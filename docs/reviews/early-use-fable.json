@@ -1,0 +1,74 @@
+[
+  {
+    "severity": "critical",
+    "title": "Checkpoint has no deployment or trust profile, so hosted-grade isolation is on the path to first use",
+    "file": "docs/early-use-plan.md",
+    "line": 34,
+    "detail": "Lines 34-36 define the checkpoint by features and gate on credential/isolation failure without naming the deployment. validation-plan.md:10 requires escape tests in the actual hosted and self-hosted shapes; server-host-assessment.md:72 and :202 record that nested sandboxing inside rootless Podman is unverified. Read literally, the owner cannot use the build until a mutually-hostile-tenant sandbox is proven, which protects against tenants the first build does not have.",
+    "fix": "Declare the checkpoint profile: owner-operated, invite-only, trusted accounts, own provider accounts only, no public signup or shared-account cals. Keep out-of-process plugins, capability RPC, host-stamped caller/space, space-keyed storage and the two-account isolation gate. Move the full hostile-workload escape matrix and worker-density budgets to a release gate for calternal.cloud public signup. Proof: ported isolation gate passes for two accounts, two spaces and one shared resource including worker-hosted actions; deployment refuses public signup and shared-account binding while the hosted gate is open.",
+    "classification": "user decision"
+  },
+  {
+    "severity": "high",
+    "title": "GenUI v0 has no producer or evaluation model, and the Notes editor contradicts 'no privileged shortcuts'",
+    "file": "docs/early-use-plan.md",
+    "line": 12,
+    "detail": "Lines 12 and 19-24 list schema properties but not who emits a tree (plugin bundle, worker per request, or model reply), where bindings are resolved, or how updates are patched. Line 11 requires Notes to use the public SDK without privileged shortcuts while lines 19 and 23 put editors in client-shipped capabilities, and architecture-proposal.md:37 requires native editors. Native renderer work started now would be built on a guess, and a worker round trip per view would put cold start on app switching (architecture-proposal.md:190).",
+    "fix": "Add to the plan: (1) v0 view definitions are static versioned files in the plugin bundle, cached per plugin version; model-emitted reply views use the same host-validated schema. (2) A binding names a registered query operation plus field paths; no expression language. (3) Two catalog tiers: primitives and capability components such as notes.editor that any plugin may reference by ID/version under its own grants. (4) One keyed patch format, coalesced per frame. Proof: one schema and fixture corpus passes in browser and Swift renderers; a generated plugin embeds notes.editor for a granted note and is refused otherwise; a view opens from cache with its worker stopped.",
+    "classification": "fix-in-plan"
+  },
+  {
+    "severity": "high",
+    "title": "Plan does not say which Notes paths bypass the TypeScript product layer",
+    "file": "docs/early-use-plan.md",
+    "line": 11,
+    "detail": "Notes is built on the public SDK (line 11) with a compiled Rust engine and a TypeScript product layer in a worker (server-host-assessment.md:29-31). Worker overhead is unmeasured and dominates plugin-backed latency (server-host-assessment.md:129). architecture-proposal.md:453 makes anything worse than existing Calternal a regression, and existing gates include open.note and sync.save_ack. Line 21 covers typing and scrolling only. A TypeScript notes.open would add a cold start the existing product does not have.",
+    "fix": "Add a hot-path rule: clients call engine operations directly for open, sync, save acknowledgement, list and palette search; the TypeScript layer supplies view definitions, composed/occasional operations and thread tool surfaces. A plugin that puts a worker on an interactive path declares it with its own budget. Proof: trace IDs for open, typing with sync in flight and save acknowledgement show no worker hop; those scenarios are compared with the origin/dev baseline on the same machine; V1 reports cold-start distributions for worker paths.",
+    "classification": "engineering experiment"
+  },
+  {
+    "severity": "high",
+    "title": "Execution v0 leaves the first computer ambiguous and omits the adapter that lets a thread call operations",
+    "file": "docs/early-use-plan.md",
+    "line": 15,
+    "detail": "Lines 34 and 36 require selected-computer execution and a worktree/PR path without saying what the first machine is. Line 15 omits the MCP/cl adapter, run-scoped credential and discovery operations that architecture-proposal.md:298 makes the only route from a thread to operations. Managed provider login (architecture-proposal.md:367) and the shared-account credential gate (:304-306) are unproven; the working-area checkout path (:344) is neither included nor excluded. If the first computer is the server, harness sandboxing in rootless Podman and managed login become prerequisites for the first coding task.",
+    "fix": "Checkpoint runs harnesses only on the owner's enrolled Mac/Linux machine via the calternal machine role, private to its owner, using CLI logins already present. Name server-side harness execution and managed login as staged omissions. Add MCP adapter, run-scoped short-lived credential and discovery/search operations to the Execution v0 row. Thread Notes edits go through operations; canonical-content checkout/write-back is deferred. Proof: one thread edits a note through MCP and the credential dies at run end and after Stop; the same thread completes a worktree task ending in a PR and survives client closure; unpairing blocks the next dispatch; the model-directed-tool credential test is recorded for the owner's account.",
+    "classification": "fix-in-plan"
+  },
+  {
+    "severity": "high",
+    "title": "Persistence v0 does not state the checkpoint's storage guarantee or the fate of data written into an early build",
+    "file": "docs/early-use-plan.md",
+    "line": 14,
+    "detail": "Line 14 bundles commit rules, chat format, recovery and attachment identity; line 38 mentions disclosed limitations without listing any. inheritance-audit.md:128 and :131 say reusing the two-root binary is a staged limitation and that a reduced recovery or tiering promise needs an explicit product decision not yet given. architecture-proposal.md:539 asks for a storage compatibility review; :338 lists five stores to back up as one set; the authority/run-record store is unchosen (:489). The chat backend is a decision, not code (no AI/Chats reference under crates, apps/web/src or packages at ea57b84b). Real owner data would land in an undeclared layout.",
+    "fix": "Get the user's decision on the checkpoint storage guarantee. Regardless: fix the space-rooted relative layout, put a format version on every protected record, commit to forward migration of checkpoint data, pick one transactional store for grants/admission/run records in the first slice, and ship one combined backup command. Proof: kill mid-edit and mid-turn with no acknowledged edit lost within the declared guarantee; restore keeps a pre-backup revocation revoked; a checkpoint data directory upgrades across one deliberate layout change by automated test; an external chat-file edit cannot forge an approval or receipt.",
+    "classification": "user decision"
+  },
+  {
+    "severity": "medium",
+    "title": "Critical path hides two dependencies and puts the whole performance specification first",
+    "file": "docs/early-use-plan.md",
+    "line": 42,
+    "detail": "Line 42 makes baselines plus contracts a single first step, while validation-plan.md:9 needs hosts, devices and budgets pinned before running and server-host-assessment.md:278 and :352 leave the benchmark host and device list unspecified. Line 43 runs 1A/1B/1C in parallel though 1C needs real sync bytes from a server (validation-plan.md:12). Line 28 starts Apple against generated types with no source of truth or Swift generator named; the only existing mechanism is schemars to contracts/actions.json to generated TypeScript (crates/calternal/src/plugins.rs:6, :114-123 at ea57b84b).",
+    "fix": "Split step 1: 1a contract toolchain and fixture revision 0 blocks everything; 1b performance specification and origin/dev baseline runs in parallel and blocks only pass/fail judgements. Name the toolchain: Rust types as source of truth, generated JSON Schema and TypeScript, Swift via UniFFI, schema-validated generic values for dynamic operations and GenUI trees. Let 1C's first bridge spike run against the unmodified origin/dev server for per-note sync, then rebase onto the space-keyed server. Proof: one contract change regenerates all three bindings and a stale snapshot fails the drift test; the Swift harness opens, edits offline and reconnects a real note before 1B completes.",
+    "classification": "fix-in-plan"
+  },
+  {
+    "severity": "medium",
+    "title": "Apple work starts 'immediately' without a first platform, and the GenUI renderer multiplies across toolkits",
+    "file": "docs/early-use-plan.md",
+    "line": 30,
+    "detail": "Line 30 defers UIKit/TextKit 2, the macOS toolkit validation and watchOS as separate platform work, yet line 12 requires a view to render in native Swift. architecture-proposal.md:37 and inheritance-audit.md:137 record three toolkits, and ADR 0072 does not choose the macOS toolkit. No document names the first platform. ADR 0072 also requires files, not a device database, to hold content on each device, which the core row (line 13) does not mention. A renderer is needed per toolkit, so starting without a target yields a throwaway demo or blocks on the Mac spike.",
+    "fix": "Get the user's choice of first Apple platform and reference devices. Name the day-zero work that needs no contracts: project/signing setup, TextKit 2 Markdown editor prototype, native primitives against design tokens, frame/hitch measurement harness. Functional Notes starts when the bridge spike passes; the GenUI renderer starts when the schema and fixtures exist. State that native Notes keeps content as files with a rebuildable index. Proof: the app on the owner's device opens and edits a real note through the core, renders one GenUI fixture view with VoiceOver names, and records hitch and input-to-paint traces with the measured refresh rate.",
+    "classification": "user decision"
+  },
+  {
+    "severity": "medium",
+    "title": "SDK v0 and the checkpoint surface list are broader than the first proof needs and vague where it matters",
+    "file": "docs/early-use-plan.md",
+    "line": 11,
+    "detail": "Line 11 puts dependencies, extension-point IDs and versioned migration contracts in the minimum artifact and rollback in the proof, while architecture-proposal.md:208 says migration rollback needs a snapshot strategy that does not exist. Line 34 says 'recovery' without distinguishing crash recovery from the protected recovery screen (architecture-proposal.md:92), omits palette, deep links and the AI pane (:35, :53, :61), and requires two-account sharing without saying whether sharing UX is in scope. The SDK row can absorb unbounded work and reviewers cannot tell when the checkpoint is complete.",
+    "fix": "SDK v0 cut: manifest, API version, scope, capability requests, operations, resource kinds, events, activation triggers, view contributions and exactly one extension point; v0 plugins may not declare a data migration and rollback is code/configuration only; hooks, service replacement and engine contracts come later on the same manifest versioning. Add one checkpoint surface table: in, proven at the gate only (two-account isolation and one shared resource), and deferred (invite/sharing UI, cals, automations, notifications, Collections, group conversations). Proof: a generated plugin and the Notes product layer validate against the same manifest schema; a manifest declaring a migration is refused; a broken personal plugin can be disabled from the recovery screen while the shell fails to load.",
+    "classification": "fix-in-plan"
+  }
+]

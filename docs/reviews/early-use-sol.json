@@ -1,0 +1,74 @@
+[
+  {
+    "severity": "medium",
+    "title": "The checkpoint lacks one authoritative scope and dependency table",
+    "file": "docs/early-use-plan.md",
+    "line": 34,
+    "classification": "fix-in-plan",
+    "detail": "The checkpoint requires selected-computer execution and a real worktree/PR path, but line 36 places second-machine enrollment after the first run and line 45 defers expansion. Validation V7 requires Mac and Linux daemons before remote execution ships (validation-plan.md:59-63). Architecture \u00a712 still lists the full integration set without an explicit intermediate exit (architecture-proposal.md:470-475). It is unclear which machine, PR lifecycle and integration proofs gate personal use. Stage 0 also risks becoming a complete future-device/performance program before any contract work (validation-plan.md:9,16). Acceptance proof: A reviewer can trace each checkpoint item to a named acceptance scenario and identify exactly where V7 and PR follow-through/cleanup apply. No deferred integration is accidentally required to reach the intermediate exit; no accepted machine safety gate disappears.",
+    "fix": "Add a checkpoint matrix naming required behavior, proof and deferred breadth; distinguish first executable run from first usable release. Keep the common machine/run protocol now, integrate one selected-machine worktree/PR path, and pass V7 before enabling remote execution; do not require a fleet UI. Explicitly put Honcho/voice/feedback/import after this checkpoint. Capture baseline and predeclare budgets for the first slice while contracts/native scaffolding start; expand device/load coverage with implemented surfaces, preserving applicable inherited gates."
+  },
+  {
+    "severity": "high",
+    "title": "Intermediate-use approval does not resolve inherited storage guarantees",
+    "file": "docs/early-use-plan.md",
+    "line": 38,
+    "classification": "user decision",
+    "detail": "The plan says storage/recovery limitations require evidence but never states what the usable build promises. Inheritance-audit.md:9-11,25-28 retains tiering, FO1 materialization and protected file-only recovery, explicitly saying no reduction is approved. Validation-plan.md:69 makes these proofs conditional on claims. Pinned ADR 0062 distinguishes the old two-root implementation from the accepted amended design. Approval to defer integrations is not approval to omit storage semantics. Acceptance proof: A written profile lists acknowledgement, materialization, state-loss recovery, backup and missing-mount behavior; it either passes inherited fault cases or cites explicit approval of the exact temporary deviation before real-data use.",
+    "fix": "Before enabling real-data personal use, publish an exact storage/recovery profile mapped to ADR 0062 and the space adaptation. Default to inherited guarantees. If the team proposes an earlier build with a coordinated-backup-only recovery profile or without tiering/FO1, present that concrete temporary limitation for user approval; disclosure alone is insufficient. Continue namespace, journal and client work meanwhile. Do not build a replacement storage engine solely to settle this scope question."
+  },
+  {
+    "severity": "high",
+    "title": "Portable GenUI omits the editor contract needed by its first app",
+    "file": "docs/early-use-plan.md",
+    "line": 19,
+    "classification": "fix-in-plan",
+    "detail": "The initial catalog places editors among capabilities to add later, yet the checkpoint promises real Notes and browser/Swift open-edit-offline parity (lines 13,28-34). Architecture-proposal.md:234 retains the browser live Yjs document; inheritance-audit.md:65 retains collaborative Markdown text. A generic form value or Markdown display is not that editor. Native full-buffer replacement and server-round-trip input would undermine co-editing, undo and responsiveness. Acceptance proof: Browser and Swift edit the same note concurrently and offline, including IME input, remote changes and own-change undo, then reconnect with identical text, preserved unknown content and honest durable-save state. The editor is mounted through the public capability with keyboard/VoiceOver semantics.",
+    "fix": "Specify one built-in document-editor capability for v0: canonical resource/session identity, collaborative text/update format, local composition/selection ownership, origin-aware undo, pending/conflict states and read-only fallback. Reuse the web editor; define the narrow TextKit 2-to-core edit/update interface concurrently. GenUI mounts the trusted native/web editor by resource reference, without embedding executable UI or serializing the document into the view tree. Keep richer editor customization incremental."
+  },
+  {
+    "severity": "high",
+    "title": "Declarative views need enforceable client safety limits",
+    "file": "docs/early-use-plan.md",
+    "line": 20,
+    "classification": "fix-in-plan",
+    "detail": "The plan already calls for bounded bindings, backpressure and host-authorized actions (lines 12,20-24). It does not specify what the renderer rejects or how client-originated network and navigation effects are authorized. A data-only tree can still exhaust layout/memory, issue excessive queries or disclose context through remote Markdown images/links; removing JavaScript does not constrain those effects. Keyed patches also lack revision/gap/reset rules. Acceptance proof: The same hostile view corpus in browser and Swift rejects excessive trees/bindings and unsafe content/URLs; reordered, duplicated and missing patches recover without stale state or unbounded buffering. Typing/scrolling remains within predeclared budgets under sustained updates.",
+    "fix": "Add a small renderer profile: validated inert Markdown, resource-handle media, explicit external-link behavior, no arbitrary URL fetches from bindings/styles, tree/depth/text/page/subscription/update quotas, and bounded layout values. Use subscription identity plus ordered view revisions; reject stale patches and request a bounded fresh snapshot after a gap. On permission loss detach bindings and clear protected data. Limits are host/client-enforced and negotiated; allow unsupported views to fail visibly rather than freeze."
+  },
+  {
+    "severity": "high",
+    "title": "Preview isolation is promised without a side-effect boundary",
+    "file": "docs/architecture-proposal.md",
+    "line": 204,
+    "classification": "fix-in-plan",
+    "detail": "The authoring loop previews inside the user space; architecture-proposal.md:110 promises an isolated preview and :208 grants migrations/recovery rules, while early-use-plan.md:11 tests preview and activation. Neither defines whether preview can mutate canonical Notes, run jobs, use live accounts or migrate production data. Existing grants alone would let an automatically generated preview change real content before activation. Acceptance proof: A preview that attempts a canonical write, migration, scheduled task or external request cannot affect production. Discard removes preview state; activation uses the tested revision. The generated plugin and Notes extension use this same path.",
+    "fix": "Make preview a separate installation identity/version with a disposable data overlay or fixture resources, no production migrations, schedules or external-effect/account handles by default. Existing grants bound maximum authority but do not silently bind preview to live effects. A deliberately authorized live test uses an explicit operation/context with attributable outcomes. Activation selects a verified immutable bundle/schema/config revision and applies its declared migration once; it does not promote arbitrary preview effects."
+  },
+  {
+    "severity": "high",
+    "title": "Retained worker data needs authority-change invalidation",
+    "file": "docs/server-host-assessment.md",
+    "line": 61,
+    "classification": "engineering experiment",
+    "detail": "Isolation domains include effective authority and each RPC checks current grants; both are good existing controls. V1 tests different callers/contexts (lines 287-291), but does not explicitly cover a caller losing a narrow resource share while the same worker retains its bytes. After revocation a read check can deny new access while an existing cache, subscription or in-flight result still discloses old content through an otherwise allowed operation. Static domain keys do not establish invalidation semantics. Acceptance proof: After the protected revocation boundary, a warmed worker cannot return or stream revoked bytes to the caller; late results are rejected and old processes/temp state cannot re-enter service. Test the same user before and after revocation, not only two initially different users.",
+    "fix": "Include an authority/visibility generation in worker and subscription lifetime. For v0, conservatively kill/recreate affected domains, cancel subscriptions and reject stale result generations when relevant grants change; do not require per-object cache taint tracking. Also recheck delivery/commit authority. Extend V1 with same-principal share revocation, membership loss and account-unbinding during cached and in-flight calls; bound cleanup and prevent reuse of old temporary state."
+  },
+  {
+    "severity": "high",
+    "title": "Make the personal-use credential gate explicit and move its proof forward",
+    "file": "docs/early-use-plan.md",
+    "line": 36,
+    "classification": "release gate",
+    "detail": "Credential/isolation failure is phrased as blocking the affected deployment or shared-account capability, which could be read as allowing unprotected private-account use. Architecture-proposal.md:304-306 explicitly requires that model-directed tools cannot read credentials and says the injection test also applies to the holder's own threads. Direct login-file management is accepted (:367), but does not itself isolate those files. The managed-auth spike is listed separately (validation-plan.md:83-85), so failure could arrive after building both integrations. Acceptance proof: For every enabled Codex/Claude account mode, retained evidence shows model-directed tools cannot recover login/refresh secrets via files, environment, process interfaces, logs or allowed outbound requests. Rotation/restart/unpairing and applicable terms are checked. No result is assumed here.",
+    "fix": "Name each offered provider/account/deployment mode in an early gate table. Run real login/refresh plus malicious shell/file-read/egress tests alongside V1, before substantial provider UX; record current distribution/use terms for that exact route. Private use is not an exemption from injection protection. Select the smallest supported mechanism that passes; neither a mandatory proxy fork nor substituting another harness is authorized by this plan. A failed mode stays disabled and is reported as a checkpoint blocker if required."
+  },
+  {
+    "severity": "medium",
+    "title": "Engine replacement needs a codec identity the native core can actually compare",
+    "file": "docs/architecture-proposal.md",
+    "line": 249,
+    "classification": "fix-in-plan",
+    "detail": "The fallback for tenant-defined kinds is already specified: preserve opaque bytes and let the server merge. But the phrase default kinds it still matches has no concrete engine/codec compatibility signal. Operation and GenUI API negotiation alone cannot tell an older native client whether its compiled Notes codec and offline edits remain safe after a space changes its engine. Queued edits can span that change. Acceptance proof: An old Swift/core client opening an incompatible engine preserves bytes and clearly disables unsupported edits; compatible codecs keep working. Pending edits created under the old codec survive as recoverable work and cannot silently overwrite the replacement format.",
+    "fix": "Add a resource-format/codec compatibility identifier and revision to resource/session negotiation, separate from plugin version and view capabilities. The server declares supported edit encodings; the core selects its compiled codec only on an explicit compatible match. Otherwise preserve opaque bytes or use read-only/plain-file fallback as supported. Revalidate queued edits after engine change and surface a conflict/rebase requirement instead of decoding or overwriting optimistically. Add one replacement-between-offline-edit-and-reconnect fixture; full replacement-engine implementation can remain V6."
+  }
+]
