@@ -1,0 +1,23 @@
+{
+  "name": "@calternal/notes-insights",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./worker": "./dist/worker.js",
+    "./manifest.json": "./manifest.json"
+  },
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@calternal/contracts": "*",
+    "@calternal/plugin-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.9.3"
+  }
+}

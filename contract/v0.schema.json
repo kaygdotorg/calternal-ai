@@ -1,0 +1,1197 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Contract",
+  "type": "object",
+  "required": [
+    "describe",
+    "note",
+    "note_result",
+    "notes_create_input",
+    "notes_get_input",
+    "notes_history_input",
+    "notes_history_result",
+    "notes_list_input",
+    "notes_list_result",
+    "notes_update_input",
+    "plugin_input",
+    "plugin_preview_result",
+    "plugin_result",
+    "plugins_list_input",
+    "plugins_list_result",
+    "request",
+    "response",
+    "summarize_result",
+    "worker_request",
+    "worker_response"
+  ],
+  "properties": {
+    "describe": {
+      "$ref": "#/definitions/DescribeResult"
+    },
+    "note": {
+      "$ref": "#/definitions/Note"
+    },
+    "note_result": {
+      "$ref": "#/definitions/NoteResult"
+    },
+    "notes_create_input": {
+      "$ref": "#/definitions/NotesCreateInput"
+    },
+    "notes_get_input": {
+      "$ref": "#/definitions/NotesGetInput"
+    },
+    "notes_history_input": {
+      "$ref": "#/definitions/NotesHistoryInput"
+    },
+    "notes_history_result": {
+      "$ref": "#/definitions/NotesHistoryResult"
+    },
+    "notes_list_input": {
+      "$ref": "#/definitions/NotesListInput"
+    },
+    "notes_list_result": {
+      "$ref": "#/definitions/NotesListResult"
+    },
+    "notes_update_input": {
+      "$ref": "#/definitions/NotesUpdateInput"
+    },
+    "plugin_input": {
+      "$ref": "#/definitions/PluginInput"
+    },
+    "plugin_preview_result": {
+      "$ref": "#/definitions/PluginPreviewResult"
+    },
+    "plugin_result": {
+      "$ref": "#/definitions/PluginResult"
+    },
+    "plugins_list_input": {
+      "$ref": "#/definitions/PluginsListInput"
+    },
+    "plugins_list_result": {
+      "$ref": "#/definitions/PluginsListResult"
+    },
+    "request": {
+      "$ref": "#/definitions/OperationRequest"
+    },
+    "response": {
+      "$ref": "#/definitions/OperationResponse_for_AnyValue"
+    },
+    "summarize_result": {
+      "$ref": "#/definitions/SummarizeResult"
+    },
+    "worker_request": {
+      "$ref": "#/definitions/WorkerRequest"
+    },
+    "worker_response": {
+      "$ref": "#/definitions/WorkerResponse"
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ApiError": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/ErrorCode"
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DescribeResult": {
+      "type": "object",
+      "required": [
+        "genui_version",
+        "operations",
+        "principal",
+        "protocol_version"
+      ],
+      "properties": {
+        "genui_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/OperationDescription"
+          }
+        },
+        "principal": {
+          "$ref": "#/definitions/Principal"
+        },
+        "protocol_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ErrorCode": {
+      "type": "string",
+      "enum": [
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "conflict",
+        "invalid_input",
+        "too_large",
+        "unavailable",
+        "internal"
+      ]
+    },
+    "ExtensionPoint": {
+      "type": "string",
+      "enum": [
+        "notes.detail"
+      ]
+    },
+    "Failure": {
+      "type": "object",
+      "required": [
+        "error",
+        "ok",
+        "request_id"
+      ],
+      "properties": {
+        "error": {
+          "$ref": "#/definitions/ApiError"
+        },
+        "ok": {
+          "$ref": "#/definitions/False"
+        },
+        "request_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "False": {
+      "type": "boolean",
+      "const": false
+    },
+    "GenUiAction": {
+      "type": "object",
+      "required": [
+        "input",
+        "operation"
+      ],
+      "properties": {
+        "input": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "operation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "GenUiNode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "children",
+            "id",
+            "type"
+          ],
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/GenUiNode"
+              }
+            },
+            "id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "stack"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "text",
+            "type"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "text"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "action",
+            "id",
+            "label",
+            "type"
+          ],
+          "properties": {
+            "action": {
+              "$ref": "#/definitions/GenUiAction"
+            },
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "button"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "label",
+            "type",
+            "value"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "stat"
+              ]
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "label",
+            "resource_id",
+            "space_id",
+            "type"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "resource_id": {
+              "type": "string"
+            },
+            "space_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "resource"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "id",
+            "resource_id",
+            "space_id",
+            "type"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "resource_id": {
+              "type": "string"
+            },
+            "space_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "document-editor"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "GenUiView": {
+      "type": "object",
+      "required": [
+        "genui_version",
+        "root"
+      ],
+      "properties": {
+        "genui_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        },
+        "root": {
+          "$ref": "#/definitions/GenUiNode"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Note": {
+      "type": "object",
+      "required": [
+        "id",
+        "markdown",
+        "revision",
+        "space_id",
+        "title",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoteResult": {
+      "type": "object",
+      "required": [
+        "note"
+      ],
+      "properties": {
+        "note": {
+          "$ref": "#/definitions/Note"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoteSummary": {
+      "type": "object",
+      "required": [
+        "id",
+        "revision",
+        "space_id",
+        "title",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NoteVersion": {
+      "type": "object",
+      "required": [
+        "markdown",
+        "revision",
+        "title",
+        "updated_at"
+      ],
+      "properties": {
+        "markdown": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesCreateInput": {
+      "type": "object",
+      "required": [
+        "markdown",
+        "space_id",
+        "title"
+      ],
+      "properties": {
+        "markdown": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesGetInput": {
+      "type": "object",
+      "required": [
+        "id",
+        "space_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesHistoryInput": {
+      "type": "object",
+      "required": [
+        "id",
+        "space_id"
+      ],
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 100.0,
+          "minimum": 1.0
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesHistoryResult": {
+      "type": "object",
+      "required": [
+        "next_cursor",
+        "versions"
+      ],
+      "properties": {
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NoteVersion"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesListInput": {
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesListResult": {
+      "type": "object",
+      "required": [
+        "notes"
+      ],
+      "properties": {
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/NoteSummary"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "NotesUpdateInput": {
+      "type": "object",
+      "required": [
+        "base_revision",
+        "id",
+        "markdown",
+        "space_id"
+      ],
+      "properties": {
+        "base_revision": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        },
+        "id": {
+          "type": "string"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "OperationDescription": {
+      "type": "object",
+      "required": [
+        "description",
+        "id",
+        "input_schema",
+        "mutates",
+        "output_schema"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "mutates": {
+          "type": "boolean"
+        },
+        "output_schema": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "OperationRequest": {
+      "type": "object",
+      "required": [
+        "input",
+        "operation",
+        "request_id"
+      ],
+      "properties": {
+        "input": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "operation": {
+          "type": "string"
+        },
+        "request_id": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "OperationResponse_for_AnyValue": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/Success_for_AnyValue"
+        },
+        {
+          "$ref": "#/definitions/Failure"
+        }
+      ]
+    },
+    "PluginDependency": {
+      "type": "object",
+      "required": [
+        "id",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginInput": {
+      "type": "object",
+      "required": [
+        "plugin_id",
+        "space_id"
+      ],
+      "properties": {
+        "plugin_id": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginManifest": {
+      "type": "object",
+      "required": [
+        "api_version",
+        "capabilities",
+        "dependencies",
+        "description",
+        "id",
+        "name",
+        "operations",
+        "version",
+        "views"
+      ],
+      "properties": {
+        "api_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PluginDependency"
+          }
+        },
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PluginOperation"
+          }
+        },
+        "version": {
+          "type": "string"
+        },
+        "views": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PluginView"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginOperation": {
+      "type": "object",
+      "required": [
+        "description",
+        "id",
+        "mutates"
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "mutates": {
+          "$ref": "#/definitions/False"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginPreviewResult": {
+      "type": "object",
+      "required": [
+        "preview",
+        "view"
+      ],
+      "properties": {
+        "preview": {
+          "$ref": "#/definitions/True"
+        },
+        "view": {
+          "$ref": "#/definitions/GenUiView"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginResult": {
+      "type": "object",
+      "required": [
+        "plugin"
+      ],
+      "properties": {
+        "plugin": {
+          "$ref": "#/definitions/PluginState"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginState": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "generation",
+        "manifest"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "generation": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "manifest": {
+          "$ref": "#/definitions/PluginManifest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginView": {
+      "type": "object",
+      "required": [
+        "extension_point",
+        "id",
+        "view"
+      ],
+      "properties": {
+        "extension_point": {
+          "$ref": "#/definitions/ExtensionPoint"
+        },
+        "id": {
+          "type": "string"
+        },
+        "view": {
+          "$ref": "#/definitions/GenUiView"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginsListInput": {
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "PluginsListResult": {
+      "type": "object",
+      "required": [
+        "plugins"
+      ],
+      "properties": {
+        "plugins": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/PluginState"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Principal": {
+      "type": "object",
+      "required": [
+        "id",
+        "spaces"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "spaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SpaceGrant"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceGrant": {
+      "type": "object",
+      "required": [
+        "id",
+        "role"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/definitions/SpaceRole"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceRole": {
+      "type": "string",
+      "enum": [
+        "reader",
+        "editor",
+        "manager"
+      ]
+    },
+    "Stats": {
+      "type": "object",
+      "required": [
+        "characters",
+        "lines",
+        "words"
+      ],
+      "properties": {
+        "characters": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "lines": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "words": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Success_for_AnyValue": {
+      "type": "object",
+      "required": [
+        "data",
+        "ok",
+        "request_id"
+      ],
+      "properties": {
+        "data": true,
+        "ok": {
+          "$ref": "#/definitions/True"
+        },
+        "request_id": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "SummarizeResult": {
+      "type": "object",
+      "required": [
+        "stats",
+        "view"
+      ],
+      "properties": {
+        "stats": {
+          "$ref": "#/definitions/Stats"
+        },
+        "view": {
+          "$ref": "#/definitions/GenUiView"
+        }
+      },
+      "additionalProperties": false
+    },
+    "True": {
+      "type": "boolean",
+      "const": true
+    },
+    "WorkerError": {
+      "type": "object",
+      "required": [
+        "code",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/definitions/WorkerErrorCode"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkerErrorCode": {
+      "type": "string",
+      "enum": [
+        "invalid_input",
+        "internal"
+      ]
+    },
+    "WorkerFailure": {
+      "type": "object",
+      "required": [
+        "error",
+        "invocation_id",
+        "ok",
+        "protocol_version"
+      ],
+      "properties": {
+        "error": {
+          "$ref": "#/definitions/WorkerError"
+        },
+        "invocation_id": {
+          "type": "string"
+        },
+        "ok": {
+          "$ref": "#/definitions/False"
+        },
+        "protocol_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkerOperation": {
+      "type": "string",
+      "enum": [
+        "notes-insights.summarize"
+      ]
+    },
+    "WorkerRequest": {
+      "type": "object",
+      "required": [
+        "invocation_id",
+        "operation",
+        "protocol_version",
+        "resource"
+      ],
+      "properties": {
+        "invocation_id": {
+          "type": "string"
+        },
+        "operation": {
+          "$ref": "#/definitions/WorkerOperation"
+        },
+        "protocol_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        },
+        "resource": {
+          "$ref": "#/definitions/WorkerResource"
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkerResource": {
+      "type": "object",
+      "required": [
+        "id",
+        "markdown",
+        "revision",
+        "space_id",
+        "title"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 256,
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorkerResponse": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/WorkerSuccess"
+        },
+        {
+          "$ref": "#/definitions/WorkerFailure"
+        }
+      ]
+    },
+    "WorkerSuccess": {
+      "type": "object",
+      "required": [
+        "data",
+        "invocation_id",
+        "ok",
+        "protocol_version"
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/definitions/SummarizeResult"
+        },
+        "invocation_id": {
+          "type": "string"
+        },
+        "ok": {
+          "$ref": "#/definitions/True"
+        },
+        "protocol_version": {
+          "type": "integer",
+          "format": "uint32",
+          "maximum": 1.0,
+          "minimum": 1.0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

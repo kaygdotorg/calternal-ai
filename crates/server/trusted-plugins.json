@@ -1,0 +1,20 @@
+{
+  "plugins": [
+    {
+      "id": "notes",
+      "version": "0.1.0",
+      "manifest": "notes/manifest.json",
+      "worker": null,
+      "worker_sha256": null,
+      "default_enabled": true
+    },
+    {
+      "id": "notes-insights",
+      "version": "0.1.0",
+      "manifest": "notes-insights/manifest.json",
+      "worker": "notes-insights/dist/worker.js",
+      "worker_sha256": "eb8dffa8b1e6ff1bbe9debdf746b61a44c71bcd55a1fd1b6f384cfb5b4c4de7a",
+      "default_enabled": false
+    }
+  ]
+}

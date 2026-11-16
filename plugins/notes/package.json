@@ -1,0 +1,10 @@
+{
+  "name": "@calternal/notes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./manifest.json": "./manifest.json"
+  },
+  "scripts": {}
+}

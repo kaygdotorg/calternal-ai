@@ -1,0 +1,15 @@
+{
+  "name": "calternal-ai",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/web", "packages/*", "plugins/*"],
+  "engines": {"node": ">=22.13.0"},
+  "scripts": {
+    "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights",
+    "build:web": "npm run build --workspace @calternal/web",
+    "build": "npm run build:plugins && npm run build:web",
+    "test:plugins": "npm test --workspace @calternal/plugin-sdk && npm test --workspace @calternal/notes-insights",
+    "test:integration": "node --test tests/integration/*.test.mjs"
+  }
+}

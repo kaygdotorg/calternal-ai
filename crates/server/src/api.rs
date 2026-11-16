@@ -1,0 +1,691 @@
+//! HTTP surface: `/api/v1/describe`, `/api/v1/operations`, same-origin static
+//! web assets with SPA fallback, loopback Host/Origin checks, dev bearer auth
+//! and security headers.
+
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use axum::Router;
+use axum::body::Bytes;
+use axum::extract::{Request, State};
+use axum::handler::HandlerWithoutStateExt;
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{any, get, post};
+use calternal_core::{
+    DescribeResult, ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult,
+    NotesCreateInput, NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
+    NotesListResult, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
+    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, SpaceRole,
+    True, WorkerResource, canonical_request_input, operation_catalog, parse_request,
+};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+use tower_http::services::ServeDir;
+
+use crate::auth::{DevPrincipal, TokenTable};
+use crate::error::HostError;
+use crate::fault::{self, FaultPoint};
+use crate::plugins::{LoadedPlugin, NodeRuntime, Registry, run_summarize};
+use crate::store::{PluginRow, Store, sha256_hex};
+
+pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+
+/// Fixed fixture text for plugin preview. Never user data.
+pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
+pub const PREVIEW_RESOURCE_ID: &str = "00000000-0000-4000-8000-000000000000";
+
+pub struct AppState {
+    pub store: Mutex<Store>,
+    pub tokens: TokenTable,
+    pub registry: Registry,
+    pub node: Option<NodeRuntime>,
+    pub allowed_hosts: Vec<String>,
+}
+
+pub type Shared = Arc<AppState>;
+
+pub fn allowed_hosts(port: u16) -> Vec<String> {
+    vec![
+        format!("127.0.0.1:{port}"),
+        format!("localhost:{port}"),
+        format!("[::1]:{port}"),
+    ]
+}
+
+pub fn router(state: Shared, web_dir: Option<PathBuf>) -> Router {
+    let api = Router::new()
+        .route("/api/v1/describe", get(describe))
+        .route("/api/v1/operations", post(operations))
+        .route("/api", any(api_not_found))
+        .route("/api/", any(api_not_found))
+        .route("/api/{*rest}", any(api_not_found));
+    let mut app = Router::new().merge(api);
+    app = match web_dir {
+        Some(dir) if dir.join("index.html").is_file() => {
+            let index = dir.join("index.html");
+            let spa = move |uri: axum::http::Uri| {
+                let index = index.clone();
+                async move { spa_fallback(uri, index).await }
+            };
+            app.fallback_service(ServeDir::new(dir).fallback(spa.into_service()))
+        }
+        _ => app.fallback(web_not_built),
+    };
+    app.layer(middleware::from_fn_with_state(state.clone(), guard))
+        .with_state(state)
+}
+
+// ------------------------------------------------------------- envelope
+
+fn failure(request_id: Option<String>, e: HostError) -> Response {
+    let status =
+        StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    let mut resp = OperationResponse::<Value>::failure(request_id, e.code, e.message);
+    if let (OperationResponse::Failure(f), Some(Value::Object(d))) = (&mut resp, e.details) {
+        f.error.details = Some(d.into_iter().collect());
+    }
+    json_response(status, &resp)
+}
+
+fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response {
+    let bytes = serde_json::to_vec(body).expect("serializable");
+    let mut r = (status, bytes).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    r
+}
+
+async fn api_not_found() -> Response {
+    failure(None, HostError::not_found("unknown API route"))
+}
+
+/// Client-side routes (e.g. `/s/personal/notes/<id>`) get index.html; a
+/// missing asset (`/assets/...` or any last segment with an extension) is a
+/// plain 404, never SPA HTML.
+async fn spa_fallback(uri: axum::http::Uri, index: PathBuf) -> Response {
+    let path = uri.path();
+    let last = path.rsplit('/').next().unwrap_or("");
+    if path.starts_with("/assets/") || last.contains('.') {
+        return (StatusCode::NOT_FOUND, "not found\n").into_response();
+    }
+    match tokio::fs::read(&index).await {
+        Ok(bytes) => {
+            let mut r = (StatusCode::OK, bytes).into_response();
+            r.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("text/html; charset=utf-8"),
+            );
+            r.headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+            r
+        }
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "web UI index missing\n").into_response(),
+    }
+}
+
+async fn web_not_built() -> Response {
+    let mut r = (
+        StatusCode::SERVICE_UNAVAILABLE,
+        "Calternal-AI development preview: web UI is not built. Run `npm run build:web`, then restart with --web-dir apps/web/dist.\n",
+    )
+        .into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    r
+}
+
+// --------------------------------------------------------------- guard
+
+fn is_api(path: &str) -> bool {
+    path == "/api" || path.starts_with("/api/")
+}
+
+/// Host allowlist (DNS-rebinding defense), Origin same-origin check, bearer
+/// auth for the API, and security headers on every response.
+async fn guard(State(state): State<Shared>, mut req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_string();
+    let api = is_api(&path);
+    let deny = |e: HostError| -> Response {
+        if api {
+            failure(None, e)
+        } else {
+            (
+                StatusCode::from_u16(e.code.http_status()).unwrap(),
+                e.message,
+            )
+                .into_response()
+        }
+    };
+    let resp = 'resp: {
+        let host = req
+            .headers()
+            .get(header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
+        if !state.allowed_hosts.iter().any(|h| h == host) {
+            break 'resp deny(HostError::forbidden("host not allowed"));
+        }
+        if let Some(origin) = req.headers().get(header::ORIGIN) {
+            let expected = format!("http://{host}");
+            if origin.to_str().ok() != Some(expected.as_str()) {
+                break 'resp deny(HostError::forbidden("cross-origin request denied"));
+            }
+        }
+        if req
+            .headers()
+            .get("sec-fetch-site")
+            .and_then(|v| v.to_str().ok())
+            == Some("cross-site")
+        {
+            break 'resp deny(HostError::forbidden("cross-site request denied"));
+        }
+        if api {
+            match bearer(req.headers()).and_then(|t| state.tokens.authenticate(t)) {
+                Some(p) => {
+                    req.extensions_mut().insert(p);
+                }
+                None => {
+                    break 'resp deny(HostError::unauthorized(
+                        "missing or invalid dev bearer token",
+                    ));
+                }
+            }
+        }
+        next.run(req).await
+    };
+    let mut resp = resp;
+    let h = resp.headers_mut();
+    h.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(CSP),
+    );
+    h.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    h.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    if api {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    resp
+}
+
+fn bearer(headers: &HeaderMap) -> Option<&[u8]> {
+    let v = headers.get(header::AUTHORIZATION)?.as_bytes();
+    let rest = v.strip_prefix(b"Bearer ")?;
+    if rest.is_empty() { None } else { Some(rest) }
+}
+
+// ------------------------------------------------------------- handlers
+
+async fn describe(State(_s): State<Shared>, req: Request) -> Response {
+    let p = req
+        .extensions()
+        .get::<DevPrincipal>()
+        .cloned()
+        .expect("guard inserts principal");
+    let result = DescribeResult {
+        protocol_version: PROTOCOL_VERSION,
+        genui_version: GENUI_VERSION,
+        principal: p.to_wire(),
+        operations: operation_catalog(),
+    };
+    json_response(StatusCode::OK, &result)
+}
+
+async fn operations(State(state): State<Shared>, req: Request) -> Response {
+    let p = req
+        .extensions()
+        .get::<DevPrincipal>()
+        .cloned()
+        .expect("guard inserts principal");
+    let ct_ok = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("application/json")
+        })
+        .unwrap_or(false);
+    if !ct_ok {
+        return failure(
+            None,
+            HostError::invalid_input("Content-Type must be application/json"),
+        );
+    }
+    if req.method() != Method::POST {
+        return failure(None, HostError::invalid_input("POST required"));
+    }
+    let bytes: Bytes = match axum::body::to_bytes(req.into_body(), MAX_BODY_BYTES + 1).await {
+        Ok(b) => b,
+        Err(_) => {
+            return failure(
+                None,
+                HostError::new(ErrorCode::TooLarge, "request exceeds 2 MiB"),
+            );
+        }
+    };
+    let request = match parse_request(&bytes) {
+        Ok(r) => r,
+        Err(e) => return failure(salvage_request_id(&bytes), e.into()),
+    };
+    let rid = request.request_id.clone();
+    let result = dispatch(
+        state,
+        p,
+        &request.request_id,
+        &request.operation,
+        request.input,
+    )
+    .await;
+    fault::hit(FaultPoint::BeforeReply);
+    match result {
+        Ok(data) => json_response(StatusCode::OK, &OperationResponse::success(rid, data)),
+        Err(e) => failure(Some(rid), e),
+    }
+}
+
+/// Echo a request_id from a well-formed envelope whose input was rejected.
+fn salvage_request_id(bytes: &[u8]) -> Option<String> {
+    let v: Value = serde_json::from_slice(bytes).ok()?;
+    let obj = v.as_object()?;
+    if obj
+        .keys()
+        .any(|k| !matches!(k.as_str(), "request_id" | "operation" | "input"))
+    {
+        return None;
+    }
+    let id = obj.get("request_id")?.as_str()?;
+    (!id.is_empty() && id.chars().count() <= 128).then(|| id.to_string())
+}
+
+fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, HostError> {
+    serde_json::from_value(Value::Object(input.into_iter().collect()))
+        .map_err(|_| HostError::invalid_input("input does not match operation schema"))
+}
+
+fn require_role(p: &DevPrincipal, space: &str, min: SpaceRole) -> Result<(), HostError> {
+    let rank = |r: &SpaceRole| match r {
+        SpaceRole::Reader => 0,
+        SpaceRole::Editor => 1,
+        SpaceRole::Manager => 2,
+    };
+    match p.role(space) {
+        None => Err(HostError::forbidden("no access to this space")),
+        Some(r) if rank(&r) < rank(&min) => {
+            Err(HostError::forbidden("insufficient role for this space"))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
+fn fingerprint(op: &str, input: &JsonObject) -> String {
+    sha256_hex(format!("{op}\n{}", canonical_request_input(input)).as_bytes())
+}
+
+async fn blocking<T: Send + 'static>(
+    state: &Shared,
+    f: impl FnOnce(&mut Store) -> Result<T, HostError> + Send + 'static,
+) -> Result<T, HostError> {
+    let state = state.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut store = state
+            .store
+            .lock()
+            .map_err(|_| HostError::internal("store poisoned"))?;
+        f(&mut store)
+    })
+    .await
+    .map_err(|_| HostError::internal("storage task failed"))?
+}
+
+fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
+    serde_json::to_value(v).map_err(|_| HostError::internal("encode"))
+}
+
+pub async fn dispatch(
+    state: Shared,
+    p: DevPrincipal,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+) -> Result<Value, HostError> {
+    match op {
+        "notes.list" => {
+            let i: NotesListInput = decode(input)?;
+            require_role(&p, &i.space_id, SpaceRole::Reader)?;
+            let notes = blocking(&state, move |s| s.list(&i.space_id, 100)).await?;
+            to_value(NotesListResult { notes })
+        }
+        "notes.get" => {
+            let i: NotesGetInput = decode(input)?;
+            require_role(&p, &i.space_id, SpaceRole::Reader)?;
+            let note = blocking(&state, move |s| s.get(&i.space_id, &i.id)).await?;
+            to_value(NoteResult { note })
+        }
+        "notes.history" => {
+            let i: NotesHistoryInput = decode(input)?;
+            require_role(&p, &i.space_id, SpaceRole::Reader)?;
+            let limit = i.limit.unwrap_or(20);
+            let (versions, next_cursor) = blocking(&state, move |s| {
+                s.history(&i.space_id, &i.id, limit, i.cursor.as_deref())
+            })
+            .await?;
+            to_value(NotesHistoryResult {
+                versions,
+                next_cursor,
+            })
+        }
+        "notes.create" | "notes.update" => mutate_note(state, p, request_id, op, input).await,
+        "plugins.list" => {
+            let i: PluginsListInput = decode(input)?;
+            require_role(&p, &i.space_id, SpaceRole::Reader)?;
+            let st = state.clone();
+            let plugins = blocking(&state, move |s| {
+                st.registry
+                    .plugins
+                    .iter()
+                    .map(|lp| plugin_state(s, &i.space_id, lp))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .await?;
+            to_value(PluginsListResult { plugins })
+        }
+        "plugins.enable" | "plugins.disable" => {
+            let fp = fingerprint(op, &input);
+            let i: PluginInput = decode(input)?;
+            // Current grants are checked on every attempt, including retries.
+            require_role(&p, &i.space_id, SpaceRole::Manager)?;
+            let enable = op == "plugins.enable";
+            let st = state.clone();
+            let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
+            blocking(&state, move |s| {
+                if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
+                    return Ok(v);
+                }
+                let lp = st
+                    .registry
+                    .get(&i.plugin_id)
+                    .ok_or_else(|| HostError::not_found("plugin is not registered"))?;
+                if enable {
+                    if let Some(why) = &lp.unavailable {
+                        return Err(HostError::unavailable(format!(
+                            "plugin cannot be enabled: {why}"
+                        )));
+                    }
+                    // Dependencies must be enabled in this space first.
+                    for dep in &lp.manifest.dependencies {
+                        let dlp = st
+                            .registry
+                            .get(&dep.id)
+                            .ok_or_else(|| HostError::unavailable("dependency missing"))?;
+                        if !plugin_state(s, &i.space_id, dlp)?.enabled {
+                            return Err(HostError::conflict(format!(
+                                "dependency {} is disabled",
+                                dep.id
+                            )));
+                        }
+                    }
+                } else {
+                    // Refuse to disable a plugin an enabled dependent needs.
+                    for other in &st.registry.plugins {
+                        if other
+                            .manifest
+                            .dependencies
+                            .iter()
+                            .any(|d| d.id == lp.manifest.id)
+                            && plugin_state(s, &i.space_id, other)?.enabled
+                        {
+                            return Err(HostError::conflict(format!(
+                                "plugin {} depends on it; disable that first",
+                                other.manifest.id
+                            )));
+                        }
+                    }
+                }
+                let manifest = lp.manifest.clone();
+                let (_, value) = s.set_plugin_enabled(
+                    principal,
+                    &rid,
+                    &op,
+                    &fp,
+                    &i.space_id,
+                    &lp.manifest.id,
+                    default_row(lp),
+                    enable,
+                    |row| {
+                        serde_json::to_value(PluginResult {
+                            plugin: PluginState {
+                                manifest,
+                                enabled: row.enabled,
+                                generation: row.generation,
+                            },
+                        })
+                        .expect("encode")
+                    },
+                )?;
+                Ok(value)
+            })
+            .await
+        }
+        "plugins.preview" => {
+            let i: PluginInput = decode(input)?;
+            require_role(&p, &i.space_id, SpaceRole::Reader)?;
+            let lp = state
+                .registry
+                .get(&i.plugin_id)
+                .ok_or_else(|| HostError::not_found("plugin is not registered"))?
+                .clone();
+            // Preview never activates and never touches user data: the worker
+            // sees only fixed fixture text.
+            let view = if lp.worker.is_some() {
+                let node = state
+                    .node
+                    .as_ref()
+                    .ok_or_else(|| HostError::unavailable("Node runtime unavailable"))?;
+                let r = run_summarize(
+                    node,
+                    &lp,
+                    WorkerResource {
+                        id: PREVIEW_RESOURCE_ID.into(),
+                        space_id: i.space_id.clone(),
+                        revision: "preview-fixture".into(),
+                        title: "Preview fixture".into(),
+                        markdown: PREVIEW_FIXTURE.into(),
+                    },
+                )
+                .await?;
+                r.view
+            } else {
+                lp.manifest
+                    .views
+                    .first()
+                    .map(|v| v.view.clone())
+                    .ok_or_else(|| HostError::not_found("plugin has no views"))?
+            };
+            to_value(PluginPreviewResult {
+                view,
+                preview: True,
+            })
+        }
+        other => {
+            // Plugin-declared operations.
+            let lp = state
+                .registry
+                .owner_of_operation(other)
+                .ok_or_else(|| HostError::not_found("unknown operation"))?
+                .clone();
+            match other {
+                "notes-insights.summarize" => summarize(state, p, lp, input).await,
+                _ => Err(HostError::unavailable(
+                    "operation has no host binding in this preview",
+                )),
+            }
+        }
+    }
+}
+
+/// Retry handling shared by every mutation: same principal + request_id with
+/// the same canonical fingerprint returns the stored result (finishing any
+/// pending materialization); a different fingerprint is a conflict.
+fn replay_receipt(
+    s: &mut Store,
+    principal: &str,
+    rid: &str,
+    op: &str,
+    fp: &str,
+) -> Result<Option<Value>, HostError> {
+    let Some(r) = s.receipt(principal, rid)? else {
+        return Ok(None);
+    };
+    if r.operation != op || r.fingerprint != fp {
+        return Err(
+            HostError::conflict("request_id was already used with different input")
+                .with_details(serde_json::json!({ "reason": "request_id_reused" })),
+        );
+    }
+    if let Some(n) = &r.note_id {
+        s.materialize(n).map_err(|e| {
+            if e.code == ErrorCode::Conflict {
+                e
+            } else {
+                HostError::unavailable("committed but not yet materialized; retry")
+            }
+        })?;
+    }
+    Ok(Some(r.result))
+}
+
+fn default_row(lp: &LoadedPlugin) -> PluginRow {
+    PluginRow {
+        enabled: lp.entry.default_enabled && lp.unavailable.is_none(),
+        generation: 1,
+    }
+}
+
+fn plugin_state(s: &Store, space: &str, lp: &LoadedPlugin) -> Result<PluginState, HostError> {
+    let row = s
+        .plugin_row(space, &lp.manifest.id)?
+        .unwrap_or_else(|| default_row(lp));
+    Ok(PluginState {
+        manifest: lp.manifest.clone(),
+        enabled: row.enabled && lp.unavailable.is_none(),
+        generation: row.generation,
+    })
+}
+
+async fn summarize(
+    state: Shared,
+    p: DevPrincipal,
+    lp: LoadedPlugin,
+    input: JsonObject,
+) -> Result<Value, HostError> {
+    let i: NotesGetInput = decode(input)?;
+    require_role(&p, &i.space_id, SpaceRole::Reader)?;
+    let node = state
+        .node
+        .clone()
+        .ok_or_else(|| HostError::unavailable("Node runtime unavailable"))?;
+    let (space, id) = (i.space_id.clone(), i.id.clone());
+    let lp2 = lp.clone();
+    // Authorized canonical read + generation capture under the same lock.
+    let (note, generation) = blocking(&state, move |s| {
+        let ps = plugin_state(s, &space, &lp2)?;
+        if !ps.enabled {
+            return Err(HostError::forbidden("plugin is disabled in this space"));
+        }
+        Ok((s.get(&space, &id)?, ps.generation))
+    })
+    .await?;
+    let result = run_summarize(
+        &node,
+        &lp,
+        WorkerResource {
+            id: note.id.clone(),
+            space_id: note.space_id.clone(),
+            revision: note.revision.clone(),
+            title: note.title.clone(),
+            markdown: note.markdown,
+        },
+    )
+    .await?;
+    // Reauthorize delivery: plugin must still be enabled at the same generation.
+    let space = i.space_id.clone();
+    let lp3 = lp.clone();
+    let still = blocking(&state, move |s| plugin_state(s, &space, &lp3)).await?;
+    if !still.enabled || still.generation != generation {
+        return Err(HostError::conflict(
+            "plugin state changed during invocation; result discarded",
+        )
+        .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })));
+    }
+    require_role(&p, &i.space_id, SpaceRole::Reader)?;
+    to_value(result)
+}
+
+async fn mutate_note(
+    state: Shared,
+    p: DevPrincipal,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+) -> Result<Value, HostError> {
+    let fp = fingerprint(op, &input);
+    let (space_id, create, update) = if op == "notes.create" {
+        let i: NotesCreateInput = decode(input)?;
+        (i.space_id.clone(), Some(i), None)
+    } else {
+        let i: NotesUpdateInput = decode(input)?;
+        (i.space_id.clone(), None, Some(i))
+    };
+    // Authorization always uses the current grants, including on retries.
+    require_role(&p, &space_id, SpaceRole::Editor)?;
+    let rid = request_id.to_string();
+    let op = op.to_string();
+    let principal = p.id;
+    blocking(&state, move |s| {
+        if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
+            return Ok(v);
+        }
+        let note = if let Some(i) = create {
+            s.create(
+                principal,
+                &rid,
+                &op,
+                &fp,
+                &i.space_id,
+                &i.title,
+                &i.markdown,
+            )?
+        } else {
+            let i = update.expect("update input");
+            s.update(
+                principal,
+                &rid,
+                &op,
+                &fp,
+                &i.space_id,
+                &i.id,
+                &i.base_revision,
+                i.title.as_deref(),
+                &i.markdown,
+            )?
+        };
+        to_value(NoteResult { note })
+    })
+    .await
+}

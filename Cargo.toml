@@ -1,0 +1,22 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "AGPL-3.0-only"
+
+[workspace.dependencies]
+calternal-core = { path = "crates/core" }
+calternal-client = { path = "crates/client" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "0.8"
+ts-rs = { version = "10", features = ["serde-json-impl"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util"] }
+clap = { version = "4", features = ["derive", "env"] }

@@ -1,0 +1,115 @@
+[
+  {
+    "name": "valid update",
+    "valid": true,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.update",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "base_revision": "opaque-1",
+        "markdown": "Hello world\n"
+      }
+    }
+  },
+  {
+    "name": "unknown envelope field",
+    "valid": false,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.update",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "base_revision": "opaque-1",
+        "markdown": "Hello world\n"
+      },
+      "principal": "owner"
+    }
+  },
+  {
+    "name": "unknown input field",
+    "valid": false,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.update",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "base_revision": "opaque-1",
+        "markdown": "Hello world\n",
+        "caller_id": "owner"
+      }
+    }
+  },
+  {
+    "name": "empty request identity",
+    "valid": false,
+    "value": {
+      "request_id": "",
+      "operation": "notes.update",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "base_revision": "opaque-1",
+        "markdown": "Hello world\n"
+      }
+    }
+  },
+  {
+    "name": "path traversal resource",
+    "valid": false,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.update",
+      "input": {
+        "space_id": "personal",
+        "id": "../note",
+        "base_revision": "opaque-1",
+        "markdown": "Hello world\n"
+      }
+    }
+  },
+  {
+    "name": "invalid pagination",
+    "valid": false,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.history",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "limit": 101
+      }
+    }
+  },
+  {
+    "name": "optional title cannot be null",
+    "valid": false,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.update",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "base_revision": "opaque-1",
+        "markdown": "Hello world\n",
+        "title": null
+      }
+    }
+  },
+  {
+    "name": "optional limit cannot be null",
+    "valid": false,
+    "value": {
+      "request_id": "retry-1",
+      "operation": "notes.history",
+      "input": {
+        "space_id": "personal",
+        "id": "11111111-1111-4111-8111-111111111111",
+        "limit": null
+      }
+    }
+  }
+]

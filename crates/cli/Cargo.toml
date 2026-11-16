@@ -1,0 +1,17 @@
+[package]
+name = "calternal-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cl"
+path = "src/main.rs"
+
+[dependencies]
+calternal-core.workspace = true
+calternal-client.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+tokio.workspace = true

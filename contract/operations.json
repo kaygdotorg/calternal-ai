@@ -1,0 +1,2114 @@
+[
+  {
+    "id": "notes.list",
+    "description": "List up to 100 notes",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "NotesListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "space_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "notes": {
+          "items": {
+            "$ref": "#/definitions/NoteSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesListResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "notes.get",
+    "description": "Read a note",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "space_id"
+      ],
+      "title": "NotesGetInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "Note": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "markdown": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "space_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "markdown",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "note": {
+          "$ref": "#/definitions/Note"
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "notes.create",
+    "description": "Create a Markdown note",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "markdown": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown",
+        "space_id",
+        "title"
+      ],
+      "title": "NotesCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "Note": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "markdown": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "space_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "markdown",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "note": {
+          "$ref": "#/definitions/Note"
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "notes.update",
+    "description": "Update a note against an opaque base revision",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "base_revision": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "markdown": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_revision",
+        "id",
+        "markdown",
+        "space_id"
+      ],
+      "title": "NotesUpdateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "Note": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "markdown": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "space_id": {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "markdown",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "note": {
+          "$ref": "#/definitions/Note"
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "notes.history",
+    "description": "Read bounded note history",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "cursor": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint32",
+          "maximum": 100.0,
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "space_id"
+      ],
+      "title": "NotesHistoryInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteVersion": {
+          "additionalProperties": false,
+          "properties": {
+            "markdown": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string"
+            },
+            "title": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "markdown",
+            "revision",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "versions": {
+          "items": {
+            "$ref": "#/definitions/NoteVersion"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "next_cursor",
+        "versions"
+      ],
+      "title": "NotesHistoryResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "plugins.list",
+    "description": "List registered plugins",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "PluginsListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ExtensionPoint": {
+          "enum": [
+            "notes.detail"
+          ],
+          "type": "string"
+        },
+        "False": {
+          "const": false,
+          "type": "boolean"
+        },
+        "GenUiAction": {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "operation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "operation"
+          ],
+          "type": "object"
+        },
+        "GenUiNode": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "children": {
+                  "items": {
+                    "$ref": "#/definitions/GenUiNode"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stack"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "children",
+                "id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/GenUiAction"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "button"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "id",
+                "label",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stat"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "resource"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "document-editor"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "GenUiView": {
+          "additionalProperties": false,
+          "properties": {
+            "genui_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "root": {
+              "$ref": "#/definitions/GenUiNode"
+            }
+          },
+          "required": [
+            "genui_version",
+            "root"
+          ],
+          "type": "object"
+        },
+        "PluginDependency": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ],
+          "type": "object"
+        },
+        "PluginManifest": {
+          "additionalProperties": false,
+          "properties": {
+            "api_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "dependencies": {
+              "items": {
+                "$ref": "#/definitions/PluginDependency"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "$ref": "#/definitions/PluginOperation"
+              },
+              "type": "array"
+            },
+            "version": {
+              "type": "string"
+            },
+            "views": {
+              "items": {
+                "$ref": "#/definitions/PluginView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "api_version",
+            "capabilities",
+            "dependencies",
+            "description",
+            "id",
+            "name",
+            "operations",
+            "version",
+            "views"
+          ],
+          "type": "object"
+        },
+        "PluginOperation": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mutates": {
+              "$ref": "#/definitions/False"
+            }
+          },
+          "required": [
+            "description",
+            "id",
+            "mutates"
+          ],
+          "type": "object"
+        },
+        "PluginState": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "generation": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "manifest": {
+              "$ref": "#/definitions/PluginManifest"
+            }
+          },
+          "required": [
+            "enabled",
+            "generation",
+            "manifest"
+          ],
+          "type": "object"
+        },
+        "PluginView": {
+          "additionalProperties": false,
+          "properties": {
+            "extension_point": {
+              "$ref": "#/definitions/ExtensionPoint"
+            },
+            "id": {
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/definitions/GenUiView"
+            }
+          },
+          "required": [
+            "extension_point",
+            "id",
+            "view"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "plugins": {
+          "items": {
+            "$ref": "#/definitions/PluginState"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "plugins"
+      ],
+      "title": "PluginsListResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "plugins.enable",
+    "description": "Enable a trusted plugin",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "plugin_id": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ExtensionPoint": {
+          "enum": [
+            "notes.detail"
+          ],
+          "type": "string"
+        },
+        "False": {
+          "const": false,
+          "type": "boolean"
+        },
+        "GenUiAction": {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "operation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "operation"
+          ],
+          "type": "object"
+        },
+        "GenUiNode": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "children": {
+                  "items": {
+                    "$ref": "#/definitions/GenUiNode"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stack"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "children",
+                "id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/GenUiAction"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "button"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "id",
+                "label",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stat"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "resource"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "document-editor"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "GenUiView": {
+          "additionalProperties": false,
+          "properties": {
+            "genui_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "root": {
+              "$ref": "#/definitions/GenUiNode"
+            }
+          },
+          "required": [
+            "genui_version",
+            "root"
+          ],
+          "type": "object"
+        },
+        "PluginDependency": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ],
+          "type": "object"
+        },
+        "PluginManifest": {
+          "additionalProperties": false,
+          "properties": {
+            "api_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "dependencies": {
+              "items": {
+                "$ref": "#/definitions/PluginDependency"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "$ref": "#/definitions/PluginOperation"
+              },
+              "type": "array"
+            },
+            "version": {
+              "type": "string"
+            },
+            "views": {
+              "items": {
+                "$ref": "#/definitions/PluginView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "api_version",
+            "capabilities",
+            "dependencies",
+            "description",
+            "id",
+            "name",
+            "operations",
+            "version",
+            "views"
+          ],
+          "type": "object"
+        },
+        "PluginOperation": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mutates": {
+              "$ref": "#/definitions/False"
+            }
+          },
+          "required": [
+            "description",
+            "id",
+            "mutates"
+          ],
+          "type": "object"
+        },
+        "PluginState": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "generation": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "manifest": {
+              "$ref": "#/definitions/PluginManifest"
+            }
+          },
+          "required": [
+            "enabled",
+            "generation",
+            "manifest"
+          ],
+          "type": "object"
+        },
+        "PluginView": {
+          "additionalProperties": false,
+          "properties": {
+            "extension_point": {
+              "$ref": "#/definitions/ExtensionPoint"
+            },
+            "id": {
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/definitions/GenUiView"
+            }
+          },
+          "required": [
+            "extension_point",
+            "id",
+            "view"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "plugin": {
+          "$ref": "#/definitions/PluginState"
+        }
+      },
+      "required": [
+        "plugin"
+      ],
+      "title": "PluginResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "plugins.disable",
+    "description": "Disable a trusted plugin",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "plugin_id": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ExtensionPoint": {
+          "enum": [
+            "notes.detail"
+          ],
+          "type": "string"
+        },
+        "False": {
+          "const": false,
+          "type": "boolean"
+        },
+        "GenUiAction": {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "operation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "operation"
+          ],
+          "type": "object"
+        },
+        "GenUiNode": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "children": {
+                  "items": {
+                    "$ref": "#/definitions/GenUiNode"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stack"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "children",
+                "id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/GenUiAction"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "button"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "id",
+                "label",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stat"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "resource"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "document-editor"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "GenUiView": {
+          "additionalProperties": false,
+          "properties": {
+            "genui_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "root": {
+              "$ref": "#/definitions/GenUiNode"
+            }
+          },
+          "required": [
+            "genui_version",
+            "root"
+          ],
+          "type": "object"
+        },
+        "PluginDependency": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "version"
+          ],
+          "type": "object"
+        },
+        "PluginManifest": {
+          "additionalProperties": false,
+          "properties": {
+            "api_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "capabilities": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "dependencies": {
+              "items": {
+                "$ref": "#/definitions/PluginDependency"
+              },
+              "type": "array"
+            },
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "operations": {
+              "items": {
+                "$ref": "#/definitions/PluginOperation"
+              },
+              "type": "array"
+            },
+            "version": {
+              "type": "string"
+            },
+            "views": {
+              "items": {
+                "$ref": "#/definitions/PluginView"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "api_version",
+            "capabilities",
+            "dependencies",
+            "description",
+            "id",
+            "name",
+            "operations",
+            "version",
+            "views"
+          ],
+          "type": "object"
+        },
+        "PluginOperation": {
+          "additionalProperties": false,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "mutates": {
+              "$ref": "#/definitions/False"
+            }
+          },
+          "required": [
+            "description",
+            "id",
+            "mutates"
+          ],
+          "type": "object"
+        },
+        "PluginState": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "generation": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "manifest": {
+              "$ref": "#/definitions/PluginManifest"
+            }
+          },
+          "required": [
+            "enabled",
+            "generation",
+            "manifest"
+          ],
+          "type": "object"
+        },
+        "PluginView": {
+          "additionalProperties": false,
+          "properties": {
+            "extension_point": {
+              "$ref": "#/definitions/ExtensionPoint"
+            },
+            "id": {
+              "type": "string"
+            },
+            "view": {
+              "$ref": "#/definitions/GenUiView"
+            }
+          },
+          "required": [
+            "extension_point",
+            "id",
+            "view"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "plugin": {
+          "$ref": "#/definitions/PluginState"
+        }
+      },
+      "required": [
+        "plugin"
+      ],
+      "title": "PluginResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "plugins.preview",
+    "description": "Preview a trusted plugin using fixture data",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "plugin_id": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "GenUiAction": {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "operation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "operation"
+          ],
+          "type": "object"
+        },
+        "GenUiNode": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "children": {
+                  "items": {
+                    "$ref": "#/definitions/GenUiNode"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stack"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "children",
+                "id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/GenUiAction"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "button"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "id",
+                "label",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stat"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "resource"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "document-editor"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "GenUiView": {
+          "additionalProperties": false,
+          "properties": {
+            "genui_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "root": {
+              "$ref": "#/definitions/GenUiNode"
+            }
+          },
+          "required": [
+            "genui_version",
+            "root"
+          ],
+          "type": "object"
+        },
+        "True": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "properties": {
+        "preview": {
+          "$ref": "#/definitions/True"
+        },
+        "view": {
+          "$ref": "#/definitions/GenUiView"
+        }
+      },
+      "required": [
+        "preview",
+        "view"
+      ],
+      "title": "PluginPreviewResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "notes-insights.summarize",
+    "description": "Compute word, character and line statistics",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "space_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "space_id"
+      ],
+      "title": "NotesGetInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "GenUiAction": {
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "operation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "operation"
+          ],
+          "type": "object"
+        },
+        "GenUiNode": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "children": {
+                  "items": {
+                    "$ref": "#/definitions/GenUiNode"
+                  },
+                  "type": "array"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stack"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "children",
+                "id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "text"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "text",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "action": {
+                  "$ref": "#/definitions/GenUiAction"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "button"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action",
+                "id",
+                "label",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "stat"
+                  ],
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "type",
+                "value"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "resource"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "resource_id": {
+                  "type": "string"
+                },
+                "space_id": {
+                  "type": "string"
+                },
+                "type": {
+                  "enum": [
+                    "document-editor"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "resource_id",
+                "space_id",
+                "type"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "GenUiView": {
+          "additionalProperties": false,
+          "properties": {
+            "genui_version": {
+              "format": "uint32",
+              "maximum": 1.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "root": {
+              "$ref": "#/definitions/GenUiNode"
+            }
+          },
+          "required": [
+            "genui_version",
+            "root"
+          ],
+          "type": "object"
+        },
+        "Stats": {
+          "additionalProperties": false,
+          "properties": {
+            "characters": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "lines": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "words": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "characters",
+            "lines",
+            "words"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "stats": {
+          "$ref": "#/definitions/Stats"
+        },
+        "view": {
+          "$ref": "#/definitions/GenUiView"
+        }
+      },
+      "required": [
+        "stats",
+        "view"
+      ],
+      "title": "SummarizeResult",
+      "type": "object"
+    }
+  }
+]

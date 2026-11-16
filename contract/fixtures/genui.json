@@ -1,0 +1,20 @@
+{
+  "genui_version": 1,
+  "root": {
+    "type": "stack",
+    "id": "stats",
+    "children": [
+      {
+        "type": "stat",
+        "id": "words",
+        "label": "Words",
+        "value": "2"
+      },
+      {
+        "type": "text",
+        "id": "summary",
+        "text": "2 words"
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "notes",
+  "version": "0.1.0",
+  "api_version": 1,
+  "name": "Notes",
+  "description": "Create, read, and revise Markdown notes.",
+  "dependencies": [],
+  "capabilities": ["notes.read", "notes.write", "notes.history"],
+  "operations": [],
+  "views": []
+}

@@ -1,0 +1,50 @@
+{
+  "binary_sha256": "3c83aa10bb95bbf7ef912a5e6181e2a468f75ca59d198a612a6b584f3673411a",
+  "measured_at": "2026-11-16T17:05:45.131Z",
+  "scope": "Development-host smoke only; debug binary, small disposable fixture, no UI or 120 Hz claim; concurrent builds may affect results.",
+  "conditions": {
+    "platform": "linux",
+    "release": "6.12.0-211.74.2.el10_2.x86_64",
+    "cpu": "AMD EPYC 7K62 48-Core Processor",
+    "logical_cpus": 12,
+    "memory_bytes": 24923168768,
+    "node": "v22.23.5",
+    "startup_ms": 59.085978000000004,
+    "document_utf8_bytes": 10434
+  },
+  "results": [
+    {
+      "name": "Notes read (warm HTTP, one ~10 KiB note)",
+      "status": "measured",
+      "metrics": {
+        "samples": 40,
+        "p50_ms": 7.086124999999981,
+        "p95_ms": 9.600437999999997,
+        "p99_ms": 12.259432000000004,
+        "max_ms": 12.259432000000004
+      }
+    },
+    {
+      "name": "Notes update (durable acknowledgement)",
+      "status": "measured",
+      "metrics": {
+        "samples": 20,
+        "p50_ms": 13.000917000000072,
+        "p95_ms": 16.319481999999994,
+        "p99_ms": 18.048456999999985,
+        "max_ms": 18.048456999999985
+      }
+    },
+    {
+      "name": "Extension (fresh Node worker per call)",
+      "status": "measured",
+      "metrics": {
+        "samples": 15,
+        "p50_ms": 93.65263100000016,
+        "p95_ms": 121.59966600000007,
+        "p99_ms": 121.59966600000007,
+        "max_ms": 121.59966600000007
+      }
+    }
+  ]
+}
