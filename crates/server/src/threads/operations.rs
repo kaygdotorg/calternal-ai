@@ -2,6 +2,9 @@
 use super::*;
 use calternal_content::Request;
 
+/// Serve one authorized thread operation on a blocking worker. List reads the
+/// bounded index, get reads one document plus its job, and writes retain content's
+/// revision checks, receipts and publication. Storage failures propagate.
 pub(super) fn apply<D: Directory>(
     st: &Shared<D>,
     who: &Identity,
@@ -44,7 +47,7 @@ pub(super) fn apply<D: Directory>(
         return Ok(saved.result);
     }
     if operation == "threads.list" {
-        let rows = content.list(space, "threads", 1000)?;
+        let rows = super::index::page(st, space)?;
         let parent = data.get("parent_thread").and_then(Value::as_str);
         let include_archived = parent.is_some()
             || data
@@ -52,7 +55,16 @@ pub(super) fn apply<D: Directory>(
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
         let limit = data.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize;
-        let threads:Vec<Value> = rows.into_iter().filter(|r| (parent.is_some() || r.metadata["deleted"] != true) && (include_archived || r.metadata["archived"] != true) && parent.is_none_or(|p|r.metadata["parent_thread"] == p)).take(limit).map(|r|json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata})).collect();
+        let threads: Vec<_> = rows
+            .into_iter()
+            .filter(|r| {
+                (parent.is_some() || r.metadata["deleted"] != true)
+                    && (include_archived || r.metadata["archived"] != true)
+                    && parent.is_none_or(|p| r.metadata["parent_thread"] == p)
+            })
+            .take(limit)
+            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata,"turn_state":r.turn_state}))
+            .collect();
         return Ok(json!({"threads":threads}));
     }
     if operation == "threads.create" {
@@ -76,7 +88,24 @@ pub(super) fn apply<D: Directory>(
         if data.contains_key("spawned_by") && !data.contains_key("parent_thread") {
             return Err(Error::invalid_input("spawned_by requires parent_thread"));
         }
-        let mut metadata = json!({"title":data["title"],"provider":data.get("provider").cloned().unwrap_or(json!("calternal-claude-code")),"mode":data.get("mode").cloned().unwrap_or(json!(AgentMode::default())),"created_at":calternal_content::now_rfc3339(),"mode_for":who.id,"archived":false,"deleted":false});
+        let now = calternal_content::now_rfc3339();
+        let provider = data
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("calternal-claude-code");
+        let mut metadata = json!({
+            "title": data["title"],
+            "provider": provider,
+            "model": document::default_model(st, provider),
+            "mode": data.get("mode").cloned().unwrap_or(json!(AgentMode::default())),
+            "mode_for": who.id,
+            "created_at": now,
+            "updated_at": now,
+            "last_activity_at": now,
+            "message_count": 0,
+            "archived": false,
+            "deleted": false,
+        });
         for key in ["parent_thread", "spawned_by"] {
             if let Some(v) = data.get(key) {
                 metadata[key] = v.clone();
@@ -105,7 +134,19 @@ pub(super) fn apply<D: Directory>(
         return Err(Error::not_found("item not found"));
     }
     if operation == "threads.get" {
-        return Ok(document::view(&item));
+        let mut result = document::view(&item);
+        result["thread"]["turn_state"] = json!("idle");
+        if item.metadata["deleted"] != true
+            && let Some(job) = st
+                .jobs
+                .thread_latest(&space.to_string(), &item.id.to_string())?
+        {
+            result["thread"]["turn_state"] = json!(super::turn_status::label(job.state));
+            if !job.state.is_final() {
+                result["job"] = json!(job.view());
+            }
+        }
+        return Ok(result);
     }
     if item.metadata["deleted"] == true {
         if operation == "threads.delete" {
@@ -181,9 +222,25 @@ pub(super) fn apply<D: Directory>(
             }
         }
         document::validate_metadata(&item.metadata)?;
+        let provider = item
+            .metadata
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let model = data.get("model").and_then(Value::as_str).unwrap_or("");
+        if model.len() > 128 {
+            return Err(Error::invalid_input("model exceeds 128 UTF-8 bytes"));
+        }
+        item.metadata["model"] = if model.is_empty() {
+            document::default_model(st, provider)
+        } else {
+            json!(model)
+        };
+        let now = calternal_content::now_rfc3339();
+        document::record_message(&mut item.metadata, &now);
         item.metadata["pending"] = json!({"account":who.id,"request_id":request_id,"fingerprint":fp,"created_ms":calternal_types::now_ms()});
         let body = format!(
-            "{}\n<!-- message:{} role:person actor:{} -->\n{}\n<!-- /message -->\n",
+            "{}\n<!-- message:{} role:person actor:{} time:{now} -->\n{}\n<!-- /message -->\n",
             document::body(&item)?,
             Uuid::now_v7(),
             actor,
@@ -236,14 +293,15 @@ pub(super) fn apply<D: Directory>(
             Ok(result)
         });
     }
-    if !matches!(operation, "threads.archive" | "threads.delete") {
-        return Err(Error::not_found("unknown operation"));
+    match operation {
+        "threads.rename" => item.metadata["title"] = data["title"].clone(),
+        "threads.archive" => item.metadata["archived"] = json!(true),
+        "threads.unarchive" => item.metadata["archived"] = json!(false),
+        "threads.delete" => item.metadata["deleted"] = json!(true),
+        _ => return Err(Error::not_found("unknown operation")),
     }
-    if operation == "threads.delete" {
-        item.metadata["deleted"] = json!(true);
-    } else {
-        item.metadata["archived"] = json!(true);
-    }
+    document::validate_metadata(&item.metadata)?;
+    item.metadata["updated_at"] = json!(calternal_content::now_rfc3339());
     let bytes = document::encode(&item.metadata, document::body(&item)?);
     if operation == "threads.delete" {
         let deleted = content.trash(

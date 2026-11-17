@@ -39,7 +39,8 @@ pub(super) fn state_name(state: JobState) -> &'static str {
     }
 }
 
-pub(super) fn parse_state(name: &str) -> JobState {
+/// Decode the existing job storage state for trusted host readers in constant time.
+pub(crate) fn parse_state(name: &str) -> JobState {
     match name {
         "admitted" => JobState::Admitted,
         "running" => JobState::Running,

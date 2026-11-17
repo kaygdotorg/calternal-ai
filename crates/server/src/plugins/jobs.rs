@@ -28,6 +28,8 @@
 
 mod checkpoint;
 mod claim;
+mod database;
+pub(crate) use database::JobDatabase;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -194,7 +196,7 @@ pub struct ChildResult {
 }
 
 /// One open space job file and when it was last used (for closing the oldest).
-type OpenSpace = (Arc<Mutex<Connection>>, u64);
+type OpenSpace = (Arc<JobDatabase>, u64);
 
 /// Durable job records plus live streams. Cheap to share behind the app state.
 pub struct Jobs {
@@ -207,6 +209,7 @@ pub struct Jobs {
     pub(super) live: LiveMap,
     pub(super) subscribers: Arc<AtomicUsize>,
     permits: Arc<Semaphore>,
+    thread_events: Option<Arc<crate::threads::turn_events::Publisher>>,
 }
 
 impl Jobs {
@@ -268,6 +271,15 @@ impl Jobs {
         self
     }
 
+    /// Publish durable saved-turn changes on the existing per-space journal.
+    /// Install at server startup before recovery. Cost: one shared handle, no I/O.
+    pub fn with_thread_events(mut self, content: Arc<calternal_content::Content>) -> Self {
+        self.thread_events = Some(Arc::new(crate::threads::turn_events::Publisher::new(
+            content,
+        )));
+        self
+    }
+
     /// A job service that refuses every admission (for hosts without job storage).
     pub fn disabled() -> Self {
         Self {
@@ -280,12 +292,15 @@ impl Jobs {
             live: Arc::new(Mutex::new(HashMap::new())),
             subscribers: Arc::new(AtomicUsize::new(0)),
             permits: Arc::new(Semaphore::new(super::runner::MAX_RUNNING)),
+            thread_events: None,
         }
     }
 
     /// The space's job connection, opening (and applying retention to) it on first
     /// use and closing the least recently used beyond [`MAX_OPEN_SPACES`].
-    pub(super) fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, Error> {
+    /// Scoped to trusted host callers. Cost: cache lock and, if cold, opening the
+    /// space job database, preparing its schema and applying retention.
+    pub(crate) fn conn(&self, space: &str) -> Result<Arc<JobDatabase>, Error> {
         let root = self
             .root
             .as_ref()
@@ -315,8 +330,10 @@ impl Jobs {
             .map_err(db_err)?;
         c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
         c.execute_batch(SCHEMA).map_err(db_err)?;
+        c.execute_batch(crate::threads::turn_events::SCHEMA)
+            .map_err(db_err)?;
         retain(&c)?;
-        let c = Arc::new(Mutex::new(c));
+        let c = Arc::new(JobDatabase::new(c));
         let mut spaces = self.spaces.lock().unwrap_or_else(|p| p.into_inner());
         if spaces.len() >= MAX_OPEN_SPACES
             && let Some(oldest) = spaces
@@ -342,6 +359,17 @@ impl Jobs {
             .map_err(db_err)?;
         let value = f(&tx)?;
         tx.commit().map_err(db_err)?;
+        if let Some(publisher) = &self.thread_events {
+            let pending = c
+                .prepare_cached("SELECT EXISTS(SELECT 1 FROM saved_turn_events)")
+                .and_then(|mut query| query.query_row([], |row| row.get::<_, bool>(0)));
+            drop(c);
+            match pending {
+                Ok(true) => publisher.wake(space, conn),
+                Ok(false) => {}
+                Err(error) => tracing::warn!(%error, %space, "saved turn journal wake deferred"),
+            }
+        }
         Ok(value)
     }
 
