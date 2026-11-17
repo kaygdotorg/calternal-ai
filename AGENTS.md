@@ -14,3 +14,19 @@
 - Backend lanes run on Codex GPT-6.1-Sol medium; UI stays with Claude. When Codex is rate-limited, backend lanes run as Claude Opus 5.5 or Sonnet 5.5 at low or medium reasoning (by complexity) until it resets. Bring design questions that neither repository settles to the user instead of deciding them.
 - Git workflow (user rule, 2026-11-17): `dev` is the working branch. Every lane works in its own bb worktree on its own branch cut from `dev` (`bb thread spawn --new-environment worktree --base-branch dev`), never in the shared checkout. The parent integrates each lane as small atomic commits on `dev`, pushes, then deletes the lane's branch and worktree once merged or no longer useful. `main` receives only verified working builds, rarely. Push to both `origin` (Forgejo) and `github` (public). Issues live on Forgejo only (`fj -H https://git.kayg.org ... -r kayg/calternal-ai`): every lane owns one issue and keeps it current. Issues stay concise and readable: a one-line goal, a status checklist, open questions as one-line bullets, links instead of logs.
 - Human-readable files first (user rule, 2026-11-17): anything stored as a file in userdata is Markdown (frontmatter plus body, or `key: value` lines) unless that genuinely does not fit; JSON only then, with the reason written down.
+- Review gate (user rule, 2026-11-17): before any lane merges into `dev`, it is reviewed against this checklist (from `docs/reviews/simplification-review-2026-11-17.md`); a failed item blocks the merge or is recorded on the lane's issue with a reason.
+  1. No new copy of a shared type (IDs, caller-safe error, capabilities, time/hash helpers); "until shared types exist" is a blocker.
+  2. Dependencies point downward; no crate added for one helper: move the helper down.
+  3. Nothing global on the request path: no installation-wide mutex, thread or connection for per-space work; a lock held across fsync or a cross-thread call is justified in its doc comment.
+  4. No blocking call on an async thread (file I/O, hashing, process spawn, SQLite, a std mutex held across I/O).
+  5. Parse once, load once; the lane states the read and flush counts of its hot path.
+  6. Constant work (schemas, catalogs, validators) is built once and cached.
+  7. Everything stored has a stated bound or retention; "forever" needs the owner's sign-off.
+  8. No compatibility code: no migration chains, legacy readers, aliases, interim projections, or ignored tests kept for old behaviour.
+  9. Spaces only, by UUID: no names standing in for IDs, no "Home", no app-specific names in generic code.
+  10. One place per fact: an operation, capability or role is declared once and the rest derived.
+  11. No unwired code: every public item has a non-test caller in the merge, or the issue names the lane that will call it.
+  12. Reuse before writing: the lane names the existing primitive it considered for files, durability, locking or validation.
+  13. The docs gate covers the crate; comments state purpose, failure and cost, and do not restate the name.
+  14. Docs match the code in the same merge (README, crate README, `docs/`); dated lane reports live under `docs/reviews/`.
+  15. `cargo fmt --check` is clean; a source file past about 600 lines is split by concern.

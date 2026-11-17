@@ -1014,6 +1014,165 @@ members: Array<SpaceMember>, };
 
 export type SpaceChangedResult = Record<string, never>;
 /**
+ * Ask for a secret; the value is supplied later through the trusted surface.
+ */
+
+export type SecretsRequestInput = {
+/**
+ * Owning space UUID; omit for a personal (account-owned) secret.
+ */
+space_id?: string,
+/**
+ * Secret name: 1–96 bytes of `a-z 0-9 . _ - :`, starting with a letter or digit.
+ */
+name: string,
+/**
+ * Short label shown in the prompt, at most 120 characters.
+ */
+label: string,
+/**
+ * Why it is needed, shown in the prompt, at most 500 characters.
+ */
+reason: string, };
+/**
+ * Pending request identifier returned by `secrets.request`.
+ */
+
+export type SecretsRequestResult = {
+/**
+ * UUID of the pending request, answered by the provide endpoint.
+ */
+request_id: string, };
+/**
+ * List secret metadata and pending requests of one owner.
+ */
+
+export type SecretsListInput = {
+/**
+ * Owning space UUID; omit for the caller's personal secrets.
+ */
+space_id?: string, };
+/**
+ * Everything about a stored secret except its value.
+ */
+
+export type SecretMetadata = {
+/**
+ * Secret name.
+ */
+name: string,
+/**
+ * Human label.
+ */
+label: string,
+/**
+ * Current version, increased by each rotation.
+ */
+version: bigint,
+/**
+ * Creation time in Unix milliseconds.
+ */
+created_at: bigint,
+/**
+ * Last change in Unix milliseconds.
+ */
+updated_at: bigint, };
+/**
+ * A request waiting for a value.
+ */
+
+export type SecretPendingRequest = {
+/**
+ * Request UUID.
+ */
+id: string,
+/**
+ * Name the value will be stored under.
+ */
+name: string,
+/**
+ * Label shown in the prompt.
+ */
+label: string,
+/**
+ * Reason shown in the prompt.
+ */
+reason: string,
+/**
+ * Who asked: account and route (session, plugin or agent thread).
+ */
+requested_by: string,
+/**
+ * Request time in Unix milliseconds.
+ */
+created_at: bigint, };
+/**
+ * Metadata and pending requests of one owner; never values.
+ */
+
+export type SecretsListResult = {
+/**
+ * Stored secrets ordered by name.
+ */
+secrets: Array<SecretMetadata>,
+/**
+ * Pending requests, oldest first.
+ */
+requests: Array<SecretPendingRequest>, };
+/**
+ * Destroy a secret (`name`) or withdraw a pending request (`request_id`); exactly one.
+ */
+
+export type SecretsRevokeInput = {
+/**
+ * Owning space UUID; omit for a personal secret.
+ */
+space_id?: string,
+/**
+ * Secret to destroy, with every version.
+ */
+name?: string,
+/**
+ * Pending request to withdraw.
+ */
+request_id?: string, };
+/**
+ * Empty success for `secrets.revoke`.
+ */
+
+export type SecretsRevokeResult = Record<string, never>;
+/**
+ * Body of `POST /api/v1/auth/secrets/provide`. Not an operation: only a signed-in
+ * browser or app session with a recent passkey assertion may send it.
+ */
+
+export type SecretsProvideInput = {
+/**
+ * Owning space UUID; omit for a personal secret.
+ */
+space_id?: string,
+/**
+ * Pending request being answered.
+ */
+request_id: string,
+/**
+ * The secret value, 1 byte to 64 KiB of UTF-8.
+ */
+value: string, };
+/**
+ * Which secret the provide endpoint stored; never the value or a handle.
+ */
+
+export type SecretsProvideResult = {
+/**
+ * Secret name.
+ */
+name: string,
+/**
+ * Version now stored.
+ */
+version: bigint, };
+/**
  * Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.
  */
 

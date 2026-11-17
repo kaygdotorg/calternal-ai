@@ -808,6 +808,22 @@ pub struct Contract {
     pub space_members_result: crate::SpaceMembersResult,
     /// Schema representative for the stored space directory space changed result.
     pub space_changed_result: crate::SpaceChangedResult,
+    /// Schema representative for the secrets request input.
+    pub secrets_request_input: crate::SecretsRequestInput,
+    /// Schema representative for the secrets request result.
+    pub secrets_request_result: crate::SecretsRequestResult,
+    /// Schema representative for the secrets list input.
+    pub secrets_list_input: crate::SecretsListInput,
+    /// Schema representative for the secrets list result.
+    pub secrets_list_result: crate::SecretsListResult,
+    /// Schema representative for the secrets revoke input.
+    pub secrets_revoke_input: crate::SecretsRevokeInput,
+    /// Schema representative for the secrets revoke result.
+    pub secrets_revoke_result: crate::SecretsRevokeResult,
+    /// Schema representative for the trusted provide endpoint's body.
+    pub secrets_provide_input: crate::SecretsProvideInput,
+    /// Schema representative for the trusted provide endpoint's result.
+    pub secrets_provide_result: crate::SecretsProvideResult,
     /// Schema export representative for `request`; not a field accepted by operation dispatch.
     pub request: OperationRequest,
     /// Schema export representative for `response`; not a field accepted by operation dispatch.

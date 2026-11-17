@@ -21,6 +21,7 @@ calternal-fsio.workspace = true
 calternal-core.workspace = true
 calternal-plugin-host.workspace = true
 calternal-machine.workspace = true
+calternal-secrets.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

@@ -4,6 +4,8 @@
 mod models;
 mod spaces;
 pub use spaces::*;
+mod secrets;
+pub use secrets::*;
 mod validation;
 pub use models::*;
 pub use validation::*;
