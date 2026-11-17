@@ -73,7 +73,7 @@
     if (!renaming || !summary) return;
     renaming = false;
     const t = draftTitle.trim();
-    if (t && t !== summary.title) void client.rename(summary.id, t);
+    if (t && t !== summary.title) void client.rename(summary.id, t).catch((e: Error) => toast(`Not renamed: ${e.message}`));
   }
 </script>
 
