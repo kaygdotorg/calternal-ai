@@ -1,0 +1,14 @@
+{
+  "data": {
+    "threads": [
+      {
+        "id": "019a8c00-0000-7000-8000-000000000001",
+        "metadata": {
+          "archived": false,
+          "title": "Long conversation title that should wrap clearly"
+        }
+      }
+    ]
+  },
+  "ok": true
+}

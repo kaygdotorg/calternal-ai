@@ -147,6 +147,13 @@ impl Plugin {
             .iter()
             .map(|kind| {
                 let placement = match &kind.storage {
+                    ManifestPlacement::VisibleTree {
+                        folder,
+                        subdirectories,
+                    } => Placement::VisibleTree {
+                        folder: folder.clone(),
+                        subdirectories: subdirectories.clone(),
+                    },
                     ManifestPlacement::Visible { folder } => Placement::Visible {
                         folder: folder.clone(),
                     },
@@ -443,3 +450,6 @@ pub fn verify_digest(path: &Path, expected: Option<&str>) -> Result<(), String> 
         None => Err("worker bundle digest not pinned in trusted registry".into()),
     }
 }
+
+#[cfg(test)]
+mod job_claim_tests;

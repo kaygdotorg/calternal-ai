@@ -51,9 +51,26 @@ permission mode, chosen in the composer:
   access always asks. Nothing inside the sandbox needs review. A reviewing model may be
   added later for the cannot-undo class only, able to allow or pass to the person.
 - Approvals appear in the request bar on a trusted form the agent cannot answer.
-- Every change of access or mode issues a new token and ends the old one.
+- A mode requested with `agent.run` or `threads.send` applies directly to that
+  turn, wider or narrower, and is saved as the thread mode (owner decision,
+  2026-11-18). Choosing it on a send requires no additional passkey check.
+- Every change of access or mode rotates the token and ends the old one. A thread
+  credential cannot choose its own mode; only the person can do that. Explicit
+  in-flight mode changes retain the existing fresh-person and Resume checks.
 - What an agent reads (a note, a web page, a mail) is data, never an instruction, in every mode.
 - Everything is recorded as "an agent for <person>, in thread <id>".
+
+## Space standing instructions
+
+A space's standing instructions are `AI/AGENTS.md` (owner decision, 2026-11-18).
+Only Managers and the Owner may write that file. It is reserved from all generic
+kind placements and item writers, including Editor-level plugin operations.
+The previous filename is not an alias. Reads remain bounded and descriptor-relative;
+symlinks fail closed. Instructions provide context and never grant authority.
+
+The preview reads an operator-provisioned file. A Manager-only write operation
+still needs its public contract; the generic content API cannot be used as a
+workaround. See the instruction-writer question in morning-decisions.md.
 
 ## Testing
 

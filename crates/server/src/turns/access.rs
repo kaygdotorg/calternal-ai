@@ -40,21 +40,6 @@ pub(crate) fn app(op: &str) -> &str {
     op.split_once('.').map_or(op, |(prefix, _)| prefix)
 }
 
-/// Narrowing is immediate on a new turn. A wider requested mode keeps the saved
-/// mode until the owner settles the wider-mode policy; no I/O or allocation.
-pub(crate) fn narrower(requested: AgentMode, saved: AgentMode) -> AgentMode {
-    let rank = |m| match m {
-        AgentMode::LeastAccess => 0,
-        AgentMode::ApproveForMe => 1,
-        AgentMode::FullAccess => 2,
-    };
-    if rank(requested) <= rank(saved) {
-        requested
-    } else {
-        saved
-    }
-}
-
 /// Automatic reviewer seam, restricted to irreversible effects. It cannot widen
 /// token scope or override external/publication or access-change approval policy.
 pub trait Reviewer: Send + Sync {
@@ -151,11 +136,24 @@ impl Authority {
                 Err(Error::forbidden("agent cannot change thread authority"))
             };
         }
+        if op.starts_with("threads.")
+            && input
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| self.thread().map(|t| t.to_string() != id).unwrap_or(true))
+        {
+            return Err(Error::not_found("item not found"));
+        }
         if input.get("space_id").and_then(|v| v.as_str()) != Some(self.space.as_str()) {
             return Err(Error::not_found("space not found"));
         }
         let app = app(op);
-        let default = !self.source_app.is_empty() && app == self.source_app;
+        let own_thread = op.starts_with("threads.")
+            && input
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| self.thread().map(|t| t.to_string() == id).unwrap_or(false));
+        let default = own_thread || (!self.source_app.is_empty() && app == self.source_app);
         let action = action_scope(op, input, rid, risk);
         let matching = self
             .grants

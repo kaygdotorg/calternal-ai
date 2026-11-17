@@ -76,7 +76,7 @@ pub(super) async fn build<D: Directory>(
 fn read_space(root: &calternal_fsio::beneath::Folder, space_id: &str) -> std::io::Result<String> {
     use std::io::Read;
     let space = root.open_sub(&format!("spaces/{space_id}"), false)?;
-    let file = space.open_file("AI/Instructions.md")?;
+    let file = space.open_file(calternal_types::SPACE_INSTRUCTIONS_PATH)?;
     let mut bytes = Vec::new();
     file.take(16 * 1024 + 1).read_to_end(&mut bytes)?;
     let truncated = bytes.len() > 16 * 1024;
@@ -102,7 +102,13 @@ mod tests {
             read_space(&root, &id).unwrap_err().kind(),
             std::io::ErrorKind::NotFound
         );
-        let path = space.join("AI/Instructions.md");
+        // The previous name is not an alias and never contributes instructions.
+        std::fs::write(space.join("AI/Instructions.md"), "Old name must be ignored").unwrap();
+        assert_eq!(
+            read_space(&root, &id).unwrap_err().kind(),
+            std::io::ErrorKind::NotFound
+        );
+        let path = space.join(calternal_types::SPACE_INSTRUCTIONS_PATH);
         std::fs::write(&path, "Space context").unwrap();
         assert_eq!(read_space(&root, &id).unwrap(), "Space context");
         std::fs::write(&path, "x".repeat(20 * 1024)).unwrap();
