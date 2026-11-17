@@ -1,6 +1,6 @@
 <script lang="ts">
   // A pill: a round button on its own glass (`glass`, the default) or a quiet tint. Icon only, or icon + visible label (`showLabel`).
-  // `label` is required: it is the accessible name either way.
+  // `label` is required: it is the accessible name either way. `children` replaces the visible text (several lengths of it, say) while `label` stays the full name.
   import type { HTMLButtonAttributes } from "svelte/elements";
   import Glass from "./Glass.svelte";
   import Icon from "./Icon.svelte";
@@ -11,16 +11,17 @@
     icon,
     showLabel = false,
     glass = true,
+    children,
     el = $bindable(),
     class: klass,
     ...rest
-  }: { el?: HTMLButtonElement; label: string; icon?: IconName; showLabel?: boolean; glass?: boolean; class?: string } & Omit<HTMLButtonAttributes, "aria-label"> = $props();
+  }: { el?: HTMLButtonElement; label: string; icon?: IconName; showLabel?: boolean; glass?: boolean; children?: import("svelte").Snippet; class?: string } & Omit<HTMLButtonAttributes, "aria-label"> = $props();
 </script>
 
-<button bind:this={el} type="button" class={["pill", klass]} class:wide={showLabel} class:flat={!glass} aria-label={showLabel ? undefined : label} title={showLabel ? undefined : label} use:adaptive {...rest}>
+<button bind:this={el} type="button" class={["pill", klass]} class:wide={showLabel} class:flat={!glass} aria-label={showLabel && !children ? undefined : label} title={showLabel && !children ? undefined : label} use:adaptive {...rest}>
   {#if glass}<Glass />{/if}
   {#if icon}<Icon name={icon} />{/if}
-  {#if showLabel}<span>{label}</span>{/if}
+  {#if showLabel}{#if children}{@render children()}{:else}<span>{label}</span>{/if}{/if}
 </button>
 
 <style>

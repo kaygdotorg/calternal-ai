@@ -45,10 +45,10 @@
   .side { height: 100%; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--s-4) var(--s-4) 0; min-height: 0; }
   header { flex: none; display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3); min-height: var(--bar-h); }
   .tile { display: grid; place-items: center; width: calc(var(--pill-h) - var(--s-2)); height: calc(var(--pill-h) - var(--s-2)); border-radius: var(--r-select); background: var(--accent-soft); color: var(--accent); }
-  .name { flex: 1; font-family: var(--font-rounded); font-size: var(--text-heading); font-weight: var(--strong-weight); letter-spacing: -0.01em; }
+  .name { flex: 1; font-family: var(--font-rounded); font-variation-settings: "ROND" 100; font-size: var(--text-heading); font-weight: var(--strong-weight); letter-spacing: -0.01em; }
   .body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(var(--s-1) * -1); padding: 0 var(--s-1); }
   footer { position: relative; flex: none; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) 0 max(var(--s-4), var(--safe-bottom)); }
-  .avatar { flex: none; width: var(--pill-h); height: var(--pill-h); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-family: var(--font-rounded); font-weight: var(--strong-weight); transition: scale var(--dur-fast) var(--ease-out); }
+  .avatar { flex: none; width: var(--pill-h); height: var(--pill-h); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-weight: var(--strong-weight); transition: scale var(--dur-fast) var(--ease-out); }
   .avatar:active { scale: var(--press-scale); }
   .switch :global(.menu) { left: 0; right: 0; min-width: 0; max-width: none; }
   .switch { flex: 1; min-width: 0; display: flex; justify-content: center; }

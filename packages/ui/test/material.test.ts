@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import tokens from "../tokens/tokens.json";
-import { behindLuminance, luminance, material } from "../src/lib/material";
+import { backdropRange, behindLuminance, luminance, material, setBackdropField, washFor } from "../src/lib/material";
 
 describe("luminance", () => {
   it("orders black, grey and white", () => {
@@ -41,6 +41,27 @@ describe("material", () => {
     expect(material("dark", 0.9).alpha).toBeGreaterThan(material("dark", 0.02).alpha);
   });
   it("never exceeds an alpha that would hide the backdrop entirely", () => {
-    expect(material("light", 0).alpha).toBeLessThanOrEqual(0.92);
+    expect(material("light", 0).alpha).toBeLessThanOrEqual(0.4);
+  });
+});
+
+describe("wallpaper field", () => {
+  const dark = { cols: 4, rows: 2, lum: [0.02, 0.02, 0.9, 0.9, 0.02, 0.02, 0.9, 0.9] };
+  it("replaces the mesh and reports the range inside a region", () => {
+    setBackdropField(dark);
+    try {
+      expect(behindLuminance("light", { x0: 0, y0: 0, x1: 0.2, y1: 1 })).toBeLessThan(0.1);
+      expect(behindLuminance("light", { x0: 0.8, y0: 0, x1: 1, y1: 1 })).toBeGreaterThan(0.8);
+      expect(backdropRange("light", { x0: 0, y0: 0, x1: 0.5, y1: 1 })).toEqual({ min: 0.02, max: 0.02 });
+    } finally {
+      setBackdropField(null);
+    }
+  });
+  it("washes a dark wallpaper white for dark ink, and a bright one black for light ink", () => {
+    expect(washFor("light", { min: 0.02, max: 0.1 }, 0.35)).toBeGreaterThan(0.6);
+    expect(washFor("light", { min: 0.85, max: 0.9 }, 0.35)).toBe(0.35);
+    expect(washFor("dark", { min: 0.7, max: 0.9 }, 0.35)).toBeGreaterThan(0.8);
+    expect(washFor("dark", { min: 0.0, max: 0.02 }, 0.35)).toBe(0.35);
+    expect(washFor("light", { min: 0, max: 0 }, 0.35)).toBeLessThanOrEqual(0.9);
   });
 });

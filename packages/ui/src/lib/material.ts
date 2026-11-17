@@ -31,31 +31,83 @@ export interface Frac {
   y1: number;
 }
 
-const MESH: Record<Scheme, number[]> = {
-  light: tokens.backdrop.light.map(luminance),
-  dark: tokens.backdrop.dark.map(luminance),
-};
-
-/** Bilinear brightness of the 3 by 3 mesh at a point (fractions of the viewport). */
-function at(mesh: number[], x: number, y: number): number {
-  const u = Math.min(Math.max(x, 0), 1) * 2;
-  const v = Math.min(Math.max(y, 0), 1) * 2;
-  const i = Math.min(Math.floor(u), 1);
-  const j = Math.min(Math.floor(v), 1);
-  const fu = u - i;
-  const fv = v - j;
-  const a = mesh[j * 3 + i]!;
-  const b = mesh[j * 3 + i + 1]!;
-  const c = mesh[(j + 1) * 3 + i]!;
-  const d = mesh[(j + 1) * 3 + i + 1]!;
-  return a * (1 - fu) * (1 - fv) + b * fu * (1 - fv) + c * (1 - fu) * fv + d * fu * fv;
+/**
+ * What the surfaces are drawn over, as a grid of brightness values (0..1, relative luminance) laid over the viewport: `cols` by `rows`,
+ * row-major, cell centres at (i + 0.5) / cols. The default is the background's own 3 by 3 colour mesh; a wallpaper replaces it with a
+ * grid read once from its blurred copy (`setBackdropField`). Nothing here ever reads pixels at runtime.
+ */
+export interface Field {
+  cols: number;
+  rows: number;
+  lum: ArrayLike<number>;
 }
 
-/** Mean brightness of the background inside a rectangle: the mesh sampled at nine points (corners, edges, centre). */
-export function behindLuminance(scheme: Scheme, r: Frac, mesh: number[] = MESH[scheme]): number {
+const MESH: Record<Scheme, Field> = {
+  light: { cols: 3, rows: 3, lum: tokens.backdrop.light.map(luminance) },
+  dark: { cols: 3, rows: 3, lum: tokens.backdrop.dark.map(luminance) },
+};
+let wallpaper: Field | null = null;
+
+/** Uses `f` (a wallpaper's brightness grid) as what surfaces sit on, or the background mesh again when null. Re-samples every surface. */
+export function setBackdropField(f: Field | null): void {
+  wallpaper = f;
+  scheduleMaterial();
+}
+
+/** Bilinear brightness of a grid at a point (fractions of the viewport); the grid's outer cells extend to the edges. */
+function at(f: Field, x: number, y: number): number {
+  const u = Math.min(Math.max(x * f.cols - 0.5, 0), f.cols - 1);
+  const v = Math.min(Math.max(y * f.rows - 0.5, 0), f.rows - 1);
+  const i = Math.min(Math.floor(u), f.cols - 2 < 0 ? 0 : f.cols - 2);
+  const j = Math.min(Math.floor(v), f.rows - 2 < 0 ? 0 : f.rows - 2);
+  const fu = u - i;
+  const fv = v - j;
+  const g = (a: number, b: number) => f.lum[Math.min(b, f.rows - 1) * f.cols + Math.min(a, f.cols - 1)]!;
+  return g(i, j) * (1 - fu) * (1 - fv) + g(i + 1, j) * fu * (1 - fv) + g(i, j + 1) * (1 - fu) * fv + g(i + 1, j + 1) * fu * fv;
+}
+
+const asField = (m: Field | number[]): Field => (Array.isArray(m) ? { cols: 3, rows: 3, lum: m } : m);
+
+/** Mean brightness of the backdrop inside a rectangle: the grid sampled at nine points (corners, edges, centre). */
+export function behindLuminance(scheme: Scheme, r: Frac, mesh?: Field | number[]): number {
+  const f = mesh ? asField(mesh) : (wallpaper ?? MESH[scheme]);
   let sum = 0;
-  for (const fy of [0, 0.5, 1]) for (const fx of [0, 0.5, 1]) sum += at(mesh, r.x0 + (r.x1 - r.x0) * fx, r.y0 + (r.y1 - r.y0) * fy);
+  for (const fy of [0, 0.5, 1]) for (const fx of [0, 0.5, 1]) sum += at(f, r.x0 + (r.x1 - r.x0) * fx, r.y0 + (r.y1 - r.y0) * fy);
   return sum / 9;
+}
+
+/** The darkest and brightest cell of the current backdrop inside a rectangle: what the worst legible-text case is. */
+export function backdropRange(scheme: Scheme, r: Frac): { min: number; max: number } {
+  const f = wallpaper ?? MESH[scheme];
+  let min = 1;
+  let max = 0;
+  for (let j = 0; j < f.rows; j++) {
+    const y = (j + 0.5) / f.rows;
+    if (y < r.y0 || y > r.y1) continue;
+    for (let i = 0; i < f.cols; i++) {
+      const x = (i + 0.5) / f.cols;
+      if (x < r.x0 || x > r.x1) continue;
+      const v = f.lum[j * f.cols + i]!;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+  return max < min ? { min: 0.5, max: 0.5 } : { min, max };
+}
+
+/**
+ * The wash (0..1 alpha of the scheme's tint) a flat surface on the backdrop needs so its secondary ink (`ink-3`) reaches 4.5:1 over the
+ * worst cell in `range`: white in the light scheme (dark ink needs a light ground), black in the dark scheme. Never below `base`, never above
+ * 0.9 (a wallpaper is still meant to show). Derived from the wallpaper's own brightness, the way the owner's calternal-ui plugin does.
+ */
+export function washFor(scheme: Scheme, range: { min: number; max: number }, base: number): number {
+  const ink = luminance(tokens[scheme]["ink-3"]);
+  if (scheme === "light") {
+    const need = 4.5 * (ink + 0.05) - 0.05; // the lightest-needed ground
+    return Math.min(0.9, Math.max(base, (need - range.min) / (1 - range.min)));
+  }
+  const allow = (ink + 0.05) / 4.5 - 0.05; // the darkest-allowed ground's ceiling
+  return Math.min(0.9, Math.max(base, range.max <= allow ? 0 : 1 - allow / range.max));
 }
 
 /** What a surface is drawn with: tint alpha (0..1) and blur radius (px, before the touch scale). */
@@ -68,22 +120,24 @@ export interface Material {
 export type Role = "glass" | "card";
 
 const num = (s: string): number => parseFloat(s);
+/** The most fill a glass pill gains where its backdrop fights its glyphs (the plugin's `--cf-pill-wash-max`). */
+const WASH_MAX = 0.35;
 const BASE: Record<Scheme, Record<Role, number>> = {
-  light: { glass: num(tokens.light["glass-a"]), card: num(tokens.light["card-a"]) },
-  dark: { glass: num(tokens.dark["glass-a"]), card: num(tokens.dark["card-a"]) },
+  light: { glass: num(tokens.light["glass-a"]), card: num(tokens.light["glass-a"]) },
+  dark: { glass: num(tokens.dark["glass-a"]), card: num(tokens.dark["glass-a"]) },
 };
 const BLUR = num(tokens.light["glass-blur"]);
 
 /**
  * The material for a surface whose background has brightness `behind`. How much the background fights the ink (`need`, 0..1):
  * a light scheme has dark ink, so it is the dark parts behind that hurt; a dark scheme is the other way round. The tint grows
- * by up to 0.45 and the blur by up to a fifth as `need` does; with `need` 0 the approved values are returned unchanged.
+ * by up to the wash the plugin allows (0.35) and the blur by up to a fifth as `need` does; with `need` 0 the approved values are returned unchanged.
  * `form` is accepted so the touch tuning can differ later; the touch blur scale itself is a CSS token.
  */
 export function material(scheme: Scheme, behind: number, role: Role = "glass", _form: Form = "desktop"): Material {
   const need = scheme === "light" ? Math.max(0, 0.6 - behind) / 0.6 : Math.min(1, Math.max(0, behind - 0.12) / 0.5);
   const base = BASE[scheme][role];
-  return { alpha: Math.min(0.92, base + 0.45 * need), blur: Math.round(BLUR * (1 + 0.2 * need)) };
+  return { alpha: Math.min(0.4, base + WASH_MAX * need), blur: Math.round(BLUR * (1 + 0.2 * need)) };
 }
 
 // ---- registry: surfaces ask to be adapted; one frame does all the reads, then all the writes ----

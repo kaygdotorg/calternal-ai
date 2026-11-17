@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { href } from "../../lib/route.svelte";
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
@@ -42,7 +43,7 @@
   <header>
     {#if shell.narrow || !shell.sidebarOpen}<IconButton icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
     <div class="title">
-      {#if parent}<a class="crumb" href="/threads/{parent.id}">{parent.title}</a>{/if}
+      {#if parent}<a class="crumb" href={href(`/threads/${parent.id}`)}>{parent.title}</a>{/if}
       <h1>{summary?.title ?? "Thread"}</h1>
     </div>
     {#if summary}<Badge text={summary.state} tone={TONE[summary.state]} dot />{/if}

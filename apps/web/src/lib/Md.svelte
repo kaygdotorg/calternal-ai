@@ -23,8 +23,8 @@
 </div>
 
 <style>
-  .md { display: grid; gap: var(--s-4); font-size: var(--text-body); line-height: 1.55; font-weight: var(--body-weight); overflow-wrap: anywhere; }
-  .h { font-size: var(--text-body); font-weight: var(--strong-weight); }
+  .md { display: grid; gap: var(--s-4); font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); overflow-wrap: anywhere; }
+  .h { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   ul, ol { display: grid; gap: var(--s-2); padding-inline-start: var(--s-7); }
   ul { list-style: disc; } ol { list-style: decimal; }
   li::marker { color: var(--ink-3); }

@@ -6,6 +6,11 @@
   import { adaptive } from "../lib/material";
   let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right"; children: Snippet } = $props();
   let box = $state<HTMLElement>();
+  // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
+  const portal = (node: HTMLElement) => {
+    document.body.append(node);
+    return { destroy: () => node.remove() };
+  };
   let from: HTMLElement | null = null;
   const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
   $effect(() => {
@@ -30,10 +35,12 @@
 </script>
 
 {#if open}
-  <div class="scrim" role="presentation" onclick={onclose}></div>
-  <div bind:this={box} class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onkeydown={onkey} use:adaptive>
-    <Glass dense />
-    {@render children()}
+  <div class="layer" use:portal>
+    <div class="scrim" role="presentation" onclick={onclose}></div>
+    <div bind:this={box} class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onkeydown={onkey} use:adaptive>
+      <Glass dense />
+      {@render children()}
+    </div>
   </div>
 {/if}
 
@@ -41,7 +48,7 @@
   .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
   .sheet { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); }
   .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); animation: up var(--dur-slow) var(--spring); }
-  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(420px, 92vw); border-radius: var(--r-pane); animation: in var(--dur-slow) var(--spring); }
+  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); animation: in var(--dur-slow) var(--spring); }
   @keyframes fade { from { opacity: 0; } }
   @keyframes up { from { translate: 0 24px; opacity: 0; } }
   @keyframes in { from { translate: 24px 0; opacity: 0; } }

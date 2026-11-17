@@ -7,10 +7,12 @@
   import Shell from "./shell/Shell.svelte";
   import { shell } from "./shell/shell.svelte";
   import Unknown from "./shell/Unknown.svelte";
+  import SettingsSheet from "./appearance/SettingsSheet.svelte";
 
   const NONE: AppDef = { kind: "", name: "Calternal", icon: "apps", Sidebar: Unknown, Main: Unknown, panels: [{ id: "none", label: "Nothing", icon: "info", component: Unknown }] };
   const seg = $derived(segments());
-  const app = $derived(appFor(seg[0]) ?? NONE);
+  const settings = $derived(seg[0] === "settings");
+  const app = $derived(appFor(seg[0]) ?? (settings ? APPS[0]! : NONE));
   onMount(() => {
     if (route.path === "/") navigate("/threads", true);
     void Promise.all(APPS.map((a) => a.start?.()));
@@ -24,4 +26,5 @@
   });
 </script>
 
-{#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
+{#if route.path !== "/"}<Shell {app} id={settings ? undefined : seg[1]} />{/if}
+<SettingsSheet open={settings} onclose={() => navigate("/threads")} />

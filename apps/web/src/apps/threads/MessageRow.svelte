@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { href } from "../../lib/route.svelte";
   // One message. The person's words sit in a tinted bubble on the right; the agent's are plain text on the card, with folded
   // steps, generated-UI cards and links to child threads between paragraphs. No inner card around a message.
   import { Icon } from "@calternal/ui";
@@ -21,7 +22,7 @@
         {:else if b.type === "card"}<GenUi source={b.source} />
         {:else}
           {@const t = store.get(b.threadId)}
-          {#if t}<a class="child" href="/threads/{t.id}"><Icon name="branch" mini /><span>{t.title}</span><small>{t.state}</small></a>{/if}
+          {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" mini /><span>{t.title}</span><small>{t.state}</small></a>{/if}
         {/if}
       {/each}
     </div>

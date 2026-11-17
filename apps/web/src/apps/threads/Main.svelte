@@ -14,5 +14,5 @@
 {/if}
 
 <style>
-  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-size: var(--text-body); }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-size: var(--text-ui); }
 </style>

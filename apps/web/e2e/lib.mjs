@@ -3,10 +3,12 @@ import { spawn } from "node:child_process";
 import { chromium } from "playwright";
 
 export const PORT = 4174;
-export const BASE = `http://127.0.0.1:${PORT}`;
+/** CAL_URL points the scripts at an already deployed app (for example http://127.0.0.1/ai on the preview host) instead of a local preview. */
+export const BASE = process.env.CAL_URL ?? `http://127.0.0.1:${PORT}`;
 
 /** Starts the preview server and resolves when it answers. Returns a stop function. */
 export async function serve() {
+  if (process.env.CAL_URL) return () => {};
   const p = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"], { stdio: "ignore", detached: false });
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(BASE)).ok) break; } catch { /* not yet */ }
@@ -27,7 +29,8 @@ export async function open(browser, device, scheme, path) {
   const page = await ctx.newPage();
   await page.goto(BASE + path);
   await page.waitForSelector("html[data-ready]");
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-side").length > 0 || document.documentElement.dataset.nowall !== undefined, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(500);
   return { ctx, page };
 }
 

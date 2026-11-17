@@ -4,21 +4,33 @@
  * Links are ordinary `<a href>`; `interceptLinks` turns same-origin clicks into history navigation without a reload.
  */
 
+/**
+ * Where the app is mounted: "/" normally, "/ai/" on the preview host. Addresses inside the app never contain it; links and the address bar do.
+ * Set by the build (`CAL_BASE`), read from Vite's `BASE_URL`.
+ */
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/** An app address (`/threads/abc`) as it appears in the address bar and in an `<a href>`. */
+export const href = (path: string): string => BASE + path;
+
+const inApp = (pathname: string): string => (BASE && pathname.startsWith(BASE) ? pathname.slice(BASE.length) || "/" : pathname);
+
 /** The current location. Read it in markup or a `$derived` and it stays current. */
-export const route = $state({ path: location.pathname, query: new URLSearchParams(location.search) });
+export const route = $state({ path: inApp(location.pathname), query: new URLSearchParams(location.search) });
 
 /** `/threads/abc` becomes `["threads", "abc"]`. */
 export const segments = (): string[] => route.path.split("/").filter(Boolean);
 
 function sync(): void {
-  route.path = location.pathname;
+  route.path = inApp(location.pathname);
   route.query = new URLSearchParams(location.search);
 }
 
 /** Goes to `to` (a path with an optional query) without a reload. */
 export function navigate(to: string, replace = false): void {
-  if (to === location.pathname + location.search) return;
-  history[replace ? "replaceState" : "pushState"](null, "", to);
+  const full = href(to);
+  if (full === location.pathname + location.search) return;
+  history[replace ? "replaceState" : "pushState"](null, "", full);
   sync();
 }
 
@@ -39,6 +51,6 @@ export function interceptLinks(): void {
     const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
     if (!a || a.target === "_blank" || a.origin !== location.origin || a.hasAttribute("download")) return;
     e.preventDefault();
-    navigate(a.pathname + a.search);
+    navigate(inApp(a.pathname) + a.search);
   });
 }

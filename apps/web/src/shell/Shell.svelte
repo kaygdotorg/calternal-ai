@@ -7,7 +7,7 @@
   import type { AppDef } from "../apps/registry";
   import Backdrop from "./Backdrop.svelte";
   import PhoneTabs from "./PhoneTabs.svelte";
-  import RightCard from "./RightCard.svelte";
+  import RightSidebar from "./RightSidebar.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
   let { app, id }: { app: AppDef; id?: string } = $props();
@@ -22,9 +22,9 @@
   </main>
 
   {#if shell.narrow && shell.sidebarOpen}<button type="button" class="peek" aria-label="Close the sidebar" onclick={() => shell.closeOver()}></button>{/if}
-  {#if shell.narrow && shell.rightOpen}<button type="button" class="scrim" aria-label="Close the side card" onclick={() => shell.closeOver()}></button>{/if}
+  {#if shell.narrow && shell.rightOpen}<button type="button" class="scrim" aria-label="Close the side panel" onclick={() => shell.closeOver()}></button>{/if}
 
-  <aside class="right" aria-label="{app.name} side card" inert={!shell.rightOpen}><RightCard {app} {id} /></aside>
+  <aside class="right" aria-label="{app.name} side panel" inert={!shell.rightOpen}><RightSidebar {app} {id} /></aside>
 </div>
 {#if shell.narrow && !shell.sidebarOpen}<PhoneTabs {app} />{/if}
 
@@ -39,11 +39,10 @@
   .side { min-width: 0; overflow: hidden; }
   .side > :global(.side) { width: var(--side-w); }
   /* The middle card's top and bottom edges touch the viewport; it keeps one gap on each side. */
-  .mid { min-width: 0; padding: 0 var(--inset) 0 0; }
-  .shell:not(.narrow)[data-sidebar="false"] .mid { padding-left: var(--inset); }
+  .mid { min-width: 0; padding: 0 var(--inset); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
-  .right { min-width: 0; overflow: hidden; padding-right: var(--inset); }
-  .right > :global(.right) { height: 100%; width: calc(var(--right-w) - var(--inset)); overflow: clip; }
+  .right { min-width: 0; overflow: hidden; }
+  .right > :global(.rs) { width: var(--right-w); }
 
   /* Narrow: layers. */
   .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(var(--tier-cap) + var(--cap-offset) + var(--s-4) + var(--safe-bottom)); }
@@ -57,8 +56,9 @@
   .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-pane); }
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); }
   .scrim { position: fixed; inset: 0; z-index: 3; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
-  .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); padding: 0 var(--inset) 0 0; transform: translateX(110%); transition: transform var(--dur-slow) var(--spring); overflow: visible; }
+  /* Slid over the app, the flat sidebar needs a ground of its own: the same wallpaper copy and wash, aligned to the viewport. */
+  .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); transform: translateX(110%); transition: transform var(--dur-slow) var(--spring); border-radius: var(--r-pane) 0 0 var(--r-pane); box-shadow: var(--shadow-card); background: linear-gradient(rgb(var(--tint) / var(--wash, var(--side-tint-a))) 0 0), var(--wall-side, var(--backdrop)) center / cover no-repeat fixed; }
   .narrow[data-right="true"] .right { transform: none; }
-  .narrow .right > :global(.right) { width: 100%; }
+  .narrow .right > :global(.rs) { width: 100%; }
   @keyframes fade { from { opacity: 0; } }
 </style>

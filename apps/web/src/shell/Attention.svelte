@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { href } from "../lib/route.svelte";
   // The attention card: what needs the person, at most three items, a card because it asks for attention. Absent when empty.
   import { Badge, Card, Icon } from "@calternal/ui";
   import type { AttentionItem } from "../apps/registry";
@@ -11,7 +12,7 @@
     <h2>Needs you {#if items.length > 3}<Badge text={String(items.length)} tone="accent" />{/if}</h2>
     <ul>
       {#each shown as it (it.id)}
-        <li><a href={it.href}><span class="ic"><Icon name={it.icon} /></span><span class="tx"><span class="t">{it.title}</span><span class="s">{it.sub}</span></span></a></li>
+        <li><a href={href(it.href)}><span class="ic"><Icon name={it.icon} /></span><span class="tx"><span class="t">{it.title}</span><span class="s">{it.sub}</span></span></a></li>
       {/each}
     </ul>
   </Card>

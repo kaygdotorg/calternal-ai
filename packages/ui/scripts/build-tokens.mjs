@@ -70,8 +70,8 @@ ${decl(t.dark)}
   --backdrop: ${backdrop(t.backdrop.dark)};
 }
 @media (prefers-reduced-transparency: reduce) {
-  :root { --glass-a: 0.94; --card-a: 0.96; }
-  :root[data-scheme="dark"] { --glass-a: 0.95; --card-a: 0.96; }
+  :root { --glass-a: 0.94; --card-tint-a: 0.96; --side-tint-a: 0.9; }
+  :root[data-scheme="dark"] { --glass-a: 0.95; --card-tint-a: 0.96; --side-tint-a: 0.9; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root {

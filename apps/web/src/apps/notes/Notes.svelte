@@ -50,7 +50,7 @@
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); line-height: 1.2; letter-spacing: -0.01em; }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); margin-top: var(--s-6); }
-  p { font-size: var(--text-body); line-height: 1.65; font-weight: var(--body-weight); }
+  p { font-size: var(--text-ui); line-height: 1.65; font-weight: var(--body-weight); }
   .lede { color: var(--ink-3); }
   .rail { position: absolute; z-index: 3; top: 50%; translate: 0 -50%; left: 0; }
   .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-5); min-width: var(--pill-h); justify-items: start; }

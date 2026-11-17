@@ -2,7 +2,7 @@
   // The Threads app's sidebar body: the space's threads grouped by workspace, children nested under their parent, with running and
   // waiting states. A state is an icon-free dot plus a word for assistive tech; colour alone never carries it.
   import { Row } from "@calternal/ui";
-  import { route, segments } from "../../lib/route.svelte";
+  import { href, route, segments } from "../../lib/route.svelte";
   import type { ThreadState, ThreadSummary } from "./model";
   import { store } from "./store.svelte";
   const current = $derived(segments()[0] === "threads" ? segments()[1] : undefined);
@@ -12,7 +12,7 @@
 </script>
 
 {#snippet line(t: ThreadSummary, depth: number)}
-  <Row title={t.title} sub={WORD[t.state] ? `${WORD[t.state]} · ${time(t.updatedAt)}` : time(t.updatedAt)} href="/threads/{t.id}" selected={current === t.id} {depth}>
+  <Row title={t.title} sub={WORD[t.state] ? `${WORD[t.state]} · ${time(t.updatedAt)}` : time(t.updatedAt)} href={href(`/threads/${t.id}`)} selected={current === t.id} {depth}>
     {#snippet leading()}<span class="dot {t.state}" role="img" aria-label={WORD[t.state] || "idle"}></span>{/snippet}
   </Row>
 {/snippet}
