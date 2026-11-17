@@ -12,3 +12,6 @@ artifacts/
 # Generated Rust and TypeScript reference documentation.
 /reference-docs/
 apps/web/public/wallpapers/
+apps/docs/public/fonts/
+apps/docs/src/styles/tokens.generated.css
+apps/docs/src/presets.generated.json
