@@ -452,10 +452,20 @@ fn a_request_id_is_new_again_after_receipt_retention() {
     };
     let content = open_retaining(dir.path(), |_| {}, retention);
     content
-        .register_kind(space, "notes", Placement::Visible { folder: "Notes".into() }, FileFormat::Markdown)
+        .register_kind(
+            space,
+            "notes",
+            Placement::Visible {
+                folder: "Notes".into(),
+            },
+            FileFormat::Markdown,
+        )
         .unwrap();
     write(&content, b"first\n").unwrap();
-    assert_eq!(write(&content, b"second\n").unwrap_err().code, ErrorCode::Conflict);
+    assert_eq!(
+        write(&content, b"second\n").unwrap_err().code,
+        ErrorCode::Conflict
+    );
     drop(content);
     std::thread::sleep(retention * 4);
     let content = open_retaining(dir.path(), |_| {}, retention);

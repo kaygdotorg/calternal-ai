@@ -1072,17 +1072,44 @@ fn server_refuses_empty_swapped_or_foreign_roots() {
         std::fs::create_dir_all(dir).unwrap();
     }
     let pin = Some(INSTALLATION);
-    assert_eq!(serve_status(None, &appdata, &ssd, &hdd, true), Some(1), "no pin");
-    assert_eq!(serve_status(pin, &appdata, &ssd, &hdd, false), Some(1), "empty roots");
-    assert!(!appdata.join("system").exists(), "a refused start created state");
+    assert_eq!(
+        serve_status(None, &appdata, &ssd, &hdd, true),
+        Some(1),
+        "no pin"
+    );
+    assert_eq!(
+        serve_status(pin, &appdata, &ssd, &hdd, false),
+        Some(1),
+        "empty roots"
+    );
+    assert!(
+        !appdata.join("system").exists(),
+        "a refused start created state"
+    );
     // First setup, then a normal restart, both serve.
     drop(start(&d.0, None));
-    assert_eq!(serve_status(pin, &appdata, &ssd, &hdd, false), None, "paired restart");
+    assert_eq!(
+        serve_status(pin, &appdata, &ssd, &hdd, false),
+        None,
+        "paired restart"
+    );
     let other_pin = Some("00000000-0000-0000-0000-000000000002");
-    assert_eq!(serve_status(other_pin, &appdata, &ssd, &hdd, false), Some(1), "different pin");
+    assert_eq!(
+        serve_status(other_pin, &appdata, &ssd, &hdd, false),
+        Some(1),
+        "different pin"
+    );
     // Swapped userdata roots carry the wrong role markers.
-    assert_eq!(serve_status(pin, &appdata, &hdd, &ssd, false), Some(1), "swapped roots");
-    assert_eq!(serve_status(pin, &appdata, &hdd, &ssd, true), Some(1), "--create cannot repair");
+    assert_eq!(
+        serve_status(pin, &appdata, &hdd, &ssd, false),
+        Some(1),
+        "swapped roots"
+    );
+    assert_eq!(
+        serve_status(pin, &appdata, &hdd, &ssd, true),
+        Some(1),
+        "--create cannot repair"
+    );
     // A userdata root of another installation carries another installation ID.
     let other = TempDir::new("roots-other");
     let (oa, os, oh) = (
@@ -1090,9 +1117,20 @@ fn server_refuses_empty_swapped_or_foreign_roots() {
         other.0.join("userdata-ssd"),
         other.0.join("userdata-hdd"),
     );
-    assert_eq!(serve_status(other_pin, &oa, &os, &oh, true), None, "other first setup");
-    assert_eq!(serve_status(pin, &appdata, &os, &hdd, false), Some(1), "foreign root");
+    assert_eq!(
+        serve_status(other_pin, &oa, &os, &oh, true),
+        None,
+        "other first setup"
+    );
+    assert_eq!(
+        serve_status(pin, &appdata, &os, &hdd, false),
+        Some(1),
+        "foreign root"
+    );
     // The recovery log lives in userdata-ssd, owner-only.
     let log = ssd.join(".calternal/recovery");
-    assert!(log.join("snapshot.json").is_file(), "recovery log provisioned");
+    assert!(
+        log.join("snapshot.json").is_file(),
+        "recovery log provisioned"
+    );
 }

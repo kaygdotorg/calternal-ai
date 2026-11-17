@@ -40,8 +40,8 @@ mod dispatch;
 mod guard;
 mod plugins;
 pub use dispatch::dispatch;
-use dispatch::*;
 pub(crate) use dispatch::fingerprint;
+use dispatch::*;
 use guard::*;
 use plugins::*;
 

@@ -6,13 +6,11 @@
 //! A connection pins at most 16 existing journals and buffers one 64-entry page.
 //! Each journal admits at most 128 listeners (operator safety ceiling). Dropping
 //! the HTTP body drops receivers and journal handles, releasing admission.
-use calternal_types::Error;
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
     plugins::Session,
 };
-use calternal_types::{Capability, SpaceId};
 use axum::{
     body::Body,
     extract::{Query, Request, State},
@@ -21,6 +19,8 @@ use axum::{
 };
 use calternal_core::{LiveFrame, LiveSubscription};
 use calternal_store::{JournalEntry, SpaceStore};
+use calternal_types::Error;
+use calternal_types::{Capability, SpaceId};
 use futures_util::future::select_all;
 use serde::Deserialize;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
@@ -205,7 +205,9 @@ impl<D: Directory> Stream<D> {
             // Check all followed spaces on every wake, including an idle revoke.
             if self.page.is_empty() {
                 for f in &self.follows {
-                    if !authorized(&self.state, &self.identity, &self.session, f.content_space).await {
+                    if !authorized(&self.state, &self.identity, &self.session, f.content_space)
+                        .await
+                    {
                         return None;
                     }
                 }
@@ -218,7 +220,14 @@ impl<D: Directory> Stream<D> {
                         space_id: follow.space.clone(),
                     }));
                 }
-                if !authorized(&self.state, &self.identity, &self.session, follow.content_space).await {
+                if !authorized(
+                    &self.state,
+                    &self.identity,
+                    &self.session,
+                    follow.content_space,
+                )
+                .await
+                {
                     return None;
                 }
                 if !entry.item.is_empty() {

@@ -1,9 +1,9 @@
 //! Owner-local SQL and bounded invalidation history. Events carry no content.
-use calternal_types::Error;
 use super::{Inputs, internal};
 use crate::auth::{Directory, Identity};
-use calternal_types::{AccountId, Capability, SpaceId};
 use calternal_core::AccountInputRecord;
+use calternal_types::Error;
+use calternal_types::{AccountId, Capability, SpaceId};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Value, json};
 use uuid::Uuid;

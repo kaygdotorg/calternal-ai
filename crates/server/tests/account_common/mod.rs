@@ -37,7 +37,13 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
         userdata_ssd: dir.path().join("userdata-ssd"),
         userdata_hdd: dir.path().join("userdata-hdd"),
     };
-    let store = Store::open(&roots, uuid::Uuid::from_u128(1), true, calternal_content::DEFAULT_RECEIPT_RETENTION).unwrap();
+    let store = Store::open(
+        &roots,
+        uuid::Uuid::from_u128(1),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
     let tokens = StoredDirectory::open(&roots.appdata, config, false, None).unwrap();
     let auth = tokens.http_auth().unwrap().auth.clone();
     let router = api::router(

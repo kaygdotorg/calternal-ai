@@ -30,12 +30,20 @@ impl Fixture {
                     userdata_ssd: dir.path().join("userdata-ssd"),
                     userdata_hdd: dir.path().join("userdata-hdd"),
                 };
-                let store = Store::open(&roots, uuid::Uuid::from_u128(1), true, calternal_content::DEFAULT_RECEIPT_RETENTION).unwrap();
+                let store = Store::open(
+                    &roots,
+                    uuid::Uuid::from_u128(1),
+                    true,
+                    calternal_content::DEFAULT_RECEIPT_RETENTION,
+                )
+                .unwrap();
                 let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
                 let token =
-                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/owner.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/owner.token"))
+                        .unwrap();
                 let guest_token =
-                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/guest.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/guest.token"))
+                        .unwrap();
                 let owner = tokens.authenticate(token.as_bytes()).unwrap();
                 let spaces = tokens
                     .describe(&owner)

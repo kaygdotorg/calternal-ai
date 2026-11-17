@@ -1,13 +1,13 @@
 //! Account-derived operation admission and pending submission state machine.
-use calternal_types::Error;
 use super::{Inputs, internal};
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
     plugins::Session,
 };
-use calternal_types::{Capability, SpaceId};
 use calternal_core::*;
+use calternal_types::Error;
+use calternal_types::{Capability, SpaceId};
 use rusqlite::{TransactionBehavior, params};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -151,9 +151,7 @@ fn prepare<D: Directory>(
                 .policy(&i.request.operation)
                 .ok_or_else(|| Error::not_found("unknown operation"))?;
             if policy.required != Capability::ContentWrite {
-                return Err(Error::invalid_input(
-                    "only content writes may be queued",
-                ));
+                return Err(Error::invalid_input("only content writes may be queued"));
             }
             policy.authorize_space(&st.directory, &identity, space)?;
             let prior = Inputs::get(&tx, kind, &i.request.request_id)?;
@@ -237,9 +235,7 @@ fn prepare<D: Directory>(
                 }
                 "pending.confirm" => {
                     if row.state != "confirmation_required" {
-                        return Err(Error::conflict(
-                            "submission is not awaiting confirmation",
-                        ));
+                        return Err(Error::conflict("submission is not awaiting confirmation"));
                     }
                     // Confirm records permission to attempt this exact immutable envelope.
                     service.set_state(&tx, &mut row, "submitting")?;

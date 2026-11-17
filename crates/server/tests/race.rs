@@ -35,7 +35,13 @@ async fn disable_during_invocation_discards_result() {
     let worker = support::worker(&wdir, support::READ_NOTE, support::COMPLETE_AFTER_GO);
     let plugin = support::plugin(support::insights_manifest(), Some(&worker), false);
     let roots = support::roots(&root.0);
-    let store = Store::open(&roots, uuid::Uuid::from_u128(1), true, calternal_content::DEFAULT_RECEIPT_RETENTION).unwrap();
+    let store = Store::open(
+        &roots,
+        uuid::Uuid::from_u128(1),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
     let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {

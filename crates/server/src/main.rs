@@ -241,7 +241,9 @@ fn main() {
                     },
                     installation_id,
                     create,
-                    std::time::Duration::from_secs(u64::from(receipt_retention_days.max(1)) * 86_400),
+                    std::time::Duration::from_secs(
+                        u64::from(receipt_retention_days.max(1)) * 86_400,
+                    ),
                     port,
                     web_dir,
                     plugin_root,
@@ -292,10 +294,22 @@ async fn serve(
          CALTERNAL_INSTALLATION_ID (or pass --installation-id). For first setup, generate a \
          new UUID, keep it there, and start once with --create.";
     let installation = installation_id
-        .ok_or_else(|| boot(1, "invalid_input", "no installation ID is configured", PIN_HINT))
+        .ok_or_else(|| {
+            boot(
+                1,
+                "invalid_input",
+                "no installation ID is configured",
+                PIN_HINT,
+            )
+        })
         .and_then(|id| {
             uuid::Uuid::parse_str(&id).map_err(|_| {
-                boot(1, "invalid_input", "the installation ID is not a UUID", PIN_HINT)
+                boot(
+                    1,
+                    "invalid_input",
+                    "the installation ID is not a UUID",
+                    PIN_HINT,
+                )
             })
         })?;
     let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {

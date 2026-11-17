@@ -1,5 +1,4 @@
 //! One private account SSE route, account inferred exclusively from authentication.
-use calternal_types::Error;
 use super::{Inputs, internal};
 use crate::{
     api::{Shared, error_response},
@@ -13,6 +12,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use calternal_core::AccountFrame;
+use calternal_types::Error;
 use serde::Deserialize;
 use std::collections::VecDeque;
 #[derive(Deserialize)]

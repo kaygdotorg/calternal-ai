@@ -155,7 +155,11 @@ pub(crate) fn revoked_targets(
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|m| m["account_id"].as_str().and_then(|a| AccountId::parse(a).ok()))
+                .filter_map(|m| {
+                    m["account_id"]
+                        .as_str()
+                        .and_then(|a| AccountId::parse(a).ok())
+                })
                 .collect())
         }
         _ => Ok(Vec::new()),

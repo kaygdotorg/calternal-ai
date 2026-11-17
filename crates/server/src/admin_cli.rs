@@ -175,7 +175,9 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                     .hint("Next: run `calternal machines list` to review machine access."))
             } else {
                 Err(CliError::new("not_found", format!("no machine {id}"))
-                    .hint("`calternal machines list --appdata DIR` shows the machines and their ids.")
+                    .hint(
+                        "`calternal machines list --appdata DIR` shows the machines and their ids.",
+                    )
                     .human_message(format!("No machine with ID {id} was found.")))
             }
         }
