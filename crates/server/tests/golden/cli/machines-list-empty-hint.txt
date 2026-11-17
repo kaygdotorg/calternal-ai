@@ -1,0 +1,2 @@
+No machines are enrolled yet. Run `calternal machines code` to add one.
+Next: run `calternal machines code --help`.

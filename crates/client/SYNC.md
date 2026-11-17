@@ -1,41 +1,44 @@
-# Journal following design (unbuilt)
+# Following server state
 
-The server remains sync and saved-merge authority. No offline cache, journal
-endpoint, subscription, local file mirror or outbox is implemented in this crate.
-This design does not depend on the preview content store moving to per-space DBs.
+Clients do not sync files or merge replicas. The server owns all content and
+merge authority. `Client::subscribe` opens one SSE connection following 1–16
+space UUIDs, restoring opaque signed bookmarks through `BookmarkStorage`.
+`LiveConnection::next` reconnects with exponential 250 ms–30 s backoff; reset,
+authorization and protocol failures stop. Cancellation interrupts network reads
+and backoff, and dropping the connection releases its socket without background
+workers. This preview still accepts loopback HTTP only.
 
-Use one ordered owner per (server identity, account UUID, space UUID). Persist the
-opaque signed cursor from `calternal-store` with the local changes it covers in a
-single local transaction. Store validates space binding, epoch, entry hash and
-rollback witnesses; clients never forge cursors or compare signed strings as
-sequence numbers. Keep account/private-profile streams separate from space data.
+The server subscribes before backlog reads and always reads indexed journal pages;
+broadcasts are bounded hints. Sequence positions suppress repeated backlog/live
+hints. Every delivery checks current session, membership and per-space item existence.
+A bookmark from another space, an expired epoch or rollback produces explicit
+`reset`, after which the consumer reloads authorized state and reconnects.
 
-Subscribe before catch-up, buffer bounded live hints, replay journal pages from
-the last committed cursor, then reconcile the buffer by journal sequence. Push is
-a hint. Reconnect/foreground always replays; duplicate delivery is idempotent.
-A slow consumer or sequence gap triggers catch-up, never cursor advancement over
-unapplied entries. Topic filters need server-issued continuation cursors rather
-than an assumption that all visible entries have consecutive global sequences.
+After applying an entry, call `accept` to invalidate its configured item cache and persist
+its bookmark. Never accept before application. A crash before acceptance can replay
+that event; cache application must be idempotent. `Ready` bookmarks also cover
+filtered entries, so clients must not infer global continuity from visible entries.
+No atomic snapshot+bookmark or retention lease is implemented: callers must reload
+on reset before trusting derived state. `ItemCache` holds bounded UUID-keyed opaque
+values and optionally calls platform-provided `PersistentCache`; there is no merge
+logic. `FileBookmarks` uses inherited fsio atomic writes and Markdown cache files.
+Each storage instance must be scoped to one server/account. Apple supplies durable
+storage and restores bookmarks when creating its native stream; NativeLive has
+only ephemeral bookmarks, and the platform persists state before accepting events.
 
-Expired/rollback cursors require an explicit reset: stop publication, obtain a
-consistent authorized snapshot and cursor, atomically replace clean derived
-state, then replay. Preserve dirty original bytes, bases and pending request IDs
-through reset. Revalidate authority before sending; revocation stops replay and
-must never move another account's edits into a new session. Signing out drops the
-active credential and network owner; unresolved edits require an approved local
-retention/export policy. Unknown formats remain opaque; unsafe merges preserve
-both copies. A journal position is not a content durability or room save receipt.
+Each live connection owns an `OfflineOutbox`, drained after authorized reconnect
+before publishing events. It retains ordered immutable request envelopes in memory, with stable
+request IDs and no local merge. Draining uses ordinary server operations, which
+recheck current access and replay receipts. Any refusal or uncertain transport
+outcome retains the head and stops the drain. Platform code owns durable offline
+input retention and visible pending rendering. Never transfer an outbox into a
+different account/session. A sent envelope's identity/input cannot be edited after
+an uncertain result. Server drafts, pending submission operations and an account
+stream remain blocked on the account-state retention decision in issue #17.
 
-Questions for the user / protocol owner:
-
-- Snapshot/reset protocol: atomic snapshot+cursor (server snapshot cost) or a
-  bounded snapshot followed by replay under a retention lease (lease lifecycle and
-  explicit expiry handling)? No HTTP journal/reset contract exists yet.
-- Local dirty data after revocation/sign-out: retain encrypted private recovery
-  data (platform secret and expiry policy needed) or require an explicit authorized
-  export before deletion (more interaction, possible device storage pressure)?
-- Apple multi-process ownership: one broker process (IPC/lifecycle work) or shared
-  transactional storage with fenced leases (recovery and concurrency work)?
-
-These choices do not block the in-memory online operation client. No implementation
-or durability, offline, sync or performance qualification is implied by this note.
+Bounds: 16 bookmarks per memory store, 4 KiB per bookmark file and 1024 files per exclusively owned file cache root,
+2 MiB SSE buffer,
+1–1024 memory cache items of at most 1 MiB each, and 256 offline envelopes of at
+most the core's 2 MiB body bound. The caller controls cache cleanup; this lane does
+not claim encrypted offline recovery, platform Keychain integration, production
+transport or a file sync implementation.

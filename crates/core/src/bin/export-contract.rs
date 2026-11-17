@@ -31,6 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )*};
     }
     emit!(
+        LiveSubscription,
+        LiveFrame,
         ManifestCapability,
         HostCallKind,
         ManifestIdempotency,

@@ -26,7 +26,7 @@ use uuid::Uuid;
 pub struct Store {
     conn: Connection,
     root: PathBuf,
-    content: Content,
+    content: std::sync::Arc<Content>,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     _lock: File,
 }
@@ -171,7 +171,7 @@ impl Store {
         let store = Self {
             conn,
             root,
-            content,
+            content: std::sync::Arc::new(content),
             secrets: std::sync::Arc::new(secrets),
             _lock: lock,
         };
@@ -718,3 +718,6 @@ pub fn blocked_error() -> HostError {
     HostError::conflict("note file was changed outside Calternal; writes are blocked")
         .with_details(serde_json::json!({"reason":"external_change"}))
 }
+
+#[path = "store_live.rs"]
+mod live_follow;

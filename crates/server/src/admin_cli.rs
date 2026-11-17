@@ -16,9 +16,17 @@ use calternal_server::plugins;
 
 /// `calternal machines …`: operator administration of execution machines.
 #[derive(Subcommand)]
+#[command(
+    after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n  calternal machines code --pool --data-dir /srv/calternal\n\nSee also: calternal machines --help, calternal machine --help."
+)]
 pub enum MachinesCmd {
-    /// Print a one-time enrollment code (for an account, or the shared pool).
+    /// Create a one-time code to enroll a person-owned or pool machine.
+    #[command(
+        about = "Create a one-time machine enrollment code",
+        after_help = "Examples:\n  calternal machines code --pool --data-dir /srv/calternal\n  calternal machines code --account ACCOUNT_UUID --data-dir /srv/calternal\n\nSee also: calternal machine enroll, calternal machines list."
+    )]
     Code {
+        /// Server data directory.
         #[arg(long)]
         data_dir: PathBuf,
         /// Code for a pool machine the operator runs.
@@ -31,20 +39,35 @@ pub enum MachinesCmd {
         #[arg(long, default_value_t = 60)]
         minutes: u64,
     },
-    /// List enrolled machines.
+    /// List enrolled machines, including revoked machines.
+    #[command(
+        about = "List machines enrolled with this server",
+        after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal machines code, calternal machines revoke."
+    )]
     List {
+        /// Server data directory.
         #[arg(long)]
         data_dir: PathBuf,
     },
     /// Revoke a machine; a running server applies it within a second.
+    #[command(
+        about = "Revoke a machine's access to this server",
+        after_help = "Examples:\n  calternal machines revoke MACHINE_UUID --data-dir /srv/calternal\n\nSee also: calternal machines list, calternal machines code."
+    )]
     Revoke {
+        /// Server data directory.
         #[arg(long)]
         data_dir: PathBuf,
         /// Machine UUID.
         machine: String,
     },
-    /// Allow (or with --remove, stop allowing) an account to use pool machines.
+    /// Allow an account to use pool machines, or remove that access.
+    #[command(
+        about = "Grant or remove an account's access to pool machines",
+        after_help = "Examples:\n  calternal machines pool-grant ACCOUNT_UUID --data-dir /srv/calternal\n  calternal machines pool-grant ACCOUNT_UUID --remove --data-dir /srv/calternal\n\nSee also: calternal machines list, calternal machines code."
+    )]
     PoolGrant {
+        /// Server data directory.
         #[arg(long)]
         data_dir: PathBuf,
         /// Account UUID.
@@ -97,8 +120,8 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                 ("expires", out.local_ms(expires)),
             ])
             .blank()
-            .line("The code works once. Give it to the machine's owner now; it is not shown again.")
-            .line("On that machine: calternal machine enroll --server URL --code CODE"))
+            .line("This code works once. Share it with the machine's owner now.")
+            .hint("Next: run `calternal machine enroll` on that computer."))
         }
         MachinesCmd::List { data_dir } => {
             let machines = admin::list(&data_dir).map_err(|e| data_dir_error(e.message))?;
@@ -130,24 +153,30 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                            "os": m.os, "arch": m.arch, "state": state(m)})
                 })
                 .collect();
-            Ok(Reply::new(json!({ "machines": listed })).table(
+            let empty = machines.is_empty();
+            let reply = Reply::new(json!({ "machines": listed })).table(
                 &["ID", "OWNER", "NAME", "PLATFORM", "STATE"],
                 rows,
-                "No machines are enrolled. Create a code with `calternal machines code`.",
-            ))
+                "No machines are enrolled yet. Run `calternal machines code` to add one.",
+            );
+            Ok(if empty {
+                reply.hint("Next: run `calternal machines code --help`.")
+            } else {
+                reply
+            })
         }
         MachinesCmd::Revoke { data_dir, machine } => {
             let id = uuid::Uuid::parse_str(&machine).map_err(|_| bad_uuid("machine"))?;
             if admin::revoke(&data_dir, id).map_err(|e| data_dir_error(e.message))? {
-                Ok(
-                    Reply::new(json!({"machine": id, "revoked": true})).line(format!(
+                Ok(Reply::new(json!({"machine": id, "revoked": true}))
+                    .line(format!(
                         "Revoked machine {id}. A running server applies it within a second."
-                    )),
-                )
+                    ))
+                    .hint("Next: run `calternal machines list` to review machine access."))
             } else {
-                Err(CliError::new("not_found", format!("no machine {id}")).hint(
-                    "`calternal machines list --data-dir DIR` shows the machines and their ids.",
-                ))
+                Err(CliError::new("not_found", format!("no machine {id}"))
+                    .hint("`calternal machines list --data-dir DIR` shows the machines and their ids.")
+                    .human_message(format!("No machine with ID {id} was found.")))
             }
         }
         MachinesCmd::PoolGrant {
@@ -204,6 +233,6 @@ pub fn plugin_digest(root: &Path) -> Reply {
     Reply::new(json!({ "workers": workers })).table(
         &["PLUGIN", "WORKER", "SHA-256", "STATE"],
         rows,
-        "No trusted plugin has a worker bundle.",
+        "No trusted plugins with worker bundles were found. Check `--plugin-root`.",
     )
 }

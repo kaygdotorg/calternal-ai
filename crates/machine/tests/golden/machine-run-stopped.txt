@@ -1,1 +1,1 @@
-Machine stopped.
+The machine stopped cleanly.

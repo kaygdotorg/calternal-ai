@@ -368,6 +368,29 @@ impl Content {
             self.journals.publish(space,request.account,request.id.into(),request.operation.into(),request.fingerprint.into(),None,"control".into(),result)
         })
     }
+    /// Checks one item's current kind and existence inside an authorized space.
+    /// Cost: bounded cache lookup and one indexed per-space SQLite read; no global
+    /// catalog access, content body allocation, journal bridge or fsync.
+    pub fn contains(&self, space: SpaceId, kind: &str, item: uuid::Uuid) -> Result<bool> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind=?2)",
+                    rusqlite::params![item.to_string(), kind],
+                    |r| r.get(0),
+                )
+                .map_err(Error::internal)
+        })
+    }
+
+    /// Pins the existing per-space journal for asynchronous following. The host must
+    /// authorize the space first and invoke this method on a blocking thread.
+    /// Cost: one bounded bridge round trip, lazy database/key opens on first use;
+    /// cloning the returned handle needs no further bridge or content lock.
+    pub fn live_journal(&self, space: SpaceId) -> Result<calternal_store::SpaceStore> {
+        self.journals.handle(space)
+    }
+
     /// Returns a bounded journal page for host diagnostics and conformance tests.
     /// Cost: one bridge round trip and indexed read allocating at most 10,000 events;
     /// a cold journal opens its database/witness. No content reads or normal fsync.

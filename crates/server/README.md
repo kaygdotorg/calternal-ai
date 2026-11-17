@@ -174,3 +174,17 @@ Timings from these tests are development-host smoke numbers, not performance gat
 Manual provider jobs and their CLI, scoped credentials, risk review, machine homes
 and durable retry waits are documented in [manual turns](../../docs/agent-turns.md).
 The provider test suite uses an account-free fake official CLI.
+
+`GET /api/v1/live?subscriptions=<JSON array>` follows 1–16 distinct space UUIDs.
+Each array element is `{ "space_id": "<uuid>", "bookmark": null | "<opaque>" }`.
+The authenticated feed emits SSE `data` containing core `LiveFrame` values:
+`entry`, `ready` and explicit `reset`. SSE matches the existing jobs stream.
+Journal broadcast receivers are registered before replay; database pages are the
+source of every delivery, including catch-up after lag. The stream checks current
+session and space grants for every event and uses the selected per-space database for current item
+binding. Unknown and inaccessible spaces have identical 404 responses. In-process
+auth changes wake idle streams; a one-second fallback checks expiry and directory
+changes through separately opened handles. This is a development preview; no
+cross-process instantaneous revocation guarantee is asserted. Each space has a
+128-subscriber safety ceiling and each connection buffers one 64-entry page.
+The account-state feed and draft/pending operations remain unbuilt (issue #17).

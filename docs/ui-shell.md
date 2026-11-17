@@ -24,11 +24,14 @@ All three change with the current app and are exposed to the plugin API, with go
 
 Not a card: it sits directly on the tinted background.
 
-- Header: the current app's name with a simple icon (not an emoji), fixed. No horizontal
-  scrolling app strip.
+- Header: the app's name as a wordmark in a cursive font, with no icon. The name and its
+  font are set in Settings → Appearance. No horizontal scrolling app strip.
 - Attention card: things that need the user's attention, at most 3 items. It is a card
   because it asks for attention. With nothing to show, the card is absent.
-- Body: app-specific.
+- Body: app-specific. In Threads the person makes their own sections and drags threads
+  freely between them; nothing is grouped under an automatic project label. Double-click
+  renames a thread; right-click opens a context menu.
+- The sidebar's content fades out at its top and bottom edges; no hard cut-off.
 - Footer: account picture on the left; the app switcher in the middle; a search icon on
   the right. Switching always happens at the bottom: apps in the sidebar footer, panels
   as tabs at the bottom of the right card, the tab bar on phones. The header's app name is
@@ -60,6 +63,43 @@ Not a card: it sits directly on the tinted background.
   services while in use.
 - The reference for both, and for the overall polish, is kayg's bb plugin `calternal-ui`
   (`/home/kayg/Developer/bb-plugins/calternal-ui`). Calternal must be at least that good.
+
+## Interaction rules
+
+Decided by kayg, 2026-11-17, from the first live preview.
+
+- Focus rings appear only for keyboard focus, never from a mouse or touch.
+- Controls animate when used by pointer or touch, never when invoked from the keyboard.
+- Motion is non-linear (springs or eased curves) and never blocks input; a surface never
+  appears before its material is ready (no transparent popover that then blurs).
+- Blur is cheap: wallpapers are blurred once when chosen; live blur is limited to small
+  surfaces. Performance decides every material choice.
+- The top of the middle card fades content out; no solid band.
+- A caret sits exactly on the text baseline of its placeholder and text.
+- Icons come from one set, at one optical size and stroke per tier, aligned to the text.
+- State indicators say something or are absent: no dot for idle.
+- A thread shown in the attention card is not also listed below it.
+- Selecting text in a chat offers two actions: **Comment** (puts the selection in the
+  composer as a quote, a blank line, then the caret) and **Ask in Side Chat** (opens the
+  right sidebar's chat with the selection quoted).
+- Interaction craft follows Emil Kowalski's and Jakub Krehel's published guidance and the
+  Hallmark skill; visual presets follow the Craft study in the existing app's repo.
+
+- Nothing draws out of bounds: rings, menus and popovers stay inside the window and their
+  container.
+- The accent colour is inferred from the wallpaper by default, never a fixed brown; it can
+  be overridden.
+- One design system defines every surface (pill, capsule, toolbar, card, menu) with its
+  transparency and blur, and those adapt to the contrast of what is behind them, as the
+  existing app's primitives do.
+- Sidebars fade at top and bottom; no solid bands anywhere.
+- Pickers (model, machine) show an icon per provider and have an inline search field.
+- Message text is not streamed by default: a turn shows that it is working and its steps,
+  and the finished message appears at once. Streaming is a setting.
+- Keyboard shortcuts are discoverable with Cmd-/ or ? and configurable, as in the
+  existing app.
+- The composer doubles as a command and search palette that understands plain language,
+  after the existing app's unified composer.
 
 ## Preview
 

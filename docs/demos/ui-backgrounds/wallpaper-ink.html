@@ -1,0 +1,55 @@
+<!doctype html><meta charset=utf-8><title>Wallpaper to ink and accent, with a contrast guard</title>
+<!-- Self-contained, no network. For each wallpaper and scheme: sample a 24x14 grid ONCE, find the worst cell under the sidebar,
+     raise the wash until secondary ink reaches 4.5:1, pick an accent from the most vivid common hue (OKLCH) and nudge its lightness
+     until it reads 4.5:1 on the card. Mirrors calternal-ui frame/color.ts + the shell's washFor(). Numbers are WCAG 2 ratios. -->
+<style>
+body{margin:0;padding:16px;font:12px/1.35 system-ui;background:#0e0e10;color:#cfcfd4}
+.g{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.s{position:relative;aspect-ratio:16/10;border-radius:10px;overflow:hidden;background-size:cover}
+.side{position:absolute;inset:0 auto 0 0;width:28%;padding:10px;box-sizing:border-box}
+.card{position:absolute;inset:8px 8px 8px 31%;border-radius:10px;padding:10px;box-sizing:border-box}
+.chip{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:4px}
+b{font-weight:600}small{display:block;margin-top:6px;opacity:.8}
+</style><div class=g id=g></div>
+<script>
+const lin=c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4,gam=c=>c<=.0031308?12.92*c:1.055*c**(1/2.4)-.055;
+function lab(h){const n=parseInt(h.slice(1),16),r=lin((n>>16&255)/255),g=lin((n>>8&255)/255),b=lin((n&255)/255);
+ const l=Math.cbrt(.4122214708*r+.5363325363*g+.0514459929*b),m=Math.cbrt(.2119034982*r+.6806995451*g+.1073969566*b),s=Math.cbrt(.0883024619*r+.2817188376*g+.6299787005*b);
+ return[.2104542553*l+.793617785*m-.0040720468*s,1.9779984951*l-2.428592205*m+.4505937099*s,.0259040371*l+.7827717662*m-.808675766*s]}
+function rgb(L,a,b){const l=(L+.3963377774*a+.2158037573*b)**3,m=(L-.1055613458*a-.0638541728*b)**3,s=(L-.0894841775*a-1.291485548*b)**3;
+ return[gam(4.0767416621*l-3.3077115913*m+.2309699292*s),gam(-1.2684380046*l+2.6097574011*m-.3413193965*s),gam(-.0041960863*l-.7034186147*m+1.707614701*s)]}
+const rng=s=>()=>(s=s+0x6D2B79F5|0,s=Math.imul(s^s>>>15,s|1),s^=s+Math.imul(s^s>>>7,s|61),((s^s>>>14)>>>0)/4294967296);
+/** Mesh in OKLab: Gaussian-weighted colour points, gentle domain warp, optional monochrome grain (amp in 8-bit steps). */
+function mesh(cols,w,h,{seed=1,sigma=.5,warp=.05,grain=0}={}){
+ const R=rng(seed),P=cols.map((c,i)=>({c:lab(c),x:(i%3+.2+R()*.6)/3,y:(Math.floor(i/3)+.2+R()*.6)/Math.ceil(cols.length/3)}));
+ const cv=document.createElement('canvas');cv.width=w;cv.height=h;const x=cv.getContext('2d'),im=x.createImageData(w,h),d=im.data,k=-1/(2*sigma*sigma);
+ for(let j=0;j<h;j++)for(let i=0;i<w;i++){
+  const u=i/w+warp*Math.sin(j/h*5+seed),v=j/h+warp*Math.sin(i/w*4+seed*2);let t=0,L=0,A=0,B=0;
+  for(const p of P){const dx=(u-p.x)*1.6,dy=v-p.y,q=Math.exp((dx*dx+dy*dy)*k);t+=q;L+=q*p.c[0];A+=q*p.c[1];B+=q*p.c[2]}
+  const c=rgb(L/t,A/t,B/t),n=grain?(R()+R()-1)*grain:0,o=(j*w+i)*4;
+  for(let z=0;z<3;z++)d[o+z]=Math.max(0,Math.min(255,Math.round(c[z]*255+n+(grain?0:0))));d[o+3]=255}
+ x.putImageData(im,0,0);return cv}
+
+const s2l=v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4},Y=c=>.2126*s2l(c[0])+.7152*s2l(c[1])+.0722*s2l(c[2]),
+ ratio=(a,b)=>{const x=Y(a),y=Y(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)},mix=(a,b,t)=>a.map((v,i)=>v*(1-t)+b[i]*t),
+ hx=c=>'#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join(''),
+ px=(L,C,h)=>rgb(L,C*Math.cos(h*Math.PI/180),C*Math.sin(h*Math.PI/180)).map(v=>v*255);
+function read(cv){const t=document.createElement('canvas');t.width=24;t.height=14;const x=t.getContext('2d');x.drawImage(cv,0,0,24,14);const d=x.getImageData(0,0,24,14).data,g=[];
+ for(let i=0;i<d.length;i+=4)g.push([d[i],d[i+1],d[i+2]]);return g}
+function hue(g){const bins=Array.from({length:24},()=>({s:0,x:0,y:0,n:0,c:0}));
+ for(const p of g){const[L,a,b]=lab('#'+hx(p).slice(1)),c=Math.hypot(a,b);if(c<.03)continue;const h=(Math.atan2(b,a)*180/Math.PI+360)%360,k=bins[Math.floor(h/15)%24];k.s+=c;k.x+=Math.cos(h*Math.PI/180)*c;k.y+=Math.sin(h*Math.PI/180)*c;k.c+=c;k.n++}
+ const k=bins.reduce((a,z)=>z.s>a.s?z:a);return k.n<3?null:{c:k.c/k.n,h:(Math.atan2(k.y,k.x)*180/Math.PI+360)%360}}
+function style(cv,scheme){const g=read(cv),dark=scheme=='dark',under=g.filter((_,i)=>i%24<7),wash=dark?[0,0,0]:[255,255,255],ink3=dark?[166,166,166]:[95,95,95],
+ worst=under.reduce((a,p)=>(Y(p)>Y(a))==dark?p:a);let a=.35;for(;a<.9;a+=.05)if(Math.min(...under.map(p=>ratio(ink3,mix(p,wash,a))))>=4.5)break;
+ const card=dark?[31,31,31]:[247,247,247],h=hue(g)||{c:0,h:60},C=Math.min(.17,Math.max(.09,h.c*1.4));let L=dark?.78:.5,acc;
+ for(let i=0;i<30;i++){acc=px(L,C,h.h);if(ratio(acc,card)>=4.5)break;L+=dark?.02:-.02}
+ return{a:Math.min(a,.9),acc,card,ink3,worstCell:worst,min:Math.min(...under.map(p=>ratio(ink3,mix(p,wash,Math.min(a,.9)))))}}
+const W=[['Dusk',['#241f3a','#3d3358','#6e5273','#2a2b45','#a2707a','#d9a58f'],4],['Sage',['#e8ecde','#cfdccb','#b4cbb8','#f3efe0','#d4e1df','#c2d3c4'],7],
+ ['Dune',['#f3d9b8','#e8a77a','#fff1d6','#d97c5a','#8e4a3b','#f7c58f'],2],['Harsh (stress test)',['#ffffff','#101010','#ff4d00','#f2f2f2','#202020','#ffd400'],9]];
+for(const[n,cols,seed]of W){const cv=mesh(cols,640,400,{seed,grain:2.5,sigma:n[0]=='H'?.25:.5});
+ for(const sc of['light','dark']){const r=style(cv,sc),d=sc=='dark',el=document.createElement('div');
+  el.innerHTML=`<div class=s style="background-image:url(${cv.toDataURL('image/jpeg',.9)})"><div class=side style="background:rgb(${d?'0 0 0':'255 255 255'}/${r.a.toFixed(2)});color:${d?'#ebebeb':'#262626'}"><b>Calternal</b><br><span style="color:${hx(r.ink3)}">Notes<br>Tasks</span></div>
+  <div class=card style="background:${hx(r.card)};color:${d?'#ebebeb':'#262626'}"><b>Title</b><br>Body text <span style="color:${hx(r.acc)}">accent link</span></div></div>
+  <small><b>${n}</b> / ${sc}: wash ${Math.round(r.a*100)}%, ink-3 min ${r.min.toFixed(1)}:1<br><span class=chip style="background:${hx(r.acc)}"></span>${hx(r.acc)} on card ${ratio(r.acc,r.card).toFixed(1)}:1</small>`;
+  document.getElementById('g').append(el)}}
+</script>

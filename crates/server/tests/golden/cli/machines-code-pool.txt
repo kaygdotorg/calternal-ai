@@ -4,6 +4,5 @@ code:     <CODE>
 owner:    pool
 expires:  <TIME>
 
-The code works once. Give it to the machine's owner now; it is not shown again.
-On that machine: calternal machine enroll --server URL --code CODE
+This code works once. Share it with the machine's owner now.
 --- stderr ---

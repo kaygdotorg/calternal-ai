@@ -9,7 +9,7 @@
 //! UniFFI is a background operation boundary: editor composition, selection, keystrokes,
 //! layout, animation and per-frame rendering stay native. Submit coalesced transactions
 //! and consume batched results; never copy an entire document per keystroke. Journal
-//! following and offline storage are deliberately unbuilt; see `SYNC.md`.
+//! following uses explicit bookmark acceptance; see `SYNC.md`.
 use calternal_core::*;
 use reqwest::{
     Client as HttpClient, Url,
@@ -473,3 +473,12 @@ where
         } => result,
     }
 }
+
+mod live;
+pub use live::LiveConnection;
+mod state;
+pub use state::{
+    BookmarkStorage, FileBookmarks, ItemCache, MemoryBookmarks, PersistentCache, StorageFuture,
+};
+mod outbox;
+pub use outbox::OfflineOutbox;

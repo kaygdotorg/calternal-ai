@@ -1,2 +1,2 @@
-error: machine enroll: server refused (404): unknown, used or expired enrollment code
+error: The server returned HTTP 404 while trying to machine enroll: unknown, used or expired enrollment code
 hint: The code may be used, expired or mistyped: ask for a new one (`calternal machines code`) and enroll again.

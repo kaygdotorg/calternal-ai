@@ -2,6 +2,45 @@
 /** Arbitrary JSON object at the transport boundary; validate operation-specific values before use. */
 export type JsonObject = Record<string, unknown>;
 /**
+ * One space followed on a live connection. At most 16 distinct spaces per connection.
+ */
+
+export type LiveSubscription = {
+/**
+ * Full space UUID; possessing it grants no access.
+ */
+space_id: string,
+/**
+ * Opaque signed server bookmark; absent starts at the current head.
+ */
+bookmark: string | null, };
+/**
+ * SSE data payload. Entries are opaque journal values; only the server interprets them.
+ * A reset stops this subscription; reload authorized state before reconnecting.
+ */
+
+export type LiveFrame = { "Entry": {
+/**
+ * Space whose journal advanced.
+ */
+space_id: string,
+/**
+ * Complete server journal entry, including its signed token and item UUID.
+ */
+entry: unknown, } } | { "Ready": {
+/**
+ * Space now caught up.
+ */
+space_id: string,
+/**
+ * Opaque signed bookmark, including positions skipped by access filtering.
+ */
+bookmark: string, } } | { "Reset": {
+/**
+ * Space whose derived state must be reloaded.
+ */
+space_id: string, } };
+/**
  * Closed host vocabulary, matching protected host capability names.
  */
 

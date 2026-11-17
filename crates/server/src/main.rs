@@ -14,12 +14,20 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "calternal",
-    about = "Calternal-AI localhost development preview host (disposable data only)"
+    about = "Run a Calternal server or manage its enrolled machines",
+    after_help = "Examples:\n  calternal serve --data-dir ./calternal-data --development\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
 )]
 struct Cli {
     /// Print one JSON document instead of text (errors too, on stdout); see docs/cli.md.
     #[arg(long, global = true)]
     json: bool,
+    /// Hide the short next-step line shown after successful terminal output.
+    #[arg(
+        long,
+        global = true,
+        help = "Hide terminal hints (also CALTERNAL_NO_HINTS=1)"
+    )]
+    no_hints: bool,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -44,7 +52,24 @@ enum Cmd {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
     },
+    /// Follow a space journal; --json prints one compact JSON object per event.
+    Watch {
+        space: String,
+        #[arg(long, env = "CALTERNAL_URL", default_value = "http://127.0.0.1:3210")]
+        base_url: String,
+        #[arg(long, env = "CALTERNAL_TOKEN_FILE")]
+        token_file: PathBuf,
+        #[arg(
+            long,
+            help = "Bookmark cache directory exclusive to this server and account"
+        )]
+        bookmarks: Option<PathBuf>,
+    },
     /// Serve the development preview on 127.0.0.1.
+    #[command(
+        about = "Start the development-preview server",
+        after_help = "Examples:\n  calternal serve --data-dir ./calternal-data --development\n  calternal serve --data-dir /srv/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
+    )]
     Serve {
         /// Disposable data directory (created if missing, mode 0700).
         #[arg(long)]
@@ -82,17 +107,30 @@ enum Cmd {
         machine_poll_hold_ms: u64,
     },
     /// Machine role: enroll this computer and run threads for a server.
+    #[command(
+        about = "Enroll this computer and run assigned threads",
+        after_help = "Examples:\n  calternal machine enroll --help\n  calternal machine status\n\nSee also: calternal machines code, calternal machine enroll."
+    )]
     Machine {
         #[command(subcommand)]
         cmd: calternal_machine::cli::Command,
     },
     /// Operator administration of execution machines in a data directory.
+    #[command(
+        about = "Manage machines enrolled with this server",
+        after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal machines code, calternal machine --help."
+    )]
     Machines {
         #[command(subcommand)]
         cmd: MachinesCmd,
     },
     /// Print SHA-256 of trusted worker bundles for pinning in trusted-plugins.json.
+    #[command(
+        about = "Show worker bundle hashes and their trust status",
+        after_help = "Examples:\n  calternal plugin-digest\n  calternal plugin-digest --plugin-root ./plugins\n\nSee also: calternal serve --help."
+    )]
     PluginDigest {
+        /// Directory containing the trusted plugin bundles.
         #[arg(long, default_value = "plugins")]
         plugin_root: PathBuf,
     },
@@ -111,7 +149,7 @@ fn main() {
         Err(code) => std::process::exit(code),
     };
     // Reads the local time zone, which is only safe before any thread starts.
-    let out = Output::detect(cli.json);
+    let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
         Cmd::Agent { args } => calternal_cli::agent::main(args, &out),
         Cmd::Invoke {
@@ -121,6 +159,26 @@ fn main() {
         } => calternal_cli::agent::invoke(connection, Some(operation), input, &out),
         Cmd::Describe { connection } => {
             calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
+        }
+        Cmd::Watch {
+            space,
+            base_url,
+            token_file,
+            bookmarks,
+        } => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .expect("runtime");
+            out.finish(rt.block_on(calternal_cli::watch::run(
+                &base_url,
+                token_file,
+                space,
+                bookmarks,
+                &out,
+                calternal_client::CancellationToken::new(),
+            )))
         }
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
@@ -432,4 +490,173 @@ async fn shutdown_signal() {
         _ = term.recv() => {},
     }
     tracing::info!("shutting down");
+}
+
+#[cfg(test)]
+mod cli_output_tests {
+    use super::*;
+    use calternal_cli::testing::assert_golden;
+    use calternal_machine::protocol::Owner;
+    use std::path::{Path, PathBuf};
+    use time::UtcOffset;
+
+    fn golden(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/golden/cli")
+            .join(name)
+    }
+
+    fn enrolled_data_dir() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("system/machines.db");
+        let mut conn = calternal_server::machines::db::open(&path).unwrap();
+        let (code, _) = calternal_server::machines::db::new_code(
+            &conn,
+            Owner::Pool,
+            std::time::Duration::from_secs(60),
+        )
+        .unwrap();
+        let code = calternal_auth::token::normalize_setup_token(&code).unwrap();
+        let row = calternal_server::machines::db::redeem_code(
+            &mut conn,
+            &calternal_auth::token::hash32(&code),
+            &[7; 32],
+            "build-machine-with-a-long-name",
+            "linux",
+            "x86_64",
+        )
+        .unwrap()
+        .unwrap();
+        let id = uuid::Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
+        conn.execute(
+            "UPDATE machines SET id = ?1 WHERE id = ?2",
+            [id.to_string(), row.id.to_string()],
+        )
+        .unwrap();
+        let path = dir.path().to_path_buf();
+        (dir, path)
+    }
+
+    fn redact_code_and_time(text: &str) -> String {
+        let mut cleaned = String::new();
+        for line in text.lines() {
+            if line.starts_with("code:") {
+                cleaned.push_str("code:     <CODE>\n");
+            } else if line.starts_with("expires:") {
+                cleaned.push_str("expires:  <TIME>\n");
+            } else {
+                cleaned.push_str(line);
+                cleaned.push('\n');
+            }
+        }
+        cleaned
+    }
+
+    #[test]
+    fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
+        let (_keep, data_dir) = enrolled_data_dir();
+        for width in [120, 80, 40] {
+            let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
+            let machines = admin_cli::machines(
+                MachinesCmd::List {
+                    data_dir: data_dir.clone(),
+                },
+                &out,
+            )
+            .unwrap();
+            assert_golden(
+                &golden(&format!("machines-list-width-{width}.txt")),
+                &out.render(&machines),
+            );
+
+            let digest = admin_cli::plugin_digest(Path::new("/nonexistent-plugins"));
+            assert_golden(
+                &golden(&format!("plugin-digest-width-{width}.txt")),
+                &out.render(&digest),
+            );
+        }
+    }
+
+    #[test]
+    fn no_hints_is_a_global_calternal_option() {
+        use clap::Parser;
+
+        let cli = Cli::try_parse_from([
+            "calternal",
+            "machines",
+            "list",
+            "--data-dir",
+            "/tmp/calternal",
+            "--no-hints",
+        ])
+        .unwrap();
+        assert!(cli.no_hints);
+    }
+
+    #[test]
+    fn machine_code_and_empty_list_hint_goldens_cover_enabled_and_disabled_hints() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
+        let code = admin_cli::machines(
+            MachinesCmd::Code {
+                data_dir: dir.path().to_path_buf(),
+                pool: true,
+                account: None,
+                minutes: 60,
+            },
+            &out,
+        )
+        .unwrap();
+        assert_golden(
+            &golden("machines-code-hint.txt"),
+            &redact_code_and_time(&out.render(&code)),
+        );
+        let no_hints = Output::fixed_terminal(false, 80, UtcOffset::UTC, false);
+        assert_golden(
+            &golden("machines-code-no-hint.txt"),
+            &redact_code_and_time(&no_hints.render(&code)),
+        );
+
+        let empty_dir = tempfile::tempdir().unwrap();
+        let empty = admin_cli::machines(
+            MachinesCmd::List {
+                data_dir: empty_dir.path().to_path_buf(),
+            },
+            &out,
+        )
+        .unwrap();
+        assert_golden(&golden("machines-list-empty-hint.txt"), &out.render(&empty));
+        assert_golden(
+            &golden("machines-list-empty-no-hint.txt"),
+            &no_hints.render(&empty),
+        );
+    }
+
+    #[test]
+    fn calternal_command_help_has_examples_and_see_also() {
+        use clap::Parser;
+
+        let commands: &[&[&str]] = &[
+            &["calternal", "--help"],
+            &["calternal", "serve", "--help"],
+            &["calternal", "machine", "--help"],
+            &["calternal", "machine", "enroll", "--help"],
+            &["calternal", "machine", "run", "--help"],
+            &["calternal", "machine", "status", "--help"],
+            &["calternal", "machines", "--help"],
+            &["calternal", "machines", "code", "--help"],
+            &["calternal", "machines", "list", "--help"],
+            &["calternal", "machines", "revoke", "--help"],
+            &["calternal", "machines", "pool-grant", "--help"],
+            &["calternal", "plugin-digest", "--help"],
+        ];
+        for args in commands {
+            let help = Cli::try_parse_from(args.iter().copied())
+                .err()
+                .expect("--help exits before running the command")
+                .to_string();
+            assert!(help.contains("Examples:"), "{args:?}: {help}");
+            assert!(help.contains("See also:"), "{args:?}: {help}");
+        }
+    }
 }

@@ -72,8 +72,14 @@ pub fn allowed_hosts(port: u16) -> Vec<String> {
 
 /// Build the authenticated API and optional static asset routes.
 pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Router {
+    let content = state
+        .store
+        .lock()
+        .expect("store available at router construction")
+        .shared_content();
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
+        .route("/api/v1/live", get(crate::live::events::<D>))
         .route("/api/v1/operations", post(operations::<D>))
         .route(
             "/api/v1/jobs/{id}/events",
@@ -82,7 +88,8 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .merge(crate::machines::http::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
-        .route("/api/{*rest}", any(api_not_found));
+        .route("/api/{*rest}", any(api_not_found))
+        .layer(axum::Extension(content));
     let http_auth = state.tokens.http_auth().cloned();
     let mut app = Router::new().merge(api);
     if let Some(service) = &http_auth {

@@ -1,0 +1,5 @@
+code:     <CODE>
+owner:    pool
+expires:  <TIME>
+
+This code works once. Share it with the machine's owner now.

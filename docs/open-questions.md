@@ -2,21 +2,25 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-17 17:10 IST.
+[glossary](glossary.md). Updated 2026-11-17 19:10 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| 1 | Sandbox boundary: one microVM per person per space, per workspace, or per person? | Decide from the hybrid measurement (issue #7, report being written) | Cloud agents |
-| 2 | Containers now and microVMs before public sign-up, or containers inside a per-person microVM from the start? | Follow #7's numbers | Cloud agents |
+| 4 | When to start performance budgets and benchmarks on the perf VMs | After the simplification lane merges | Performance |
 
 ## Design rounds
 
-- The Settings screen: its own round (retry and snooze, permission defaults, fonts, wallpapers, machines).
-- Composer and chat experience: mentions, commands, context chips, the request bar.
+- **Next: the composer as a unified command and search palette**, from the existing app's design.
+- The Settings screen. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
+
+## Queued, no decision needed
+
+- Rewrite git history to drop old images at the next quiet point.
+- A documentation site generated from the code (`/docs/user`, `/docs/admin`, `/docs/dev`, `llms.txt`, Markdown for every page).
 
 ## Recently decided (2026-11-17), now in the decision records
 

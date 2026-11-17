@@ -35,6 +35,9 @@ pub enum BackendKind {
 
 /// Machine-role subcommands.
 #[derive(Debug, Subcommand)]
+#[command(
+    after_help = "Examples:\n  calternal machine enroll --server https://cal.example.org --code CODE\n  calternal machine status\n\nSee also: calternal machines code, calternal machine --help."
+)]
 pub enum Command {
     /// Choose direct or sandboxed execution on a machine you own.
     Set {
@@ -48,6 +51,10 @@ pub enum Command {
         connection: calternal_cli::agent::Connection,
     },
     /// Enroll this computer with a server using a one-time code.
+    #[command(
+        about = "Enroll this computer with a server",
+        after_help = "Examples:\n  calternal machine enroll --server https://cal.example.org --code CODE\n  calternal machine enroll --server https://cal.example.org --code - < code.txt\n\nSee also: calternal machines code, calternal machine status."
+    )]
     Enroll {
         /// Server base URL, for example `https://cal.example.org`.
         #[arg(long)]
@@ -56,7 +63,7 @@ pub enum Command {
         /// Prefer the environment variable or `-`: an argument shows in the process list.
         #[arg(long, env = "CALTERNAL_ENROLL_CODE")]
         code: String,
-        /// Machine directory (credentials and sandboxes).
+        /// Directory for credentials and thread sandboxes.
         #[arg(long)]
         dir: Option<PathBuf>,
         /// Label shown to the owner; defaults to the host name.
@@ -67,8 +74,12 @@ pub enum Command {
         direct: bool,
     },
     /// Connect to the server and run assigned threads until stopped.
+    #[command(
+        about = "Run threads assigned to this machine until stopped",
+        after_help = "Examples:\n  calternal machine run\n  calternal machine run --backend podman --max-sandboxes 4\n\nSee also: calternal machine status, calternal machine enroll."
+    )]
     Run {
-        /// Machine directory (credentials and sandboxes).
+        /// Directory containing credentials and thread sandboxes.
         #[arg(long)]
         dir: Option<PathBuf>,
         /// Sandbox backend.
@@ -85,8 +96,12 @@ pub enum Command {
         max_sandboxes: u32,
     },
     /// Show this machine's identity and server.
+    #[command(
+        about = "Show this machine's enrollment details",
+        after_help = "Examples:\n  calternal machine status\n  calternal machine status --dir /var/lib/calternal-machine\n\nSee also: calternal machine enroll, calternal machine run."
+    )]
     Status {
-        /// Machine directory.
+        /// Directory containing this machine's credentials.
         #[arg(long)]
         dir: Option<PathBuf>,
     },
@@ -161,8 +176,18 @@ fn fail(command: &str, e: Error) -> CliError {
     } else {
         1
     };
+    let human = match &e {
+        Error::Http(why) => format!("Couldn't reach the server while trying to {command}: {why}"),
+        Error::Status { status, message } => {
+            format!("The server returned HTTP {status} while trying to {command}: {message}")
+        }
+        Error::Revoked => "The server revoked this machine.".to_owned(),
+        Error::Io(why) => format!("Couldn't access the machine's files: {why}"),
+        Error::Protocol(why) => format!("The server response could not be used: {why}"),
+    };
     CliError::new(code, format!("{command}: {e}"))
         .hint(hint)
+        .human_message(human)
         .exit(exit)
 }
 
@@ -180,6 +205,7 @@ fn identity(c: &Credentials, dir: &std::path::Path) -> Reply {
         ("server", c.server.clone()),
         ("credentials", Credentials::path(dir).display().to_string()),
     ])
+    .hint("Next: run `calternal machine run` to accept assigned threads.")
 }
 
 async fn run(cmd: Command) -> Result<Reply, CliError> {
@@ -254,7 +280,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             connection::run(config, shutdown_signal())
                 .await
                 .map_err(|e| fail("machine run", e))?;
-            Ok(Reply::new(json!({"stopped": true})).line("Machine stopped."))
+            Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))
         }
     }
 }
@@ -329,7 +355,7 @@ mod tests {
         both(
             "machine-run-stopped",
             "calternal machine run",
-            Ok(Reply::new(json!({"stopped": true})).line("Machine stopped.")),
+            Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly.")),
         );
         let e = fail("machine run", Error::Revoked);
         assert_eq!(e.exit, EXIT_REVOKED);
@@ -345,6 +371,47 @@ mod tests {
             "machine-enroll-refused",
             "error",
             Err(fail("machine enroll", refused)),
+        );
+    }
+
+    #[test]
+    fn machine_command_help_has_examples_and_see_also() {
+        use clap::Parser;
+
+        #[derive(clap::Parser)]
+        struct MachineCli {
+            #[command(subcommand)]
+            _command: Command,
+        }
+
+        let commands: &[&[&str]] = &[
+            &["machine", "--help"],
+            &["machine", "enroll", "--help"],
+            &["machine", "run", "--help"],
+            &["machine", "status", "--help"],
+        ];
+        for args in commands {
+            let help = MachineCli::try_parse_from(args.iter().copied())
+                .err()
+                .expect("--help exits before running the command")
+                .to_string();
+            assert!(help.contains("Examples:"), "{args:?}: {help}");
+            assert!(help.contains("See also:"), "{args:?}: {help}");
+        }
+    }
+
+    #[test]
+    fn identity_hint_has_terminal_and_no_hint_goldens() {
+        let reply = identity(
+            &creds(),
+            Path::new("/home/u/.local/share/calternal/machine"),
+        );
+        let terminal = Output::fixed_terminal(false, 120, UtcOffset::UTC, true);
+        let no_hints = Output::fixed_terminal(false, 120, UtcOffset::UTC, false);
+        assert_golden(&golden("machine-status-hint.txt"), &terminal.render(&reply));
+        assert_golden(
+            &golden("machine-status-no-hint.txt"),
+            &no_hints.render(&reply),
         );
     }
 }

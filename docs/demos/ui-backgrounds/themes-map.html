@@ -1,0 +1,62 @@
+<!doctype html><meta charset=utf-8><title>Community palettes mapped onto Calternal tokens</title>
+<!-- Self-contained, no network. Our ink-2/3/4 sit 82/70/54% of the way from paper to ink (what the current light and dark tokens measure). Each theme is 8 colours (bg, fg, accent, danger, good, warn, info; surface derived). The mapper derives the token set
+     (paper, ink 1-4, line, accent text, accent-soft, semantic) and runs the contrast guard: ink-3 >= 4.5:1 and accent text >= 4.5:1 on paper.
+     "was -> now" shows where the guard had to move a colour away from the upstream palette. Values: upstream repos, see docs/ui-backgrounds-and-themes.md. -->
+<style>
+body{margin:0;padding:14px;font:12px/1.35 system-ui;background:#111;color:#cfcfd4}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.t{border-radius:10px;padding:10px;border:1px solid #0003}
+.t h3{margin:0 0 6px;font:600 13px system-ui}
+.sw{display:flex;gap:3px;margin:8px 0 4px}.sw i{flex:1;height:16px;border-radius:4px;box-shadow:inset 0 0 0 1px #8883}
+.n{opacity:.85;font-size:11px}.bad{font-weight:700}
+</style><div class=g id=g></div>
+<script>
+const h2=h=>{const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255]},hx=c=>'#'+c.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+const s2l=v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4},Y=c=>.2126*s2l(c[0])+.7152*s2l(c[1])+.0722*s2l(c[2]),ratio=(a,b)=>{const x=Y(a),y=Y(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05)};
+const lin=c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4,gam=c=>c<=.0031308?12.92*c:1.055*c**(1/2.4)-.055;
+const lab=c=>{const[r,g,b]=c.map(v=>lin(v/255)),l=Math.cbrt(.4122214708*r+.5363325363*g+.0514459929*b),m=Math.cbrt(.2119034982*r+.6806995451*g+.1073969566*b),s=Math.cbrt(.0883024619*r+.2817188376*g+.6299787005*b);
+ return[.2104542553*l+.793617785*m-.0040720468*s,1.9779984951*l-2.428592205*m+.4505937099*s,.0259040371*l+.7827717662*m-.808675766*s]};
+const rgb=([L,a,b])=>{const l=(L+.3963377774*a+.2158037573*b)**3,m=(L-.1055613458*a-.0638541728*b)**3,s=(L-.0894841775*a-1.291485548*b)**3;
+ return[gam(4.0767416621*l-3.3077115913*m+.2309699292*s),gam(-1.2684380046*l+2.6097574011*m-.3413193965*s),gam(-.0041960863*l-.7034186147*m+1.707614701*s)].map(v=>v*255)};
+const mix=(a,b,t)=>{const x=lab(a),y=lab(b);return rgb(x.map((v,i)=>v*(1-t)+y[i]*t))};
+/** Move c along lightness (toward ink) until it reaches ratio r on bg; returns [colour, moved?]. */
+const guard=(c,bg,fg,r)=>{if(ratio(c,bg)>=r)return[c,0];let t=0,o=c;for(;t<1&&ratio(o,bg)<r;t+=.04)o=mix(c,fg,t);return[o,1]};
+// id, name, mode, licence, bg, fg, accent, danger, good, warn, info
+const T=[
+['catppuccin-latte','Catppuccin Latte','light','MIT','#eff1f5','#4c4f69','#8839ef','#d20f39','#40a02b','#df8e1d','#1e66f5'],
+['catppuccin-mocha','Catppuccin Mocha','dark','MIT','#1e1e2e','#cdd6f4','#cba6f7','#f38ba8','#a6e3a1','#f9e2af','#89b4fa'],
+['rose-pine-dawn','Rosé Pine Dawn','light','MIT','#faf4ed','#464261','#907aa9','#b4637a','#56949f','#ea9d34','#286983'],
+['rose-pine','Rosé Pine','dark','MIT','#191724','#e0def4','#c4a7e7','#eb6f92','#9ccfd8','#f6c177','#3e8fb0'],
+['tokyo-night-day','Tokyo Night Day','light','Apache-2.0','#e1e2e7','#3760bf','#2e7de9','#f52a65','#587539','#8c6c3e','#007197'],
+['tokyo-night','Tokyo Night','dark','Apache-2.0','#1a1b26','#c0caf5','#7aa2f7','#f7768e','#9ece6a','#e0af68','#7dcfff'],
+['nord-light','Nord (Snow Storm)','light','MIT','#eceff4','#2e3440','#5e81ac','#bf616a','#a3be8c','#ebcb8b','#81a1c1'],
+['nord','Nord','dark','MIT','#2e3440','#d8dee9','#88c0d0','#bf616a','#a3be8c','#ebcb8b','#81a1c1'],
+['gruvbox-light','Gruvbox Light','light','MIT','#fbf1c7','#3c3836','#af3a03','#9d0006','#79740e','#b57614','#076678'],
+['gruvbox','Gruvbox Dark','dark','MIT','#282828','#ebdbb2','#fe8019','#fb4934','#b8bb26','#fabd2f','#83a598'],
+['dracula-alucard','Alucard (Dracula light)','light','MIT','#fffbeb','#1f1f1f','#644ac9','#cb3a2a','#14710a','#846e15','#036a96'],
+['dracula','Dracula','dark','MIT','#282a36','#f8f8f2','#bd93f9','#ff5555','#50fa7b','#f1fa8c','#8be9fd'],
+['solarized-light','Solarized Light','light','MIT','#fdf6e3','#657b83','#268bd2','#dc322f','#859900','#b58900','#2aa198'],
+['solarized-dark','Solarized Dark','dark','MIT','#002b36','#839496','#268bd2','#dc322f','#859900','#b58900','#2aa198'],
+['everforest-light','Everforest Light','light','MIT','#fdf6e3','#5c6a72','#8da101','#f85552','#35a77c','#dfa000','#3a94c5'],
+['everforest','Everforest Dark','dark','MIT','#2d353b','#d3c6aa','#a7c080','#e67e80','#83c092','#dbbc7f','#7fbbb3'],
+['kanagawa-lotus','Kanagawa Lotus','light','MIT','#f2ecbc','#545464','#4d699b','#c84053','#6f894e','#77713f','#6693bf'],
+['kanagawa-wave','Kanagawa Wave','dark','MIT','#1f1f28','#dcd7ba','#7e9cd8','#e46876','#98bb6c','#e6c384','#7fb4ca'],
+['one-light','One Light','light','MIT (Atom)','#fafafa','#383a42','#4078f2','#e45649','#50a14f','#c18401','#0184bc'],
+['one-dark','One Dark','dark','MIT (Atom)','#282c34','#abb2bf','#61afef','#e06c75','#98c379','#e5c07b','#56b6c2'],
+['github-light','GitHub Light','light','MIT','#ffffff','#24292f','#0969da','#cf222e','#1a7f37','#9a6700','#0969da'],
+['github-dark','GitHub Dark','dark','MIT','#0d1117','#c9d1d9','#58a6ff','#f85149','#3fb950','#d29922','#58a6ff'],
+['ayu-light','Ayu Light','light','MIT','#fcfcfc','#5c6166','#f29718','#e65050','#6cbf43','#eba400','#22a4e6'],
+['ayu-mirage','Ayu Mirage','dark','MIT','#1f2430','#cccac2','#ffcc66','#ff6666','#87d96c','#ffa659','#73d0ff']];
+for(const[id,name,mode,lic,bg,fg,ac,dg,gd,wn,inf]of T){
+ const dark=mode=='dark',P=h2(bg),F=h2(fg),A=h2(ac),k=(x,t)=>mix(P,F,t),
+  ink2=k(0,.82),[ink3,m3]=guard(k(0,.70),P,F,4.5),ink4=k(0,.54),[acT,ma]=guard(A,P,F,4.5),
+  card=mix(P,dark?[255,255,255]:[0,0,0],dark?.035:.025),side=mix(P,dark?[0,0,0]:[255,255,255],dark?.2:.35),
+  was3=ratio(k(0,.70),P),wasA=ratio(A,P),line=mix(P,F,.12),soft=mix(P,A,dark?.22:.14);
+ const d=document.createElement('div');d.className='t';d.style.cssText=`background:${bg};color:${fg}`;
+ d.innerHTML=`<h3>${name} <span class=n>${mode} · ${lic}</span></h3>
+ <div style="display:flex;gap:6px"><div style="width:30%;background:${hx(side)};border-radius:8px;padding:6px;font-size:11px">Notes<br><span style="color:${hx(ink3)}">Tasks</span></div>
+ <div style="flex:1;background:${hx(card)};border-radius:8px;padding:6px"><b>Title</b><br><span style="color:${hx(ink2)}">Body copy</span> <span style="color:${hx(acT)}">link</span> <span style="background:${hx(soft)};border-radius:4px;padding:0 4px">chip</span></div></div>
+ <div class=sw>${[P,card,side,F,ink2,ink3,ink4,line,A,acT,h2(dg),h2(gd),h2(wn),h2(inf)].map(c=>`<i style="background:${hx(c)}"></i>`).join('')}</div>
+ <div class=n>ink-3 ${was3.toFixed(1)}${m3?` → <span class=bad>${ratio(ink3,P).toFixed(1)}</span>`:''}:1 · accent text ${wasA.toFixed(1)}${ma?` → <span class=bad>${ratio(acT,P).toFixed(1)}</span>`:''}:1</div>`;
+ document.getElementById('g').append(d)}
+</script>

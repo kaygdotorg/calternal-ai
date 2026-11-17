@@ -33,6 +33,18 @@ public enum BridgeChecks {
         let spacesRequest = try NativeRequest(operation: "spaces.list", inputJson: "{}", requestId: nil)
         let spaces = try object(await client.call(request: spacesRequest, cancellation: cancellation))
         let space = try unwrap((spaces["spaces"] as? [[String: Any]])?.first?["id"] as? String)
+        let liveCancellation = NativeCancellation()
+        let live = try await client.subscribe(spaces: [space], bookmarksJson: "{}", cancellation: liveCancellation)
+        var events = live.frames(cancellation: liveCancellation).makeAsyncIterator()
+        let readyJson = try unwrap(await events.next())
+        let ready = try object(readyJson)
+        try require(ready["type"] as? String == "ready", "live ready")
+        try await live.accept(frameJson: readyJson)
+        liveCancellation.cancel()
+        do {
+            _ = try await events.next()
+            throw CheckFailure.failed("expected live cancellation")
+        } catch NativeError.Cancelled { }
         let create = try NativeRequest(operation: "notes.create", inputJson: input(["space_id": space, "title": "Swift bridge", "markdown": "First\n"]), requestId: nil)
         let first = try object(await client.call(request: create, cancellation: cancellation))
         let replay = try object(await client.call(request: create, cancellation: cancellation))

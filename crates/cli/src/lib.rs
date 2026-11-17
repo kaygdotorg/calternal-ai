@@ -13,3 +13,5 @@ pub mod output;
 pub mod testing;
 
 pub mod agent;
+
+pub mod watch;

@@ -1,0 +1,35 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1; classes = {}; objectVersion = 56;
+	objects = {
+		000000000000000000A00006 = {isa = PBXBuildFile; fileRef = 000000000000000000A0001F; };
+		000000000000000000A00007 = {isa = PBXBuildFile; fileRef = 000000000000000000A00020; };
+		000000000000000000A0001F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		000000000000000000A00020 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Study.swift; sourceTree = "<group>"; };
+		000000000000000000A00008 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Host.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000A00009 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Runner.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000A00001 = {isa = PBXGroup; children = (000000000000000000A00004, 000000000000000000A00005, 000000000000000000A00003); sourceTree = "<group>"; };
+		000000000000000000A00004 = {isa = PBXGroup; children = (000000000000000000A0001F); path = Host; sourceTree = "<group>"; };
+		000000000000000000A00005 = {isa = PBXGroup; children = (000000000000000000A00020); path = Runner; sourceTree = "<group>"; };
+		000000000000000000A00003 = {isa = PBXGroup; children = (000000000000000000A00008, 000000000000000000A00009); name = Products; sourceTree = "<group>"; };
+		000000000000000000A0000E = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000A00006); runOnlyForDeploymentPostprocessing = 0; };
+		000000000000000000A0000F = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000A00007); runOnlyForDeploymentPostprocessing = 0; };
+		000000000000000000A00010 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		000000000000000000A00011 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		000000000000000000A0000A = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000A00012; buildPhases = (000000000000000000A0000E, 000000000000000000A00010); buildRules = (); dependencies = (); name = Host; productName = Host; productReference = 000000000000000000A00008; productType = "com.apple.product-type.application"; };
+		000000000000000000A0001E = {isa = PBXContainerItemProxy; containerPortal = 000000000000000000A00000; proxyType = 1; remoteGlobalIDString = 000000000000000000A0000A; remoteInfo = Host; };
+		000000000000000000A0001D = {isa = PBXTargetDependency; target = 000000000000000000A0000A; targetProxy = 000000000000000000A0001E; };
+		000000000000000000A0000B = {isa = PBXNativeTarget; buildConfigurationList = 000000000000000000A00013; buildPhases = (000000000000000000A0000F, 000000000000000000A00011); buildRules = (); dependencies = (000000000000000000A0001D); name = Runner; productName = Runner; productReference = 000000000000000000A00009; productType = "com.apple.product-type.bundle.ui-testing"; };
+		000000000000000000A00000 = {isa = PBXProject; attributes = {LastUpgradeCheck = 2700; TargetAttributes = {000000000000000000A0000B = {TestTargetID = 000000000000000000A0000A; }; }; }; buildConfigurationList = 000000000000000000A00014; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = 000000000000000000A00001; productRefGroup = 000000000000000000A00003; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000A0000A, 000000000000000000A0000B); };
+		000000000000000000A00015 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphonesimulator; IPHONEOS_DEPLOYMENT_TARGET = 27.0; SWIFT_VERSION = 5.0; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = NO; ONLY_ACTIVE_ARCH = YES; }; name = Debug; };
+		000000000000000000A00016 = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphonesimulator; IPHONEOS_DEPLOYMENT_TARGET = 27.0; SWIFT_VERSION = 5.0; CODE_SIGNING_ALLOWED = NO; }; name = Release; };
+		000000000000000000A00017 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = study.host; PRODUCT_NAME = Host; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; TARGETED_DEVICE_FAMILY = 1; }; name = Debug; };
+		000000000000000000A00018 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = study.host; PRODUCT_NAME = Host; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UILaunchScreen_Generation = YES; TARGETED_DEVICE_FAMILY = 1; }; name = Release; };
+		000000000000000000A00019 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = study.runner; PRODUCT_NAME = Runner; GENERATE_INFOPLIST_FILE = YES; TEST_TARGET_NAME = Host; TARGETED_DEVICE_FAMILY = 1; }; name = Debug; };
+		000000000000000000A0001A = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = study.runner; PRODUCT_NAME = Runner; GENERATE_INFOPLIST_FILE = YES; TEST_TARGET_NAME = Host; TARGETED_DEVICE_FAMILY = 1; }; name = Release; };
+		000000000000000000A00014 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000A00015, 000000000000000000A00016); defaultConfigurationName = Debug; };
+		000000000000000000A00012 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000A00017, 000000000000000000A00018); defaultConfigurationName = Debug; };
+		000000000000000000A00013 = {isa = XCConfigurationList; buildConfigurations = (000000000000000000A00019, 000000000000000000A0001A); defaultConfigurationName = Debug; };
+	};
+	rootObject = 000000000000000000A00000;
+}
