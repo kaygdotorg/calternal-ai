@@ -17,35 +17,48 @@ use calternal_core::{
     DescribeResult, ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult,
     NotesCreateInput, NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
     NotesListResult, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
-    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, SpaceRole,
-    True, WorkerResource, canonical_request_input, operation_catalog, parse_request,
+    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
+    WorkerResource, canonical_request_input, operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tower_http::services::ServeDir;
 
-use crate::auth::{DevPrincipal, TokenTable};
+use crate::auth::{Directory, Identity, TokenTable};
+use crate::authz::{self, Constraint};
 use crate::error::HostError;
 use crate::fault::{self, FaultPoint};
 use crate::plugins::{LoadedPlugin, NodeRuntime, Registry, run_summarize};
 use crate::store::{PluginRow, Store, sha256_hex};
 
+/// Same-origin development content security policy applied to every response.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 /// Fixed fixture text for plugin preview. Never user data.
 pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
+/// Stable synthetic resource identifier used only for plugin previews.
 pub const PREVIEW_RESOURCE_ID: &str = "00000000-0000-4000-8000-000000000000";
 
-pub struct AppState {
+/// Shared host services; `D` is the protected source of current identity and grants.
+/// The default preserves development startup; stored directories plug in without
+/// changing operation handlers or caching membership in authenticated identities.
+pub struct AppState<D: Directory = TokenTable> {
+    /// Serialized durable preview store; authorization precedes taking this lock.
     pub store: Mutex<Store>,
-    pub tokens: TokenTable,
+    /// Identity and membership directory (legacy field name preserves startup callers).
+    pub tokens: D,
+    /// Immutable registry of trusted development plugins.
     pub registry: Registry,
+    /// Optional bounded Node worker runtime.
     pub node: Option<NodeRuntime>,
+    /// Exact loopback Host allowlist for this listener.
     pub allowed_hosts: Vec<String>,
 }
 
-pub type Shared = Arc<AppState>;
+/// Reference-counted host state; cloning never clones the directory or its grants.
+pub type Shared<D = TokenTable> = Arc<AppState<D>>;
 
+/// Construct the exact loopback hostnames accepted for a bound listener port.
 pub fn allowed_hosts(port: u16) -> Vec<String> {
     vec![
         format!("127.0.0.1:{port}"),
@@ -54,10 +67,11 @@ pub fn allowed_hosts(port: u16) -> Vec<String> {
     ]
 }
 
-pub fn router(state: Shared, web_dir: Option<PathBuf>) -> Router {
+/// Build the authenticated API and optional static asset routes.
+pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Router {
     let api = Router::new()
-        .route("/api/v1/describe", get(describe))
-        .route("/api/v1/operations", post(operations))
+        .route("/api/v1/describe", get(describe::<D>))
+        .route("/api/v1/operations", post(operations::<D>))
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found));
@@ -73,7 +87,7 @@ pub fn router(state: Shared, web_dir: Option<PathBuf>) -> Router {
         }
         _ => app.fallback(web_not_built),
     };
-    app.layer(middleware::from_fn_with_state(state.clone(), guard))
+    app.layer(middleware::from_fn_with_state(state.clone(), guard::<D>))
         .with_state(state)
 }
 
@@ -148,7 +162,11 @@ fn is_api(path: &str) -> bool {
 
 /// Host allowlist (DNS-rebinding defense), Origin same-origin check, bearer
 /// auth for the API, and security headers on every response.
-async fn guard(State(state): State<Shared>, mut req: Request, next: Next) -> Response {
+async fn guard<D: Directory>(
+    State(state): State<Shared<D>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
     let path = req.uri().path().to_string();
     let api = is_api(&path);
     let deny = |e: HostError| -> Response {
@@ -228,25 +246,25 @@ fn bearer(headers: &HeaderMap) -> Option<&[u8]> {
 
 // ------------------------------------------------------------- handlers
 
-async fn describe(State(_s): State<Shared>, req: Request) -> Response {
+async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
     let p = req
         .extensions()
-        .get::<DevPrincipal>()
+        .get::<Identity>()
         .cloned()
         .expect("guard inserts principal");
     let result = DescribeResult {
         protocol_version: PROTOCOL_VERSION,
         genui_version: GENUI_VERSION,
-        principal: p.to_wire(),
+        principal: state.tokens.describe(&p),
         operations: operation_catalog(),
     };
     json_response(StatusCode::OK, &result)
 }
 
-async fn operations(State(state): State<Shared>, req: Request) -> Response {
+async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
     let p = req
         .extensions()
-        .get::<DevPrincipal>()
+        .get::<Identity>()
         .cloned()
         .expect("guard inserts principal");
     let ct_ok = req
@@ -318,27 +336,12 @@ fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, HostError> {
         .map_err(|_| HostError::invalid_input("input does not match operation schema"))
 }
 
-fn require_role(p: &DevPrincipal, space: &str, min: SpaceRole) -> Result<(), HostError> {
-    let rank = |r: &SpaceRole| match r {
-        SpaceRole::Reader => 0,
-        SpaceRole::Editor => 1,
-        SpaceRole::Manager => 2,
-    };
-    match p.role(space) {
-        None => Err(HostError::forbidden("no access to this space")),
-        Some(r) if rank(&r) < rank(&min) => {
-            Err(HostError::forbidden("insufficient role for this space"))
-        }
-        Some(_) => Ok(()),
-    }
-}
-
 fn fingerprint(op: &str, input: &JsonObject) -> String {
     sha256_hex(format!("{op}\n{}", canonical_request_input(input)).as_bytes())
 }
 
-async fn blocking<T: Send + 'static>(
-    state: &Shared,
+async fn blocking<D: Directory, T: Send + 'static>(
+    state: &Shared<D>,
     f: impl FnOnce(&mut Store) -> Result<T, HostError> + Send + 'static,
 ) -> Result<T, HostError> {
     let state = state.clone();
@@ -357,9 +360,45 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
     serde_json::to_value(v).map_err(|_| HostError::internal("encode"))
 }
 
-pub async fn dispatch(
-    state: Shared,
-    p: DevPrincipal,
+/// Dispatch through the mandatory policy gate before any handler or receipt replay.
+/// The caller supplies a verified identity; supplied fixture grants are discarded
+/// by conversion for legacy development callers. Each attempt reads current capability sets.
+/// Summarize additionally rechecks membership after the worker before delivery.
+/// Successful checks add no allocation or locking beyond the directory lookup.
+pub async fn dispatch<D: Directory>(
+    state: Shared<D>,
+    p: impl Into<Identity>,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+) -> Result<Value, HostError> {
+    let p = p.into();
+    let Some(policy) = authz::policy(op) else {
+        return Err(if state.registry.owner_of_operation(op).is_some() {
+            HostError::unavailable("operation has no host binding in this preview")
+        } else {
+            HostError::not_found("unknown operation")
+        });
+    };
+    policy.authorize(&state.tokens, &p, &input)?;
+    if policy.constraint == Constraint::PluginInvocation {
+        let i: NotesGetInput = decode(input)?;
+        let lp = state
+            .registry
+            .owner_of_operation(op)
+            .ok_or_else(|| HostError::not_found("unknown operation"))?
+            .clone();
+        let result = summarize(state.clone(), lp, &i).await?;
+        policy.authorize_space(&state.tokens, &p, &i.space_id)?;
+        return Ok(result);
+    }
+    dispatch_checked(state, p, request_id, op, input).await
+}
+
+/// Private handler entry: called exclusively after the dispatch policy gate.
+async fn dispatch_checked<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
     request_id: &str,
     op: &str,
     input: JsonObject,
@@ -367,19 +406,16 @@ pub async fn dispatch(
     match op {
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
-            require_role(&p, &i.space_id, SpaceRole::Reader)?;
             let notes = blocking(&state, move |s| s.list(&i.space_id, 100)).await?;
             to_value(NotesListResult { notes })
         }
         "notes.get" => {
             let i: NotesGetInput = decode(input)?;
-            require_role(&p, &i.space_id, SpaceRole::Reader)?;
             let note = blocking(&state, move |s| s.get(&i.space_id, &i.id)).await?;
             to_value(NoteResult { note })
         }
         "notes.history" => {
             let i: NotesHistoryInput = decode(input)?;
-            require_role(&p, &i.space_id, SpaceRole::Reader)?;
             let limit = i.limit.unwrap_or(20);
             let (versions, next_cursor) = blocking(&state, move |s| {
                 s.history(&i.space_id, &i.id, limit, i.cursor.as_deref())
@@ -393,7 +429,6 @@ pub async fn dispatch(
         "notes.create" | "notes.update" => mutate_note(state, p, request_id, op, input).await,
         "plugins.list" => {
             let i: PluginsListInput = decode(input)?;
-            require_role(&p, &i.space_id, SpaceRole::Reader)?;
             let st = state.clone();
             let plugins = blocking(&state, move |s| {
                 st.registry
@@ -408,13 +443,11 @@ pub async fn dispatch(
         "plugins.enable" | "plugins.disable" => {
             let fp = fingerprint(op, &input);
             let i: PluginInput = decode(input)?;
-            // Current grants are checked on every attempt, including retries.
-            require_role(&p, &i.space_id, SpaceRole::Manager)?;
             let enable = op == "plugins.enable";
             let st = state.clone();
             let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
             blocking(&state, move |s| {
-                if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
+                if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
                     return Ok(v);
                 }
                 let lp = st
@@ -459,7 +492,7 @@ pub async fn dispatch(
                 }
                 let manifest = lp.manifest.clone();
                 let (_, value) = s.set_plugin_enabled(
-                    principal,
+                    &principal,
                     &rid,
                     &op,
                     &fp,
@@ -484,7 +517,6 @@ pub async fn dispatch(
         }
         "plugins.preview" => {
             let i: PluginInput = decode(input)?;
-            require_role(&p, &i.space_id, SpaceRole::Reader)?;
             let lp = state
                 .registry
                 .get(&i.plugin_id)
@@ -522,20 +554,9 @@ pub async fn dispatch(
                 preview: True,
             })
         }
-        other => {
-            // Plugin-declared operations.
-            let lp = state
-                .registry
-                .owner_of_operation(other)
-                .ok_or_else(|| HostError::not_found("unknown operation"))?
-                .clone();
-            match other {
-                "notes-insights.summarize" => summarize(state, p, lp, input).await,
-                _ => Err(HostError::unavailable(
-                    "operation has no host binding in this preview",
-                )),
-            }
-        }
+        _ => Err(HostError::unavailable(
+            "operation has no host binding in this preview",
+        )),
     }
 }
 
@@ -588,14 +609,11 @@ fn plugin_state(s: &Store, space: &str, lp: &LoadedPlugin) -> Result<PluginState
     })
 }
 
-async fn summarize(
-    state: Shared,
-    p: DevPrincipal,
+async fn summarize<D: Directory>(
+    state: Shared<D>,
     lp: LoadedPlugin,
-    input: JsonObject,
+    i: &NotesGetInput,
 ) -> Result<Value, HostError> {
-    let i: NotesGetInput = decode(input)?;
-    require_role(&p, &i.space_id, SpaceRole::Reader)?;
     let node = state
         .node
         .clone()
@@ -633,37 +651,34 @@ async fn summarize(
         )
         .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })));
     }
-    require_role(&p, &i.space_id, SpaceRole::Reader)?;
     to_value(result)
 }
 
-async fn mutate_note(
-    state: Shared,
-    p: DevPrincipal,
+async fn mutate_note<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
     request_id: &str,
     op: &str,
     input: JsonObject,
 ) -> Result<Value, HostError> {
     let fp = fingerprint(op, &input);
-    let (space_id, create, update) = if op == "notes.create" {
+    let (create, update) = if op == "notes.create" {
         let i: NotesCreateInput = decode(input)?;
-        (i.space_id.clone(), Some(i), None)
+        (Some(i), None)
     } else {
         let i: NotesUpdateInput = decode(input)?;
-        (i.space_id.clone(), None, Some(i))
+        (None, Some(i))
     };
-    // Authorization always uses the current grants, including on retries.
-    require_role(&p, &space_id, SpaceRole::Editor)?;
     let rid = request_id.to_string();
     let op = op.to_string();
     let principal = p.id;
     blocking(&state, move |s| {
-        if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
+        if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
             return Ok(v);
         }
         let note = if let Some(i) = create {
             s.create(
-                principal,
+                &principal,
                 &rid,
                 &op,
                 &fp,
@@ -674,7 +689,7 @@ async fn mutate_note(
         } else {
             let i = update.expect("update input");
             s.update(
-                principal,
+                &principal,
                 &rid,
                 &op,
                 &fp,

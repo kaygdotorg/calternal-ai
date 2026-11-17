@@ -8,3 +8,6 @@ node_modules/
 .dev-data/
 artifacts/
 *.log
+
+# Generated Rust and TypeScript reference documentation.
+/reference-docs/

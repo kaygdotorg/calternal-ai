@@ -7,18 +7,31 @@ import type {
   WorkerResponse,
 } from "@calternal/contracts";
 
+/** Operation and worker transport version supported by the SDK. */
 export const PROTOCOL_VERSION = 1 as const;
+/** Portable declarative view version supported by the SDK. */
 export const GENUI_VERSION = 1 as const;
+/** Maximum UTF-8 Markdown size, in bytes (1 MiB). */
 export const MAX_DOCUMENT_BYTES = 1024 * 1024;
+/** Maximum serialized operation request size, in bytes (2 MiB). */
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
+/** Maximum worker standard-input size, in bytes (2 MiB), checked before JSON decoding. */
 export const MAX_WORKER_INPUT_BYTES = 2 * 1024 * 1024;
+/** Maximum worker standard-output size, in bytes (256 KiB), checked before JSON decoding. */
 export const MAX_WORKER_OUTPUT_BYTES = 256 * 1024;
+/** Host diagnostic capture budget, in bytes (16 KiB); never include private request content. */
 export const MAX_WORKER_STDERR_BYTES = 16 * 1024;
+/** Host worker execution timeout, in milliseconds (3 seconds). */
 export const WORKER_TIMEOUT_MS = 3000;
+/** Maximum serialized portable view size, in UTF-8 bytes (64 KiB). */
 export const MAX_GENUI_SERIALIZED_BYTES = 64 * 1024;
+/** Combined portable view string-value budget, in UTF-8 bytes (32 KiB). */
 export const MAX_GENUI_STRING_BYTES = 32 * 1024;
+/** Maximum literal text-node size, in UTF-8 bytes (8 KiB). */
 export const MAX_GENUI_TEXT_BYTES = 8 * 1024;
+/** Maximum nodes per portable view, including its root (128). */
 export const MAX_GENUI_NODES = 128;
+/** Maximum portable view depth, counting the root as depth one (8). */
 export const MAX_GENUI_DEPTH = 8;
 
 const ID_PATTERN = /^[A-Za-z0-9_.:-]{1,80}$/;
@@ -30,7 +43,9 @@ const MUTATING_HOST_OPERATIONS = new Set([
   "plugins.disable",
 ]);
 
+/** Contract violation raised by SDK parsers and validators; contains a safe diagnostic. */
 export class ContractValidationError extends Error {
+  /** Create a validation failure; callers must supply a diagnostic without credentials or private input. */
   constructor(message: string) {
     super(message);
     this.name = "ContractValidationError";
@@ -257,6 +272,11 @@ function jsonBytes(value: unknown): number {
   return utf8Bytes(serialized);
 }
 
+/**
+ * Validate version, unique IDs, node shapes and byte/depth budgets without rendering. Traversal and temporary JSON storage cost O(view bytes).
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function validateGenUiView(value: unknown): GenUiView {
   if (!isRecord(value)) fail("invalid GenUI view");
   exactKeys(value, ["genui_version", "root"]);
@@ -319,6 +339,11 @@ function validateOperationInput(operation: string, input: JsonRecord): void {
   }
 }
 
+/**
+ * Validate an operation envelope, its known input schema and the 2 MiB serialized budget; does not authorize the caller. Costs O(request bytes). Unknown operations are rejected.
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function validateOperationRequest(value: unknown): OperationRequest {
   if (!isRecord(value)) fail("malformed operation envelope");
   exactKeys(value, ["request_id", "operation", "input"]);
@@ -348,10 +373,20 @@ function decodeJson(input: string | Uint8Array, maxBytes: number, description: s
   }
 }
 
+/**
+ * Decode at most 2 MiB of strict UTF-8 JSON, then validate the operation envelope and input. Allocates O(input bytes).
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function parseOperationRequest(input: string | Uint8Array): OperationRequest {
   return validateOperationRequest(decodeJson(input, MAX_BODY_BYTES, "request"));
 }
 
+/**
+ * Validate plugin declarations, unique operation/view IDs and all read-only contributions. Does not load code or grant capabilities. Cost includes contributed views and action-input validation.
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function validatePluginManifest(value: unknown): PluginManifest {
   if (!isRecord(value)) fail("invalid plugin manifest");
   exactKeys(value, ["id", "version", "api_version", "name", "description", "dependencies", "capabilities", "operations", "views"]);
@@ -395,6 +430,11 @@ export function validatePluginManifest(value: unknown): PluginManifest {
   return value as unknown as PluginManifest;
 }
 
+/**
+ * Validate a portable tree and require each action to be declared and read-only. Does not grant dispatch authority. Costs O(view bytes + declared operations).
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function validateExtensionView(value: unknown, manifest: PluginManifest): GenUiView {
   const view = validateGenUiView(value);
   const declared = new Set(manifest.operations.map((operation) => operation.id));
@@ -422,6 +462,11 @@ function validateWorkerResource(value: unknown): void {
   if (revision.length === 0) fail("missing resource revision");
 }
 
+/**
+ * Validate a notes-insights.summarize invocation and its authorized snapshot. Does not check access or issue storage capabilities. Costs O(snapshot bytes).
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function validateWorkerRequest(value: unknown): WorkerRequest {
   if (!isRecord(value)) fail("invalid worker request");
   exactKeys(value, ["protocol_version", "invocation_id", "operation", "resource"]);
@@ -432,10 +477,20 @@ export function validateWorkerRequest(value: unknown): WorkerRequest {
   return value as unknown as WorkerRequest;
 }
 
+/**
+ * Decode at most 2 MiB of strict UTF-8 JSON and validate a worker invocation. Allocates O(input bytes).
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function parseWorkerRequest(input: string | Uint8Array): WorkerRequest {
   return validateWorkerRequest(decodeJson(input, MAX_WORKER_INPUT_BYTES, "worker input"));
 }
 
+/**
+ * Validate response correlation, version, safe failure shape or successful statistics and portable view. Costs O(response bytes). The expected invocationId must come from the host.
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function validateWorkerResponse(value: unknown, invocationId: string): WorkerResponse {
   if (!isRecord(value)) fail("invalid worker response");
   if (value.protocol_version !== PROTOCOL_VERSION) fail("worker protocol/invocation mismatch");
@@ -463,6 +518,11 @@ export function validateWorkerResponse(value: unknown, invocationId: string): Wo
   return value as unknown as WorkerResponse;
 }
 
+/**
+ * Decode at most 256 KiB of strict UTF-8 JSON and validate response correlation with the host-issued invocationId. Allocates O(input bytes).
+ * @returns The validated value without an additional clone.
+ * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
+ */
 export function parseWorkerResponse(input: string | Uint8Array, invocationId: string): WorkerResponse {
   const response = validateWorkerResponse(decodeJson(input, MAX_WORKER_OUTPUT_BYTES, "worker output"), invocationId);
   return response;

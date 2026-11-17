@@ -5,11 +5,15 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message}")]
+/// Pure contract validation failure; carries safe diagnostics and no authority decisions.
 pub struct ValidationError {
+    /// Stable failure category for protocol mapping.
     pub code: ErrorCode,
+    /// Safe human-readable reason; do not include credentials or private input.
     pub message: String,
 }
 impl ValidationError {
+    /// Construct an invalid-input error with a safe caller-supplied message; no input content is sanitized here.
     pub fn invalid(message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode::InvalidInput,
@@ -24,6 +28,10 @@ fn require(ok: bool, message: &str) -> Result<(), ValidationError> {
         Err(ValidationError::invalid(message))
     }
 }
+/// Check a space/plugin/node identifier in O(bytes), without allocation.
+///
+/// # Errors
+/// Returns invalid input unless there are 1..80 ASCII letters, digits or `_.:-`.
 pub fn validate_id(value: &str) -> Result<(), ValidationError> {
     require(
         !value.is_empty()
@@ -34,12 +42,20 @@ pub fn validate_id(value: &str) -> Result<(), ValidationError> {
         "identifier must be 1..80 ASCII letters, digits, _, ., :, -",
     )
 }
+/// Check that a resource identity parses as a UUID, without storage or access checks.
+///
+/// # Errors
+/// Returns invalid input for a malformed UUID.
 pub fn validate_resource_id(value: &str) -> Result<(), ValidationError> {
     require(
         uuid::Uuid::parse_str(value).is_ok(),
         "resource id must be a UUID",
     )
 }
+/// Check a title in O(bytes): nonblank, at most 256 Unicode scalars and no controls.
+///
+/// # Errors
+/// Returns invalid input when any title constraint fails.
 pub fn validate_title(value: &str) -> Result<(), ValidationError> {
     require(
         !value.trim().is_empty()
@@ -48,6 +64,10 @@ pub fn validate_title(value: &str) -> Result<(), ValidationError> {
         "title must have 1..256 characters and no controls",
     )
 }
+/// Check the UTF-8 byte length in constant time; does not parse Markdown.
+///
+/// # Errors
+/// Returns too large above the 1 MiB document budget.
 pub fn validate_markdown(value: &str) -> Result<(), ValidationError> {
     if value.len() > MAX_DOCUMENT_BYTES {
         Err(ValidationError {
@@ -70,6 +90,10 @@ fn resource(space_id: &str, id: &str) -> Result<(), ValidationError> {
     validate_resource_id(id)
 }
 
+/// Check correlation and operation IDs and the 2 MiB serialized-body budget. Serializes once, using O(body bytes) time and memory.
+///
+/// # Errors
+/// Returns invalid input for malformed IDs, serialization failure or an oversized envelope.
 pub fn validate_envelope(request: &OperationRequest) -> Result<(), ValidationError> {
     require(
         !request.request_id.is_empty() && request.request_id.chars().count() <= 128,
@@ -88,10 +112,15 @@ pub fn validate_envelope(request: &OperationRequest) -> Result<(), ValidationErr
     )?;
     Ok(())
 }
+/// Validate an envelope and its known operation input, allocating temporary serialized/decoded values proportional to the input. Does not authorize the caller.
+///
+/// # Errors
+/// Returns envelope/input errors, or not found for an unknown operation.
 pub fn validate_request(request: &OperationRequest) -> Result<(), ValidationError> {
     validate_envelope(request)?;
     validate_operation_input(&request.operation, &request.input)
 }
+/// Test membership in the fixed preview operation catalog without allocation or authority checks.
 pub fn is_known_operation(operation: &str) -> bool {
     matches!(
         operation,
@@ -107,6 +136,10 @@ pub fn is_known_operation(operation: &str) -> bool {
             | "notes-insights.summarize"
     )
 }
+/// Validate the envelope and known operation inputs; leave unknown operation schemas to server discovery for forward compatibility. Cost is proportional to serialized input.
+///
+/// # Errors
+/// Returns envelope errors or input errors for a known operation.
 pub fn validate_client_request(request: &OperationRequest) -> Result<(), ValidationError> {
     validate_envelope(request)?;
     if is_known_operation(&request.operation) {
@@ -114,6 +147,10 @@ pub fn validate_client_request(request: &OperationRequest) -> Result<(), Validat
     }
     Ok(())
 }
+/// Decode and validate an operation body, bounding bytes before JSON allocation. Cost and allocations are O(body bytes).
+///
+/// # Errors
+/// Returns too large above 2 MiB, invalid input for malformed JSON/schema, or not found for an unknown operation.
 pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> {
     if bytes.len() > MAX_BODY_BYTES {
         return Err(ValidationError {
@@ -126,6 +163,10 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> 
     validate_request(&request)?;
     Ok(request)
 }
+/// Decode a known operation input and enforce its value constraints; allocates a temporary JSON clone proportional to input size. Does not check access.
+///
+/// # Errors
+/// Returns invalid input for schema/value violations, too large for oversized Markdown, or not found for unknown operations.
 pub fn validate_operation_input(
     operation: &str,
     input: &JsonObject,
@@ -195,6 +236,10 @@ fn string_bytes(value: &Value) -> usize {
         _ => 0,
     }
 }
+/// Validate portable tree version, unique IDs and budgets: 64 KiB JSON, 32 KiB string values, 8 KiB text, depth 8 and 128 nodes. Serializes the tree and allocates O(tree bytes) temporary storage.
+///
+/// # Errors
+/// Returns invalid input for any tree or budget violation; does not grant operation authority.
 pub fn validate_genui(view: &GenUiView) -> Result<(), ValidationError> {
     require(
         view.genui_version == GENUI_VERSION,
@@ -256,7 +301,10 @@ pub fn validate_genui(view: &GenUiView) -> Result<(), ValidationError> {
     }
     visit(&view.root, 1, &mut HashSet::new())
 }
-/// Extension views may only refer to operations declared read-only by that manifest.
+/// Validate the tree and every action against declared read-only operations. Traversal costs O(nodes × declared operations), plus tree validation.
+///
+/// # Errors
+/// Returns tree/input errors or invalid input for undeclared or mutating actions.
 pub fn validate_extension_view(
     view: &GenUiView,
     manifest: &PluginManifest,
@@ -292,6 +340,10 @@ pub fn validate_extension_view(
     }
     visit(&view.root, manifest)
 }
+/// Check plugin IDs, version, API compatibility, unique operation/view IDs and all contributed views. Cost includes each view validation and declared-operation lookup. Does not load code or issue grants.
+///
+/// # Errors
+/// Returns invalid input or propagated view/input errors for invalid declarations.
 pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), ValidationError> {
     validate_id(&manifest.id)?;
     require(
@@ -319,6 +371,10 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), ValidationErro
     }
     Ok(())
 }
+/// Validate the `notes-insights.summarize` snapshot, invocation ID and protocol version in O(snapshot bytes). No I/O or permission lookup occurs.
+///
+/// # Errors
+/// Returns invalid input for malformed metadata or too large above the Markdown byte limit.
 pub fn validate_worker_request(request: &WorkerRequest) -> Result<(), ValidationError> {
     require(
         request.protocol_version == PROTOCOL_VERSION,
@@ -333,6 +389,10 @@ pub fn validate_worker_request(request: &WorkerRequest) -> Result<(), Validation
         "missing resource revision",
     )
 }
+/// Decode one response of at most 256 KiB, verify protocol/invocation correlation and validate any successful view. Allocates O(response bytes).
+///
+/// # Errors
+/// Returns invalid input for excess bytes, malformed JSON, correlation mismatch or invalid portable views.
 pub fn parse_worker_response(
     bytes: &[u8],
     invocation_id: &str,
@@ -359,6 +419,7 @@ pub fn parse_worker_response(
 
 /// Object keys sorted recursively, independent of serde_json map-order features.
 /// No numeric/string coercion: differing typed values remain different inputs.
+/// Allocates O(input bytes) temporary values; each object sorts its keys in O(keys log keys).
 pub fn canonical_request_input(input: &JsonObject) -> String {
     fn sorted(value: &Value) -> Value {
         match value {
@@ -383,9 +444,17 @@ pub struct PendingRequest {
     request: OperationRequest,
 }
 impl PendingRequest {
+    /// Create a validated pending request with a fresh UUID identity; retain it unchanged after an uncertain result. Validation costs O(input bytes).
+    ///
+    /// # Errors
+    /// Returns envelope or known-operation validation failures.
     pub fn new(operation: impl Into<String>, input: JsonObject) -> Result<Self, ValidationError> {
         Self::with_id(uuid::Uuid::new_v4().to_string(), operation, input)
     }
+    /// Create a validated pending request using an existing retry identity; callers must preserve the operation and input on retries. Cost is O(input bytes).
+    ///
+    /// # Errors
+    /// Returns envelope or known-operation validation failures.
     pub fn with_id(
         id: impl Into<String>,
         operation: impl Into<String>,
@@ -399,9 +468,14 @@ impl PendingRequest {
         validate_client_request(&request)?;
         Ok(Self { request })
     }
+    /// Borrow the validated immutable request without allocation, preserving its retry identity.
     pub fn request(&self) -> &OperationRequest {
         &self.request
     }
+    /// Check a pending `notes.update` against the actual opaque revision; other operations pass unchanged. Decoding clones O(input bytes). This is advisory; the host must check atomically again.
+    ///
+    /// # Errors
+    /// Returns conflict on mismatch or invalid input if update decoding fails.
     pub fn check_base_revision(&self, actual: &str) -> Result<(), ValidationError> {
         if self.request.operation == "notes.update" {
             let input: NotesUpdateInput = decode(&self.request.input)?;
@@ -416,6 +490,7 @@ impl PendingRequest {
     }
 }
 
+/// Build discovery metadata and JSON Schemas for all ten preview operations. Allocates fresh schema trees on each call; callers may cache the result outside the pure core.
 pub fn operation_catalog() -> Vec<OperationDescription> {
     fn entry<I: schemars::JsonSchema, O: schemars::JsonSchema>(
         id: &str,

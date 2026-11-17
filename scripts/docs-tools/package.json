@@ -1,0 +1,13 @@
+{
+  "name": "calternal-documentation-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node ./reference.mjs --check",
+    "build": "node ./reference.mjs"
+  },
+  "devDependencies": {
+    "typedoc": "0.28.14",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,3 +1,5 @@
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 //! Async HTTP effects adapter. The pure contract and pending identities live in core.
 //! Dropping a request future stops waiting locally; it does not undo server commits.
 use calternal_core::*;
@@ -12,23 +14,33 @@ use std::time::Duration;
 const MAX_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
+/// Safe local or remote failure; transport errors can leave a mutation outcome unknown.
 pub enum ClientError {
     #[error("{0}")]
+    /// Local contract validation failed before dispatch.
     Validation(#[from] ValidationError),
     #[error("invalid client configuration: {0}")]
+    /// The loopback URL, credential or HTTP client could not be configured.
     Configuration(&'static str),
     #[error("transport failed; server outcome may be unknown")]
+    /// The transport failed; the server may already have committed a mutation.
     Transport,
     #[error("server response violates the preview protocol: {0}")]
+    /// The reply failed content-type, size, schema, version or correlation checks.
     Protocol(&'static str),
     #[error("{code:?}: {message}", code = .error.code, message = .error.message)]
+    /// A safe server error whose category matches the HTTP status.
     Api {
+        /// HTTP response status, consistent with the API error category.
         status: u16,
+        /// Safe server failure payload.
         error: ApiError,
+        /// Recovered correlation identity, absent when the server could not recover it.
         request_id: Option<String>,
     },
 }
 impl ClientError {
+    /// Convert this failure to a safe portable API error; clones diagnostic strings, maps local transport/protocol failures to unavailable.
     pub fn api_error(&self) -> ApiError {
         match self {
             Self::Validation(e) => ApiError {
@@ -53,11 +65,17 @@ impl ClientError {
 
 // Deliberately no Debug: the HTTP adapter owns a sensitive Authorization header.
 #[derive(Clone)]
+/// Reusable HTTP adapter holding a sensitive bearer header; cloning shares the connection pool.
+/// Deliberately omits Debug to avoid exposing credentials.
 pub struct Client {
     http: HttpClient,
     base: Url,
 }
 impl Client {
+    /// Build a reusable preview HTTP client for an HTTP loopback origin and ASCII graphic bearer token. Uses 15-second request and 3-second connection timeouts; disables proxies and redirects.
+    ///
+    /// # Errors
+    /// Returns configuration errors for invalid origins/tokens or HTTP initialization failure.
     pub fn new(base_url: &str, token: &str) -> Result<Self, ClientError> {
         let base =
             Url::parse(base_url).map_err(|_| ClientError::Configuration("invalid base URL"))?;
@@ -127,6 +145,10 @@ impl Client {
         }
         Ok((status, bytes))
     }
+    /// Fetch `GET /api/v1/describe` with version checks and a 128 MiB response cap. One network round trip; response bytes are buffered.
+    ///
+    /// # Errors
+    /// Returns transport, API or protocol errors for failed or incompatible replies.
     pub async fn describe(&self) -> Result<DescribeResult, ClientError> {
         let response = self
             .http
@@ -168,7 +190,10 @@ impl Client {
             request_id: failure.request_id,
         })
     }
-    /// No automatic retry. The caller retains `request` and chooses to retry it unchanged.
+    /// Validate and send one operation, buffering at most 128 MiB and checking request correlation. No automatic retry occurs; retain the same request after uncertain outcomes. Dropping the future does not undo a server commit.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors, including result decoding errors.
     pub async fn execute<T: DeserializeOwned>(
         &self,
         request: &OperationRequest,
@@ -192,9 +217,17 @@ impl Client {
         }
         Ok(result.data)
     }
+    /// Execute one operation with an untyped JSON result; inherits the buffering, timeout and retry semantics of [`Self::execute`].
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors.
     pub async fn invoke(&self, request: &OperationRequest) -> Result<Value, ClientError> {
         self.execute(request).await
     }
+    /// Serialize a typed input into an immutable pending request, allocating O(input bytes). Supply the prior identity for retries or omit it for a new UUID.
+    ///
+    /// # Errors
+    /// Returns protocol errors for non-object/unserializable input or validation errors.
     pub fn pending<I: Serialize>(
         operation: &str,
         input: &I,
@@ -209,14 +242,26 @@ impl Client {
             None => PendingRequest::new(operation, input)?,
         })
     }
+    /// Call `notes.list` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn notes_list(&self, input: &NotesListInput) -> Result<NotesListResult, ClientError> {
         self.execute(Self::pending("notes.list", input, None)?.request())
             .await
     }
+    /// Call `notes.get` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn notes_get(&self, input: &NotesGetInput) -> Result<NoteResult, ClientError> {
         self.execute(Self::pending("notes.get", input, None)?.request())
             .await
     }
+    /// Call `notes.history` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn notes_history(
         &self,
         input: &NotesHistoryInput,
@@ -224,6 +269,10 @@ impl Client {
         self.execute(Self::pending("notes.history", input, None)?.request())
             .await
     }
+    /// Call `notes.create` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn notes_create(
         &self,
         input: &NotesCreateInput,
@@ -232,6 +281,10 @@ impl Client {
         self.execute(Self::pending("notes.create", input, Some(request_id.into()))?.request())
             .await
     }
+    /// Call `notes.update` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn notes_update(
         &self,
         input: &NotesUpdateInput,
@@ -240,6 +293,10 @@ impl Client {
         self.execute(Self::pending("notes.update", input, Some(request_id.into()))?.request())
             .await
     }
+    /// Call `plugins.list` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn plugins_list(
         &self,
         input: &PluginsListInput,
@@ -247,6 +304,10 @@ impl Client {
         self.execute(Self::pending("plugins.list", input, None)?.request())
             .await
     }
+    /// Call `plugins.enable` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn plugins_enable(
         &self,
         input: &PluginInput,
@@ -255,6 +316,10 @@ impl Client {
         self.execute(Self::pending("plugins.enable", input, Some(request_id.into()))?.request())
             .await
     }
+    /// Call `plugins.disable` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn plugins_disable(
         &self,
         input: &PluginInput,
@@ -263,6 +328,10 @@ impl Client {
         self.execute(Self::pending("plugins.disable", input, Some(request_id.into()))?.request())
             .await
     }
+    /// Call `plugins.preview` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    ///
+    /// # Errors
+    /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
     pub async fn plugins_preview(
         &self,
         input: &PluginInput,

@@ -1,0 +1,19 @@
+[package]
+name = "calternal-fsio"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+test-hooks = []
+
+[dependencies]
+arc-swap = "1.9.2"
+tracing = "0.1.44"
+unicode-normalization = "0.1.25"
+
+# Swapping a saved file in, to see what it replaced (#222).
+[target.'cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))'.dependencies]
+rustix = { version = "1.1.5", features = ["fs"] }
+

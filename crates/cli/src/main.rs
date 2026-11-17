@@ -1,3 +1,6 @@
+//! Command-line adapter for the disposable loopback preview; uses shared client validation and retry identities.
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 use calternal_client::{Client, ClientError};
 use calternal_core::*;
 use clap::{Args, Parser, Subcommand};

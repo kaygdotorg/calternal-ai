@@ -68,6 +68,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "arc-swap"
+version = "1.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84a22b5d51209f6de83d37a0b33d320acb8da88823e42a94c075140708f032a5"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "askama"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -259,6 +268,27 @@ dependencies = [
  "serde_json",
  "thiserror",
  "ts-rs",
+ "uuid",
+]
+
+[[package]]
+name = "calternal-fsio"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "rustix",
+ "tracing",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "calternal-roots"
+version = "0.1.0"
+dependencies = [
+ "calternal-fsio",
+ "rustix",
+ "tempfile",
+ "tokio",
  "uuid",
 ]
 
@@ -1990,6 +2020,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75cd3fb03d5288b3ba9a1ee103ac7e9cbb59f0b03d64f8ddfcc04dd42758a85d"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-width"

@@ -6,6 +6,8 @@
   "workspaces": ["apps/web", "packages/*", "plugins/*"],
   "engines": {"node": ">=22.13.0"},
   "scripts": {
+    "check:docs": "./scripts/check-docs.sh",
+    "build:docs": "./scripts/build-docs.sh",
     "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights",
     "build:web": "npm run build --workspace @calternal/web",
     "build": "npm run build:plugins && npm run build:web",

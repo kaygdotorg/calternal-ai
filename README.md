@@ -40,6 +40,10 @@ For mutation retries, retain the `--request-id` and repeat exactly the same oper
 
 `python3 contract/verify-cli.py --running-data-dir .dev-data` checks the CLI against a running preview using disposable fixtures. `node scripts/measure-preview.mjs` launches a separate disposable server and records local debug timings in `artifacts/preview-smoke.json`. Those timings are not a 120 Hz UI result or a production performance gate.
 
+## Reference documentation
+
+Every public code change includes matching reference comments. Run `npm run check:docs` to enforce documentation coverage and links, or `npm run build:docs` to generate the Rust and TypeScript sites under ignored `reference-docs/`. See [documentation rules and commands](docs/documentation.md) for entry pages, tool versions and server-lane integration.
+
 ## Scope and limitations
 
 - SQLite is the preview's authoritative revision/receipt store. Markdown files are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
