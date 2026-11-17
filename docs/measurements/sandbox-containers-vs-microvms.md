@@ -3,6 +3,8 @@
 
 Measured 2026-11-17 on `calternal-perf-01-backup01`. Measurement and report only. No technology selection is made. Raw results and scripts are retained on that VM under `~/calternal-ai-sandbox-measure`; the machine-readable summary is [sandbox-containers-vs-microvms.json](sandbox-containers-vs-microvms.json). perf-02 was not used.
 
+Markdown is the human-readable report. The requested JSON companion preserves numeric quantiles, per-thread observations, tool metadata, coverage and cleanup records for machine processing.
+
 
 ## Machine and scope
 
@@ -84,6 +86,8 @@ Firecracker full snapshot, one idle trial: 3066.68 ms including explicit host fs
 Firecracker restore, one trial: API-ready 5.03 ms; usable shell 107.11 ms. Retained writable disk allocation was 136.69 MiB. The memory file was still in host page cache; restore is demand-paged, so this does not measure a cold-disk full working-set restore.
 
 After requesting a 512 MiB balloon and waiting three seconds: VMM PSS 31.02 MiB, RSS 31.75 MiB. This observation follows snapshot restore and is not a matched comparison with the pre-snapshot anonymous-memory profile.
+
+Balloon-driver statistics were not obtained: the harness sent a JSON body with `GET /balloon/statistics`, which Firecracker rejected with HTTP 400, `GET request cannot have a body.` This is a harness request error, not evidence that balloon statistics are unsupported. The host PSS observation above remains available; the driver's achieved balloon size was not verified.
 
 
 ## 3. Host memory per thread
@@ -195,9 +199,7 @@ This is a short sequential-write sanity check, not a storage benchmark: cached r
 | firecracker | idle | 46 | 768MiB_available_guard | 695.50 | 5729.32 |
 | firecracker | light | 42 | 768MiB_available_guard | 607.93 | 5827.52 |
 
-Podman launches failed with exit status 126 at 194 live containers while host MemAvailable was about 4 GiB, so memory was not the limit; the cause was not diagnosed. podman idle launch/workload limit at 194 threads: `Command '['/nix/store/rya5h303vr4vbskr5mljpq2ia4j5g3bi-podman-6.1.4/bin/podman', '--root', '/home/kayg/calternal-ai-sandbox-measure/podman-root', '--runroot', '/home/kayg/calternal-ai-sandbox-measure/podman-run', '--storage-driver', 'overlay', 'run', '-d', '--name', 'sbm-786617facd', '--network', 'none', '--memory', '1024m', '--pids-limit', '256', '--volume', '/home/kayg/calternal-ai-sandbox-measure/checkout.tar:/checkout.tar:ro', 'localhost/bench:toolset', '/sbin/workload', 'idle']' returned non-zero exit status 126.`.
-
-podman light launch/workload limit at 194 threads: `Command '['/nix/store/rya5h303vr4vbskr5mljpq2ia4j5g3bi-podman-6.1.4/bin/podman', '--root', '/home/kayg/calternal-ai-sandbox-measure/podman-root', '--runroot', '/home/kayg/calternal-ai-sandbox-measure/podman-run', '--storage-driver', 'overlay', 'run', '-d', '--name', 'sbm-afae6d6513', '--network', 'none', '--memory', '1024m', '--pids-limit', '256', '--volume', '/home/kayg/calternal-ai-sandbox-measure/checkout.tar:/checkout.tar:ro', 'localhost/bench:toolset', '/sbin/workload', 'light']' returned non-zero exit status 126.`.
+Podman launches failed with exit status 126 at 194 live containers while host MemAvailable was about 4 GiB, well above the host-memory guard. The cause was not diagnosed, so this is an observed launch limit rather than a measured RAM capacity. The exact failed commands are retained in the JSON `observations.density_error` records.
 
 Density stops before launching another thread when host `MemAvailable` falls below 768 MiB, with a test cap of 512 containers or 80 microVMs. It does not intentionally trigger the host OOM killer or disturb unrelated services. The results are observed lower bounds under that reserve policy, not the maximum until host OOM and not an extrapolation to a clean 7 GB machine. This VM has 7.70 GiB RAM and baseline services consume part of it. There is no swap, so no swap threshold can be measured. Build runs use a separate 512 MiB host-available guard. A malicious or memory-heavy guest could touch its full configured RAM irrespective of the idle/light density shown.
 
@@ -304,4 +306,11 @@ cd ..
 `run.sh` executes metadata, startup, profiles, host/sandbox builds at 1 and 4, ten-build profiles, restricted networking and density in sequence. Build commands source the environment derived from the pinned Nix development shell rather than installing another compiler in the guest. `tools.paths` and the full closure pin the actual measured binaries even though the initial Nix acquisition used the host registry.
 
 Raw events: `raw/events.jsonl`; excluded host setup failures: `raw/events-build-preflight.jsonl`; excluded network attempts: `raw/events-network-preflight.jsonl`; preflight observations: `raw/events-preflight.jsonl`; per-build logs and 0.5-second samples: `raw/*-build-*`; versions/input hashes: `raw/metadata.json`; individual VM serial/API logs: `fc-*/console.log`; phase logs: `starts.log`, `profiles.log`, `builds.log`, `build10.log`, `network.log`, `density.log`, `sharing.log`, `flow.log`, `continue.log`. The JSON summary retains failures, limits, quantiles and raw-file paths. Disposable containers, VMs, image stores, disks, snapshots, toolset copies and Cargo/build caches are removed after final collection; scripts and raw observations remain. Nix store entries are shared package-manager state and were not globally garbage-collected.
+
+The final coverage audit found all 660 startup observations, 240 fan-out requests, eight idle/light profiles, four density cases and both thirty-sample resume cases. `raw/final-audit.json` records the checks; raw memory traces exist for all eight build configurations, including the guard-stopped ten-VM run. `raw/cleanup.json` records zero remaining test containers/images and removal of the large fixtures, leaving about 19 MiB of scripts, logs and results. Both records are copied into the JSON companion. No completed measurement was rerun during this final audit.
+
+## Simplification opportunities
+
+- Keep the common toolset manifest as the single input to both image formats.
+- Record client command overhead and runtime/guest work as separate phases; the current end-to-end timings intentionally include both.
 
