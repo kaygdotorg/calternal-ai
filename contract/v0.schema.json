@@ -1098,6 +1098,28 @@
       "description": "Placement inside a space userdata tree; hidden files belong to the declaring plugin.",
       "anyOf": [
         {
+          "description": "Visible subtree claimed by one plugin, with at most eight safe components.",
+          "type": "object",
+          "required": [
+            "folder",
+            "subdirectories"
+          ],
+          "properties": {
+            "folder": {
+              "description": "One safe visible top-level folder.",
+              "type": "string"
+            },
+            "subdirectories": {
+              "description": "Safe directory components below the folder; never a filesystem path.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "User-visible top-level folder; the host rejects cross-plugin folder claims.",
           "type": "object",
           "required": [

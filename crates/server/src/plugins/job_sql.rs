@@ -13,6 +13,7 @@ use calternal_types::Error;
 
 pub(super) const SCHEMA: &str = "BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,plugin TEXT NOT NULL,account TEXT NOT NULL,session TEXT NOT NULL,operation TEXT NOT NULL,input TEXT NOT NULL,parent TEXT,state TEXT NOT NULL,checkpoint TEXT NOT NULL,checkpoint_seq INTEGER NOT NULL,checkpoints INTEGER NOT NULL,result TEXT NOT NULL,runs INTEGER NOT NULL,generation INTEGER NOT NULL,request_key TEXT UNIQUE,finished_ms INTEGER) STRICT;
+CREATE INDEX IF NOT EXISTS jobs_thread ON jobs(json_extract(input,'$.request.thread_id')) WHERE operation='agent.turn';
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;

@@ -105,7 +105,7 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
     jobs.finish(&space, &id, next.job.runs, RunEnd::Done(json!({})))
         .unwrap();
     assert!(jobs.agent_authenticate(&current).unwrap().is_none());
-    // A later manual turn inherits the thread's current mode, with fresh grants.
+    // A later person send applies its requested mode directly, with fresh grants.
     let next_id = jobs
         .admit(Admission {
             space: space.clone(),
@@ -125,8 +125,8 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
     let inherited = jobs.agent_prepare_scope(&authority, next.job.runs).unwrap();
     assert_eq!(
         inherited.mode,
-        AgentMode::ApproveForMe,
-        "a new turn widened the saved thread mode"
+        AgentMode::FullAccess,
+        "the new turn ignored the person's requested wider mode"
     );
     assert!(inherited.grants.is_empty());
     let raw = std::fs::read(dir.path().join("spaces").join(space).join("jobs.db")).unwrap();
@@ -190,7 +190,17 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
         jobs,
         allowed_hosts: api::allowed_hosts(3210),
     });
-    let thread = Uuid::now_v7().to_string();
+    let created = api::dispatch(
+        state.clone(),
+        who.clone(),
+        Session::Static,
+        "create-own-thread",
+        "threads.create",
+        serde_json::from_value(json!({"space_id":space,"title":"Own thread"})).unwrap(),
+    )
+    .await
+    .unwrap();
+    let thread = created["thread"]["id"].as_str().unwrap().to_owned();
     let id = state
         .jobs
         .admit(Admission {
@@ -282,6 +292,13 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     tokio::task::block_in_place(|| state.jobs.agent_scope_change(&scope)).unwrap();
     let new =
         tokio::task::block_in_place(|| state.jobs.agent_token(&scope, _run.job.runs)).unwrap();
+    let (status, reply) = call(
+        new.clone(),
+        "threads.send",
+        json!({"id":thread,"message":"no self-widening","mode":"full_access"}),
+    )
+    .await;
+    assert_eq!(status, 403, "{reply}");
     let (status,reply)=call(new.clone(),"secrets.request",json!({"space_id":space,"name":"provider-audit","label":"Fixture","reason":"Agent provenance"})).await;
     assert_eq!(status, 200, "{reply}");
     let path = data
@@ -309,6 +326,51 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
             scope.thread().unwrap()
         )
     );
+    // Full access remains bound to one thread, including within the same space.
+    for target_space in [&space, &other] {
+        let thread = api::dispatch(
+            state.clone(),
+            who.clone(),
+            Session::Static,
+            &format!("create-{target_space}"),
+            "threads.create",
+            serde_json::from_value(json!({"space_id":target_space,"title":"Foreign thread"}))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        let target = &thread["thread"]["id"];
+        let foreign = call(
+            new.clone(),
+            "threads.send",
+            json!({"id":target,"message":"must not append"}),
+        )
+        .await;
+        let missing = call(
+            new.clone(),
+            "threads.send",
+            json!({"id":Uuid::now_v7(),"message":"must not append"}),
+        )
+        .await;
+        assert_eq!(foreign.0, 404, "{}", foreign.1);
+        assert_eq!(foreign.1["error"], missing.1["error"]);
+        let saved = api::dispatch(
+            state.clone(),
+            who.clone(),
+            Session::Static,
+            "read-thread",
+            "threads.get",
+            serde_json::from_value(json!({"id":target})).unwrap(),
+        )
+        .await
+        .unwrap();
+        assert!(
+            !saved["thread"]["markdown"]
+                .as_str()
+                .unwrap()
+                .contains("must not append")
+        );
+    }
     let read = Request::builder()
         .uri("/api/v1/describe")
         .header("host", "localhost:3210")

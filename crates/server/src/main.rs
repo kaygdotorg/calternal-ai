@@ -34,6 +34,11 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Create, read, send to, stop, archive and delete saved conversations.
+    Threads {
+        #[command(flatten)]
+        args: calternal_cli::threads::Args,
+    },
     /// Run, watch and control official provider sessions in machine sandboxes.
     Agent {
         #[command(flatten)]
@@ -183,6 +188,7 @@ fn main() {
     // Reads the local time zone, which is only safe before any thread starts.
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
+        Cmd::Threads { args } => calternal_cli::threads::main(args, &out),
         Cmd::Agent { args } => calternal_cli::agent::main(args, &out),
         Cmd::Invoke {
             connection,

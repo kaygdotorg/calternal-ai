@@ -108,7 +108,7 @@ fn error(message: &str) -> CliError {
     CliError::new("agent", message)
         .hint("Run calternal agent --help; inspect the turn before resuming uncertain work.")
 }
-fn client(c: &Connection) -> Result<Client, CliError> {
+pub(crate) fn client(c: &Connection) -> Result<Client, CliError> {
     let token = if let Some(path) = &c.token_file {
         use std::os::unix::fs::PermissionsExt;
         let meta = std::fs::symlink_metadata(path)
@@ -127,7 +127,7 @@ fn client(c: &Connection) -> Result<Client, CliError> {
         .map_err(|_| error("Cannot connect with these server settings."))
 }
 
-async fn call(
+pub(crate) async fn call(
     client: &Client,
     operation: &str,
     input: Value,

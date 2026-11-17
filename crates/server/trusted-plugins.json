@@ -13,7 +13,7 @@
       "version": "0.1.0",
       "manifest": "notes-insights/manifest.json",
       "worker": "notes-insights/dist/worker.js",
-      "worker_sha256": "c641cea08b8f95224d304f2f4159ef31aa3b0ab6aa480b839616fd1ec68a9300",
+      "worker_sha256": "8c6af5b31bff39dafe983090ef044e0fc23cd5965285f6245f9c731f2cfd2ae6",
       "default_enabled": false
     },
     {

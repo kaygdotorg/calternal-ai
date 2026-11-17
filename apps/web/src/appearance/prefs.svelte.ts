@@ -10,6 +10,7 @@ import { accentFor } from "./accent";
 import { PRESETS, presetById } from "./presets";
 import { applyTheme } from "./theme";
 import { setFloor } from "./veil";
+import { setClarity } from "./wallpaper";
 import { onWallpaperColours, setCraftLight, setFlags, setWallpaper, updateVeil, type WallpaperColours } from "./wallpaper";
 
 /** How the accent colour is chosen. */
@@ -49,7 +50,7 @@ export interface Prefs {
    * TEMPORARY, for the owner's side-by-side comparison (Settings, Appearance, Compare); removed once decided. `floor`: the readability floor the veil is solved to (`current` 7:1 with text that
    * flips, or `low` 4.5:1 that shows more wallpaper). `light`: the light scheme's surfaces (`derived`: the lighter photo with the solved veil, or `craft`: the unchanged photo under 0.92 white).
    */
-  compare: { floor: "current" | "low"; light: "derived" | "craft" };
+  compare: { floor: "current" | "low"; light: "derived" | "craft"; /** Clear to tinted, 0 to 1: how much of the wallpaper shows through the veils. Null: from the system (reduced transparency or more contrast ask for tinted). */ clarity: number | null };
 }
 
 /** The defaults, after the plugin's: a lightly blurred wallpaper behind the sidebars, a heavily blurred, deeper card. */
@@ -68,7 +69,7 @@ export const DEFAULTS: Prefs = {
   fonts: DEFAULT_FONTS,
   motion: true,
   chatWidth: "wide",
-  compare: { floor: "current", light: "derived" },
+  compare: { floor: "current", light: "derived", clarity: null },
 };
 
 /** What Blur turns on: the blur radii (px) of the sidebars' and the card's copies of the picture. Tint and Dim have no fixed strength: the veil is solved (veil.ts). */
@@ -117,6 +118,13 @@ class Appearance {
     this.apply();
   }
 
+  /** Clear to tinted, 0 to 1. The person's choice, else from the system: reduced transparency or more contrast mean tinted (1); otherwise the middle (0.5), where the solved veil is untouched. */
+  get clarity(): number {
+    const c = this.prefs.compare.clarity;
+    if (typeof c === "number") return c;
+    return matchMedia("(prefers-reduced-transparency: reduce)").matches || matchMedia("(prefers-contrast: more)").matches ? 1 : 0.5;
+  }
+
   /** Writes the CSS variables and starts whatever must be redone for the current preferences. Stores them only when `save` (a change the person made): a first visit keeps no stored setting, so the defaults stay the defaults. */
   apply(save = false): void {
     const p = this.prefs;
@@ -134,6 +142,7 @@ class Appearance {
     if (p.motion) delete document.documentElement.dataset.motion; else document.documentElement.dataset.motion = "off";
     // The comparison: a lower readability floor, and Craft's light surfaces on the unchanged photograph (a photo's unchanged rendition is its dark-scheme file).
     setFloor(p.compare.floor);
+    setClarity(this.clarity);
     const craft = p.compare.light === "craft" && scheme === "light";
     setCraftLight(craft);
     const picture = w && !w.recipe && craft ? "dark" : scheme;

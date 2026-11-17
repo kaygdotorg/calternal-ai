@@ -287,7 +287,16 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         Err(e) => return failure(salvage_request_id(&bytes), e.into()),
     };
     let rid = request.request_id.clone();
-    let result = if calternal_core::AGENT_OPERATIONS
+    let scheduling_space = request
+        .input
+        .get("space_id")
+        .and_then(Value::as_str)
+        .and_then(|s| SpaceId::parse(s).ok())
+        .map(|s| s.to_string());
+    let thread_account = p.id;
+    let state_for_threads = state.clone();
+    let thread_scheduler = machines.clone();
+    let mut result = if calternal_core::AGENT_OPERATIONS
         .iter()
         .any(|(id, _, _)| *id == request.operation)
     {
@@ -319,6 +328,44 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         )
         .await
     };
+    if request.operation == "threads.stop" {
+        if let (Some(machines), Ok(value)) = (&thread_scheduler, &result) {
+            if let Err(error) =
+                crate::turns::finish_thread_stop(&state_for_threads, machines, value).await
+            {
+                result = Err(error);
+            }
+        }
+    }
+    if matches!(
+        request.operation.as_str(),
+        "threads.send" | "pending.submit" | "pending.confirm"
+    ) {
+        if let (Some(machines), Ok(value)) = (thread_scheduler, result.as_ref()) {
+            let value = if request.operation.starts_with("pending.") {
+                &value["result"]
+            } else {
+                value
+            };
+            if let (Some(space), Some(id)) = (
+                value["job"]["space_id"].as_str(),
+                value["job"]["id"].as_str(),
+            ) {
+                if scheduling_space
+                    .as_ref()
+                    .is_none_or(|expected| expected == space)
+                {
+                    crate::turns::schedule_thread(
+                        &state_for_threads,
+                        &machines,
+                        space.to_owned(),
+                        id.to_owned(),
+                        thread_account,
+                    );
+                }
+            }
+        }
+    }
     fault::hit(FaultPoint::BeforeReply);
     match result {
         Ok(data) => json_response(StatusCode::OK, &OperationResponse::success(rid, data)),
