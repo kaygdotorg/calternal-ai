@@ -187,3 +187,46 @@ async fn invitation_redemption_is_single_use_expiring_and_provisions_personal_sp
     assert_eq!(used.status, 400);
     assert_eq!(used.signature(), bogus.signature());
 }
+
+#[tokio::test]
+async fn separate_managers_cannot_copy_or_revoke_each_others_invites() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[4];
+    f.op(
+        1,
+        "spaces.set_role",
+        json!({"space_id":space,"account_id":f.ids[4],"role":"manager"}),
+    )
+    .await
+    .ok();
+    let (invite, _) = link(&f, 2, space, "reader", None).await;
+    let others = f.op(4, "invites.list", json!({"space_id":space})).await;
+    others.ok();
+    assert_eq!(others.body["data"]["invites"], json!([]));
+    let hidden = f
+        .op(
+            4,
+            "invites.revoke",
+            json!({"space_id":space,"invite_id":invite}),
+        )
+        .await;
+    let absent = f
+        .op(
+            4,
+            "invites.revoke",
+            json!({"space_id":space,"invite_id":uuid::Uuid::now_v7()}),
+        )
+        .await;
+    assert_eq!(hidden.status, 404);
+    assert_eq!(hidden.signature(), absent.signature());
+    let owner = f.op(1, "invites.list", json!({"space_id":space})).await;
+    owner.ok();
+    assert_eq!(owner.body["data"]["invites"][0]["invite_id"], invite);
+    f.op(
+        1,
+        "invites.revoke",
+        json!({"space_id":space,"invite_id":invite}),
+    )
+    .await
+    .ok();
+}

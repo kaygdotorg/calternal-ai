@@ -135,8 +135,8 @@ impl Auth {
         })
     }
 
-    /// Lists invitations in a single authorized snapshot. Owner-only grants are
-    /// hidden from Managers. Only unexpired, unused, unrevoked links can be copied.
+    /// Lists invitations in one snapshot. Managers see their own ordinary grants.
+    /// The Owner can see all grants. Only usable links can be copied.
     pub fn list_invites(&self, actor: AccountId, space: SpaceId) -> Result<Value> {
         let inner = self.inner.clone();
         self.spaces().run(move |c| {
@@ -152,10 +152,10 @@ impl Auth {
                  )
                  SELECT id,space_role,created_at,expires_at,used_at,revoked_at,secret
                  FROM invites WHERE space_id=?1 AND expires_at>?2
-                   AND (?3 OR space_role NOT IN (SELECT role FROM privileged))
+                   AND (?3 OR (created_by=?4 AND space_role NOT IN (SELECT role FROM privileged)))
                  ORDER BY created_at,id",
             ).map_err(sql)?;
-            let mut rows = stmt.query(params![space.to_string(), now, owner]).map_err(sql)?;
+            let mut rows = stmt.query(params![space.to_string(), now, owner, actor.to_string()]).map_err(sql)?;
             let mut invites = Vec::new();
             while let Some(row) = rows.next().map_err(sql)? {
                 let id: String = row.get(0).map_err(sql)?;
@@ -185,11 +185,11 @@ impl Auth {
     ) -> Result<Value> {
         self.spaces().mutate(actor, Some(space), Some(receipt), move |tx| {
             require(tx, actor, space, PeopleOperation::RevokeInvite.capability().name())?;
-            let role: String = tx.query_row(
-                "SELECT space_role FROM invites WHERE space_id=?1 AND id=?2",
-                params![space.to_string(),id.to_string()], |r| r.get(0),
+            let (creator, role): (String, String) = tx.query_row(
+                "SELECT created_by,space_role FROM invites WHERE space_id=?1 AND id=?2",
+                params![space.to_string(),id.to_string()], |r| Ok((r.get(0)?,r.get(1)?)),
             ).optional().map_err(sql)?.ok_or_else(missing)?;
-            if !is_owner(tx, actor, space)? && privileged(tx, &role)? {
+            if !is_owner(tx, actor, space)? && (creator != actor.to_string() || privileged(tx, &role)?) {
                 return Err(missing());
             }
             Ok(move |tx: &rusqlite::Transaction<'_>| {
