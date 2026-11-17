@@ -1323,7 +1323,11 @@ async fn filesystem_modes_and_complete_sql_inventory() {
     // the server's (roots included).
     walk(f.dir.path(), f.dir.path(), &mut files);
     let mut tables = vec![];
-    for db in ["state.sqlite3", "system/auth.db"] {
+    // Plugin enablement lives in the space's own content.db; no installation-wide
+    // state database exists.
+    assert!(!f.appdata().join("state.sqlite3").exists());
+    let space_db = format!("spaces/{}/content.db", f.spaces[0]);
+    for db in [space_db.as_str(), "system/content-index.db", "system/auth.db"] {
         let c = Connection::open_with_flags(
             f.appdata().join(db),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -2408,7 +2412,7 @@ async fn interrupted_authority_and_login_are_atomic_with_receipts() {
             f.stop();
             let response = task.await.unwrap();
             f.start().await;
-            for db in ["state.sqlite3", "system/auth.db"] {
+            for db in ["system/content-index.db", "system/auth.db"] {
                 let c = Connection::open_with_flags(
                     f.appdata().join(db),
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
