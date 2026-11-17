@@ -76,6 +76,8 @@ Every public code change includes matching reference comments. Run `npm run chec
 - Only repository-shipped, digest-pinned plugin bundles run. Workers use the machine role’s container sandbox; Node permission flags and cleared environments add defense in depth. Explicit direct development mode has no OS isolation. No arbitrary community plugin installation or provider credentials.
 - Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. Saved thread files and manual provider turns are development slices, with steering,
 large-output storage and the public TypeScript product bridge still unfinished.
+The private [request inbox](docs/requests.md) lists agent questions, approvals and
+secret prompts through `calternal requests` and the account feed.
 See [manual turns](docs/agent-turns.md) and [threads](docs/threads.md). Voice and
 memory integration remain unfinished.
 - UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.

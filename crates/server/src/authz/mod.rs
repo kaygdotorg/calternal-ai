@@ -211,6 +211,15 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
                 scope: Scope::Account,
                 constraint: Constraint::None,
             })
+            .chain(calternal_core::REQUEST_OPERATIONS.iter().map(|row| Policy {
+                operation: Cow::Borrowed(row.id),
+                required: row.required,
+                scope: match row.target {
+                    calternal_core::RequestTarget::Space => Scope::Space,
+                    _ => Scope::Account,
+                },
+                constraint: Constraint::None,
+            }))
             .collect()
     });
     static NOTES: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();

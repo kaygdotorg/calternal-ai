@@ -95,13 +95,6 @@ pub enum Command {
         /// least_access, approve_for_me or full_access; requires a fresh passkey session.
         mode: String,
     },
-    /// Approve a pending scope using a freshly verified person session.
-    Approve {
-        /// Turn job UUID.
-        job_id: String,
-        /// Access request UUID.
-        approval_id: String,
-    },
 }
 
 fn error(message: &str) -> CliError {
@@ -246,14 +239,6 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
             input.mode = mode(&m)?;
             ("agent.mode", false)
         }
-        Command::Approve {
-            job_id,
-            approval_id,
-        } => {
-            input.job_id = job_id;
-            input.approval_id = approval_id;
-            ("access.approve", false)
-        }
     };
     let result = call(&client, operation, json!(input), args.connection.request_id).await?;
     if operation == "agent.discard" {
@@ -293,10 +278,8 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
                         out.agent_event(&json!({"type":"retry_waiting","retry":retry}));
                     }
                 }
-                if let Some(requests) = event.data["requests"].as_array() {
-                    for request in requests.iter().filter(|r| r["approved"] == false) {
-                        out.agent_event(&json!({"type":"approval_request","request":request}));
-                    }
+                if event.data["job"]["state"] == "waiting" {
+                    out.agent_event(&json!({"type":"waiting","message":"Waiting on a person. Use calternal requests list."}));
                 }
             }
             "end" => {

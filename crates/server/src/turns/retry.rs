@@ -83,7 +83,8 @@ pub(super) fn manifest_defaults<D: Directory>(
     })
 }
 
-/// Restore provider wait timers once at server startup. Waits use one async task
+/// Restore provider wait timers and readmit resolved person waits at startup.
+/// Retry waits use one async task
 /// per active job (bounded by existing job admission); they hold no process or
 /// execution permit and recheck authority and machine fencing every second.
 pub async fn recover<D: Directory>(
@@ -93,6 +94,10 @@ pub async fn recover<D: Directory>(
     let st = state.clone();
     for (space, id) in blocking(move || st.jobs.agent_retry_waiting()).await? {
         schedule(state, machines, space, id);
+    }
+    let st = state.clone();
+    for (space, id) in blocking(move || st.jobs.recover_request_waits()).await? {
+        super::run::schedule(state, machines, space, id);
     }
     Ok(())
 }

@@ -144,6 +144,161 @@ bookmark: string, } } | { "Ready": {
  */
 bookmark: string, } } | "Reset";
 /**
+ * A request is presented only to the authenticated recipient.
+ */
+
+export type PersonRequest = {
+/**
+ * Stable request UUID.
+ */
+id: string,
+/**
+ * Addressed space UUID, absent for personal secret requests.
+ */
+space_id: string | null,
+/**
+ * Thread UUID when the request was raised during a turn.
+ */
+thread_id: string | null,
+/**
+ * Question, approval or trusted secret prompt.
+ */
+detail: RequestDetail, };
+/**
+ * The information needed to render each pending request.
+ */
+
+export type RequestDetail = { "kind": "question",
+/**
+ * Label shown in inbox summaries and non-interactive clients.
+ */
+label: string,
+/**
+ * Form drawn by the application.
+ */
+form: GenUiView, } | { "kind": "approval",
+/**
+ * App operation prefix.
+ */
+app: string,
+/**
+ * Whether the proposed grant includes writes.
+ */
+write: boolean,
+/**
+ * Exact operation details when raised by an automatic approval check.
+ */
+action: JsonObject, } | { "kind": "secret",
+/**
+ * Secret name, never the value.
+ */
+name: string,
+/**
+ * Short human-readable name.
+ */
+label: string,
+/**
+ * Why the caller requested the credential.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the original fifteen-minute request expires.
+ */
+expires_at_ms: number, };
+/**
+ * How long approved authority remains usable.
+ */
+
+export type ApprovalLifetime = "once" | "this_thread";
+/**
+ * Account-private pending request snapshot.
+ */
+
+export type RequestsListResult = {
+/**
+ * Currently authorized requests, ordered by ID.
+ */
+requests: Array<PersonRequest>, };
+/**
+ * Resolve a pending question with the submitted form values.
+ */
+
+export type RequestAnswerInput = {
+/**
+ * Question UUID.
+ */
+id: string,
+/**
+ * Submitted form values.
+ */
+answer: JsonObject, };
+/**
+ * Resolve a pending approval with the selected lifetime.
+ */
+
+export type RequestApproveInput = {
+/**
+ * Approval UUID.
+ */
+id: string,
+/**
+ * Maximum duration of the grant.
+ */
+lifetime: ApprovalLifetime, };
+/**
+ * Decline one pending approval.
+ */
+
+export type RequestDenyInput = {
+/**
+ * Approval UUID.
+ */
+id: string, };
+/**
+ * Result of resolving a private request.
+ */
+
+export type RequestResolution = {
+/**
+ * Resolved request UUID.
+ */
+id: string,
+/**
+ * Answered, approved or denied.
+ */
+status: string, };
+/**
+ * Raise a question from the caller's current thread.
+ */
+
+export type RequestAskInput = {
+/**
+ * Form capable of asking several questions at once.
+ */
+form: GenUiView, };
+/**
+ * Standing instructions for one space. Omitting Markdown reads the file.
+ */
+
+export type SpaceInstructionsInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Replacement Markdown, limited to 16 KiB.
+ */
+markdown: string | null, };
+/**
+ * The bounded standing instructions document.
+ */
+
+export type SpaceInstructionsResult = {
+/**
+ * Markdown text. An absent file is represented by empty text.
+ */
+markdown: string, };
+/**
  * One space followed on a live connection. At most 16 distinct spaces per connection.
  */
 
@@ -622,10 +777,6 @@ app: string,
  * Whether the requested grant allows mutations as well as reads.
  */
 write: boolean,
-/**
- * Approval UUID for a freshly verified person to approve.
- */
-approval_id: string,
 /**
  * Stream epoch last seen, empty on first read.
  */

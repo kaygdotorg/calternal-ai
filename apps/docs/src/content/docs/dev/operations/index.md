@@ -50,6 +50,12 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [pending.cancel](./pending-cancel/): pending cancel
 - [pending.confirm](./pending-confirm/): pending confirm
 - [pending.submit](./pending-submit/): pending submit
+- [requests.list](./requests-list/): List requests waiting on the signed-in account
+- [requests.ask](./requests-ask/): Ask the person a question from the current turn
+- [requests.answer](./requests-answer/): Answer a pending question
+- [requests.approve](./requests-approve/): Approve with a fresh verified passkey
+- [requests.deny](./requests-deny/): Decline a pending approval
+- [space.instructions](./space-instructions/): Read or replace standing space instructions
 - [agent.settings](./agent-settings/): Read or set your account defaults or thread retry settings
 - [machines.resume](./machines-resume/): Explicitly resume your interrupted machine lease
 - [machines.set](./machines-set/): Set direct or sandboxed execution on your own machine
@@ -61,4 +67,3 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [agent.resume](./agent-resume/): Explicitly resume an interrupted turn from its checkpoint
 - [agent.mode](./agent-mode/): Change a thread permission mode and rotate its token
 - [access.request](./access-request/): Ask for a named app scope in this thread
-- [access.approve](./access-approve/): Approve a scope with a freshly verified person session

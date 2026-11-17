@@ -18,12 +18,13 @@ pub struct Authority {
     /// Operation prefix of the originating app.
     pub source_app: String,
     /// Approved additional app prefixes and whether writes are permitted.
+    #[serde(skip)]
     pub grants: Vec<Grant>,
 }
 
 /// A person-approved app scope, optionally bound to one exact action digest.
 /// App grants cover ordinary reads/reversible changes; sensitive effects in
-/// approval modes require the action digest. All grants currently last one turn.
+/// approval modes require the action digest. Thread grants are retained until the thread is archived or deleted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Grant {
@@ -94,6 +95,23 @@ impl Authority {
             _ => Err(Error::internal("agent thread attribution missing")),
         }
     }
+    /// A once grant cannot bypass ownership of thread targets or their space.
+    pub(crate) fn can_request_action(&self, op: &str, input: &JsonObject) -> bool {
+        !op.starts_with("agent.")
+            && !op.starts_with("access.")
+            && input.get("space_id").and_then(serde_json::Value::as_str)
+                == Some(self.space.as_str())
+            && (!op.starts_with("threads.")
+                || input
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(|id| {
+                        self.thread()
+                            .map(|thread| thread.to_string() == id)
+                            .unwrap_or(false)
+                    }))
+    }
+
     /// Enforce current token scope before a handler or receipt replay. Catalog and
     /// validators are cached once; each call scans only the thread's bounded grants.
     pub fn check(&self, op: &str, input: &JsonObject) -> Result<(), Error> {
@@ -115,8 +133,8 @@ impl Authority {
     }
 
     /// Apply scope and declared risk to a built-in or manifest operation. Approved
-    /// external scopes bind the exact canonical input; irreversible and widening
-    /// scopes additionally bind the retry identity, so a new action asks again.
+    /// scopes bind canonical operation input. Irreversible and widening scopes
+    /// also bind the request ID, so a new action asks again.
     pub fn check_operation(
         &self,
         op: &str,
@@ -126,8 +144,11 @@ impl Authority {
         risk: calternal_core::OperationRisk,
     ) -> Result<(), Error> {
         let own_turn = input.get("job_id").and_then(|v| v.as_str()) == Some(self.job.as_str());
-        if op == "access.request" && own_turn {
+        if matches!(op, "access.request" | "requests.ask") && own_turn {
             return Ok(());
+        }
+        if (op.starts_with("requests.") || op == "space.instructions") && op != "requests.ask" {
+            return Err(Error::forbidden("a person must call this operation"));
         }
         if op.starts_with("agent.") {
             return if own_turn && matches!(op, "agent.events" | "agent.stop") {
@@ -165,12 +186,11 @@ impl Authority {
             .any(|g| g.action_hash.as_deref() == Some(action.as_str()));
         let approved = match risk {
             calternal_core::OperationRisk::Irreversible
-            | calternal_core::OperationRisk::External
-            | calternal_core::OperationRisk::WidensAccess => exact_grant,
+            | calternal_core::OperationRisk::WidensAccess => false,
+            calternal_core::OperationRisk::External => exact_grant,
             _ => app_grant || exact_grant,
         };
-        let allowed = exact_grant && risk == calternal_core::OperationRisk::WidensAccess
-            || risk_allowed(self.mode, risk, default, approved, &RulesOnly, op, input);
+        let allowed = risk_allowed(self.mode, risk, default, approved, &RulesOnly, op, input);
         if allowed {
             Ok(())
         } else {
@@ -250,10 +270,13 @@ pub fn action_scope(
     rid: &str,
     risk: calternal_core::OperationRisk,
 ) -> String {
-    let retry = if risk == calternal_core::OperationRisk::External {
-        ""
-    } else {
+    let retry = if matches!(
+        risk,
+        calternal_core::OperationRisk::Irreversible | calternal_core::OperationRisk::WidensAccess
+    ) {
         rid
+    } else {
+        ""
     };
     crate::store::sha256_hex(
         format!(

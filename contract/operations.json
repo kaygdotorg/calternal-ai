@@ -3998,7 +3998,7 @@
               "type": "string"
             },
             {
-              "description": "Parked until its child jobs report; it runs again when they all have.",
+              "description": "Parked without a process until its child jobs report or its person request is resolved.",
               "enum": [
                 "waiting"
               ],
@@ -4165,7 +4165,7 @@
               "type": "string"
             },
             {
-              "description": "Parked until its child jobs report; it runs again when they all have.",
+              "description": "Parked without a process until its child jobs report or its person request is resolved.",
               "enum": [
                 "waiting"
               ],
@@ -6659,6 +6659,476 @@
     }
   },
   {
+    "risk": "read",
+    "id": "requests.list",
+    "description": "List requests waiting on the signed-in account",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "GenUiView": {
+          "additionalProperties": false,
+          "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",
+          "properties": {
+            "genui_version": {
+              "description": "Generated-UI language version; exactly 2 (version 1 was the retired JSON tree).",
+              "format": "uint32",
+              "maximum": 2.0,
+              "minimum": 2.0,
+              "type": "integer"
+            },
+            "source": {
+              "description": "Program source, at most 64 KiB of UTF-8.",
+              "maxLength": 65536,
+              "type": "string"
+            }
+          },
+          "required": [
+            "genui_version",
+            "source"
+          ],
+          "type": "object"
+        },
+        "PersonRequest": {
+          "description": "A request is presented only to the authenticated recipient.",
+          "properties": {
+            "detail": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/RequestDetail"
+                }
+              ],
+              "description": "Question, approval or trusted secret prompt."
+            },
+            "id": {
+              "description": "Stable request UUID.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Addressed space UUID, absent for personal secret requests.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "thread_id": {
+              "description": "Thread UUID when the request was raised during a turn.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "detail",
+            "id"
+          ],
+          "type": "object"
+        },
+        "RequestDetail": {
+          "description": "The information needed to render each pending request.",
+          "oneOf": [
+            {
+              "description": "One generated form, which may have multiple fields.",
+              "properties": {
+                "form": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/GenUiView"
+                    }
+                  ],
+                  "description": "Form drawn by the application."
+                },
+                "kind": {
+                  "enum": [
+                    "question"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Label shown in inbox summaries and non-interactive clients.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "form",
+                "kind",
+                "label"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Trusted, fixed form describing the proposed authority.",
+              "properties": {
+                "action": {
+                  "additionalProperties": true,
+                  "description": "Exact operation details when raised by an automatic approval check.",
+                  "type": "object"
+                },
+                "app": {
+                  "description": "App operation prefix.",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                "write": {
+                  "description": "Whether the proposed grant includes writes.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "action",
+                "app",
+                "kind",
+                "write"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Trusted, fixed form describing the existing secret request.",
+              "properties": {
+                "expires_at_ms": {
+                  "description": "Unix milliseconds when the original fifteen-minute request expires.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "secret"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Short human-readable name.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Secret name, never the value.",
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "Why the caller requested the credential.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "expires_at_ms",
+                "kind",
+                "label",
+                "name",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "description": "Account-private pending request snapshot.",
+      "properties": {
+        "requests": {
+          "description": "Currently authorized requests, ordered by ID.",
+          "items": {
+            "$ref": "#/definitions/PersonRequest"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "title": "RequestsListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "requests.ask",
+    "description": "Ask the person a question from the current turn",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "GenUiView": {
+          "additionalProperties": false,
+          "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",
+          "properties": {
+            "genui_version": {
+              "description": "Generated-UI language version; exactly 2 (version 1 was the retired JSON tree).",
+              "format": "uint32",
+              "maximum": 2.0,
+              "minimum": 2.0,
+              "type": "integer"
+            },
+            "source": {
+              "description": "Program source, at most 64 KiB of UTF-8.",
+              "maxLength": 65536,
+              "type": "string"
+            }
+          },
+          "required": [
+            "genui_version",
+            "source"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Raise a question from the caller's current thread.",
+      "properties": {
+        "form": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/GenUiView"
+            }
+          ],
+          "description": "Form capable of asking several questions at once."
+        }
+      },
+      "required": [
+        "form"
+      ],
+      "title": "RequestAskInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "requests.answer",
+    "description": "Answer a pending question",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Resolve a pending question with the submitted form values.",
+      "properties": {
+        "answer": {
+          "additionalProperties": true,
+          "description": "Submitted form values.",
+          "type": "object"
+        },
+        "id": {
+          "description": "Question UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer",
+        "id"
+      ],
+      "title": "RequestAnswerInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "requests.approve",
+    "description": "Approve with a fresh verified passkey",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ApprovalLifetime": {
+          "description": "How long approved authority remains usable.",
+          "oneOf": [
+            {
+              "description": "The first matching action may use the grant.",
+              "enum": [
+                "once"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The grant survives turns until the thread is archived or deleted.",
+              "enum": [
+                "this_thread"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Resolve a pending approval with the selected lifetime.",
+      "properties": {
+        "id": {
+          "description": "Approval UUID.",
+          "type": "string"
+        },
+        "lifetime": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ApprovalLifetime"
+            }
+          ],
+          "description": "Maximum duration of the grant."
+        }
+      },
+      "required": [
+        "id",
+        "lifetime"
+      ],
+      "title": "RequestApproveInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "requests.deny",
+    "description": "Decline a pending approval",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Decline one pending approval.",
+      "properties": {
+        "id": {
+          "description": "Approval UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RequestDenyInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "id": "space.instructions",
+    "description": "Read or replace standing space instructions",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Standing instructions for one space. Omitting Markdown reads the file.",
+      "properties": {
+        "markdown": {
+          "description": "Replacement Markdown, limited to 16 KiB.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInstructionsInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "The bounded standing instructions document.",
+      "properties": {
+        "markdown": {
+          "description": "Markdown text. An absent file is represented by empty text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown"
+      ],
+      "title": "SpaceInstructionsResult",
+      "type": "object"
+    }
+  },
+  {
     "risk": "reversible",
     "id": "agent.settings",
     "description": "Read or set your account defaults or thread retry settings",
@@ -6744,11 +7214,6 @@
         "app": {
           "default": "",
           "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
           "type": "string"
         },
         "context": {
@@ -6950,11 +7415,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7152,11 +7612,6 @@
         "app": {
           "default": "",
           "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
           "type": "string"
         },
         "context": {
@@ -7358,11 +7813,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7560,11 +8010,6 @@
         "app": {
           "default": "",
           "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
           "type": "string"
         },
         "context": {
@@ -7766,11 +8211,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7968,11 +8408,6 @@
         "app": {
           "default": "",
           "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
           "type": "string"
         },
         "context": {
@@ -8174,11 +8609,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -8376,11 +8806,6 @@
         "app": {
           "default": "",
           "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
           "type": "string"
         },
         "context": {
@@ -8582,11 +9007,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -8784,215 +9204,6 @@
         "app": {
           "default": "",
           "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
-        "context": {
-          "default": [],
-          "description": "Labelled context contributions, bounded by the provider command budget.",
-          "items": {
-            "$ref": "#/definitions/ProviderContext"
-          },
-          "type": "array"
-        },
-        "direct": {
-          "default": false,
-          "description": "Whether an account-owned machine runs directly; pool machines refuse this.",
-          "type": "boolean"
-        },
-        "epoch": {
-          "default": "",
-          "description": "Stream epoch last seen, empty on first read.",
-          "type": "string"
-        },
-        "job_id": {
-          "default": "",
-          "description": "Job UUID for events/stop/resume/mode/access operations.",
-          "type": "string"
-        },
-        "lease_id": {
-          "default": "",
-          "description": "Fenced lease UUID for explicit machine-level resumption.",
-          "type": "string"
-        },
-        "machine_id": {
-          "default": "",
-          "description": "Machine UUID for owner-controlled execution settings.",
-          "type": "string"
-        },
-        "mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AgentMode"
-            }
-          ],
-          "default": "approve_for_me",
-          "description": "Permission mode; defaults to Approve for me."
-        },
-        "model": {
-          "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
-          "type": "string"
-        },
-        "options": {
-          "additionalProperties": true,
-          "default": {},
-          "description": "Options declared by the selected provider, bounded by the command budget.",
-          "type": "object"
-        },
-        "prompt": {
-          "default": "",
-          "description": "Person's prompt; at most 16 KiB, required for run.",
-          "type": "string"
-        },
-        "provider_id": {
-          "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
-          "type": "string"
-        },
-        "retry_failed": {
-          "default": false,
-          "description": "Explicit retry of a failed workspace discard; never implied by status polling.",
-          "type": "boolean"
-        },
-        "retry_settings": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AgentRetrySettings"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Per-thread recovery override; absent uses the account defaults."
-        },
-        "source_app": {
-          "default": "",
-          "description": "Originating app operation prefix; empty grants no originating-app access.",
-          "type": "string"
-        },
-        "space_id": {
-          "default": "",
-          "description": "Owning space UUID, required for check/run, otherwise derived from the job.",
-          "type": "string"
-        },
-        "thread_id": {
-          "default": "",
-          "description": "Thread UUID for check/run; no thread file is created in step one.",
-          "type": "string"
-        },
-        "write": {
-          "default": false,
-          "description": "Whether the requested grant allows mutations as well as reads.",
-          "type": "boolean"
-        }
-      },
-      "title": "AgentInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": true,
-      "title": "Map_of_AnyValue",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "widens_access",
-    "id": "access.approve",
-    "description": "Approve a scope with a freshly verified person session",
-    "mutates": true,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "AgentMode": {
-          "description": "Thread permission mode; every change revokes the previous thread token.",
-          "oneOf": [
-            {
-              "description": "Thread, workspace and originating app only; other scopes require approval.",
-              "enum": [
-                "least_access"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Current space access, reviewed by rules; high-risk classes require approval.",
-              "enum": [
-                "approve_for_me"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Current space access without approvals, independently of sandboxing.",
-              "enum": [
-                "full_access"
-              ],
-              "type": "string"
-            }
-          ]
-        },
-        "AgentRetrySettings": {
-          "additionalProperties": false,
-          "description": "Typed automatic provider recovery settings; manifest defaults apply per account and a manual turn may override them. Neither permits machine re-placement.",
-          "properties": {
-            "provider_errors": {
-              "description": "Retry explicit transient provider errors, with no pending tool effect.",
-              "type": "boolean"
-            },
-            "subscription_limits": {
-              "description": "Resume subscription usage limits at the reset reported by the provider.",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "provider_errors",
-            "subscription_limits"
-          ],
-          "type": "object"
-        },
-        "ProviderContext": {
-          "additionalProperties": false,
-          "description": "A labelled contribution; data, never authority or system instructions.",
-          "properties": {
-            "source": {
-              "description": "Plugin or attachment label, at most 128 UTF-8 bytes.",
-              "type": "string"
-            },
-            "text": {
-              "description": "Contribution text; included in the command's total bound.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "source",
-            "text"
-          ],
-          "type": "object"
-        }
-      },
-      "description": "Input union for manual-turn operations. Each operation rejects irrelevant fields. UUIDs are full resource identifiers; model work never starts without a space check.",
-      "properties": {
-        "after": {
-          "default": 0,
-          "description": "Next job sequence requested; zero on first read.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "app": {
-          "default": "",
-          "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
           "type": "string"
         },
         "context": {

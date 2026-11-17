@@ -31,6 +31,7 @@ mod collections;
 mod db;
 mod discovery;
 mod files;
+mod instructions;
 mod journal;
 mod linked_write;
 mod mutations;
@@ -147,13 +148,6 @@ pub fn format_rfc3339(instant: time::OffsetDateTime) -> String {
         .expect("timestamp format")
 }
 impl Content {
-    /// Return the validated SSD userdata root for descriptor-relative, authorized
-    /// metadata reads. The caller must retain root guards and check space access.
-    /// Cost: one path clone, no I/O or content/space locks.
-    pub fn userdata_root(&self) -> PathBuf {
-        self.roots.userdata_ssd.clone()
-    }
-
     /// Opens the identifier-only catalog and replays unfinished space intents.
     /// `receipt_retention` bounds how long each space keeps request receipts
     /// ([`DEFAULT_RECEIPT_RETENTION`] unless the operator sets another); a retry
@@ -539,6 +533,13 @@ impl Content {
             } else {
                 None
             };
+            let payload = serde_json::from_str(&result).map_err(internal)?;
+            let payload = if revision == instructions::INTENT {
+                self.place_instructions(space.id, &payload)?;
+                Value::Null
+            } else {
+                payload
+            };
             self.journals.publish(
                 &space.journal,
                 account.parse().map_err(internal)?,
@@ -547,7 +548,7 @@ impl Content {
                 &fp,
                 item,
                 &revision,
-                serde_json::from_str(&result).map_err(internal)?,
+                payload,
             )?;
             space
                 .conn
