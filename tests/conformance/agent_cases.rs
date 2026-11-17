@@ -21,7 +21,7 @@ pub const OPERATIONS: &[&str] = &[
 async fn agent_operations_hide_foreign_jobs_spaces_and_machine_settings() {
     let f = Fixture::new().await;
     let thread = uuid::Uuid::now_v7().to_string();
-    let start=f.op(1,"agent.run",json!({"space_id":f.spaces[0].to_uppercase(),"thread_id":thread.to_uppercase(),"prompt":"disposable conformance prompt"})).await;
+    let start=f.op(1,"agent.run",json!({"space_id":f.spaces[0],"thread_id":thread,"prompt":"disposable conformance prompt"})).await;
     start.ok();
     assert_eq!(
         start.body["data"]["job"]["space_id"], f.spaces[0],
@@ -139,4 +139,52 @@ async fn access_approval_requires_the_person_and_rotates_into_explicit_resume() 
     mode.ok();
     assert_eq!(mode.body["data"]["job"]["state"], "interrupted");
     f.op(1, "agent.stop", json!({"job_id":job})).await.ok();
+}
+
+#[tokio::test]
+async fn manual_turns_share_request_admission_with_content_and_directory_writes() {
+    let f = Fixture::new().await;
+    let rid = "turn-shared-admission";
+    let input =
+        json!({"space_id":f.spaces[0],"thread_id":uuid::Uuid::now_v7(),"prompt":"receipt probe"});
+    let first = f.op_id(1, "agent.run", input.clone(), rid).await;
+    first.ok();
+    let replay = f.op_id(1, "agent.run", input, rid).await;
+    replay.ok();
+    assert_eq!(
+        first.body["data"]["job"]["id"],
+        replay.body["data"]["job"]["id"]
+    );
+    let content = f
+        .op_id(
+            1,
+            "notes.create",
+            json!({"space_id":f.spaces[0],"title":"receipt probe","markdown":"body"}),
+            rid,
+        )
+        .await;
+    assert_eq!(
+        content.status, 409,
+        "turn receipt did not reserve the shared identity"
+    );
+    let directory = f
+        .op_id(
+            1,
+            "spaces.set_role",
+            json!({"space_id":f.spaces[0],"account_id":f.ids[2],"role":"reader"}),
+            rid,
+        )
+        .await;
+    assert_eq!(directory.status, 409);
+    let other = "content-before-turn";
+    f.op_id(
+        1,
+        "notes.create",
+        json!({"space_id":f.spaces[0],"title":"receipt probe","markdown":"body"}),
+        other,
+    )
+    .await
+    .ok();
+    let turn=f.op_id(1,"agent.run",json!({"space_id":f.spaces[0],"thread_id":uuid::Uuid::now_v7(),"prompt":"receipt probe"}),other).await;
+    assert_eq!(turn.status, 409);
 }

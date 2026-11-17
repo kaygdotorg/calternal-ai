@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-/// Canonical key for schema inventory, fixed policy and unbound enrollment tokens.
+/// Canonical key for schema inventory, fixed policy, unbound enrollment tokens
+/// and pool machine authority (account-owned tables with no account).
 pub(crate) const GLOBAL: &str = "000000000000000000000000000000000";
-// A closed inventory: adding a security table requires an explicit owner mapping.
-// Delivery/ack/reset tables are intentionally absent; rebuilt devices always resync.
+// A closed inventory of every auth.db table: adding a table requires an explicit
+// owner mapping here, or recovery configuration refuses the database.
 const SPECS: &[(&str, char, &str)] = &[
     ("users", '1', "id"),
     ("passkeys", '1', "user_id"),
@@ -15,9 +16,12 @@ const SPECS: &[(&str, char, &str)] = &[
     ("installations", '1', "user_id"),
     ("group_members", '1', "user_id"),
     ("space_receipts", '1', "actor"),
-    ("note_shares", '1', "owner_id"),
-    ("share_grants", '1', "person_id"),
-    ("installation_notes_scopes", '1', "@installation"),
+    ("agent_access", '1', "account"),
+    ("agent_approvals", '1', "account"),
+    ("agent_discards", '1', "account"),
+    ("machine_codes", '1', "owner_account"),
+    ("machines", '1', "owner_account"),
+    ("machine_pool_grants", '1', "account"),
     ("spaces", '2', "id"),
     ("space_memberships", '2', "space_id"),
     ("groups", '3', "id"),
@@ -28,18 +32,6 @@ const SPECS: &[(&str, char, &str)] = &[
     ("space_roles", '0', ""),
     ("space_role_capabilities", '0', ""),
     ("development_directory", '0', ""),
-];
-const EXCLUDED: &[&str] = &[
-    "note_journal",
-    "share_fanout",
-    "recipient_control",
-    "recipient_control_acks",
-    "recipient_share_state",
-    "share_fanout_acks",
-    "recipient_share_fences",
-    "sharing_installation_resets",
-    "sharing_reset_cursors",
-    "share_fanout_deliveries",
 ];
 /// Comparable format-three owner record for delta capture; never exposed to tenants.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -60,11 +52,7 @@ fn key_expr(kind: char, owner: &str, prefix: &str) -> String {
     if kind == '0' {
         return format!("'{GLOBAL}'");
     }
-    let value = if owner == "@installation" {
-        format!("(SELECT user_id FROM installations WHERE id={prefix}.installation_id)")
-    } else {
-        format!("{prefix}.{}", quote(owner))
-    };
+    let value = format!("{prefix}.{}", quote(owner));
     format!(
         "CASE WHEN {value} IS NULL THEN '{GLOBAL}' ELSE '{kind}'||replace(lower({value}),'-','') END"
     )
@@ -87,11 +75,10 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)?;
-    if names.iter().any(|n| {
-        !n.starts_with("security_recovery_")
-            && !SPECS.iter().any(|(s, _, _)| s == n)
-            && !EXCLUDED.contains(&n.as_str())
-    }) {
+    if names
+        .iter()
+        .any(|n| !n.starts_with("security_recovery_") && !SPECS.iter().any(|(s, _, _)| s == n))
+    {
         return Err(err(
             "unclassified auth table; recovery owner mapping required",
         ));
@@ -200,13 +187,9 @@ pub(crate) fn capture_record(
         let filter = if *owner_kind == '0' {
             if kind == '0' { "1".into() } else { "0".into() }
         } else if kind == '0' {
-            if *name == "setup_tokens" {
-                "user_id IS NULL".into()
-            } else {
-                "0".into()
-            }
-        } else if *owner == "@installation" {
-            "installation_id IN (SELECT id FROM installations WHERE user_id=?1)".into()
+            // Account-owned rows with no account (unbound setup tokens, pool
+            // machine codes and machines) belong to the global record.
+            format!("{} IS NULL", quote(owner))
         } else {
             format!("{}=?1", quote(owner))
         };

@@ -9,13 +9,13 @@ use axum::{
 };
 use calternal_server::{
     api::{AppState, Shared, allowed_hosts, router},
-    auth::{Directory, TokenTable},
+    auth::{Directory, StoredDirectory},
     plugins::Registry,
     store::Store,
 };
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tower::ServiceExt;
 
 const CANARY: &str = "sk-canary-server-5d2e81-never-stored-in-clear";
@@ -29,7 +29,8 @@ struct Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        // `root` is appdata; its parent holds all three roots.
+        let _ = std::fs::remove_dir_all(self.root.parent().unwrap());
     }
 }
 impl Fixture {
@@ -37,9 +38,23 @@ impl Fixture {
     /// (`None` removes the membership).
     async fn new(role: Option<&'static str>) -> Self {
         tokio::task::spawn_blocking(move || {
-            let root =
+            let base =
                 std::env::temp_dir().join(format!("calternal-secrets-{}", uuid::Uuid::new_v4()));
-            let tokens = TokenTable::load_or_create(&root).unwrap();
+            let roots = calternal_roots::Roots {
+                appdata: base.join("appdata"),
+                userdata_ssd: base.join("userdata-ssd"),
+                userdata_hdd: base.join("userdata-hdd"),
+            };
+            let store = Store::open(
+                &roots,
+                uuid::Uuid::from_u128(1),
+                true,
+                calternal_content::DEFAULT_RECEIPT_RETENTION,
+            )
+            .unwrap();
+            // Every later path is in appdata; `base` holds all three roots.
+            let root = roots.appdata.clone();
+            let tokens = StoredDirectory::load_or_create(&root).unwrap();
             let guest = std::fs::read_to_string(root.join("dev-tokens/guest.token")).unwrap();
             let owner = std::fs::read_to_string(root.join("dev-tokens/owner.token")).unwrap();
             let guest_id = tokens
@@ -54,7 +69,7 @@ impl Fixture {
                 .to_string();
             let shared = tokens
                 .spaces
-                .list(calternal_auth::AccountId::parse(&owner_id).unwrap())
+                .list(calternal_types::AccountId::parse(&owner_id).unwrap())
                 .unwrap()
                 .into_iter()
                 .find(|s| s.name == "shared")
@@ -78,8 +93,9 @@ impl Fixture {
             }
             .unwrap();
             let state = Arc::new(AppState {
-                store: Mutex::new(Store::open(&root).unwrap()),
-                tokens,
+                inputs: store.account_inputs(),
+                store,
+                directory: tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),
                 jobs: calternal_server::plugins::Jobs::disabled(),
@@ -233,7 +249,7 @@ async fn development_bearer_tokens_cannot_provide() {
     let res = router(f.state.clone(), None).oneshot(req).await.unwrap();
     // Without account sessions the route is not mounted at all.
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    assert!(scan(&f.root).is_empty());
+    assert!(scan(f.root.parent().unwrap()).is_empty());
 }
 
 async fn op(app: &App, cookie: &str, operation: &str, input: Value) -> Value {

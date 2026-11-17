@@ -127,7 +127,7 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
         }
         command
             .args(["agent", "--base-url", &server.url(), "--token-file"])
-            .arg(data.join("dev-tokens/owner.token"))
+            .arg(data.join("appdata/dev-tokens/owner.token"))
             .args([
                 "run",
                 "--space-id",
@@ -309,7 +309,8 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
 }
 
 fn expedite(data: &Path, space: &str, id: &str) {
-    let c = rusqlite::Connection::open(data.join("spaces").join(space).join("jobs.db")).unwrap();
+    let c = rusqlite::Connection::open(data.join("appdata/spaces").join(space).join("jobs.db"))
+        .unwrap();
     c.execute(
         "UPDATE jobs SET checkpoint=json_set(checkpoint,'$.retry.next_attempt_ms',0) WHERE id=?1",
         [id],

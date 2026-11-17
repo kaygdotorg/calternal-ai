@@ -57,7 +57,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     else {
         panic!("account machine")
     };
-    let _containers = Containers(account);
+    let _containers = Containers(account.as_uuid());
     let _machine = Proc(
         Command::new(BIN)
             .args([
@@ -88,7 +88,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
             &server.url(),
             "--token-file",
         ])
-        .arg(data.join("dev-tokens/owner.token"))
+        .arg(data.join("appdata/dev-tokens/owner.token"))
         .args([
             "run",
             "--space-id",

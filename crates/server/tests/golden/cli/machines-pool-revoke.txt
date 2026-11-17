@@ -1,4 +1,4 @@
 exit: 0
 --- stdout ---
-Account cccccccc-cccc-4ccc-8ccc-cccccccccccc may no longer use pool machines.
+Account cccccccc-cccc-7ccc-8ccc-cccccccccccc may no longer use pool machines.
 --- stderr ---

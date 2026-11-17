@@ -81,62 +81,7 @@ async fn sign_out_ends_the_session_immediately() {
     assert_eq!(api.status, 401);
 }
 
-// Source live-feed cases are deferred; see ../PORTING.md.
-
-#[tokio::test]
-#[ignore = "protected account mutation receipt replay is not ported; source retry assertions retained"]
-async fn revoking_another_device_signs_it_out() {
-    let app = app();
-    let (laptop, mut dev) = first_owner(&app, "kayg").await;
-    let phone = login(&app, &mut dev).await.session();
-    let list = action(&app, &laptop, "account.installations", "", json!(null)).await;
-    let phone_id = list.body["result"]["installations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|r| r["current"] == false)
-        .unwrap()["id"]
-        .clone();
-    let r = action(
-        &app,
-        &laptop,
-        "account.revoke",
-        "rv1",
-        json!({ "installation": phone_id }),
-    )
-    .await;
-    assert_eq!(r.status, 200, "{:?}", r.body);
-    assert_eq!(get(&app, "/api/v1/auth/me", Some(&phone)).await.status, 401);
-    let status = get(&app, "/api/v1/auth/status", Some(&phone)).await;
-    assert_eq!(status.body["signed_in"], false);
-    assert!(status.cookie.is_none());
-    assert_eq!(
-        get(&app, "/api/v1/auth/me", Some(&laptop)).await.status,
-        200
-    );
-
-    // A retry with the same key replays instead of failing.
-    let again = action(
-        &app,
-        &laptop,
-        "account.revoke",
-        "rv1",
-        json!({ "installation": phone_id }),
-    )
-    .await;
-    assert_eq!(again.status, 200);
-    assert_eq!(again.body["replayed"], true);
-
-    let missing = action(
-        &app,
-        &laptop,
-        "account.revoke",
-        "rv2",
-        json!({ "installation": "00000000-0000-4000-8000-000000000000" }),
-    )
-    .await;
-    assert_eq!(missing.code(), "not_found");
-}
+// Source live-feed cases are deferred; see docs/reviews/server-porting-2026-11-17.md.
 
 #[tokio::test]
 async fn sessions_expire_when_unused() {

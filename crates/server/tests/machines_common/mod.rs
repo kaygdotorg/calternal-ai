@@ -64,6 +64,23 @@ impl Drop for Proc {
     }
 }
 
+/// The installation arguments of the server under `data`, as `calternal
+/// machines …` takes them (the same roots and pinned ID as `Server::start`).
+pub fn installation(data: &Path) -> Vec<std::ffi::OsString> {
+    let mut out = Vec::new();
+    for (flag, root) in [
+        ("--appdata", "appdata"),
+        ("--userdata-ssd", "userdata-ssd"),
+        ("--userdata-hdd", "userdata-hdd"),
+    ] {
+        out.push(flag.into());
+        out.push(data.join(root).into());
+    }
+    out.push("--installation-id".into());
+    out.push("00000000-0000-0000-0000-000000000001".into());
+    out
+}
+
 pub fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -86,7 +103,7 @@ impl Server {
     }
 
     pub fn start_with_plugins(data: &Path, port: u16, plugins: &Path) -> Self {
-        let startup = data.join("startup.json");
+        let startup = data.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(BIN)
             .args([
@@ -94,9 +111,16 @@ impl Server {
                 "--development",
                 "--port",
                 &port.to_string(),
-                "--data-dir",
+                "--create",
+                "--installation-id",
+                "00000000-0000-0000-0000-000000000001",
             ])
-            .arg(data)
+            .arg("--appdata")
+            .arg(data.join("appdata"))
+            .arg("--userdata-ssd")
+            .arg(data.join("userdata-ssd"))
+            .arg("--userdata-hdd")
+            .arg(data.join("userdata-hdd"))
             .arg("--plugin-root")
             .arg(plugins)
             .args(["--machine-lease-ttl-ms", &LEASE_TTL_MS.to_string()])

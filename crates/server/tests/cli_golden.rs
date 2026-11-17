@@ -5,6 +5,7 @@
 //! placeholders first; the time zone is forced to UTC+1 to prove local rendering.
 
 use std::io::{BufRead, BufReader, Read};
+use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -77,10 +78,90 @@ fn data(dir: &Path) -> String {
     dir.to_str().unwrap().to_owned()
 }
 
+const INSTALLATION: &str = "00000000-0000-0000-0000-000000000001";
+
+/// A paired, stopped installation under `dir`, as `calternal serve --create`
+/// leaves it (roots paired, auth.db present, an empty recovery log directory),
+/// with `users` and `machines` rows written before recovery is first attached.
+/// Returns the `machines` command arguments naming it.
+fn installation(
+    dir: &Path,
+    users: &[&str],
+    machines: &[(&str, Option<&str>, &str, &str, &str)],
+) -> Vec<String> {
+    let roots = calternal_roots::Roots {
+        appdata: dir.join("appdata"),
+        userdata_ssd: dir.join("userdata-ssd"),
+        userdata_hdd: dir.join("userdata-hdd"),
+    };
+    let id = uuid::Uuid::parse_str(INSTALLATION).unwrap();
+    drop(
+        calternal_server::store::Store::open(
+            &roots,
+            id,
+            true,
+            calternal_content::DEFAULT_RECEIPT_RETENTION,
+        )
+        .unwrap(),
+    );
+    let c = calternal_auth::db::open_conn(&roots.appdata.join("system/auth.db")).unwrap();
+    for user in users {
+        c.execute(
+            "INSERT INTO users(id,name,username,created_at) VALUES(?1,'Person',?1,0)",
+            [user],
+        )
+        .unwrap();
+    }
+    for (id, owner, name, os, arch) in machines {
+        c.execute(
+            "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms) VALUES(?1,?2,?3,?4,?5,?6,0)",
+            rusqlite::params![id, owner, vec![7u8; 32], name, os, arch],
+        )
+        .unwrap();
+    }
+    drop(c);
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .recursive(true)
+        .create(roots.userdata_ssd.join(".calternal/recovery"))
+        .unwrap();
+    args(dir)
+}
+
+/// The `machines` arguments naming the installation under `dir`.
+fn args(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for (flag, root) in [
+        ("--appdata", "appdata"),
+        ("--userdata-ssd", "userdata-ssd"),
+        ("--userdata-hdd", "userdata-hdd"),
+    ] {
+        out.push(flag.to_owned());
+        out.push(data(&dir.join(root)));
+    }
+    out.push("--installation-id".into());
+    out.push(INSTALLATION.into());
+    out
+}
+
+/// `head` followed by the installation arguments.
+fn cmd<'a>(head: &[&'a str], installation: &'a [String]) -> Vec<&'a str> {
+    head.iter()
+        .copied()
+        .chain(installation.iter().map(String::as_str))
+        .collect()
+}
+
+/// Replaces the temporary directory in output with `<DIR>`.
+fn redact(dir: &Path) -> impl Fn(&str) -> String {
+    let dir = data(dir);
+    move |s: &str| s.replace(&dir, "<DIR>")
+}
+
 #[test]
 fn machines_code_prints_the_code_once_with_a_local_expiry() {
     let d = tempfile::tempdir().unwrap();
-    let dir = data(d.path());
+    let inst = installation(d.path(), &[], &[]);
     let (human, json) = {
         let clean = |s: &str| {
             let mut out = String::new();
@@ -105,7 +186,7 @@ fn machines_code_prints_the_code_once_with_a_local_expiry() {
         };
         case(
             "machines-code-pool",
-            &["machines", "code", "--pool", "--data-dir", &dir],
+            &cmd(&["machines", "code", "--pool"], &inst),
             "calternal machines code",
             &clean,
         )
@@ -120,122 +201,85 @@ fn machines_code_prints_the_code_once_with_a_local_expiry() {
     // Error: neither --pool nor --account.
     case(
         "machines-code-error",
-        &["machines", "code", "--data-dir", &dir],
+        &cmd(&["machines", "code"], &inst),
         "error",
         &|s| s.to_owned(),
     );
 }
 
-fn enrolled_data_dir() -> (tempfile::TempDir, String) {
+fn enrolled_installation() -> (tempfile::TempDir, Vec<String>) {
     let d = tempfile::tempdir().unwrap();
-    let path = d.path().join("system/machines.db");
-    let mut c = calternal_server::machines::db::open(&path).unwrap();
-    for (id, name, os, arch, owner) in [
-        (
-            MACHINE_A,
-            "build-box",
-            "linux",
-            "x86_64",
-            calternal_machine::protocol::Owner::Pool,
-        ),
-        (
-            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            "laptop",
-            "macos",
-            "aarch64",
-            calternal_machine::protocol::Owner::Account {
-                id: uuid::Uuid::parse_str("cccccccc-cccc-4ccc-8ccc-cccccccccccc").unwrap(),
-            },
-        ),
-    ] {
-        let (code, _) =
-            calternal_server::machines::db::new_code(&c, owner, Duration::from_secs(60)).unwrap();
-        let canon = calternal_auth::token::normalize_setup_token(&code).unwrap();
-        let row = calternal_server::machines::db::redeem_code(
-            &mut c,
-            &calternal_auth::token::hash32(&canon),
-            &[7; 32],
-            name,
-            os,
-            arch,
-            false,
-        )
-        .unwrap()
-        .unwrap();
-        // Give the rows fixed ids so the snapshots are stable.
-        c.execute(
-            "UPDATE machines SET id = ?1 WHERE id = ?2",
-            [id, &row.id.to_string()],
-        )
-        .unwrap();
-    }
-    let dir = data(d.path());
-    (d, dir)
+    let owner = "cccccccc-cccc-7ccc-8ccc-cccccccccccc";
+    let inst = installation(
+        d.path(),
+        &[owner],
+        &[
+            (MACHINE_A, None, "build-box", "linux", "x86_64"),
+            (
+                "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                Some(owner),
+                "laptop",
+                "macos",
+                "aarch64",
+            ),
+        ],
+    );
+    (d, inst)
 }
 
 #[test]
 fn machines_list_revoke_and_pool_grant() {
-    let (_keep, dir) = enrolled_data_dir();
+    let (_keep, inst) = enrolled_installation();
     case(
         "machines-list",
-        &["machines", "list", "--data-dir", &dir],
+        &cmd(&["machines", "list"], &inst),
         "calternal machines list",
         &|s| s.to_owned(),
     );
     case(
         "machines-revoke",
-        &["machines", "revoke", MACHINE_A, "--data-dir", &dir],
+        &cmd(&["machines", "revoke", MACHINE_A], &inst),
         "calternal machines revoke",
         &|s| s.to_owned(),
     );
     // The revoked machine now shows its state.
     case(
         "machines-list-after-revoke",
-        &["machines", "list", "--data-dir", &dir],
+        &cmd(&["machines", "list"], &inst),
         "calternal machines list",
         &|s| s.to_owned(),
     );
     case(
         "machines-revoke-unknown",
-        &[
-            "machines",
-            "revoke",
-            "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            "--data-dir",
-            &dir,
-        ],
+        &cmd(
+            &["machines", "revoke", "dddddddd-dddd-4ddd-8ddd-dddddddddddd"],
+            &inst,
+        ),
         "error",
         &|s| s.to_owned(),
     );
     case(
         "machines-revoke-bad-id",
-        &["machines", "revoke", "nope", "--data-dir", &dir],
+        &cmd(&["machines", "revoke", "nope"], &inst),
         "error",
         &|s| s.to_owned(),
     );
-    let account = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    let account = "cccccccc-cccc-7ccc-8ccc-cccccccccccc";
     case(
         "machines-pool-grant",
-        &["machines", "pool-grant", account, "--data-dir", &dir],
+        &cmd(&["machines", "pool-grant", account], &inst),
         "calternal machines pool-grant",
         &|s| s.to_owned(),
     );
     case(
         "machines-pool-revoke",
-        &[
-            "machines",
-            "pool-grant",
-            account,
-            "--remove",
-            "--data-dir",
-            &dir,
-        ],
+        &cmd(&["machines", "pool-grant", account, "--remove"], &inst),
         "calternal machines pool-grant",
         &|s| s.to_owned(),
     );
     case(
         "machines-pool-grant-error",
-        &["machines", "pool-grant", "nope", "--data-dir", &dir],
+        &cmd(&["machines", "pool-grant", "nope"], &inst),
         "error",
         &|s| s.to_owned(),
     );
@@ -244,23 +288,23 @@ fn machines_list_revoke_and_pool_grant() {
 #[test]
 fn machines_list_empty_and_unusable_data_dir() {
     let d = tempfile::tempdir().unwrap();
-    let dir = data(d.path());
+    let inst = installation(d.path(), &[], &[]);
     case(
         "machines-list-empty",
-        &["machines", "list", "--data-dir", &dir],
+        &cmd(&["machines", "list"], &inst),
         "calternal machines list",
         &|s| s.to_owned(),
     );
-    // A regular file cannot be a data directory.
-    let file = d.path().join("file");
-    std::fs::write(&file, b"x").unwrap();
-    let clean = |s: &str| s.replace(file.to_str().unwrap(), "<FILE>");
+    // Unpaired (missing) roots are refused by the storage guard; nothing is created.
+    let missing = tempfile::tempdir().unwrap();
+    let unpaired = args(&missing.path().join("absent"));
     case(
         "machines-list-error",
-        &["machines", "list", "--data-dir", file.to_str().unwrap()],
+        &cmd(&["machines", "list"], &unpaired),
         "error",
-        &clean,
+        &redact(missing.path()),
     );
+    assert!(!missing.path().join("absent").exists());
 }
 
 #[test]
@@ -312,7 +356,11 @@ fn machine_status_and_enroll_failures_say_what_to_do() {
 
 fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
     let d = tempfile::tempdir().unwrap();
-    let dir = data(d.path());
+    let dir = data(&d.path().join("appdata"));
+    let (ssd, hdd) = (
+        data(&d.path().join("userdata-ssd")),
+        data(&d.path().join("userdata-hdd")),
+    );
     let mut args = vec![
         "serve",
         "--development",
@@ -320,8 +368,15 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
         "0",
         "--plugin-root",
         "/nonexistent-plugins",
-        "--data-dir",
+        "--appdata",
         &dir,
+        "--userdata-ssd",
+        &ssd,
+        "--userdata-hdd",
+        &hdd,
+        "--create",
+        "--installation-id",
+        "00000000-0000-0000-0000-000000000001",
     ];
     args.extend_from_slice(extra);
     if json {

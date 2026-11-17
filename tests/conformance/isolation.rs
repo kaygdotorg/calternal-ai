@@ -22,8 +22,10 @@ mod agent_cases;
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
 
+mod drafts_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
+mod simplify_review_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
@@ -134,6 +136,10 @@ impl Drop for Fixture {
     }
 }
 impl Fixture {
+    /// The server's appdata root; userdata-ssd and userdata-hdd are its siblings.
+    fn appdata(&self) -> PathBuf {
+        self.dir.path().join("appdata")
+    }
     fn stop(&mut self) {
         if let Some(mut p) = self.child.take() {
             let _ = p.kill();
@@ -141,7 +147,7 @@ impl Fixture {
         }
     }
     async fn start(&mut self) {
-        let path = self.dir.path().join("startup.json");
+        let path = self.appdata().join("startup.json");
         let _ = std::fs::remove_file(&path);
         let binary = std::env::var("CALTERNAL_SERVER_BIN")
             .expect("set CALTERNAL_SERVER_BIN to built dev-VM binary");
@@ -160,8 +166,14 @@ impl Fixture {
         }
         self.child = Some(
             command
-                .args(["--port", "0", "--origin", ORIGIN, "--data-dir"])
-                .arg(self.dir.path())
+                .args(["--port", "0", "--origin", ORIGIN, "--create"])
+                .args(["--installation-id", "00000000-0000-0000-0000-000000000001"])
+                .arg("--appdata")
+                .arg(self.appdata())
+                .arg("--userdata-ssd")
+                .arg(self.dir.path().join("userdata-ssd"))
+                .arg("--userdata-hdd")
+                .arg(self.dir.path().join("userdata-hdd"))
                 .arg("--plugin-root")
                 .arg(repo.join("plugins"))
                 // The binary is built with `test-plugins`; see README.
@@ -347,10 +359,10 @@ impl Fixture {
             development: false,
         };
         f.start().await;
-        let token = std::fs::read_to_string(f.dir.path().join("setup.token")).unwrap();
+        let token = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
         f.enroll(&token).await;
         f.stop();
-        let auth = Auth::open(f.dir.path(), AuthConfig::new(ORIGIN).unwrap()).unwrap();
+        let auth = Auth::open(&f.appdata(), AuthConfig::new(ORIGIN).unwrap()).unwrap();
         let mut tokens = vec![];
         for name in ["Account A", "Account B", "No membership", "Ordinary target"] {
             tokens.push(auth.create(name).await.unwrap().token);
@@ -378,7 +390,7 @@ impl Fixture {
                 .push(s.body["data"]["space"]["id"].as_str().unwrap().into());
         }
         f.stop();
-        let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
         for (s, r) in f.spaces[2..].iter().zip(["reader", "editor", "manager"]) {
             c.execute(
                 "INSERT INTO space_memberships VALUES(?1,?2,?3)",
@@ -584,6 +596,19 @@ async fn all_operations_hide_foreign_ids() {
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
+    // Private account input is exercised with real sessions in drafts_cases.rs.
+    covered.extend([
+        "drafts.save",
+        "drafts.list",
+        "drafts.get",
+        "drafts.delete",
+        "pending.queue",
+        "pending.edit",
+        "pending.list",
+        "pending.cancel",
+        "pending.confirm",
+        "pending.submit",
+    ]);
     covered.sort_unstable();
     let mut registered: Vec<_> = catalog.body["operations"]
         .as_array()
@@ -765,7 +790,7 @@ async fn secrets_are_owner_private_and_provide_needs_a_fresh_session() {
     // A stale session (assertion older than the freshness window) is refused
     // before the body is read, and nothing is stored.
     f.stop();
-    let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+    let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
     c.execute(
         "UPDATE installations SET assertion_at = assertion_at - 86400000 WHERE user_id=?1",
         params![f.ids[1]],
@@ -1105,7 +1130,7 @@ async fn ceremonies_cookie_fixation_and_parallel_limits() {
         .await;
     assert_eq!(me.body["user"]["id"], f.ids[1]);
     assert!(f.auth("login/finish", None, body).await.status >= 400);
-    let used = std::fs::read_to_string(f.dir.path().join("setup.token")).unwrap();
+    let used = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
     assert!(
         f.auth("setup/start", None, json!({"token":used}))
             .await
@@ -1235,16 +1260,52 @@ async fn input_validation_and_request_id_scope() {
         first.body["data"]["note"]["id"],
         other.body["data"]["note"]["id"]
     );
-    let conflict = f
+    let reused = f
         .op_id(
             1,
             "notes.create",
-            json!({"space_id":f.spaces[3],"title":"other space","markdown":"c"}),
+            json!({"space_id":f.spaces[0],"title":"changed","markdown":"c"}),
             "duplicate",
         )
         .await;
-    assert_eq!(conflict.status, 409);
+    assert_eq!(reused.status, 409, "same account, space and request ID");
     evidence("input", json!(rows));
+}
+
+/// Request IDs are unique per (account, space). The same ID used by one account in
+/// two spaces, or by two accounts in one space, yields independent results; each
+/// retry replays only its own, never the other's.
+#[tokio::test]
+async fn request_ids_are_scoped_to_account_and_space() {
+    let f = Fixture::new().await;
+    // Account 1 owns spaces 0 and 3; account 2 is an editor in space 3.
+    let create = |space: &str, title: &str| json!({"space_id":space,"title":title,"markdown":format!("{title}\n")});
+    let mut results = vec![];
+    for (who, space, title) in [
+        (1, &f.spaces[0], "one in A"),
+        (1, &f.spaces[3], "one in B"),
+        (2, &f.spaces[3], "two in B"),
+    ] {
+        let first = f
+            .op_id(who, "notes.create", create(space, title), "shared-id")
+            .await;
+        first.ok();
+        let note = first.body["data"]["note"].clone();
+        assert_eq!(note["title"], title);
+        assert_eq!(note["space_id"], json!(space));
+        let again = f
+            .op_id(who, "notes.create", create(space, title), "shared-id")
+            .await;
+        again.ok();
+        assert_eq!(
+            again.body["data"]["note"], note,
+            "a retry replays its own result"
+        );
+        results.push(note["id"].as_str().unwrap().to_owned());
+    }
+    let distinct: std::collections::BTreeSet<_> = results.iter().collect();
+    assert_eq!(distinct.len(), 3, "three independent results");
+    evidence("request_id_scope", json!(results));
 }
 
 fn walk(root: &Path, path: &Path, out: &mut Vec<Value>) {
@@ -1271,13 +1332,21 @@ async fn filesystem_modes_and_complete_sql_inventory() {
     .await
     .ok();
     let mut files = vec![];
-    use std::os::unix::fs::PermissionsExt;
-    files.push(json!({"path":".","directory":true,"mode":format!("{:04o}",std::fs::metadata(f.dir.path()).unwrap().permissions().mode()&0o777)}));
+    // The fixture directory only holds the three roots; every entry below it is
+    // the server's (roots included).
     walk(f.dir.path(), f.dir.path(), &mut files);
     let mut tables = vec![];
-    for db in ["state.sqlite3", "system/auth.db"] {
+    // Plugin enablement lives in the space's own content.db; no installation-wide
+    // state database exists.
+    assert!(!f.appdata().join("state.sqlite3").exists());
+    let space_db = format!("spaces/{}/content.db", f.spaces[0]);
+    for db in [
+        space_db.as_str(),
+        "system/content-index.db",
+        "system/auth.db",
+    ] {
         let c = Connection::open_with_flags(
-            f.dir.path().join(db),
+            f.appdata().join(db),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .unwrap();
@@ -1314,7 +1383,7 @@ async fn filesystem_modes_and_complete_sql_inventory() {
 async fn expired_sessions_rejected_on_all_protected_routes() {
     let mut f = Fixture::new().await;
     f.stop();
-    let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+    let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
     c.execute(
         "UPDATE installations SET expires_at=1 WHERE user_id=?1",
         [&f.ids[1]],
@@ -1379,7 +1448,7 @@ async fn concurrent_transfer_remove_and_kill_restart() {
         f.stop();
         f.start().await;
         let c = Connection::open_with_flags(
-            f.dir.path().join("system/auth.db"),
+            f.appdata().join("system/auth.db"),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )
         .unwrap();
@@ -1424,7 +1493,7 @@ async fn concurrent_transfer_remove_and_kill_restart() {
         f.stop();
         let _ = task.await;
         f.start().await;
-        let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
         let bad:i64=c.query_row("SELECT COUNT(*) FROM spaces s LEFT JOIN space_memberships m ON s.id=m.space_id AND s.owner_account=m.account_id WHERE m.account_id IS NULL",[],|r|r.get(0)).unwrap();
         assert_eq!(bad, 0);
     }
@@ -1518,7 +1587,7 @@ async fn running_worker_revoke(mode: WorkerRevocation) {
             .unwrap()
             .as_millis() as i64;
         let expires_at = now + 1_000;
-        let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
         c.execute(
             "UPDATE installations SET expires_at=?1 WHERE user_id=?2",
             params![expires_at, f.ids[2]],
@@ -1639,7 +1708,7 @@ async fn development_tokens_require_explicit_flag_even_after_restart() {
     f.development = true;
     f.start().await;
     let startup: Value =
-        serde_json::from_slice(&std::fs::read(f.dir.path().join("startup.json")).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(f.appdata().join("startup.json")).unwrap()).unwrap();
     let token = std::fs::read_to_string(startup["token_files"]["owner"].as_str().unwrap()).unwrap();
     let probe = |client: Client, base: String, token: String| async move {
         client
@@ -1853,7 +1922,7 @@ async fn every_bound_space_operation_requires_its_policy_capability() {
             (1, "owner")
         };
         f.stop();
-        let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
         assert_eq!(
             c.execute(
                 "DELETE FROM space_role_capabilities WHERE role=?1 AND capability=?2",
@@ -1872,7 +1941,7 @@ async fn every_bound_space_operation_requires_its_policy_capability() {
             denied.body
         );
         f.stop();
-        let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
         c.execute(
             "INSERT INTO space_role_capabilities VALUES(?1,?2)",
             params![role, cap],
@@ -1964,7 +2033,7 @@ async fn each_space_capability_is_independent_over_http() {
         "space.delete",
     ] {
         f.stop();
-        let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
         c.execute(
             "DELETE FROM space_role_capabilities WHERE role='editor'",
             [],
@@ -2029,7 +2098,7 @@ async fn all_operations_reject_revoked_and_expired_sessions_before_dispatch() {
         assert_eq!(r.status, 401, "revoked {}", op["id"]);
     }
     f.stop();
-    let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+    let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
     c.execute(
         "UPDATE installations SET expires_at=1 WHERE user_id=?1",
         [&f.ids[2]],
@@ -2104,7 +2173,7 @@ async fn host_method_and_api_fallback_do_not_expose_resources() {
 async fn parallel_setup_and_login_ceremonies_are_take_once() {
     let mut f = Fixture::new().await;
     f.stop();
-    let auth = Auth::open(f.dir.path(), AuthConfig::new(ORIGIN).unwrap()).unwrap();
+    let auth = Auth::open(&f.appdata(), AuthConfig::new(ORIGIN).unwrap()).unwrap();
     let token = auth.create("Setup race").await.unwrap().token;
     drop(auth);
     f.start().await;
@@ -2276,7 +2345,7 @@ async fn managers_manage_is_required_even_for_owner_target_changes() {
     let mut f = Fixture::new().await;
     let s = f.spaces[4].clone();
     f.stop();
-    let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+    let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
     c.execute(
         "DELETE FROM space_role_capabilities WHERE role='owner' AND capability='managers.manage'",
         [],
@@ -2360,9 +2429,9 @@ async fn interrupted_authority_and_login_are_atomic_with_receipts() {
             f.stop();
             let response = task.await.unwrap();
             f.start().await;
-            for db in ["state.sqlite3", "system/auth.db"] {
+            for db in ["system/content-index.db", "system/auth.db"] {
                 let c = Connection::open_with_flags(
-                    f.dir.path().join(db),
+                    f.appdata().join(db),
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
                 )
                 .unwrap();
@@ -2379,7 +2448,7 @@ async fn interrupted_authority_and_login_are_atomic_with_receipts() {
                 );
             }
             let c = Connection::open_with_flags(
-                f.dir.path().join("system/auth.db"),
+                f.appdata().join("system/auth.db"),
                 rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
             )
             .unwrap();
@@ -2401,7 +2470,7 @@ async fn interrupted_authority_and_login_are_atomic_with_receipts() {
                 f.login(1).await.ok();
                 rows.push(json!({"scenario":scenario,"delay_us":delay_us,"ack_status":response.as_ref().map(|r|r.0),"new_sessions":count}));
             } else {
-                let receipt:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND request_id=?2)",params![f.ids[1],request_id],|r|r.get(0)).unwrap();
+                let receipt:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND scope=?2 AND request_id=?3)",params![f.ids[1],space,request_id],|r|r.get(0)).unwrap();
                 let owner: String = c
                     .query_row(
                         "SELECT owner_account FROM spaces WHERE id=?1",

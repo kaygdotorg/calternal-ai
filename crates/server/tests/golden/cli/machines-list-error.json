@@ -3,8 +3,8 @@ exit: 1
 {
   "error": {
     "code": "failed",
-    "hint": "Check that --data-dir is the server's data directory and that you can write to it.",
-    "message": "machine database failure"
+    "hint": "Pass the same three roots and installation ID as `calternal serve`; see `calternal machines --help`.",
+    "message": "storage roots refused: userdata-ssd root <DIR>/absent/userdata-ssd is missing; disk may not be mounted"
   },
   "ok": false
 }

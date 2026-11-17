@@ -3,12 +3,11 @@ use super::blocking;
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
-    authz::Capability,
-    error::HostError,
     machines::{LeaseState, MachineService},
     plugins::job_sql::now_ms,
 };
 use calternal_core::{AgentRetrySettings, ProviderBilling, ProviderFailureClass};
+use calternal_types::{Capability, Error};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 
@@ -64,11 +63,11 @@ pub fn next(
 
 pub(super) fn manifest_defaults<D: Directory>(
     state: &Shared<D>,
-) -> Result<AgentRetrySettings, HostError> {
+) -> Result<AgentRetrySettings, Error> {
     let plugin = state
         .registry
         .get("calternal-orchestrator")
-        .ok_or_else(|| HostError::unavailable("orchestrator plugin is not installed"))?;
+        .ok_or_else(|| Error::unavailable("orchestrator plugin is not installed"))?;
     let boolean = |id: &str| {
         plugin
             .manifest
@@ -76,7 +75,7 @@ pub(super) fn manifest_defaults<D: Directory>(
             .iter()
             .find(|s| s.id == id)
             .and_then(|s| s.default.as_bool())
-            .ok_or_else(|| HostError::internal("retry setting is not a typed manifest boolean"))
+            .ok_or_else(|| Error::internal("retry setting is not a typed manifest boolean"))
     };
     Ok(AgentRetrySettings {
         provider_errors: boolean("retry-provider-errors")?,
@@ -90,7 +89,7 @@ pub(super) fn manifest_defaults<D: Directory>(
 pub async fn recover<D: Directory>(
     state: &Shared<D>,
     machines: &Arc<MachineService>,
-) -> Result<(), HostError> {
+) -> Result<(), Error> {
     let st = state.clone();
     for (space, id) in blocking(move || st.jobs.agent_retry_waiting()).await? {
         schedule(state, machines, space, id);
@@ -131,10 +130,9 @@ pub(super) fn schedule<D: Directory>(
                     let _ = super::stop_machine(&svc, &job).await;
                     return;
                 }
-                let who = Identity {
-                    id: Arc::from(job.account.as_str()),
-                };
-                let Some(account) = calternal_auth::AccountId::parse(&job.account) else {
+                let who = Identity { id: job.account };
+                let Ok(account) = calternal_types::AccountId::parse(&job.account.to_string())
+                else {
                     return;
                 };
                 let lease = job.checkpoint["lease_id"]

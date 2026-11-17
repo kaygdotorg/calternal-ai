@@ -14,9 +14,6 @@
 //! [`crate::secrets::plugin_handle`]. Every other declared host call is
 //! refused until its host service exists.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -26,15 +23,16 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Handle;
 use uuid::Uuid;
 
-use calternal_secrets::{Actor, Owner, Via};
+use calternal_secrets::Owner;
+use calternal_types::{Actor, Via};
 
 use super::jobs::Admission;
 use super::live::Live;
 use super::{Plugin, Session, activation, host_capability, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use crate::authz::Capability;
 use crate::store::sha256_hex;
+use calternal_types::{Capability, SpaceId};
 
 /// Fixed fixture text served to previews. Never user data.
 pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
@@ -42,7 +40,7 @@ pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample tex
 pub const PREVIEW_ITEM_ID: &str = "00000000-0000-7000-8000-000000000000";
 
 /// Per-invocation trusted adapter called from the worker thread, never by plugin code.
-/// Both methods may block on directory and store locks.
+/// Both methods may block on the directory and on the target space's lock.
 pub trait InvocationHost: Send + Sync {
     /// Recheck current authority for `required`: grants, plugin activation and generation.
     fn authorize(&self, required: ManifestCapability) -> bool;
@@ -60,8 +58,7 @@ pub struct SpaceHost<D: Directory> {
     identity: Identity,
     session: Session,
     runtime: Handle,
-    space: String,
-    space_uuid: String,
+    space: SpaceId,
     plugin: Arc<Plugin>,
     generation: u32,
     request_id: String,
@@ -86,8 +83,7 @@ pub struct Run {
 
 impl<D: Directory> SpaceHost<D> {
     /// Capture an invocation's authority. `session` is the caller's sign-in, rechecked
-    /// at every boundary; `space` is the content-space key used by the store and
-    /// directory; `generation` is the activation generation read when the invocation
+    /// at every boundary; `space` is the space the invocation runs in; `generation` is the activation generation read when the invocation
     /// was admitted; `request_id` scopes write receipts. Must be called inside the
     /// async runtime, whose handle the blocking session checks use.
     #[allow(clippy::too_many_arguments)]
@@ -95,8 +91,7 @@ impl<D: Directory> SpaceHost<D> {
         state: Shared<D>,
         identity: Identity,
         session: Session,
-        space: String,
-        space_uuid: String,
+        space: SpaceId,
         plugin: Arc<Plugin>,
         generation: u32,
         request_id: String,
@@ -107,7 +102,6 @@ impl<D: Directory> SpaceHost<D> {
             session,
             runtime: Handle::current(),
             space,
-            space_uuid,
             plugin,
             generation,
             request_id,
@@ -157,9 +151,9 @@ impl<D: Directory> SpaceHost<D> {
             .state
             .jobs
             .admit(Admission {
-                space: self.space_uuid.clone(),
+                space: self.space.to_string(),
                 plugin: self.plugin.manifest.id.clone(),
-                account: self.identity.id.to_string(),
+                account: self.identity.id,
                 session: self.session.clone(),
                 operation: operation.to_owned(),
                 input: run_input,
@@ -169,7 +163,7 @@ impl<D: Directory> SpaceHost<D> {
             })
             .map_err(|_| Error::Refused)?;
         let _guard = self.runtime.enter();
-        runner::schedule(&self.state, self.space_uuid.clone(), id.clone());
+        runner::schedule(&self.state, self.space.to_string(), id.clone());
         Ok(json!({ "job_id": id }))
     }
 
@@ -181,16 +175,10 @@ impl<D: Directory> SpaceHost<D> {
     fn secret_handle(&self, input: &Value) -> Result<Value, Error> {
         let object = exact(input, &["name"])?;
         let name = str_field(object, "name")?.ok_or(Error::Invalid)?;
-        let space = calternal_auth::SpaceId::parse(&self.space_uuid).ok_or(Error::Refused)?;
-        let (secrets, account) = {
-            let store = self.state.store.lock().map_err(|_| Error::Refused)?;
-            let (account, _) = store
-                .worker_ids(&self.identity.id, &self.space)
-                .map_err(|_| Error::Refused)?;
-            (store.secrets(), account)
-        };
+        let (space, account) = (self.space, self.identity.id);
+        let secrets = self.state.store.secrets();
         let actor = Actor {
-            account: calternal_auth::AccountId::parse(&account).ok_or(Error::Refused)?,
+            account,
             via: if let Session::Agent {
                 space,
                 job,
@@ -203,9 +191,11 @@ impl<D: Directory> SpaceHost<D> {
                     .agent_current(space, job, token_hash)
                     .map_err(|_| Error::Refused)?
                     .ok_or(Error::Refused)?;
-                Via::Agent(uuid::Uuid::parse_str(&scope.thread).map_err(|_| Error::Refused)?)
+                scope.actor.via
             } else {
-                Via::Plugin(self.plugin.manifest.id.clone())
+                Some(Via::Plugin {
+                    plugin: self.plugin.manifest.id.clone(),
+                })
             },
         };
         crate::secrets::plugin_handle(
@@ -229,7 +219,13 @@ impl<D: Directory> SpaceHost<D> {
         let n = self
             .state
             .jobs
-            .checkpoint(&self.space_uuid, &run.job, run.run, &run.live, checkpoint)
+            .checkpoint(
+                &self.space.to_string(),
+                &run.job,
+                run.run,
+                &run.live,
+                checkpoint,
+            )
             .map_err(|_| Error::Refused)?;
         run.checkpoints.store(n, Ordering::Release);
         self.writes.store(0, Ordering::Release);
@@ -256,8 +252,8 @@ impl<D: Directory> SpaceHost<D> {
 
     fn has(&self, capability: Capability) -> bool {
         self.state
-            .tokens
-            .capabilities(&self.identity.id, &self.space)
+            .directory
+            .capabilities(self.identity.id, self.space)
             .is_some_and(|set| set.contains(capability))
     }
 
@@ -266,9 +262,10 @@ impl<D: Directory> SpaceHost<D> {
         if !self.agent_kind_allowed(kind, false) {
             return Err(Error::Refused);
         }
-        let store = self.state.store.lock().map_err(|_| Error::Refused)?;
-        let item = store
-            .read_item(&self.space, kind, id)
+        let item = self
+            .state
+            .store
+            .read_item(self.space, kind, id)
             .map_err(|_| Error::Refused)?;
         Ok(item_json(&item))
     }
@@ -304,13 +301,14 @@ impl<D: Directory> SpaceHost<D> {
         let n = self.writes.fetch_add(1, Ordering::Relaxed);
         let receipt = format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.scope());
         let fingerprint = sha256_hex(input.to_string().as_bytes());
-        let store = self.state.store.lock().map_err(|_| Error::Refused)?;
-        let item = store
+        let item = self
+            .state
+            .store
             .write_item(
-                &self.identity.id,
+                self.identity.id,
                 &receipt,
                 &fingerprint,
-                &self.space,
+                self.space,
                 kind,
                 id,
                 base,
@@ -324,7 +322,7 @@ impl<D: Directory> SpaceHost<D> {
 
 impl<D: Directory> InvocationHost for SpaceHost<D> {
     /// Cost: one session check (see [`Session::is_live`]), one directory capability
-    /// read, one store lock and indexed activation read; no content I/O. The worker
+    /// read and one pooled activation read; no content I/O. The worker
     /// session calls this up to four times per host call.
     fn authorize(&self, required: ManifestCapability) -> bool {
         let Some(required) = host_capability(required) else {
@@ -336,15 +334,12 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         {
             return false;
         }
-        let Ok(store) = self.state.store.lock() else {
-            return false;
-        };
-        activation(&store, &self.space, &self.plugin)
+        activation(&self.state.store, self.space, &self.plugin)
             .is_ok_and(|row| row.enabled && row.generation == self.generation)
     }
 
-    /// Cost: `read_item` takes the store lock for one catalog route lookup and one
-    /// item read; `write_item` adds a durable content write (journal, file and
+    /// Cost: `read_item` is one pooled catalog route read and one item read under
+    /// the space's lock; `write_item` adds a durable content write (journal, file and
     /// directory fsync); `start_job` and `checkpoint_job` are one FULL transaction on
     /// the space's job file; `request_secret_handle` one secret-database read (plus one
     /// fsync'd insert when it records a request). Other methods are refused.

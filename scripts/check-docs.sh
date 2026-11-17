@@ -7,14 +7,11 @@ cd "$ROOT"
 if [ ! -d scripts/docs-tools/node_modules/typedoc ]; then
   npm ci --prefix scripts/docs-tools --ignore-scripts --no-audit --no-fund
 fi
-./scripts/with-toolchain.sh cargo check --locked -j6 \
-  -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
-  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content -p calternal-genui -p calternal-plugin-host -p calternal-secrets -p calternal-machine -p calternal-server \
-  --all-targets --all-features
+./scripts/with-toolchain.sh cargo check --locked -j6 --workspace --all-targets --all-features
+# The conformance suite has its own manifest outside the workspace.
+./scripts/with-toolchain.sh cargo check --locked -j6 --manifest-path tests/conformance/Cargo.toml --all-targets
 # rustdoc link checks run only during documentation generation, not cargo check.
-./scripts/with-toolchain.sh cargo doc --locked -j6 --no-deps \
-  -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
-  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content -p calternal-genui -p calternal-plugin-host -p calternal-secrets -p calternal-machine -p calternal-server \
+./scripts/with-toolchain.sh cargo doc --locked -j6 --no-deps --workspace \
   --all-features --target-dir reference-docs/rust
 # TypeScript reference checks resolve workspace packages through their built type output.
 npm run build:plugins --silent

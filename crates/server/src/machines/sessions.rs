@@ -17,8 +17,8 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 use super::state::{Exec, ExecState, Live, Machine};
-use super::{LeaseState, MachineService, blocking, db, sql};
-use crate::error::HostError;
+use super::{LeaseState, MachineService, blocking, db};
+use calternal_types::Error;
 
 /// Pending challenges kept at most; beyond it `session/start` answers 503.
 const MAX_CHALLENGES: usize = 1024;
@@ -26,8 +26,8 @@ const MAX_CHALLENGES: usize = 1024;
 const CHALLENGE_TTL: Duration = Duration::from_secs(60);
 
 /// A fresh `cm1_` bearer token and its BLAKE3 hash (the only form kept).
-fn new_token() -> Result<(String, [u8; 32]), HostError> {
-    let raw = random32().map_err(|_| HostError::internal("no randomness"))?;
+fn new_token() -> Result<(String, [u8; 32]), Error> {
+    let raw = random32().map_err(|_| Error::internal("no randomness"))?;
     let token = format!("cm1_{}", hex::encode(raw));
     let hash = hash32(&token);
     Ok((token, hash))
@@ -35,31 +35,33 @@ fn new_token() -> Result<(String, [u8; 32]), HostError> {
 
 impl MachineService {
     /// Redeem a code for a new machine bound to the presented public key.
-    /// Blocks (one commit). Unknown, used and expired codes look the same.
-    pub fn enrol(&self, req: &EnrolRequest) -> Result<EnrolResponse, HostError> {
-        let invalid = || HostError::not_found("unknown, used or expired enrolment code");
+    /// Blocks (one protected authority commit). Unknown, used and expired codes
+    /// look the same.
+    pub fn enrol(&self, req: &EnrolRequest) -> Result<EnrolResponse, Error> {
+        let invalid = || Error::not_found("unknown, used or expired enrolment code");
         let canon = normalize_setup_token(&req.code).ok_or_else(invalid)?;
         let key = B64
             .decode(&req.public_key)
             .ok()
             .filter(|k| k.len() == 32)
-            .ok_or_else(|| HostError::invalid_input("public_key must be a base64 Ed25519 key"))?;
+            .ok_or_else(|| Error::invalid_input("public_key must be a base64 Ed25519 key"))?;
         let clean = |s: &str, n: usize| -> String {
             s.chars().filter(|c| !c.is_control()).take(n).collect()
         };
         let mut st = self.lock()?;
-        let row = db::redeem_code(
-            &mut st.db,
-            &hash32(&canon),
-            &key,
-            &clean(&req.name, 64),
-            &clean(&req.os, 32),
-            &clean(&req.arch, 32),
-            req.direct,
-        )
-        .map_err(sql)?
-        .ok_or_else(invalid)?;
-        st.data_version = db::data_version(&st.db).map_err(sql)?;
+        let record = st
+            .authority
+            .redeem_code(
+                hash32(&canon),
+                key,
+                clean(&req.name, 64),
+                clean(&req.os, 32),
+                clean(&req.arch, 32),
+                req.direct,
+            )
+            .map_err(super::authority_error)?
+            .ok_or_else(invalid)?;
+        let row = db::MachineRow::new(record, false);
         let resp = EnrolResponse {
             machine_id: row.id,
             owner: row.owner,
@@ -71,18 +73,18 @@ impl MachineService {
 
     /// Issue a 60-second single-use challenge for a known, unrevoked machine.
     /// No file I/O.
-    pub fn session_start(&self, machine_id: Uuid) -> Result<String, HostError> {
+    pub fn session_start(&self, machine_id: Uuid) -> Result<String, Error> {
         let mut st = self.lock()?;
         match st.machines.get(&machine_id) {
-            None => return Err(HostError::not_found("unknown machine")),
-            Some(m) if m.row.revoked => return Err(HostError::forbidden("machine revoked")),
+            None => return Err(Error::not_found("unknown machine")),
+            Some(m) if m.row.revoked => return Err(Error::forbidden("machine revoked")),
             Some(_) => {}
         }
         let now = Instant::now();
         st.challenges
             .retain(|_, (_, t)| now.duration_since(*t) < CHALLENGE_TTL);
         if st.challenges.len() >= MAX_CHALLENGES {
-            return Err(HostError::unavailable("too many pending sessions"));
+            return Err(Error::unavailable("too many pending sessions"));
         }
         let (challenge, _) = new_token()?;
         st.challenges.insert(challenge.clone(), (machine_id, now));
@@ -95,34 +97,32 @@ impl MachineService {
     /// Re-queues `Assign` for every lease the machine holds and `Exec` for every
     /// unfinished exec. A new `boot_id` means the machine role restarted: execs it
     /// was running are reported lost.
-    pub fn session_finish(&self, f: &SessionFinish) -> Result<SessionGranted, HostError> {
+    pub fn session_finish(&self, f: &SessionFinish) -> Result<SessionGranted, Error> {
         if f.protocol != PROTOCOL_VERSION {
-            return Err(HostError::invalid_input(
-                "unsupported machine protocol version",
-            ));
+            return Err(Error::invalid_input("unsupported machine protocol version"));
         }
         let mut st = self.lock()?;
         let st = &mut *st;
-        let denied = || HostError::unauthorized("bad session proof");
+        let denied = || Error::unauthorized("bad session proof");
         match st.challenges.remove(&f.challenge) {
             Some((m, t)) if m == f.machine_id && t.elapsed() < CHALLENGE_TTL => {}
             _ => return Err(denied()),
         }
         let machine = st.machines.get_mut(&f.machine_id).ok_or_else(denied)?;
         if machine.row.revoked {
-            return Err(HostError::forbidden("machine revoked"));
+            return Err(Error::forbidden("machine revoked"));
         }
         let sig = B64.decode(&f.signature).map_err(|_| denied())?;
         ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &machine.row.public_key)
             .verify(&session_message(f.machine_id, &f.challenge), &sig)
             .map_err(|_| denied())?;
         if f.backend == "direct" && (!machine.row.direct || machine.row.owner == Owner::Pool) {
-            return Err(HostError::forbidden(
+            return Err(Error::forbidden(
                 "the owner must enable direct execution with calternal machine set",
             ));
         }
         if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
-            return Err(HostError::invalid_input("unsupported machine backend"));
+            return Err(Error::invalid_input("unsupported machine backend"));
         }
         let backend = if f.backend == "auto" {
             if machine.row.direct && machine.row.owner != Owner::Pool {
@@ -179,14 +179,14 @@ impl MachineService {
 
     /// Resolve a bearer token to its machine; 401 if unknown, 403 if revoked.
     /// One BLAKE3 hash and a map lookup.
-    pub fn authenticate(&self, token: &str) -> Result<Uuid, HostError> {
+    pub fn authenticate(&self, token: &str) -> Result<Uuid, Error> {
         let st = self.lock()?;
         let id = *st
             .sessions
             .get(&hash32(token))
-            .ok_or_else(|| HostError::unauthorized("unknown machine session"))?;
+            .ok_or_else(|| Error::unauthorized("unknown machine session"))?;
         if st.machines.get(&id).is_none_or(|m| m.row.revoked) {
-            return Err(HostError::forbidden("machine revoked"));
+            return Err(Error::forbidden("machine revoked"));
         }
         Ok(id)
     }
@@ -201,7 +201,7 @@ impl MachineService {
         machine_id: Uuid,
         token: &str,
         req: SyncRequest,
-    ) -> Result<Vec<Envelope>, HostError> {
+    ) -> Result<Vec<Envelope>, Error> {
         let session = hash32(token);
         let svc = self.clone();
         let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
@@ -230,7 +230,7 @@ impl MachineService {
         machine_id: Uuid,
         session: &[u8; 32],
         req: &SyncRequest,
-    ) -> Result<Arc<Notify>, HostError> {
+    ) -> Result<Arc<Notify>, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         live_mut(st.machines.get_mut(&machine_id), session)?;
@@ -249,7 +249,7 @@ impl MachineService {
         Ok(notify)
     }
 
-    fn outbox(&self, machine_id: Uuid, session: &[u8; 32]) -> Result<Vec<Envelope>, HostError> {
+    fn outbox(&self, machine_id: Uuid, session: &[u8; 32]) -> Result<Vec<Envelope>, Error> {
         let mut st = self.lock()?;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         Ok(live.outbox.iter().cloned().collect())
@@ -261,10 +261,10 @@ impl MachineService {
     /// Accepts the longest in-order prefix that fits the exec's buffer and acks
     /// it; a full buffer answers `retry_after_ms`. Wrong machine, stale fence or
     /// ended lease: 409.
-    pub fn output(&self, machine_id: Uuid, post: OutputPost) -> Result<OutputAck, HostError> {
+    pub fn output(&self, machine_id: Uuid, post: OutputPost) -> Result<OutputAck, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
-        let fenced = || HostError::conflict("lease fenced");
+        let fenced = || Error::conflict("lease fenced");
         let lease = st.leases.get(&post.lease_id).ok_or_else(fenced)?;
         if lease.row.machine != Some(machine_id)
             || lease.row.fence != post.fence
@@ -325,14 +325,14 @@ impl MachineService {
     }
 }
 
-fn live_mut<'a>(m: Option<&'a mut Machine>, session: &[u8; 32]) -> Result<&'a mut Live, HostError> {
-    let m = m.ok_or_else(|| HostError::unauthorized("unknown machine"))?;
+fn live_mut<'a>(m: Option<&'a mut Machine>, session: &[u8; 32]) -> Result<&'a mut Live, Error> {
+    let m = m.ok_or_else(|| Error::unauthorized("unknown machine"))?;
     if m.row.revoked {
-        return Err(HostError::forbidden("machine revoked"));
+        return Err(Error::forbidden("machine revoked"));
     }
     match m.live.as_mut() {
         Some(l) if &l.session == session => Ok(l),
-        _ => Err(HostError::unauthorized("session replaced")),
+        _ => Err(Error::unauthorized("session replaced")),
     }
 }
 

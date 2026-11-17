@@ -91,6 +91,7 @@ impl LiveConnection {
         }
         let cancellation = self.cancellation.clone();
         tokio::select! {
+            biased;
             _ = cancellation.cancelled() => Err(ClientError::Cancelled),
             result = self.receive() => result,
         }
@@ -139,6 +140,7 @@ impl LiveConnection {
                     return Err(ClientError::Protocol("expected event stream"));
                 }
                 self.response = Some(response);
+                self.client.drain_pending(&self.cancellation).await?;
                 if let Err(error) = self
                     .outbox
                     .lock()
@@ -150,18 +152,8 @@ impl LiveConnection {
                     return Err(error);
                 }
             }
-            if let Some(end) = self.buffer.windows(2).position(|w| w == b"\n\n") {
-                let bytes: Vec<_> = self.buffer.drain(..end + 2).collect();
-                let text = std::str::from_utf8(&bytes)
-                    .map_err(|_| ClientError::Protocol("invalid live UTF-8"))?;
-                let data = text
-                    .lines()
-                    .filter_map(|line| line.strip_prefix("data: "))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if data.is_empty() {
-                    continue;
-                }
+            if let Some(event) = crate::event_stream::take(&mut self.buffer)? {
+                let data = event.data;
                 let frame: LiveFrame = serde_json::from_str(&data)
                     .map_err(|_| ClientError::Protocol("invalid live frame"))?;
                 let space = match &frame {

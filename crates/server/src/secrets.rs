@@ -12,13 +12,9 @@
 //!   `SecretStore::use_value` at a named consumer.
 //!
 //! Responses and errors never contain a value; [`calternal_secrets::Error`] text is
-//! fixed. Each call takes the host's store lock only to clone the secret store's
-//! `Arc` (no I/O under it), then runs the owner's I/O on a blocking task; the
-//! secret store itself has no installation-wide lock or connection.
-//! Spaces are named by UUID only; development aliases are not accepted here.
-
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
+//! fixed. Each call clones the secret store's `Arc` and runs the owner's I/O on a
+//! blocking task; the secret store has no installation-wide lock or connection.
+//! Spaces are named by UUID only.
 
 use std::borrow::Cow;
 
@@ -27,21 +23,21 @@ use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use calternal_auth::{AccountId, SpaceId};
 use calternal_core::{
     JsonObject, SecretMetadata, SecretPendingRequest, SecretsListInput, SecretsListResult,
     SecretsProvideInput, SecretsProvideResult, SecretsRequestInput, SecretsRequestResult,
     SecretsRevokeInput, SecretsRevokeResult,
 };
-use calternal_secrets::{
-    Actor, Error, LocalStore, Owner, RequestId, SecretName, SecretStore, SecretValue, Via,
-};
+use calternal_secrets::{LocalStore, Owner, RequestId, SecretName, SecretStore, SecretValue};
+use calternal_types::SpaceId;
+use calternal_types::{Actor, Via};
 use serde_json::{Value, json};
 
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use crate::authz::{Capability, Constraint, Policy, Scope};
-use crate::error::HostError;
+use crate::authz::{Constraint, Policy, Scope};
+use calternal_types::Capability;
+use calternal_types::Error;
 
 /// Path of the trusted endpoint that supplies a value for a pending request.
 pub const PROVIDE_PATH: &str = "/api/v1/auth/secrets/provide";
@@ -51,19 +47,27 @@ pub const PROVIDE_CAPABILITY: Capability = Capability::SpaceSettings;
 const PROVIDE_BODY_MAX: usize = 400 * 1024;
 
 /// Translate a store refusal into a caller-safe host error.
-fn host_error(e: Error) -> HostError {
+fn host_error(e: calternal_secrets::Error) -> Error {
+    use calternal_secrets::Error as E;
     match e {
-        Error::NotFound => HostError::not_found("secret not found"),
-        Error::InvalidInput => HostError::invalid_input("input does not match operation schema"),
-        Error::Conflict => HostError::conflict("secret already exists"),
-        Error::Limit => HostError::conflict("too many secrets or pending requests"),
-        Error::KeyMissing | Error::KeyUnusable => HostError::unavailable(e.to_string()),
-        Error::Internal => HostError::internal("secret storage failed"),
+        E::NotFound => Error::not_found("secret not found"),
+        E::InvalidInput => Error::invalid_input("input does not match operation schema"),
+        E::Conflict => Error::conflict("secret already exists"),
+        E::Limit => Error::conflict("too many secrets or pending requests"),
+        E::KeyMissing | E::KeyUnusable => Error::unavailable(e.to_string()),
+        E::Internal => Error::internal("secret storage failed"),
     }
 }
 
-fn account(p: &Identity) -> Result<AccountId, HostError> {
-    AccountId::parse(&p.id).ok_or_else(|| HostError::forbidden("secrets need a stored account"))
+/// The optional `space_id` field: empty means the caller's own secrets; a malformed
+/// ID names no space the caller can see.
+fn space_arg(text: &str) -> Result<Option<SpaceId>, Error> {
+    if text.is_empty() {
+        return Ok(None);
+    }
+    SpaceId::parse(text)
+        .map(Some)
+        .map_err(|_| Error::not_found("space not found"))
 }
 
 /// Resolve the owner: the caller's account, or a space the caller holds
@@ -71,40 +75,34 @@ fn account(p: &Identity) -> Result<AccountId, HostError> {
 fn owner<D: Directory>(
     state: &Shared<D>,
     p: &Identity,
-    space: &str,
+    space: Option<SpaceId>,
     operation: &str,
     required: Capability,
-) -> Result<Owner, HostError> {
-    if space.is_empty() {
-        return Ok(Owner::Account(account(p)?));
-    }
+) -> Result<Owner, Error> {
+    let Some(space) = space else {
+        return Ok(Owner::Account(p.id));
+    };
     Policy {
         operation: Cow::Owned(operation.to_owned()),
         required,
         scope: Scope::Space,
         constraint: Constraint::None,
     }
-    .authorize_space(&state.tokens, p, space)?;
-    SpaceId::parse(space)
-        .map(Owner::Space)
-        .ok_or_else(|| HostError::not_found("space not found"))
+    .authorize_space(&state.directory, p, space)?;
+    Ok(Owner::Space(space))
 }
 
-fn store<D: Directory>(state: &Shared<D>) -> Result<std::sync::Arc<LocalStore>, HostError> {
-    Ok(state
-        .store
-        .lock()
-        .map_err(|_| HostError::internal("store poisoned"))?
-        .secrets())
+fn store<D: Directory>(state: &Shared<D>) -> Result<std::sync::Arc<LocalStore>, Error> {
+    Ok(state.store.secrets())
 }
 
-fn decode<T: serde::de::DeserializeOwned>(input: JsonObject) -> Result<T, HostError> {
+fn decode<T: serde::de::DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.into_iter().collect()))
-        .map_err(|_| HostError::invalid_input("input does not match operation schema"))
+        .map_err(|_| Error::invalid_input("input does not match operation schema"))
 }
 
-fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
-    serde_json::to_value(v).map_err(|_| HostError::internal("encode"))
+fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
+    serde_json::to_value(v).map_err(|_| Error::internal("encode"))
 }
 
 /// Run an admitted `secrets.*` operation. `policy` is its registry row; its
@@ -117,19 +115,16 @@ pub async fn dispatch<D: Directory>(
     p: Identity,
     policy: Policy,
     input: JsonObject,
-    via: Via,
-) -> Result<Value, HostError> {
+    via: Option<Via>,
+) -> Result<Value, Error> {
     tokio::task::spawn_blocking(move || {
         let op = policy.operation.as_ref();
         let secrets = store(&state)?;
-        let actor = Actor {
-            account: account(&p)?,
-            via,
-        };
+        let actor = Actor { account: p.id, via };
         match op {
             "secrets.request" => {
                 let i: SecretsRequestInput = decode(input)?;
-                let owner = owner(&state, &p, &i.space_id, op, policy.required)?;
+                let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
                 let name = SecretName::new(&i.name).map_err(host_error)?;
                 let id = secrets
                     .request(&owner, &name, &i.label, &i.reason, &actor)
@@ -140,15 +135,15 @@ pub async fn dispatch<D: Directory>(
             }
             "secrets.list" => {
                 let i: SecretsListInput = decode(input)?;
-                let owner = owner(&state, &p, &i.space_id, op, policy.required)?;
+                let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
                 to_value(list(&*secrets, &owner)?)
             }
             "secrets.revoke" => {
                 let i: SecretsRevokeInput = decode(input)?;
-                let owner = owner(&state, &p, &i.space_id, op, policy.required)?;
+                let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
                 if i.name.is_empty() {
                     let id = uuid::Uuid::parse_str(&i.request_id)
-                        .map_err(|_| HostError::not_found("secret not found"))?;
+                        .map_err(|_| Error::not_found("secret not found"))?;
                     secrets.cancel(&owner, &RequestId(id), &actor)
                 } else {
                     let name = SecretName::new(&i.name).map_err(host_error)?;
@@ -157,18 +152,18 @@ pub async fn dispatch<D: Directory>(
                 .map_err(host_error)?;
                 to_value(SecretsRevokeResult {})
             }
-            _ => Err(HostError::unavailable(
+            _ => Err(Error::unavailable(
                 "operation has no host binding in this preview",
             )),
         }
     })
     .await
-    .map_err(|_| HostError::internal("secret task failed"))?
+    .map_err(|_| Error::internal("secret task failed"))?
 }
 
 /// Metadata and pending requests of one owner. Cost: two scans of that owner's
 /// database; no values are read.
-fn list(secrets: &dyn SecretStore, owner: &Owner) -> Result<SecretsListResult, HostError> {
+fn list(secrets: &dyn SecretStore, owner: &Owner) -> Result<SecretsListResult, Error> {
     Ok(SecretsListResult {
         secrets: secrets
             .list(owner)
@@ -203,7 +198,7 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
     Router::new().route(PROVIDE_PATH, post(provide::<D>))
 }
 
-fn reply(e: HostError) -> Response {
+fn reply(e: Error) -> Response {
     let status =
         StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (
@@ -218,13 +213,13 @@ fn reply(e: HostError) -> Response {
 /// The request body buffer is not zeroed (axum owns it); the parsed value moves
 /// into a zeroing [`SecretValue`] without a further copy.
 async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
-    let Some(service) = state.tokens.http_auth().cloned() else {
-        return reply(HostError::not_found("not found"));
+    let Some(service) = state.directory.http_auth().cloned() else {
+        return reply(Error::not_found("not found"));
     };
     let Some((account, installation)) =
         crate::account_http::identify(&service, req.headers()).await
     else {
-        return reply(HostError::unauthorized("missing or invalid session"));
+        return reply(Error::unauthorized("missing or invalid session"));
     };
     if service
         .auth
@@ -232,7 +227,7 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
         .await
         .is_err()
     {
-        return reply(HostError::forbidden("verify with your passkey again first"));
+        return reply(Error::forbidden("verify with your passkey again first"));
     }
     let json = req
         .headers()
@@ -246,44 +241,39 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
                 .eq_ignore_ascii_case("application/json")
         });
     if !json {
-        return reply(HostError::invalid_input(
+        return reply(Error::invalid_input(
             "Content-Type must be application/json",
         ));
     }
     let Ok(bytes) = axum::body::to_bytes(req.into_body(), PROVIDE_BODY_MAX).await else {
-        return reply(HostError::invalid_input("request too large"));
+        return reply(Error::invalid_input("request too large"));
     };
     let Ok(input) = serde_json::from_slice::<SecretsProvideInput>(&bytes) else {
-        return reply(HostError::invalid_input("input does not match schema"));
+        return reply(Error::invalid_input("input does not match schema"));
     };
     let result = tokio::task::spawn_blocking(move || {
-        let p = Identity {
-            id: account.to_string().into(),
-        };
+        let p = Identity { id: account };
         let owner = owner(
             &state,
             &p,
-            &input.space_id,
+            space_arg(&input.space_id)?,
             "secrets.provide",
             PROVIDE_CAPABILITY,
         )?;
         let request = uuid::Uuid::parse_str(&input.request_id)
-            .map_err(|_| HostError::not_found("secret not found"))?;
+            .map_err(|_| Error::not_found("secret not found"))?;
         let value = SecretValue::new(input.value.into_bytes()).map_err(host_error)?;
-        let actor = Actor {
-            account,
-            via: Via::Session,
-        };
+        let actor = Actor { account, via: None };
         let handle = store(&state)?
             .provide(&owner, &RequestId(request), value, &actor)
             .map_err(host_error)?;
-        Ok::<_, HostError>(SecretsProvideResult {
+        Ok::<_, Error>(SecretsProvideResult {
             name: handle.name.as_str().to_owned(),
             version: handle.version,
         })
     })
     .await
-    .unwrap_or_else(|_| Err(HostError::internal("secret task failed")));
+    .unwrap_or_else(|_| Err(Error::internal("secret task failed")));
     match result {
         Ok(r) => (StatusCode::OK, axum::Json(json!({"secret": r}))).into_response(),
         Err(e) => reply(e),
@@ -311,7 +301,7 @@ pub fn plugin_handle(
     let full = SecretName::for_plugin(plugin, name).map_err(|_| E::Invalid)?;
     match secrets.handle(owner, &full) {
         Ok(handle) => Ok(json!({"handle": secrets.token(&handle).as_str()})),
-        Err(Error::NotFound) => {
+        Err(calternal_secrets::Error::NotFound) => {
             let pending = secrets.pending(owner).map_err(|_| E::Refused)?;
             if !pending.iter().any(|r| r.name == full.as_str()) {
                 let reason = format!("The {plugin} plugin asks for its \"{name}\" secret.");

@@ -4,7 +4,7 @@ use calternal_client::{CancellationToken, Client};
 use calternal_core::{AgentInput, AgentMode, OperationRequest};
 use clap::{Args as ClapArgs, Subcommand};
 use serde_json::{Value, json};
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 /// Connection arguments shared by agent operations and the generic operation CLI.
 #[derive(Debug, Clone, ClapArgs)]
@@ -274,53 +274,47 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
         .as_str()
         .ok_or_else(|| error("Server did not return a turn ID."))?
         .to_owned();
-    let (mut epoch, mut next) = (String::new(), 0u64);
-    let mut requests = std::collections::HashSet::new();
+    let mut stream = client
+        .subscribe_job(&id, CancellationToken::new())
+        .map_err(|_| error("Cannot subscribe to this turn."))?;
     let mut retry = Value::Null;
-    loop {
-        let value = call(
-            &client,
-            "agent.events",
-            json!({"job_id":id,"epoch":epoch,"after":next}),
-            None,
-        )
-        .await?;
-        if let Some(pending) = value["requests"].as_array() {
-            for r in pending {
-                if r["approved"] == false && requests.insert(r["id"].to_string()) {
-                    out.agent_event(&json!({"type":"approval_request","request":r}));
+    while let Some(event) = stream
+        .next()
+        .await
+        .map_err(|_| error("Turn stream unavailable; inspect the turn before resuming."))?
+    {
+        match event.kind.as_str() {
+            "chunk" => out.agent_event(&event.data["data"]),
+            "reset" => out.agent_event(&json!({"type":"reset","checkpoint":event.data})),
+            "snapshot" | "state" => {
+                if event.data["job"]["checkpoint"]["retry"] != retry {
+                    retry = event.data["job"]["checkpoint"]["retry"].clone();
+                    if !retry.is_null() {
+                        out.agent_event(&json!({"type":"retry_waiting","retry":retry}));
+                    }
+                }
+                if let Some(requests) = event.data["requests"].as_array() {
+                    for request in requests.iter().filter(|r| r["approved"] == false) {
+                        out.agent_event(&json!({"type":"approval_request","request":request}));
+                    }
                 }
             }
-        }
-        if value["reset"] == true {
-            out.agent_event(&json!({"type":"reset","checkpoint":value["job"]["checkpoint"]}));
-        }
-        if let Some(events) = value["events"].as_array() {
-            for event in events {
-                out.agent_event(&event["data"]);
+            "end" => {
+                out.agent_event(&json!({"type":"end","job":event.data["job"],"hint":"Use calternal agent resume <job-id> for an interrupted turn."}));
+                return if event.data["job"]["state"] == "done" {
+                    Ok(())
+                } else {
+                    Err(error(
+                        "Turn ended without success; inspect its state and checkpoint.",
+                    ))
+                };
             }
+            _ => {}
         }
-        epoch = value["epoch"].as_str().unwrap_or("").into();
-        next = value["next"].as_u64().unwrap_or(next);
-        if value["job"]["checkpoint"]["retry"] != retry {
-            retry = value["job"]["checkpoint"]["retry"].clone();
-            if !retry.is_null() {
-                out.agent_event(&json!({"type":"retry_waiting","retry":retry}));
-            }
-        }
-        let state = value["job"]["state"].as_str().unwrap_or("failed");
-        if !matches!(state, "admitted" | "running" | "waiting" | "retry_waiting") {
-            out.agent_event(&json!({"type":"end","job":value["job"],"hint":"Use calternal agent resume <job-id> for an interrupted turn."}));
-            return if state == "done" {
-                Ok(())
-            } else {
-                Err(error(
-                    "Turn ended without success; inspect its state and checkpoint.",
-                ))
-            };
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
     }
+    Err(error(
+        "Turn stream ended before its final state; inspect the turn.",
+    ))
 }
 
 /// Generic operation/discovery entry for agents and people. Uses the same

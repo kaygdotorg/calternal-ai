@@ -18,6 +18,8 @@ use reqwest::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::time::Duration;
+mod event_stream;
+pub use event_stream::{JobEvent, JobSubscription};
 mod cancellation;
 pub use cancellation::CancellationToken;
 mod typed;
@@ -30,7 +32,7 @@ const MAX_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
 pub enum ClientError {
     #[error("{0}")]
     /// Local contract validation failed before dispatch.
-    Validation(#[from] ValidationError),
+    Validation(#[from] calternal_types::Error),
     #[error("session expired or revoked; sign in again")]
     /// Authentication is no longer valid; no automatic retry or credential refresh occurs.
     ReauthenticationRequired,
@@ -482,3 +484,6 @@ pub use state::{
 };
 mod outbox;
 pub use outbox::OfflineOutbox;
+
+mod account_input;
+pub use account_input::AccountConnection;

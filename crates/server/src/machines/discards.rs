@@ -1,8 +1,8 @@
 //! Durable explicit workspace deletion; pending requests survive server restart.
 use super::{LeaseState, MachineService, State, db, sql};
-use crate::error::HostError;
-use calternal_auth::AccountId;
 use calternal_machine::protocol::{DiscardReport, Down};
+use calternal_types::AccountId;
+use calternal_types::Error;
 use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
@@ -18,12 +18,12 @@ impl MachineService {
         account: AccountId,
         lease: Uuid,
         retry_failed: bool,
-    ) -> Result<String, HostError> {
+    ) -> Result<String, Error> {
         let mut st = self.lock()?;
         let row = db::lease(&st.db, lease)
             .map_err(sql)?
             .filter(|l| l.account == account)
-            .ok_or_else(|| HostError::not_found("run not found"))?;
+            .ok_or_else(|| Error::not_found("run not found"))?;
         let newer:bool=st.db.query_row("SELECT EXISTS(SELECT 1 FROM leases WHERE account=?1 AND thread=?2 AND rowid>(SELECT rowid FROM leases WHERE id=?3))",params![account.to_string(),row.thread.to_string(),lease.to_string()],|r|r.get(0)).map_err(sql)?;
         if newer
             || st.leases.values().any(|l| {
@@ -33,10 +33,13 @@ impl MachineService {
                     && l.state != LeaseState::Ended
             })
         {
-            return Err(HostError::conflict(
+            return Err(Error::conflict(
                 "another turn has used this workspace; discard its latest turn instead",
             ));
         }
+        st.authority
+            .authorize_discard(account, row.thread, lease)
+            .map_err(super::authority_error)?;
         st.end_with_files(
             lease,
             "the owner discarded this workspace",
@@ -53,7 +56,7 @@ impl MachineService {
             .map_err(sql)?
         };
         if targets.len() > 64 {
-            return Err(HostError::unavailable(
+            return Err(Error::unavailable(
                 "more than 64 retained machine copies; discard locally on their owners' machines",
             ));
         }
@@ -86,7 +89,7 @@ impl MachineService {
             }
             let n:u32=tx.query_row("SELECT count(*) FROM workspace_discards WHERE machine=?1 AND state IN ('pending','sent')",[&target],|r|r.get(0)).map_err(sql)?;
             if n >= 128 {
-                return Err(HostError::unavailable(
+                return Err(Error::unavailable(
                     "this machine has 128 pending discards; wait for it to reconnect",
                 ));
             }
@@ -94,8 +97,7 @@ impl MachineService {
             tx.execute("DELETE FROM workspace_discards WHERE machine=?1 AND state NOT IN ('pending','sent') AND (updated_ms<?2 OR rowid NOT IN (SELECT rowid FROM workspace_discards WHERE machine=?1 AND state NOT IN ('pending','sent') ORDER BY updated_ms DESC LIMIT 1024))",params![target,db::now_ms()-7*86_400_000i64]).map_err(sql)?;
             tx.execute("INSERT INTO workspace_discards VALUES(?1,?2,?3,?4,?5,'pending',?6) ON CONFLICT(lease,machine) DO UPDATE SET request_id=excluded.request_id,state='pending',updated_ms=excluded.updated_ms",params![lease.to_string(),target,request.to_string(),account.to_string(),row.thread.to_string(),db::now_ms()]).map_err(sql)?;
             queued.push((
-                Uuid::parse_str(&target)
-                    .map_err(|_| HostError::internal("invalid stored machine"))?,
+                Uuid::parse_str(&target).map_err(|_| Error::internal("invalid stored machine"))?,
                 request,
             ));
         }
@@ -119,7 +121,7 @@ impl MachineService {
 impl State {
     /// Replay only pending durable deletes before assignments in a new session.
     /// One bounded indexed read; called on a blocking worker under the registry lock.
-    pub(super) fn replay_discards(&mut self, machine: Uuid) -> Result<(), HostError> {
+    pub(super) fn replay_discards(&mut self, machine: Uuid) -> Result<(), Error> {
         // Sent deletions may have completed before a session/server was lost.
         // Never repeat them over newer unreviewed files; a person must inspect/retry.
         self.db.execute("UPDATE workspace_discards SET state='failed',updated_ms=?1 WHERE machine=?2 AND state='sent'",params![db::now_ms(),machine.to_string()]).map_err(sql)?;
@@ -127,7 +129,7 @@ impl State {
     }
 
     /// Deliver never-sent requests once; one bounded read and one FULL batch commit.
-    fn dispatch_discards(&mut self, machine: Uuid) -> Result<(), HostError> {
+    fn dispatch_discards(&mut self, machine: Uuid) -> Result<(), Error> {
         let rows = {
             let mut q=self.db.prepare("SELECT request_id,account,thread,lease FROM workspace_discards WHERE machine=?1 AND state='pending' LIMIT 128").map_err(sql)?;
             q.query_map([machine.to_string()], |r| {
@@ -145,21 +147,30 @@ impl State {
         let mut batch = Vec::new();
         let mut updates = Vec::new();
         for (request, account, thread, lease) in rows {
-            let parse = |s: &str| {
-                Uuid::parse_str(s).map_err(|_| HostError::internal("invalid stored discard"))
-            };
+            let parse =
+                |s: &str| Uuid::parse_str(s).map_err(|_| Error::internal("invalid stored discard"));
             let (request_id, account_id, thread_id, lease_id) = (
                 parse(&request)?,
                 parse(&account)?,
                 parse(&thread)?,
                 parse(&lease)?,
             );
-            let conflict = self.leases.values().any(|l| {
-                l.row.account.0 == account_id
-                    && l.row.thread == thread_id
-                    && l.row.id != lease_id
-                    && l.state != LeaseState::Ended
-            });
+            let authorized = self
+                .authority
+                .discard_authorized(
+                    calternal_types::AccountId::from_uuid(account_id)
+                        .map_err(|_| Error::internal("invalid stored account"))?,
+                    thread_id,
+                    lease_id,
+                )
+                .map_err(super::authority_error)?;
+            let conflict = !authorized
+                || self.leases.values().any(|l| {
+                    l.row.account.as_uuid() == account_id
+                        && l.row.thread == thread_id
+                        && l.row.id != lease_id
+                        && l.state != LeaseState::Ended
+                });
             updates.push((request_id, if conflict { "failed" } else { "sent" }));
             if !conflict {
                 batch.push(Down::Discard {
@@ -185,9 +196,9 @@ impl State {
         &mut self,
         machine: Uuid,
         reports: &[DiscardReport],
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         if reports.len() > 128 {
-            return Err(HostError::invalid_input("too many discard reports"));
+            return Err(Error::invalid_input("too many discard reports"));
         }
         if reports.is_empty() {
             return Ok(());

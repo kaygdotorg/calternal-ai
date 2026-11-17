@@ -9,14 +9,15 @@ description = "Protected installation-bound append-only auth recovery log"
 [dependencies]
 calternal-auth.workspace = true
 calternal-fsio.workspace = true
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid = { workspace = true, features = ["v7"] }
-blake3 = "1.8.7"
+blake3.workspace = true
 thiserror.workspace = true
-rustix = { version = "1", features = ["fs"] }
+rustix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
-tempfile = "3.27"
+calternal-types.workspace = true
+tempfile.workspace = true
 tokio.workspace = true

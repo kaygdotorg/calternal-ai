@@ -1,8 +1,7 @@
 //! Selected-SSD-tree placement using inherited names, exclusive moves and fsio syncs.
 //! Committed path intents survive restart; outside changes are preserved and block writes.
-use crate::{
-    Error, FaultPoint, FileFormat, Item, Materialization, Placement, Result, db::Space, sha256,
-};
+use crate::types::{blocked, internal, missing};
+use crate::{Error, FaultPoint, FileFormat, Item, Placement, Result, db::Space, file_hash};
 use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
 use std::{
@@ -14,9 +13,9 @@ use uuid::Uuid;
 fn hash(path: &Path) -> Result<Option<String>> {
     match fs::symlink_metadata(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(Error::internal(e)),
-        Ok(meta) if !meta.is_file() => Err(Error::blocked()),
-        Ok(_) => Ok(Some(sha256(&fs::read(path).map_err(Error::internal)?))),
+        Err(e) => Err(internal(e)),
+        Ok(meta) if !meta.is_file() => Err(blocked()),
+        Ok(_) => Ok(Some(file_hash(&fs::read(path).map_err(internal)?))),
     }
 }
 pub(crate) fn validate_kind(kind: &str) -> Result<()> {
@@ -28,7 +27,7 @@ pub(crate) fn validate_kind(kind: &str) -> Result<()> {
     {
         Ok(())
     } else {
-        Err(Error::invalid("invalid item kind"))
+        Err(Error::invalid_input("invalid item kind"))
     }
 }
 fn single(value: &str) -> bool {
@@ -63,7 +62,7 @@ pub(crate) fn validate_registration(placement: &Placement, format: &FileFormat) 
     if valid && encoding {
         Ok(())
     } else {
-        Err(Error::invalid("invalid kind file registration"))
+        Err(Error::invalid_input("invalid kind file registration"))
     }
 }
 fn folder(placement: &Placement, kind: &str) -> String {
@@ -83,7 +82,7 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
     if *format == FileFormat::Markdown {
         // The host owns identity; untrusted frontmatter cannot claim a second ID.
         // Preserve the submitted text as the version body, including its properties.
-        let text = std::str::from_utf8(&item.bytes).map_err(Error::internal)?;
+        let text = std::str::from_utf8(&item.bytes).map_err(internal)?;
         let mut out = format!("---\ncalternal-id: {}\n", item.id);
         if let Some(rest) = text.strip_prefix("---\n")
             && let Some((front, body)) = rest.split_once("\n---\n")
@@ -113,14 +112,14 @@ impl Space {
                 r.get::<_, String>(0)
             })
             .optional()
-            .map_err(Error::internal)?
-            .ok_or_else(|| Error::invalid("kind is not registered"))?;
-        serde_json::from_str(&json).map_err(Error::internal)
+            .map_err(internal)?
+            .ok_or_else(|| Error::invalid_input("kind is not registered"))?;
+        serde_json::from_str(&json).map_err(internal)
     }
     pub(crate) fn validate_bytes(&self, kind: &str, bytes: &[u8]) -> Result<()> {
         let (_, format) = self.registration(kind)?;
         if format == FileFormat::Markdown && std::str::from_utf8(bytes).is_err() {
-            return Err(Error::invalid("Markdown must be UTF-8"));
+            return Err(Error::invalid_input("Markdown must be UTF-8"));
         }
         Ok(())
     }
@@ -133,8 +132,8 @@ impl Space {
                 |r| r.get(0),
             )
             .optional()
-            .map_err(Error::internal)?
-            .ok_or_else(Error::missing)?;
+            .map_err(internal)?
+            .ok_or_else(missing)?;
         Ok(self.files.join(path))
     }
     pub(crate) fn choose_path(
@@ -146,12 +145,15 @@ impl Space {
         let (placement, format) = self.registration(kind)?;
         let folder = folder(&placement, kind);
         let dir = self.files.join(&folder);
-        calternal_auth::private_fs::directory(&dir).map_err(Error::internal)?;
-        if !self.names.contains_key(&folder) && self.names.len() >= 32 {
-            self.names.clear();
+        // Prepare the folder once per cached name set, not on every write.
+        if !self.names.contains_key(&folder) {
+            calternal_fsio::private::directory(&dir).map_err(internal)?;
+            if self.names.len() >= 32 {
+                self.names.clear();
+            }
         }
         let names = self.names.entry(folder.clone()).or_default();
-        names.refresh(&dir).map_err(Error::internal)?;
+        names.refresh(&dir).map_err(internal)?;
         let mut stem = names::stem_from_title(title);
         // The inherited helper bounds characters; reserve bytes too for common
         // filesystems' 255-byte component limit, including collision suffixes.
@@ -164,7 +166,7 @@ impl Space {
         };
         let taken = |folded: &str| -> Result<bool> {
             let rel = format!("{folder}/{folded}");
-            let reserved=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM items WHERE folded_path=?1 AND path!=COALESCE(?2,''))",params![names::fold(&rel),current],|r|r.get::<_,bool>(0)).map_err(Error::internal)?;
+            let reserved=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM items WHERE folded_path=?1 AND path!=COALESCE(?2,''))",params![names::fold(&rel),current],|r|r.get::<_,bool>(0)).map_err(internal)?;
             let own = current.is_some_and(|p| names::fold(p) == names::fold(&rel));
             Ok(reserved || (names.taken(folded) && !own))
         };
@@ -180,7 +182,7 @@ impl Space {
             }
             number = number.checked_add(1).ok_or_else(|| {
                 Error::new(
-                    calternal_core::ErrorCode::Unavailable,
+                    calternal_types::ErrorCode::Unavailable,
                     "no filename is available",
                 )
             })?;
@@ -191,14 +193,14 @@ impl Space {
         let (state, expected): (String, Option<String>) = self
             .conn
             .query_row(
-                "SELECT mat_state,file_sha256 FROM items WHERE id=?1",
+                "SELECT mat_state,file_hash FROM items WHERE id=?1",
                 [id.to_string()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         let found = match hash(&self.file_path(id)?) {
             Ok(found) => found,
-            Err(e) if e.code == calternal_core::ErrorCode::Conflict => {
+            Err(e) if e.code == calternal_types::ErrorCode::Conflict => {
                 self.block(id)?;
                 return Err(e);
             }
@@ -206,7 +208,7 @@ impl Space {
         };
         if state == "blocked" || found != expected {
             self.block(id)?;
-            return Err(Error::blocked());
+            return Err(blocked());
         }
         Ok(())
     }
@@ -216,48 +218,34 @@ impl Space {
                 "UPDATE items SET mat_state='blocked' WHERE id=?1",
                 [id.to_string()],
             )
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         Ok(())
-    }
-    pub(crate) fn materialization(&self, id: Uuid) -> Result<Option<Materialization>> {
-        self.conn
-            .query_row(
-                "SELECT mat_state FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(Error::internal)
-            .map(|v| {
-                v.map(|s| match s.as_str() {
-                    "pending" => Materialization::Pending,
-                    "materialized" => Materialization::Materialized,
-                    _ => Materialization::Blocked,
-                })
-            })
     }
     pub(crate) fn place(&mut self, id: Uuid, fault: fn(FaultPoint)) -> Result<()> {
         let (state, expected, old): (String, Option<String>, Option<String>) = self
             .conn
             .query_row(
-                "SELECT mat_state,file_sha256,old_path FROM items WHERE id=?1",
+                "SELECT mat_state,file_hash,old_path FROM items WHERE id=?1",
                 [id.to_string()],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         if state == "materialized" {
             return Ok(());
         }
         if state != "pending" {
-            return Err(Error::blocked());
+            return Err(blocked());
         }
         let item = self.get(id)?;
         let (_, format) = self.registration(&item.kind)?;
         let bytes = encoded(&item, &format)?;
-        let new_hash = sha256(&bytes);
+        let new_hash = file_hash(&bytes);
         let path = self.file_path(id)?;
-        let dir = path.parent().ok_or_else(|| Error::internal("parent"))?;
-        calternal_auth::private_fs::directory(dir).map_err(Error::internal)?;
+        let dir = path.parent().ok_or_else(|| internal("parent"))?;
+        // Normally prepared by `choose_path`; recreate only if it vanished since.
+        if !dir.is_dir() {
+            calternal_fsio::private::directory(dir).map_err(internal)?;
+        }
         let result = (|| {
             if let Some(old) = old {
                 let old = self.files.join(old);
@@ -269,28 +257,28 @@ impl Space {
                         == names::fold(path.to_str().unwrap_or(""))
                     {
                         if !moving.exists() {
-                            rename_safely(&old, &moving).map_err(Error::internal)?;
+                            rename_safely(&old, &moving).map_err(internal)?;
                         }
-                        rename_safely(&moving, &path).map_err(Error::internal)?;
+                        rename_safely(&moving, &path).map_err(internal)?;
                     } else {
                         rename_safely(&old, &path).map_err(|e| {
                             if e.kind() == std::io::ErrorKind::AlreadyExists {
-                                Error::blocked()
+                                blocked()
                             } else {
-                                Error::internal(e)
+                                internal(e)
                             }
                         })?;
                     }
                 } else if hash(&moving)? == expected && expected.is_some() {
-                    rename_safely(&moving, &path).map_err(Error::internal)?;
+                    rename_safely(&moving, &path).map_err(internal)?;
                 }
             }
             let found = hash(&path)?;
             if found.as_deref() == Some(&new_hash) {
                 File::open(&path)
                     .and_then(|f| f.sync_all())
-                    .map_err(Error::internal)?;
-                calternal_fsio::sync_dir(dir).map_err(Error::internal)?;
+                    .map_err(internal)?;
+                calternal_fsio::sync_dir(dir).map_err(internal)?;
             } else if found == expected {
                 fault(FaultPoint::BeforePlacement);
                 if expected.is_none() {
@@ -299,36 +287,41 @@ impl Space {
                     let stage = dir.join(format!(".calternal-content-{id}"));
                     if let Some(found) = hash(&stage)? {
                         if found != new_hash {
-                            return Err(Error::blocked());
+                            return Err(blocked());
                         }
                     } else {
-                        write_atomic_mode(&stage, &bytes, 0o600).map_err(Error::internal)?;
+                        write_atomic_mode(&stage, &bytes, 0o600).map_err(internal)?;
                     }
                     rename_safely(&stage, &path).map_err(|e| {
                         if e.kind() == std::io::ErrorKind::AlreadyExists {
-                            Error::blocked()
+                            blocked()
                         } else {
-                            Error::internal(e)
+                            internal(e)
                         }
                     })?;
                 } else {
                     // Same checked-copy contract as the preview: external writers
                     // racing the final hash/replace interval remain out of scope.
-                    write_atomic_mode(&path, &bytes, 0o600).map_err(Error::internal)?;
+                    write_atomic_mode(&path, &bytes, 0o600).map_err(internal)?;
                 }
                 fault(FaultPoint::AfterPlacement);
             } else {
-                return Err(Error::blocked());
+                return Err(blocked());
             }
             Ok(())
         })();
         if let Err(e) = result {
-            if e.code == calternal_core::ErrorCode::Conflict {
+            if e.code == calternal_types::ErrorCode::Conflict {
                 self.block(id)?;
             }
             return Err(e);
         }
-        self.conn.execute("UPDATE items SET mat_state='materialized',file_sha256=?1,old_path=NULL WHERE id=?2",params![new_hash,id.to_string()]).map_err(Error::internal)?;
+        self.conn
+            .execute(
+                "UPDATE items SET mat_state='materialized',file_hash=?1,old_path=NULL WHERE id=?2",
+                params![new_hash, id.to_string()],
+            )
+            .map_err(internal)?;
         Ok(())
     }
     pub(crate) fn cleanup(&self) -> Result<()> {
@@ -337,18 +330,18 @@ impl Space {
         let mut stmt = self
             .conn
             .prepare("SELECT DISTINCT kind FROM items")
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         let kinds = stmt
             .query_map([], |r| r.get::<_, String>(0))
-            .map_err(Error::internal)?
+            .map_err(internal)?
             .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         for kind in kinds {
             let dir = self.files.join(folder(&self.registration(&kind)?.0, &kind));
             if !fs::symlink_metadata(&dir).is_ok_and(|m| m.is_dir()) {
                 continue;
             }
-            for entry in fs::read_dir(dir).map_err(Error::internal)?.flatten() {
+            for entry in fs::read_dir(dir).map_err(internal)?.flatten() {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
                 // fsio atomic-write temps include nonce + the known item's final name.
@@ -365,13 +358,13 @@ impl Space {
                             )],
                             |r| r.get(0),
                         )
-                        .map_err(Error::internal)?;
+                        .map_err(internal)?;
                     if known
                         && !nonce.is_empty()
                         && nonce.bytes().all(|c| c.is_ascii_hexdigit())
                         && entry.file_type().is_ok_and(|t| t.is_file())
                     {
-                        fs::remove_file(entry.path()).map_err(Error::internal)?;
+                        fs::remove_file(entry.path()).map_err(internal)?;
                     }
                 }
             }

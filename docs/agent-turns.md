@@ -3,8 +3,8 @@
 Step one runs Claude Code from `calternal agent check|run|stop|resume`; it does not
 create a conversation file. Supply a space UUID and a fresh thread UUID to check
 or run. All actions are operations on `/api/v1/operations`; the CLI, a person and
-an agent use that same path. `agent.events` is the bounded polling view over the
-existing job stream. JSON streaming is NDJSON, including errors and the terminal
+an agent use that same path. The CLI watches the existing jobs SSE stream;
+`agent.events` remains a bounded explicit snapshot operation. JSON streaming is NDJSON, including errors and the terminal
 job record. Human output streams text and labelled tool steps.
 
 ```
@@ -28,15 +28,21 @@ default. An omitted `--model` uses that provider manifest's default model.
 
 One thread has at most one active or interrupted job. Admission records the prompt
 before returning, reuses the same job on an identical request ID, and refuses a
-changed input or concurrent turn. Each space's existing jobs SQLite file holds
-the turn, checkpoints, scope hashes and approvals. Text is live output, not one
+changed input or concurrent turn. Manual admission uses the same bounded
+(account, space, request ID) content receipts as other writes, behind a small
+port that thread storage will later implement. Each space's jobs SQLite file
+holds the turn and checkpoints. Token hashes, scopes, modes, approvals and
+discard authorizations live in auth.db and commit through its recovery barrier. Text is live output, not one
 file write per delta. Checkpoints store session identity, lease, last sequence and
 a bounded 16 KiB text tail after session discovery, every tool finish, at turn end
 and at least every three seconds of emitted output. Each such checkpoint is one
 FULL transaction. Live buffers hold at most 256 chunks / 1 MiB per job. Completed
-polling buffers last 30 seconds, with at most 64 retained completed streams.
-Durable final jobs and their access records last seven days (at most 1024 final
-jobs per space); at most 64 active jobs fit in a space.
+completed buffers last 30 seconds, with at most 64 retained completed streams.
+Durable final jobs last seven days (at most 1024 final jobs per space); at most
+64 active jobs fit in a space. Agent authority is capped at 1024 records per
+account, with 32 approvals per turn. Closed authority older than seven days is
+pruned on admission; interrupted scopes remain until superseded or their account
+or space is deleted, so a resumed turn cannot recover a broader initial mode.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
@@ -89,11 +95,15 @@ Sensitive action approvals conservatively bind canonical operation input; an
 irreversible or widening action also binds its request ID. Reuse that ID after
 approval. An external scope covers identical canonical input. App grants name a
 prefix and read/write. Scope approval currently lasts this turn; once-only and
-always-in-space grants need a later protected settings/recovery implementation.
+always-in-space grants need a later settings implementation. This turn's grants
+already use protected recovery.
 An old token cannot approve, change mode, or reissue itself. Token changes revoke
 the old credential immediately and pause the turn; explicit Resume delivers its
 replacement to a fresh process. Tokens expire after ten minutes or turn end.
-Only hashes persist. Worker callbacks recheck that hash, expiry and active turn,
+Only hashes persist. Authority uses the existing account directory handle and
+worker; no new installation-wide lock, worker or connection is added. Issuance
+holds its space's jobs lock across the authority commit to fence stop/resume;
+auth callbacks never acquire job or content locks. Worker callbacks recheck that hash, expiry and active turn,
 and least-access content calls remain inside the granted kind scope.
 
 `access.request` creates a bounded pending approval. Denied sensitive operations
@@ -141,3 +151,11 @@ Simplification opportunities: use the same job stream subscription abstraction f
 CLI polling and SSE, and replace the manual-turn host seam with `threads.send`
 when the file-storage lane lands. Keep provider normalization separate from those
 changes so a Codex adapter reuses the machine, job, access and retry paths.
+
+Protected discard intent is separate from placement delivery metadata. The owner
+and exact lease authorization is committed in auth.db before queuing a command;
+every delivery rechecks it. At most 1024 current discard authorizations per
+account are retained, one per thread. Delivery/acknowledgement rows in machines.db
+are operational state, not grants: they cannot authorize a delete by themselves.
+Local machine-owner deletion remains a filesystem administration command guarded
+against a running machine role; it grants no Calternal access.

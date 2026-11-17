@@ -27,7 +27,7 @@ pub(crate) struct MasterKey {
 /// so no installation-wide connection or lock sits on the request path.
 pub(crate) fn registry(appdata: &Path) -> Result<Connection> {
     let dir = appdata.join("system");
-    crate::private_fs::directory(&dir).map_err(|_| Error::Internal)?;
+    calternal_fsio::private::directory(&dir).map_err(|_| Error::Internal)?;
     crate::local::open_db(
         &dir.join("secrets.db"),
         "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v BLOB NOT NULL);

@@ -2,18 +2,41 @@
 
 Development preview with protected account sign-in and stored space authority.
 Use disposable data. The preview content store does not provide inherited tiering,
-FO1 recovery integration, or a production plugin sandbox.
+a rebuild from the recovery log, or a production plugin sandbox.
 
 ## Run
 
 ```sh
 scripts/with-toolchain.sh cargo build -p calternal-server -j4
 preview_data=$(mktemp -d /tmp/calternal-preview.XXXXXX)
-target/debug/calternal serve --data-dir "$preview_data" --port 0 \
-  --plugin-root plugins
+export CALTERNAL_INSTALLATION_ID=$(cat /proc/sys/kernel/random/uuid)
+target/debug/calternal serve --create --port 0 --plugin-root plugins \
+  --appdata "$preview_data/appdata" \
+  --userdata-ssd "$preview_data/userdata-ssd" \
+  --userdata-hdd "$preview_data/userdata-hdd"
 ```
 
-The listener binds `127.0.0.1`. `startup.json` (0600) reports `base_url`,
+Startup first validates and locks the three roots (`calternal-roots`). The
+installation ID is pinned in server configuration outside every root (ADR 0062):
+`CALTERNAL_INSTALLATION_ID` (or `--installation-id`); a missing or malformed pin
+refuses to start. Each root's `.calternal-install-id` marker must carry that ID and
+the root's role. First setup: generate a UUID, store it in the configuration, and
+start once with `--create`, which pairs three empty or missing roots by writing the
+markers. Missing,
+swapped, nested, occupied-but-unpaired or foreign roots are refused before any
+directory, lock or database is created; `--create` only pairs empty or missing
+roots. The protected security log (`calternal-recovery`) lives in
+`userdata-ssd/.calternal/recovery` and is attached to `auth.db` before any request
+or fixture seeding, so every security change is durable there before it is
+acknowledged. The operator `machines` commands take the same three roots and installation
+ID; they ask a running server over its admin socket, or open a stopped installation
+through the same guard and recovery log.
+
+Request receipts (what a retry with the same request ID replays) are kept 7 days by
+default; `--receipt-retention-days` / `CALTERNAL_RECEIPT_RETENTION_DAYS` changes it.
+A retry after that is treated as a new request.
+
+The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
 paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn
 needs a hostname. Use the reported URL and preserve the port across restarts to
@@ -33,10 +56,11 @@ grants no content access.
 bearer files; this flag is **off by default**, including after restart. Existing
 token files do not grant authority without this flag. Development `base_url`
 retains the preview's numeric loopback URL for existing bearer clients; use
-`passkey_origin` for browser passkey sign-in. The `owner` fixture owns the
-`personal` and `shared` space aliases; `guest` reads only `shared`. Each account
-and each space has an independent UUIDv7. Token files are 0600 under a 0700
-`dev-tokens` directory. New spaces use UUID roots. Aliases are retained temporarily.
+`passkey_origin` for browser passkey sign-in. The `owner` fixture owns
+two spaces named `personal` and `shared`; `guest` reads only `shared`. Each account
+and each space has an independent UUIDv7, and requests name spaces only by UUID:
+clients read them from `describe`. Token files are 0600 under a 0700 `dev-tokens`
+directory.
 
 ## HTTP
 
@@ -68,7 +92,7 @@ revocation checks come from the ported auth library. Cookies are
 Domain. Duplicate host cookies are refused across the merged router. No legacy cookie is recognized or cleared; delayed logout/refusal never expires
 a newer host cookie. Native clients may send a session bearer. DAV/app passwords are not
 accepted. Account mutation receipt replay and private live event feeds are not
-yet integrated (see PORTING.md and the ignored source test).
+yet integrated (see docs/reviews/server-porting-2026-11-17.md).
 
 `GET /api/v1/describe` returns `DescribeResult`. `POST /api/v1/operations` takes
 `{request_id, operation, input}` and returns the shared operation envelope. A
@@ -90,11 +114,11 @@ There are no CORS headers. `--web-dir` serves a plain static directory with no
 SPA fallback; unknown paths and API routes return 404.
 Core operation bodies remain capped at 2 MiB, Markdown at 1 MiB. The server
 supports the settled addresses; the current web router still needs Claude-owned
-changes listed in HTTP-VALIDATION.md.
+changes listed in docs/reviews/server-http-validation-2026-11-17.md.
 
 ## Durability profile (preview)
 
-SQLite (`state.sqlite3`, WAL, `synchronous=FULL`) is authoritative for revisions, receipts and plugin state. Reads always come from SQLite. `spaces/<space>/Notes/<uuid>.md` is a checked, portable copy of each note's head revision.
+Each space's `appdata/spaces/<space-uuid>/content.db` (WAL, `synchronous=FULL`) is authoritative for its revisions and history, and its `index.db` journal for its request receipts; plugin activation is a control value in that space's `content.db`, so no installation-wide database is written for it. Reads come from SQLite. `userdata-ssd/spaces/<space-uuid>/Notes/<title>.md` is a checked, portable copy of each note's head revision, named from its title, with the item ID in its frontmatter.
 
 A write proceeds as follows:
 
@@ -143,9 +167,11 @@ Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-pl
 
 Agent threads run on enrolled machines that connect out to this server; the server
 never starts containers or VMs (`src/machines.rs`; machine side in `crates/machine`).
-State lives in `system/machines.db` (0600, WAL, `synchronous=FULL`): enrolment code
-hashes, machines with their public keys, pool grants and leases. Exec output is kept
-in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
+Machine authority (enrollment code hashes, machines with their public keys and
+revocation, pool grants) lives in `auth.db` and is published to the recovery log
+before it is acknowledged (`calternal_auth::machines`). Placement state (leases,
+draining) lives in `system/machines.db` (0600, WAL, `synchronous=FULL`). Exec output
+is kept in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
 `--machine-poll-hold-ms` (default 20000).
 
 | Path | Who | Purpose |
@@ -154,8 +180,9 @@ in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
 | `POST /api/v1/machines/codes`, `GET /api/v1/machines`, `POST /api/v1/machines/{id}/revoke`, `POST /api/v1/machines/{id}/drain` | signed-in owner | enroll and manage your machines |
 | `POST /api/v1/machines/runs`, `GET …/runs/{lease}`, `POST …/runs/{lease}/stop`, `POST …/runs/{lease}/execs`, `GET /api/v1/machines/execs/{exec}/output?after&wait_ms` | account with `plugins.use` in the space | place work, run commands, read output |
 
-Operator commands work on the data directory, with or without the server running
-(a running server applies them within a second):
+Operator commands name the installation (three roots and installation ID). A running
+server receives them over its owner-only admin socket and applies them at once; with
+no server running they open the installation through the storage guard:
 `calternal machines code --pool|--account <uuid>`, `machines list`,
 `machines revoke <machine>`, `machines pool-grant <account> [--remove]`.
 Every command prints a readable table or block, or one JSON document with `--json`:
@@ -187,4 +214,7 @@ auth changes wake idle streams; a one-second fallback checks expiry and director
 changes through separately opened handles. This is a development preview; no
 cross-process instantaneous revocation guarantee is asserted. Each space has a
 128-subscriber safety ceiling and each connection buffers one 64-entry page.
-The account-state feed and draft/pending operations remain unbuilt (issue #17).
+Account-private drafts, pending submissions and `/api/v1/account/live` are
+implemented in separate owner-local modules; see [account input](../../docs/account-input.md).
+The live space/subscriber defaults above are operator-configurable through
+`CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.

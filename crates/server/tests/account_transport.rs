@@ -113,8 +113,7 @@ async fn session_authenticates_an_account_and_never_implies_space_authority() {
     assert_eq!(discovery.body["principal"]["spaces"], json!([]));
     let me = get(&app, "/api/v1/auth/me", Some(&cookie)).await;
     assert_eq!(me.body["user"]["role"], "admin");
-    let request =
-        json!({"request_id":"denied","operation":"notes.list","input":{"space_id":"personal"}});
+    let request = json!({"request_id":"denied","operation":"notes.list","input":{"space_id":calternal_types::SpaceId::new()}});
     let refused = post(&app, "/api/v1/operations", Some(&cookie), request).await;
     assert_eq!(refused.status, 404);
     let created = post(
@@ -212,7 +211,7 @@ async fn issued_cookie_is_host_only_secure_and_does_not_include_a_domain() {
 async fn stale_account_proof_requires_reverification_before_adding_a_passkey() {
     let app = app();
     let (cookie, mut device) = first_owner(&app, "Owner").await;
-    let db = rusqlite::Connection::open(app.dir.path().join("system/auth.db")).unwrap();
+    let db = rusqlite::Connection::open(app.dir.path().join("appdata/system/auth.db")).unwrap();
     db.execute(
         "UPDATE installations SET assertion_at=0, registration_session=0",
         [],

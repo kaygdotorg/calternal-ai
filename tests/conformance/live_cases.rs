@@ -1,8 +1,8 @@
 //! Live journal isolation over TCP with real signed-in account sessions.
 use super::*;
-struct Live {
-    response: reqwest::Response,
-    buffer: Vec<u8>,
+pub(super) struct Live {
+    pub(super) response: reqwest::Response,
+    pub(super) buffer: Vec<u8>,
 }
 impl Live {
     async fn open(f: &Fixture, who: usize, subscriptions: Value) -> Result<Self, (u16, Value)> {
@@ -24,7 +24,7 @@ impl Live {
             buffer: Vec::new(),
         })
     }
-    async fn next(&mut self) -> Option<Value> {
+    pub(super) async fn next(&mut self) -> Option<Value> {
         loop {
             if let Some(i) = self.buffer.windows(2).position(|w| w == b"\n\n") {
                 let bytes: Vec<_> = self.buffer.drain(..i + 2).collect();

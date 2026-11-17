@@ -1,0 +1,43 @@
+---
+// The header's theme picker: colour scheme (Auto, Light, Dark; Starlight's own storage key, so its pre-paint script still applies it) and a preset
+// (the design system's themed presets). A preset swaps three colours; nothing else loads. The choice is kept in localStorage.
+import presets from '../presets.generated.json';
+---
+<div class="cal-theme">
+  <select name="scheme" aria-label="Colour scheme">
+    <option value="auto">Auto</option>
+    <option value="light">Light</option>
+    <option value="dark">Dark</option>
+  </select>
+  <select name="preset" aria-label="Theme preset">
+    {presets.map((p) => <option value={p.id}>{p.name}</option>)}
+  </select>
+</div>
+<script>
+  import presets from '../presets.generated.json';
+  type P = { id: string; light: Record<string, string> | null; dark: Record<string, string> | null };
+  const root = document.documentElement;
+  const scheme = document.querySelector<HTMLSelectElement>('.cal-theme select[name="scheme"]')!;
+  const preset = document.querySelector<HTMLSelectElement>('.cal-theme select[name="preset"]')!;
+  const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
+  const apply = () => {
+    const p = (presets as P[]).find((x) => x.id === preset.value);
+    const pal = p && (root.dataset.theme === 'dark' ? p.dark : p.light);
+    for (const k of ['paper', 'ink', 'accent']) {
+      if (pal) root.style.setProperty(`--cal-${k}`, pal[k]!);
+      else root.style.removeProperty(`--cal-${k}`);
+    }
+  };
+  scheme.value = localStorage.getItem('starlight-theme') || 'auto';
+  preset.value = localStorage.getItem('cal-docs-preset') || 'calternal';
+  scheme.addEventListener('change', () => {
+    localStorage.setItem('starlight-theme', scheme.value === 'auto' ? '' : scheme.value);
+    root.dataset.theme = scheme.value === 'auto' ? (prefersDark() ? 'dark' : 'light') : scheme.value;
+    apply();
+  });
+  preset.addEventListener('change', () => {
+    localStorage.setItem('cal-docs-preset', preset.value);
+    apply();
+  });
+  apply();
+</script>

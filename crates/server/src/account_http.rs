@@ -1,6 +1,4 @@
 //! Trusted account HTTP endpoints ported from the original auth transport.
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use axum::{
     Json, Router,
@@ -11,7 +9,8 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use calternal_auth::{AccountId, Auth, AuthConfig, Error, ErrorCode, InstallationId};
+use calternal_auth::{Auth, AuthConfig, Error, ErrorCode};
+use calternal_types::{AccountId, InstallationId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::net::SocketAddr;

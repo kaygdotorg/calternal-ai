@@ -1,5 +1,5 @@
 use crate::*;
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, Actor, SpaceId, Via};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -12,10 +12,7 @@ fn name(n: &str) -> SecretName {
     SecretName::new(n).unwrap()
 }
 fn actor(account: AccountId) -> Actor {
-    Actor {
-        account,
-        via: Via::Session,
-    }
+    Actor::account(account)
 }
 fn env() -> Consumer {
     Consumer::SandboxEnv {
@@ -259,14 +256,19 @@ fn accounts_and_spaces_are_isolated() {
     let id = uuid::Uuid::now_v7();
     store
         .put(
-            &Owner::Account(AccountId(id)),
+            &Owner::Account(AccountId::from_uuid(id).unwrap()),
             &name("x"),
             "X",
             value(b"acct"),
             &me,
         )
         .unwrap();
-    assert!(store.list(&Owner::Space(SpaceId(id))).unwrap().is_empty());
+    assert!(
+        store
+            .list(&Owner::Space(SpaceId::from_uuid(id).unwrap()))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -276,7 +278,9 @@ fn request_provide_and_cancel() {
     let owner = account();
     let agent = Actor {
         account: AccountId::new(),
-        via: Via::Agent(uuid::Uuid::now_v7()),
+        via: Some(Via::Agent {
+            thread: uuid::Uuid::now_v7(),
+        }),
     };
     let id = store
         .request(
@@ -475,7 +479,7 @@ fn crash_child() {
         .unwrap()
         .parse()
         .unwrap();
-    let owner = Owner::Account(AccountId(owner));
+    let owner = Owner::Account(AccountId::from_uuid(owner).unwrap());
     let store = LocalStore::open(Path::new(&dir)).unwrap();
     let me = actor(AccountId::new());
     match std::env::var("CALTERNAL_SECRETS_CRASH").unwrap().as_str() {

@@ -1,6 +1,7 @@
 //! Transport-independent, single-worker session state machine and newline JSON frames.
-use crate::{AccountId, Error, SpaceId, validate_manifest};
+use crate::{Error, validate_manifest};
 use calternal_core::{HostCallKind, ManifestCapability, ManifestV1};
+use calternal_types::{AccountId, SpaceId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -177,23 +178,23 @@ struct Invocation {
     calls: BTreeSet<String>,
     jobs: BTreeSet<String>,
 }
-/// Long-lived worker session pinned to one manifest version and one space.
-/// A process adapter routes frames, drains both bounded queues and enforces deadlines.
-pub struct WorkerSession {
-    manifest: ManifestV1,
-    schemas: BTreeMap<String, (jsonschema::Validator, jsonschema::Validator)>,
-    space: SpaceId,
-    active: BTreeMap<String, Invocation>,
-    seen: BTreeSet<String>,
-    outgoing: VecDeque<Frame>,
-    deliveries: VecDeque<(Frame, Authority, ManifestCapability)>,
+/// A manifest's operation input/output schemas, compiled once per plugin version
+/// and shared by every worker session of it.
+pub struct CompiledSchemas(BTreeMap<String, (jsonschema::Validator, jsonschema::Validator)>);
+impl std::fmt::Debug for CompiledSchemas {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.0.keys()).finish()
+    }
 }
-impl WorkerSession {
-    /// Cost: bounded manifest validation and schema compilation; owned schema/state allocations, no I/O.
-    /// Create a session without launching code; one adapter-owned process serves this pair.
-    pub fn new(manifest: ManifestV1, space: SpaceId) -> Result<Self, Error> {
-        validate_manifest(&manifest)?;
-        let schemas = manifest
+impl CompiledSchemas {
+    /// Validates `manifest` and compiles each operation's two schemas.
+    ///
+    /// # Errors
+    /// Invalid for a manifest or schema that does not validate.
+    /// Cost: manifest validation and schema compilation; no I/O.
+    pub fn compile(manifest: &ManifestV1) -> Result<Self, Error> {
+        validate_manifest(manifest)?;
+        manifest
             .operations
             .iter()
             .map(|op| {
@@ -205,7 +206,30 @@ impl WorkerSession {
                     ),
                 ))
             })
-            .collect::<Result<_, Error>>()?;
+            .collect::<Result<_, Error>>()
+            .map(Self)
+    }
+}
+/// Long-lived worker session pinned to one manifest version and one space.
+/// A process adapter routes frames, drains both bounded queues and enforces deadlines.
+pub struct WorkerSession {
+    manifest: ManifestV1,
+    schemas: std::sync::Arc<CompiledSchemas>,
+    space: SpaceId,
+    active: BTreeMap<String, Invocation>,
+    seen: BTreeSet<String>,
+    outgoing: VecDeque<Frame>,
+    deliveries: VecDeque<(Frame, Authority, ManifestCapability)>,
+}
+impl WorkerSession {
+    /// Create a session without launching code; one adapter-owned process serves this
+    /// pair. `schemas` must be [`CompiledSchemas::compile`] of this same manifest.
+    /// Cost: owned state allocations only; no validation, compilation or I/O.
+    pub fn new(
+        manifest: ManifestV1,
+        schemas: std::sync::Arc<CompiledSchemas>,
+        space: SpaceId,
+    ) -> Result<Self, Error> {
         Ok(Self {
             manifest,
             schemas,
@@ -241,6 +265,7 @@ impl WorkerSession {
             || authority.grant.len() > 256
             || !self
                 .schemas
+                .0
                 .get(&operation)
                 .is_some_and(|(input_schema, _)| input_schema.is_valid(&input))
         {
@@ -425,7 +450,7 @@ impl WorkerSession {
                     return Err(Error::Refused);
                 }
                 if let Message::Complete { data } = &frame.message {
-                    if !self.schemas[&invocation.operation].1.is_valid(data) {
+                    if !self.schemas.0[&invocation.operation].1.is_valid(data) {
                         return Err(Error::Invalid);
                     }
                 }

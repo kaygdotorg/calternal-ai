@@ -12,7 +12,7 @@ use crate::token::{hash, new_session_token, plausible_session_token};
 use crate::{AccountId, Error, ErrorCode, InstallationId, Result};
 use rusqlite::{OptionalExtension, Transaction, params};
 use serde::Serialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::RwLock;
 
 /// How often a session's "last seen" time is written back, at most.
@@ -30,8 +30,6 @@ pub enum InstallationKind {
     Cli,
     /// An AI agent, through MCP or the API.
     Agent,
-    /// An app password that may speak DAV or use scoped Notes API actions.
-    Dav,
 }
 
 impl InstallationKind {
@@ -41,7 +39,6 @@ impl InstallationKind {
             Self::Native => "native",
             Self::Cli => "cli",
             Self::Agent => "agent",
-            Self::Dav => "dav",
         }
     }
 
@@ -51,7 +48,6 @@ impl InstallationKind {
             "native" => Self::Native,
             "cli" => Self::Cli,
             "agent" => Self::Agent,
-            "dav" => Self::Dav,
             _ => return None,
         })
     }
@@ -80,21 +76,31 @@ struct Live {
     touched_at: i64,
 }
 
-/// Sessions seen recently, by token hash.
+/// Most sessions kept in the cache; a full cache first drops expired entries,
+/// then starts empty again (it is rebuilt from `auth.db` on demand).
+const CACHE_MAX: usize = 4096;
+/// How long a revocation is remembered in memory. It only has to outlive a
+/// database lookup that started before the revoke committed; afterwards the
+/// database itself no longer finds the session.
+const REVOKED_KEEP_MS: i64 = 10 * 60 * 1000;
+
+/// Sessions seen recently, by token hash. Bounded: at most [`CACHE_MAX`] cached
+/// sessions, and revocations for [`REVOKED_KEEP_MS`].
 #[derive(Default)]
 pub(crate) struct Sessions {
     cache: RwLock<HashMap<Vec<u8>, Live>>,
-    /// Installations revoked while this process runs. Checked on every
-    /// request, so a lookup racing a revoke can never bring a session back.
-    revoked: RwLock<HashSet<InstallationId>>,
+    /// Installations revoked recently, with when. Checked on every request, so a
+    /// lookup racing a revoke can never bring a session back.
+    revoked: RwLock<HashMap<InstallationId, i64>>,
 }
 
 impl Sessions {
     fn forget_installation(&self, id: InstallationId) {
-        self.revoked
-            .write()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(id);
+        let now = now_ms();
+        let mut revoked = self.revoked.write().unwrap_or_else(|p| p.into_inner());
+        revoked.retain(|_, at| now - *at < REVOKED_KEEP_MS);
+        revoked.insert(id, now);
+        drop(revoked);
         let mut c = self.cache.write().unwrap_or_else(|p| p.into_inner());
         c.retain(|_, l| l.installation != id);
         drop(c);
@@ -104,7 +110,20 @@ impl Sessions {
         self.revoked
             .read()
             .unwrap_or_else(|p| p.into_inner())
-            .contains(&id)
+            .contains_key(&id)
+    }
+
+    /// Caches a looked-up session, keeping the cache within [`CACHE_MAX`].
+    /// Cost: O(1), or O(cache) when full.
+    fn remember(&self, key: Vec<u8>, live: Live, now: i64) {
+        let mut cache = self.cache.write().unwrap_or_else(|p| p.into_inner());
+        if cache.len() >= CACHE_MAX {
+            cache.retain(|_, l| l.expires_at > now);
+            if cache.len() >= CACHE_MAX {
+                cache.clear();
+            }
+        }
+        cache.insert(key, live);
     }
 }
 
@@ -138,7 +157,9 @@ pub(crate) fn create(
     Ok((id, token))
 }
 
-/// Who a token belongs to, if it's a live session.
+/// Who a token belongs to, if it's a live session. Expiry is judged against
+/// [`AuthConfig::clock`](crate::AuthConfig::clock); a cache miss costs one
+/// database read on the auth worker.
 pub(crate) async fn identify(
     inner: &std::sync::Arc<Inner>,
     token: &str,
@@ -147,7 +168,8 @@ pub(crate) async fn identify(
         return None;
     }
     let key = hash(token);
-    let now = now_ms();
+    // Expiry is judged by the configured clock, so tests can advance time.
+    let now = inner.config.clock.now();
     let cached = {
         let c = inner
             .sessions
@@ -161,12 +183,7 @@ pub(crate) async fn identify(
         None => {
             let k = key.clone();
             let found = inner.db.run(move |c| lookup(c, &k)).await.ok().flatten()?;
-            let mut cache = inner
-                .sessions
-                .cache
-                .write()
-                .unwrap_or_else(|p| p.into_inner());
-            cache.insert(key.clone(), found);
+            inner.sessions.remember(key.clone(), found, now);
             found
         }
     };
@@ -190,7 +207,6 @@ pub(crate) async fn identify(
 /// can shorten a recovered session, while explicit revocations use the barrier.
 fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) {
     let ttl = inner.config.session_ttl.as_millis() as i64;
-    let last_seen_at = live.touched_at;
     live.touched_at = now;
     live.expires_at = now + ttl;
     {
@@ -206,7 +222,6 @@ fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) 
     tokio::spawn(async move {
         let r = db
             .run(move |c| {
-                mark_stale_installation(c, &id, last_seen_at, now)?;
                 c.execute(
                     "UPDATE installations SET last_seen_at = ?2, expires_at = ?3
                      WHERE id = ?1 AND revoked_at IS NULL",
@@ -239,9 +254,9 @@ fn lookup(c: &mut rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
     .map_err(sql)?
     .map(|(u, i, exp, seen)| {
         Ok(Live {
-            user: AccountId::parse(&u).ok_or_else(|| Error::internal("bad user id"))?,
+            user: AccountId::parse(&u).map_err(|_| Error::internal("bad user id"))?,
             installation: InstallationId::parse(&i)
-                .ok_or_else(|| Error::internal("bad installation id"))?,
+                .map_err(|_| Error::internal("bad installation id"))?,
             expires_at: exp.unwrap_or(i64::MAX),
             touched_at: seen,
         })
@@ -280,7 +295,7 @@ pub(crate) async fn list(inner: &Inner, user: AccountId) -> Result<Vec<Installat
                 let (id, kind, name, created_at, last_seen_at) = row.map_err(sql)?;
                 out.push(Installation {
                     id: InstallationId::parse(&id)
-                        .ok_or_else(|| Error::internal("bad installation id"))?,
+                        .map_err(|_| Error::internal("bad installation id"))?,
                     kind: InstallationKind::parse(&kind)
                         .ok_or_else(|| Error::internal("bad installation kind"))?,
                     name,
@@ -434,32 +449,6 @@ mod tests {
         }
         assert_eq!(clean_name("a\u{061c}b\u{00ad}c\u{e0041}d\u{fe0f}"), "abcd");
     }
-}
-
-/// Preserve the source's dormant-device reset marker when touching legacy rows.
-/// This carries no authority or content into the session result.
-/// Sharing delivery/reset bookkeeping never triggers recovery publication. A
-/// future rebuild discards it and forces every device through an authorized resync.
-fn mark_stale_installation(
-    c: &rusqlite::Connection,
-    installation: &str,
-    last_seen_at: i64,
-    now: i64,
-) -> Result<()> {
-    const SHARING_INSTALLATION_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-    if last_seen_at >= now.saturating_sub(SHARING_INSTALLATION_TTL_MS) {
-        return Ok(());
-    }
-    c.execute(
-        "INSERT OR IGNORE INTO sharing_installation_resets(installation_id,required_at)
-         SELECT i.id,?2 FROM installations i
-         WHERE i.id=?1 AND i.revoked_at IS NULL
-           AND (i.expires_at IS NULL OR i.expires_at>?2)
-           AND EXISTS (SELECT 1 FROM share_grants g WHERE g.person_id=i.user_id)",
-        params![installation, now],
-    )
-    .map_err(sql)?;
-    Ok(())
 }
 
 #[cfg(test)]

@@ -26,9 +26,6 @@
 //! directory, and keep state in memory across invocations in the same
 //! (plugin, space). Cost per live worker: one process and three OS threads.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -40,14 +37,15 @@ use std::time::{Duration, Instant};
 
 use calternal_core::ManifestCapability;
 use calternal_plugin_host::{
-    AccountId, Authority, Error, Frame, HostBroker, MAX_FRAME_BYTES, MAX_QUEUE, Message, SpaceId,
-    WorkerSession, decode_frame, encode_frame,
+    Authority, Frame, HostBroker, MAX_FRAME_BYTES, MAX_QUEUE, Message, WorkerSession, decode_frame,
+    encode_frame,
 };
+use calternal_types::{AccountId, SpaceId};
 use serde_json::Value;
 use tokio::sync::oneshot;
 
 use super::{InvocationHost, Plugin, verify_digest};
-use crate::error::HostError;
+use calternal_types::Error;
 
 /// Deadline for one invocation, from admission to delivery.
 pub const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
@@ -175,7 +173,7 @@ pub enum Outcome {
     /// The input did not match the declared input schema.
     InvalidInput,
     /// The worker failed, broke protocol, timed out or could not run.
-    Failed(HostError),
+    Failed(Error),
     /// The invocation was cancelled through its [`CancelFlag`].
     Cancelled,
 }
@@ -217,10 +215,36 @@ impl Worker {
     }
 }
 
+/// A worker handle that is dropped (evicted, replaced, or started for a caller
+/// that was cancelled) stops its process; a second Shutdown is ignored.
+impl Drop for Worker {
+    fn drop(&mut self) {
+        let _ = self.events.send(Event::Shutdown);
+    }
+}
+
+/// One reserved cold-start slot; dropping it releases the slot, on success,
+/// failure, panic or cancellation alike. Cost: two atomic operations.
+struct Starting(Arc<AtomicUsize>);
+impl Starting {
+    fn reserve(count: &Arc<AtomicUsize>) -> Self {
+        count.fetch_add(1, Ordering::AcqRel);
+        Self(count.clone())
+    }
+}
+impl Drop for Starting {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 /// Bounded pool of long-lived workers keyed by (plugin ID, space key).
 pub struct WorkerPool {
     node: Option<NodeRuntime>,
-    workers: Mutex<HashMap<(String, String), Worker>>,
+    workers: Mutex<HashMap<(String, SpaceId), Worker>>,
+    /// Cold starts in progress; they count against `max_workers`. Each is held
+    /// by a [`Starting`] reservation, so cancellation cannot leak a slot.
+    starting: Arc<AtomicUsize>,
     in_flight: Arc<AtomicUsize>,
     max_workers: usize,
 }
@@ -236,6 +260,7 @@ impl WorkerPool {
         Self {
             node,
             workers: Mutex::new(HashMap::new()),
+            starting: Arc::new(AtomicUsize::new(0)),
             in_flight: Arc::new(AtomicUsize::new(0)),
             max_workers: max_workers.max(1),
         }
@@ -260,49 +285,86 @@ impl WorkerPool {
     }
 
     /// Run one operation on the (plugin, space) worker, starting it if needed.
-    /// `space_key` selects the process; `space` is the UUID the session is pinned to.
-    /// Cost: pool lock; on a cold start one bundle hash and one process spawn; then
-    /// one channel round trip plus the worker's own frames and broker effects.
-    pub async fn invoke(
-        &self,
-        plugin: &Arc<Plugin>,
-        space_key: &str,
-        space: SpaceId,
-        call: Call,
-    ) -> Outcome {
+    /// `space` selects the process and is the space its session is pinned to.
+    /// Cost: the pool lock for a lookup (never held across I/O); a cold start hashes
+    /// the bundle and spawns the process on a blocking thread with a reserved pool
+    /// slot; then one channel round trip plus the worker's own frames and effects.
+    pub async fn invoke(&self, plugin: &Arc<Plugin>, space: SpaceId, call: Call) -> Outcome {
         let Some(node) = &self.node else {
-            return Outcome::Failed(HostError::unavailable("Node runtime unavailable"));
+            return Outcome::Failed(Error::unavailable("Node runtime unavailable"));
         };
         if let Some(why) = &plugin.unavailable {
-            return Outcome::Failed(HostError::unavailable(format!("plugin unavailable: {why}")));
+            return Outcome::Failed(Error::unavailable(format!("plugin unavailable: {why}")));
         }
         let Some(bundle) = &plugin.worker else {
-            return Outcome::Failed(HostError::unavailable("plugin has no worker"));
+            return Outcome::Failed(Error::unavailable("plugin has no worker"));
         };
         let (reply, answer) = oneshot::channel();
         let mut pending = Box::new(Pending { call, reply });
         // A worker that exited idle between lookup and send drops its receiver;
         // the send then fails and one fresh worker is started.
+        let key = (plugin.manifest.id.clone(), space);
         for _ in 0..2 {
-            let sent = {
+            let started = {
                 let mut workers = match self.workers.lock() {
                     Ok(w) => w,
-                    Err(_) => return Outcome::Failed(HostError::internal("worker pool poisoned")),
+                    Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
                 };
-                let key = (plugin.manifest.id.clone(), space_key.to_owned());
-                if !workers.get(&key).is_some_and(Worker::usable) {
+                if workers.get(&key).is_some_and(Worker::usable) {
+                    None
+                } else {
                     workers.remove(&key);
                     if let Err(e) = self.make_room(&mut workers) {
                         return Outcome::Failed(e);
                     }
-                    match spawn(node, plugin, bundle, space, self.in_flight.clone()) {
-                        Ok(w) => {
-                            workers.insert(key.clone(), w);
-                        }
-                        Err(e) => return Outcome::Failed(e),
-                    }
+                    // Reserve the slot, then start outside the lock and off the
+                    // async thread: hashing and spawning never block other workers.
+                    Some(Starting::reserve(&self.starting))
                 }
-                let worker = &workers[&key];
+            };
+            if let Some(reservation) = started {
+                let (node, plugin2, bundle2, in_flight) = (
+                    node.clone(),
+                    plugin.clone(),
+                    bundle.clone(),
+                    self.in_flight.clone(),
+                );
+                // The reservation travels with the start: if this caller is
+                // cancelled, the detached task's output (and the slot) is dropped
+                // when the start finishes, never leaked.
+                let spawned = tokio::task::spawn_blocking(move || {
+                    (
+                        reservation,
+                        spawn(&node, &plugin2, &bundle2, space, in_flight),
+                    )
+                })
+                .await;
+                let (reservation, worker) = match spawned {
+                    Ok((r, Ok(w))) => (r, w),
+                    Ok((_, Err(e))) => return Outcome::Failed(e),
+                    Err(_) => return Outcome::Failed(Error::internal("worker start failed")),
+                };
+                let mut workers = match self.workers.lock() {
+                    Ok(w) => w,
+                    Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
+                };
+                // A concurrent cold start may have won; keep one worker per key.
+                if workers.get(&key).is_some_and(Worker::usable) {
+                    drop(worker); // stops the losing duplicate
+                } else {
+                    workers.insert(key.clone(), worker);
+                }
+                // The worker now counts in the map; release the start slot.
+                drop(reservation);
+            }
+            let sent = {
+                let workers = match self.workers.lock() {
+                    Ok(w) => w,
+                    Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
+                };
+                let Some(worker) = workers.get(&key) else {
+                    continue;
+                };
                 worker.busy.fetch_add(1, Ordering::AcqRel);
                 self.in_flight.fetch_add(1, Ordering::AcqRel);
                 if let Some(cancel) = &pending.call.cancel {
@@ -313,7 +375,10 @@ impl WorkerPool {
                     Err(mpsc::SendError(event)) => {
                         worker.busy.fetch_sub(1, Ordering::AcqRel);
                         self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                        workers.remove(&key);
+                        drop(workers);
+                        if let Ok(mut workers) = self.workers.lock() {
+                            workers.remove(&key);
+                        }
                         match event {
                             Event::Invoke(p) => Some(p),
                             _ => unreachable!("only invocations are sent here"),
@@ -324,19 +389,19 @@ impl WorkerPool {
             match sent {
                 None => {
                     return answer.await.unwrap_or_else(|_| {
-                        Outcome::Failed(HostError::unavailable("extension worker stopped"))
+                        Outcome::Failed(Error::unavailable("extension worker stopped"))
                     });
                 }
                 Some(p) => pending = p,
             }
         }
-        Outcome::Failed(HostError::unavailable("extension worker could not start"))
+        Outcome::Failed(Error::unavailable("extension worker could not start"))
     }
 
     /// Evict one idle worker if the pool is full; refuse when every worker is busy.
-    fn make_room(&self, workers: &mut HashMap<(String, String), Worker>) -> Result<(), HostError> {
+    fn make_room(&self, workers: &mut HashMap<(String, SpaceId), Worker>) -> Result<(), Error> {
         workers.retain(|_, w| w.usable());
-        if workers.len() < self.max_workers {
+        if workers.len() + self.starting.load(Ordering::Acquire) < self.max_workers {
             return Ok(());
         }
         let idle = workers
@@ -345,13 +410,11 @@ impl WorkerPool {
             .map(|(k, _)| k.clone());
         match idle {
             Some(key) => {
-                if let Some(w) = workers.remove(&key) {
-                    let _ = w.events.send(Event::Shutdown);
-                }
+                workers.remove(&key); // dropping the handle stops it
                 Ok(())
             }
             None => Err(
-                HostError::unavailable("extension workers are busy; retry shortly")
+                Error::unavailable("extension workers are busy; retry shortly")
                     .with_details(serde_json::json!({ "reason": "worker_capacity" })),
             ),
         }
@@ -365,13 +428,13 @@ fn spawn(
     bundle: &Path,
     space: SpaceId,
     in_flight: Arc<AtomicUsize>,
-) -> Result<Worker, HostError> {
+) -> Result<Worker, Error> {
     verify_digest(bundle, plugin.entry.worker_sha256.as_deref()).map_err(|why| {
         tracing::warn!(plugin = %plugin.manifest.id, reason = %why, "refusing to start worker");
-        HostError::unavailable("plugin bundle failed verification")
+        Error::unavailable("plugin bundle failed verification")
     })?;
-    let session = WorkerSession::new(plugin.manifest.clone(), space)
-        .map_err(|_| HostError::unavailable("plugin manifest rejected by worker session"))?;
+    let session = WorkerSession::new(plugin.manifest.clone(), plugin.schemas.clone(), space)
+        .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
     let dir = bundle.parent().unwrap_or(Path::new("/"));
     let mut child = Command::new(&node.path)
         .arg("--permission")
@@ -389,7 +452,7 @@ fn spawn(
         .spawn()
         .map_err(|e| {
             tracing::error!(error = %e, "failed to start worker");
-            HostError::unavailable("extension worker could not start")
+            Error::unavailable("extension worker could not start")
         })?;
     let stdin = child.stdin.take().expect("piped stdin");
     let stdout = child.stdout.take().expect("piped stdout");
@@ -399,7 +462,7 @@ fn spawn(
     std::thread::Builder::new()
         .name("plugin-worker-read".into())
         .spawn(move || read_frames(stdout, reader_events))
-        .map_err(|_| HostError::unavailable("extension worker could not start"))?;
+        .map_err(|_| Error::unavailable("extension worker could not start"))?;
     std::thread::Builder::new()
         .name("plugin-worker-write".into())
         .spawn(move || {
@@ -414,7 +477,7 @@ fn spawn(
                 }
             }
         })
-        .map_err(|_| HostError::unavailable("extension worker could not start"))?;
+        .map_err(|_| Error::unavailable("extension worker could not start"))?;
     let alive = Arc::new(AtomicBool::new(true));
     let busy = Arc::new(AtomicUsize::new(0));
     let thread = Thread {
@@ -431,7 +494,7 @@ fn spawn(
     std::thread::Builder::new()
         .name("plugin-worker".into())
         .spawn(move || thread.run(rx))
-        .map_err(|_| HostError::unavailable("extension worker could not start"))?;
+        .map_err(|_| Error::unavailable("extension worker could not start"))?;
     tracing::debug!(plugin = %plugin.manifest.id, "worker started");
     Ok(Worker {
         events,
@@ -485,8 +548,11 @@ impl HostBroker for Broker<'_> {
         authority: &Authority,
         method: calternal_core::HostCallKind,
         input: &Value,
-    ) -> Result<Value, Error> {
-        let active = self.0.get(&authority.grant).ok_or(Error::Refused)?;
+    ) -> Result<Value, calternal_plugin_host::Error> {
+        let active = self
+            .0
+            .get(&authority.grant)
+            .ok_or(calternal_plugin_host::Error::Refused)?;
         active.host.call(method, input)
     }
 }
@@ -561,16 +627,14 @@ impl Thread {
             }
         };
         for id in self.active.keys().cloned().collect::<Vec<_>>() {
-            self.finish(&id, Outcome::Failed(HostError::unavailable(message)));
+            self.finish(&id, Outcome::Failed(Error::unavailable(message)));
         }
         // Reply to invocations queued behind the stop instead of dropping them silently.
         while let Ok(event) = rx.try_recv() {
             if let Event::Invoke(p) = event {
                 self.busy.fetch_sub(1, Ordering::AcqRel);
                 self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                let _ = p
-                    .reply
-                    .send(Outcome::Failed(HostError::unavailable(message)));
+                let _ = p.reply.send(Outcome::Failed(Error::unavailable(message)));
             }
         }
     }
@@ -624,12 +688,12 @@ impl Thread {
                 }
             }
             Ok(()) => self.flush(&id),
-            Err(Error::Invalid) => self.finish(&id, Outcome::InvalidInput),
-            Err(Error::Refused) => self.finish(&id, Outcome::Refused),
+            Err(calternal_plugin_host::Error::Invalid) => self.finish(&id, Outcome::InvalidInput),
+            Err(calternal_plugin_host::Error::Refused) => self.finish(&id, Outcome::Refused),
             Err(_) => self.finish(
                 &id,
                 Outcome::Failed(
-                    HostError::unavailable("extension worker is busy; retry shortly")
+                    Error::unavailable("extension worker is busy; retry shortly")
                         .with_details(serde_json::json!({ "reason": "worker_capacity" })),
                 ),
             ),
@@ -650,17 +714,19 @@ impl Thread {
         );
         match self.session.receive(frame, &mut Broker(&self.active)) {
             Ok(()) => {}
-            Err(Error::Refused) => {
+            Err(calternal_plugin_host::Error::Refused) => {
                 // Undeclared/forged host call, or authority no longer current.
                 let _ = self.session.cancel(&id);
                 self.finish(&id, Outcome::Refused);
             }
-            Err(Error::BackPressure) => return Err("extension exceeded its queue"),
+            Err(calternal_plugin_host::Error::BackPressure) => {
+                return Err("extension exceeded its queue");
+            }
             Err(_) => {
                 let _ = self.session.cancel(&id);
                 self.finish(
                     &id,
-                    Outcome::Failed(HostError::unavailable("extension returned invalid output")),
+                    Outcome::Failed(Error::unavailable("extension returned invalid output")),
                 );
             }
         }
@@ -707,7 +773,7 @@ impl Thread {
                 message: Message::Complete { data },
                 ..
             })) => Outcome::Complete(data),
-            Ok(Some(_)) => Outcome::Failed(HostError::unavailable("extension failed")),
+            Ok(Some(_)) => Outcome::Failed(Error::unavailable("extension failed")),
             Ok(None) => return,
             Err(_) => Outcome::Refused,
         };
@@ -723,7 +789,7 @@ impl Thread {
             let frame = match self.session.next_outgoing(&mut Broker(&self.active)) {
                 Ok(Some(frame)) => frame,
                 Ok(None) => return,
-                Err(Error::Refused) => {
+                Err(calternal_plugin_host::Error::Refused) => {
                     let _ = self.session.cancel(id);
                     self.finish(id, Outcome::Refused);
                     continue;

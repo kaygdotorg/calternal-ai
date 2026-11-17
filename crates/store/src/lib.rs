@@ -21,10 +21,9 @@ mod shared;
 mod token;
 mod writer;
 
-mod pool;
-pub use pool::SpaceStores;
 mod contracts;
 mod types;
+use calternal_types::{AccountId, SpaceId};
 pub use contracts::{JournalEntry, SyncToken, TokenProof};
 use serde_json::Value;
 use shared::{Guard, Shared};
@@ -34,7 +33,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-pub use types::{AccountId, Error, ErrorCode, Result, SpaceId};
+pub use types::{Error, ErrorCode, Result};
 
 /// One event, stamped with who made it, ready to store.
 #[derive(Debug, Clone)]
@@ -88,6 +87,9 @@ pub struct Commit {
     pub events: Vec<StampedEvent>,
     /// Saved in the same transaction as the events.
     pub idempotency: Option<IdemWrite>,
+    /// Commit with `synchronous=FULL` (one WAL fsync) instead of NORMAL, so the
+    /// events and receipt survive power loss before the caller acknowledges.
+    pub durable: bool,
 }
 
 /// Knobs for one store. The defaults suit a real server; tests shrink them.
@@ -393,7 +395,7 @@ impl SpaceStore {
     /// listener. The owner may then drop it to stop the writer thread and
     /// free the memory; opening it again later loses nothing, because
     /// accepted writes are drained before release. NORMAL sync retains the
-    /// source power-loss limits; permanent publications use FULL.
+    /// source power-loss limits; durable commits use FULL.
     ///
     /// Cost: Reads handle/listener/save counters; no writer lock, allocation or I/O.
     pub fn is_unused(&self) -> bool {
@@ -606,12 +608,14 @@ impl SpaceStore {
     }
 
     /// Saves events (and an idempotency record) atomically and returns the
-    /// stored entries.
+    /// stored entries. A receipt key is unique per (account, space) for its
+    /// retention: a second commit with a stored key fails with
+    /// `IdempotencyConflict` and writes nothing.
     ///
     /// Cost: Allocates a reply channel, encoded account key and output entries.
     /// Waits on the bounded single-writer queue; the writer serializes one
-    /// SQLite transaction with NORMAL sync, then broadcasts. No caller mutex
-    /// is held over I/O. This is not a power-loss-durable edit ack contract.
+    /// SQLite transaction, NORMAL sync unless [`Commit::durable`] asks for FULL
+    /// (one WAL fsync), then broadcasts. No caller mutex is held over I/O.
     pub async fn commit(&self, mut commit: Commit) -> Result<Vec<JournalEntry>> {
         if let Some(idem) = &mut commit.idempotency {
             idem.key = receipt_key(idem.account, &idem.key);
@@ -624,33 +628,6 @@ impl SpaceStore {
             .map_err(|_| Error::internal("store writer stopped"))?;
         rx.await
             .map_err(|_| Error::internal("store writer dropped a commit"))?
-    }
-
-    /// Appends a complete publication batch once. Receipts do not expire.
-    ///
-    /// Cost: Account-qualified publication keys prevent cross-member receipt reuse.
-    /// Allocates a reply channel/key/events; queues one SQLite transaction
-    /// with FULL sync. The single writer serializes it; no caller mutex is held.
-    pub async fn commit_once(
-        &self,
-        account: AccountId,
-        key: String,
-        digest: String,
-        events: Vec<StampedEvent>,
-    ) -> Result<crate::SyncToken> {
-        let (reply, rx) = oneshot::channel();
-        self.inner
-            .sender()
-            .send(writer::Cmd::Once(
-                receipt_key(account, &key),
-                digest,
-                events,
-                reply,
-            ))
-            .await
-            .map_err(|_| Error::internal("store writer stopped"))?;
-        rx.await
-            .map_err(|_| Error::internal("store writer dropped publication"))?
     }
 
     /// Finds an earlier result for an idempotency key.
@@ -795,12 +772,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
         .map_err(Error::internal)?
 }
 
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
+use calternal_types::now_ms;
 
 #[cfg(test)]
 mod tests;

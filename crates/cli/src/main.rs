@@ -56,6 +56,14 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    Drafts {
+        #[command(subcommand)]
+        command: calternal_cli::account_input::Drafts,
+    },
+    Pending {
+        #[command(subcommand)]
+        command: calternal_cli::account_input::Pending,
+    },
     #[command(
         about = "Follow a space and print changes as they arrive",
         after_help = "Examples:\n  cl watch <space-id>\n  cl watch <space-id> --json\n\nSee also: cl describe --help."
@@ -105,8 +113,8 @@ enum Command {
 }
 #[derive(Args)]
 struct Space {
-    /// Space UUID; defaults to the signed-in account's personal space.
-    #[arg(long, alias = "space-id", default_value = "personal")]
+    /// Space UUID, as listed by `describe`.
+    #[arg(long, alias = "space-id")]
     space: String,
 }
 #[derive(Args)]
@@ -316,6 +324,16 @@ fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
     let (operation, mut input) = match command {
+        Command::Drafts { command } => {
+            let (op, input) = command.operation();
+            (op.into(), input)
+        }
+        Command::Pending { command } => {
+            let (op, input) = command
+                .operation()
+                .map_err(|_| "cannot read pending input; use --help")?;
+            (op.into(), input)
+        }
         Command::Watch { .. } => return Err("watch is a stream".into()),
         Command::Describe => return Err("describe is not an operation".into()),
         Command::Invoke { operation, input } => {
@@ -479,7 +497,9 @@ mod tests {
     }
     #[test]
     fn no_hints_is_global_and_command_help_has_examples_and_see_also() {
-        let cli = Cli::try_parse_from(["cl", "notes", "list", "--no-hints"]).unwrap();
+        let space = calternal_types::SpaceId::new().to_string();
+        let cli =
+            Cli::try_parse_from(["cl", "notes", "list", "--space", &space, "--no-hints"]).unwrap();
         assert!(cli.no_hints);
         let commands: &[&[&str]] = &[
             &["cl", "--help"],

@@ -39,18 +39,35 @@ impl NativeLive {
         self.outbox.lock().await.enqueue(pending)?;
         Ok(())
     }
-    /// Return visible pending input as an ordered JSON array. O(queued bytes)
+    /// Restore one platform-persisted PendingQueueInput, including its original
+    /// offline creation time. At most 2 MiB; wrong schema, changed identity and
+    /// full queues are refused. O(input bytes), no clock read or network effects.
+    pub async fn restore_input(&self, pending_json: String) -> Result<(), NativeError> {
+        if pending_json.len() > calternal_core::MAX_BODY_BYTES {
+            return Err(NativeError::Failure {
+                details: "offline input exceeds limit".into(),
+            });
+        }
+        let input: calternal_core::PendingQueueInput = serde_json::from_str(&pending_json)
+            .map_err(|_| NativeError::Failure {
+                details: "invalid retained pending input".into(),
+            })?;
+        self.outbox.lock().await.restore(input)?;
+        Ok(())
+    }
+    /// Return complete visible pending input as an ordered JSON array. O(queued bytes)
     /// serialization, no I/O; no credentials are included. Never restore into a
     /// different account. Unknown outcomes retain the same request envelope.
     pub async fn pending_input(&self) -> String {
         let outbox = self.outbox.lock().await;
-        serde_json::to_string(&outbox.pending().collect::<Vec<_>>()).expect("pending envelopes")
+        serde_json::to_string(&outbox.submissions().collect::<Vec<_>>()).expect("pending envelopes")
     }
     /// Read one server event as JSON. Cancellation interrupts network and backoff;
     /// O(event bytes) parsing/serialization with no platform writes. Swift persists
     /// its applied cache and bookmark before calling accept with the returned JSON.
     pub async fn next(&self) -> Result<String, NativeError> {
         let permit = tokio::select! {
+            biased;
             _ = self.cancellation.cancelled() => return Err(NativeError::Cancelled),
             permit = self.delivery.acquire() => permit.expect("live delivery semaphore"),
         };

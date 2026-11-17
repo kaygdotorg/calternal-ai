@@ -32,8 +32,8 @@ IDs and nested action input values, not object keys.
 `calternal_core` exports all models and synchronous validators. Important APIs:
 `parse_request`, `validate_request` (host known-operation validation),
 `validate_client_request` (envelope plus known input validation; leaves unknown
-operation schemas to the host), `validate_genui`, `validate_manifest`,
-`validate_extension_view`, `validate_worker_request`, `parse_worker_response`,
+operation schemas to the host), `validate_genui` (version and size of a
+generated-UI view; the host also compiles its source with `calternal-genui`),
 `canonical_request_input`, and `PendingRequest`. Recursively sorted object keys
 make equivalent input key order compare identically without value coercion.
 

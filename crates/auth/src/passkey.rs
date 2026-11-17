@@ -39,7 +39,7 @@ pub(crate) async fn start_registration(
     let username = crate::setup::username_for(&r.name);
     let (ccr, state) = inner
         .webauthn
-        .start_passkey_registration(r.user.0, &username, &r.name, Some(existing))
+        .start_passkey_registration(r.user.as_uuid(), &username, &r.name, Some(existing))
         .map_err(Error::internal)?;
     let mut options = serde_json::to_value(&ccr).map_err(Error::internal)?;
     require_discoverable(&mut options);
@@ -104,7 +104,7 @@ pub(crate) async fn finish_registration(
 /// Starts a sign-in with any passkey for this host.
 pub(crate) fn start_login(
     inner: &Arc<Inner>,
-    user: AccountId,
+    user: Option<AccountId>,
     purpose: crate::LoginPurpose,
     source: &str,
 ) -> Result<(String, Value)> {
@@ -142,9 +142,8 @@ pub(crate) async fn finish_login(
         ceremony,
         credential,
         device,
-        expected_user,
+        Some(expected_user),
         purpose,
-        false,
     )
     .await
 }
@@ -156,9 +155,8 @@ pub(crate) async fn finish_login_inner(
     ceremony: &str,
     credential: Value,
     device: String,
-    expected_user: AccountId,
+    expected_user: Option<AccountId>,
     purpose: crate::LoginPurpose,
-    discoverable: bool,
 ) -> Result<(AccountId, InstallationId, String)> {
     let Pending::Login { state, .. } =
         inner
@@ -172,8 +170,8 @@ pub(crate) async fn finish_login_inner(
         .webauthn
         .identify_discoverable_authentication(&cred)
         .map_err(failed)?;
-    let user = AccountId(uuid);
-    if !discoverable && expected_user != user {
+    let user = AccountId::from_uuid(uuid).map_err(failed)?;
+    if expected_user.is_some_and(|expected| expected != user) {
         return Err(failed("passkey belongs to a different account"));
     }
     let cred_id = cred_id.to_vec();
@@ -182,7 +180,7 @@ pub(crate) async fn finish_login_inner(
         .iter()
         .position(|k| k.cred_id().as_ref() == cred_id.as_slice())
         .ok_or_else(|| failed("unknown passkey"))?;
-    if !inner.account_failures.ready(user.0) {
+    if !inner.account_failures.ready(user.as_uuid()) {
         return Err(Error::new(
             ErrorCode::TooManyRequests,
             "account sign-in back-off; try again shortly",
@@ -196,7 +194,7 @@ pub(crate) async fn finish_login_inner(
         {
             Ok(result) => result,
             Err(e) => {
-                return Err(if inner.account_failures.failed(user.0) {
+                return Err(if inner.account_failures.failed(user.as_uuid()) {
                     Error::new(
                         ErrorCode::TooManyRequests,
                         "account sign-in back-off; try again shortly",
@@ -206,7 +204,7 @@ pub(crate) async fn finish_login_inner(
                 });
             }
         };
-    inner.account_failures.clear(user.0);
+    inner.account_failures.clear(user.as_uuid());
     let changed = keys[pos].update_credential(&result) == Some(true);
     let json = changed
         .then(|| serde_json::to_string(&keys[pos]))
@@ -286,6 +284,10 @@ mod recovery_tests {
         }
         fn complete(&self, _: &rusqlite::Connection, _: &str) -> Result<()> {
             unreachable!("prepare refuses this transaction")
+        }
+        fn serial(&self) -> &std::sync::Mutex<()> {
+            static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            &SERIAL
         }
     }
 

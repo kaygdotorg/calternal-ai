@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
-use calternal_auth::{AccountId, SpaceId};
 use calternal_core::ErrorCode;
 use calternal_machine::identity::MachineKey;
 use calternal_machine::protocol::{
@@ -13,16 +12,27 @@ use calternal_machine::protocol::{
     SandboxState, SessionFinish, Stream, SyncRequest,
 };
 use calternal_server::machines::{MachineService, Settings};
+use calternal_types::{AccountId, SpaceId};
 use uuid::Uuid;
 
-fn service(dir: &std::path::Path) -> Arc<MachineService> {
+/// A service over a fresh auth.db with one existing account (machine authority
+/// requires owners to exist). Authority calls go to the auth worker, so they run
+/// outside the async worker, as the HTTP layer does.
+fn service(dir: &std::path::Path) -> (Arc<MachineService>, AccountId) {
     let settings = Settings {
         lease_ttl: Duration::from_millis(300),
         poll_hold: Duration::from_millis(100),
         output_buffer_bytes: 64,
         ..Settings::default()
     };
-    MachineService::open(dir, settings).unwrap()
+    tokio::task::block_in_place(|| {
+        let spaces = calternal_auth::spaces::Spaces::open(&dir.join("system/auth.db")).unwrap();
+        let owner = spaces.seed_development().unwrap().owner;
+        (
+            MachineService::open(dir, spaces.machines(), settings).unwrap(),
+            owner,
+        )
+    })
 }
 
 struct M {
@@ -32,7 +42,11 @@ struct M {
 }
 
 fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
-    let (code, _) = svc.issue_code(Owner::Account { id: owner.0 }).unwrap();
+    tokio::task::block_in_place(|| enrol_blocking(svc, owner))
+}
+
+fn enrol_blocking(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
+    let (code, _) = svc.issue_code(Owner::Account { id: owner }).unwrap();
     let key = MachineKey::generate().unwrap();
     let req = EnrolRequest {
         code,
@@ -52,22 +66,24 @@ fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
 }
 
 fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
-    let challenge = svc.session_start(id).unwrap();
-    let finish = SessionFinish {
-        machine_id: id,
-        signature: key.sign_session(id, &challenge),
-        challenge,
-        boot_id: boot,
-        protocol: 2,
-        backend: "podman".into(),
-    };
-    let token = svc.session_finish(&finish).unwrap().token;
-    assert_eq!(
-        svc.session_finish(&finish).unwrap_err().code,
-        ErrorCode::Unauthorized,
-        "challenge replay"
-    );
-    M { id, key, token }
+    tokio::task::block_in_place(|| {
+        let challenge = svc.session_start(id).unwrap();
+        let finish = SessionFinish {
+            machine_id: id,
+            signature: key.sign_session(id, &challenge),
+            challenge,
+            boot_id: boot,
+            protocol: 2,
+            backend: "podman".into(),
+        };
+        let token = svc.session_finish(&finish).unwrap().token;
+        assert_eq!(
+            svc.session_finish(&finish).unwrap_err().code,
+            ErrorCode::Unauthorized,
+            "challenge replay"
+        );
+        M { id, key, token }
+    })
 }
 
 async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec<Down> {
@@ -105,8 +121,8 @@ fn data(seq: u64, n: usize) -> Chunk {
 #[tokio::test(flavor = "multi_thread")]
 async fn sessions_need_the_machine_key() {
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let (id, _key) = enrol(&svc, AccountId::new());
+    let (svc, owner) = service(dir.path());
+    let (id, _key) = enrol(&svc, owner);
     let wrong = MachineKey::generate().unwrap();
     let challenge = svc.session_start(id).unwrap();
     let forged = SessionFinish {
@@ -134,8 +150,7 @@ async fn sessions_need_the_machine_key() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stale_fence_and_wrong_machine_are_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let owner = AccountId::new();
+    let (svc, owner) = service(dir.path());
     let (a_id, a_key) = enrol(&svc, owner);
     let (b_id, b_key) = enrol(&svc, owner);
     let a = connect(&svc, a_id, a_key, Uuid::new_v4());
@@ -258,11 +273,10 @@ async fn stale_fence_and_wrong_machine_are_refused() {
     assert_eq!(ack.acked, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_direct() {
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let owner = AccountId::new();
+    let (svc, owner) = service(dir.path());
     let (id, key) = enrol(&svc, owner);
     let handshake = |backend: &str| {
         let challenge = svc.session_start(id).unwrap();
@@ -277,18 +291,20 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
     };
     assert_eq!(handshake("auto").unwrap().backend, "podman");
     assert_eq!(
-        svc.set_direct(AccountId::new(), id, true).unwrap_err().code,
+        tokio::task::block_in_place(|| svc.set_direct(AccountId::new(), id, true))
+            .unwrap_err()
+            .code,
         ErrorCode::NotFound
     );
-    svc.set_direct(owner, id, true).unwrap();
+    tokio::task::block_in_place(|| svc.set_direct(owner, id, true)).unwrap();
     assert_eq!(handshake("auto").unwrap().backend, "direct");
-    svc.set_direct(owner, id, false).unwrap();
+    tokio::task::block_in_place(|| svc.set_direct(owner, id, false)).unwrap();
     assert_eq!(handshake("auto").unwrap().backend, "podman");
     assert_eq!(handshake("direct").unwrap_err().code, ErrorCode::Forbidden);
-    let (code, _) = svc.issue_code(Owner::Pool).unwrap();
+    let (code, _) = tokio::task::block_in_place(|| svc.issue_code(Owner::Pool)).unwrap();
     let pool_key = MachineKey::generate().unwrap();
-    let pool = svc
-        .enrol(&EnrolRequest {
+    let pool = tokio::task::block_in_place(|| {
+        svc.enrol(&EnrolRequest {
             code,
             public_key: pool_key.public_key_b64(),
             name: "pool".into(),
@@ -296,8 +312,9 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
             arch: "x86_64".into(),
             direct: false,
         })
-        .unwrap()
-        .machine_id;
+    })
+    .unwrap()
+    .machine_id;
     let challenge = svc.session_start(pool).unwrap();
     let grant = svc
         .session_finish(&SessionFinish {
@@ -312,33 +329,32 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
     assert_eq!(grant.backend, "podman");
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
     use calternal_machine::protocol::DiscardReport;
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let account = AccountId(Uuid::new_v4());
+    let (svc, account) = service(dir.path());
     let (id, key) = enrol(&svc, account);
     let machine = connect(&svc, id, key, Uuid::new_v4());
     sync(&svc, &machine, vec![]).await;
     let run = svc
-        .request_run(SpaceId(Uuid::new_v4()), account, Uuid::new_v4(), None)
+        .request_run(SpaceId::new(), account, Uuid::new_v4(), None)
         .unwrap();
     svc.release_run(account, run.lease_id).unwrap();
     drop(svc);
-    let svc = service(dir.path()); // Offline requests must survive restart.
+    let (svc, _) = service(dir.path()); // Offline requests must survive restart.
     assert_eq!(
-        svc.discard_run(account, run.lease_id, false).unwrap(),
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
         "pending"
     );
     assert_eq!(
-        svc.discard_run(AccountId(Uuid::new_v4()), run.lease_id, false)
+        tokio::task::block_in_place(|| svc.discard_run(AccountId::new(), run.lease_id, false))
             .unwrap_err()
             .code,
         ErrorCode::NotFound
     );
     drop(svc);
-    let svc = service(dir.path());
+    let (svc, _) = service(dir.path());
     let machine = connect(&svc, machine.id, machine.key, Uuid::new_v4());
     let messages = sync(&svc, &machine, vec![]).await;
     let request = messages
@@ -367,18 +383,18 @@ async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
         .await
         .unwrap();
     assert_eq!(
-        svc.discard_run(account, run.lease_id, false).unwrap(),
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
         "pending"
     );
     svc.sync(machine.id, &machine.token, report(request, false))
         .await
         .unwrap();
     assert_eq!(
-        svc.discard_run(account, run.lease_id, false).unwrap(),
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
         "failed"
     );
     assert_eq!(
-        svc.discard_run(account, run.lease_id, true).unwrap(),
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, true)).unwrap(),
         "pending"
     );
     let messages = sync(&svc, &machine, vec![]).await;
@@ -400,25 +416,24 @@ async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
         .await
         .unwrap();
     assert_eq!(
-        svc.discard_run(account, run.lease_id, false).unwrap(),
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
         "done"
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pending_discard_never_replays_over_a_replacement_turn() {
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let account = AccountId(Uuid::new_v4());
+    let (svc, account) = service(dir.path());
     let (id, key) = enrol(&svc, account);
     let machine = connect(&svc, id, key, Uuid::new_v4());
     sync(&svc, &machine, vec![]).await;
-    let space = SpaceId(Uuid::new_v4());
+    let space = SpaceId::new();
     let thread = Uuid::new_v4();
     let old = svc.request_run(space, account, thread, None).unwrap();
     svc.release_run(account, old.lease_id).unwrap();
     assert_eq!(
-        svc.discard_run(account, old.lease_id, false).unwrap(),
+        tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false)).unwrap(),
         "pending"
     );
     let replacement = svc.request_run(space, account, thread, None).unwrap();
@@ -429,14 +444,14 @@ async fn pending_discard_never_replays_over_a_replacement_turn() {
         "stale deletion could remove replacement work"
     );
     assert_eq!(
-        svc.discard_run(account, old.lease_id, false)
+        tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false))
             .unwrap_err()
             .code,
         ErrorCode::Conflict
     );
     svc.release_run(account, replacement.lease_id).unwrap();
     assert_eq!(
-        svc.discard_run(account, old.lease_id, false)
+        tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false))
             .unwrap_err()
             .code,
         ErrorCode::Conflict

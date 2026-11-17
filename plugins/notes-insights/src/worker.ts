@@ -16,19 +16,11 @@ function summarize(markdown: string): Stats {
   };
 }
 
-/** Portable statistics view, identical to the v1 worker's presentation. */
+/** Generated-UI statistics view: three metrics in a row, drawn by each client natively. */
 function view(stats: Stats): GenUiView {
   return {
-    genui_version: 1,
-    root: {
-      type: "stack",
-      id: "notes-insights.stats",
-      children: [
-        { type: "stat", id: "notes-insights.words", label: "Words", value: String(stats.words) },
-        { type: "stat", id: "notes-insights.characters", label: "Characters", value: String(stats.characters) },
-        { type: "stat", id: "notes-insights.lines", label: "Lines", value: String(stats.lines) },
-      ],
-    },
+    genui_version: 2,
+    source: `Row([Metric("Words", "${stats.words}"), Metric("Characters", "${stats.characters}"), Metric("Lines", "${stats.lines}")])`,
   };
 }
 

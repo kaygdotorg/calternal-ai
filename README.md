@@ -14,21 +14,37 @@ From the repository root:
 npm ci
 npm run build
 ./scripts/with-toolchain.sh cargo build --locked -p calternal-server -p calternal-cli
+export CALTERNAL_INSTALLATION_ID=$(cat /proc/sys/kernel/random/uuid)  # keep it; see below
 ./scripts/with-toolchain.sh cargo run --locked -p calternal-server -- serve \
-  --data-dir .dev-data --port 3210 --plugin-root plugins
+  --development --create --port 3210 --plugin-root plugins \
+  --appdata .dev-data/appdata \
+  --userdata-ssd .dev-data/userdata-ssd \
+  --userdata-hdd .dev-data/userdata-hdd
 ```
 
-The server prints **paths**, never token values. Do not paste tokens into a conversation.
+The server keeps its databases in appdata and space files in the two userdata
+roots. The installation ID is pinned in the server's configuration
+(`CALTERNAL_INSTALLATION_ID`, or `--installation-id`), outside every root: keep the
+value you generated with the rest of the server's configuration. `--create` pairs
+three empty roots with it on first start; afterwards the server refuses to start
+without the pin, or with roots that are missing, swapped, or carry another ID. Security
+changes are also written to a protected log in `userdata-ssd/.calternal/recovery`.
 
-The owner can edit `personal` and `shared`; `.dev-data/dev-tokens/guest.token` can only read `shared`. These are fixed development principals, not production authentication. The server binds to loopback only; do not expose the preview publicly.
+`--development` creates two fixture accounts and writes their bearer tokens to
+`.dev-data/appdata/dev-tokens/`. The server prints **paths**, never token values.
+Do not paste tokens into a conversation. The owner has two spaces named
+`personal` and `shared`; the guest can only read `shared`. These are fixed
+development principals, not production authentication. The server binds to
+loopback only; do not expose the preview publicly.
 
-The CLI uses the same operation route:
+The CLI uses the same operation route. Spaces are named by UUID, listed by
+`describe`:
 
 ```sh
-export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/dev-tokens/owner.token"
+export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/appdata/dev-tokens/owner.token"
 ./target/debug/cl describe
-./target/debug/cl notes list --space personal
-./target/debug/cl plugins list --space personal
+./target/debug/cl notes list --space <space-uuid>
+./target/debug/cl plugins list --space <space-uuid>
 ```
 
 For mutation retries, retain the `--request-id` and repeat exactly the same operation and input. A transport failure can mean the server committed even though the reply was lost. Tokens are accepted from a protected file or environment, never a command-line token argument.
@@ -37,9 +53,10 @@ Space changes can be followed with `calternal watch <space-uuid> --token-file
 <credential-file>` (`--json` emits one event per line). The shared client follows
 one SSE connection, retains accepted bookmarks, invalidates bounded item caches,
 and drains ordered offline input after reconnect. Swift exposes a cancellable
-async stream. Server drafts, pending submission operations and the account feed
-remain unbuilt pending [retention policy](docs/morning-decisions.md); see the
-[live lane report](docs/reviews/live-2026-11-17.md) for evidence and limitations.
+async stream. [Private drafts, pending submissions and the account feed](docs/account-input.md)
+use per-account storage, explicit-delete retention and seven-day confirmation
+for old offline input. See the [drafts lane report](docs/reviews/drafts-2026-11-17.md)
+for qualification and remaining platform work.
 
 ## Verification
 
@@ -53,7 +70,7 @@ Every public code change includes matching reference comments. Run `npm run chec
 
 ## Scope and limitations
 
-- SQLite is the preview's authoritative revision/receipt store. Markdown files are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
+- Each space's SQLite databases in appdata are authoritative for its revisions and request receipts; Markdown files in userdata are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
 - Only repository-shipped, digest-pinned plugin bundles run. Node permission flags and cleared environments are defense in depth, **not an OS sandbox**. No arbitrary community plugin installation or provider credentials.
 - Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. There is no real AI conversation, machine pairing, provider login, voice or memory integration yet.
 - UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.

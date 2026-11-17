@@ -1,0 +1,38 @@
+{
+  "name": "@calternal/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Calternal's web client: the shell (docs/ui-shell.md) and the Threads app on fixture data.",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "prepare:assets": "node scripts/fonts.mjs && node scripts/wallpapers.mjs && npm run tokens --workspace @calternal/ui && npm run build --workspace @calternal/genui",
+    "dev": "npm run prepare:assets && vite --host 0.0.0.0",
+    "build": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json",
+    "test": "npm run prepare:assets && vitest run",
+    "e2e": "node e2e/run.mjs"
+  },
+  "dependencies": {
+    "@calternal/genui": "*",
+    "@calternal/ui": "*"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@fontsource-variable/dancing-script": "5.3.0",
+    "@fontsource-variable/google-sans-flex": "5.3.1",
+    "@fontsource/maple-mono": "5.3.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@testing-library/user-event": "^14.6.12",
+    "axe-core": "^4.14.1",
+    "jsdom": "^31.0.1",
+    "playwright": "^1.65.1",
+    "svelte": "5.57.1",
+    "svelte-check": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vite": "8.3.1",
+    "vitest": "^5.0.4"
+  }
+}

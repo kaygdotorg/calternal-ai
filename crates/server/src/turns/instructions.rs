@@ -1,7 +1,8 @@
 //! Condensed trusted instruction layers and the bounded space Markdown reader.
 use super::{access::Authority, blocking};
-use crate::{api::Shared, auth::Directory, error::HostError};
+use crate::{api::Shared, auth::Directory};
 use calternal_core::AgentInput;
+use calternal_types::Error;
 use serde_json::json;
 
 pub(super) async fn build<D: Directory>(
@@ -9,13 +10,18 @@ pub(super) async fn build<D: Directory>(
     i: &AgentInput,
     space: &str,
     authority: &Authority,
-) -> Result<String, HostError> {
+) -> Result<String, Error> {
     let core = include_str!("../../../../plugins/calternal-orchestrator/skills/core.md");
     let (st, space_id, authority) = (state.clone(), space.to_owned(), authority.clone());
     let (extra, index) = blocking(move || {
-        let caps = st.tokens.capabilities(&authority.account, &space_id);
+        let caps = st.directory.capabilities(
+            calternal_types::AccountId::parse(&authority.actor.account.to_string())
+                .map_err(|_| Error::internal("stored account"))?,
+            calternal_types::SpaceId::parse(&space_id)
+                .map_err(|_| Error::internal("stored space"))?,
+        );
         let sample = serde_json::from_value(json!({"space_id":space_id,"job_id":authority.job}))
-            .map_err(|_| HostError::internal("instruction index"))?;
+            .map_err(|_| Error::internal("instruction index"))?;
         let index = st
             .registry
             .tool_index()
@@ -45,18 +51,14 @@ pub(super) async fn build<D: Directory>(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let root = st
-            .store
-            .lock()
-            .map_err(|_| HostError::internal("store poisoned"))?
-            .instruction_root();
+        let root = st.store.instruction_root();
         let root = calternal_fsio::beneath::Folder::open(&root)
-            .map_err(|_| HostError::internal("instruction root unavailable"))?;
+            .map_err(|_| Error::internal("instruction root unavailable"))?;
         let result = read_space(&root, &space_id);
         match result {
             Ok(s) => Ok((s, index)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((String::new(), index)),
-            Err(_) => Err(HostError::internal(
+            Err(_) => Err(Error::internal(
                 "space instructions could not be read safely",
             )),
         }

@@ -175,7 +175,7 @@ impl ProviderEvent {
     /// Enforce protocol version, JSON-safe sequence numbers and field byte budgets.
     /// O(payload bytes); no allocation, I/O or provider-specific assumptions.
     /// Returns a fixed diagnostic when a frame is malformed or oversized.
-    pub fn validate(&self) -> Result<(), crate::ValidationError> {
+    pub fn validate(&self) -> Result<(), calternal_types::Error> {
         let short = |s: &str, n: usize| s.len() <= n;
         let safe = |n: u64| n <= 9_007_199_254_740_991;
         let valid = match &self.event {
@@ -210,7 +210,9 @@ impl ProviderEvent {
             ),
         };
         if self.version != PROVIDER_VERSION || self.seq == 0 || !safe(self.seq) || !valid {
-            Err(crate::ValidationError::invalid("invalid provider event"))
+            Err(calternal_types::Error::invalid_input(
+                "invalid provider event",
+            ))
         } else {
             Ok(())
         }

@@ -1,0 +1,38 @@
+{
+  "name": "@calternal/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Calternal's design system: tokens (one JSON source), fonts, the adaptive glass material and the reusable surfaces.",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles": "./src/styles/index.css",
+    "./tokens.json": "./tokens/tokens.json"
+  },
+  "svelte": "./src/index.ts",
+  "scripts": {
+    "tokens": "node scripts/build-tokens.mjs",
+    "pretest": "npm run tokens",
+    "test": "vitest run",
+    "check": "npm run tokens && svelte-check --tsconfig ./tsconfig.json"
+  },
+  "peerDependencies": {
+    "svelte": "^5.57.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@testing-library/user-event": "^14.6.12",
+    "axe-core": "^4.14.1",
+    "jsdom": "^31.0.1",
+    "svelte": "5.57.1",
+    "svelte-check": "^4.3.0",
+    "typescript": "^5.9.3",
+    "vite": "8.3.1",
+    "vitest": "^5.0.4"
+  }
+}

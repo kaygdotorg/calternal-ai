@@ -1,4 +1,5 @@
 //! Thread-token lifecycle with the real per-space jobs database; no provider account.
+mod support;
 use calternal_core::AgentMode;
 use calternal_server::{
     plugins::{
@@ -13,15 +14,19 @@ use uuid::Uuid;
 #[test]
 fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
     let dir = tempfile::tempdir().unwrap();
-    let jobs = Jobs::open(dir.path()).unwrap();
-    let space = Uuid::now_v7().to_string();
-    let account = Uuid::now_v7().to_string();
+    let directory = calternal_server::auth::StoredDirectory::load_or_create(dir.path()).unwrap();
+    let dev = support::dev(&directory);
+    let jobs = Jobs::open(dir.path())
+        .unwrap()
+        .with_security(directory.spaces.agents());
+    let space = dev.personal.to_string();
+    let account = dev.owner.id.to_string();
     let thread = Uuid::now_v7().to_string();
     let id = jobs
         .admit(Admission {
             space: space.clone(),
             plugin: "calternal-orchestrator".into(),
-            account: account.clone(),
+            account: calternal_types::AccountId::parse(&account).unwrap(),
             session: Session::Static,
             operation: "agent.turn".into(),
             input: json!({"request":{"thread_id":thread}}),
@@ -32,9 +37,11 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
         .unwrap();
     let run = jobs.claim(&space, &id).unwrap().unwrap();
     let mut authority = Authority {
-        account,
+        actor: calternal_types::Actor::agent(
+            calternal_types::AccountId::parse(&account).unwrap(),
+            Uuid::parse_str(&thread).unwrap(),
+        ),
         space: space.clone(),
-        thread,
         job: id.clone(),
         mode: AgentMode::LeastAccess,
         source_app: "notes".into(),
@@ -105,7 +112,7 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     use axum::{
         body::{Body, to_bytes},
@@ -113,17 +120,17 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     };
     use calternal_server::{
         api::{self, AppState},
-        auth::{Directory, TokenTable},
+        auth::{Directory, StoredDirectory},
         machines::{MachineService, Settings},
         plugins::{Registry, WorkerPool},
         store::Store,
     };
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use tower::ServiceExt;
     let data = tempfile::tempdir().unwrap();
     let root = data.path().to_path_buf();
     let (tokens, who, principal) = tokio::task::spawn_blocking(move || {
-        let tokens = TokenTable::load_or_create(&root).unwrap();
+        let tokens = StoredDirectory::load_or_create(&root).unwrap();
         let owner = std::fs::read(root.join("dev-tokens/owner.token")).unwrap();
         let who = tokens.authenticate(&owner).unwrap();
         let principal = tokens.describe(&who);
@@ -133,14 +140,30 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     .unwrap();
     let space = principal.spaces[0].id.clone();
     let other = principal.spaces[1].id.clone();
+    let roots = support::roots(data.path());
+    let store = Store::open(
+        &roots,
+        Uuid::from_u128(1),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let machines = tokio::task::block_in_place(|| {
+        MachineService::open(data.path(), tokens.spaces.machines(), Settings::default())
+    })
+    .unwrap();
+    let jobs = Jobs::open(data.path())
+        .unwrap()
+        .with_security(tokens.spaces.agents());
     let state = Arc::new(AppState {
-        store: Mutex::new(Store::open(data.path()).unwrap()),
-        tokens,
+        inputs: store.account_inputs(),
+        store,
+        directory: tokens,
         registry: Registry::load(
             &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
         ),
         workers: WorkerPool::new(None),
-        jobs: Jobs::open(data.path()).unwrap(),
+        jobs,
         allowed_hosts: api::allowed_hosts(3210),
     });
     let thread = Uuid::now_v7().to_string();
@@ -149,7 +172,7 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
         .admit(Admission {
             space: space.clone(),
             plugin: "calternal-orchestrator".into(),
-            account: who.id.to_string(),
+            account: who.id,
             session: Session::Static,
             operation: "agent.turn".into(),
             input: json!({"request":{"thread_id":thread}}),
@@ -160,18 +183,16 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
         .unwrap();
     let _run = state.jobs.claim(&space, &id).unwrap().unwrap();
     let mut scope = Authority {
-        account: who.id.to_string(),
+        actor: calternal_types::Actor::agent(who.id, Uuid::parse_str(&thread).unwrap()),
         space: space.clone(),
-        thread,
         job: id.clone(),
         mode: AgentMode::LeastAccess,
         source_app: String::new(),
         grants: vec![],
     };
-    let old = state.jobs.agent_token(&scope, _run.job.runs).unwrap();
-    let app = api::router(state.clone(), None).layer(axum::Extension(
-        MachineService::open(data.path(), Settings::default()).unwrap(),
-    ));
+    let old =
+        tokio::task::block_in_place(|| state.jobs.agent_token(&scope, _run.job.runs)).unwrap();
+    let app = api::router(state.clone(), None).layer(axum::Extension(machines));
     let call = |token: String, op: &str, input: serde_json::Value| {
         let app = app.clone();
         let op = op.to_owned();
@@ -217,14 +238,15 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
         403
     );
     scope.source_app = "notes".into();
-    state.jobs.agent_scope_change(&scope).unwrap();
+    tokio::task::block_in_place(|| state.jobs.agent_scope_change(&scope)).unwrap();
     assert_eq!(
         call(old.clone(), "notes.list", json!({"space_id":space}))
             .await
             .0,
         401
     );
-    let new = state.jobs.agent_token(&scope, _run.job.runs).unwrap();
+    let new =
+        tokio::task::block_in_place(|| state.jobs.agent_token(&scope, _run.job.runs)).unwrap();
     assert_eq!(
         call(new.clone(), "notes.list", json!({"space_id":space}))
             .await
@@ -233,11 +255,16 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     );
     // Secret audit provenance reuses the existing Actor/Via type for the agent.
     scope.mode = AgentMode::FullAccess;
-    state.jobs.agent_scope_change(&scope).unwrap();
-    let new = state.jobs.agent_token(&scope, _run.job.runs).unwrap();
+    tokio::task::block_in_place(|| state.jobs.agent_scope_change(&scope)).unwrap();
+    let new =
+        tokio::task::block_in_place(|| state.jobs.agent_token(&scope, _run.job.runs)).unwrap();
     let (status,reply)=call(new.clone(),"secrets.request",json!({"space_id":space,"name":"provider-audit","label":"Fixture","reason":"Agent provenance"})).await;
     assert_eq!(status, 200, "{reply}");
-    let path = data.path().join("spaces").join(&space).join("secrets.db");
+    let path = data
+        .path()
+        .join("appdata/spaces")
+        .join(&space)
+        .join("secrets.db");
     let actor: String = tokio::task::spawn_blocking(move || {
         rusqlite::Connection::open(path)
             .unwrap()
@@ -252,7 +279,11 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     .unwrap();
     assert_eq!(
         actor,
-        format!("account:{} agent-thread:{}", who.id, scope.thread)
+        format!(
+            "an agent for {}, in thread {}",
+            who.id,
+            scope.thread().unwrap()
+        )
     );
     let read = Request::builder()
         .uri("/api/v1/describe")

@@ -3,14 +3,24 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "plugins/*"],
-  "engines": {"node": ">=22.13.0"},
+  "workspaces": [
+    "packages/*",
+    "plugins/*",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
+    "docs:site": "node scripts/docs-site/build.mjs",
     "check:docs": "./scripts/check-docs.sh",
     "build:docs": "./scripts/build-docs.sh",
     "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights && npm run build --workspace @calternal/claude-code",
     "build": "npm run build:plugins",
     "test:plugins": "npm test --workspace @calternal/plugin-sdk && npm test --workspace @calternal/notes-insights && npm test --workspace @calternal/claude-code",
-    "test:integration": "node --test tests/integration/*.test.mjs"
+    "test:integration": "node --test tests/integration/*.test.mjs",
+    "web:dev": "npm run dev --workspace @calternal/web",
+    "web:build": "npm run build --workspace @calternal/web",
+    "web:test": "npm test --workspace @calternal/web"
   }
 }

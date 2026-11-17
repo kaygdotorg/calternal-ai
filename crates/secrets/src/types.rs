@@ -2,7 +2,8 @@
 //! except [`SecretValue`], which only exposes its bytes through an explicit call.
 
 use crate::{Error, Result};
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
+
 use zeroize::Zeroizing;
 
 /// The single account or space a secret belongs to.
@@ -25,8 +26,8 @@ impl Owner {
     /// The owner's UUID.
     pub fn uuid(&self) -> uuid::Uuid {
         match self {
-            Self::Account(id) => id.0,
-            Self::Space(id) => id.0,
+            Self::Account(id) => id.as_uuid(),
+            Self::Space(id) => id.as_uuid(),
         }
     }
 }
@@ -134,36 +135,6 @@ impl HandleToken {
     /// The wire text.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-/// How an actor reached the store, recorded in the audit trail.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Via {
-    /// A signed-in person's session (provide, revoke, list).
-    Session,
-    /// A plugin invocation acting for the account.
-    Plugin(String),
-    /// An agent thread acting for the account.
-    Agent(uuid::Uuid),
-}
-
-/// Who performed an action: always an account, plus the route it came through.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Actor {
-    /// The account on whose authority the action ran.
-    pub account: AccountId,
-    /// Session, plugin or agent.
-    pub via: Via,
-}
-
-impl Actor {
-    pub(crate) fn describe(&self) -> String {
-        match &self.via {
-            Via::Session => format!("account:{} session", self.account),
-            Via::Plugin(p) => format!("account:{} plugin:{p}", self.account),
-            Via::Agent(t) => format!("account:{} agent-thread:{t}", self.account),
-        }
     }
 }
 

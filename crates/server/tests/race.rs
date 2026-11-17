@@ -5,11 +5,11 @@
 mod support;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use calternal_server::api::{AppState, allowed_hosts, dispatch};
-use calternal_server::auth::{TokenTable, dev_principals};
+use calternal_server::auth::StoredDirectory;
 use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
 use serde_json::{Value, json};
@@ -34,20 +34,27 @@ async fn disable_during_invocation_discards_result() {
     // The worker reads the note through the broker, then blocks until `go` exists.
     let worker = support::worker(&wdir, support::READ_NOTE, support::COMPLETE_AFTER_GO);
     let plugin = support::plugin(support::insights_manifest(), Some(&worker), false);
-    let data = root.0.join("data");
+    let roots = support::roots(&root.0);
+    let store = Store::open(
+        &roots,
+        uuid::Uuid::from_u128(1),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
-        store: Mutex::new(Store::open(&data).unwrap()),
-        tokens: TokenTable::load_or_create(&data).unwrap(),
+        inputs: store.account_inputs(),
+        store,
+        directory: StoredDirectory::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),
         workers: WorkerPool::new(Some(node)),
         jobs: calternal_server::plugins::Jobs::disabled(),
         allowed_hosts: allowed_hosts(0),
     });
-    let owner = dev_principals()
-        .into_iter()
-        .find(|p| p.id == "owner")
-        .unwrap();
+    let dev = support::dev(&state.directory);
+    let owner = dev.owner;
 
     let note = dispatch(
         state.clone(),
@@ -55,7 +62,7 @@ async fn disable_during_invocation_discards_result() {
         calternal_server::plugins::Session::Static,
         "c",
         "notes.create",
-        obj(json!({"space_id": "personal", "title": "T", "markdown": "x"})),
+        obj(json!({"space_id": dev.personal, "title": "T", "markdown": "x"})),
     )
     .await
     .unwrap();
@@ -67,7 +74,7 @@ async fn disable_during_invocation_discards_result() {
             calternal_server::plugins::Session::Static,
             rid,
             op,
-            obj(json!({"space_id": "personal", "plugin_id": "notes-insights"})),
+            obj(json!({"space_id": dev.personal, "plugin_id": "notes-insights"})),
         )
     };
     toggle("e1", "plugins.enable").await.unwrap();
@@ -80,7 +87,7 @@ async fn disable_during_invocation_discards_result() {
             calternal_server::plugins::Session::Static,
             "s",
             "notes-insights.summarize",
-            obj(json!({"space_id": "personal", "id": id2})),
+            obj(json!({"space_id": dev.personal, "id": id2})),
         )
         .await
     });
@@ -107,7 +114,7 @@ async fn disable_during_invocation_discards_result() {
         calternal_server::plugins::Session::Static,
         "s2",
         "notes-insights.summarize",
-        obj(json!({"space_id": "personal", "id": id})),
+        obj(json!({"space_id": dev.personal, "id": id})),
     )
     .await
     .expect_err("disabled");

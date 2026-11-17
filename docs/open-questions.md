@@ -2,18 +2,21 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-17 19:10 IST.
+[glossary](glossary.md). Updated 2026-11-17 20:40 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
 | 4 | When to start performance budgets and benchmarks on the perf VMs | After the simplification lane merges | Performance |
+| 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | Keep the provisional choice unless it looks wrong on the preview | Materials |
+| 6 | Light renditions of the eight default wallpapers (they suit dark mode): derive a lighter version automatically (provisional), or kayg supplies light ones | Automatic for now | Light theme |
+| 7 | Spaces in the shell: where the space switcher lives, what the current space limits, Settings groups, groups holding space roles, an automatic personal space (five questions asked 2026-11-17) | See chat; recommendations stand as provisional | Shell, Settings |
 
 ## Design rounds
 
-- **Next: the composer as a unified command and search palette**, from the existing app's design.
-- The Settings screen. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- Onboarding for developers versus everyone else: what changes.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
 
@@ -23,6 +26,8 @@ move to the decision record they belong to and leave this list. Terms: see
 - A documentation site generated from the code (`/docs/user`, `/docs/admin`, `/docs/dev`, `llms.txt`, Markdown for every page).
 
 ## Recently decided (2026-11-17), now in the decision records
+
+- The composer and palette: see `composer.md`.
 
 - Provider logins: each person signs in to the official programs inside their own sandbox; the server never stores a provider login.
 - State lives on the server; clients subscribe to it and cache what they need, as the existing app does. There is no sync protocol to design. A client whose bookmark is too old reloads.

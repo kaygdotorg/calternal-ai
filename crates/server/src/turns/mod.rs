@@ -1,6 +1,7 @@
 //! Manual provider turns: durable jobs, machine exec streams and explicit resume.
 //! No conversation file is stored here; the Threads storage lane owns that step.
 pub mod access;
+mod admission;
 mod instructions;
 pub mod retry;
 mod run;
@@ -8,8 +9,6 @@ mod run;
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
-    authz::Capability,
-    error::HostError,
     machines::MachineService,
     plugins::{
         Session,
@@ -17,18 +16,19 @@ use crate::{
     },
 };
 use access::Authority;
-use calternal_auth::{AccountId, InstallationId, SpaceId};
 use calternal_core::{AgentInput, JobState, JsonObject};
+use calternal_types::SpaceId;
+use calternal_types::{Capability, Error};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
 
 pub(super) async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, HostError> + Send + 'static,
-) -> Result<T, HostError> {
+    f: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     tokio::task::spawn_blocking(f)
         .await
-        .map_err(|_| HostError::internal("turn task failed"))?
+        .map_err(|_| Error::internal("turn task failed"))?
 }
 
 /// Dispatch a catalogued manual-turn operation. Every call rechecks current space
@@ -43,15 +43,15 @@ pub async fn dispatch<D: Directory>(
     rid: &str,
     op: &str,
     input: JsonObject,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     if let Some(a) = &agent {
         a.check(op, &input)?;
     }
     let mut i: AgentInput = serde_json::from_value(json!(input))
-        .map_err(|_| HostError::invalid_input("input does not match agent schema"))?;
+        .map_err(|_| Error::invalid_input("input does not match agent schema"))?;
     if op == "agent.settings" {
         if agent.is_some() {
-            return Err(HostError::forbidden(
+            return Err(Error::forbidden(
                 "a person must configure automatic retries",
             ));
         }
@@ -65,30 +65,27 @@ pub async fn dispatch<D: Directory>(
         }
         let job = load(&state, &i.job_id).await?;
         authorize(&state, &who, &job.space, Capability::PluginsUse).await?;
-        if job.account != who.id.as_ref() {
-            return Err(HostError::not_found("turn not found"));
+        if job.account != who.id {
+            return Err(Error::not_found("turn not found"));
         }
         let value = i
             .retry_settings
-            .ok_or_else(|| HostError::invalid_input("thread settings require retry_settings"))?;
+            .ok_or_else(|| Error::invalid_input("thread settings require retry_settings"))?;
         let (st, sp, id) = (state.clone(), job.space, job.id);
         blocking(move || st.jobs.agent_thread_settings(&sp, &id, value)).await?;
         return Ok(json!({"retry_settings":value}));
     }
     if op == "machines.resume" {
         if agent.is_some() {
-            return Err(HostError::forbidden(
-                "a person must resume interrupted work",
-            ));
+            return Err(Error::forbidden("a person must resume interrupted work"));
         }
-        let account =
-            AccountId::parse(&who.id).ok_or_else(|| HostError::not_found("run not found"))?;
+        let account = who.id;
         let lease = Uuid::parse_str(&i.lease_id)
-            .map_err(|_| HostError::invalid_input("lease_id must be a UUID"))?;
+            .map_err(|_| Error::invalid_input("lease_id must be a UUID"))?;
         let svc = machines.clone();
         let space = blocking(move || {
             svc.run_space(lease)?
-                .ok_or_else(|| HostError::not_found("run not found"))
+                .ok_or_else(|| Error::not_found("run not found"))
         })
         .await?;
         authorize(&state, &who, &space.to_string(), Capability::PluginsUse).await?;
@@ -97,18 +94,19 @@ pub async fn dispatch<D: Directory>(
     }
     if op == "machines.set" {
         if agent.is_some() {
-            return Err(HostError::forbidden(
+            return Err(Error::forbidden(
                 "a person must change machine execution settings",
             ));
         }
-        let account =
-            AccountId::parse(&who.id).ok_or_else(|| HostError::not_found("machine not found"))?;
+        let account = who.id;
         let machine = Uuid::parse_str(&i.machine_id)
-            .map_err(|_| HostError::invalid_input("machine_id must be a UUID"))?;
+            .map_err(|_| Error::invalid_input("machine_id must be a UUID"))?;
         blocking(move || machines.set_direct(account, machine, i.direct)).await?;
         return Ok(json!({"machine_id":i.machine_id,"direct":i.direct}));
     }
     validate(&mut i, op)?;
+    let canonical: JsonObject =
+        serde_json::from_value(json!(&i)).map_err(|_| Error::internal("turn input encoding"))?;
     if matches!(op, "agent.run" | "agent.check") {
         authorize(&state, &who, &i.space_id, Capability::PluginsUse).await?;
         let (st, account, request, scope) = (
@@ -133,23 +131,38 @@ pub async fn dispatch<D: Directory>(
         };
         let data = json!({"request":i,"check":op=="agent.check","retry_settings":settings});
         let compare = data["request"].clone();
+        let space = SpaceId::parse(&scope).map_err(|_| Error::not_found("space not found"))?;
+        let admission = admission::ManualAdmission::new(
+            state.store.shared_content(),
+            who.id,
+            space,
+            rid,
+            op,
+            &canonical,
+        );
         let id = blocking(move || {
-            st.jobs.admit(Admission {
-                space: scope,
-                plugin: "calternal-orchestrator".into(),
-                account: account.clone(),
-                session,
-                operation: "agent.turn".into(),
-                input: data,
-                parent: None,
-                generation,
-                request_key: format!("agent/{account}/{request}"),
+            admission.apply(|| {
+                let id = st.jobs.admit(Admission {
+                    space: scope,
+                    plugin: "calternal-orchestrator".into(),
+                    account: who.id,
+                    session,
+                    operation: "agent.turn".into(),
+                    input: data,
+                    parent: None,
+                    generation,
+                    request_key: format!("agent/{account}/{request}"),
+                })?;
+                Ok(json!({"job_id":id}))
             })
         })
-        .await?;
+        .await?["job_id"]
+            .as_str()
+            .ok_or_else(|| Error::internal("turn admission result"))?
+            .to_owned();
         let job = load(&state, &id).await?;
         if job.input["request"] != compare {
-            return Err(HostError::conflict(
+            return Err(Error::conflict(
                 "request_id already used with different input",
             ));
         }
@@ -169,22 +182,35 @@ pub async fn dispatch<D: Directory>(
     )
     .await?;
     if job.operation != "agent.turn" {
-        return Err(HostError::not_found("turn not found"));
+        return Err(Error::not_found("turn not found"));
     }
-    let is_owner = job.account == who.id.as_ref();
+    let is_owner = job.account == who.id;
     if op != "agent.events" && !is_owner {
-        let (st, account, space) = (state.clone(), who.id.clone(), job.space.clone());
+        let (st, account, space) = (
+            state.clone(),
+            who.id,
+            SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?,
+        );
         let manager = blocking(move || {
             Ok(st
-                .tokens
-                .capabilities(&account, &space)
+                .directory
+                .capabilities(account, space)
                 .is_some_and(|c| c.contains(Capability::PluginsManage)))
         })
         .await?;
         if op != "agent.stop" || !manager {
-            return Err(HostError::not_found("turn not found"));
+            return Err(Error::not_found("turn not found"));
         }
     }
+    let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
+    let admission = admission::ManualAdmission::new(
+        state.store.shared_content(),
+        who.id,
+        space,
+        rid,
+        op,
+        &canonical,
+    );
     match op {
         "agent.events" => {
             let batch = state.jobs.live(&job.id).read(i.after);
@@ -199,18 +225,20 @@ pub async fn dispatch<D: Directory>(
         }
         "agent.discard" => {
             if !job.state.is_final() && job.state != JobState::Interrupted {
-                return Err(HostError::conflict(
+                return Err(Error::conflict(
                     "stop this turn before discarding its workspace",
                 ));
             }
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             blocking(move || {
-                st.jobs.cancel(&sp, &id)?;
-                st.jobs.agent_revoke(&sp, &id)
+                admission.apply(|| {
+                    st.jobs.cancel(&sp, &id)?;
+                    st.jobs.agent_revoke(&sp, &id)?;
+                    Ok(Value::Null)
+                })
             })
             .await?;
-            let account = AccountId::parse(&job.account)
-                .ok_or_else(|| HostError::not_found("turn not found"))?;
+            let account = job.account;
             let lease = job.checkpoint["lease_id"]
                 .as_str()
                 .and_then(|s| Uuid::parse_str(s).ok());
@@ -223,24 +251,42 @@ pub async fn dispatch<D: Directory>(
         }
         "agent.stop" => {
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
+            let (svc, ending) = (machines.clone(), job.clone());
             blocking(move || {
-                st.jobs.cancel(&sp, &id)?;
-                st.jobs.agent_revoke(&sp, &id)
+                admission.apply(|| {
+                    st.jobs.cancel(&sp, &id)?;
+                    st.jobs.agent_revoke(&sp, &id)?;
+                    release(&svc, &ending)?;
+                    Ok(Value::Null)
+                })
             })
             .await?;
-            stop_machine(&machines, &job).await?;
             Ok(json!({"job":load(&state,&job.id).await?.view()}))
         }
         "agent.resume" => {
-            if job.state != JobState::Interrupted {
-                return Err(HostError::conflict(
-                    "only an interrupted turn can resume; inspect its checkpoint first",
-                ));
-            }
-            // Fence the previous lease before readmission, including after server recovery.
-            stop_machine(&machines, &job).await?;
-            let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
-            blocking(move || st.jobs.agent_resume(&sp, &id)).await?;
+            let (st, sp, id, svc) = (
+                state.clone(),
+                job.space.clone(),
+                job.id.clone(),
+                machines.clone(),
+            );
+            blocking(move || {
+                admission.apply(|| {
+                    let current = st
+                        .jobs
+                        .get(&sp, &id)?
+                        .ok_or_else(|| Error::not_found("turn not found"))?;
+                    if current.state != JobState::Interrupted {
+                        return Err(Error::conflict(
+                            "only an interrupted turn can resume; inspect its checkpoint first",
+                        ));
+                    }
+                    release(&svc, &current)?;
+                    st.jobs.agent_resume(&sp, &id)?;
+                    Ok(Value::Null)
+                })
+            })
+            .await?;
             run::schedule(&state, &machines, job.space.clone(), job.id.clone());
             Ok(json!({"job":load(&state,&job.id).await?.view()}))
         }
@@ -253,21 +299,26 @@ pub async fn dispatch<D: Directory>(
                 i.write,
             );
             let id = blocking(move || {
-                let a = st.jobs.agent_scope(&sp, &id)?;
-                st.jobs.agent_request(&a, &app, write)
+                admission.apply(|| {
+                    let a = st.jobs.agent_scope(&sp, &id)?;
+                    Ok(json!({"approval_id":st.jobs.agent_request(&a,&app,write)?}))
+                })
             })
-            .await?;
+            .await?["approval_id"]
+                .as_str()
+                .ok_or_else(|| Error::internal("approval result"))?
+                .to_owned();
             Ok(json!({"approval_id":id,"status":"pending","scope":"this turn"}))
         }
         "agent.mode" | "access.approve" => {
             if agent.is_some() {
-                return Err(HostError::forbidden(
+                return Err(Error::forbidden(
                     "a freshly verified person must change agent access",
                 ));
             }
             fresh(&state, &session).await?;
             if job.state.is_final() {
-                return Err(HostError::conflict("finished turns cannot change access"));
+                return Err(Error::conflict("finished turns cannot change access"));
             }
             // Revoke authority before stopping processes so no old token can act.
             let (st, sp, id, action) = (
@@ -276,37 +327,40 @@ pub async fn dispatch<D: Directory>(
                 job.id.clone(),
                 op.to_owned(),
             );
+            let (svc, ending) = (machines.clone(), job.clone());
             blocking(move || {
-                let mut a = st.jobs.agent_scope(&sp, &id)?;
-                if action == "agent.mode" {
-                    a.mode = i.mode;
-                    st.jobs.agent_scope_change(&a)?;
-                } else {
-                    st.jobs.agent_approve(&mut a, &i.approval_id)?;
-                }
-                st.jobs.agent_interrupt(&sp, &id)?;
-                Ok(())
+                admission.apply(|| {
+                    let mut a = st.jobs.agent_scope(&sp, &id)?;
+                    if action == "agent.mode" {
+                        a.mode = i.mode;
+                        st.jobs.agent_scope_change(&a)?;
+                    } else {
+                        st.jobs.agent_approve(&mut a, &i.approval_id)?;
+                    }
+                    st.jobs.agent_interrupt(&sp, &id)?;
+                    release(&svc, &ending)?;
+                    Ok(Value::Null)
+                })
             })
             .await?;
-            stop_machine(&machines, &job).await?;
             Ok(
                 json!({"job":load(&state,&job.id).await?.view(),"hint":"Resume explicitly to deliver the replacement token."}),
             )
         }
-        _ => Err(HostError::not_found("unknown agent operation")),
+        _ => Err(Error::not_found("unknown agent operation")),
     }
 }
 
-async fn load<D: Directory>(state: &Shared<D>, id: &str) -> Result<Job, HostError> {
+async fn load<D: Directory>(state: &Shared<D>, id: &str) -> Result<Job, Error> {
     let space = state
         .jobs
         .route(id)
-        .ok_or_else(|| HostError::not_found("turn not found"))?;
+        .ok_or_else(|| Error::not_found("turn not found"))?;
     let (st, id) = (state.clone(), id.to_owned());
     blocking(move || {
         st.jobs
             .get(&space, &id)?
-            .ok_or_else(|| HostError::not_found("turn not found"))
+            .ok_or_else(|| Error::not_found("turn not found"))
     })
     .await
 }
@@ -316,80 +370,85 @@ pub(super) async fn authorize<D: Directory>(
     who: &Identity,
     space: &str,
     required: Capability,
-) -> Result<(), HostError> {
-    if SpaceId::parse(space).is_none() {
-        return Err(HostError::not_found("turn not found"));
+) -> Result<(), Error> {
+    if SpaceId::parse(space).is_err() {
+        return Err(Error::not_found("turn not found"));
     }
-    let (st, id, space) = (state.clone(), who.id.clone(), space.to_owned());
+    let (st, id, space) = (
+        state.clone(),
+        who.id,
+        SpaceId::parse(space).map_err(|_| Error::not_found("turn not found"))?,
+    );
     blocking(move || {
         if st
-            .tokens
-            .capabilities(&id, &space)
+            .directory
+            .capabilities(id, space)
             .is_some_and(|c| c.contains(required))
         {
             Ok(())
         } else {
-            Err(HostError::not_found("turn not found"))
+            Err(Error::not_found("turn not found"))
         }
     })
     .await
 }
 
-async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(), HostError> {
+async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(), Error> {
     let Session::Installation {
         account,
         installation,
     } = session
     else {
-        return Err(HostError::forbidden(
+        return Err(Error::forbidden(
             "sign in again with a passkey to approve access",
         ));
     };
     let service = state
-        .tokens
+        .directory
         .http_auth()
-        .ok_or_else(|| HostError::forbidden("person session required"))?;
-    let account =
-        AccountId::parse(account).ok_or_else(|| HostError::forbidden("person session required"))?;
-    let installation = InstallationId(
-        Uuid::parse_str(installation)
-            .map_err(|_| HostError::forbidden("person session required"))?,
-    );
+        .ok_or_else(|| Error::forbidden("person session required"))?;
     service
         .auth
-        .require_fresh(account, installation, false)
+        .require_fresh(*account, *installation, false)
         .await
-        .map_err(|_| HostError::forbidden("sign in again with a passkey to approve access"))
+        .map_err(|_| Error::forbidden("sign in again with a passkey to approve access"))
 }
 
-async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), HostError> {
+fn release(machines: &MachineService, job: &Job) -> Result<(), Error> {
+    if let Some(lease) = job.checkpoint["lease_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok())
+    {
+        machines.release_run(job.account, lease)?;
+    }
+    Ok(())
+}
+
+async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), Error> {
     if let Some(id) = job
         .checkpoint
         .get("lease_id")
         .and_then(Value::as_str)
         .and_then(|v| Uuid::parse_str(v).ok())
     {
-        let (svc, account) = (
-            machines.clone(),
-            AccountId::parse(&job.account).ok_or_else(|| HostError::not_found("turn not found"))?,
-        );
+        let (svc, account) = (machines.clone(), job.account);
         blocking(move || svc.release_run(account, id).map(|_| ())).await?;
     }
     Ok(())
 }
 
-fn validate(i: &mut AgentInput, op: &str) -> Result<(), HostError> {
+fn validate(i: &mut AgentInput, op: &str) -> Result<(), Error> {
     if i.prompt.len() > 16 * 1024
         || i.model.len() > 128
         || i.source_app.len() > 80
         || i.source_app.contains('.')
         || i.app.len() > 80
     {
-        return Err(HostError::invalid_input("agent input exceeds its bounds"));
+        return Err(Error::invalid_input("agent input exceeds its bounds"));
     }
     if matches!(op, "agent.run" | "agent.check") {
-        let invalid = || HostError::invalid_input("check/run needs space_id and thread_id UUIDs");
-        let space = SpaceId::parse(&i.space_id).ok_or_else(invalid)?;
+        let invalid = || Error::invalid_input("check/run needs space_id and thread_id UUIDs");
+        let space = SpaceId::parse(&i.space_id).map_err(|_| invalid())?;
         let thread = Uuid::parse_str(&i.thread_id).map_err(|_| invalid())?;
         if !i.job_id.is_empty() {
             return Err(invalid());
@@ -397,11 +456,11 @@ fn validate(i: &mut AgentInput, op: &str) -> Result<(), HostError> {
         i.space_id = space.to_string();
         i.thread_id = thread.to_string();
         if op == "agent.run" && i.prompt.trim().is_empty() {
-            return Err(HostError::invalid_input("run needs a prompt"));
+            return Err(Error::invalid_input("run needs a prompt"));
         }
     } else {
         i.job_id = Uuid::parse_str(&i.job_id)
-            .map_err(|_| HostError::invalid_input("job_id must be a UUID"))?
+            .map_err(|_| Error::invalid_input("job_id must be a UUID"))?
             .to_string();
     }
     Ok(())
@@ -411,24 +470,21 @@ pub(super) async fn enabled_generation<D: Directory>(
     state: &Shared<D>,
     space: &str,
     plugin: &str,
-) -> Result<u32, HostError> {
+) -> Result<u32, Error> {
     let (st, key, plugin) = (
         state.clone(),
-        state.tokens.content_space(space),
+        SpaceId::parse(space).map_err(|_| Error::not_found("turn not found"))?,
         plugin.to_owned(),
     );
     blocking(move || {
         let plugin = st
             .registry
             .get(&plugin)
-            .ok_or_else(|| HostError::unavailable("required plugin is not installed"))?;
-        let store = st
-            .store
-            .lock()
-            .map_err(|_| HostError::internal("store poisoned"))?;
-        let row = crate::plugins::activation(&store, &key, plugin)?;
+            .ok_or_else(|| Error::unavailable("required plugin is not installed"))?;
+        let store = &st.store;
+        let row = crate::plugins::activation(store, key, plugin)?;
         if !row.enabled {
-            return Err(HostError::forbidden("required plugin is disabled"));
+            return Err(Error::forbidden("required plugin is disabled"));
         }
         Ok(row.generation)
     })

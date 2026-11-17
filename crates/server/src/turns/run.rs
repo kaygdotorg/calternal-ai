@@ -3,18 +3,17 @@ use super::{access::Authority, blocking};
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
-    authz::Capability,
-    error::HostError,
     machines::{LeaseState, MachineService},
     plugins::jobs::{Job, RunEnd},
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
-use calternal_auth::{AccountId, SpaceId};
 use calternal_core::{
     AgentInput, PROVIDER_COMMAND_BYTES, PROVIDER_EVENT_BYTES, ProviderCommand, ProviderEvent,
     ProviderEventKind, ProviderRequest,
 };
 use calternal_machine::protocol::{ChunkEvent, Stream};
+use calternal_types::SpaceId;
+use calternal_types::{Capability, Error};
 use serde_json::{Value, json};
 use std::{
     sync::Arc,
@@ -53,8 +52,8 @@ pub(super) fn schedule<D: Directory>(
         let wait_space = sp.clone();
         let wait_id = jid.clone();
         let finished = blocking(move || {
-            s.jobs.agent_revoke_run(&sp, &jid, run)?;
-            s.jobs.finish(&sp, &jid, run, end).map(|_| ())
+            s.jobs.finish(&sp, &jid, run, end)?;
+            s.jobs.agent_revoke_run(&sp, &jid, run)
         })
         .await;
         if waiting && finished.is_ok() {
@@ -68,17 +67,14 @@ async fn execute<D: Directory>(
     machines: &Arc<MachineService>,
     job: &Job,
     live: &Arc<crate::plugins::live::Live>,
-) -> Result<RunEnd, HostError> {
+) -> Result<RunEnd, Error> {
     let i: AgentInput = serde_json::from_value(job.input["request"].clone())
-        .map_err(|_| HostError::internal("invalid turn input"))?;
-    let account =
-        AccountId::parse(&job.account).ok_or_else(|| HostError::not_found("turn not found"))?;
-    let space = SpaceId::parse(&job.space).ok_or_else(|| HostError::not_found("turn not found"))?;
+        .map_err(|_| Error::internal("invalid turn input"))?;
+    let account = job.account;
+    let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
     let thread =
-        Uuid::parse_str(&i.thread_id).map_err(|_| HostError::invalid_input("invalid thread id"))?;
-    let who = Identity {
-        id: Arc::from(job.account.as_str()),
-    };
+        Uuid::parse_str(&i.thread_id).map_err(|_| Error::invalid_input("invalid thread id"))?;
+    let who = Identity { id: job.account };
     super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
     if super::enabled_generation(state, &job.space, &job.plugin).await? != job.generation {
         return Ok(RunEnd::Failed);
@@ -91,28 +87,25 @@ async fn execute<D: Directory>(
     let provider = state
         .registry
         .get(provider_id)
-        .ok_or_else(|| HostError::unavailable("provider plugin is not installed"))?
+        .ok_or_else(|| Error::unavailable("provider plugin is not installed"))?
         .clone();
     let spec = provider
         .manifest
         .provider
         .as_ref()
-        .ok_or_else(|| HostError::unavailable("plugin does not provide an adapter"))?;
+        .ok_or_else(|| Error::unavailable("plugin does not provide an adapter"))?;
     let executable = spec.executable.clone();
     let default_model = spec.default_model.clone();
     let (st, key, p) = (
         state.clone(),
-        state.tokens.content_space(&job.space),
+        SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?,
         provider.clone(),
     );
     let generation = blocking(move || {
-        let store = st
-            .store
-            .lock()
-            .map_err(|_| HostError::internal("store poisoned"))?;
-        let row = crate::plugins::activation(&store, &key, &p)?;
+        let store = &st.store;
+        let row = crate::plugins::activation(store, key, &p)?;
         if !row.enabled {
-            return Err(HostError::forbidden("provider plugin is disabled"));
+            return Err(Error::forbidden("provider plugin is disabled"));
         }
         Ok(row.generation)
     })
@@ -122,9 +115,8 @@ async fn execute<D: Directory>(
         job.space.clone(),
         job.id.clone(),
         Authority {
-            account: job.account.clone(),
+            actor: calternal_types::Actor::agent(job.account, thread),
             space: job.space.clone(),
-            thread: i.thread_id.clone(),
             job: job.id.clone(),
             mode: i.mode,
             source_app: i.source_app.clone(),
@@ -178,7 +170,7 @@ async fn execute<D: Directory>(
         }
         if let Some(machine) = view.machine_id {
             tokio::select! {
-                permit=&mut acquire=>break (machine,permit.map_err(|_|HostError::unavailable("turn execution stopped"))?),
+                permit=&mut acquire=>break (machine,permit.map_err(|_|Error::unavailable("turn execution stopped"))?),
                 _=tokio::time::sleep(Duration::from_secs(1))=>continue,
             }
         }
@@ -257,9 +249,9 @@ async fn execute<D: Directory>(
             seq: seq as u64 + 1,
             command,
         })
-        .map_err(|_| HostError::internal("provider encoding"))?;
+        .map_err(|_| Error::internal("provider encoding"))?;
         if line.len() + 1 > PROVIDER_COMMAND_BYTES {
-            return Err(HostError::invalid_input(
+            return Err(Error::invalid_input(
                 "provider instructions exceed command budget",
             ));
         }
@@ -301,15 +293,12 @@ async fn execute<D: Directory>(
         }
         let (st, key, p) = (
             state.clone(),
-            state.tokens.content_space(&job.space),
+            SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?,
             provider.clone(),
         );
         let active = blocking(move || {
-            let store = st
-                .store
-                .lock()
-                .map_err(|_| HostError::internal("store poisoned"))?;
-            let row = crate::plugins::activation(&store, &key, &p)?;
+            let store = &st.store;
+            let row = crate::plugins::activation(store, key, &p)?;
             Ok(row.enabled && row.generation == generation)
         })
         .await?;
@@ -340,21 +329,21 @@ async fn execute<D: Directory>(
                 } => {
                     let bytes = B64
                         .decode(data)
-                        .map_err(|_| HostError::internal("invalid machine output"))?;
+                        .map_err(|_| Error::internal("invalid machine output"))?;
                     for byte in bytes {
                         pending.push(byte);
                         if pending.len() > PROVIDER_EVENT_BYTES {
-                            return Err(HostError::invalid_input("provider event exceeds budget"));
+                            return Err(Error::invalid_input("provider event exceeds budget"));
                         }
                         if byte != b'\n' {
                             continue;
                         }
                         let e: ProviderEvent = serde_json::from_slice(&pending)
-                            .map_err(|_| HostError::invalid_input("invalid provider event"))?;
+                            .map_err(|_| Error::invalid_input("invalid provider event"))?;
                         e.validate()?;
                         pending.clear();
                         if e.version != 1 || e.seq != provider_seq + 1 || outcome.is_some() {
-                            return Err(HostError::invalid_input("provider event sequence failed"));
+                            return Err(Error::invalid_input("provider event sequence failed"));
                         }
                         provider_seq = e.seq;
                         match &e.event {
@@ -375,7 +364,7 @@ async fn execute<D: Directory>(
                             }
                             ProviderEventKind::ToolStarted { id, name, summary } => {
                                 if pending_tools.len() >= 128 || pending_tools.contains(id) {
-                                    return Err(HostError::invalid_input(
+                                    return Err(Error::invalid_input(
                                         "provider pending tool limit or duplicate tool id",
                                     ));
                                 }
@@ -405,9 +394,9 @@ async fn execute<D: Directory>(
                             _ => {}
                         }
                         let value = serde_json::to_value(&e)
-                            .map_err(|_| HostError::internal("provider encoding"))?;
+                            .map_err(|_| Error::internal("provider encoding"))?;
                         if !live.publish(job.runs, &value) {
-                            return Err(HostError::conflict("turn stopped accepting output"));
+                            return Err(Error::conflict("turn stopped accepting output"));
                         }
                         if matches!(
                             e.event,
@@ -444,12 +433,12 @@ async fn execute<D: Directory>(
                         let latest = blocking(move || {
                             st.jobs
                                 .get(&sp, &jid)?
-                                .ok_or_else(|| HostError::not_found("turn not found"))
+                                .ok_or_else(|| Error::not_found("turn not found"))
                         })
                         .await?;
                         let settings: calternal_core::AgentRetrySettings =
                             serde_json::from_value(latest.input["retry_settings"].clone())
-                                .map_err(|_| HostError::internal("invalid retry settings"))?;
+                                .map_err(|_| Error::internal("invalid retry settings"))?;
                         let completed = job.checkpoint["retry"]["retry_count"]
                             .as_u64()
                             .unwrap_or(0)
@@ -487,7 +476,7 @@ async fn save<D: Directory>(
     job: &Job,
     live: &Arc<crate::plugins::live::Live>,
     checkpoint: &Value,
-) -> Result<(), HostError> {
+) -> Result<(), Error> {
     let (st, sp, id, run, live, checkpoint) = (
         state.clone(),
         job.space.clone(),

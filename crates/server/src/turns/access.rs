@@ -1,17 +1,16 @@
 //! Per-thread access policy. Authentication storage is implemented by the per-space jobs service.
-use crate::error::HostError;
 use calternal_core::{AgentMode, JsonObject};
+use calternal_types::Error;
 use serde::{Deserialize, Serialize};
 
 /// A token's current, server-owned scope. Never supplied by an adapter.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Authority {
-    /// Account on whose behalf the agent acts; rechecked against current membership.
-    pub account: String,
+    /// Shared attribution. Access comes only from its account; via must name
+    /// this agent's thread and never grants authority.
+    pub actor: calternal_types::Actor,
     /// Only space this token can address.
     pub space: String,
-    /// Thread to which all effects are attributed.
-    pub thread: String,
     /// Only turn whose controls this token may call.
     pub job: String,
     /// Current permission mode, changed only by a person.
@@ -68,9 +67,17 @@ pub fn risk_allowed(
 }
 
 impl Authority {
+    /// The agent thread in the shared attribution. Invalid stored attribution
+    /// fails closed; no I/O or allocation.
+    pub fn thread(&self) -> Result<uuid::Uuid, Error> {
+        match self.actor.via {
+            Some(calternal_types::Via::Agent { thread }) => Ok(thread),
+            _ => Err(Error::internal("agent thread attribution missing")),
+        }
+    }
     /// Enforce current token scope before a handler or receipt replay. Catalog and
     /// validators are cached once; each call scans only the thread's bounded grants.
-    pub fn check(&self, op: &str, input: &JsonObject) -> Result<(), HostError> {
+    pub fn check(&self, op: &str, input: &JsonObject) -> Result<(), Error> {
         use std::{collections::HashMap, sync::OnceLock};
         static CATALOG: OnceLock<HashMap<String, (bool, calternal_core::OperationRisk)>> =
             OnceLock::new();
@@ -81,7 +88,7 @@ impl Authority {
                 .collect()
         });
         let Some((mutates, risk)) = catalog.get(op) else {
-            return Err(HostError::forbidden(
+            return Err(Error::forbidden(
                 "agent operation has no declared risk class",
             ));
         };
@@ -98,7 +105,7 @@ impl Authority {
         rid: &str,
         mutates: bool,
         risk: calternal_core::OperationRisk,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         let own_turn = input.get("job_id").and_then(|v| v.as_str()) == Some(self.job.as_str());
         if op == "access.request" && own_turn {
             return Ok(());
@@ -107,11 +114,11 @@ impl Authority {
             return if own_turn && matches!(op, "agent.events" | "agent.stop") {
                 Ok(())
             } else {
-                Err(HostError::forbidden("agent cannot change thread authority"))
+                Err(Error::forbidden("agent cannot change thread authority"))
             };
         }
         if input.get("space_id").and_then(|v| v.as_str()) != Some(self.space.as_str()) {
-            return Err(HostError::not_found("space not found"));
+            return Err(Error::not_found("space not found"));
         }
         let app = op.split_once('.').map(|(a, _)| a).unwrap_or("");
         let default = !self.source_app.is_empty() && app == self.source_app;
@@ -141,7 +148,7 @@ impl Authority {
         if allowed {
             Ok(())
         } else {
-            Err(HostError::forbidden(
+            Err(Error::forbidden(
                 "agent access requires a person approval; use access.request",
             ))
         }
