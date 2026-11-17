@@ -8,6 +8,9 @@ const screens = [
   ["threads secret", "/threads/t-secret?panel=files"],
   ["threads long", "/threads/t-long?panel=run"],
   ["notes", "/notes/n-1?panel=inspector"],
+  ["settings appearance", "/settings/appearance"],
+  ["settings agents", "/settings/agents"],
+  ["settings admin", "/settings/instructions"],
   ["not found", "/nothing/here"],
 ];
 const stop = await serve();

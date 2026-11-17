@@ -9,7 +9,7 @@
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import AccountSheet from "./AccountSheet.svelte";
   import Attention from "./Attention.svelte";
-  import SearchSheet from "./SearchSheet.svelte";
+  import Palette from "./Palette.svelte";
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
@@ -43,7 +43,7 @@
 </div>
 
 <AccountSheet open={account} onclose={() => (account = false)} />
-<SearchSheet open={shell.searchOpen} onclose={() => (shell.searchOpen = false)} />
+<Palette open={shell.searchOpen} onclose={() => (shell.searchOpen = false)} />
 
 <style>
   /* The bars float over one scrolling column; its fades are as tall as the bars. */

@@ -1,9 +1,9 @@
 <script lang="ts">
-  // A modal sheet: slides up from the bottom (a phone) or in from the side. A real dialog: `label` is required, focus moves in and is
+  // A modal sheet: slides up from the bottom (a phone), in from the side, or down from the top edge (`top`, the palette). A real dialog: `label` is required, focus moves in and is
   // trapped, Escape and the scrim close it, and focus returns to where it came from. The scrim dims the page; the sheet is glass.
   import type { Snippet } from "svelte";
   import Panel from "./Panel.svelte";
-  let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right"; children: Snippet } = $props();
+  let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right" | "top"; children: Snippet } = $props();
   let box = $state<HTMLElement>();
   // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
   const portal = (node: HTMLElement) => {
@@ -15,7 +15,7 @@
   $effect(() => {
     if (!open || !box) return;
     from = document.activeElement as HTMLElement | null;
-    box.focus(); // the dialog itself: announced by name, and no focus ring until the person presses Tab
+    if (!box.contains(document.activeElement)) box.focus(); // (a field inside that took focus keeps it) the dialog itself: announced by name, and no focus ring until the person presses Tab
     return () => from?.focus?.();
   });
   function onkey(e: KeyboardEvent) {
@@ -48,6 +48,9 @@
   :global(.sheet) { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
   :global(.sheet.bottom) { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
   :global(.sheet.right) { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
+  /* The palette: centred under the top edge. */
+  :global(.sheet.top) { top: 10dvh; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: top center; translate: -50% 0; max-height: 80dvh; }
+  :global(.sheet.top[data-surface]:not([data-ready])) { translate: -50% calc(var(--s-8) * -1); }
   :global(.sheet[data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
   :global(.sheet.right[data-surface]:not([data-ready])) { translate: var(--s-8) 0; }
 </style>

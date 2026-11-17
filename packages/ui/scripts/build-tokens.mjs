@@ -79,9 +79,20 @@ ${decl(t.desktop, "    ")}
 ${decl(t.dark)}
   --backdrop: ${backdrop(t.backdrop.dark)};
 }
+/* A surface may carry the other scheme's ink (a sidebar over a very dark picture in the light scheme): data-ink picks that scheme's colours for its subtree. */
+[data-ink="light"] {
+  color-scheme: light;
+  color: var(--ink);
+${decl(t.light)}
+}
+[data-ink="dark"] {
+  color-scheme: dark;
+  color: var(--ink);
+${decl(t.dark)}
+}
 @media (prefers-reduced-transparency: reduce) {
-  :root { --glass-a: 0.94; --card-tint-a: 0.96; --side-tint-a: 0.9; }
-  :root[data-scheme="dark"] { --glass-a: 0.95; --card-tint-a: 0.96; --side-tint-a: 0.9; }
+  :root { --glass-a: 0.94; }
+  :root[data-scheme="dark"] { --glass-a: 0.95; }
 }
 @media (prefers-reduced-motion: reduce) {
   :root {

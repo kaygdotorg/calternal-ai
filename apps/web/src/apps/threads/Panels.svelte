@@ -1,7 +1,8 @@
 <script lang="ts">
   // The right card's three tabs for a thread. Placeholder content on fixture data: Changes lists what the turn changed (the real list
   // comes from the turn's recorded changes), Run shows where it runs, Files is the workspace tree. `kind` picks the tab.
-  import { Badge, Icon, Row } from "@calternal/ui";
+  import { Badge } from "@calternal/ui";
+  import PanelRow from "./PanelRow.svelte";
   import type { Change, RunInfo } from "./model";
   import { client } from "./store.svelte";
   let { id, kind }: { id?: string; kind: "changes" | "run" | "files" } = $props();
@@ -20,27 +21,28 @@
 {:else if kind === "changes"}
   <ul class="list" aria-label="Changed files">
     {#each changes as c (c.path)}
-      <li><Row title={c.path.split("/").at(-1)!} sub={c.path} icon="file">
-        {#snippet trailing()}<span class="add">+{c.added}</span><span class="rem">−{c.removed}</span><Badge text={c.status} tone={c.status === "added" ? "good" : "neutral"} />{/snippet}
-      </Row></li>
+      <li><PanelRow title={c.path.split("/").at(-1)!} sub={c.path} icon="file">
+        {#snippet trailing()}<span class="n add">+{c.added}</span><span class="n rem">−{c.removed}</span><span class="st"><Badge text={c.status} tone={c.status === "added" ? "good" : "neutral"} /></span>{/snippet}
+      </PanelRow></li>
     {/each}
   </ul>
 {:else if kind === "run" && info}
-  <div class="chips" aria-label="Access"><Badge text={info.permission} tone={info.permission === "Full access" ? "warn" : "neutral"} /><Badge text={info.runsOn} tone="info" /></div>
-  <dl class="kv">
-    {#each Object.entries({ State: info.state, Permission: info.permission, "Runs on": info.runsOn, Workspace: info.workspace, Branch: info.branch, Provider: info.provider, Model: info.model, Usage: info.tokens }) as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}
-  </dl>
+  <ul class="list" aria-label="Run details">
+    {#each [["State", info.state, "pulse"], ["Permission", info.permission, "shield"], ["Runs on", info.runsOn, "terminal"], ["Workspace", info.workspace, "folder"], ["Branch", info.branch, "branch"], ["Provider", info.provider, "spark"], ["Model", info.model, "code"], ["Usage", info.tokens, "list"]] as const as [k, v, ic]}
+      <li><PanelRow icon={ic} title={v} sub={k} /></li>
+    {/each}
+  </ul>
 {:else if kind === "files"}
   <ul class="list" aria-label="Workspace files">
-    {#each TREE as [name, depth]}<li><Row title={name} icon={name.includes(".") ? "file" : "folder"} depth={depth - 1} /></li>{/each}
+    {#each TREE as [name, depth]}<li><PanelRow title={name} icon={name.includes(".") ? "file" : "folder"} depth={depth - 1} /></li>{/each}
   </ul>
 {/if}
 
 <style>
-  .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-2) var(--s-4) 0; }
-  .list { display: grid; gap: var(--s-1); }
+  .list { display: grid; gap: var(--s-3); }
   .empty { color: var(--ink-3); padding: var(--s-6); }
-  .add { color: var(--good); font-variant-numeric: tabular-nums; } .rem { color: var(--danger); font-variant-numeric: tabular-nums; }
-  .kv { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-4) var(--s-7); margin: 0; padding: var(--s-4); font-size: var(--text-ui); }
-  dt { color: var(--ink-3); } dd { margin: 0; overflow-wrap: anywhere; }
+  /* Trailing columns keep their widths so the figures and badges of different rows line up. */
+  .n { min-width: 4.4ch; text-align: end; font-variant-numeric: tabular-nums; }
+  .add { color: var(--good); } .rem { color: var(--danger); }
+  .st { min-width: 6.2em; display: inline-flex; justify-content: flex-end; }
 </style>

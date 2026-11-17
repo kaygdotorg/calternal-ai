@@ -40,7 +40,7 @@ try {
 
   // Choosing a wallpaper: from the click to the new blurred copies being in place (two canvas renders, one 24 by 14 read, the wash): the one-off cost
   // that replaces a per-frame blur. Five picks.
-  const w = await open(browser, "desktop", "light", "/settings/appearance");
+  const w = await open(browser, "desktop", "light", "/settings/appearance?sheet=1");
   await w.page.waitForSelector('[role="radiogroup"][aria-label="Wallpaper"] [role="radio"]');
   await w.page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-side").length > 0);
   const picks = [];

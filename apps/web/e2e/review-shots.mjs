@@ -33,6 +33,12 @@ try {
   await shot("switcher-card-dark", "desktop", "dark", "/threads/t-run?switcher=card");
   await shot("message-actions-hover", "desktop", "light", "/threads/t-idle", async (p) => { await p.locator(".msg.agent").nth(1).hover(); await p.waitForTimeout(300); await p.locator(".msg.agent").nth(1).getByRole("button", { name: "Reply in side chat" }).hover(); await p.waitForTimeout(700); });
   await shot("settings-app", "desktop", "light", "/settings");
-  await shot("settings-appearance-sheet", "desktop", "light", "/settings/appearance");
+  await shot("settings-appearance-sheet", "desktop", "light", "/settings/appearance?sheet=1");
+  await shot("settings-appearance-page", "desktop", "light", "/settings/appearance");
+  await shot("settings-appearance-page-dark", "desktop", "dark", "/settings/appearance");
+  await shot("settings-agents-page", "desktop", "light", "/settings/agents");
+  await shot("settings-admin-danger", "desktop", "light", "/settings/instructions");
+  await shot("settings-deeplink-blur", "desktop", "light", "/settings/appearance/appearance.blur");
+  await shot("settings-phone", "phone", "light", "/settings/agents");
   await shot("children-bar", "desktop", "light", "/threads/t-run", async (p) => { await p.locator(".kids").hover(); await p.waitForTimeout(500); });
 } finally { await browser.close(); stop(); }

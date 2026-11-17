@@ -51,7 +51,9 @@ describe("appearance settings", () => {
     expect(appearance.prefs.materials.blur).toBe(false);
     await userEvent.click(screen.getByRole("checkbox", { name: /Tint/ }));
     expect(appearance.prefs.materials).toEqual({ blur: false, dim: true, tint: false });
-    expect(document.documentElement.style.getPropertyValue("--card-tint-a")).toBe("0");
+    await userEvent.click(screen.getByRole("checkbox", { name: /Dim/ }));
+    // With every box off the surfaces are opaque paper (appearance/veil.ts).
+    expect(document.documentElement.style.getPropertyValue("--c-dim-a")).toBe("1.000");
   });
 
   it("UI size sets one scale for the whole interface", async () => {
