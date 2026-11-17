@@ -482,3 +482,6 @@ pub use state::{
 };
 mod outbox;
 pub use outbox::OfflineOutbox;
+
+mod account_input;
+pub use account_input::AccountConnection;
