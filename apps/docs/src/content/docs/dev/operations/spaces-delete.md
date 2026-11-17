@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "irreversible",
   "id": "spaces.delete",
   "description": "Delete directory records; content cleanup is a later step",
   "mutates": true
@@ -29,7 +30,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "description": "Input for members, leave and directory-record deletion.",
   "properties": {
     "space_id": {
-      "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+      "description": "Space UUID; names are never accepted in its place.",
       "type": "string"
     }
   },

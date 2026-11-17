@@ -1311,6 +1311,32 @@
         }
       }
     },
+    "ItemState": {
+      "description": "Stable state of an item address.",
+      "oneOf": [
+        {
+          "description": "The item is in its ordinary collection.",
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        {
+          "description": "The item can be restored from the space's Trash.",
+          "type": "string",
+          "enum": [
+            "in_trash"
+          ]
+        },
+        {
+          "description": "The identity is retained after permanent deletion.",
+          "type": "string",
+          "enum": [
+            "deleted"
+          ]
+        }
+      ]
+    },
     "LiveFrame": {
       "description": "SSE data payload. Entries are opaque journal values; only the server interprets them. A reset stops this subscription; reload authorized state before reconnecting.",
       "oneOf": [
@@ -2392,6 +2418,10 @@
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "tag": {
+          "description": "Exact tag name (without a leading hash), including notes with descendant tags.",
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -2906,6 +2936,14 @@
         "space_id": {
           "description": "Owning space UUID, independent of account identity.",
           "type": "string"
+        },
+        "state": {
+          "description": "Lifecycle state of a Notes address, omitted for kinds without this projection.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ItemState"
+            }
+          ]
         }
       },
       "additionalProperties": false

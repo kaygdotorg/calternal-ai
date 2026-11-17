@@ -2,7 +2,7 @@
 title: "plugin-sdk: index/variables/MAX_GENUI_SERIALIZED_BYTES"
 ---
 
-<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -16,4 +16,4 @@ title: "plugin-sdk: index/variables/MAX_GENUI_SERIALIZED_BYTES"
 
 > `const` **MAX\_GENUI\_SERIALIZED\_BYTES**: `number`
 
-Maximum serialized portable view size, in UTF-8 bytes (64 KiB).
+Maximum generated-UI source size, in UTF-8 bytes (64 KiB).

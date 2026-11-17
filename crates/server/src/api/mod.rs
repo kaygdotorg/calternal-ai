@@ -16,10 +16,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use calternal_core::{
     ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
-    NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput, NotesListResult,
-    NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput, PluginPreviewResult,
-    PluginResult, PluginState, PluginsListInput, PluginsListResult, True, canonical_request_input,
-    operation_catalog, parse_request,
+    NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesUpdateInput, OperationResponse,
+    PROTOCOL_VERSION, PluginInput, PluginPreviewResult, PluginResult, PluginState,
+    PluginsListInput, PluginsListResult, True, canonical_request_input, operation_catalog,
+    parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -37,6 +37,7 @@ use calternal_types::{AccountId, Error, SpaceId};
 
 mod dispatch;
 mod guard;
+mod notes;
 pub(crate) mod people;
 mod plugins;
 mod request_action;

@@ -73,6 +73,8 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   send(threadId: string, text: string, requestId: string): Promise<void>;
   /** Stops the running turn. */
   stop(threadId: string): Promise<void>;
+  /** Tries the last turn again (after a failure) or continues it from its last saved step (after an interruption). */
+  resume(threadId: string): Promise<void>;
   /** Renames a thread. */
   rename(threadId: string, title: string): Promise<void>;
   /** Archives a thread (and its finished children): it leaves the list and keeps its file. */

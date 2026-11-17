@@ -17,15 +17,6 @@ export const FIXTURE_SPACES: SpaceInfo[] = [
   { id: "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b22", name: "Infra" },
 ];
 
-/**
- * TEMPORARY: a new account has no space until the server creates the personal one itself at sign-up (announced). Until then the first load makes it ("Personal", one request, once). When the
- * server does it, delete this function and its one call in `Spaces.load`.
- */
-async function withPersonal<T extends { id: string; name: string; owner: string; created: unknown }>(all: T[]): Promise<T[]> {
-  if (all.length) return all;
-  return [(await server.operate<{ space: T }>("spaces.create", { name: "Personal" })).space];
-}
-
 class Spaces {
   list = $state<SpaceInfo[]>(FIXTURE_SPACES);
   currentId = $state(read());
@@ -43,17 +34,14 @@ class Spaces {
   setList(l: SpaceInfo[]): void { if (l.length) this.list = l; }
   private loading: Promise<void> | null = null;
   /**
-   * Reads the signed-in person's spaces from the real server (`spaces.list`; fixtures stay when it is not selected). The personal space is the one this account owns that was
-   * created first, and comes first in the list. A failure keeps what is shown and is tried again on the next call. One request; later callers share it.
+   * Reads the signed-in person's spaces from the real server (`spaces.list`; fixtures stay when it is not selected). The personal space is the one the server marks (`personal: true`) and comes first in the list. A failure keeps what is shown and is tried again on the next call. One request; later callers share it.
    */
   load(): Promise<void> {
     if (!serverMode()) return Promise.resolve();
     this.loading ??= (async () => {
-      let [{ spaces: all }, me] = await Promise.all([server.spaces.list(), fetch("/api/v1/auth/me", { headers: server.authHeaders() }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ user?: { id?: string } } | null>]);
-      const mine = me?.user?.id;
-      all = await withPersonal(all);
+      const { spaces: all } = await server.spaces.list();
       const byAge = [...all].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : 0));
-      const personal = byAge.find((s) => (s as { personal?: boolean }).personal) ?? byAge.find((s) => s.owner === mine); // the server marks it (`personal: true`); owner-and-oldest is the stand-in until that is in dev
+      const personal = byAge.find((s) => s.personal);
       this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name })));
     })().catch((e) => { this.loading = null; throw e; });
     return this.loading;

@@ -8,7 +8,7 @@ title: "calternal machines code"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `machines code (--pool \| --account UUID) --data-dir DIR [--minutes N]` | Issue a one-time machine enrollment code (default 60 minutes). | `code`, `owner`, `expires` (local), then two sentences on using it. | `code`, `owner` (`pool` or `account:<uuid>`), `expires_at` |
+| `machines code (--pool \| --account UUID) --appdata DIR --userdata-ssd DIR --userdata-hdd DIR [--minutes N]` | Issue a one-time machine enrollment code (default 60 minutes). | `code`, `owner`, `expires` (local), then two sentences on using it. | `code`, `owner` (`pool` or `account:<uuid>`), `expires_at` |
 
 ## JSON data shape
 

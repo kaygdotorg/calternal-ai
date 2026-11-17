@@ -171,6 +171,29 @@ earlier lane evidence. Dev-01 owns the final workspace gate with Podman.
 | `cargo fmt --all --check` and `cargo fmt --manifest-path tests/conformance/Cargo.toml --check` | Passed. |
 | `node scripts/docs-site/generate.mjs` | Generated 271 pages. The checked-in CLI reference includes the merged command text. |
 
+### Notes merge verification
+
+The lane merged `origin/dev` at `43ec35e`. The CLI renderers, discovery
+catalog, and authorization matrix include both People and Notes. The notes
+merge adds no auth tables, so the combined auth schema stays at version 8.
+The following commands ran on dev-02 with `nix develop -c`, using the same
+target and profile settings as the previous run.
+
+| Command | Result |
+| --- | --- |
+| `cargo run --locked -j6 -p calternal-core --bin export-contract` and the same command with `-- --check` | Regenerated the merged artifacts and passed the drift check. |
+| `npm run build:plugins` | Passed before Cargo tests. |
+| `node scripts/docs-site/generate.mjs` and the same command with `--check` | Generated and verified 289 pages. |
+| `node --test scripts/docs-site/publication.test.mjs` | 2 passed. |
+| `cargo build --locked -j6 -p calternal-server --features test-plugins` | Passed. |
+| `CARGO_TARGET_DIR="$PWD/target" CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1` | 71 passed. |
+| `cargo test --locked -j6 -p calternal-auth -p calternal-recovery` | 124 passed. |
+| `cargo test --locked -j6 -p calternal-core` | 7 passed. |
+| `cargo test --locked -j6 -p calternal-cli --test people --test requests` | Both passed. |
+| `cargo test --locked -j6 -p calternal-server --features test-plugins --test authz_matrix --test spaces_matrix --test requests_review --test cli_golden` | 26 passed. |
+| `npm run test:integration` and `npm run test:plugins` | Passed. One opt-in provider case skipped. |
+| `cargo fmt --all --check` and `cargo fmt --manifest-path tests/conformance/Cargo.toml --check` | Passed. |
+
 ## Remaining decisions
 
 - **Group-held server authority** needs a grant mechanism. Local operator

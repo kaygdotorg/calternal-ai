@@ -9,7 +9,7 @@
  *   - `markdown`: a small frontmatter, then messages: `<!-- message:<uuid> role:person|agent time:<rfc3339> [turn:<job>] [actor:<..>] -->` text `<!-- /message -->`.
  * Message text is untrusted display text: nothing here reads access, roles or instructions from it.
  */
-import type { Message, Permission, ProviderId, ThreadState, ThreadSummary } from "../apps/threads/model";
+import type { Message, Permission, ProviderId, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
 
 /** The thread metadata the server keeps (the fields this client reads). */
 export interface WireMetadata {
@@ -54,6 +54,13 @@ export function stateOfTurn(label: string | undefined): ThreadState {
   }
 }
 
+/** What a turn label asks of the person: a failed turn can be tried again, an interrupted one resumed. (The reason and the machine are not in the list yet: plain words stand in.) */
+function noticeOf(turn: string | undefined): { notice?: ThreadNotice } {
+  if (turn === "failed") return { notice: { kind: "failed", reason: "The provider did not finish the turn" } };
+  if (turn === "interrupted") return { notice: { kind: "interrupted", machine: "the machine" } };
+  return {};
+}
+
 /** Milliseconds since the epoch of an RFC 3339 time, or `fallback`. */
 const ms = (t: string | undefined, fallback: number): number => { const v = t ? Date.parse(t) : NaN; return Number.isFinite(v) ? v : fallback; };
 
@@ -73,6 +80,7 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: s
     // The server picks the machine itself (no operation names it): say so rather than show a blank.
     runsOn: known.runsOn ?? { machine: "Automatic", mode: "sandboxed" },
     messageCount: md.message_count ?? 0,
+    ...noticeOf(turn),
   };
 }
 

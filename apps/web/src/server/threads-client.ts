@@ -243,6 +243,13 @@ export class ServerThreads implements ThreadsClient {
     await this.pull(id, true);
   }
 
+  /** Tries the last turn again, or continues an interrupted one: `agent.resume` on the thread's last job (`retry_failed` for a failure). */
+  async resume(id: string): Promise<void> {
+    const t = this.turns.get(id);
+    if (!t?.job) throw new Error("this page does not know which turn to resume; open the thread again");
+    await this.server.operate("agent.resume", { space_id: this.space(), thread_id: id, job_id: t.job, retry_failed: t.state === "failed" });
+  }
+
   async createThread(title: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
     const input: Record<string, unknown> = { space_id: this.space(), title };
     if (o.provider) input.provider = providerPlugin(o.provider);

@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "irreversible",
   "id": "secrets.revoke",
   "description": "Destroy a personal secret or request; space management requires secrets.manage",
   "mutates": true

@@ -116,6 +116,7 @@ pub fn is_known_operation(operation: &str) -> bool {
         .any(|(id, _, _)| *id == operation)
         || crate::PeopleOperation::from_id(operation).is_some()
         || is_account_input_operation(operation)
+        || crate::note_operation(operation).is_some()
         || request_operation(operation).is_some()
         || matches!(
             operation,
@@ -123,7 +124,6 @@ pub fn is_known_operation(operation: &str) -> bool {
                 | "spaces.create"
                 | "spaces.leave"
                 | "spaces.delete"
-                | "notes.list"
                 | "notes.get"
                 | "resolve"
                 | "notes.create"
@@ -184,6 +184,9 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
     if let Some(people) = crate::PeopleOperation::from_id(operation) {
         return people.validate(input);
     }
+    if let Some(op) = crate::note_operation(operation) {
+        return op.validate(input);
+    }
     if let Some(row) = request_operation(operation) {
         return row.validate(input);
     }
@@ -217,10 +220,6 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
             let i: ResolveInput = decode(input)?;
             validate_id(&i.kind)?;
             resource("", &i.id)
-        }
-        "notes.list" => {
-            let i: NotesListInput = decode(input)?;
-            space(&i.space_id)
         }
         "jobs.get" | "jobs.cancel" => {
             let i: JobInput = decode(input)?;
@@ -417,7 +416,6 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             "Delete directory records; content cleanup is a later step",
             true,
         ),
-        entry::<NotesListInput, NotesListResult>("notes.list", "List up to 100 notes", false),
         entry::<ResolveInput, ResolveResult>(
             "resolve",
             "Resolve an item address with current access",
@@ -478,6 +476,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         crate::PeopleOperation::ALL
             .iter()
             .map(|operation| operation.describe()),
+    );
+    catalog.extend(
+        crate::NOTE_OPERATIONS
+            .iter()
+            .map(crate::NoteOperation::describe),
     );
     catalog.extend(account_input_catalog());
     catalog.extend(REQUEST_OPERATIONS.iter().map(RequestOperation::description));

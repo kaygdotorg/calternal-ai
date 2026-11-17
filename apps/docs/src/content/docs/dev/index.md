@@ -7,6 +7,7 @@ title: "Developer reference"
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
 - [Operations](./operations/)
+- [Notes operations](./notes-operations/)
 - [Manifest schema](./manifest/)
 - [Plugin SDK](./typescript/plugin-sdk/)
 - [GenUI API](./typescript/genui/)

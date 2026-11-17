@@ -20,6 +20,7 @@
 </script>
 
 <main class="wrap">
+  <p class="mark" aria-hidden="true">Calternal</p>
 {#if offline}
   <Card label="Server unreachable" variant="solid" class="card">
     <div class="in">
@@ -58,7 +59,8 @@
 </main>
 
 <style>
-  .wrap { min-height: 100dvh; display: grid; place-items: center; padding: var(--s-6); }
+  .wrap { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: var(--s-6); padding: var(--s-6); background: linear-gradient(rgb(var(--tint, 247 247 247) / 0.55) 0 0), var(--wall-cheap, none) center / cover no-repeat; }
+  .mark { font-family: var(--font-brand, inherit); font-size: var(--text-title); font-weight: var(--strong-weight); color: var(--ink); }
   .wrap :global(.card) { width: min(26rem, 100%); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }

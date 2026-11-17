@@ -24,5 +24,8 @@ pub mod threads;
 /// HTTP people, group and invitation commands.
 pub mod people;
 
+/// Structured Notes, tags and Trash command adapters.
+pub mod notes;
+
 /// Account requests and trusted person decisions.
 pub mod requests;

@@ -79,3 +79,16 @@ lock, the cache map lock covers lookups only, and journal calls run on the calle
 thread.
 
 Threads reuse the same Markdown kind storage and guarded move outbox. `admit_item` fences a native engine admission against the current item head; `trash` runs a bounded lifecycle guard before moving an item to its space-local Trash. Callbacks cannot re-enter content.
+
+## Indexed discovery and lifecycle
+
+The current head keeps rebuildable label and link projections. Per-space SQL
+indexes provide prefix and name lookups without reading body bytes. A move
+between live placement and Trash changes index membership in the same
+transaction as the revision and outbox intent. A path-and-link edit stages
+changed same-kind sources atomically and finishes their recoverable placement
+before publishing the root receipt. Purge removes the guarded Trash file and
+its versions while retaining the item identity in the selected space.
+
+See [Notes operations](../../docs/notes-operations.md) for the native
+plugin's bounds and retention.

@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "read",
   "id": "resolve",
   "description": "Resolve an item address with current access",
   "mutates": false
@@ -55,6 +56,34 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
+  "definitions": {
+    "ItemState": {
+      "description": "Stable state of an item address.",
+      "oneOf": [
+        {
+          "description": "The item is in its ordinary collection.",
+          "enum": [
+            "active"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The item can be restored from the space's Trash.",
+          "enum": [
+            "in_trash"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The identity is retained after permanent deletion.",
+          "enum": [
+            "deleted"
+          ],
+          "type": "string"
+        }
+      ]
+    }
+  },
   "description": "Current owning space and effective capabilities for a visible address.",
   "properties": {
     "access": {
@@ -75,6 +104,14 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     "space_id": {
       "description": "Owning space UUID, independent of account identity.",
       "type": "string"
+    },
+    "state": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/ItemState"
+        }
+      ],
+      "description": "Lifecycle state of a Notes address, omitted for kinds without this projection."
     }
   },
   "required": [

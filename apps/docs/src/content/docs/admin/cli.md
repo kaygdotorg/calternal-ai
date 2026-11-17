@@ -104,6 +104,22 @@ with `--cursor`. For a group's member continuation, also pass `--group GROUP`.
 The invite retention setting is `CALTERNAL_INVITE_RETENTION_DAYS`, seven days by
 default from expiry, redemption, or revocation.
 
+| Command | Purpose | Human output | Data |
+|---|---|---|---|
+| `notes list --space UUID [--tag TAG]` | List active notes, optionally under a tag. | Note table | `notes[]` |
+| `notes lookup --space UUID PREFIX` | Find live notes by title prefix. | Note table with link target | `notes[]` with `link_target` |
+| `notes rename ID --base-revision REVISION --title TITLE` | Update heading, filename and links. | Note fields and Markdown | `note` |
+| `notes delete ID` | Move a note to Trash. | Note fields and state | `note` |
+| `notes restore ID` | Restore a note. | Note fields and state | `note` |
+| `tags list --space UUID` | List tags and note counts. | Tag and count table | `tags[]` |
+| `tags lookup --space UUID PREFIX` | Find tags by name prefix. | Tag and count table | `tags[]` |
+| `trash list --space UUID` | List trashed notes. | Note table with deletion time | `notes[]` |
+| `trash purge ID` | Permanently delete a note in Trash. | ID and deletion state | `id`, `state` |
+
+These commands accept `--base-url`, `--token-file`, `--request-id` and
+`--json`. See [Notes operations](/docs/dev/notes-operations/) for bounds, permission
+checks and Trash retention.
+
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
 | `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |
