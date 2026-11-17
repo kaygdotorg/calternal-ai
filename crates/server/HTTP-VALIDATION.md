@@ -76,8 +76,8 @@ Ignored, with source assertions retained:
    available. The source's exact retry assertions remain ignored rather than
    removed or weakened. Durable protected account receipts are unfinished.
 
-Three source journal/websocket login cases are unported: this server has no
-private account feed/websocket. They are not counted as passing or ignored
+Three source journal/websocket login cases remain unported: the new private
+input SSE feed does not publish installation/people/password changes. They are not counted as passing or ignored
 executable ports. No empty test stand-ins were introduced.
 
 Nine additional tests cover passkey management/last-key protection, account/

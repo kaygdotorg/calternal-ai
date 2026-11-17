@@ -31,6 +31,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )*};
     }
     emit!(
+        DraftKey,
+        DraftSaveInput,
+        AccountInputList,
+        PendingInput,
+        PendingQueueInput,
+        AccountInputRecord,
+        AccountInputResult,
+        AccountInputListResult,
+        AccountFrame,
         LiveSubscription,
         LiveFrame,
         ManifestCapability,

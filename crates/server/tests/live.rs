@@ -45,6 +45,7 @@ impl Fixture {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let state = Arc::new(AppState {
+            inputs: store.account_inputs(),
             store: Mutex::new(store),
             tokens,
             registry: Registry::load(std::path::Path::new("/missing")),

@@ -37,6 +37,7 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
     let store = Store::open(dir.path()).unwrap();
     let router = api::router(
         Arc::new(AppState {
+            inputs: store.account_inputs(),
             store: Mutex::new(store),
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),

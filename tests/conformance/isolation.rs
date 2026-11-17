@@ -23,6 +23,7 @@ mod jobs_cases;
 
 #[path = "live_cases.rs"]
 mod live_cases;
+mod drafts_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
@@ -582,6 +583,8 @@ async fn all_operations_hide_foreign_ids() {
     catalog.ok();
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
+    // Private account input is exercised with real sessions in drafts_cases.rs.
+    covered.extend(["drafts.save","drafts.list","drafts.get","drafts.delete","pending.queue","pending.edit","pending.list","pending.cancel","pending.confirm","pending.submit"]);
     covered.sort_unstable();
     let mut registered: Vec<_> = catalog.body["operations"]
         .as_array()

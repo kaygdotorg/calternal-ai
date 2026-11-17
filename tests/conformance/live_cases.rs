@@ -1,13 +1,13 @@
 //! Live journal isolation over TCP with real signed-in account sessions.
 use super::*;
-struct Live { response: reqwest::Response, buffer: Vec<u8> }
+pub(super) struct Live { pub(super) response: reqwest::Response, pub(super) buffer: Vec<u8> }
 impl Live {
     async fn open(f:&Fixture,who:usize,subscriptions:Value)->Result<Self,(u16,Value)> {
         let response=f.client.get(format!("{}/api/v1/live",f.base)).header("host","localhost:18080").header("origin",ORIGIN).header("cookie",&f.cookies[who]).query(&[("subscriptions",subscriptions.to_string())]).send().await.unwrap();
         if response.status()!=200 {return Err((response.status().as_u16(),response.json().await.unwrap()));}
         Ok(Self{response,buffer:Vec::new()})
     }
-    async fn next(&mut self)->Option<Value> {
+    pub(super) async fn next(&mut self)->Option<Value> {
         loop {
             if let Some(i)=self.buffer.windows(2).position(|w|w==b"\n\n") {
                 let bytes:Vec<_>=self.buffer.drain(..i+2).collect();

@@ -37,6 +37,7 @@ async fn disable_during_invocation_discards_result() {
     let data = root.0.join("data");
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
+        inputs: calternal_server::account_input::Inputs::new(&data, Default::default()),
         store: Mutex::new(Store::open(&data).unwrap()),
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),
