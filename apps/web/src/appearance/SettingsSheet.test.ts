@@ -9,7 +9,7 @@ import type { Wallpaper, WallpaperLibrary } from "./library";
 const w = (id: string, name: string) => ({ id, name, source: "builtin" as const, url: `blob:${id}`, thumb: `blob:${id}` });
 const saved: Wallpaper[] = [];
 const library: WallpaperLibrary = {
-  list: async () => [w("dune", "Dune"), w("aurora", "Aurora"), ...saved],
+  list: async () => [w("golden-field", "Golden field"), w("storm-sea", "Storm"), ...saved],
   upload: async (f) => ({ ...w("up-1", f.name), source: "upload" as const }),
   remove: async () => {},
   search: async (q) => (q ? [{ id: `${q}:0`, description: `${q} photo`, thumb: "blob:t", credit: { author: "A. Person", link: "https://unsplash.com/" } }] : []),
@@ -29,8 +29,8 @@ describe("appearance settings", () => {
     render(SettingsSheet, { open: true, onclose() {} });
     const group = screen.getByRole("radiogroup", { name: "Wallpaper" });
     expect(within(group).getByRole("radio", { name: /Automatic/ }).getAttribute("aria-checked")).toBe("true");
-    await userEvent.click(within(group).getByRole("radio", { name: "Aurora" }));
-    expect(appearance.prefs.wallpaperId).toBe("aurora");
+    await userEvent.click(within(group).getByRole("radio", { name: "Storm" }));
+    expect(appearance.prefs.wallpaperId).toBe("storm-sea");
     await userEvent.click(within(group).getByRole("radio", { name: "No wallpaper" }));
     expect(appearance.prefs.wallpaperId).toBeNull();
   });

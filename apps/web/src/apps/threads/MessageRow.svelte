@@ -22,7 +22,7 @@
         {:else if b.type === "card"}<GenUi source={b.source} />
         {:else}
           {@const t = store.get(b.threadId)}
-          {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" mini /><span>{t.title}</span><small>{t.state}</small></a>{/if}
+          {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" inline /><span>{t.title}</span><small>{t.state}</small></a>{/if}
         {/if}
       {/each}
     </div>

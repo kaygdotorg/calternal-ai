@@ -12,7 +12,7 @@ export type AccentMode = "default" | "wallpaper" | "custom";
 
 /** Everything the settings sheet edits. */
 export interface Prefs {
-  /** A library id, `"auto"` (Dune in light, Aurora in dark) or null for none. */
+  /** A library id, `"auto"` (Golden field in light, Storm in dark) or null for none. */
   wallpaperId: string | null;
   /** The sidebars' copy of the wallpaper: blur radius in px, and the strength of the tint over it (percent). */
   side: { blur: number; tint: number };
@@ -55,7 +55,7 @@ class Appearance {
 
   /** The chosen wallpaper, if the library has it. */
   get wallpaper(): Wallpaper | undefined {
-    const id = this.prefs.wallpaperId === "auto" ? (currentScheme() === "dark" ? "aurora" : "dune") : this.prefs.wallpaperId;
+    const id = this.prefs.wallpaperId === "auto" ? (currentScheme() === "dark" ? "storm-sea" : "golden-field") : this.prefs.wallpaperId;
     return this.wallpapers.find((w) => w.id === id);
   }
 

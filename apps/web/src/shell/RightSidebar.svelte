@@ -17,7 +17,7 @@
     {#key panel.id}<panel.component {id} {...panel.props} />{/key}
   </div>
   {#if !shell.narrow}
-    <div class="tabs"><Capsule label="{app.name} panels" items={app.panels.map((p) => ({ id: p.id, label: p.label, icon: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
+    <div class="tabs"><Capsule label="{app.name} panels" morph={app.panels.length > 3} items={app.panels.map((p) => ({ id: p.id, label: p.label, icon: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
   {/if}
 </div>
 

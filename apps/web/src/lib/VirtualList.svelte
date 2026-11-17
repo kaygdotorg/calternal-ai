@@ -18,8 +18,10 @@
     label,
     row,
     startAtBottom = true,
+    topInset = 0,
+    bottomInset = 0,
     onrange,
-  }: { onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
+  }: { topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
 
   let scroller = $state<HTMLDivElement>();
   let heights = new Float64Array(0);
@@ -43,7 +45,7 @@
 
   function update() {
     if (!scroller) return;
-    const top = scroller.scrollTop;
+    const top = Math.max(0, scroller.scrollTop - topInset);
     const f = tree.find(Math.max(0, top - overscan));
     const l = Math.min(count - 1, tree.find(top + scroller.clientHeight + overscan));
     if (f !== first || l + 1 !== last) {
@@ -73,7 +75,7 @@
       heights[i] = h;
       tree.add(i, d);
       changed = true;
-      if (tree.prefix(i) < top && !stuck) shiftAbove += d;
+      if (tree.prefix(i) + topInset < top && !stuck) shiftAbove += d;
     }
     if (!changed) return;
     total = tree.prefix(count);
@@ -93,7 +95,7 @@
 
   /** Scrolls so row `i` is at the top. */
   export function scrollToIndex(i: number) {
-    if (scroller) scroller.scrollTop = tree.prefix(i);
+    if (scroller) scroller.scrollTop = tree.prefix(i) + topInset;
   }
   /** Scrolls to the end and keeps following it while the list grows. */
   export function scrollToBottom() {
@@ -108,7 +110,7 @@
       const wasEmpty = heights.length === 0;
       resize(n);
       if (wasEmpty) stuck = startAtBottom;
-      if (wasEmpty && startAtBottom && scroller) scroller.scrollTop = total;
+      if (wasEmpty && startAtBottom && scroller) scroller.scrollTop = total + topInset + bottomInset;
       update();
     });
   });
@@ -120,9 +122,9 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div bind:this={scroller} class="scroller" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
-  <div class="sizer" style:height="{total}px">
-    <div class="window" style:transform="translateY({offset}px)">
+<div bind:this={scroller} class="scroller" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
+  <div class="sizer" style:height="{total + topInset + bottomInset}px">
+    <div class="window" style:transform="translateY({offset + topInset}px)">
       {#each indices as i (i)}
         <div class="row" data-i={i} role="article" aria-posinset={i + 1} aria-setsize={count} use:measure>{@render row(i)}</div>
       {/each}
@@ -131,7 +133,10 @@
 </div>
 
 <style>
-  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; mask-image: linear-gradient(to bottom, transparent 0, #000 var(--s-5), #000 calc(100% - var(--s-5)), transparent 100%); }
+  /* Rows fade out under the floating header and composer, progressively and along an eased curve (extra stops, so there is no visible edge and no
+     opaque strip): content is already faint where it meets the bar's text, as in the owner's calternal-ui edge fade. */
+  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict;
+    mask-image: linear-gradient(to bottom, transparent 0, rgb(0 0 0 / 0.06) calc(var(--fade-t) * 0.45), rgb(0 0 0 / 0.28) calc(var(--fade-t) * 0.68), rgb(0 0 0 / 0.68) calc(var(--fade-t) * 0.86), #000 var(--fade-t), #000 calc(100% - var(--fade-b)), rgb(0 0 0 / 0.68) calc(100% - var(--fade-b) * 0.86), rgb(0 0 0 / 0.28) calc(100% - var(--fade-b) * 0.68), rgb(0 0 0 / 0.06) calc(100% - var(--fade-b) * 0.45), transparent 100%); }
   .sizer { position: relative; width: 100%; }
   .window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .row { contain: layout style; }

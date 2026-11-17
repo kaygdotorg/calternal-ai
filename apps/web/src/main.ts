@@ -1,12 +1,13 @@
 import { mount } from "svelte";
 import "@calternal/ui/styles";
-import { currentScheme, initScheme, loadFonts, registerFonts } from "@calternal/ui";
+import { currentScheme, initInputModality, initScheme, loadFonts, registerFonts } from "@calternal/ui";
 import App from "./App.svelte";
 import { interceptLinks } from "./lib/route.svelte";
 import { shell } from "./shell/shell.svelte";
 import { appearance } from "./appearance/prefs.svelte";
 
 registerFonts(import.meta.env.BASE_URL);
+initInputModality();
 initScheme();
 shell.start();
 interceptLinks();

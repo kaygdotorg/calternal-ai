@@ -40,7 +40,7 @@
   <section class="bar" aria-label="Waiting on you" data-kind={cur.kind} use:adaptive>
     <Glass dense />
     <header>
-      <span class="kind"><Icon name={ICON[cur.kind]} mini />{NAME[cur.kind]}</span>
+      <span class="kind"><Icon name={ICON[cur.kind]} inline />{NAME[cur.kind]}</span>
       {#if requests.length > 1}
         <span class="pager">
           <IconButton icon="back" label="Previous request" disabled={index === 0} onclick={() => (index = Math.max(0, index - 1))} />
@@ -57,7 +57,7 @@
           <GenUi source={cur.form} bind:values={formState} />
           <footer><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></footer>
         {:else if cur.kind === "approval"}
-          <div class="trusted"><Icon name="lock" mini /> Drawn by Calternal. An agent can’t answer this for you.</div>
+          <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. An agent can’t answer this for you.</div>
           <h2>{cur.title}</h2>
           <p>{cur.action}</p>
           <pre aria-label="The command"><code>{cur.command}</code></pre>
@@ -67,7 +67,7 @@
             <Button variant="primary" text="Allow once" onclick={() => answer({ kind: "approval", decision: "once" })} />
           </footer>
         {:else}
-          <div class="trusted"><Icon name="lock" mini /> Drawn by Calternal. The agent gets a handle, never the value.</div>
+          <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. The agent gets a handle, never the value.</div>
           <h2>{cur.label}</h2>
           <p id="why">{cur.why}</p>
           <div class="meta"><Badge text={cur.scope === "personal" ? "Personal" : "Shared with the space"} tone="info" /><Badge text={cur.required ? "Required" : "Optional"} /><code>{cur.name}</code></div>

@@ -16,16 +16,16 @@
 
 <div class="steps" class:open>
   <button type="button" class="head" aria-expanded={open} aria-controls="{uid}-list" onclick={() => (open = !open)}>
-    <span class="chips" aria-hidden="true">{#each kinds as k, i}<span class="chip" style:--i={i}><Icon name={ICON[k]} mini /></span>{/each}</span>
+    <span class="chips" aria-hidden="true">{#each kinds as k, i}<span class="chip" style:--i={i}><Icon name={ICON[k]} inline /></span>{/each}</span>
     <span class="sum" class:shimmer={running}>{running ? "Working" : `Worked for ${worked}`} · {steps.length} {steps.length === 1 ? "tool" : "tools"}</span>
-    <span class="chev"><Icon name="chevron" mini /></span>
+    <span class="chev"><Icon name="chevron" inline /></span>
   </button>
   <div class="list" id="{uid}-list" inert={!open}>
     <ol>
       {#each steps as s (s.id)}
         <li>
           <button type="button" class="step" aria-expanded={openStep === s.id} onclick={() => (openStep = openStep === s.id ? null : s.id)}>
-            <span class="ic"><Icon name={ICON[s.kind]} mini /></span>
+            <span class="ic"><Icon name={ICON[s.kind]} inline /></span>
             <span class="t">{s.title}</span><code>{s.detail}</code>
             <span class="ms">{s.status === "failed" ? "failed" : `${(s.ms / 1000).toFixed(1)} s`}</span>
           </button>

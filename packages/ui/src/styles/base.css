@@ -17,9 +17,18 @@ ul, ol { padding: 0; list-style: none; }
 code, kbd, pre { font-family: var(--font-mono); }
 ::selection { background: color-mix(in oklab, var(--accent-base) 26%, transparent); }
 
-/* One focus ring for every interactive thing: visible on keyboard focus, silent on pointer focus. */
+/* One focus ring for every interactive thing, drawn only for keyboard focus. `:focus-visible` alone is not enough: it always matches in a text field,
+   so a mouse click in the composer would draw the ring. lib/input.ts keeps `data-input` on <html>; with a pointer in use no ring is ever drawn. */
 :focus { outline: none; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: inherit; }
+:root[data-input="key"] :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: inherit; }
+
+/* Controls animate when used by pointer or touch, never from the keyboard: with the keyboard in use every transition and animation ends at once, so
+   Tab, Enter and typing apply the end state without the press or hover motion. */
+:root[data-input="key"] *, :root[data-input="key"] *::before, :root[data-input="key"] *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation-duration: 0s !important; animation-delay: 0s !important; }
+
+/* Chrome is not text: only message text, code and fields can be selected, so no stray handle or highlight appears on a title, a row or a button. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-select: text; user-select: text; }
 
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 

@@ -149,7 +149,7 @@
         <h2 id="s-font">Fonts</h2>
         {#each (["ui", "chat", "code"] as const) as r}
           <Row tall title={ROLE[r]} sub={label(r)} icon="notes" onclick={() => { view = r; source = A.prefs.fonts[r].source; fq = ""; error = ""; }}>
-            {#snippet trailing()}<Icon name="chevron" mini />{/snippet}
+            {#snippet trailing()}<Icon name="chevron" inline />{/snippet}
           </Row>
         {/each}
         <p class="note">Google Sans Flex and Maple Mono are the defaults. A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>
@@ -169,7 +169,7 @@
           <button type="button" role="radio" aria-checked={on} class="frow" onclick={() => pick(view as FontRole, f)}>
             <span class="fam" style:font-family={f.ready ? (f.source === "system" ? "inherit" : `"${f.family}"`) : "inherit"}>{f.family}</span>
             <span class="src">{f.ready ? SOURCE_LABEL[f.source] : "needs the server"}</span>
-            {#if on}<Icon name="check" mini />{/if}
+            {#if on}<Icon name="check" inline />{/if}
           </button>
         {:else}
           <p class="note">{source === "upload" ? "No fonts of your own yet." : "Nothing matches."}</p>

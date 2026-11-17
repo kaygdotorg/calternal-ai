@@ -11,7 +11,7 @@
   <div role="radiogroup" aria-labelledby="ro-m" class="machines">
     {#each machines as m (m)}
       <button type="button" role="radio" aria-checked={value.machine === m} class="mrow" onclick={() => onchange({ ...value, machine: m })}>
-        <Icon name="terminal" /><span>{m}</span>{#if value.machine === m}<Icon name="check" mini />{/if}
+        <Icon name="terminal" /><span>{m}</span>{#if value.machine === m}<Icon name="check" inline />{/if}
       </button>
     {/each}
   </div>

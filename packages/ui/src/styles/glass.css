@@ -17,3 +17,8 @@
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass { background: color-mix(in oklab, var(--paper) 90%, transparent); }
 }
+
+/* A floating surface appears only once its material is ready (lib/ready.ts): hidden and a little small until `data-ready`, then it eases in. The
+   transition names its properties (never `all`), uses the spring token, and ends at once under the keyboard or reduced motion. */
+[data-surface] { transition: opacity var(--dur-base) var(--ease-out), scale var(--dur-slow) var(--spring), translate var(--dur-slow) var(--spring); transform-origin: var(--origin, center); }
+[data-surface]:not([data-ready]) { opacity: 0; scale: var(--enter-scale); pointer-events: none; }

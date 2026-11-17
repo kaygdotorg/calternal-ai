@@ -16,6 +16,8 @@ export { ICONS, type IconName } from "./icons";
 export { adaptive, backdropRange, behindLuminance, material, luminance, scheduleMaterial, setBackdropField, washFor, type Field } from "./lib/material";
 export { initScheme, applyScheme, currentScheme, currentForm, schemePreference, onScheme, type Scheme, type SchemePreference, type Form } from "./lib/theme";
 export { roving } from "./lib/roving";
+export { ready } from "./lib/ready";
 export { loadFonts, fontsReady, familyFor, registerFonts } from "./lib/fonts";
 export { default as Menu } from "./components/Menu.svelte";
 export type { MenuItem } from "./components/Menu.svelte";
+export { initInputModality, modality, type Modality } from "./lib/input";

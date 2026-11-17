@@ -5,7 +5,7 @@
  * and "Unsplash" results are procedurally generated pictures with fake credits. Fixture-only; nothing here ships with the real client.
  */
 
-/** One picture the person can use. `url` is something an `<img>` can load (a blob URL here; a same-origin file from the real server). */
+/** One picture the person can use. `url` is something an `<img>` can load (a same-origin file or a blob URL). A credit is shown wherever the picture is chosen. */
 export interface Wallpaper {
   id: string;
   name: string;
@@ -42,17 +42,22 @@ export interface WallpaperLibrary {
 interface Blob2 { x: number; y: number; r: number; c: string }
 interface Def { id: string; name: string; base: [string, string]; blobs: Blob2[] }
 
-/** The built-in set: soft, saturated colour fields, each with a light and a dark region so both schemes have something to work with. */
-const BUILTIN: Def[] = [
-  { id: "dune", name: "Dune", base: ["#f3d9b8", "#e8a77a"], blobs: [{ x: 0.2, y: 0.25, r: 0.55, c: "#fff1d6" }, { x: 0.8, y: 0.7, r: 0.6, c: "#d97c5a" }, { x: 0.55, y: 1, r: 0.5, c: "#8e4a3b" }, { x: 0.95, y: 0.1, r: 0.35, c: "#f7c58f" }] },
-  { id: "lagoon", name: "Lagoon", base: ["#bfe6e4", "#4aa3b0"], blobs: [{ x: 0.15, y: 0.2, r: 0.5, c: "#eafbf5" }, { x: 0.75, y: 0.35, r: 0.55, c: "#2f7fa3" }, { x: 0.4, y: 0.95, r: 0.6, c: "#1d4f6e" }, { x: 0.95, y: 0.9, r: 0.35, c: "#7ed0c0" }] },
-  { id: "aurora", name: "Aurora", base: ["#1d2b4f", "#3a2a6b"], blobs: [{ x: 0.25, y: 0.3, r: 0.5, c: "#41d1b0" }, { x: 0.7, y: 0.2, r: 0.5, c: "#7b5bd6" }, { x: 0.55, y: 0.8, r: 0.55, c: "#2b6fc4" }, { x: 0.05, y: 0.9, r: 0.35, c: "#0f1630" }] },
-  { id: "ember", name: "Ember", base: ["#f2c6a0", "#d96a4a"], blobs: [{ x: 0.2, y: 0.8, r: 0.55, c: "#f6a06a" }, { x: 0.75, y: 0.25, r: 0.5, c: "#c43d4a" }, { x: 0.5, y: 0.5, r: 0.4, c: "#ffd9a8" }, { x: 1, y: 1, r: 0.4, c: "#6b2a3a" }] },
-  { id: "orchid", name: "Orchid", base: ["#efd6f0", "#b58ad8"], blobs: [{ x: 0.2, y: 0.2, r: 0.5, c: "#fbeaf8" }, { x: 0.8, y: 0.6, r: 0.55, c: "#8b5fc7" }, { x: 0.4, y: 0.9, r: 0.5, c: "#e58fc0" }, { x: 0.95, y: 0.05, r: 0.3, c: "#a9c7f2" }] },
-  { id: "moss", name: "Moss", base: ["#d7e3c3", "#7f9f6a"], blobs: [{ x: 0.3, y: 0.2, r: 0.5, c: "#f1f4dc" }, { x: 0.75, y: 0.65, r: 0.55, c: "#4f7a4a" }, { x: 0.15, y: 0.9, r: 0.45, c: "#a9c47b" }, { x: 0.9, y: 0.1, r: 0.3, c: "#e9d9a4" }] },
-  { id: "slate", name: "Slate", base: ["#3b4252", "#1f232e"], blobs: [{ x: 0.2, y: 0.25, r: 0.5, c: "#5d6b86" }, { x: 0.8, y: 0.75, r: 0.55, c: "#2a3350" }, { x: 0.6, y: 0.1, r: 0.35, c: "#7a8aa6" }, { x: 0.1, y: 1, r: 0.4, c: "#14161e" }] },
-  { id: "paper", name: "Paper", base: ["#f6f1e8", "#e7ddcd"], blobs: [{ x: 0.2, y: 0.3, r: 0.5, c: "#fffaf0" }, { x: 0.85, y: 0.8, r: 0.5, c: "#d9c9ae" }, { x: 0.6, y: 0.1, r: 0.3, c: "#f0e3cf" }, { x: 0.1, y: 0.95, r: 0.35, c: "#e0d2bb" }] },
+/**
+ * The built-in set: eight photographs chosen to blur well (a warm field, a storm, a fjord, hills, two seas, a pine lake, a night city, a sunrise),
+ * shipped under `public/wallpapers` with their credits in `credits.json` and `CREDITS.md`. They are openly licensed Unsplash photos (the Unsplash
+ * licence: free to use, credit appreciated), fetched once through Lorem Picsum; no page loads from either site.
+ */
+const BUILTIN: { id: string; name: string }[] = [
+  { id: "golden-field", name: "Golden field" },
+  { id: "storm-sea", name: "Storm" },
+  { id: "fjord", name: "Fjord" },
+  { id: "green-hills", name: "Green hills" },
+  { id: "calm-sea", name: "Calm sea" },
+  { id: "pine-lake", name: "Pine lake" },
+  { id: "night-bridge", name: "Night bridge" },
+  { id: "sunrise-farm", name: "Sunrise" },
 ];
+const BASE = import.meta.env.BASE_URL;
 
 /** A simple string hash, for deterministic fake stock pictures. */
 const hash = (s: string): number => [...s].reduce((a, c) => (Math.imul(a, 31) + c.charCodeAt(0)) >>> 0, 7);
@@ -98,9 +103,15 @@ export class FixtureLibrary implements WallpaperLibrary {
   private built: Promise<Wallpaper[]> | null = null;
 
   private async builtins(): Promise<Wallpaper[]> {
-    this.built ??= Promise.all(
-      BUILTIN.map(async (d) => ({ id: d.id, name: d.name, source: "builtin" as const, url: await paint(d, 1600, 1000), thumb: await paint(d, 240, 150) })),
-    );
+    this.built ??= fetch(`${BASE}wallpapers/credits.json`)
+      .then((r) => r.json() as Promise<{ id: string; author: string; link: string }[]>)
+      .catch(() => [])
+      .then((credits) =>
+        BUILTIN.map((d) => {
+          const c = credits.find((x) => x.id === d.id);
+          return { id: d.id, name: d.name, source: "builtin" as const, url: `${BASE}wallpapers/${d.id}.jpg`, thumb: `${BASE}wallpapers/${d.id}-thumb.jpg`, credit: c ? { author: c.author, link: c.link } : undefined };
+        }),
+      );
     return this.built;
   }
 

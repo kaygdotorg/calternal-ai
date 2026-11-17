@@ -9,7 +9,7 @@
   const value = $derived(shell.rightOpen ? (app.panels.find((p) => p.id === shell.panel) ?? app.panels[0]!).id : "main");
 </script>
 
-<nav class="phone-tabs" aria-label="{app.name} sections"><Capsule label="{app.name} sections" morph {items} {value} onchange={(v) => (v === "main" ? shell.closeOver() : shell.showPanel(v))} /></nav>
+<nav class="phone-tabs" aria-label="{app.name} sections"><Capsule label="{app.name} sections" morph tall {items} {value} onchange={(v) => (v === "main" ? shell.closeOver() : shell.showPanel(v))} /></nav>
 
 <style>
   .phone-tabs { position: fixed; z-index: 5; left: var(--s-6); right: var(--s-6); bottom: max(var(--cap-offset), var(--safe-bottom)); display: flex; justify-content: center; }

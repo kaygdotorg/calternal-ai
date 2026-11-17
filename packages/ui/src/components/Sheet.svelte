@@ -4,6 +4,7 @@
   import type { Snippet } from "svelte";
   import Glass from "./Glass.svelte";
   import { adaptive } from "../lib/material";
+  import { ready } from "../lib/ready";
   let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right"; children: Snippet } = $props();
   let box = $state<HTMLElement>();
   // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
@@ -37,7 +38,7 @@
 {#if open}
   <div class="layer" use:portal>
     <div class="scrim" role="presentation" onclick={onclose}></div>
-    <div bind:this={box} class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onkeydown={onkey} use:adaptive>
+    <div bind:this={box} class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onkeydown={onkey} use:adaptive use:ready>
       <Glass dense />
       {@render children()}
     </div>
@@ -45,12 +46,11 @@
 {/if}
 
 <style>
-  .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
+  .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); }
   .sheet:focus { outline: none; }
-  .sheet { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); }
-  .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); animation: up var(--dur-slow) var(--spring); }
-  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); animation: in var(--dur-slow) var(--spring); }
-  @keyframes fade { from { opacity: 0; } }
-  @keyframes up { from { translate: 0 24px; opacity: 0; } }
-  @keyframes in { from { translate: 24px 0; opacity: 0; } }
+  .sheet { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
+  .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
+  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
+  .sheet:global([data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
+  .sheet.right:global([data-surface]:not([data-ready])) { translate: var(--s-8) 0; }
 </style>
