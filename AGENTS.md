@@ -33,3 +33,5 @@
   15. `cargo fmt --check` is clean; a source file past about 600 lines is split by concern.
 - Official plugins are named `calternal-<name>` (`calternal-orchestrator`, `calternal-notes`); kinds keep short names (`threads`, `notes`).
 - Every lane's report ends with a short "Simplification opportunities" section: what it noticed could be removed, merged or made simpler, in its own area or nearby.
+- Screenshots and other evidence images belong on the lane's Forgejo issue as attachments, never in the repository; documents link to them there. (Small diagrams that are part of a document's content may stay in `docs/assets/`.)
+- The coordinating thread archives a lane as soon as it is merged or no longer needed, and checks running lanes at least every 30 minutes: a lane that is idle, waiting on a timer, or repeating itself is steered or stopped.
