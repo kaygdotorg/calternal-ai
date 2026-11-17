@@ -14,6 +14,9 @@ import type {
 import { events } from "./sse";
 import { link } from "./link.svelte";
 
+/** Operations that only read (by their last word, as in `contract/operations.json`): they are answered only for a live session, so they may go before the session is confirmed. Everything else is held (default deny). */
+const READS = /(?:^|\.)(?:list|get|history|members|lookup|preview|events|summarize|resolve)$/;
+
 /** A failure the server reported (`code` is its stable category) or a transport failure (`code` is "unavailable"). */
 export class ServerError extends Error {
   /** The server's stable category (`ApiError["code"]`), or one of the account routes' own (`passkey_failed`, `setup_token_invalid`, …) or this page's (`unavailable`, `cancelled`); say.ts words each. */
@@ -46,14 +49,15 @@ export class ServerClient {
    */
   async json<T = Record<string, unknown>>(path: string, o: { method?: "GET" | "POST"; body?: unknown; link?: boolean } = {}): Promise<T> {
     const method = o.method ?? (o.body === undefined ? "GET" : "POST");
-    const res = await this.send(path, { method, headers: o.body === undefined ? {} : { "content-type": "application/json" }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }, o.link === false);
+    const res = await this.send(path, { method, headers: o.body === undefined ? {} : { "content-type": "application/json" }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }, o.link === false, method === "POST");
     if (res.status === 204) return {} as T;
     const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) { const e = (data.error ?? {}) as { code?: string; message?: string }; throw new ServerError(e.code ?? codeOfStatus(res.status), e.message ?? "", res.status); }
     return data as T;
   }
   /** Every call goes through here: the session's headers, the link-state reporting (unless `plain`), and a transport failure as `ServerError("unavailable")`. */
-  private async send(path: string, init: RequestInit = {}, plain = false): Promise<Response> {
+  private async send(path: string, init: RequestInit = {}, plain = false, change = false): Promise<Response> {
+    if (change && !plain) await link.mayWrite();
     try { return await (plain ? this.plain : this.f)(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
     catch { throw new ServerError("unavailable", "Can't reach the server."); }
   }
@@ -69,7 +73,7 @@ export class ServerClient {
   }
   /** Calls one operation. `requestId` makes a retry the same request. */
   async operate<T>(operation: string, input: Record<string, unknown> = {}, requestId: string = crypto.randomUUID()): Promise<T> {
-    const res = await this.send("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) });
+    const res = await this.send("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) }, false, !READS.test(operation));
     let body: OperationResponse<T>;
     try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }
     if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
@@ -136,19 +140,23 @@ export class ServerClient {
   }
 
   /**
-   * Follows the signed-in account's feed (`GET /api/v1/account/live`, SSE): `Changed` says the private snapshot (drafts, pending) is stale (reload `drafts.list` and
-   * `pending.list`, then keep the bookmark), `Ready` carries the bookmark, `Reset` says to reload and subscribe again without one.
+   * Follows the signed-in account's feed (`GET /api/v1/account/live`, SSE) and hands each frame to `onFrame` as the contract's `AccountFrame`: `Changed` says the private snapshot (drafts, pending) is stale (reload
+   * `drafts.list` and `pending.list`, then keep the bookmark), `Ready` carries the bookmark, `Reset` says to reload and subscribe again without one, and `ReadinessChanged` (only when `readiness` is asked for) says to read
+   * `agent.readiness` again. This is the one place that reads the wire form of the feed (internally tagged, `{"type":"changed",…}`, against the generated externally tagged type); every reader gets the same frames.
    */
-  async accountLive(onFrame: (f: AccountFrame) => void, o: { bookmark?: string; signal?: AbortSignal } = {}): Promise<void> {
-    const q = o.bookmark ? `?bookmark=${encodeURIComponent(o.bookmark)}` : "";
-    for await (const ev of events(await this.stream(`/api/v1/account/live${q}`, o.signal))) {
+  async accountLive(onFrame: (f: AccountFrame) => void, o: { bookmark?: string; readiness?: boolean; signal?: AbortSignal } = {}): Promise<void> {
+    const q = [o.bookmark ? `bookmark=${encodeURIComponent(o.bookmark)}` : "", o.readiness ? "readiness=true" : ""].filter(Boolean).join("&");
+    for await (const ev of events(await this.stream(`/api/v1/account/live${q ? `?${q}` : ""}`, o.signal))) {
       const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
-      // Internally tagged on the wire (`{"type":"changed","bookmark":...}`), externally in the generated type: accept both.
-      const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
+      const type = (typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0] ?? "").toLowerCase().replace(/_/g, "");
       const body = typeof raw === "object" && typeof raw.type !== "string" ? (Object.values(raw)[0] as Record<string, unknown>) : (raw as Record<string, unknown>);
-      onFrame(type === "reset" ? "Reset" : ({ [type === "ready" ? "Ready" : "Changed"]: { bookmark: String(body.bookmark ?? "") } } as unknown as AccountFrame));
+      if (type === "readinesschanged") onFrame("ReadinessChanged");
+      else if (type === "reset") onFrame("Reset");
+      else onFrame(({ [type === "ready" ? "Ready" : "Changed"]: { bookmark: String((typeof body === "object" ? body?.bookmark : "") ?? "") } }) as AccountFrame);
     }
   }
+  /** The readiness feed: calls `onChange` whenever `agent.readiness` should be read again (readiness changed, or a reset). Resolves when the stream ends or `signal` aborts. */
+  readinessLive = (onChange: () => void, signal?: AbortSignal): Promise<void> => this.accountLive((f) => { if (f === "ReadinessChanged" || f === "Reset") onChange(); }, { readiness: true, signal });
 
   /** Follows a plugin job's events (`GET /api/v1/jobs/<id>/events`, SSE): `snapshot` first, then `chunk`s, possibly a `reset`, and `end`. `after` resumes (`<epoch>:<seq>`). */
   async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "state" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {

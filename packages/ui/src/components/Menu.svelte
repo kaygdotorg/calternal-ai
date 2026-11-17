@@ -70,7 +70,7 @@
       <input type="search" use:textField={{ kind: "search", cancels: true }} placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" onkeydown={fromSearch} />
     </div>
   {/if}
-  <div bind:this={list} class="menu" role="presentation" use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
+  <div bind:this={list} class="menu" role={search ? "menu" : "presentation"} aria-label={search ? label : undefined} use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
     {#each shown as it (it.id)}
       <button type="button" class="it" class:danger={it.danger} disabled={it.disabled} role={radio ? "menuitemradio" : "menuitem"} aria-checked={radio ? !!it.checked : undefined} tabindex="-1" onclick={() => { onpick(it.id); close(); }}>
         {#if it.icon}<Icon name={it.icon} />{/if}
@@ -84,9 +84,9 @@
 {/snippet}
 
 {#if currentForm() === "touch"}
-  <Sheet {open} {label} onclose={onclose}><div class="sh" role="menu" aria-label={label}>{@render content()}</div></Sheet>
+  <Sheet {open} {label} onclose={onclose}><div class="sh" role={search ? "group" : "menu"} aria-label={label}>{@render content()}</div></Sheet>
 {:else}
-  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>
+  <Popover {open} anchor={anchor ?? trigger} {label} role={search ? "dialog" : "menu"} prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>
 {/if}
 
 <style>

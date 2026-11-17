@@ -16,6 +16,9 @@
 
   let { app }: { app: AppDef } = $props();
   // The switcher is here unless the experiment moved it under the middle card (a phone keeps it here; its bottom bar is the app's panels).
+  // One scroller serves every app: a new app starts at the top (an offset left by another app's list would put this one's first row under the wordmark).
+  let scroller = $state<HTMLElement>();
+  $effect(() => { void app.kind; if (scroller) scroller.scrollTop = 0; });
   const inFooter = $derived(shell.narrow || appearance.prefs.switcher === "sidebar");
   let menu = $state(false);
   let trigger = $state<HTMLButtonElement>();
@@ -28,7 +31,7 @@
     {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{/if}
   </header>
 
-  <div class="scroll edge-fade" use:pull={{ refresh: async () => { await app.refresh?.(); } }}>
+  <div class="scroll edge-fade" bind:this={scroller} use:pull={{ refresh: async () => { await app.refresh?.(); } }}>
     <Attention items={app.attention?.() ?? []} />
     {#key spaces.current.id}<div class="body"><app.Sidebar /></div>{/key}
   </div>

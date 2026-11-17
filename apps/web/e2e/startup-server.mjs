@@ -48,6 +48,28 @@ try {
     for (let i = 0; i < N; i++) { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, storageState: cookieOnly }); await visit(ctx, latency); const r = await visit(ctx, latency); warm.push(r.ready); warmS.push(r.settled); if (!r.shell) bad++; if (r.flash) flashes.push("warm"); await ctx.close(); }
     console.log(`latency +${latency} ms each way   cold: ready ${med(cold).toFixed(0)} ms, settled ${med(coldS).toFixed(0)} ms   warm: ready ${med(warm).toFixed(0)} ms, settled ${med(warmS).toFixed(0)} ms`);
   }
+  // A session revoked elsewhere: the app paints from the device record for one round trip. Nothing may be changed in that window, and the person ends at the sign-in screen.
+  {
+    const A = await b.newContext({ viewport: { width: 1440, height: 900 }, storageState: cookieOnly });
+    await visit(A, 0); // this device now has a record
+    const B = await b.newContext({ storageState: cookieOnly });
+    const out = await B.request.post(`${url}/api/v1/auth/logout`, { headers: { origin: url, "content-type": "application/json" }, data: {} }); // the same session, ended from "another device"
+    await B.close();
+    const p = await A.newPage();
+    await p.addInitScript(() => { localStorage.setItem("cal.firstrun", "1"); localStorage.setItem("cal.server", "1"); });
+    const sent = []; p.on("request", (r) => { if (r.method() === "POST" && r.url().includes("/api/v1/")) sent.push(`${r.url().split("/api/v1/")[1]} ${(r.postData() ?? "").slice(0, 80)}`); });
+    await p.route("**/api/v1/auth/status", async (r) => { await new Promise((x) => setTimeout(x, 2500)); await r.continue(); }); // the server's answer comes late
+    await p.goto(`${url}/notes`, { waitUntil: "commit" });
+    await p.waitForSelector("html[data-ready]", { timeout: 10000 });
+    const painted = await p.locator("aside.side").isVisible().catch(() => false);
+    await p.getByRole("button", { name: "New note" }).click({ timeout: 4000 }).catch(() => {}); // try a change inside the window
+    await p.getByRole("button", { name: "Write the first note" }).click({ timeout: 1000 }).catch(() => {});
+    await p.getByRole("heading", { name: "Sign in" }).waitFor({ timeout: 8000 }).catch(() => {});
+    const writes = sent.filter((x) => !/^auth\//.test(x) && !/"operation":"(?:[a-z-]+\.)*(?:list|get|history|members|lookup|preview|events|summarize|resolve)"/.test(x));
+    const rows = [["the revoked session was ended on the server", out.status() === 204], ["the app painted from the record while the answer was pending", painted], ["no change was sent before the session was confirmed", writes.length === 0, writes.join("; ")], ["and the person ends at the sign-in screen", await p.getByRole("heading", { name: "Sign in" }).isVisible()]];
+    for (const [m, c, n] of rows) { console.log(`${c ? "PASS" : "FAIL"}  revoked elsewhere: ${m}${n ? "  " + n : ""}`); if (!c) bad++; }
+    await A.close();
+  }
   console.log(flashes.length ? `FAIL  the sign-in screen flashed on ${flashes.length} loads` : "PASS  no sign-in flash for a signed-in person");
   if (flashes.length || bad) bad++;
   await b.close();

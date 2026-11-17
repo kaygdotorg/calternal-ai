@@ -13,7 +13,9 @@ export function pull(node: HTMLElement, o: PullOptions) {
   ind.setAttribute("aria-hidden", "true");
   ind.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4a8 8 0 1 0 8 8"/></svg>';
   Object.assign(ind.style, { position: "absolute", left: "50%", top: "0", zIndex: "5", width: "32px", height: "32px", marginLeft: "-16px", display: "grid", placeItems: "center", borderRadius: "50%", background: "var(--paper)", boxShadow: "var(--shadow-float)", color: "var(--ink-2)", opacity: "0", pointerEvents: "none", translate: "0 -40px" });
-  node.style.position ||= "relative";
+  // The indicator is positioned against the node: only a node that is not positioned already needs `relative` (the inline style is empty even when the stylesheet says `absolute`, and forcing `relative` made the sidebar's
+  // scroller as tall as its list instead of as tall as the window, so in a short window the rest of the list could not be reached and the clipping box scrolled instead, putting the first row under the wordmark).
+  if (getComputedStyle(node).position === "static") node.style.position = "relative";
   node.append(ind);
   let y0 = 0, pulling = false, busy = false, d = 0;
   const show = (v: number, spin = false) => { ind.style.opacity = String(Math.min(1, v / THRESHOLD)); ind.style.translate = `0 ${Math.min(v, 96) - 40}px`; ind.style.rotate = spin ? "" : `${v * 3}deg`; ind.style.animation = spin ? "spin 800ms linear infinite" : ""; };

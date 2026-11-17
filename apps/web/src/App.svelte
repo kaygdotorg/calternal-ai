@@ -4,7 +4,7 @@
   import { onMount, untrack } from "svelte";
   import { appFor, type AppDef } from "./apps/registry";
   import { navigate, route, segments, setQuery } from "./lib/route.svelte";
-  import { Toasts } from "@calternal/ui";
+  import { Toasts, undoLatest } from "@calternal/ui";
   import Shell from "./shell/Shell.svelte";
   import LinkBanner from "./shell/LinkBanner.svelte";
   import { shell } from "./shell/shell.svelte";
@@ -44,6 +44,7 @@
     { id: "settings", label: "Appearance settings", group: "Navigation", where: "Anywhere", chord: "Mod+Comma", run: () => navigate("/settings/appearance") },
     { id: "app1", label: "Open Threads", group: "Navigation", where: "Anywhere", chord: "Alt+Digit1", run: () => navigate("/threads") },
     { id: "app2", label: "Open Notes", group: "Navigation", where: "Anywhere", chord: "Alt+Digit2", run: () => navigate("/notes") },
+    { id: "undo", label: "Undo the last archive or delete", group: "Threads", where: "Outside a text field", chord: "Mod+KeyZ", run: () => undoLatest() || false },
     { id: "next", label: "Next thread", group: "Threads", where: "Anywhere", chord: "Alt+ArrowDown", run: () => step(1) },
     { id: "prev", label: "Previous thread", group: "Threads", where: "Anywhere", chord: "Alt+ArrowUp", run: () => step(-1) },
     { id: "composer", label: "Write a message", group: "Threads", where: "Outside a text field", chord: "Slash", run: () => { const f = document.getElementById("composer-field"); if (!f) return false; f.focus(); } },
