@@ -13,6 +13,8 @@ if(args.join(' ')==='auth status'){
 if(process.env.CALTERNAL_AGENT_TOKEN) execFileSync('calternal',['--help'],{stdio:'ignore'});
 let prompt='';for await(const data of process.stdin)prompt+=data;
 const emit=m=>process.stdout.write(JSON.stringify(m)+'\n');
+if(prompt.includes('require-resume')&&!args.includes('--resume'))process.exit(88);
+if(prompt.includes('require-fresh')&&args.includes('--resume'))process.exit(89);
 if(!args.includes('--append-system-prompt')||!args.includes('--disallowedTools')||process.env.ANTHROPIC_API_KEY||process.env.CLAUDE_CODE_OAUTH_TOKEN)process.exit(93);
 if(args.includes('--resume')&&!existsSync(join(process.cwd(),'.fake-session')))process.exit(87);
 writeFileSync(join(process.cwd(),'.fake-session'),'fixture session');

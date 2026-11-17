@@ -1,5 +1,6 @@
 //! Thread-file admission reuses manual turn validation and durable jobs.
 use super::*;
+use crate::threads::provider_session::{KEY, ProviderSession};
 /// Finish a committed message intent under its content space lock, fencing Trash.
 /// The job key and admission receipt survive a crash between stores. No callback
 /// re-enters content; lock order is content -> jobs. Cost: settings read, current
@@ -34,7 +35,8 @@ pub(crate) async fn admit<D: Directory>(
             if current.kind!="threads" || current.metadata["deleted"]==true {return Err(Error::not_found("item not found"));}
             if let Some(saved)=saved {return Ok(saved);}
             if current.metadata["pending"]!=intent {return Err(Error::conflict("the pending send has been superseded"));}
-            st.jobs.admit(Admission{space:space.clone(),plugin:"calternal-orchestrator".into(),account:who.id,session,operation:"agent.turn".into(),input:json!({"request":input,"check":false,"retry_settings":settings,"thread_request":intent}),parent:None,generation,request_key}).map(|id|json!({"job_id":id}))
+            let resume = ProviderSession::owned(&current.metadata, who.id);
+            st.jobs.admit(Admission{space:space.clone(),plugin:"calternal-orchestrator".into(),account:who.id,session,operation:"agent.turn".into(),input:json!({"request":input,"check":false,"retry_settings":settings,"thread_request":intent,(KEY):resume}),parent:None,generation,request_key}).map(|id|json!({"job_id":id}))
         })
     }).await?;
     let id = id["job_id"]
