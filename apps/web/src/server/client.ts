@@ -143,13 +143,14 @@ export class ServerClient {
    * Follows the signed-in account's feed (`GET /api/v1/account/live`, SSE): `Changed` says the private snapshot (drafts, pending) is stale (reload `drafts.list` and
    * `pending.list`, then keep the bookmark), `Ready` carries the bookmark, `Reset` says to reload and subscribe again without one.
    */
-  async accountLive(onFrame: (f: AccountFrame) => void, o: { bookmark?: string; signal?: AbortSignal } = {}): Promise<void> {
-    const q = o.bookmark ? `?bookmark=${encodeURIComponent(o.bookmark)}` : "";
-    for await (const ev of events(await this.stream(`/api/v1/account/live${q}`, o.signal))) {
+  async accountLive(onFrame: (f: AccountFrame | "Readiness") => void, o: { bookmark?: string; readiness?: boolean; signal?: AbortSignal } = {}): Promise<void> {
+    const q = [o.bookmark ? `bookmark=${encodeURIComponent(o.bookmark)}` : "", o.readiness ? "readiness=true" : ""].filter(Boolean).join("&");
+    for await (const ev of events(await this.stream(`/api/v1/account/live${q ? `?${q}` : ""}`, o.signal))) {
       const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
       // Internally tagged on the wire (`{"type":"changed","bookmark":...}`), externally in the generated type: accept both.
       const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
       const body = typeof raw === "object" && typeof raw.type !== "string" ? (Object.values(raw)[0] as Record<string, unknown>) : (raw as Record<string, unknown>);
+      if (type === "readiness_changed") { onFrame("Readiness"); continue; } // private: asks the account to read readiness again (no bookmark)
       onFrame(type === "reset" ? "Reset" : ({ [type === "ready" ? "Ready" : "Changed"]: { bookmark: String(body.bookmark ?? "") } } as unknown as AccountFrame));
     }
   }

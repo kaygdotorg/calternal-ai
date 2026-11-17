@@ -87,6 +87,7 @@ export class ServerInput implements InputClient {
         let reset = false;
         try {
           await this.server.accountLive((f) => {
+            if (f === "Readiness") return; // only asked for by the Machines page
             if (f === "Reset") { reset = true; bookmark = undefined; onChange(); }
             else if ("Changed" in f) { onChange(); bookmark = f.Changed.bookmark; }
             else bookmark = f.Ready.bookmark;

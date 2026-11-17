@@ -11,3 +11,4 @@
 /* A phone: a row's text takes the full width and its controls go under it (a side-by-side squeeze broke a command into single letters). */
 @media (max-width: 600px) { .sp .r { flex-direction: column; align-items: stretch; } .sp .a { flex-wrap: wrap; } .sp .n { flex: none; }  }
 .sp .cmd { display: block; margin-top: var(--s-3); padding: var(--s-3) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); font-family: var(--font-mono, monospace); font-size: var(--text-label); overflow-wrap: anywhere; user-select: all; }
+.sp .r.sub { padding-left: var(--s-9, 40px); min-height: 0; }
