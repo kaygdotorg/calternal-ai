@@ -48,8 +48,14 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   (`github.com/ComicBit/bb-plugin-genui`, Apache-2.0: lexer, parser, AST, evaluator,
   component catalog, validation) as the starting point for the component description
   format.
-- Hooks may watch and block (proceed, wait, reject) within the plugin's own space, enabled by
-  a manager. No rewriting; bb's own dispatch hook does not rewrite either.
+- Hooks may watch, block (proceed, wait, reject) and rewrite, within the plugin's own space
+  and only when a manager enabled them. A rewrite may change content (message text,
+  operation input) but never the caller, space or target; access is checked after it; both
+  versions are recorded and shown as changed by the plugin; rewrites run one at a time in
+  an order the manager sets.
+- Context contributions: a plugin may attach context to an agent turn (Honcho memory is the
+  model). It is labelled with its source, recorded with the turn, visible to the user and
+  bounded by a deadline. It never changes what the user typed.
 - Page-wide JavaScript is not supported. Its legitimate uses are covered instead by full-CSS
   themes, command and shortcut contributions, and the shell regions.
 - Themes can be full CSS, with no network access. Trusted screens (sign-in, permission
