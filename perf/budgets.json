@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "policy": "Never raise budgets silently. Null means unmeasured, never a pass. Inherited ceilings remain breaches even when comparisons are imperfect.",
+  "entries": [
+    {
+      "metric": "notes.get",
+      "percentile": "p95",
+      "budget": 50,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "authenticated HTTP notes.get through full response body",
+      "reference": "open.api_get p95 50"
+    },
+    {
+      "metric": "notes.update",
+      "percentile": "p95",
+      "budget": 40,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "HTTP notes.update through durable acknowledgement",
+      "reference": "sync.save_ack p95 40; different API, inherited ceiling"
+    },
+    {
+      "metric": "notes.list.first100",
+      "percentile": "p95",
+      "budget": 50,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "HTTP notes.list; current API returns up to 100 rows with no cursor; reference returns 50",
+      "reference": "home.page p95 50; reference page is bounded to 50"
+    },
+    {
+      "metric": "notes.get",
+      "percentile": "p50",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "p50 observation; proposed budget awaits first complete run",
+      "reference": null
+    },
+    {
+      "metric": "notes.update",
+      "percentile": "p50",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "p50 observation; proposed budget awaits first complete run",
+      "reference": null
+    },
+    {
+      "metric": "notes.list.first100",
+      "percentile": "p50",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "p50 observation; proposed budget awaits first complete run",
+      "reference": null
+    },
+    {
+      "metric": "space.process_cold_open",
+      "percentile": "p95",
+      "budget": 300,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "first notes.list after restarting populated roots; OS page cache remains warm",
+      "reference": "home.first_page p95 300"
+    },
+    {
+      "metric": "admission",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "needs timing hook separating authentication, admission, dispatch",
+      "reference": null
+    },
+    {
+      "metric": "receipt.round_trip",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "replay exact authenticated notes.update request; includes guard and admission",
+      "reference": null
+    },
+    {
+      "metric": "live.commit_to_client",
+      "percentile": "p95",
+      "budget": 10,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "needs commit timestamp correlated with subscribed SSE delivery",
+      "reference": "sync.round_trip p95 10; different start marker"
+    },
+    {
+      "metric": "plugin.three_host_calls",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "needs trusted worker with exactly three host calls; shipped worker has one",
+      "reference": null
+    },
+    {
+      "metric": "job.first_chunk",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "start job until first SSE stream chunk; provider lane pending",
+      "reference": null
+    },
+    {
+      "metric": "resolve",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "HTTP resolve operation for /notes/<UUID>",
+      "reference": null
+    },
+    {
+      "metric": "auth.session",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "GET auth/me with real software-passkey session",
+      "reference": null
+    },
+    {
+      "metric": "memory.1_spaces.after_2s",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "MiB",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "VmRSS two seconds after listing all spaces; does not prove idle release",
+      "reference": "mem.idle p95 64 MiB"
+    },
+    {
+      "metric": "startup.1_spaces",
+      "percentile": "p95",
+      "budget": 300,
+      "unit": "ms",
+      "fixture": "1 spaces, 100 notes each",
+      "measurement": "spawn populated installation through auth/status readiness",
+      "reference": "startup.healthz p95 300"
+    },
+    {
+      "metric": "memory.100_spaces.after_2s",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "MiB",
+      "fixture": "100 spaces, 100 notes each",
+      "measurement": "VmRSS two seconds after listing all spaces; does not prove idle release",
+      "reference": "mem.idle p95 64 MiB"
+    },
+    {
+      "metric": "startup.100_spaces",
+      "percentile": "p95",
+      "budget": 300,
+      "unit": "ms",
+      "fixture": "100 spaces, 100 notes each",
+      "measurement": "spawn populated installation through auth/status readiness",
+      "reference": "startup.healthz p95 300"
+    },
+    {
+      "metric": "memory.1000_spaces.after_2s",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "MiB",
+      "fixture": "1000 spaces, 100 notes each",
+      "measurement": "VmRSS two seconds after listing all spaces; does not prove idle release",
+      "reference": "mem.idle p95 64 MiB"
+    },
+    {
+      "metric": "startup.1000_spaces",
+      "percentile": "p95",
+      "budget": 300,
+      "unit": "ms",
+      "fixture": "1000 spaces, 100 notes each",
+      "measurement": "spawn populated installation through auth/status readiness",
+      "reference": "startup.healthz p95 300"
+    },
+    {
+      "metric": "live.update_to_client",
+      "percentile": "p95",
+      "budget": 10,
+      "unit": "ms",
+      "fixture": "all",
+      "reference": "sync.round_trip p95 10",
+      "measurement": "from before HTTP update until matching journal SSE entry; upper bound on commit-to-client"
+    },
+    {
+      "metric": "account.draft_write_to_feed",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "all",
+      "reference": null,
+      "measurement": "from before HTTP draft save until account SSE event"
+    },
+    {
+      "metric": "memory.1_spaces.idle_released",
+      "percentile": "p95",
+      "budget": 64,
+      "unit": "MiB",
+      "fixture": "1 spaces of 100 notes",
+      "reference": "mem.idle p95 64 MiB",
+      "measurement": "RSS after at least 632 seconds; require all store writer threads retired; three independent replicas"
+    },
+    {
+      "metric": "memory.100_spaces.idle_released",
+      "percentile": "p95",
+      "budget": 64,
+      "unit": "MiB",
+      "fixture": "100 spaces of 100 notes",
+      "reference": "mem.idle p95 64 MiB",
+      "measurement": "RSS after at least 632 seconds; require all store writer threads retired; three independent replicas"
+    },
+    {
+      "metric": "memory.1000_spaces.idle_released",
+      "percentile": "p95",
+      "budget": 64,
+      "unit": "MiB",
+      "fixture": "1000 spaces of 100 notes",
+      "reference": "mem.idle p95 64 MiB",
+      "measurement": "RSS after at least 632 seconds; require all store writer threads retired; three independent replicas"
+    }
+  ]
+}

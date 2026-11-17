@@ -1,0 +1,64 @@
+# Server performance gate
+
+Build on `claude@calternal-dev-01-compute02`; run only on
+`kayg@calternal-perf-01-backup01` under `/usr/local/bin/perf-lock.sh`.
+The new crate is tooling, never a product dependency. `scripts/perf-check.sh`
+is the coordinator's pre-merge gate. It requires a previously built baseline
+binary and its commit, runs three cold and five warm AB/BA pairs and preserves raw samples remotely.
+
+The seed controls payload bytes. UUIDs and timestamps are assigned by the real
+server. Each size is created once through real HTTP with a software-passkey
+registration and login ported from `tests/conformance/isolation.rs`. Stopped roots
+are copied for each arm, preserving identical UUIDs and sessions across arms.
+Concurrency is deliberately one outstanding request, not an unbounded load test.
+Fixtures: 1k, 10k, 100k notes in one space; 100 and 1,000 spaces with 100 notes each.
+Untimed provisioning uses private temporary `/dev/shm` roots, then copies stopped
+roots to the disk-backed run directory. Timings never use tmpfs roots.
+No 1M fixture: establish measured disk/RSS headroom on the 7 GiB VM first.
+
+Every sample includes the complete HTTP response. Raw vectors are kept in
+`~/calternal-ai-perf/<run>/<fixture>-<pair>-<arm>/raw.json`; only summary JSON belongs
+in git. Roots (including credentials) are deleted after each successful arm.
+On error, retain the failing roots for diagnosis, then remove them explicitly.
+Do not reuse a work directory. Keep raw samples for 30 days, scripts and summary
+for the issue lifetime; remove expired raw files during the next locked run.
+
+Quantiles use nearest rank, as the reference harness. Report p50/p95/p99/max for
+each arm. A budget breach must occur in at least two head arms to fail.
+This reproduction rule applies regardless of noise; never excuse a reproduced
+breach because its variance is large. AB/BA alternation limits ordering bias.
+A baseline-vs-baseline control is required before interpreting a regression.
+The three cold pairs invoke the host-provided `sudo -n
+/usr/local/sbin/perf-drop-caches` helper before each server start, while holding
+the perf lock. Five warm pairs follow without dropping the OS page cache.
+Reported noise is the range of per-arm p50s divided by their median; all eight
+pairs repeat potential noisy breaches rather than waiving them.
+
+Null budgets mean no inherited limit and no measured proposal yet. They are
+unqualified, never passes. Inherited limits are copied without comfortable
+headroom, with semantic differences named in `budgets.json`. `notes.list` is
+currently capped at 100 rows without pagination; its inherited page budget exposes that cost without pretending
+the responses have equivalent sizes. Session check is `/api/v1/auth/me`; address
+resolution is the `resolve` operation, not a fabricated static route.
+
+Still missing: isolated admission timing, exact server-commit-to-SSE timing,
+three-host-call worker, job first stream chunk,
+and proof of idle-release. See `docs/performance.md`. Until those are implemented,
+this is a partial qualification and cannot certify the whole backend merge gate.
+
+Exit 1 means a reproduced numeric breach. Exit 2 means an error or incomplete
+mandatory coverage; neither is green. A summary is written before either numeric
+breach or incomplete coverage is returned.
+
+The gate also runs `--idle-only`: three independent servers per fixture size
+(1, 100, 1,000 spaces, each with 100 notes) wait concurrently for 632 seconds
+after all clients close. `/proc` writer-thread counts must reach zero, and RSS
+is compared with 64 MiB. These nine servers measure only idle memory; their
+startup timings do not enter the latency matrix. A breach must occur in at
+least two replicates of the same size.
+
+`perf/profile.sh /absolute/suite-directory <commit>` runs a separate 1k control
+with CPU `perf` sampling and syscall wall-time summaries. It requires extracted
+Debian perf/strace binaries and their runtime libraries in
+`~/calternal-ai-perf/tools/extracted`. Profiles stay on the perf VM; instrumented
+numbers are excluded from the uninstrumented gate.

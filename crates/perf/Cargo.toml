@@ -1,0 +1,16 @@
+[package]
+name = "calternal-perf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
+clap = { workspace = true, features = ["derive"] }
+webauthn-authenticator-rs.workspace = true
+webauthn-rs.workspace = true
+url.workspace = true
+tempfile.workspace = true
