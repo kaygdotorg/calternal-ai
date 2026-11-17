@@ -1,3 +1,4 @@
-TITLE                               ID                                    STATE
-Long conversation title that shou…  019a8c00-0000-7000-8000-000000000001  active
+TITLE         TURN     STATE   MESSAGES  ID             PROVIDER      MODEL
+Long conver…  waiting  active  17        019a8c…000001  calternal-c…  sonnet
+3 columns hidden; use --json or a wider terminal.
 Next: calternal threads create --help

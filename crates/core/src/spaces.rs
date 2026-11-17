@@ -56,6 +56,8 @@ pub struct StoredSpace {
     pub created: i64,
     /// Caller role, including the effective Owner role.
     pub role: SpaceRole,
+    /// Whether this is the personal space provisioned for the caller.
+    pub personal: bool,
 }
 /// Account's visible spaces; server administration does not add memberships.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

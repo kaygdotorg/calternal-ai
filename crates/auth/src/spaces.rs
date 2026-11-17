@@ -22,6 +22,8 @@ pub struct Space {
     pub created: i64,
     /// Effective role including the owner relation.
     pub role: String,
+    /// Whether this is the personal space provisioned for the caller.
+    pub personal: bool,
 }
 /// One membership visible to a current space reader.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,7 +92,7 @@ fn exists_account(c: &Connection, actor: AccountId) -> Result<()> {
 fn list(c: &Connection, actor: AccountId) -> Result<Vec<Space>> {
     exists_account(c, actor)?;
     let mut st=c.prepare("SELECT s.id,s.name,s.owner_account,s.created,
-        CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
+        CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END, COALESCE(s.personal_for=?1,0)
         FROM spaces s JOIN space_memberships m ON m.space_id=s.id WHERE m.account_id=?1 ORDER BY s.created,s.id").map_err(sql)?;
     let rows = st
         .query_map([actor.to_string()], |r| {
@@ -100,17 +102,19 @@ fn list(c: &Connection, actor: AccountId) -> Result<Vec<Space>> {
                 r.get::<_, String>(2)?,
                 r.get(3)?,
                 r.get(4)?,
+                r.get(5)?,
             ))
         })
         .map_err(sql)?;
     rows.map(|r| {
-        let (id, name, owner, created, role) = r.map_err(sql)?;
+        let (id, name, owner, created, role, personal) = r.map_err(sql)?;
         Ok(Space {
             id: space_id(id)?,
             name,
             owner: account(owner)?,
             created,
             role,
+            personal,
         })
     })
     .collect()
@@ -120,11 +124,29 @@ fn create(c: &Connection, actor: AccountId, name: &str) -> Result<Space> {
     if name.trim().is_empty() || name.chars().count() > 256 || name.chars().any(char::is_control) {
         return Err(Error::invalid("invalid space name"));
     }
+    insert_owned(c, actor, name, crate::db::now_ms(), false)
+}
+
+/// Insert the space and its owner membership on the caller's transaction.
+/// Cost: two writes, with durability provided by the enclosing authority commit.
+pub(crate) fn insert_owned(
+    c: &Connection,
+    actor: AccountId,
+    name: &str,
+    created: i64,
+    personal: bool,
+) -> Result<Space> {
     let id = SpaceId::new();
-    let created = crate::db::now_ms();
+    let account = actor.to_string();
     c.execute(
-        "INSERT INTO spaces(id,name,owner_account,created) VALUES(?1,?2,?3,?4)",
-        params![id.to_string(), name, actor.to_string(), created],
+        "INSERT INTO spaces(id,name,owner_account,created,personal_for) VALUES(?1,?2,?3,?4,?5)",
+        params![
+            id.to_string(),
+            name,
+            account,
+            created,
+            personal.then_some(&account)
+        ],
     )
     .map_err(sql)?;
     c.execute(
@@ -138,6 +160,7 @@ fn create(c: &Connection, actor: AccountId, name: &str) -> Result<Space> {
         owner: actor,
         created,
         role: "owner".into(),
+        personal,
     })
 }
 /// A capability-checked mutation. Target restrictions are additional to its grant.
@@ -514,7 +537,7 @@ pub struct DevelopmentIds {
     pub owner: AccountId,
     /// Account associated with the development guest token.
     pub guest: AccountId,
-    /// The owner's space named `personal`; the guest is not a member.
+    /// The development owner's provisioned personal space UUID.
     pub personal: SpaceId,
     /// The space named `shared`, where the guest is a reader.
     pub shared: SpaceId,
@@ -542,36 +565,38 @@ impl Spaces {
                 let owner = AccountId::new();
                 let guest = AccountId::new();
                 for (name, id) in [("owner", owner), ("guest", guest)] {
-                    tx.execute(
-                        "INSERT INTO users(id,name,username,created_at) VALUES(?1,?2,?3,?4)",
-                        params![
-                            id.to_string(),
-                            name,
-                            format!("dev-{name}"),
-                            crate::db::now_ms()
-                        ],
-                    )
-                    .map_err(sql)?;
+                    let personal = crate::setup::insert_account(
+                        &tx,
+                        id,
+                        name,
+                        &format!("dev-{name}"),
+                        crate::db::now_ms(),
+                    )?;
+                    if id == owner {
+                        tx.execute(
+                            "INSERT INTO development_directory VALUES('personal',?1)",
+                            [personal.to_string()],
+                        )
+                        .map_err(sql)?;
+                    }
                     tx.execute(
                         "INSERT INTO development_directory VALUES(?1,?2)",
                         params![name, id.to_string()],
                     )
                     .map_err(sql)?;
                 }
-                for name in ["personal", "shared"] {
-                    let s = create(&tx, owner, name)?;
+                {
+                    let s = create(&tx, owner, "shared")?;
                     tx.execute(
                         "INSERT INTO development_directory VALUES(?1,?2)",
-                        params![name, s.id.to_string()],
+                        params!["shared", s.id.to_string()],
                     )
                     .map_err(sql)?;
-                    if name == "shared" {
-                        tx.execute(
-                            "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
-                            params![s.id.to_string(), guest.to_string()],
-                        )
-                        .map_err(sql)?;
-                    }
+                    tx.execute(
+                        "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
+                        params![s.id.to_string(), guest.to_string()],
+                    )
+                    .map_err(sql)?;
                 }
             }
             let get = |name| {

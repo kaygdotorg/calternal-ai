@@ -441,7 +441,7 @@ fn server_admin_gains_no_content_or_membership_access() {
             .is_none()
     );
     forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
-    assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 1);
+    assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 2);
 }
 #[test]
 fn deletion_removes_only_directory_records_and_does_not_resurrect_on_restart() {
@@ -460,7 +460,10 @@ fn deletion_removes_only_directory_records_and_does_not_resurrect_on_restart() {
     let reopened = Spaces::open(&f.path).unwrap();
     let ids = reopened.seed_development().unwrap();
     assert_eq!(ids.shared, f.ids.shared);
-    assert!(reopened.list(ids.guest).unwrap().is_empty());
+    let guest_spaces = reopened.list(ids.guest).unwrap();
+    assert_eq!(guest_spaces.len(), 1);
+    assert!(guest_spaces[0].personal);
+    assert_eq!(guest_spaces[0].owner, ids.guest);
 }
 #[test]
 fn revocations_and_transfer_survive_restart() {
@@ -609,7 +612,7 @@ fn directory_group_management_cannot_expose_another_spaces_members() {
     )
     .unwrap();
     forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
-    assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 1);
+    assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 2);
     assert!(
         f.spaces
             .capabilities(f.ids.guest, f.ids.personal)

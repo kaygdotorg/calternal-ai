@@ -2,6 +2,7 @@ Thread:   019a8c00-0000-7000-8000-000000000001
 Title:    Plan
 Address:  /threads/019a8c00-0000-7000-8000-000000000001
 State:    active
+Thread turn state:  running
 
 ---
 title: Plan

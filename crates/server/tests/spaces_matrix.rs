@@ -70,18 +70,13 @@ impl Fixture {
                 .unwrap()
                 .id
                 .to_string();
-            let personal = spaces
-                .iter()
-                .find(|s| s.name == "personal")
-                .unwrap()
-                .id
-                .to_string();
+            let personal = spaces.iter().find(|s| s.personal).unwrap().id.to_string();
             let c = rusqlite::Connection::open(root.join("system/auth.db")).unwrap();
             match role.as_deref() {
                 None => {
                     c.execute(
-                        "DELETE FROM space_memberships WHERE account_id=?1",
-                        [&actor],
+                        "DELETE FROM space_memberships WHERE account_id=?1 AND space_id=?2",
+                        [&actor, &shared],
                     )
                     .unwrap();
                 }
@@ -94,8 +89,8 @@ impl Fixture {
                 }
                 Some(role) => {
                     c.execute(
-                        "UPDATE space_memberships SET role=?1 WHERE account_id=?2",
-                        [role, &actor],
+                        "UPDATE space_memberships SET role=?1 WHERE account_id=?2 AND space_id=?3",
+                        [role, &actor, &shared],
                     )
                     .unwrap();
                 }

@@ -121,7 +121,11 @@ const glossary = await read('docs/glossary.md');
 page('user/spaces-and-roles', 'Spaces and roles', ['docs/glossary.md'], section(glossary, 'People and access'));
 page('user/permissions-modes', 'Permission modes', ['docs/agent-instructions.md'], 'Accepted design; the complete approval experience is not a released feature.\n\n' + section(await read('docs/agent-instructions.md'), 'Access'));
 page('user/space-instructions', 'Space standing instructions', ['docs/agent-instructions.md'], section(await read('docs/agent-instructions.md'), 'Space standing instructions'));
-page('user/threads', 'Threads', ['docs/orchestrator-proposal.md'], 'Accepted orchestrator decisions; this is not a claim that the complete thread experience is implemented. Later decisions below take precedence over earlier proposal text.\n\n' + section(await read('docs/orchestrator-proposal.md'), 'Decided in the grill (2026-11-17)'));
+const savedThreads = await read('docs/threads.md');
+page('user/threads', 'Threads', ['docs/threads.md', 'docs/orchestrator-proposal.md'],
+  '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates') +
+  '\n## CLI\n' + section(savedThreads, 'CLI') +
+  '\n## Accepted design\n' + section(await read('docs/orchestrator-proposal.md'), 'Decided in the grill (2026-11-17)'));
 for (const [id, title, source, note] of [
   ['machines', 'Machines', 'crates/machine/README.md', 'Implementation reference. The later orchestrator decision requires Resume after interruption; automatic re-placement described in this README is not the accepted product behavior.'],
   ['secrets', 'Secrets', 'crates/secrets/README.md', 'Per-owner key storage and recovery reference. Operator backup retention and key backup handling require a production runbook.'],
