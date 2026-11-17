@@ -22,9 +22,8 @@
   {#each CATALOGUE.filter((p) => installed.includes(p.id)) as p (p.id)}
     <li data-setting="plugins.{p.id}">
       <div class="r">
-        <span class="n"><span class="t">{p.name}</span><span class="h">May: {p.access}</span></span>
+        <span class="sw"><Switch label={p.name} hint="May: {p.access}" checked={on(p.id)} onchange={(v) => values.set(`plugins.${p.id}.enabled`, v)} /></span>
         {#if p.options.length}<button type="button" class="drill" aria-expanded={openId === p.id} aria-label="{p.name} options" onclick={() => (openId = openId === p.id ? null : p.id)}><span class="h">Options</span><Icon inline name="chevron" /></button>{/if}
-        <Switch label="{p.name} on" checked={on(p.id)} onchange={(v) => values.set(`plugins.${p.id}.enabled`, v)} />
       </div>
       {#if openId === p.id}
         <div class="opts">{#each p.options as o (o.id)}<Switch label={o.label} checked={values.get<boolean>(`plugins.${p.id}.${o.id}`, true)} onchange={(v) => values.set(`plugins.${p.id}.${o.id}`, v)} />{/each}</div>
@@ -46,6 +45,7 @@
   ul { display: grid; }
   .r { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); min-height: var(--row-h-settings); padding: var(--s-3) var(--s-6); }
   .n { display: grid; flex: 1; min-width: 0; gap: var(--s-1); }
+  .sw { flex: 1; min-width: 0; }
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .h { font-size: var(--text-label); color: var(--ink-3); }
   .drill { display: inline-flex; align-items: center; gap: var(--s-2); }

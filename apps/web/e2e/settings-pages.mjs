@@ -25,7 +25,7 @@ ok((await page.getByText("Installed").count()) > 0 && (await page.getByText("Ava
 await page.getByRole("button", { name: "Threads options" }).click(); await page.waitForTimeout(200);
 ok((await page.getByText("Show the steps of a turn").count()) === 1, "…a plugin's own options open from its row");
 await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("button", { name: "Install" }).click(); await page.waitForTimeout(200);
-ok((await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("switch").count()) === 1 || (await page.getByRole("switch", { name: "Calendar on" }).count()) === 1, "…and Install moves a plugin to Installed");
+ok((await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("switch").count()) === 1 || (await page.getByRole("switch", { name: "Calendar" }).count()) === 1, "…and Install moves a plugin to Installed");
 const pages = await page.evaluate(() => [...document.querySelectorAll("aside.side nav a")].map((a) => a.textContent.trim()));
 ok(!pages.some((p) => /Skills|Automations/.test(p)), "Skills and automations are not in Settings (waiting on a design round)", pages.join(", "));
 await b.close(); stop();

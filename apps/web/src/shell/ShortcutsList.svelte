@@ -49,6 +49,7 @@
   .act { display: flex; gap: var(--s-3); margin-top: var(--s-3); }
   h2 { font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); margin-bottom: var(--s-2); }
   ul { display: grid; gap: var(--s-1); }
+  @media (max-width: 600px) { li { flex-wrap: wrap; } .tx { flex-basis: 100%; } }
   li { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-h-settings); padding: 0 var(--s-2) 0 var(--s-4); border-radius: var(--r-select); }
   .tx { flex: 1; min-width: 0; display: grid; }
   small { font-size: var(--text-label); color: var(--ink-3); }
