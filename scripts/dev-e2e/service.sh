@@ -23,7 +23,8 @@ start_unit() {
   shift
   if ! active "$unit"; then
     systemd-run --user --quiet --collect --unit="calternal-e2e-$unit" \
-      --property=Type=exec --property=UMask=0077 -- "$@"
+      --property=Type=exec --property=UMask=0077 \
+      --setenv=NO_PROXY=127.0.0.1 --setenv=no_proxy=127.0.0.1 -- "$@"
   fi
 }
 stop_unit() {
@@ -62,12 +63,12 @@ wait_for() {
 }
 server_ready() {
   active server && [[ -s $owner_token ]] &&
-    curl -fsS --max-time 2 "$base_url/api/v1/auth/status"
+    curl -fsS --noproxy '*' --max-time 2 "$base_url/api/v1/auth/status"
 }
 machine_ready() {
   active machine &&
     printf 'Authorization: Bearer %s\n' "$(<"$owner_token")" |
-      curl -fsS --max-time 2 --header @- "$base_url/api/v1/machines" |
+      curl -fsS --noproxy '*' --max-time 2 --header @- "$base_url/api/v1/machines" |
       jq -e --arg id "$machine_id" '.machines[] | select(.id == $id and .state == "online")'
 }
 relay_ready() {
@@ -95,7 +96,8 @@ start() {
       --userdata-ssd "$root/userdata-ssd" --userdata-hdd "$root/userdata-hdd" \
       --installation-id "$installation" --account "$account" |
       jq -er '.data.code' |
-      "$binary" machine enroll --server "$base_url" --dir "$root/machine" \
+      NO_PROXY=127.0.0.1 no_proxy=127.0.0.1 "$binary" machine enroll \
+        --server "$base_url" --dir "$root/machine" \
         --name calternal-e2e-dev-01 --code - >/dev/null
   fi
   identity=$("$binary" --json machine status --dir "$root/machine")

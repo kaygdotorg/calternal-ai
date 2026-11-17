@@ -5,23 +5,28 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
+from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 ROOT = Path.home() / "calternal-e2e"
-URL = "http://127.0.0.1:34135"
+PORT = 34135
 
 
+@contextmanager
 def request(path, body=None):
     token = (ROOT / "appdata/dev-tokens/owner.token").read_text().strip()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     data = None if body is None else json.dumps(body).encode()
+    connection = HTTPConnection("127.0.0.1", PORT, timeout=25)
     try:
-        return urlopen(Request(f"{URL}/api/v1/{path}", data, headers), timeout=25)
-    except HTTPError as error:
-        # Responses may include thread state. Only report HTTP status here.
-        raise RuntimeError(f"{path}: HTTP {error.code}") from None
+        connection.request("GET" if data is None else "POST", f"/api/v1/{path}", data, headers)
+        with connection.getresponse() as response:
+            if not 200 <= response.status < 300:
+                raise RuntimeError(f"{path}: HTTP {response.status}")
+            yield response
+    finally:
+        connection.close()
 
 
 def call(path, body=None):
@@ -157,11 +162,11 @@ def run_real():
                 text_size += len(text)
             if event == "end":
                 state = payload["job"]["state"]
-    except (OSError, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError):
+    except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError):
         if job is not None:
             try:
                 op("threads.stop", id=thread)
-            except (OSError, RuntimeError, ValueError, KeyError):
+            except (OSError, HTTPException, RuntimeError, ValueError, KeyError):
                 state = "stop_failed"
     outcome = state
     if state == "done":
@@ -178,7 +183,7 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["fixture"]:
         try:
             run_fixture()
-        except (OSError, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError) as error:
+        except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError) as error:
             sys.exit(str(error))
     elif sys.argv[1:] == ["claude"]:
         sys.exit(0 if run_real() else 1)
