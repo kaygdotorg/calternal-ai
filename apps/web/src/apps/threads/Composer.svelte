@@ -73,6 +73,17 @@
   // ---- the same engine as the palette: highlighted words, @ for people, agents, threads and items, / for skills ----
   // Warm the recogniser once when the composer appears (its regular expressions compile on first use): the first key typed should cost what the others do.
   $effect(() => { marksOf("warm @a friday 5pm !high #t"); });
+  // The first key must run warm code: at idle after mount the field is sent a key that does nothing (F24, then its key-up) and an input event with no change, so the shortcut lookup, the field editor's
+  // key and input handlers, the undo grouping and the trigger rules have all run once before the person types. (Marked `warm`: the page's input modality ignores it.)
+  $effect(() => {
+    const el = field;
+    if (!el) return;
+    const id = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 300)))(() => {
+      for (const type of ["keydown", "keyup"]) { const e = new KeyboardEvent(type, { key: "F24", bubbles: true, cancelable: true }); (e as KeyboardEvent & { warm?: boolean }).warm = true; el.dispatchEvent(e); }
+      el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
+    return () => (window.cancelIdleCallback ?? clearTimeout)(id as number);
+  });
   const marks = $derived(marksOf(text));
   const pool = $derived(mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
   // The pickers' search indexes are built when the composer is idle, not on the first `@` or `/`.
