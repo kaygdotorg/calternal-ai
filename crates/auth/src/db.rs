@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// The one schema version this build reads; [`migrate`] creates it on an empty file.
-const VERSION: i64 = 2;
+const VERSION: i64 = 3;
 
 /// A handle to `auth.db`. Cheap to clone; clones share one connection, one worker
 /// thread and one recovery sink, so the account and space services open the file

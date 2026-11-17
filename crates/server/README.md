@@ -28,7 +28,9 @@ directory, lock or database is created; `--create` only pairs empty or missing
 roots. The protected security log (`calternal-recovery`) lives in
 `userdata-ssd/.calternal/recovery` and is attached to `auth.db` before any request
 or fixture seeding, so every security change is durable there before it is
-acknowledged. The operator `machines` commands take the same appdata root as `--appdata`.
+acknowledged. The operator `machines` commands take the same three roots and installation
+ID; they ask a running server over its admin socket, or open a stopped installation
+through the same guard and recovery log.
 
 Request receipts (what a retry with the same request ID replays) are kept 7 days by
 default; `--receipt-retention-days` / `CALTERNAL_RECEIPT_RETENTION_DAYS` changes it.
@@ -165,9 +167,11 @@ Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-pl
 
 Agent threads run on enrolled machines that connect out to this server; the server
 never starts containers or VMs (`src/machines.rs`; machine side in `crates/machine`).
-State lives in `system/machines.db` (0600, WAL, `synchronous=FULL`): enrolment code
-hashes, machines with their public keys, pool grants and leases. Exec output is kept
-in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
+Machine authority (enrollment code hashes, machines with their public keys and
+revocation, pool grants) lives in `auth.db` and is published to the recovery log
+before it is acknowledged (`calternal_auth::machines`). Placement state (leases,
+draining) lives in `system/machines.db` (0600, WAL, `synchronous=FULL`). Exec output
+is kept in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
 `--machine-poll-hold-ms` (default 20000).
 
 | Path | Who | Purpose |
@@ -176,8 +180,9 @@ in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
 | `POST /api/v1/machines/codes`, `GET /api/v1/machines`, `POST /api/v1/machines/{id}/revoke`, `POST /api/v1/machines/{id}/drain` | signed-in owner | enroll and manage your machines |
 | `POST /api/v1/machines/runs`, `GET …/runs/{lease}`, `POST …/runs/{lease}/stop`, `POST …/runs/{lease}/execs`, `GET /api/v1/machines/execs/{exec}/output?after&wait_ms` | account with `plugins.use` in the space | place work, run commands, read output |
 
-Operator commands work on the data directory, with or without the server running
-(a running server applies them within a second):
+Operator commands name the installation (three roots and installation ID). A running
+server receives them over its owner-only admin socket and applies them at once; with
+no server running they open the installation through the storage guard:
 `calternal machines code --pool|--account <uuid>`, `machines list`,
 `machines revoke <machine>`, `machines pool-grant <account> [--remove]`.
 Every command prints a readable table or block, or one JSON document with `--json`:

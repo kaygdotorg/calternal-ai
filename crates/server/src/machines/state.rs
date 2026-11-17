@@ -15,8 +15,7 @@ use calternal_types::AccountId;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-use super::{LeaseState, MachineView, RunView, Settings, db, sql};
-use calternal_types::Error;
+use super::{LeaseState, MachineView, RunView, Settings, db};
 
 /// An open machine session: its outbox and last report.
 pub(super) struct Live {
@@ -126,7 +125,8 @@ impl Exec {
 /// finished execs by ten minutes, sessions by one per machine.
 pub(super) struct State {
     pub db: rusqlite::Connection,
-    pub data_version: i64,
+    /// Recovery-protected machine authority in `auth.db`.
+    pub authority: calternal_auth::machines::Machines,
     pub machines: HashMap<Uuid, Machine>,
     pub sessions: HashMap<[u8; 32], Uuid>,
     pub challenges: HashMap<String, (Uuid, Instant)>,
@@ -285,30 +285,6 @@ impl State {
         for lease in held {
             self.end_lease(lease, "the machine was revoked", settings);
         }
-    }
-
-    /// Re-read machines and pool grants after the operator CLI wrote the file.
-    pub fn reload(&mut self, settings: &Settings) -> Result<(), Error> {
-        self.pool_grants = db::pool_grants(&self.db)
-            .map_err(sql)?
-            .into_iter()
-            .collect();
-        for row in db::machines(&self.db).map_err(sql)? {
-            match self.machines.get_mut(&row.id) {
-                Some(m) => {
-                    let newly_revoked = row.revoked && !m.row.revoked;
-                    m.row.draining = row.draining;
-                    if newly_revoked {
-                        self.apply_revocation(row.id, settings);
-                    }
-                }
-                None => {
-                    let id = row.id;
-                    self.machines.insert(id, Machine::new(row, Instant::now()));
-                }
-            }
-        }
-        Ok(())
     }
 
     fn may_use(&self, m: &Machine, account: AccountId) -> bool {

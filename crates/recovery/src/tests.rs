@@ -875,6 +875,94 @@ fn account_receipt_and_space_change_publish_together_and_retry_has_no_fsyncs() {
     assert_eq!(count.load(Ordering::SeqCst), 0);
 }
 
+/// Machine authority (codes, enrollment, revocation, pool grants) is protected
+/// state: each change is published (two file fsyncs) before it returns, account-
+/// owned rows land in the owner's record and pool rows in the global record, and a
+/// refused publication leaves the authority unchanged.
+#[test]
+fn machine_authority_is_published_before_acknowledgement() {
+    let f = Fixture::new();
+    f.baseline();
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let fail = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (observed, failing) = (count.clone(), fail.clone());
+    let c = Arc::new(
+        Coordinator::with_observer(
+            &f.root,
+            f.install,
+            Arc::new(move |s| {
+                if matches!(s, Step::BeforeIntent) && failing.swap(false, Ordering::SeqCst) {
+                    return Err(err("injected crash before the intent"));
+                }
+                if matches!(s, Step::FileSynced) {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(())
+            }),
+        )
+        .unwrap(),
+    );
+    let spaces = Spaces::open(&f.db).unwrap();
+    spaces.configure_recovery(c.clone()).unwrap();
+    let machines = spaces.machines();
+    // A publication that fails before commit leaves no authority behind.
+    fail.store(true, Ordering::SeqCst);
+    assert!(machines.set_pool_grant(f.outsider, true).is_err());
+    assert!(machines.pool_grants().unwrap().is_empty());
+    let published = |label: &str, run: &dyn Fn()| {
+        count.store(0, Ordering::SeqCst);
+        run();
+        assert_eq!(count.load(Ordering::SeqCst), 2, "{label} was not published");
+    };
+    count.store(0, Ordering::SeqCst);
+    let (code, _) = machines
+        .issue_code(Some(f.owner), std::time::Duration::from_secs(60))
+        .unwrap();
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        2,
+        "an owner's code was not published"
+    );
+    let canon = calternal_auth::token::normalize_setup_token(&code).unwrap();
+    count.store(0, Ordering::SeqCst);
+    let machine = machines
+        .redeem_code(
+            calternal_auth::token::hash32(&canon),
+            vec![7; 32],
+            "laptop".into(),
+            "linux".into(),
+            "x86_64".into(),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        2,
+        "enrollment was not published"
+    );
+    published("a pool code", &|| {
+        machines
+            .issue_code(None, std::time::Duration::from_secs(60))
+            .unwrap();
+    });
+    published("a pool grant", &|| {
+        machines.set_pool_grant(f.member, true).unwrap()
+    });
+    published("a revocation", &|| {
+        assert!(machines.revoke(machine.id).unwrap());
+    });
+    let snapshot = c.validate_and_read().unwrap();
+    assert_eq!(snapshot.tables["machines"].rows.len(), 1);
+    assert_eq!(snapshot.tables["machine_pool_grants"].rows.len(), 1);
+    assert_eq!(snapshot.tables["machine_codes"].rows.len(), 2);
+    assert_eq!(
+        snapshot.tables,
+        capture(&f.connection(), f.install, snapshot.sequence)
+            .unwrap()
+            .tables
+    );
+}
+
 #[test]
 fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
     for extra in [0, 12] {

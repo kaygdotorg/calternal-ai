@@ -325,43 +325,14 @@ async fn serve(
         .map_err(|e| boot(1, "io", format!("appdata: {e}"), DATA_HINT))?;
     // Every security change is written to this log in userdata-ssd before it is
     // acknowledged (crates/recovery), so auth.db can be rebuilt if appdata is lost.
-    let recovery_dir = roots.userdata_ssd.join(".calternal/recovery");
-    calternal_fsio::private::directory(&recovery_dir)
-        .map_err(|e| boot(1, "io", format!("recovery log directory: {e}"), DATA_HINT))?;
-    let recovery = calternal_recovery::Coordinator::open(&recovery_dir, store.installation())
-        .map_err(|e| {
-            boot(
-                1,
-                "failed",
-                format!("recovery log: {e}"),
-                "The recovery log in userdata-ssd is damaged or belongs to another installation.",
-            )
-        })?;
-    let machines = {
-        let dir = data_dir.clone();
-        match tokio::task::spawn_blocking(move || MachineService::open(&dir, machine_settings))
-            .await
-        {
-            Ok(Ok(m)) => m,
-            Ok(Err(e)) => {
-                return Err(boot(
-                    1,
-                    "failed",
-                    format!("machines: {}", e.message),
-                    DATA_HINT,
-                ));
-            }
-            Err(_) => {
-                return Err(boot(
-                    1,
-                    "internal",
-                    "the machines service did not start",
-                    DATA_HINT,
-                ));
-            }
-        }
-    };
-    let _sweeper = machines.spawn_sweeper();
+    let recovery = store.open_recovery(create).map_err(|e| {
+        boot(
+            1,
+            "failed",
+            e.message,
+            "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
+        )
+    })?;
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
     let registry = match &test_root {
@@ -426,6 +397,39 @@ async fn serve(
                 ));
             }
         };
+    // Machine authority shares auth.db and its recovery barrier.
+    let machines = {
+        let dir = data_dir.clone();
+        let authority = directory.spaces.machines();
+        match tokio::task::spawn_blocking(move || {
+            MachineService::open(&dir, authority, machine_settings)
+        })
+        .await
+        {
+            Ok(Ok(m)) => m,
+            Ok(Err(e)) => {
+                return Err(boot(
+                    1,
+                    "failed",
+                    format!("machines: {}", e.message),
+                    DATA_HINT,
+                ));
+            }
+            Err(_) => {
+                return Err(boot(
+                    1,
+                    "internal",
+                    "the machines service did not start",
+                    DATA_HINT,
+                ));
+            }
+        }
+    };
+    let _sweeper = machines.spawn_sweeper();
+    // Operator commands reach this server here instead of writing behind it.
+    let _admin =
+        calternal_server::machines::admin::serve_socket(&data_dir, installation, machines.clone())
+            .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
     let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
     {
         match service.auth.first_owner_token().await {
@@ -565,7 +569,6 @@ async fn shutdown_signal() {
 mod cli_output_tests {
     use super::*;
     use calternal_cli::testing::assert_golden;
-    use calternal_machine::protocol::Owner;
     use std::path::{Path, PathBuf};
     use time::UtcOffset;
 
@@ -575,35 +578,47 @@ mod cli_output_tests {
             .join(name)
     }
 
-    fn enrolled_data_dir() -> (tempfile::TempDir, PathBuf) {
+    /// A paired, stopped installation (as `serve --create` leaves it) with the
+    /// given pool machines written before recovery is first attached.
+    fn installation(machines: &[(&str, &str)]) -> (tempfile::TempDir, admin_cli::Installation) {
+        use std::os::unix::fs::DirBuilderExt;
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("system/machines.db");
-        let mut conn = calternal_server::machines::db::open(&path).unwrap();
-        let (code, _) = calternal_server::machines::db::new_code(
-            &conn,
-            Owner::Pool,
-            std::time::Duration::from_secs(60),
-        )
-        .unwrap();
-        let code = calternal_auth::token::normalize_setup_token(&code).unwrap();
-        let row = calternal_server::machines::db::redeem_code(
-            &mut conn,
-            &calternal_auth::token::hash32(&code),
-            &[7; 32],
-            "build-machine-with-a-long-name",
-            "linux",
-            "x86_64",
-        )
-        .unwrap()
-        .unwrap();
-        let id = uuid::Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
-        conn.execute(
-            "UPDATE machines SET id = ?1 WHERE id = ?2",
-            [id.to_string(), row.id.to_string()],
-        )
-        .unwrap();
-        let path = dir.path().to_path_buf();
-        (dir, path)
+        let roots = calternal_roots::Roots {
+            appdata: dir.path().join("appdata"),
+            userdata_ssd: dir.path().join("userdata-ssd"),
+            userdata_hdd: dir.path().join("userdata-hdd"),
+        };
+        let id = "00000000-0000-0000-0000-000000000001";
+        drop(
+            Store::open(
+                &roots,
+                uuid::Uuid::parse_str(id).unwrap(),
+                true,
+                calternal_content::DEFAULT_RECEIPT_RETENTION,
+            )
+            .unwrap(),
+        );
+        let c = calternal_auth::db::open_conn(&roots.appdata.join("system/auth.db")).unwrap();
+        for (machine, name) in machines {
+            c.execute(
+                "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms) VALUES(?1,NULL,?2,?3,'linux','x86_64',0)",
+                rusqlite::params![machine, vec![7u8; 32], name],
+            )
+            .unwrap();
+        }
+        drop(c);
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .recursive(true)
+            .create(roots.userdata_ssd.join(".calternal/recovery"))
+            .unwrap();
+        let installation = admin_cli::Installation {
+            appdata: roots.appdata,
+            userdata_ssd: roots.userdata_ssd,
+            userdata_hdd: roots.userdata_hdd,
+            installation_id: id.into(),
+        };
+        (dir, installation)
     }
 
     fn redact_code_and_time(text: &str) -> String {
@@ -623,12 +638,15 @@ mod cli_output_tests {
 
     #[test]
     fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
-        let (_keep, data_dir) = enrolled_data_dir();
+        let (_keep, installation) = installation(&[(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "build-machine-with-a-long-name",
+        )]);
         for width in [120, 80, 40] {
             let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
             let machines = admin_cli::machines(
                 MachinesCmd::List {
-                    appdata: data_dir.clone(),
+                    installation: installation.clone(),
                 },
                 &out,
             )
@@ -655,7 +673,13 @@ mod cli_output_tests {
             "machines",
             "list",
             "--appdata",
-            "/tmp/calternal",
+            "/tmp/calternal/appdata",
+            "--userdata-ssd",
+            "/tmp/calternal/ssd",
+            "--userdata-hdd",
+            "/tmp/calternal/hdd",
+            "--installation-id",
+            "00000000-0000-0000-0000-000000000001",
             "--no-hints",
         ])
         .unwrap();
@@ -664,11 +688,11 @@ mod cli_output_tests {
 
     #[test]
     fn machine_code_and_empty_list_hint_goldens_cover_enabled_and_disabled_hints() {
-        let dir = tempfile::tempdir().unwrap();
+        let (_keep, installation) = installation(&[]);
         let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
         let code = admin_cli::machines(
             MachinesCmd::Code {
-                appdata: dir.path().to_path_buf(),
+                installation: installation.clone(),
                 pool: true,
                 account: None,
                 minutes: 60,
@@ -686,10 +710,10 @@ mod cli_output_tests {
             &redact_code_and_time(&no_hints.render(&code)),
         );
 
-        let empty_dir = tempfile::tempdir().unwrap();
+        let (_keep_empty, empty_installation) = self::installation(&[]);
         let empty = admin_cli::machines(
             MachinesCmd::List {
-                appdata: empty_dir.path().to_path_buf(),
+                installation: empty_installation,
             },
             &out,
         )

@@ -3,7 +3,7 @@ exit: 1
 {
   "error": {
     "code": "not_found",
-    "hint": "`calternal machines list --appdata DIR` shows the machines and their ids.",
+    "hint": "`calternal machines list` shows the machines and their ids.",
     "message": "no machine dddddddd-dddd-4ddd-8ddd-dddddddddddd"
   },
   "ok": false

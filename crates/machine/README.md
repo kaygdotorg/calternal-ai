@@ -10,7 +10,7 @@ machine and never starts containers or VMs. The server side lives in
 
 ```sh
 # On the server host, or from the signed-in account (POST /api/v1/machines/codes):
-calternal machines code --appdata DATA --account <account-uuid>   # or --pool
+calternal machines code --appdata APPDATA --userdata-ssd SSD --userdata-hdd HDD --account <account-uuid>   # or --pool
 # On the machine:
 scripts/install-machine.sh --server https://cal.example.org --code CODE
 # which runs, in order:

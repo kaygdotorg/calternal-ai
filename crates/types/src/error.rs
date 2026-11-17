@@ -48,8 +48,9 @@ impl ErrorCode {
 /// A failure whose every field may be shown to the caller who caused it.
 ///
 /// Cost: the message (and details, when present) are heap allocations; building
-/// one does no I/O and takes no lock.
-#[derive(Debug, Clone, PartialEq)]
+/// one does no I/O and takes no lock. It serializes as `{code, message, details}`
+/// for local channels such as the admin socket.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Error {
     /// Category callers branch on; never parse the message instead.
     pub code: ErrorCode,

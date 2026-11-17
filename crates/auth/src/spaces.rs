@@ -324,6 +324,11 @@ impl Spaces {
             receipt_retention,
         }
     }
+    /// Machine authority over this same `auth.db` handle, sharing its worker and
+    /// recovery barrier. Cost: one Arc clone.
+    pub fn machines(&self) -> crate::machines::Machines {
+        crate::machines::Machines::new(self.db.clone())
+    }
     /// Attaches recovery before any requests are admitted; reconciles pending
     /// proposals. Covers every handle sharing this database (see [`crate::Auth::spaces`]).
     pub fn configure_recovery(&self, sink: std::sync::Arc<dyn RecoverySink>) -> Result<()> {

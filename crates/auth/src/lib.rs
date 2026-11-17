@@ -14,6 +14,7 @@ mod config;
 pub mod db;
 mod http_facing;
 pub mod limit;
+pub mod machines;
 mod passkey;
 mod passkeys;
 mod session;

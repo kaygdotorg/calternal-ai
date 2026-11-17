@@ -25,6 +25,8 @@ pub struct Store {
     content: std::sync::Arc<Content>,
     /// The appdata root (account-input databases live under it).
     appdata: std::path::PathBuf,
+    /// The three roots this store validated and locked.
+    roots: calternal_roots::Roots,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
     // Dropped last: every database and file handle above closes first.
@@ -102,6 +104,34 @@ impl Store {
     pub fn installation(&self) -> Uuid {
         self.installation
     }
+    /// The appdata root this store locked. Cost: a borrow.
+    pub fn appdata(&self) -> &std::path::Path {
+        &self.appdata
+    }
+    /// Opens the installation's protected security log in userdata-ssd
+    /// (`.calternal/recovery`), bound to the pinned installation ID. `create`
+    /// provisions its directory at first setup; otherwise a missing log is refused,
+    /// since every authority change must reach it before acknowledgement.
+    /// The caller attaches it to `auth.db` before any authority change.
+    ///
+    /// # Errors
+    /// Unavailable when the directory is missing (without `create`), unusable,
+    /// damaged or bound to another installation.
+    ///
+    /// Cost: directory checks and the log's open (reads, at most a provisioning fsync).
+    pub fn open_recovery(&self, create: bool) -> Result<calternal_recovery::Coordinator, Error> {
+        let dir = self.roots.userdata_ssd.join(".calternal/recovery");
+        if create {
+            calternal_fsio::private::directory(&dir)
+                .map_err(|e| Error::unavailable(format!("recovery log directory: {e}")))?;
+        } else if !dir.is_dir() {
+            return Err(Error::unavailable(
+                "the recovery log in userdata-ssd is missing or not a directory",
+            ));
+        }
+        calternal_recovery::Coordinator::open(&dir, self.installation)
+            .map_err(|e| Error::unavailable(format!("recovery log: {e}")))
+    }
     /// Shared secret store under this appdata root. Cost: one reference-count
     /// increment.
     pub fn secrets(&self) -> std::sync::Arc<calternal_secrets::LocalStore> {
@@ -149,6 +179,7 @@ impl Store {
         Ok(Self {
             content: std::sync::Arc::new(content),
             appdata: root.clone(),
+            roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
             installation,
             _roots: locks,

@@ -1,5 +1,5 @@
 exit: 1
 --- stdout ---
 --- stderr ---
-error: machine database failure
-hint: Check that --appdata is the server's appdata root and that you can write to it.
+error: storage roots refused: userdata-ssd root <DIR>/absent/userdata-ssd is missing; disk may not be mounted
+hint: Pass the same three roots and installation ID as `calternal serve`; see `calternal machines --help`.

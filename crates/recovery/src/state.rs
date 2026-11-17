@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-/// Canonical key for schema inventory, fixed policy and unbound enrollment tokens.
+/// Canonical key for schema inventory, fixed policy, unbound enrollment tokens
+/// and pool machine authority (account-owned tables with no account).
 pub(crate) const GLOBAL: &str = "000000000000000000000000000000000";
 // A closed inventory of every auth.db table: adding a table requires an explicit
 // owner mapping here, or recovery configuration refuses the database.
@@ -15,6 +16,9 @@ const SPECS: &[(&str, char, &str)] = &[
     ("installations", '1', "user_id"),
     ("group_members", '1', "user_id"),
     ("space_receipts", '1', "actor"),
+    ("machine_codes", '1', "owner_account"),
+    ("machines", '1', "owner_account"),
+    ("machine_pool_grants", '1', "account"),
     ("spaces", '2', "id"),
     ("space_memberships", '2', "space_id"),
     ("groups", '3', "id"),
@@ -180,11 +184,9 @@ pub(crate) fn capture_record(
         let filter = if *owner_kind == '0' {
             if kind == '0' { "1".into() } else { "0".into() }
         } else if kind == '0' {
-            if *name == "setup_tokens" {
-                "user_id IS NULL".into()
-            } else {
-                "0".into()
-            }
+            // Account-owned rows with no account (unbound setup tokens, pool
+            // machine codes and machines) belong to the global record.
+            format!("{} IS NULL", quote(owner))
         } else {
             format!("{}=?1", quote(owner))
         };

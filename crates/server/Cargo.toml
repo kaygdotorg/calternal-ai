@@ -23,6 +23,7 @@ calternal-content.workspace = true
 calternal-store.workspace = true
 calternal-roots.workspace = true
 calternal-recovery.workspace = true
+rustix = { workspace = true, features = ["process"] }
 calternal-auth.workspace = true
 calternal-fsio.workspace = true
 calternal-core.workspace = true

@@ -21,13 +21,17 @@
 //!
 //! Who may use a machine: its owning account; a pool machine only accounts the
 //! operator granted (`calternal machines pool-grant`). Space authority for a run
-//! is checked by [`http`] on every call.
+//! is checked by [`http`] on every call. Machine authority (codes, enrolment,
+//! revocation, pool grants) commits in `auth.db` through the recovery barrier
+//! ([`calternal_auth::machines`]); `machines.db` holds only leases and draining.
 //!
 //! Locking and cost: machines are installation-wide (not per-space), so one
 //! registry mutex guards them. Every method except [`MachineService::sync`] and
 //! [`MachineService::read_output`] takes it and may commit to SQLite while
-//! holding it (one fsync, 1–5 ms, only on enrolment, placement, lease change and
-//! revocation); those methods block and must run on a blocking task, which
+//! holding it (one fsync, 1–5 ms, on placement, lease change and draining; an
+//! authority change waits on the auth worker and its recovery publication, two
+//! more fsyncs, held so the registry and authority never disagree); those
+//! methods block and must run on a blocking task, which
 //! [`http`] does. The two async methods only wait on a `Notify` and take the lock
 //! on blocking tasks. Hot paths: a `sync` with nothing new reads and writes no
 //! file; an `output` upload never touches SQLite. Placement scans waiting
@@ -198,6 +202,21 @@ fn sql(e: rusqlite::Error) -> Error {
     Error::internal("machine database failure")
 }
 
+/// Maps a machine-authority failure to a caller-safe error; the private detail is
+/// logged here. An unknown owner account and a refused recovery publication both
+/// leave authority unchanged.
+pub(crate) fn authority_error(e: calternal_auth::Error) -> Error {
+    tracing::warn!(error = %e, "machine authority");
+    match e.code() {
+        calternal_auth::ErrorCode::InvalidInput | calternal_auth::ErrorCode::NotFound => {
+            Error::invalid_input("no such account or machine")
+        }
+        _ => Error::unavailable(
+            "machine authority was not changed: unknown account, or the recovery log refused it",
+        ),
+    }
+}
+
 /// Run `f` on a blocking task; the registry lock and SQLite never block an async worker.
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T, Error> + Send + 'static,
@@ -208,19 +227,33 @@ async fn blocking<T: Send + 'static>(
 }
 
 impl MachineService {
-    /// Open `<data>/system/machines.db` and load machines, grants and active leases.
-    /// Blocks: one schema check and three reads.
-    pub fn open(data_dir: &Path, settings: Settings) -> Result<Arc<Self>, Error> {
+    /// Open `<data>/system/machines.db`, then load machines and grants from
+    /// `authority` and active leases. The host opens `data_dir` under the root
+    /// guard and passes the authority handle of its recovery-protected `auth.db`.
+    /// Blocks: one schema check, two authority reads and two placement reads.
+    pub fn open(
+        data_dir: &Path,
+        authority: calternal_auth::machines::Machines,
+        settings: Settings,
+    ) -> Result<Arc<Self>, Error> {
         let db = db::open(&data_dir.join("system/machines.db")).map_err(sql)?;
         let now = Instant::now();
-        let machines = db::machines(&db)
-            .map_err(sql)?
+        let draining = db::draining(&db).map_err(sql)?;
+        let machines = authority
+            .list()
+            .map_err(authority_error)?
             .into_iter()
-            .map(|row| (row.id, Machine::new(row, now)))
+            .map(|r| {
+                let drains = draining.contains(&r.id);
+                (r.id, Machine::new(db::MachineRow::new(r, drains), now))
+            })
             .collect();
         let mut st = State {
-            data_version: db::data_version(&db).map_err(sql)?,
-            pool_grants: db::pool_grants(&db).map_err(sql)?.into_iter().collect(),
+            pool_grants: authority
+                .pool_grants()
+                .map_err(authority_error)?
+                .into_iter()
+                .collect(),
             machines,
             sessions: HashMap::new(),
             challenges: HashMap::new(),
@@ -229,7 +262,9 @@ impl MachineService {
             execs: HashMap::new(),
             next_order: 0,
             db,
+            authority,
         };
+        db::prune_ended(&st.db, settings.ended_lease_retention).map_err(sql)?;
         for row in db::active_leases(&st.db).map_err(sql)? {
             st.next_order += 1;
             st.threads.insert(row.thread, row.id);
@@ -460,13 +495,60 @@ impl MachineService {
 
     // --------------------------------------------------------------- owners
 
-    /// Issue a one-time enrolment code for `owner`; blocks (one commit).
-    /// Returns the code and its expiry in Unix milliseconds.
+    /// Issue a one-time enrolment code for `owner`; blocks (one protected
+    /// authority commit). Returns the code and its expiry in Unix milliseconds.
     pub fn issue_code(&self, owner: Owner) -> Result<(String, i64), Error> {
+        let st = self.lock()?;
+        st.authority
+            .issue_code(db::owner_account(owner), self.settings.code_ttl)
+            .map_err(authority_error)
+    }
+
+    /// Issue a code valid for `ttl` instead of the configured default (operator
+    /// commands choose the lifetime); blocks (one protected authority commit).
+    pub fn issue_code_for(&self, owner: Owner, ttl: Duration) -> Result<(String, i64), Error> {
+        let st = self.lock()?;
+        st.authority
+            .issue_code(db::owner_account(owner), ttl)
+            .map_err(authority_error)
+    }
+
+    /// Every enrolled machine, revoked ones included, for the operator. Blocks
+    /// briefly (no file I/O).
+    pub fn all_machines(&self) -> Result<Vec<db::MachineRow>, Error> {
+        let st = self.lock()?;
+        let mut rows: Vec<_> = st.machines.values().map(|m| m.row.clone()).collect();
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(rows)
+    }
+
+    /// Revoke any machine as the operator; false when it does not exist. Blocks
+    /// (one protected authority commit); takes effect at once as in [`Self::revoke`].
+    pub fn revoke_any(&self, machine: Uuid) -> Result<bool, Error> {
         let mut st = self.lock()?;
-        let issued = db::new_code(&st.db, owner, self.settings.code_ttl)?;
-        st.data_version = db::data_version(&st.db).map_err(sql)?;
-        Ok(issued)
+        let st = &mut *st;
+        if !st.authority.revoke(machine).map_err(authority_error)? {
+            return Ok(false);
+        }
+        st.apply_revocation(machine, &self.settings);
+        Ok(true)
+    }
+
+    /// Grant or withdraw an account's use of pool machines; blocks (one protected
+    /// authority commit) and places waiting runs the grant now allows.
+    pub fn set_pool_grant(&self, account: AccountId, granted: bool) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        let st = &mut *st;
+        st.authority
+            .set_pool_grant(account, granted)
+            .map_err(authority_error)?;
+        if granted {
+            st.pool_grants.insert(account);
+        } else {
+            st.pool_grants.remove(&account);
+        }
+        st.place_waiting(&self.settings);
+        Ok(())
     }
 
     /// Machines owned by `account`. Blocks briefly (no file I/O).
@@ -494,8 +576,7 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         Self::check_owner(st, account, machine)?;
-        db::revoke(&st.db, machine).map_err(sql)?;
-        st.data_version = db::data_version(&st.db).map_err(sql)?;
+        st.authority.revoke(machine).map_err(authority_error)?;
         st.apply_revocation(machine, &self.settings);
         Ok(())
     }
@@ -511,7 +592,6 @@ impl MachineService {
         let st = &mut *st;
         Self::check_owner(st, account, machine)?;
         db::set_draining(&st.db, machine, draining).map_err(sql)?;
-        st.data_version = db::data_version(&st.db).map_err(sql)?;
         if let Some(m) = st.machines.get_mut(&machine) {
             m.row.draining = draining;
         }
@@ -538,19 +618,15 @@ impl MachineService {
         })
     }
 
-    /// Pick up operator CLI changes, mark silent machines offline, fence and
-    /// re-place their leases after `lease_ttl`, drop finished exec buffers after
-    /// ten minutes and ended lease rows after `ended_lease_retention`. Blocks: one
-    /// `PRAGMA data_version` read per tick; writes only when something changed.
+    /// Mark silent machines offline, fence and re-place their leases after
+    /// `lease_ttl`, drop finished exec buffers after ten minutes and ended lease
+    /// rows after `ended_lease_retention`. Operator changes arrive through the
+    /// service itself (the admin socket), never behind it. Blocks: one indexed
+    /// delete per tick, which writes only when a lease row has expired.
     pub fn sweep(&self) -> Result<(), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
-        let version = db::data_version(&st.db).map_err(sql)?;
-        if version != st.data_version {
-            st.data_version = version;
-            st.reload(&self.settings)?;
-            db::prune_ended(&st.db, self.settings.ended_lease_retention).map_err(sql)?;
-        }
+        db::prune_ended(&st.db, self.settings.ended_lease_retention).map_err(sql)?;
         let now = Instant::now();
         let offline_after = self.settings.poll_hold + Duration::from_secs(5);
         let mut expired = Vec::new();

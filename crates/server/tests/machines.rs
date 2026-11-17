@@ -33,9 +33,8 @@ async fn enrolment_codes_are_single_use_and_expire() {
             "--account",
             &owner_id,
             "--json",
-            "--appdata",
         ])
-        .arg(data.0.join("appdata"))
+        .args(installation(&data.0))
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -205,8 +204,8 @@ async fn other_accounts_cannot_use_see_or_touch_a_machine() {
     // A pool grant alone does not help: there is no pool machine.
     let (guest_id, _) = server.principal(g).await;
     let st = std::process::Command::new(BIN)
-        .args(["machines", "pool-grant", &guest_id, "--appdata"])
-        .arg(data.0.join("appdata"))
+        .args(["machines", "pool-grant", &guest_id])
+        .args(installation(&data.0))
         .status()
         .unwrap();
     assert!(st.success());
@@ -222,8 +221,8 @@ async fn pool_machines_serve_only_granted_accounts() {
     let data = TempDir::new("pool-data");
     let server = Server::start(&data.0, free_port());
     let out = std::process::Command::new(BIN)
-        .args(["machines", "code", "--pool", "--json", "--appdata"])
-        .arg(data.0.join("appdata"))
+        .args(["machines", "code", "--pool", "--json"])
+        .args(installation(&data.0))
         .output()
         .unwrap();
     let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -244,8 +243,8 @@ async fn pool_machines_serve_only_granted_accounts() {
     );
     let (owner_id, _) = server.principal(&server.owner).await;
     let st = std::process::Command::new(BIN)
-        .args(["machines", "pool-grant", &owner_id, "--appdata"])
-        .arg(data.0.join("appdata"))
+        .args(["machines", "pool-grant", &owner_id])
+        .args(installation(&data.0))
         .status()
         .unwrap();
     assert!(st.success());

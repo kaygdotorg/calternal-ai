@@ -142,6 +142,31 @@ CREATE TABLE space_receipts(
  PRIMARY KEY(actor,scope,request_id)
 ) STRICT;
 CREATE INDEX space_receipts_age ON space_receipts(actor,at_ms);
+-- Machine authority: who may run code where. A NULL owner is the operator's
+-- pool. Codes store only their hash; expired codes are pruned after a day.
+CREATE TABLE machine_codes(
+ hash BLOB PRIMARY KEY,
+ owner_account TEXT REFERENCES users(id) ON DELETE CASCADE,
+ created_ms INTEGER NOT NULL,
+ expires_ms INTEGER NOT NULL,
+ used_ms INTEGER
+) STRICT;
+CREATE INDEX machine_codes_owner ON machine_codes(owner_account);
+CREATE TABLE machines(
+ id TEXT PRIMARY KEY,
+ owner_account TEXT REFERENCES users(id) ON DELETE CASCADE,
+ public_key BLOB NOT NULL,
+ name TEXT NOT NULL,
+ os TEXT NOT NULL,
+ arch TEXT NOT NULL,
+ enrolled_ms INTEGER NOT NULL,
+ revoked_ms INTEGER
+) STRICT;
+CREATE INDEX machines_owner ON machines(owner_account);
+CREATE TABLE machine_pool_grants(
+ account TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+ granted_ms INTEGER NOT NULL
+) STRICT;
 -- What the development seed created, so a restart returns the same fixture IDs and
 -- never resurrects removed memberships or deleted spaces. Never read by requests.
 CREATE TABLE development_directory(name TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE) STRICT;

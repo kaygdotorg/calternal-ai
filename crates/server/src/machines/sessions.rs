@@ -17,7 +17,7 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 use super::state::{Exec, ExecState, Live, Machine};
-use super::{LeaseState, MachineService, blocking, db, sql};
+use super::{LeaseState, MachineService, blocking, db};
 use calternal_types::Error;
 
 /// Pending challenges kept at most; beyond it `session/start` answers 503.
@@ -35,7 +35,8 @@ fn new_token() -> Result<(String, [u8; 32]), Error> {
 
 impl MachineService {
     /// Redeem a code for a new machine bound to the presented public key.
-    /// Blocks (one commit). Unknown, used and expired codes look the same.
+    /// Blocks (one protected authority commit). Unknown, used and expired codes
+    /// look the same.
     pub fn enrol(&self, req: &EnrolRequest) -> Result<EnrolResponse, Error> {
         let invalid = || Error::not_found("unknown, used or expired enrolment code");
         let canon = normalize_setup_token(&req.code).ok_or_else(invalid)?;
@@ -48,17 +49,18 @@ impl MachineService {
             s.chars().filter(|c| !c.is_control()).take(n).collect()
         };
         let mut st = self.lock()?;
-        let row = db::redeem_code(
-            &mut st.db,
-            &hash32(&canon),
-            &key,
-            &clean(&req.name, 64),
-            &clean(&req.os, 32),
-            &clean(&req.arch, 32),
-        )
-        .map_err(sql)?
-        .ok_or_else(invalid)?;
-        st.data_version = db::data_version(&st.db).map_err(sql)?;
+        let record = st
+            .authority
+            .redeem_code(
+                hash32(&canon),
+                key,
+                clean(&req.name, 64),
+                clean(&req.os, 32),
+                clean(&req.arch, 32),
+            )
+            .map_err(super::authority_error)?
+            .ok_or_else(invalid)?;
+        let row = db::MachineRow::new(record, false);
         let resp = EnrolResponse {
             machine_id: row.id,
             owner: row.owner,

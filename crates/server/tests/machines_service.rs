@@ -15,14 +15,24 @@ use calternal_server::machines::{MachineService, Settings};
 use calternal_types::{AccountId, SpaceId};
 use uuid::Uuid;
 
-fn service(dir: &std::path::Path) -> Arc<MachineService> {
+/// A service over a fresh auth.db with one existing account (machine authority
+/// requires owners to exist). Authority calls go to the auth worker, so they run
+/// outside the async worker, as the HTTP layer does.
+fn service(dir: &std::path::Path) -> (Arc<MachineService>, AccountId) {
     let settings = Settings {
         lease_ttl: Duration::from_millis(300),
         poll_hold: Duration::from_millis(100),
         output_buffer_bytes: 64,
         ..Settings::default()
     };
-    MachineService::open(dir, settings).unwrap()
+    tokio::task::block_in_place(|| {
+        let spaces = calternal_auth::spaces::Spaces::open(&dir.join("system/auth.db")).unwrap();
+        let owner = spaces.seed_development().unwrap().owner;
+        (
+            MachineService::open(dir, spaces.machines(), settings).unwrap(),
+            owner,
+        )
+    })
 }
 
 struct M {
@@ -32,6 +42,10 @@ struct M {
 }
 
 fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
+    tokio::task::block_in_place(|| enrol_blocking(svc, owner))
+}
+
+fn enrol_blocking(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
     let (code, _) = svc.issue_code(Owner::Account { id: owner }).unwrap();
     let key = MachineKey::generate().unwrap();
     let req = EnrolRequest {
@@ -102,8 +116,8 @@ fn data(seq: u64, n: usize) -> Chunk {
 #[tokio::test(flavor = "multi_thread")]
 async fn sessions_need_the_machine_key() {
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let (id, _key) = enrol(&svc, AccountId::new());
+    let (svc, owner) = service(dir.path());
+    let (id, _key) = enrol(&svc, owner);
     let wrong = MachineKey::generate().unwrap();
     let challenge = svc.session_start(id).unwrap();
     let forged = SessionFinish {
@@ -130,8 +144,7 @@ async fn sessions_need_the_machine_key() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stale_fence_and_wrong_machine_are_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let svc = service(dir.path());
-    let owner = AccountId::new();
+    let (svc, owner) = service(dir.path());
     let (a_id, a_key) = enrol(&svc, owner);
     let (b_id, b_key) = enrol(&svc, owner);
     let a = connect(&svc, a_id, a_key, Uuid::new_v4());

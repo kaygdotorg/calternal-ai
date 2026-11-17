@@ -107,7 +107,9 @@ fn machine_pool_grant_requires_a_working_recovery_log() {
     // permissions or root-user dependence in this failure injection.
     std::fs::write(&log, b"unavailable recovery directory").unwrap();
     let account = AccountId::new();
-    let result = admin::pool_grant(&roots.appdata, account, true);
+    // Adapted call (simplify lane): machine administration takes the guarded
+    // store, since an appdata path alone cannot reach the recovery log.
+    let result = admin::service_for(&_store).and_then(|svc| svc.set_pool_grant(account, true));
     assert!(
         result.is_err(),
         "pool authority was acknowledged without a usable recovery log"
