@@ -184,8 +184,12 @@ pub fn run(
         .block_on(client.execute_cancellable(pending.request(), &CancellationToken::new()))
         .map_err(error)?;
     let id = &pending.request().request_id;
-    Ok(crate::people::render(out, operation, id, &data)
-        .unwrap_or_else(|| render(out, operation, id, data)))
+    Ok(if operation.starts_with("requests.") {
+        crate::requests::reply(data, id)
+    } else {
+        crate::people::render(out, operation, id, &data)
+            .unwrap_or_else(|| render(out, operation, id, data))
+    })
 }
 fn error(e: calternal_client::ClientError) -> CliError {
     let api = e.api_error();

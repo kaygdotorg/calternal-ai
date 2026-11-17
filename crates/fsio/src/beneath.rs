@@ -101,6 +101,34 @@ impl Folder {
         Ok(File::from(fd))
     }
 
+    /// Open or create one child directory without following a symlink. A
+    /// newly created entry is synced in its parent before returning.
+    pub fn child(&self, name: &str, create: bool) -> io::Result<Self> {
+        single(name)?;
+        let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        let open = || rustix::fs::openat(&self.fd, name, flags, Mode::empty());
+        let fd = match open() {
+            Err(rustix::io::Errno::NOENT) if create => {
+                match rustix::fs::mkdirat(&self.fd, name, Mode::from_raw_mode(0o755)) {
+                    Ok(()) | Err(rustix::io::Errno::EXIST) => self.sync()?,
+                    Err(e) => return Err(e.into()),
+                }
+                open()?
+            }
+            result => result?,
+        };
+        Ok(Self {
+            fd,
+            path: self.path.join(name),
+        })
+    }
+
+    /// Check whether a descriptor-relative replacement can safely target this name.
+    /// A missing entry or a regular file is allowed; symlinks and other types fail.
+    pub fn check_replacement(&self, name: &str) -> io::Result<()> {
+        replacement_target(&self.fd, name)
+    }
+
     /// The names in this folder (not `.` and `..`).
     pub fn names(&self) -> io::Result<Vec<String>> {
         let mut dir = rustix::fs::Dir::read_from(&self.fd)?;
@@ -194,6 +222,33 @@ impl TempFile {
             io::ErrorKind::AlreadyExists,
             "every name offered is taken",
         ))
+    }
+
+    /// Atomically replace a server-owned entry in the pinned directory. Existing
+    /// nonregular entries are refused. If an outside rename races the check, the
+    /// rename never follows its destination. Syncs the new file and the folder.
+    pub fn replace(mut self, to: &str) -> io::Result<()> {
+        replacement_target(&self.dir, to)?;
+        self.file.sync_all()?;
+        rustix::fs::renameat(&self.dir, self.name.as_str(), &self.dir, to)?;
+        self.placed = true;
+        rustix::fs::fsync(&self.dir)?;
+        crate::usage::changed(&self.path.join(to));
+        Ok(())
+    }
+}
+
+fn replacement_target(dir: &OwnedFd, name: &str) -> io::Result<()> {
+    single(name)?;
+    match rustix::fs::statat(dir, name, AtFlags::SYMLINK_NOFOLLOW) {
+        Ok(st)
+            if rustix::fs::FileType::from_raw_mode(st.st_mode)
+                != rustix::fs::FileType::RegularFile =>
+        {
+            Err(io::ErrorKind::InvalidInput.into())
+        }
+        Ok(_) | Err(rustix::io::Errno::NOENT) => Ok(()),
+        Err(e) => Err(e.into()),
     }
 }
 

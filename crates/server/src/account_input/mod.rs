@@ -136,7 +136,7 @@ pub(crate) fn revoked_targets(
     use calternal_types::AccountId;
     use serde_json::Value;
     match op {
-        "spaces.remove_member" => Ok(input
+        "spaces.remove_member" | "spaces.set_role" => Ok(input
             .get("account_id")
             .and_then(Value::as_str)
             .and_then(|a| AccountId::parse(a).ok())

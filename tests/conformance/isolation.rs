@@ -22,6 +22,9 @@ mod agent_cases;
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
 mod people_cases;
+
+mod requests_cases;
+mod requests_review_cases;
 mod threads_cases;
 
 mod drafts_cases;
@@ -623,6 +626,8 @@ async fn all_operations_hide_foreign_ids() {
     covered.extend(["spaces.list", "spaces.create"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
     covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
+
+    covered.extend(requests_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([
         "drafts.save",

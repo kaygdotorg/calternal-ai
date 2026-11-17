@@ -321,15 +321,7 @@ impl<D: Directory> Stream<D> {
                 next = chunk.seq + 1;
             }
             self.next = Some(next);
-            let requests = if job.operation == "agent.turn" {
-                let (st, space, id) = (self.state.clone(), self.space.clone(), self.id.clone());
-                blocking(move || st.jobs.agent_requests(&space, &id))
-                    .await
-                    .ok()?
-            } else {
-                vec![]
-            };
-            let current = json!({"job":job.view(),"requests":requests});
+            let current = json!({"job":job.view()});
             if job.operation == "agent.turn" && current != self.last_state {
                 self.last_state = current.clone();
                 out.push_str(&event("state", None, &current));

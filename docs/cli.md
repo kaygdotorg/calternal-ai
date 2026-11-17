@@ -98,6 +98,16 @@ with `--cursor`. For a group's member continuation, also pass `--group GROUP`.
 The invite retention setting is `CALTERNAL_INVITE_RETENTION_DAYS`, seven days by
 default from expiry, redemption, or revocation.
 
+| Command | Purpose | Human output | `data` (JSON) |
+|---|---|---|---|
+| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |
+| `requests answer ID --answer JSON` | Submit a question's form values. | Request ID and status. | `id`, `status` |
+| `requests approve ID --lifetime once\|this-thread` | Approve using a fresh passkey session. | Request ID and status. | `id`, `status` |
+| `requests deny ID` | Decline a pending approval. | Request ID and status. | `id`, `status` |
+
+Both `calternal requests` and `cl requests` use the same operations. See the
+[request contract](requests.md) for session and retry requirements.
+
 The `machines` commands name the installation exactly as `serve` does: the three
 roots and the installation ID (`--installation-id` or `CALTERNAL_INSTALLATION_ID`).
 Machine authority (codes, enrollment, revocation, pool grants) is recorded in the

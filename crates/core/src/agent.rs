@@ -56,8 +56,6 @@ pub struct AgentInput {
     pub app: String,
     /// Whether the requested grant allows mutations as well as reads.
     pub write: bool,
-    /// Approval UUID for a freshly verified person to approve.
-    pub approval_id: String,
     /// Stream epoch last seen, empty on first read.
     pub epoch: String,
     /// Next job sequence requested; zero on first read.
@@ -122,11 +120,6 @@ pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
         "Ask for a named app scope in this thread",
         true,
     ),
-    (
-        "access.approve",
-        "Approve a scope with a freshly verified person session",
-        true,
-    ),
 ];
 
 /// Declared risk class, evaluated in addition to capabilities and token scope.
@@ -145,6 +138,13 @@ pub enum OperationRisk {
     WidensAccess,
 }
 
+impl OperationRisk {
+    /// Whether a person can retain approval for this class across a thread.
+    pub fn allows_thread_approval(self) -> bool {
+        matches!(self, Self::Read | Self::Reversible | Self::External)
+    }
+}
+
 /// Risk for a built-in operation; plugin risks come directly from their manifests.
 /// This classification feeds discovery and the agent reviewer, never substitutes
 /// for current capabilities. O(operation-name bytes), no I/O.
@@ -153,7 +153,7 @@ pub fn builtin_operation_risk(id: &str, mutates: bool) -> OperationRisk {
         return operation.risk();
     }
     match id {
-        "plugins.enable" | "agent.mode" | "access.approve" | "access.request" | "machines.set" => {
+        "plugins.enable" | "agent.mode" | "access.request" | "machines.set" => {
             OperationRisk::WidensAccess
         }
         "agent.discard" | "spaces.delete" | "spaces.leave" | "secrets.revoke" => {

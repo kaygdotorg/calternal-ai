@@ -26,6 +26,8 @@ mod job_streams;
 pub mod jobs;
 pub mod live;
 mod machine_worker;
+mod requests;
+pub(crate) use requests::OnceAdmission;
 pub mod runner;
 pub mod session;
 pub mod worker;

@@ -76,7 +76,8 @@ pub(crate) fn is_owner(c: &Connection, actor: AccountId, space: SpaceId) -> Resu
     )
     .map_err(sql)
 }
-fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
+/// Tests an enabled account’s effective direct or group capability in this space.
+pub(crate) fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
     c.query_row(
         "SELECT EXISTS(SELECT 1 FROM space_account_roles m
         JOIN space_role_capabilities rc ON rc.role=m.role

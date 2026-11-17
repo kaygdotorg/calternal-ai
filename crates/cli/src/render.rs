@@ -47,6 +47,9 @@ fn rows(v: &Value, key: &str) -> Vec<Value> {
 
 /// The reply for `operation`'s successful `data`; `--json` carries `data` unchanged.
 pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -> Reply {
+    if operation.starts_with("requests.") {
+        return calternal_cli::requests::reply(data, request_id);
+    }
     if calternal_core::is_account_input_operation(operation) {
         return calternal_cli::account_input::render(out, operation, request_id, data);
     }

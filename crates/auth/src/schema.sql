@@ -232,14 +232,37 @@ CREATE TABLE agent_access(
 ) STRICT;
 CREATE INDEX agent_access_account ON agent_access(account);
 CREATE TABLE agent_approvals(
- id TEXT PRIMARY KEY, job TEXT NOT NULL REFERENCES agent_access(job) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, job TEXT NOT NULL,
  account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
- app TEXT NOT NULL, write_access INTEGER NOT NULL, approved INTEGER NOT NULL,
- action TEXT NOT NULL CHECK(length(action)<=16384),
- action_hash TEXT CHECK(action_hash IS NULL OR length(action_hash)=64)
+ space TEXT NOT NULL, thread TEXT NOT NULL,
+ app TEXT NOT NULL, write_access INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','answered','denied','once','this_thread','cancelled')),
+ kind TEXT NOT NULL DEFAULT 'approval' CHECK(kind IN ('approval','question')),
+ action TEXT NOT NULL CHECK(length(CAST(action AS BLOB))<=16384),
+ action_hash TEXT CHECK(action_hash IS NULL OR length(action_hash)=64),
+ decision_request TEXT, decision_value TEXT CHECK(length(CAST(decision_value AS BLOB))<=16384),
+ resolved_ms INTEGER,
+ claimed_id TEXT, claimed_hash TEXT, claimed_ms INTEGER,
+ FOREIGN KEY(space) REFERENCES spaces(id) ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX agent_approvals_job ON agent_approvals(job);
-CREATE INDEX agent_approvals_account ON agent_approvals(account);
+CREATE INDEX agent_approvals_thread ON agent_approvals(space,thread);
+CREATE INDEX agent_approvals_account ON agent_approvals(account,space,thread);
+-- Membership changes and authority cleanup share the protected recovery commit.
+CREATE TRIGGER erase_member_agent_authority AFTER DELETE ON space_memberships
+BEGIN
+ DELETE FROM agent_approvals WHERE account=OLD.account_id AND space=OLD.space_id;
+ DELETE FROM agent_access WHERE account=OLD.account_id AND space=OLD.space_id;
+END;
+CREATE TRIGGER erase_unreadable_member_agent_authority AFTER UPDATE OF role ON space_memberships
+WHEN NOT EXISTS (
+ SELECT 1 FROM space_role_capabilities
+ WHERE role=NEW.role AND capability='space.read'
+)
+BEGIN
+ DELETE FROM agent_approvals WHERE account=NEW.account_id AND space=NEW.space_id;
+ DELETE FROM agent_access WHERE account=NEW.account_id AND space=NEW.space_id;
+END;
 CREATE TABLE agent_discards(
  account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  thread TEXT NOT NULL, lease TEXT NOT NULL, authorized_ms INTEGER NOT NULL,

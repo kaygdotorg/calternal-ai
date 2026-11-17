@@ -23,3 +23,6 @@ pub mod threads;
 
 /// HTTP people, group and invitation commands.
 pub mod people;
+
+/// Account requests and trusted person decisions.
+pub mod requests;

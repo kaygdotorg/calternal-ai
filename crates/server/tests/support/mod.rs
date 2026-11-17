@@ -148,3 +148,19 @@ pub fn roots(dir: &Path) -> calternal_roots::Roots {
         userdata_hdd: dir.join("userdata-hdd"),
     }
 }
+
+/// Establish a parked provider request in a storage-only fixture.
+#[allow(dead_code)]
+pub fn park_request(jobs: &calternal_server::plugins::Jobs, space: &str, id: &str, request: &str) {
+    let job = jobs.get(space, id).unwrap().unwrap();
+    jobs.checkpoint(
+        space,
+        id,
+        job.runs,
+        &jobs.live(id),
+        &serde_json::json!({"machine_id":uuid::Uuid::new_v4()}),
+    )
+    .unwrap();
+    jobs.agent_park_request(&job, || Ok(request.to_owned()))
+        .unwrap();
+}
