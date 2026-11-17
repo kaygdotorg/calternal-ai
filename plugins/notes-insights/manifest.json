@@ -50,10 +50,14 @@
               "lines"
             ],
             "additionalProperties": false
+          },
+          "view": {
+            "type": "object"
           }
         },
         "required": [
-          "stats"
+          "stats",
+          "view"
         ],
         "additionalProperties": false
       },

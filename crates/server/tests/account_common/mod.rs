@@ -40,7 +40,7 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
             store: Mutex::new(store),
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
-            node: None,
+            workers: calternal_server::plugins::WorkerPool::new(None),
             allowed_hosts: api::allowed_hosts(8080),
         }),
         None,

@@ -1,6 +1,8 @@
 //! Authorization conformance over the real HTTP router, mutable memberships,
 //! retry receipts, cross-space IDs, and asynchronous worker delivery.
 
+mod support;
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,9 +15,7 @@ use calternal_core::{Principal, SpaceGrant, SpaceRole, operation_catalog};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch, router};
 use calternal_server::auth::{Directory, Identity};
 use calternal_server::authz::{BUILTIN_ROLES, Capability, CapabilitySet, POLICIES};
-use calternal_server::plugins::{
-    LoadedPlugin, MAX_CONCURRENT_WORKERS, Registry, RegistryEntry, file_sha256, resolve_node,
-};
+use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -146,28 +146,18 @@ impl Fixture {
     async fn new(role: u8, block: bool) -> Self {
         let root = std::env::temp_dir().join(format!("calternal-authz-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let worker = root.join("worker.js");
-        // Optional deterministic barrier is reached only after the canonical read.
-        let script = r#"const fs=require('fs');let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const r=JSON.parse(s);const done=()=>process.stdout.write(JSON.stringify({protocol_version:1,invocation_id:r.invocation_id,ok:true,data:{stats:{words:1,characters:1,lines:1},view:{genui_version:1,root:{type:'text',id:'t',text:'done'}}}}));BLOCK});"#;
-        let script = script.replace("BLOCK", if block {
-            "const timer=setInterval(()=>{if(fs.existsSync(__dirname+'/go')){clearInterval(timer);done()}},10)"
-        } else { "done()" });
-        std::fs::write(&worker, script).unwrap();
-        let plugin = LoadedPlugin {
-            entry: RegistryEntry {
-                id: "notes-insights".into(), version: "0.1.0".into(),
-                manifest: "fixture".into(), worker: Some("worker.js".into()),
-                worker_sha256: Some(file_sha256(&worker).unwrap()), default_enabled: true,
-            },
-            manifest: serde_json::from_value(json!({
-                "id":"notes-insights", "version":"0.1.0", "api_version":1,
-                "name":"Test fixture", "description":"Disposable worker",
-                "dependencies":[], "capabilities":["notes.read"],
-                "operations":[{"id":"notes-insights.summarize", "description":"Stats", "mutates":false}],
-                "views":[]
-            })).unwrap(),
-            worker: Some((worker, root.clone())), unavailable: None,
-        };
+        // Optional deterministic barrier is reached only after the brokered read.
+        let worker = support::worker(
+            &root,
+            support::READ_NOTE,
+            if block { support::COMPLETE_AFTER_GO } else { support::COMPLETE },
+        );
+        let plugin = support::plugin(
+            support::insights_manifest(),
+            Some(&worker),
+            true,
+            &[("notes-insights.summarize", "notes", "note_id")],
+        );
         let mut store = Store::open(&root.join("data")).unwrap();
         let note = serde_json::to_value(
             store
@@ -186,14 +176,12 @@ impl Fixture {
         let state = Arc::new(AppState {
             store: Mutex::new(store),
             tokens: MutableDirectory::new(role),
-            registry: Registry {
-                plugins: vec![plugin],
-            },
-            node: Some(
+            registry: Registry::from_plugins(vec![plugin]),
+            workers: WorkerPool::new(Some(
                 resolve_node(None)
                     .await
                     .expect("Node >= 22.13 for worker tests"),
-            ),
+            )),
             allowed_hosts: allowed_hosts(0),
         });
         Self { state, note, root }
@@ -267,7 +255,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     let fixture = Fixture::new(3, false).await;
     let rows: BTreeSet<_> = MATRIX.iter().map(|(op, _, _)| *op).collect();
     let mut registered: BTreeSet<_> = operation_catalog().into_iter().map(|op| op.id).collect();
-    for plugin in &fixture.state.registry.plugins {
+    for plugin in fixture.state.registry.plugins() {
         registered.extend(plugin.manifest.operations.iter().map(|op| op.id.clone()));
     }
     assert_eq!(rows.len(), MATRIX.len(), "duplicate matrix row");
@@ -294,16 +282,34 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             .collect::<BTreeSet<_>>(),
         registered
     );
-    assert_eq!(rows, POLICIES.iter().map(|p| p.operation).collect());
+    // Host rows plus manifest-derived plugin rows cover every operation exactly once.
+    let plugin_rows: Vec<&str> = fixture
+        .state
+        .registry
+        .plugin_policies()
+        .map(|p| p.operation.as_ref())
+        .collect();
+    assert!(
+        POLICIES
+            .iter()
+            .all(|p| !plugin_rows.contains(&p.operation.as_ref())),
+        "a plugin row is hardcoded in the host table"
+    );
+    let all: BTreeSet<&str> = POLICIES
+        .iter()
+        .map(|p| p.operation.as_ref())
+        .chain(plugin_rows.iter().copied())
+        .collect();
+    assert_eq!(rows, all);
     assert_eq!(
-        POLICIES.len(),
+        POLICIES.len() + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
-        "duplicate host policy"
+        "duplicate policy"
     );
     // Include the repository registry even though execution uses a controlled worker.
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
-    for plugin in Registry::load(&root).plugins {
-        for op in plugin.manifest.operations {
+    for plugin in Registry::load(&root).plugins() {
+        for op in &plugin.manifest.operations {
             assert!(
                 rows.contains(op.id.as_str()),
                 "missing matrix row: {}",
@@ -509,21 +515,14 @@ async fn membership_revocation_during_worker_discards_delivery() {
         "notes-insights.summarize",
         input,
     ));
-    // A permit is acquired only after the authorized canonical read. The worker
-    // then waits on a read-only file barrier, matching runtime filesystem limits.
+    // Admission to a worker happens only after authorization and generation
+    // capture. The worker then waits on a read-only file barrier, matching
+    // runtime filesystem limits.
     let start = std::time::Instant::now();
-    while fixture
-        .state
-        .node
-        .as_ref()
-        .unwrap()
-        .permits
-        .available_permits()
-        == MAX_CONCURRENT_WORKERS
-    {
+    while fixture.state.workers.in_flight() == 0 {
         assert!(
             start.elapsed() < Duration::from_secs(2),
-            "worker did not acquire a permit"
+            "worker did not admit the invocation"
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -602,11 +601,7 @@ async fn no_grant_hides_summarize_binding_registration() {
             input.clone(),
         )
         .await;
-    Arc::get_mut(&mut fixture.state)
-        .unwrap()
-        .registry
-        .plugins
-        .clear();
+    Arc::get_mut(&mut fixture.state).unwrap().registry = Registry::empty();
     let absent = fixture
         .call(
             Some(TOKEN),
@@ -720,10 +715,9 @@ fn built_in_roles_cover_exact_documented_capabilities() {
     }
     assert_eq!(Capability::from_name("unknown.permission"), None);
     assert_eq!(CapabilitySet::default(), CapabilitySet::empty());
+    // Plugin rows come from the shipped manifests through the same lookup.
+    let registry = Registry::load(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"));
     for (op, capability, _) in MATRIX {
-        assert_eq!(
-            calternal_server::authz::policy(op).unwrap().required,
-            *capability
-        );
+        assert_eq!(registry.policy(op).unwrap().required, *capability);
     }
 }

@@ -695,7 +695,7 @@ fn plugin_enable_disable_receipts_survive_opposite_mutation() {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(
         root.join("manifest.json"),
-        r#"{"id":"notes","version":"0.1.0","api_version":1,"name":"Notes","description":"Notes app","dependencies":[],"capabilities":[],"operations":[],"views":[]}"#,
+        r#"{"id":"notes","name":"Notes","icon":"note","version":"0.1.0","api_version":1,"kinds":[{"id":"notes","storage":{"folder":"Notes"},"claimed_text":true,"schema":{"type":"object"}}],"operations":[],"collections":[],"views":[],"attention":[],"settings":[],"schedules":[],"webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls":[]}"#,
     )
     .unwrap();
     let srv = start_full(&d.0.join("data"), None, None, Some(&d.0.join("plugins")));

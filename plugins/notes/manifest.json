@@ -1,11 +1,26 @@
 {
   "id": "notes",
+  "name": "Notes",
+  "icon": "note",
   "version": "0.1.0",
   "api_version": 1,
-  "name": "Notes",
-  "description": "Create, read, and revise Markdown notes.",
-  "dependencies": [],
-  "capabilities": ["notes.read", "notes.write", "notes.history"],
+  "kinds": [
+    {
+      "id": "notes",
+      "storage": { "folder": "Notes" },
+      "claimed_text": true,
+      "schema": { "type": "object" }
+    }
+  ],
   "operations": [],
-  "views": []
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": []
 }

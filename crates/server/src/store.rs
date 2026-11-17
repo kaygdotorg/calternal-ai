@@ -480,6 +480,112 @@ impl Store {
             .materialize(self.space(&space)?, item_id(id)?)
             .map_err(content_error)
     }
+    /// UUID forms of an acting account and a content space, for worker authority
+    /// correlation only (they grant nothing). Cost: at most two indexed binding
+    /// lookups; a first-seen fixture name inserts one binding row.
+    pub fn worker_ids(&self, principal: &str, space_id: &str) -> Result<(String, String), HostError> {
+        Ok((
+            self.account(principal)?.to_string(),
+            self.space(space_id)?.to_string(),
+        ))
+    }
+    /// Reads one item of `kind` for a plugin broker. The global route must place it in
+    /// `space_id`; a foreign, absent or wrong-kind ID is the same not-found.
+    /// Cost: catalog route lookup plus one indexed item read and body allocation.
+    pub fn read_item(&self, space_id: &str, kind: &str, id: &str) -> Result<Item, HostError> {
+        let missing = || HostError::not_found("item not found");
+        let (space, id) = (self.space(space_id)?, item_id(id)?);
+        if self.content.locate(kind, id).map_err(content_error)? != Some(space) {
+            return Err(missing());
+        }
+        let item = self.content.get(space, id).map_err(content_error)?;
+        if item.kind != kind {
+            return Err(missing());
+        }
+        Ok(item)
+    }
+    /// Creates (no `id`) or updates (against `base`) one plugin-kind item with a
+    /// per-account receipt, so a replayed receipt returns the original item.
+    /// The kind must already be registered in the space (plugin enable does that).
+    /// Cost: one generic content write: journal and FULL SQL commits, file and
+    /// directory fsync.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_item(
+        &self,
+        principal: &str,
+        request_id: &str,
+        fingerprint: &str,
+        space_id: &str,
+        kind: &str,
+        id: Option<Uuid>,
+        base: Option<&str>,
+        metadata: serde_json::Value,
+        text: &str,
+    ) -> Result<Item, HostError> {
+        if let Some(id) = id {
+            self.read_item(space_id, kind, &id.to_string())?;
+        }
+        let request = Request {
+            account: self.account(principal)?,
+            id: request_id,
+            operation: "plugin.write_item",
+            fingerprint,
+        };
+        self.content
+            .write(
+                self.space(space_id)?,
+                id,
+                kind,
+                base,
+                metadata,
+                text.as_bytes(),
+                request,
+                |i| serde_json::json!({"id": i.id, "revision": i.revision}),
+            )
+            .map_err(content_error)
+    }
+    /// Provisions a plugin in one space: registers each declared kind's placement
+    /// and format, then creates (or returns) each standard collection with its
+    /// stable ID. Idempotent; a changed placement for an existing kind is refused.
+    /// Cost: one indexed read per kind (plus one FULL insert when new) and, per
+    /// absent collection, one durable content write.
+    pub fn provision_plugin(
+        &self,
+        space_id: &str,
+        principal: &str,
+        kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
+        collections: &[(String, String, String)],
+    ) -> Result<(), HostError> {
+        let space = self.space(space_id)?;
+        for (kind, placement, format) in kinds {
+            self.content
+                .register_kind(space, kind, placement.clone(), format.clone())
+                .map_err(content_error)?;
+        }
+        if collections.is_empty() {
+            return Ok(());
+        }
+        // Collections are host-owned items with one fixed hidden placement.
+        self.content
+            .register_kind(
+                space,
+                "collections",
+                calternal_content::Placement::Hidden {
+                    plugin_id: "collections".into(),
+                },
+                calternal_content::FileFormat::Opaque {
+                    extension: "json".into(),
+                },
+            )
+            .map_err(content_error)?;
+        let account = self.account(principal)?;
+        for (kind, key, title) in collections {
+            self.content
+                .ensure_standard_collection(space, account, kind, key, title)
+                .map_err(content_error)?;
+        }
+        Ok(())
+    }
     /// Read one space's plugin state without inheriting another space's enablement.
     /// Cost: one indexed read on the plugin connection; no content I/O or fsync.
     pub fn plugin_row(

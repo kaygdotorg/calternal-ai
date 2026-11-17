@@ -19,6 +19,7 @@ calternal-roots.workspace = true
 calternal-auth.workspace = true
 calternal-fsio.workspace = true
 calternal-core.workspace = true
+calternal-plugin-host.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

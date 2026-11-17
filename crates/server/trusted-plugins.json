@@ -6,15 +6,23 @@
       "manifest": "notes/manifest.json",
       "worker": null,
       "worker_sha256": null,
-      "default_enabled": true
+      "default_enabled": true,
+      "item_operations": []
     },
     {
       "id": "notes-insights",
       "version": "0.1.0",
       "manifest": "notes-insights/manifest.json",
       "worker": "notes-insights/dist/worker.js",
-      "worker_sha256": "eb8dffa8b1e6ff1bbe9debdf746b61a44c71bcd55a1fd1b6f384cfb5b4c4de7a",
-      "default_enabled": false
+      "worker_sha256": "4679760879291e11ed71c4371073bc1c43b01bff84d2b53bcb3466968737a922",
+      "default_enabled": false,
+      "item_operations": [
+        {
+          "operation": "notes-insights.summarize",
+          "kind": "notes",
+          "field": "note_id"
+        }
+      ]
     }
   ]
 }

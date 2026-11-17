@@ -1,0 +1,89 @@
+//! Shared fixtures for plugin tests: protocol-v2 test workers written in plain
+//! JavaScript (no SDK), so each test controls exactly what the worker sends.
+#![allow(dead_code)]
+
+use std::path::{Path, PathBuf};
+
+use calternal_core::ManifestV1;
+use calternal_server::plugins::{ItemOperation, Plugin, TrustedEntry, file_sha256};
+use serde_json::json;
+
+/// The shipped notes-insights manifest, parsed by the real host library.
+pub fn insights_manifest() -> ManifestV1 {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/notes-insights/manifest.json");
+    calternal_plugin_host::parse_manifest(&std::fs::read(path).unwrap()).unwrap()
+}
+
+/// A manifest from inline JSON with every list defaulted to empty.
+pub fn manifest(extra: serde_json::Value) -> ManifestV1 {
+    let mut base = json!({
+        "id": "fixture", "name": "Fixture", "icon": "puzzle", "version": "0.1.0", "api_version": 1,
+        "kinds": [], "operations": [], "collections": [], "views": [], "attention": [],
+        "settings": [], "schedules": [], "webhooks": [], "secrets": [], "hooks": [],
+        "themes": [], "host_calls": []
+    });
+    for (k, v) in extra.as_object().unwrap() {
+        base[k] = v.clone();
+    }
+    serde_json::from_value(base).unwrap()
+}
+
+/// Trusted entry for `manifest` whose worker is `worker` (digest pinned), with
+/// item bindings `(operation, kind, field)`.
+pub fn plugin(
+    manifest: ManifestV1,
+    worker: Option<&Path>,
+    default_enabled: bool,
+    items: &[(&str, &str, &str)],
+) -> Plugin {
+    let entry = TrustedEntry {
+        id: manifest.id.clone(),
+        version: manifest.version.clone(),
+        manifest: "manifest.json".into(),
+        worker: worker.map(|_| "worker.js".into()),
+        worker_sha256: worker.map(|w| file_sha256(w).unwrap()),
+        default_enabled,
+        item_operations: items
+            .iter()
+            .map(|(operation, kind, field)| ItemOperation {
+                operation: (*operation).into(),
+                kind: (*kind).into(),
+                field: (*field).into(),
+            })
+            .collect(),
+    };
+    Plugin::new(entry, manifest, worker.map(|w| std::fs::canonicalize(w).unwrap())).unwrap()
+}
+
+/// Write a v2 test worker to `dir/worker.js`.
+///
+/// `on_invoke` runs with `f` (the frame), `m` (its message) and `send(frame)`;
+/// `on_reply` additionally sees the stored invoke message as `inv`. Helpers:
+/// `call(f, method, input)` sends a host call; `done(f, data)` completes;
+/// `stats(text)` builds a notes-insights result for `text`.
+pub fn worker(dir: &Path, on_invoke: &str, on_reply: &str) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join("worker.js");
+    let script = format!(
+        r#"const fs=require('fs');const rl=require('readline').createInterface({{input:process.stdin}});
+const send=f=>process.stdout.write(JSON.stringify(f)+'\n');
+const inv=new Map();
+const frame=(f,message)=>({{protocol_version:2,invocation_id:f.invocation_id,message}});
+const call=(f,method,input)=>send(frame(f,{{type:'host_call',call_id:'c'+Math.random().toString(36).slice(2,8),method,input,authority:inv.get(f.invocation_id).authority}}));
+const done=(f,data)=>send(frame(f,{{type:'complete',data}}));
+const stats=t=>{{const s={{words:t.split(/\s+/).filter(Boolean).length,characters:[...t].length,lines:t.split('\n').filter((l,i,a)=>i<a.length-1||l).length}};return {{stats:s,view:{{genui_version:1,root:{{type:'stack',id:'root',children:[{{type:'stat',id:'w',label:'Words',value:String(s.words)}}]}}}}}}}};
+rl.on('line',l=>{{const f=JSON.parse(l);const m=f.message;
+ if(m.type==='invoke'){{inv.set(f.invocation_id,m);{on_invoke}}}
+ else if(m.type==='host_reply'){{const i=inv.get(f.invocation_id);{on_reply}}}
+}});"#
+    );
+    std::fs::write(&path, script).unwrap();
+    path
+}
+
+/// Default behaviour: read the note through the broker, then return its statistics.
+pub const READ_NOTE: &str = "call(f,'read_item',{kind:'notes',item_id:m.input.note_id})";
+/// Default reply handler: complete with statistics of the item's text.
+pub const COMPLETE: &str = "done(f,stats(m.ok?m.data.text:''))";
+/// Reply handler that waits for a `go` file next to the worker before completing.
+pub const COMPLETE_AFTER_GO: &str = "const t=setInterval(()=>{if(fs.existsSync(__dirname+'/go')){clearInterval(t);done(f,stats(m.ok?m.data.text:''))}},10)";

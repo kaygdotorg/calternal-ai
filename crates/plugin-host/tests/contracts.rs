@@ -390,7 +390,7 @@ fn schemas_and_typed_identity_are_enforced_without_external_retrieval() {
         frame(
             "inv-1",
             Message::Complete {
-                data: json!({"stats":{"words":0,"characters":0,"lines":0}}),
+                data: json!({"stats":{"words":0,"characters":0,"lines":0},"view":{}}),
             },
         ),
         &mut h,

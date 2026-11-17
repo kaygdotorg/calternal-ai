@@ -1,7 +1,7 @@
 /** Long-lived notes statistics worker. All item reads go through the authorized host broker.
  * @module
  */
-import type { ManifestV1, Stats } from "@calternal/contracts";
+import type { GenUiView, ManifestV1, Stats } from "@calternal/contracts";
 import { WorkerRuntimeV2, parseWorkerFrameV2, encodeWorkerFrameV2, MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
 import manifest from "../manifest.json" with { type: "json" };
 
@@ -16,12 +16,29 @@ function summarize(markdown: string): Stats {
   };
 }
 
+/** Portable statistics view, identical to the v1 worker's presentation. */
+function view(stats: Stats): GenUiView {
+  return {
+    genui_version: 1,
+    root: {
+      type: "stack",
+      id: "notes-insights.stats",
+      children: [
+        { type: "stat", id: "notes-insights.words", label: "Words", value: String(stats.words) },
+        { type: "stat", id: "notes-insights.characters", label: "Characters", value: String(stats.characters) },
+        { type: "stat", id: "notes-insights.lines", label: "Lines", value: String(stats.lines) },
+      ],
+    },
+  };
+}
+
 const runtime = new WorkerRuntimeV2(manifest as ManifestV1, {
   "notes-insights.summarize": async (input, context) => {
     if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || !("note_id" in input) || typeof input.note_id !== "string") throw new Error("invalid input");
     const item = await context.call("read_item", { kind: "notes", item_id: input.note_id });
-    if (!item || typeof item !== "object" || !("markdown" in item) || typeof item.markdown !== "string") throw new Error("invalid item");
-    return { stats: summarize(item.markdown) };
+    if (!item || typeof item !== "object" || !("text" in item) || typeof item.text !== "string") throw new Error("invalid item");
+    const stats = summarize(item.text);
+    return { stats, view: view(stats) };
   },
 }, async frame => {
   const line = encodeWorkerFrameV2(frame);
