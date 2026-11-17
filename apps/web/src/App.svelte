@@ -6,6 +6,7 @@
   import { navigate, route, segments, setQuery } from "./lib/route.svelte";
   import { Toasts } from "@calternal/ui";
   import Shell from "./shell/Shell.svelte";
+  import LinkBanner from "./shell/LinkBanner.svelte";
   import { shell } from "./shell/shell.svelte";
   import { spaces } from "./shell/spaces.svelte";
   import Unknown from "./shell/Unknown.svelte";
@@ -64,6 +65,7 @@
 </script>
 
 {#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
+<LinkBanner />
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
 <FirstRun />
 <SettingsSheet open={settings && shell.narrow} onclose={() => navigate("/settings/appearance")} />

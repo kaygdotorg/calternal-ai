@@ -12,6 +12,7 @@ import type {
   SpacesListResult,
 } from "../../../../packages/contracts/src/index";
 import { events } from "./sse";
+import { link } from "./link.svelte";
 
 /** A failure the server reported (`code` is its stable category) or a transport failure (`code` is "unavailable"). */
 export class ServerError extends Error {
@@ -28,10 +29,14 @@ export class ServerClient {
   constructor(o: ServerOptions) {
     this.base = o.base ?? "";
     this.token = o.token;
-    this.f = o.fetch ?? ((...a) => fetch(...a));
+    const raw = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+    // Every call reports to the shared link state (reconnecting banner, expired session); a call the caller cancelled is not a failure.
+    this.f = (...a) => raw(...a).then((r) => { if (r.status === 401) link.expired(!!this.token()); else link.ok(); return r; }, (e: Error) => { if (e?.name !== "AbortError") link.failed(); throw e; });
   }
   /** The headers a plain `fetch` of an API path needs (the bearer in development token mode; nothing for a cookie session). */
   authHeaders(): Record<string, string> { return this.headers(); }
+  /** A plain call to an API path (the machines routes) with the session, reporting to the link state like every other call. */
+  request(path: string, init: RequestInit = {}): Promise<Response> { return this.f(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     const t = this.token();
     return { ...(t ? { authorization: `Bearer ${t}` } : {}), ...extra };

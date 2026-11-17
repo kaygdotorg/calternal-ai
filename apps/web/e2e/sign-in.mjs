@@ -47,9 +47,33 @@ try {
   await page.goto(`${url}/`); await page.waitForSelector("html[data-ready]");
   check(!(await page.getByRole("heading", { name: "Sign in" }).isVisible().catch(() => false)), "session survives a reload");
 
+  page.on("dialog", (d) => void d.accept());
+  const go = async (path) => { await page.evaluate((p) => { history.pushState(null, "", p); dispatchEvent(new PopStateEvent("popstate")); }, path); };
   await page.goto(`${url}/`); await page.waitForSelector("html[data-ready]");
-  await page.evaluate(() => { history.pushState(null, "", "/settings/account"); dispatchEvent(new PopStateEvent("popstate")); });
-  await page.getByRole("button", { name: /Sign out/ }).first().click();
+  // Settings pages show real data in server mode.
+  await go("/settings/account");
+  await page.getByText("Test Owner").first().waitFor({ timeout: 8000 });
+  check(await page.getByText("(this browser)").first().isVisible(), "Account: this browser listed among the installations");
+  check(await page.locator('[data-setting^="account.passkey."]').count() === 1, "Account: the one passkey is listed");
+  await go("/settings/members");
+  await page.getByText("You", { exact: true }).first().waitFor({ timeout: 8000 });
+  check(await page.getByText("Owner", { exact: true }).first().isVisible(), "Members: you are the owner");
+  await go("/settings/machines");
+  await page.getByRole("button", { name: "Make a code" }).click();
+  await page.getByText(/calternal machine enroll/).waitFor({ timeout: 8000 });
+  check(true, "Machines: an enrollment code is made");
+  check(await page.getByText("Admin", { exact: true }).count() === 0, "Admin: no pages without operations, so no section");
+  // The line to the server: offline shows the banner and clears when it returns.
+  await go("/settings/secrets"); await page.getByText(/No secrets/).waitFor({ timeout: 8000 }); await go("/settings/account");
+  await ctx.setOffline(true);
+  await go("/settings/secrets");
+  await page.getByText(/Reconnecting/).waitFor({ timeout: 5000 });
+  check(true, "offline: reconnecting banner");
+  await ctx.setOffline(false);
+  await page.getByText(/Reconnecting/).waitFor({ state: "hidden", timeout: 8000 });
+  check(true, "back online: banner gone");
+  await go("/settings/account");
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
   await page.getByRole("heading", { name: "Sign in" }).waitFor({ timeout: 10000 });
   st = await (await ctx.request.get(`${url}/api/v1/auth/status`)).json();
   check(st.signed_in === false, "sign out ends the session");
@@ -59,6 +83,14 @@ try {
   await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Sign in"), null, { timeout: 15000 }).catch(() => {});
   st = await (await ctx.request.get(`${url}/api/v1/auth/status`)).json();
   check(st.signed_in === true, "signing in again with the passkey works");
+  // An ended session returns to the sign-in screen at the same address.
+  await go("/settings/account");
+  await ctx.clearCookies();
+  await go("/settings/secrets"); // the page asks the server, which refuses the missing session
+  // The standalone server has no deep-link fallback (Caddy has one on the preview), so the reload itself lands on its 404 here; the banner and the unchanged address are what this host can show.
+  await page.getByText(/session ended/).waitFor({ timeout: 5000 });
+  await page.waitForTimeout(2000);
+  check(new URL(page.url()).pathname === "/settings/secrets", "session expired: banner, then a reload at the same address");
   await browser.close();
 } catch (e) { console.error(e); console.error(log.slice(-1500)); failed++; }
 stop();

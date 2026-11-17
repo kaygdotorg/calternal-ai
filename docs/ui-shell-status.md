@@ -341,3 +341,32 @@ Listed, not changed (not the shell's, or not decided): the composer's chip label
 ## Simplify pass (2026-11-18)
 
 Read `shell/`, `appearance/`, `palette/`, `lib/` and `packages/ui` for exports nothing uses (a scan of every export against the whole repository, tests included) and removed what was dead: `setLook` and the unread `lastVeils` (wallpaper), `settingById` (settings registry), `fmtTime`, `fmtDay`, `dayName`, `monthName` and four constants behind them (palette dates), `adaptiveCount` (material), `springEasing` (spring engine), `scrollToIndex` (VirtualList); and took `export` off seven things only their own file uses (`THIS_SPACE`, `VISIBLE`, `keyChips`, `resolveScheme`, `FLOORS` and others). The Settings pages' own controls (shortcuts, machines, plugins) load when their page opens, so they are not in the first load. Not changed, with the reason: the translucent fills (`rgb(var(--ink-rgb) / 0.05 ... 0.1)`, 40 uses in six values) cannot become one root token, because a token computed at the root would not follow a sidebar's flipped ink (`data-ink`); the two `isMac` helpers (the app's shortcuts and the editor's text keys) stay apart because the editor package must not import from the app. Tests: 172 and 49 pass. First load: scripts 299.6 KB before the Settings pages of this round, 301.4 KB after them and these removals (raw; gzip 108.3 and 109.3 KB), stylesheet 71.3 and 71.8 KB.
+
+## Server mode beyond sign-in (2026-11-18)
+
+With `?server=1` Settings shows only what a server operation backs. Real now: **Account** (name and role read only, passkeys add/rename/remove with the fresh-passkey step, installations, sign out, sign out everywhere), **Members** of the current space (list, role, remove, leave), **Secrets** (names and labels, never values), **Space plugins** (list, switch), **Delete space**, **Machines** (list, state, sandboxed/direct, pause, revoke, enrollment code). Appearance and Keyboard are this browser's own. Admin has no operations at all, so no Admin section shows even for an operator (the capability is read from `/auth/me`: `server.settings`). Fixtures show everything as before.
+
+Shell states: **reconnecting** (any call or stream that cannot reach the server: a pill, probed every 3 s), **session ended** (a 401: a pill, then a reload into the sign-in screen at the same address), **version** (`describe.protocol_version` differs from this build's: a plain notice). Tested in `apps/web/e2e/sign-in.mjs`; the version notice is not (needs a server of another protocol).
+
+### Controls hidden in server mode: the operation needed
+
+| Page | Control | Operation needed |
+| --- | --- | --- |
+| Account | Name (edit) | `account.set_profile` (name) |
+| Account | Connected provider accounts | an operation listing and disconnecting provider accounts |
+| Agents | Every control (retry, snooze, sandbox idle time, decision service, defaults) | `agent.settings` exists but its fields do not map to these controls yet; needs the list of settings and their bounds |
+| Plugins (user) | Installed / available catalogue, per-plugin options | `plugins.install`, `plugins.uninstall`, a plugin's declared settings read and write |
+| Members and roles | Names (rows show an id prefix) | `spaces.members` returning display names |
+| Members and roles | Add a person, Add a group | `spaces.add_member` (by person), group membership operations (ADR 0060) |
+| Members and roles | Roles (the capability sets) | `roles.list` (ADR 0058) |
+| Members and roles | Transfer ownership | none in the UI yet (`spaces.transfer` exists; no control built) |
+| Invites | Whole page: create, open, revoke, revoke all | `invites.create`, `invites.list`, `invites.revoke` (ADR 0059) |
+| Secrets | Delete one, delete all | `secrets.revoke` exists; no control yet for space secrets by name |
+| Instructions and defaults | Instructions (AI/AGENTS.md), default look | space file read/write, space settings |
+| Space plugins | Turn off every plugin | none needed; not built (one `plugins.disable` per plugin) |
+| Machines | Add by SSH (guided flow) | server-side SSH enrollment; the enrollment code replaces it |
+| Admin | Groups and plans | `groups.list/create/delete`, group limits |
+| Admin | Machine pool | `pool.list`, `pool.drain` |
+| Admin | Storage | `storage.status` for the three roots |
+| Admin | Server settings, people, invites by the operator | `people.invite`, `people.manage`, `server.settings` operations |
+| Shell | Personal space | server creates it at sign-up (then delete `withPersonal` in `spaces.svelte.ts`) |

@@ -17,6 +17,15 @@ export const FIXTURE_SPACES: SpaceInfo[] = [
   { id: "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b22", name: "Infra" },
 ];
 
+/**
+ * TEMPORARY: a new account has no space until the server creates the personal one itself at sign-up (announced). Until then the first load makes it ("Personal", one request, once). When the
+ * server does it, delete this function and its one call in `Spaces.load`.
+ */
+async function withPersonal<T extends { id: string; name: string; owner: string; created: unknown }>(all: T[]): Promise<T[]> {
+  if (all.length) return all;
+  return [(await server.operate<{ space: T }>("spaces.create", { name: "Personal" })).space];
+}
+
 class Spaces {
   list = $state<SpaceInfo[]>(FIXTURE_SPACES);
   currentId = $state(read());
@@ -42,8 +51,7 @@ class Spaces {
     this.loading ??= (async () => {
       let [{ spaces: all }, me] = await Promise.all([server.spaces.list(), fetch("/api/v1/auth/me", { headers: server.authHeaders() }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ user?: { id?: string } } | null>]);
       const mine = me?.user?.id;
-      // A new account has no space yet, and everyone has a personal one from sign-up: make it (one request, once; the server names no space for us).
-      if (!all.length) all = [(await server.operate<{ space: (typeof all)[number] }>("spaces.create", { name: "Personal" })).space];
+      all = await withPersonal(all);
       const byAge = [...all].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : 0));
       const personal = byAge.find((s) => s.owner === mine);
       this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name })));

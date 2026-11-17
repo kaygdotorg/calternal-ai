@@ -5,7 +5,7 @@ import App from "./App.svelte";
 import { interceptLinks } from "./lib/route.svelte";
 import { shell } from "./shell/shell.svelte";
 import { appearance } from "./appearance/prefs.svelte";
-import { devToken, serverMode } from "./server/client";
+import { serverMode } from "./server/client";
 
 registerFonts(import.meta.env.BASE_URL);
 initInputModality();
@@ -18,16 +18,13 @@ interceptLinks();
 void appearance.start();
 Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(() => {
   const target = document.getElementById("app")!;
-  // The real server without a development token needs a session: ask once, and show the sign-in (or first-owner setup) screen instead of the app. Fixtures never load this.
-  const gate = serverMode() && !devToken() ? import("./server/auth").then((a) => a.status()).catch(() => null) : Promise.resolve(null);
-  void gate.then(async (st) => {
-    if (st && !st.signed_in) {
-      const { default: SignIn } = await import("./shell/SignIn.svelte");
-      mount(SignIn, { target, props: { needsSetup: st.setup } });
-    } else {
-      // With the real server the app starts knowing its spaces (an adapter reads the current space the moment it starts); a slow or failing server does not hold it back for long.
-      if (serverMode()) await Promise.race([import("./shell/spaces.svelte").then((m) => m.spaces.load()).catch((e) => console.error("spaces:", e?.code, e?.message)) , new Promise((r) => setTimeout(r, 4000))]);
-      mount(App, { target });
+  // The real server needs its start-up checks first (session, protocol, who, spaces: server/boot.ts); fixtures never load any of it.
+  const next = serverMode() ? import("./server/boot").then((m) => m.boot()).catch(() => ({ screen: "app" as const })) : Promise.resolve({ screen: "app" as const });
+  void next.then(async (b) => {
+    if (b.screen === "app") mount(App, { target });
+    else {
+      const { default: Gate } = await import("./shell/SignIn.svelte");
+      mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup } : { version: b } });
     }
     document.documentElement.dataset.ready = "";
   });

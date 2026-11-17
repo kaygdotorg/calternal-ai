@@ -3,7 +3,7 @@
   // "Sign in with a passkey", or, on a fresh installation, the setup form (the setup link's token and a name). Success reloads into the app.
   import { Button, Card, Spinner } from "@calternal/ui";
   import { AuthError, setup, signIn } from "../server/auth";
-  let { needsSetup }: { needsSetup: boolean } = $props();
+  let { needsSetup = false, version }: { needsSetup?: boolean; version?: { server: number; expected: number } } = $props();
   const fromLink = new URLSearchParams(location.hash.slice(1)).get("setup") ?? new URLSearchParams(location.search).get("setup") ?? "";
   let token = $state(fromLink);
   let name = $state("");
@@ -19,6 +19,15 @@
 </script>
 
 <main class="wrap">
+{#if version}
+  <Card label="Version mismatch" variant="solid" class="card">
+    <div class="in">
+      <h1>{version.server > version.expected ? "This page is out of date" : "The server is out of date"}</h1>
+      <p class="note">{version.server > version.expected ? "The server is newer than this page and may answer in ways it does not understand. Reload to get the current page." : "This page is newer than the server and may ask for things it does not have yet. Ask whoever runs the server to update it."} (Server protocol {version.server}, this page {version.expected}.)</p>
+      <div class="go"><Button variant="primary" text="Reload" onclick={() => location.reload()} /></div>
+    </div>
+  </Card>
+{:else}
   <Card label={needsSetup ? "Set up Calternal" : "Sign in"} variant="solid" class="card">
     <form class="in" onsubmit={(e) => { e.preventDefault(); void run(needsSetup ? () => setup(token, name) : signIn); }}>
       <h1>{needsSetup ? "Set up Calternal" : "Sign in"}</h1>
@@ -36,6 +45,7 @@
       </div>
     </form>
   </Card>
+{/if}
 </main>
 
 <style>

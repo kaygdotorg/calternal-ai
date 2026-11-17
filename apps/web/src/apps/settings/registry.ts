@@ -214,8 +214,35 @@ export const SECTIONS: Section[] = [
   { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
 ];
 
-/** The sections this person sees: Admin (the server) only with the server-admin capability. */
-export const visibleSections = (): Section[] => SECTIONS.filter((s) => s.id !== "server" || caps.serverAdmin);
+const lazy = (id: string, label: string, load: () => Promise<{ default: Component<any> }>, help?: string): Group => ({ settings: [{ id, label, help, control: { type: "custom", load } }] });
+const deleteSpace = (): void => {
+  if (!confirm(`Delete the space "${spaces.current.name}"? Its records are removed.`)) return;
+  void import("../../server/client").then(({ server }) => server.operate("spaces.delete", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
+};
+const leaveSpace = (): void => {
+  if (!confirm(`Leave the space "${spaces.current.name}"? You lose access to everything in it.`)) return;
+  void import("../../server/client").then(({ server }) => server.operate("spaces.leave", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
+};
+/**
+ * The pages in server mode: only what a server operation backs. Account, Members, Secrets, Space plugins and Machines show the real data; Appearance and Keyboard are this browser's own and stay; every other
+ * control (profile name, invites, groups, instructions, Agents defaults, Admin) has no operation yet and is not shown (the table in docs/ui-shell-status.md lists each with the operation it needs).
+ */
+function serverSections(): Section[] {
+  const account: Page = { ...accountPage, groups: [lazy("account.panel", "Account", () => import("./AccountPanel.svelte"))] };
+  const machines: Page = { ...machinesPage, groups: [lazy("machines.list", "Machines", () => import("./ServerMachinesPanel.svelte"))] };
+  const members: Page = { ...membersPage, groups: [lazy("space.members", "Members", () => import("./MembersPanel.svelte")), { title: "Danger area", danger: true, settings: [{ id: "space.leave", label: "Leave this space", help: "You lose access to everything in it.", control: { type: "button", text: "Leave space…", danger: true, run: leaveSpace } }] }] };
+  const secrets: Page = { ...secretsPage, groups: [lazy("space.secrets", "Secrets", () => import("./SecretsPanel.svelte"))] };
+  const plugins: Page = { ...spacePluginsPage, groups: [lazy("space.plugins", "Plugins", () => import("./ServerPluginsPanel.svelte"))] };
+  const manage: Page = { id: "manage", name: "Delete this space", icon: "folder", blurb: "Removes the space for everyone in it.", groups: [{ title: "Danger area", danger: true, settings: [{ id: "space.delete", label: "Delete this space", help: "Only the owner may.", control: { type: "button", text: "Delete space…", danger: true, run: deleteSpace } }] }] };
+  return [
+    { id: "user", name: "User", pages: [appearancePage, keyboardPage, machines, account] },
+    { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, secrets, plugins, manage] },
+    ...(caps.serverAdmin ? [{ id: "server" as const, name: "Admin", pages: [] }] : []),
+  ].filter((x) => x.pages.length);
+}
+
+/** The sections this person sees: Admin (the server) only with the server-admin capability (the real one in server mode). */
+export const visibleSections = (): Section[] => (serverMode() ? serverSections() : SECTIONS.filter((s) => s.id !== "server" || caps.serverAdmin));
 export const pageById = (id: string | undefined): Page | undefined => visibleSections().flatMap((s) => s.pages).find((p) => p.id === id);
 /** Every setting with the page it lives on. */
 export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));

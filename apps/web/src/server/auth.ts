@@ -32,11 +32,13 @@ const b64 = {
 export const base64url = b64;
 
 type Json = Record<string, unknown>;
+/** The bearer in development token mode, nothing for a cookie session. */
+const authHeaders = (): Record<string, string> => { try { const t = localStorage.getItem("cal.devtoken"); return t ? { authorization: `Bearer ${t}` } : {}; } catch { return {}; } };
 interface Descriptor { id: string; type: string; transports?: string[] }
 
-async function post(path: string, body: Json = {}): Promise<Json> {
+async function post(path: string, body: Json = {}, method = "POST"): Promise<Json> {
   let res: Response;
-  try { res = await fetch(`/api/v1/auth/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); }
+  try { res = await fetch(`/api/v1/auth/${path}`, method === "GET" ? { headers: authHeaders() } : { method, headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body) }); }
   catch (e) { throw new AuthError("unavailable", "The server did not answer. Check the connection and try again."); }
   if (res.status === 204) return {};
   let data: Json = {};
@@ -122,3 +124,41 @@ export async function signIn(): Promise<void> {
 
 /** Ends this browser's session on the server. */
 export async function signOut(): Promise<void> { await post("logout"); }
+
+/** Who is signed in: the account (`name`, `role`, `capabilities`) and this browser's installation id. */
+export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string }
+/** A passkey as the server lists it. */
+export interface Passkey { id: string; name: string; created_at: number; last_used_at: number | null }
+/** A signed-in browser or app of this account. */
+export interface InstallationRow { id: string; kind: string; name: string; created_at: number; last_seen_at: number; current: boolean }
+
+/** Asks again for a passkey (`reverify/*`): the server wants a fresh one before it changes how someone signs in. */
+async function reverify(): Promise<void> {
+  const s = await post("reverify/start", {});
+  const cred = await ceremony("get", s.options as Json);
+  await post("reverify/finish", { ceremony: s.ceremony, credential: encodeCredential(cred), device: deviceName() });
+}
+/** Runs a change that may ask for a fresh passkey: if the server says so, verifies once and tries again. */
+async function fresh<T>(f: () => Promise<T>): Promise<T> {
+  try { return await f(); } catch (e) {
+    if (e instanceof AuthError && e.code === "passkey_reverification_required") { await reverify(); return f(); }
+    throw e;
+  }
+}
+/** The account endpoints behind Settings, Account. */
+export const account = {
+  me: () => post("me", {}, "GET") as unknown as Promise<Me>,
+  passkeys: async () => ((await post("passkeys", {}, "GET")).passkeys ?? []) as Passkey[],
+  installations: async () => ((await post("installations", {}, "GET")).installations ?? []) as InstallationRow[],
+  rename: (id: string, name: string) => fresh(() => post("passkeys/rename", { id, name })),
+  remove: (id: string) => fresh(() => post("passkeys/remove", { id })),
+  revokeInstallation: (installation: string) => fresh(() => post("installations/revoke", { installation })),
+  /** Creates a passkey on this device and adds it to the account. */
+  async addPasskey(name: string): Promise<void> {
+    await fresh(async () => {
+      const s = await post("passkeys/add/start", {});
+      const cred = await ceremony("create", s.options as Json);
+      await post("passkeys/add/finish", { ceremony: s.ceremony, credential: encodeCredential(cred), name });
+    });
+  },
+};
