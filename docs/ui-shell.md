@@ -61,6 +61,27 @@ Not a card: it sits directly on the tinted background.
 - The reference for both, and for the overall polish, is kayg's bb plugin `calternal-ui`
   (`/home/kayg/Developer/bb-plugins/calternal-ui`). Calternal must be at least that good.
 
+## Interaction rules
+
+Decided by kayg, 2026-11-17, from the first live preview.
+
+- Focus rings appear only for keyboard focus, never from a mouse or touch.
+- Controls animate when used by pointer or touch, never when invoked from the keyboard.
+- Motion is non-linear (springs or eased curves) and never blocks input; a surface never
+  appears before its material is ready (no transparent popover that then blurs).
+- Blur is cheap: wallpapers are blurred once when chosen; live blur is limited to small
+  surfaces. Performance decides every material choice.
+- The top of the middle card fades content out; no solid band.
+- A caret sits exactly on the text baseline of its placeholder and text.
+- Icons come from one set, at one optical size and stroke per tier, aligned to the text.
+- State indicators say something or are absent: no dot for idle.
+- A thread shown in the attention card is not also listed below it.
+- Selecting text in a chat offers two actions: **Comment** (puts the selection in the
+  composer as a quote, a blank line, then the caret) and **Ask in Side Chat** (opens the
+  right sidebar's chat with the selection quoted).
+- Interaction craft follows Emil Kowalski's and Jakub Krehel's published guidance and the
+  Hallmark skill; visual presets follow the Craft study in the existing app's repo.
+
 ## Preview
 
 The web UI is deployed for review at `https://preview.calternal.cloud/ai/` (served from
