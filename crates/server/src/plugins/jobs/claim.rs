@@ -12,6 +12,7 @@ impl Jobs {
     /// submitted it. This prevents a plugin-shaped result from selecting the
     /// native interpreter for an ordinary job. Cost: the existing FULL claim
     /// transaction/read, with predicates in its update; no additional head load.
+    /// The claim stays publicly admitted until placement and its checkpoint commit.
     pub(crate) fn claim_turn(
         &self,
         space: &str,
@@ -34,11 +35,16 @@ impl Jobs {
         plugin: Option<&str>,
         account: Option<AccountId>,
     ) -> Result<Option<Claimed>, Error> {
+        let claimed_state = if operation.is_some() {
+            "placing"
+        } else {
+            "running"
+        };
         let job = self.tx(space, |tx| {
             let n = tx
                 .execute(
-                    "UPDATE jobs SET state='running',runs=runs+1 WHERE id=?1 AND state='admitted' AND (?2 IS NULL OR operation=?2) AND (?3 IS NULL OR plugin=?3) AND (?4 IS NULL OR account=?4)",
-                    params![id,operation,plugin,account.map(|a|a.to_string())],
+                    "UPDATE jobs SET state=?5,runs=runs+1 WHERE id=?1 AND state='admitted' AND (?2 IS NULL OR operation=?2) AND (?3 IS NULL OR plugin=?3) AND (?4 IS NULL OR account=?4)",
+                    params![id,operation,plugin,account.map(|a|a.to_string()),claimed_state],
                 )
                 .map_err(db_err)?;
             if n == 0 {

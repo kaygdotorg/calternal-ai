@@ -46,6 +46,9 @@ pending requests, and carries forward eligible grants. Archiving or deleting a
 thread removes its saved modes, credentials, and grants for every account.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
+An admitted run remains queued while it reserves a lease and waits for execution
+capacity. The first visible running state and its selected machine checkpoint
+commit together. A resumed run can expose the previous checkpoint while queued.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
 the lease and makes the turn interrupted; no machine automatically receives it.
 Only an explicit Resume starts interrupted work. Stop, completion and interruption
