@@ -49,7 +49,7 @@ try {
   await measure('Notes read (warm HTTP, one ~10 KiB note)', 40, () => op('notes.get', { space_id: space, id: note.id }));
   let revision = 0;
   await measure('Notes update (durable acknowledgement)', 20, async () => { ({ note } = await op('notes.update', { space_id: space, id: note.id, base_revision: note.revision, markdown: markdown + `\nRevision ${++revision}\n` })); });
-  await op('plugins.enable', { space_id: space, plugin_id: 'notes-insights' });
+  await op('plugins.enable', { space_id: space, plugin_id: 'calternal-notes-insights' });
   await measure('Extension (fresh Node worker per call)', 15, () => op('notes-insights.summarize', { space_id: space, id: note.id }));
   const binarySha256 = createHash('sha256').update(await readFile(join(root, 'target/debug/calternal'))).digest('hex');
   const report = { binary_sha256: binarySha256, measured_at: new Date().toISOString(), scope: 'Development-host smoke only; debug binary, small disposable fixture, no UI or 120 Hz claim; concurrent builds may affect results.', conditions: { platform: platform(), release: release(), cpu: cpus()[0]?.model, logical_cpus: cpus().length, memory_bytes: totalmem(), node: process.version, startup_ms: startupMs, document_utf8_bytes: Buffer.byteLength(markdown) }, results: samples };

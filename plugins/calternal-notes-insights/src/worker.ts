@@ -55,4 +55,4 @@ async function main(): Promise<void> {
   }
   if (buffered.length) throw new Error("unterminated frame");
 }
-main().catch(() => { process.stderr.write("notes-insights worker protocol failure\n"); process.exitCode = 1; process.stdin.destroy(); });
+main().catch(() => { process.stderr.write("calternal-notes-insights worker protocol failure\n"); process.exitCode = 1; process.stdin.destroy(); });

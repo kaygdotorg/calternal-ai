@@ -1,4 +1,4 @@
-PLUGIN: notes-insights
-WORKER: notes-insights/dist/worker.js
+PLUGIN: calternal-notes-insights
+WORKER: calternal-notes-insights/dist/w…
 SHA-256: -
 STATE: unreadable: worker: No such file…

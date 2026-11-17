@@ -6,7 +6,7 @@ Question: one way to run untrusted plugin code (the machine role's sandbox) inst
 
 ## What was measured
 
-The real `plugins/notes-insights` worker bundle (sha256 `8ef03794…3698`) and the real protocol v2 (`WorkerRuntimeV2`, newline-delimited JSON frames over the worker's stdio), one long-lived worker per (plugin, space). A small Rust driver (`pwbench`) plays the server: it sends `invoke` frames, answers each `host_call` (`read_item`) with a note immediately, and reads `complete`. A bench worker (same SDK, same stdio loop, synthetic operations `bench.hostcalls`, `bench.echo`, `bench.echo_back`) gives the host-call and large-payload cases the notes-insights operation cannot.
+The real `plugins/calternal-notes-insights` worker bundle (sha256 `8ef03794…3698`) and the real protocol v2 (`WorkerRuntimeV2`, newline-delimited JSON frames over the worker's stdio), one long-lived worker per (plugin, space). A small Rust driver (`pwbench`) plays the server: it sends `invoke` frames, answers each `host_call` (`read_item`) with a note immediately, and reads `complete`. A bench worker (same SDK, same stdio loop, synthetic operations `bench.hostcalls`, `bench.echo`, `bench.echo_back`) gives the host-call and large-payload cases the notes-insights operation cannot.
 
 | Variant | How one worker is hosted |
 | --- | --- |
@@ -23,12 +23,12 @@ Method: all measurements under `/usr/local/bin/perf-lock.sh`, nothing built on t
 Caveats that apply to everything:
 - The VM has 4 cores and the driver shares them with the workers. Parallel runs are CPU-bound, not a property of one variant alone.
 - About 3.3 GiB of this VM's RAM is other lanes' leftover `/tmp` (tmpfs), so about 3.4 GiB was available. The 50-worker rows fit in that.
-- The notes-insights worker itself does real work: counting words over a 200 KiB note costs about 4 ms of Node CPU, which is why the 200 KiB row is large in every variant.
+- The calternal-notes-insights worker itself does real work: counting words over a 200 KiB note costs about 4 ms of Node CPU, which is why the 200 KiB row is large in every variant.
 - Numbers come from one run of each test on one VM; no confidence intervals.
 
 ## 1. Cold start: spawn to first response (n = 30)
 
-"First response" is the time from starting the worker (spawn, or connect plus `podman exec`) until the first `complete` of a notes-insights `summarize` (which includes one host call). For B-exec and C-exec the container is started first (last column, not included in the first response). C numbers are for a container started in an already-running VM; the VM's own boot is in section 9.
+"First response" is the time from starting the worker (spawn, or connect plus `podman exec`) until the first `complete` of the unchanged `notes-insights.summarize` operation (which includes one host call). For B-exec and C-exec the container is started first (last column, not included in the first response). C numbers are for a container started in an already-running VM; the VM's own boot is in section 9.
 
 | Variant | first response p50 ms | p95 ms | max ms | 2nd call p50 ms | container start before exec, p50 ms |
 |---|---|---|---|---|---|
@@ -66,7 +66,7 @@ The bench worker makes n sequential `read_item` host calls (1 KiB reply each) in
 
 ## 4. Throughput
 
-Calls per second, small request (notes-insights `summarize`, 1 KiB note). "16 in flight" pipelines 16 invocations on one worker. Eight workers run in eight driver threads at once; the rows with a 4-vCPU VM repeat the C runs in a VM with as many vCPUs as the host has cores (the main C runs used 2 vCPUs).
+Calls per second, small request (`notes-insights.summarize`, 1 KiB note). "16 in flight" pipelines 16 invocations on one worker. Eight workers run in eight driver threads at once; the rows with a 4-vCPU VM repeat the C runs in a VM with as many vCPUs as the host has cores (the main C runs used 2 vCPUs).
 
 | Calls per second | A | A0 (no permission flags) | B-run | B-exec | C-run | C-exec |
 |---|---|---|---|---|---|---|

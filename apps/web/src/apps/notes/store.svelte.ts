@@ -31,8 +31,8 @@ class NotesStore {
     if (this.started) return;
     this.started = true;
     try {
-      this.spaces = await this.client.spaces();
-      if (serverMode()) shellSpaces.setList(this.spaces); // the server's list is the shell's
+      await shellSpaces.load(); // in server mode the shell's list is the server's (and the order puts the personal space first)
+      this.spaces = serverMode() ? shellSpaces.list : await this.client.spaces();
       this.space = this.spaces.find((s) => s.id === shellSpaces.current.id) ?? this.spaces[0] ?? null;
       await this.refresh();
       if (this.space) this.stop = this.client.watch(this.space.id, () => void this.refresh());
