@@ -37,6 +37,7 @@ export function initInputModality(): void {
   let rest = 0, pending = 0;
   const inField = (t: EventTarget | null) => t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && !["button", "checkbox", "radio", "range", "color", "file", "submit", "reset", "image"].includes(t.type)) || (t as HTMLElement | null)?.isContentEditable === true;
   addEventListener("keydown", (e) => {
+    if ((e as KeyboardEvent & { warm?: boolean }).warm) return; // a warm-up event a field sends itself at idle (see the composer): not the person
     if (e.isComposing || MODIFIER_KEYS.has(e.key) || ((e.metaKey || e.ctrlKey) && e.key.length === 1)) return;
     if (inField(e.target)) {
       if (e.key !== "Tab" && e.key !== "ArrowUp" && e.key !== "ArrowDown") {

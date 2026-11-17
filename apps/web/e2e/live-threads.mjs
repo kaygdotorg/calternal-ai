@@ -69,6 +69,9 @@ const stopAfter = page.getByRole("button", { name: "Stop the turn" });
 const reloadedRunning = (await stopAfter.count()) + (await page.locator("text=/Running/").count());
 console.log(`    after reload mid-turn: stop button=${await stopAfter.count()}, "Running" labels=${await page.locator("text=/Running/").count()}, working row=${await page.locator("text=/Working/").count()}`);
 ok("a reloaded page shows the running turn", reloadedRunning > 0);
+{ let at = -1; for (let i = 0; i < 40 && at < 0; i++) { if ((await page.locator("text=/Working/").count()) > 0) at = i * 100; else await page.waitForTimeout(100); }
+  ok("a reloaded page shows what the turn has done so far (the Working row with its steps)", at >= 0, at >= 0 ? `after ${at} ms; ${await page.locator("[class*=steps] li, .steps li").count()} step rows` : `no Working row within 4 s; stop button still ${await stopAfter.count()}`);
+  await page.screenshot({ path: "/tmp/live-reload.png" }); }
 const stopBtn = page.getByRole("button", { name: "Stop the turn" });
 if (await stopBtn.count()) {
   await stopBtn.click(); await page.waitForTimeout(3000);

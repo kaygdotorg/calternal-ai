@@ -47,3 +47,12 @@ For a fresh real account, each in plain words with the next step and no placehol
 | Request bar | Question: the agent waits and continues once answered. Approval: nothing runs until you decide; "for this thread" lasts until the thread is deleted. Secret: where the value goes | the buttons already on the bar |
 
 What the server can tell today: a failed or interrupted turn comes from the turn state (`failed`, `interrupted`) with generic words; "no machine", "machine offline" and "provider not signed in" need a machine-readiness read the server does not offer yet (the real adapter shows none of them rather than guess), and the retry countdown needs the retry fields of the job checkpoint. Resume is `agent.resume` on the thread's last job.
+
+## Backend follow-ups (for the requests and threads lanes)
+
+- **Which lifetimes a request allows.** The list does not say; the UI reads it from `action.risk` (`irreversible` and `widens_access` are single-use) in `lifetimesOf`. The server should send it, for example `detail.lifetimes: ["once"]` or `["once", "this_thread"]`, so the rule lives in one place. `lifetimesOf` already prefers such a list when it is there.
+- **Readiness** (machine enrolled, online, provider signed in) and **retry fields** (attempt, next attempt) for the states in "Empty, missing and failed states".
+- **A fixture provider that emits tool events.** The seeded installation's provider emits only `session` and `text_delta`, so a page reloaded mid-turn shows the Working row with no steps (a real provider's steps are replayed from the oldest retained event when a page connects without a bookmark; checked: the second connection returns the whole stream). A fixture with a few `tool_started` and `tool_finished` events would let `live-threads.mjs` check the steps.
+- **Resuming a job stream after a bookmark** re-sent the `session` chunk in a probe (`?after=<id>` with the last id seen): worth a look, harmless to the UI.
+
+The page's session code is the shell's: the adapter uses the shared `ServerClient` (bearer in development token mode, the browser's cookie otherwise, nothing of its own), and `/api/v1/auth/me` is called by the shell's `server/boot.ts`, not by the Threads adapter.
