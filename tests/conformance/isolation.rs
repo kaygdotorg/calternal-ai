@@ -582,18 +582,18 @@ async fn all_operations_hide_foreign_ids() {
         ),
         (
             "plugins.enable",
-            json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
-            json!({"space_id":missing,"plugin_id":"notes-insights"}),
+            json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
+            json!({"space_id":missing,"plugin_id":"calternal-notes-insights"}),
         ),
         (
             "plugins.disable",
-            json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
-            json!({"space_id":missing,"plugin_id":"notes-insights"}),
+            json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
+            json!({"space_id":missing,"plugin_id":"calternal-notes-insights"}),
         ),
         (
             "plugins.preview",
-            json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
-            json!({"space_id":missing,"plugin_id":"notes-insights"}),
+            json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
+            json!({"space_id":missing,"plugin_id":"calternal-notes-insights"}),
         ),
         (
             "secrets.request",
@@ -875,7 +875,7 @@ async fn role_boundaries_and_demoted_receipts() {
             ),
             (
                 "plugins.enable",
-                json!({"space_id":s,"plugin_id":"notes-insights"}),
+                json!({"space_id":s,"plugin_id":"calternal-notes-insights"}),
                 role == "manager",
             ),
             (
@@ -1356,7 +1356,7 @@ async fn filesystem_modes_and_complete_sql_inventory() {
     f.op(
         1,
         "plugins.enable",
-        json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
+        json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
     )
     .await
     .ok();
@@ -1593,7 +1593,7 @@ async fn running_worker_revoke(mode: WorkerRevocation) {
     f.op(
         1,
         "plugins.enable",
-        json!({"space_id":s,"plugin_id":"notes-insights"}),
+        json!({"space_id":s,"plugin_id":"calternal-notes-insights"}),
     )
     .await
     .ok();
@@ -1925,7 +1925,7 @@ async fn every_bound_space_operation_requires_its_policy_capability() {
         f.op(
             1,
             "plugins.enable",
-            json!({"space_id":space,"plugin_id":"notes-insights"}),
+            json!({"space_id":space,"plugin_id":"calternal-notes-insights"}),
         )
         .await
         .ok();
@@ -1941,7 +1941,7 @@ async fn every_bound_space_operation_requires_its_policy_capability() {
                 json!({"id":note["id"],"base_revision":note["revision"],"markdown":"policy"})
             }
             "plugins.enable" | "plugins.disable" | "plugins.preview" => {
-                json!({"space_id":space,"plugin_id":"notes-insights"})
+                json!({"space_id":space,"plugin_id":"calternal-notes-insights"})
             }
             _ => json!({"space_id":space}),
         };
@@ -2085,7 +2085,7 @@ async fn each_space_capability_is_independent_over_http() {
             ),
             (
                 "plugins.enable",
-                json!({"space_id":s,"plugin_id":"notes-insights"}),
+                json!({"space_id":s,"plugin_id":"calternal-notes-insights"}),
                 cap == "plugins.manage",
             ),
             (

@@ -12,6 +12,7 @@ import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
+import { devToken, serverMode } from "../../server/client";
 import { caps } from "../../shell/capabilities";
 
 export type Control =
@@ -46,6 +47,11 @@ export interface Section { id: "user" | "space" | "server"; name: string; pages:
 const fx = <T,>(id: string, def: T): Pick<Setting, "get" | "set"> => ({ get: () => values.get<T>(id, def), set: (v) => values.set(id, v) });
 const A = appearance;
 const ap = (f: (p: typeof A.prefs) => void) => A.change(f);
+/** Server mode with a cookie session: ends it on the server and reloads into the sign-in screen. Fixtures only explain. */
+const signOutAction = (): void => {
+  if (!serverMode() || devToken()) return confirmLater("Sign out")();
+  void import("../../server/auth").then((a) => a.signOut()).then(() => location.replace(import.meta.env.BASE_URL), () => alert("Could not sign out. Check the connection and try again."));
+};
 const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
 
 const appearancePage: Page = {
@@ -132,7 +138,7 @@ const accountPage: Page = {
       { id: "account.passkeys", label: "Passkeys", help: "How you prove it is you.", control: { type: "drill", summary: () => "2 passkeys", run: confirmLater("Passkeys") } },
       { id: "account.providers", label: "Connected provider accounts", help: "What you sign in to. The server never stores them.", control: { type: "drill", summary: () => "Claude Code, Codex", run: confirmLater("Connected provider accounts") } },
     ] },
-    { settings: [{ id: "account.sign-out", label: "Sign out", control: { type: "button", text: "Sign out…", run: confirmLater("Sign out") } }] },
+    { settings: [{ id: "account.sign-out", label: "Sign out", control: { type: "button", text: "Sign out…", run: signOutAction } }] },
   ],
 };
 
@@ -208,8 +214,35 @@ export const SECTIONS: Section[] = [
   { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
 ];
 
-/** The sections this person sees: Admin (the server) only with the server-admin capability. */
-export const visibleSections = (): Section[] => SECTIONS.filter((s) => s.id !== "server" || caps.serverAdmin);
+const lazy = (id: string, label: string, load: () => Promise<{ default: Component<any> }>, help?: string): Group => ({ settings: [{ id, label, help, control: { type: "custom", load } }] });
+const deleteSpace = (): void => {
+  if (!confirm(`Delete the space "${spaces.current.name}"? Its records are removed.`)) return;
+  void import("../../server/client").then(({ server }) => server.operate("spaces.delete", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
+};
+const leaveSpace = (): void => {
+  if (!confirm(`Leave the space "${spaces.current.name}"? You lose access to everything in it.`)) return;
+  void import("../../server/client").then(({ server }) => server.operate("spaces.leave", { space_id: spaces.current.id })).then(() => location.replace(import.meta.env.BASE_URL), (e: Error) => alert(e.message));
+};
+/**
+ * The pages in server mode: only what a server operation backs. Account, Members, Secrets, Space plugins and Machines show the real data; Appearance and Keyboard are this browser's own and stay; every other
+ * control (profile name, invites, groups, instructions, Agents defaults, Admin) has no operation yet and is not shown (the table in docs/ui-shell-status.md lists each with the operation it needs).
+ */
+function serverSections(): Section[] {
+  const account: Page = { ...accountPage, groups: [lazy("account.panel", "Account", () => import("./AccountPanel.svelte"))] };
+  const machines: Page = { ...machinesPage, groups: [lazy("machines.list", "Machines", () => import("./ServerMachinesPanel.svelte"))] };
+  const members: Page = { ...membersPage, groups: [lazy("space.members", "Members", () => import("./MembersPanel.svelte")), { title: "Danger area", danger: true, settings: [{ id: "space.leave", label: "Leave this space", help: "You lose access to everything in it.", control: { type: "button", text: "Leave space…", danger: true, run: leaveSpace } }] }] };
+  const secrets: Page = { ...secretsPage, groups: [lazy("space.secrets", "Secrets", () => import("./SecretsPanel.svelte"))] };
+  const plugins: Page = { ...spacePluginsPage, groups: [lazy("space.plugins", "Plugins", () => import("./ServerPluginsPanel.svelte"))] };
+  const manage: Page = { id: "manage", name: "Delete this space", icon: "folder", blurb: "Removes the space for everyone in it.", groups: [{ title: "Danger area", danger: true, settings: [{ id: "space.delete", label: "Delete this space", help: "Only the owner may.", control: { type: "button", text: "Delete space…", danger: true, run: deleteSpace } }] }] };
+  // Admin has no page backed by an operation yet, so it has no section even with the capability (the table in docs/ui-shell-status.md).
+  return [
+    { id: "user", name: "User", pages: [appearancePage, keyboardPage, machines, account] },
+    { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, secrets, plugins, manage] },
+  ];
+}
+
+/** The sections this person sees: Admin (the server) only with the server-admin capability (the real one in server mode). */
+export const visibleSections = (): Section[] => (serverMode() ? serverSections() : SECTIONS.filter((s) => s.id !== "server" || caps.serverAdmin));
 export const pageById = (id: string | undefined): Page | undefined => visibleSections().flatMap((s) => s.pages).find((p) => p.id === id);
 /** Every setting with the page it lives on. */
 export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));

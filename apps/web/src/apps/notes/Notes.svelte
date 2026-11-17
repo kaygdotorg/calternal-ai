@@ -6,6 +6,7 @@
   import NoteEditor from "./NoteEditor.svelte";
   import { notes } from "./store.svelte";
   import { store as threadStore } from "../threads/store.svelte";
+  import { navigate } from "../../lib/route.svelte";
   // Tags in use: fixture words until the server lists them (its search index will).
   const TAGS = ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
@@ -57,7 +58,8 @@
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     {:else}
       <h1>{id ? "Note not found" : "Notes"}</h1>
-      <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : "Choose a note on the left, or make a new one.")}</p>
+      <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : notes.list.length ? "Choose a note on the left, or make a new one." : "A note is a page of Markdown that you and your agents can read and edit. This space has none yet.")}</p>
+      {#if !id && !notes.list.length && !notes.error}<p class="first"><Button variant="primary" text="Write the first note" onclick={async () => { const n = await notes.create("Untitled"); if (n) navigate(`/notes/${n.id}`); }} /></p>{/if}
     {/if}
   </article>
   </div>
@@ -76,6 +78,7 @@
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); line-height: 1.2; letter-spacing: -0.01em; }
   p { font-size: var(--text-ui); line-height: 1.65; font-weight: var(--body-weight); }
   .lede { color: var(--ink-3); }
+  .first { margin-top: var(--s-5); }
   .rail { position: absolute; z-index: 3; top: 50%; translate: 0 -50%; left: 0; }
   .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-5); min-width: var(--pill-h); justify-items: start; }
   .ticks i { display: block; width: var(--s-6); height: 2px; border-radius: var(--r-pill); background: var(--ink-4); }

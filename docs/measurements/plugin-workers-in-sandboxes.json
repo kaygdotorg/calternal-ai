@@ -374,7 +374,7 @@
     "1": {
      "variant": "A",
      "workers": 1,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3494664,
       "MemFree": 800068,
@@ -502,7 +502,7 @@
     "10": {
      "variant": "A",
      "workers": 10,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3511568,
       "MemFree": 781848,
@@ -630,7 +630,7 @@
     "50": {
      "variant": "A",
      "workers": 50,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3527396,
       "MemFree": 797956,
@@ -1160,7 +1160,7 @@
     "10": {
      "variant": "A0",
      "workers": 10,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3567580,
       "MemFree": 1909020,
@@ -1661,7 +1661,7 @@
     "1": {
      "variant": "Brun",
      "workers": 1,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3514296,
       "MemFree": 790192,
@@ -1839,7 +1839,7 @@
     "10": {
      "variant": "Brun",
      "workers": 10,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3501508,
       "MemFree": 688164,
@@ -2017,7 +2017,7 @@
     "50": {
      "variant": "Brun",
      "workers": 50,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3487876,
       "MemFree": 671620,
@@ -2567,7 +2567,7 @@
     "1": {
      "variant": "Bexec",
      "workers": 1,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3446936,
       "MemFree": 2106840,
@@ -2770,7 +2770,7 @@
     "10": {
      "variant": "Bexec",
      "workers": 10,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3444700,
       "MemFree": 2102500,
@@ -2973,7 +2973,7 @@
     "50": {
      "variant": "Bexec",
      "workers": 50,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "host_meminfo_before_kib": {
       "MemAvailable": 3446740,
       "MemFree": 2103344,
@@ -3602,7 +3602,7 @@
     "10": {
      "variant": "Crun",
      "workers": 10,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "vm": {
       "name": "mem-476151",
       "pid": 476157,
@@ -4192,7 +4192,7 @@
     "1": {
      "variant": "Cexec",
      "workers": 1,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "vm": {
       "name": "mem-475621",
       "pid": 475627,
@@ -4357,7 +4357,7 @@
     "10": {
      "variant": "Cexec",
      "workers": 10,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "vm": {
       "name": "mem-475713",
       "pid": 475719,
@@ -4522,7 +4522,7 @@
     "50": {
      "variant": "Cexec",
      "workers": 50,
-     "bundle": "notes-insights",
+     "bundle": "calternal-notes-insights",
      "vm": {
       "name": "mem-475844",
       "pid": 475854,

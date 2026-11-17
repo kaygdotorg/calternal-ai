@@ -33,8 +33,8 @@ test("operation request fixture corpus has the same accept/reject outcomes", asy
 });
 
 test("repo Notes manifest satisfies manifest v1", async () => {
-  const notes = await fixture("plugins/notes/manifest.json");
-  assert.equal(validateManifestV1(notes).id, "notes");
+  const notes = await fixture("plugins/calternal-notes/manifest.json");
+  assert.equal(validateManifestV1(notes).id, "calternal-notes");
 });
 
 test("GenUI views are versioned, bounded generated-UI source", () => {
