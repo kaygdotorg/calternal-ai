@@ -58,6 +58,17 @@ struct Slot {
     space: Mutex<Option<Space>>,
     last_used: Mutex<Instant>,
 }
+impl Slot {
+    /// Whether something outside the cache (a live subscriber) still holds this
+    /// space's journal. Cost: a try-lock and two counter reads; a slot being worked
+    /// on right now counts as in use.
+    fn in_use(&self) -> bool {
+        match self.space.try_lock() {
+            Ok(space) => space.as_ref().is_some_and(|s| !s.journal.is_unused()),
+            Err(_) => true,
+        }
+    }
+}
 type Cache = Arc<Mutex<HashMap<SpaceId, Arc<Slot>>>>;
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
@@ -78,7 +89,9 @@ fn sweep(spaces: &Cache, idle: Duration) -> usize {
     {
         let mut map = lock(spaces);
         map.retain(|_, slot| {
-            let keep = Arc::strong_count(slot) > 1 || lock(&slot.last_used).elapsed() < idle;
+            let keep = Arc::strong_count(slot) > 1
+                || lock(&slot.last_used).elapsed() < idle
+                || slot.in_use();
             if !keep {
                 closed.push(slot.clone());
             }
@@ -211,7 +224,7 @@ impl Content {
                     if map.len() >= 64 {
                         let idle = map
                             .iter()
-                            .filter(|(_, s)| Arc::strong_count(s) == 1)
+                            .filter(|(_, s)| Arc::strong_count(s) == 1 && !s.in_use())
                             .min_by_key(|(_, s)| *lock(&s.last_used))
                             .map(|(k, _)| *k)
                             .ok_or_else(|| Error::unavailable("content cache is busy"))?;
@@ -368,6 +381,30 @@ impl Content {
             )
         })
     }
+    /// Checks one item's current kind and existence inside an authorized space.
+    /// Cost: the space's lock and one indexed read; no catalog access, body
+    /// allocation, journal call or fsync.
+    pub fn contains(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<bool> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind=?2)",
+                    params![item.to_string(), kind],
+                    |r| r.get(0),
+                )
+                .map_err(internal)
+        })
+    }
+
+    /// The space's journal store, for asynchronous following. The host must
+    /// authorize the space first and call this on a blocking thread. While the
+    /// returned handle (or a subscription on it) lives, the space stays open, so a
+    /// reopen never starts a second writer on the same journal.
+    /// Cost: the space's lock (opening the space if cold) and one Arc clone.
+    pub fn live_journal(&self, space: SpaceId) -> Result<calternal_store::SpaceStore> {
+        self.with_space(space, |s| Ok(s.journal.clone()))
+    }
+
     /// Returns a bounded journal page for host diagnostics and conformance tests.
     /// Cost: the space's lock and one indexed read allocating at most 10,000 events;
     /// a cold journal opens its database/witness. No content reads or normal fsync.

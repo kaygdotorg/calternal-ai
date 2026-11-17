@@ -4,7 +4,10 @@
   "description": "Schema export root grouping all operation types; never an HTTP request body.",
   "type": "object",
   "required": [
+    "account_frame",
     "describe",
+    "live_frame",
+    "live_subscription",
     "note",
     "note_result",
     "notes_create_input",
@@ -43,11 +46,35 @@
     "summarize_result"
   ],
   "properties": {
+    "account_frame": {
+      "description": "Schema representative for the private account invalidation stream.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/AccountFrame"
+        }
+      ]
+    },
     "describe": {
       "description": "Schema export representative for `describe`; not a field accepted by operation dispatch.",
       "allOf": [
         {
           "$ref": "#/definitions/DescribeResult"
+        }
+      ]
+    },
+    "live_frame": {
+      "description": "SSE data payload including explicit bookmark resets.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/LiveFrame"
+        }
+      ]
+    },
+    "live_subscription": {
+      "description": "Multiplexed live journal subscription query element.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/LiveSubscription"
         }
       ]
     },
@@ -342,6 +369,69 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "AccountFrame": {
+      "description": "Account feed uses the space feed's explicit acceptance/reset rules.",
+      "oneOf": [
+        {
+          "description": "Invalidate and reload account input; carries no private content after revocation.",
+          "type": "object",
+          "required": [
+            "bookmark",
+            "type"
+          ],
+          "properties": {
+            "bookmark": {
+              "description": "Account-bound unpredictable bookmark, persisted only after reload completes.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "changed"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Backlog exhausted at this account-bound bookmark.",
+          "type": "object",
+          "required": [
+            "bookmark",
+            "type"
+          ],
+          "properties": {
+            "bookmark": {
+              "description": "Current accepted position.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ready"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Foreign, expired or rolled-back bookmark: reload before reopening.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "reset"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "ApiError": {
       "description": "Safe error payload for all operations; messages must not contain credentials or private diagnostics.",
       "type": "object",
@@ -759,6 +849,104 @@
               "$ref": "#/definitions/GenUiNode"
             }
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "LiveFrame": {
+      "description": "SSE data payload. Entries are opaque journal values; only the server interprets them. A reset stops this subscription; reload authorized state before reconnecting.",
+      "oneOf": [
+        {
+          "description": "One currently authorized journal entry, in space order.",
+          "type": "object",
+          "required": [
+            "entry",
+            "space_id",
+            "type"
+          ],
+          "properties": {
+            "entry": {
+              "description": "Complete server journal entry, including its signed token and item UUID."
+            },
+            "space_id": {
+              "description": "Space whose journal advanced.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "entry"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Backlog exhausted; subsequent entries continue from this bookmark.",
+          "type": "object",
+          "required": [
+            "bookmark",
+            "space_id",
+            "type"
+          ],
+          "properties": {
+            "bookmark": {
+              "description": "Opaque signed bookmark, including positions skipped by access filtering.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Space now caught up.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ready"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "An expired, foreign or rolled-back bookmark requires a reload.",
+          "type": "object",
+          "required": [
+            "space_id",
+            "type"
+          ],
+          "properties": {
+            "space_id": {
+              "description": "Space whose derived state must be reloaded.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "reset"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "LiveSubscription": {
+      "description": "One space followed on a live connection. At most 16 distinct spaces per connection.",
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "bookmark": {
+          "description": "Opaque signed server bookmark; absent starts at the current head.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Full space UUID; possessing it grants no access.",
+          "type": "string"
         }
       },
       "additionalProperties": false

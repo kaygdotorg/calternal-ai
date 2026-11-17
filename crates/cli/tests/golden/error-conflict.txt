@@ -1,2 +1,2 @@
-error: revision is stale
-hint: Fetch the current version (`cl notes get`), then retry with its revision.
+error: The saved version has changed: revision is stale
+hint: Run `cl notes get ID` for the latest revision, then try again.

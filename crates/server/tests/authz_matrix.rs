@@ -208,6 +208,7 @@ impl Fixture {
         )
         .unwrap();
         let state = Arc::new(AppState {
+            inputs: store.account_inputs(),
             store,
             directory: tokens,
             registry: Registry::from_plugins(vec![plugin]),
@@ -302,6 +303,17 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     // The real stored-directory matrix lives in spaces_matrix.rs, where every
     // directory handler and its target invariants are exercised against SQLite.
     let stored_rows: BTreeSet<_> = [
+        // Private account authority and target isolation: account_input.rs.
+        "drafts.save",
+        "drafts.list",
+        "drafts.get",
+        "drafts.delete",
+        "pending.queue",
+        "pending.edit",
+        "pending.list",
+        "pending.cancel",
+        "pending.confirm",
+        "pending.submit",
         "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
         "spaces.create",
@@ -342,14 +354,20 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             .all(|p| !plugin_rows.contains(&p.operation.as_ref())),
         "a plugin row is hardcoded in the host table"
     );
-    let all: BTreeSet<&str> = POLICIES
+    let all: BTreeSet<String> = POLICIES
         .iter()
-        .map(|p| p.operation.as_ref())
-        .chain(plugin_rows.iter().copied())
+        .map(|p| p.operation.to_string())
+        .chain(calternal_core::account_input_operations().map(str::to_owned))
+        .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
-    assert_eq!(rows, all);
     assert_eq!(
-        POLICIES.len() + plugin_rows.len(),
+        rows.iter()
+            .map(|s| (*s).to_owned())
+            .collect::<BTreeSet<_>>(),
+        all
+    );
+    assert_eq!(
+        POLICIES.len() + calternal_core::account_input_operations().count() + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );

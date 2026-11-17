@@ -1,0 +1,5 @@
+machine:      aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+owner:        pool
+server:       https://cal.example.org
+credentials:  /home/u/.local/share/calternal/machine/credentials
+Next: run `calternal machine run` to accept assigned threads.

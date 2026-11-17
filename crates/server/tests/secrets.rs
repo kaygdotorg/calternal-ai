@@ -87,6 +87,7 @@ impl Fixture {
             }
             .unwrap();
             let state = Arc::new(AppState {
+                inputs: store.account_inputs(),
                 store,
                 directory: tokens,
                 registry: Registry::empty(),

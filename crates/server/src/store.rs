@@ -27,7 +27,10 @@ use uuid::Uuid;
 pub struct Store {
     writer: Mutex<Connection>,
     readers: ReadPool,
-    content: Content,
+    /// Shared with live streams and account inputs; never behind a store-wide lock.
+    content: std::sync::Arc<Content>,
+    /// The appdata root (account-input databases live under it).
+    appdata: std::path::PathBuf,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: uuid::Uuid,
     // Dropped last: every database and file handle above closes first.
@@ -179,7 +182,8 @@ impl Store {
         let store = Self {
             writer: Mutex::new(conn),
             readers: ReadPool::new(path),
-            content,
+            content: std::sync::Arc::new(content),
+            appdata: root.clone(),
             secrets: std::sync::Arc::new(secrets),
             installation,
             _roots: locks,
@@ -603,3 +607,6 @@ impl Store {
         Ok((next, value))
     }
 }
+
+#[path = "store_live.rs"]
+mod live_follow;

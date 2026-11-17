@@ -25,6 +25,7 @@ impl Fixture {
         let dev = support::dev(&tokens);
         let (owner, guest) = (dev.owner, dev.guest);
         let state = Arc::new(AppState {
+            inputs: store.account_inputs(),
             store,
             directory: tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),

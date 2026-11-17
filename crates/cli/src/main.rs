@@ -14,7 +14,8 @@ use std::{path::PathBuf, process::ExitCode};
 #[command(
     name = "cl",
     version,
-    about = "Calternal localhost disposable-data development preview CLI"
+    about = "Use Calternal's development preview from the command line",
+    after_help = "Examples:\n  cl describe\n  cl notes list --space SPACE_UUID\n\nSee also: cl notes --help, cl plugins --help, cl invoke --help."
 )]
 struct Cli {
     #[arg(
@@ -43,30 +44,76 @@ struct Cli {
         help = "Print one JSON document ({\"ok\":...}) instead of text; errors too, on stdout"
     )]
     json: bool,
+    /// Hide the short next-step line shown after successful terminal output.
+    #[arg(
+        long,
+        global = true,
+        help = "Hide terminal hints (also CALTERNAL_NO_HINTS=1)"
+    )]
+    no_hints: bool,
     #[command(subcommand)]
     command: Command,
 }
 #[derive(Subcommand)]
 enum Command {
+    Drafts {
+        #[command(subcommand)]
+        command: calternal_cli::account_input::Drafts,
+    },
+    Pending {
+        #[command(subcommand)]
+        command: calternal_cli::account_input::Pending,
+    },
+    #[command(
+        about = "Follow a space and print changes as they arrive",
+        after_help = "Examples:\n  cl watch <space-id>\n  cl watch <space-id> --json\n\nSee also: cl describe --help."
+    )]
+    Watch {
+        space: String,
+        #[arg(
+            long,
+            help = "Bookmark cache directory exclusive to this server and account"
+        )]
+        bookmarks: Option<PathBuf>,
+    },
+    #[command(
+        about = "Show your spaces and the operations available from this server",
+        after_help = "Examples:\n  cl describe\n\nSee also: cl notes --help, cl plugins --help."
+    )]
     Describe,
-    #[command(alias = "note")]
+    #[command(
+        alias = "note",
+        about = "Create, read, and review notes in a space",
+        after_help = "Examples:\n  cl notes list\n  cl notes create --title Plan --markdown-file plan.md\n\nSee also: cl notes list --help, cl plugins --help."
+    )]
     Notes {
         #[command(subcommand)]
         command: NotesCommand,
     },
-    #[command(alias = "plugin")]
+    #[command(
+        alias = "plugin",
+        about = "List and manage plugins enabled in a space",
+        after_help = "Examples:\n  cl plugins list\n  cl plugins preview calternal-notes\n\nSee also: cl plugins list --help, cl notes --help."
+    )]
     Plugins {
         #[command(subcommand)]
         command: PluginsCommand,
     },
+    #[command(
+        about = "Call an operation by its stable operation id",
+        after_help = "Examples:\n  cl invoke notes.list --input '{\"space_id\":\"SPACE_UUID\"}'\n\nSee also: cl describe, cl notes --help."
+    )]
     Invoke {
+        /// Stable operation id from `cl describe`.
         operation: String,
-        #[arg(long)]
+        /// JSON input object matching the operation's input schema.
+        #[arg(long, help = "JSON input object for the operation")]
         input: String,
     },
 }
 #[derive(Args)]
 struct Space {
+    /// Space UUID, as listed by `describe`.
     #[arg(long, alias = "space-id")]
     space: String,
 }
@@ -76,7 +123,7 @@ struct ItemSpace {
         long,
         alias = "space-id",
         default_value = "",
-        help = "Optional compatibility space hint; item IDs resolve their owning space"
+        help = "Optional space UUID; item IDs already identify their owning space"
     )]
     space: String,
 }
@@ -85,7 +132,8 @@ struct DocumentText {
     #[arg(
         long,
         conflicts_with = "markdown_file",
-        required_unless_present = "markdown_file"
+        required_unless_present = "markdown_file",
+        help = "Markdown content to save"
     )]
     markdown: Option<String>,
     #[arg(
@@ -122,69 +170,123 @@ impl DocumentText {
 }
 #[derive(Subcommand)]
 enum NotesCommand {
+    #[command(
+        about = "List notes in a space",
+        after_help = "Examples:\n  cl notes list\n  cl notes list --space SPACE_UUID\n\nSee also: cl notes create, cl notes get."
+    )]
     List {
         #[command(flatten)]
         scope: Space,
     },
+    #[command(
+        about = "Show one note and its current revision",
+        after_help = "Examples:\n  cl notes get NOTE_UUID\n\nSee also: cl notes list, cl notes update."
+    )]
     Get {
+        /// Note UUID.
         id: String,
         #[command(flatten)]
         scope: ItemSpace,
     },
+    #[command(
+        about = "Create a note in a space",
+        after_help = "Examples:\n  cl notes create --title Plan --markdown '# Plan'\n  cl notes create --title Plan --markdown-file plan.md\n\nSee also: cl notes list, cl notes get."
+    )]
     Create {
         #[command(flatten)]
         scope: Space,
+        /// Short title shown in note lists.
         #[arg(long)]
         title: String,
         #[command(flatten)]
         text: DocumentText,
     },
+    #[command(
+        about = "Replace a note's content against its current revision",
+        after_help = "Examples:\n  cl notes update NOTE_UUID --base-revision r-2 --markdown-file plan.md\n\nSee also: cl notes get, cl notes history."
+    )]
     Update {
+        /// Note UUID.
         id: String,
         #[command(flatten)]
         scope: ItemSpace,
+        /// Revision returned by `cl notes get`; a stale value is rejected.
         #[arg(long)]
         base_revision: String,
+        /// Replace the note title too.
         #[arg(long)]
         title: Option<String>,
         #[command(flatten)]
         text: DocumentText,
     },
+    #[command(
+        about = "List earlier saved versions of a note",
+        after_help = "Examples:\n  cl notes history NOTE_UUID\n  cl notes history NOTE_UUID --limit 10\n\nSee also: cl notes get, cl notes update."
+    )]
     History {
+        /// Note UUID.
         id: String,
         #[command(flatten)]
         scope: ItemSpace,
+        /// Maximum number of versions to show.
         #[arg(long)]
         limit: Option<u32>,
+        /// Continue from the cursor printed by the previous page.
         #[arg(long)]
         cursor: Option<String>,
     },
 }
 #[derive(Subcommand)]
 enum PluginsCommand {
+    #[command(
+        about = "List plugins installed in a space",
+        after_help = "Examples:\n  cl plugins list\n  cl plugins list --space SPACE_UUID\n\nSee also: cl plugins enable, cl plugins preview."
+    )]
     List {
         #[command(flatten)]
         scope: Space,
     },
+    #[command(
+        about = "Enable an installed plugin in a space",
+        after_help = "Examples:\n  cl plugins enable calternal-notes\n\nSee also: cl plugins list, cl plugins preview."
+    )]
     Enable {
+        /// Plugin ID from `cl plugins list`.
         plugin_id: String,
         #[command(flatten)]
         scope: Space,
     },
+    #[command(
+        about = "Disable a plugin in a space",
+        after_help = "Examples:\n  cl plugins disable calternal-notes\n\nSee also: cl plugins list, cl plugins enable."
+    )]
     Disable {
+        /// Plugin ID from `cl plugins list`.
         plugin_id: String,
         #[command(flatten)]
         scope: Space,
     },
+    #[command(
+        about = "Preview a plugin's view without changing anything",
+        after_help = "Examples:\n  cl plugins preview calternal-notes\n\nSee also: cl plugins list, cl plugins enable."
+    )]
     Preview {
+        /// Plugin ID from `cl plugins list`.
         plugin_id: String,
         #[command(flatten)]
         scope: Space,
     },
 }
 fn token_error(message: &str) -> CliError {
+    let human = match message {
+        "cannot inspect the token file" => "Couldn't inspect the credential file.",
+        "cannot read the token file" => "Couldn't read the credential file; check its permissions.",
+        "the token file is too large" => "The credential file is larger than expected.",
+        other => other,
+    };
     CliError::new("unauthorized", message)
         .hint("Put the credential in a file readable only by you (chmod 600) and pass --token-file, or set CALTERNAL_TOKEN_FILE.")
+        .human_message(human)
 }
 fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
     if let Ok(token) = std::env::var("CALTERNAL_TOKEN")
@@ -222,6 +324,17 @@ fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
     let (operation, mut input) = match command {
+        Command::Drafts { command } => {
+            let (op, input) = command.operation();
+            (op.into(), input)
+        }
+        Command::Pending { command } => {
+            let (op, input) = command
+                .operation()
+                .map_err(|_| "cannot read pending input; use --help")?;
+            (op.into(), input)
+        }
+        Command::Watch { .. } => return Err("watch is a stream".into()),
         Command::Describe => return Err("describe is not an operation".into()),
         Command::Invoke { operation, input } => {
             let input: Value =
@@ -297,10 +410,40 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
     Client::pending(&operation, &input, request_id).map_err(|e| e.to_string())
 }
 fn input_error(message: impl Into<String>) -> CliError {
+    let message = message.into();
+    let human = match message.as_str() {
+        "--input must be valid JSON" => "The --input value is not valid JSON.".to_owned(),
+        "cannot open Markdown file" => {
+            "Couldn't open the Markdown file; check that its path exists and is readable."
+                .to_owned()
+        }
+        "cannot read UTF-8 Markdown" => {
+            "Couldn't read the Markdown file as UTF-8; check its contents.".to_owned()
+        }
+        "Markdown input is required" => {
+            "Provide Markdown with `--markdown` or `--markdown-file`.".to_owned()
+        }
+        other => format!("The input could not be used: {other}"),
+    };
     CliError::new("invalid_input", message)
         .hint("Run the command with --help to see the options it needs.")
+        .human_message(human)
 }
 async fn run(cli: Cli, out: &Output) -> Result<Reply, CliError> {
+    if let Command::Watch { space, bookmarks } = &cli.command {
+        let token = cli
+            .token_file
+            .ok_or_else(|| input_error("--token-file is required"))?;
+        return calternal_cli::watch::run(
+            &cli.base_url,
+            token,
+            space.clone(),
+            bookmarks.clone(),
+            out,
+            CancellationToken::new(),
+        )
+        .await;
+    }
     let token = load_token(cli.token_file)?;
     let client = Client::new(&cli.base_url, &token).map_err(|e| {
         render::api_error(e.api_error(), None)
@@ -336,7 +479,7 @@ fn main() -> ExitCode {
         Err(code) => return ExitCode::from(code as u8),
     };
     // Detect the time zone before the runtime starts its threads.
-    let out = Output::detect(cli.json);
+    let out = Output::detect_with_options(cli.json, cli.no_hints);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -351,6 +494,35 @@ mod tests {
     #[test]
     fn no_token_argv() {
         assert!(Cli::try_parse_from(["cl", "--token", "secret", "describe"]).is_err());
+    }
+    #[test]
+    fn no_hints_is_global_and_command_help_has_examples_and_see_also() {
+        let cli = Cli::try_parse_from(["cl", "notes", "list", "--no-hints"]).unwrap();
+        assert!(cli.no_hints);
+        let commands: &[&[&str]] = &[
+            &["cl", "--help"],
+            &["cl", "describe", "--help"],
+            &["cl", "notes", "--help"],
+            &["cl", "notes", "list", "--help"],
+            &["cl", "notes", "get", "ID", "--help"],
+            &["cl", "notes", "create", "--help"],
+            &["cl", "notes", "update", "ID", "--help"],
+            &["cl", "notes", "history", "ID", "--help"],
+            &["cl", "plugins", "--help"],
+            &["cl", "plugins", "list", "--help"],
+            &["cl", "plugins", "enable", "ID", "--help"],
+            &["cl", "plugins", "disable", "ID", "--help"],
+            &["cl", "plugins", "preview", "ID", "--help"],
+            &["cl", "invoke", "--help"],
+        ];
+        for args in commands {
+            let help = Cli::try_parse_from(args.iter().copied())
+                .err()
+                .expect("--help exits before running the command")
+                .to_string();
+            assert!(help.contains("Examples:"), "{args:?}: {help}");
+            assert!(help.contains("See also:"), "{args:?}: {help}");
+        }
     }
     #[test]
     fn update_requires_revision_and_text() {

@@ -2,6 +2,182 @@
 /** Arbitrary JSON object at the transport boundary; validate operation-specific values before use. */
 export type JsonObject = Record<string, unknown>;
 /**
+ * Draft key: one private composition per account, space and target item.
+ */
+
+export type DraftKey = {
+/**
+ * Owning space UUID, used only to recheck access and remove revoked input.
+ */
+space_id: string,
+/**
+ * Full UUID of the thread or item being composed against.
+ */
+item_id: string, };
+/**
+ * Last-write-wins draft replacement; no client merge or base revision.
+ */
+
+export type DraftSaveInput = {
+/**
+ * Owning space UUID.
+ */
+space_id: string,
+/**
+ * Full target item UUID.
+ */
+item_id: string,
+/**
+ * Unsent UTF-8 text, bounded by the document limit and account ceiling.
+ */
+text: string, };
+/**
+ * Account-private list input. No caller-supplied account is accepted.
+ */
+
+export type AccountInputList = Record<string, never>;
+/**
+ * Stable pending identity; another account's identical ID selects its own state.
+ */
+
+export type PendingInput = {
+/**
+ * Request ID of the underlying write, retained through every reconnect.
+ */
+id: string, };
+/**
+ * Queue or replace a pending write before its first submission attempt.
+ */
+
+export type PendingQueueInput = {
+/**
+ * Owning space UUID; must agree with the write's resolved target.
+ */
+space_id: string,
+/**
+ * Full target item UUID, used to clear its draft after a successful send.
+ */
+item_id: string,
+/**
+ * Original offline creation time in Unix milliseconds; future times are refused.
+ */
+created_at_ms: number,
+/**
+ * Validated operation envelope with a stable request ID; nested input operations forbidden.
+ */
+request: OperationRequest, };
+/**
+ * Current account-owned record; revisions come from the server, never a device clock.
+ */
+
+export type AccountInputRecord = {
+/**
+ * Draft item UUID or pending request ID.
+ */
+id: string,
+/**
+ * Space checked before delivery or submission.
+ */
+space_id: string,
+/**
+ * Thread or item being composed against.
+ */
+item_id: string,
+/**
+ * Opaque server revision for this replacement.
+ */
+revision: string,
+/**
+ * Original creation time, preserved on edits.
+ */
+created_at_ms: number,
+/**
+ * Draft text, absent for pending submissions.
+ */
+text: string | null,
+/**
+ * Stable operation, absent for drafts.
+ */
+request: OperationRequest | null,
+/**
+ * queued, confirmation_required, or submitting (immutable after attempt).
+ */
+state: string, };
+/**
+ * Operation result containing one private input, or none after removal/send.
+ */
+
+export type AccountInputResult = {
+/**
+ * Current record; confirmation_required is also a request addressed to this person.
+ */
+record: AccountInputRecord | null,
+/**
+ * Underlying write's ordinary receipt, returned after submission.
+ */
+result: unknown, };
+/**
+ * Complete bounded account input snapshot, fetched again after a stream reset.
+ */
+
+export type AccountInputListResult = {
+/**
+ * Current authorized records, ordered by identity.
+ */
+records: Array<AccountInputRecord>, };
+/**
+ * Account feed uses the space feed's explicit acceptance/reset rules.
+ */
+
+export type AccountFrame = { "Changed": {
+/**
+ * Account-bound unpredictable bookmark, persisted only after reload completes.
+ */
+bookmark: string, } } | { "Ready": {
+/**
+ * Current accepted position.
+ */
+bookmark: string, } } | "Reset";
+/**
+ * One space followed on a live connection. At most 16 distinct spaces per connection.
+ */
+
+export type LiveSubscription = {
+/**
+ * Full space UUID; possessing it grants no access.
+ */
+space_id: string,
+/**
+ * Opaque signed server bookmark; absent starts at the current head.
+ */
+bookmark: string | null, };
+/**
+ * SSE data payload. Entries are opaque journal values; only the server interprets them.
+ * A reset stops this subscription; reload authorized state before reconnecting.
+ */
+
+export type LiveFrame = { "Entry": {
+/**
+ * Space whose journal advanced.
+ */
+space_id: string,
+/**
+ * Complete server journal entry, including its signed token and item UUID.
+ */
+entry: unknown, } } | { "Ready": {
+/**
+ * Space now caught up.
+ */
+space_id: string,
+/**
+ * Opaque signed bookmark, including positions skipped by access filtering.
+ */
+bookmark: string, } } | { "Reset": {
+/**
+ * Space whose derived state must be reloaded.
+ */
+space_id: string, } };
+/**
  * Closed host vocabulary, matching protected host capability names.
  */
 

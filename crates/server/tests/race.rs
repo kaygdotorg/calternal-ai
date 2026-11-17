@@ -39,6 +39,7 @@ async fn disable_during_invocation_discards_result() {
     let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
+        inputs: store.account_inputs(),
         store,
         directory: StoredDirectory::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),

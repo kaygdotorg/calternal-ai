@@ -48,7 +48,7 @@ fn invalid(message: &str) -> NativeError {
 /// Bounded watch state; cloning the Arc is constant cost, no persistent I/O.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct NativeCancellation {
-    token: CancellationToken,
+    pub(crate) token: CancellationToken,
 }
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 impl NativeCancellation {
@@ -69,7 +69,8 @@ impl NativeCancellation {
 
 /// Validated immutable operation envelope with one request identity, retained for retry.
 /// No credential is stored in this object. Persist identity/input before durable use;
-/// this preview does not implement an offline outbox. Holds O(input bytes) in memory;
+/// the connection's in-memory outbox does not provide platform durability. Holds
+/// O(input bytes) in memory;
 /// no credential, persistent writes or per-frame use.
 #[cfg_attr(feature = "uniffi", derive(uniffi::Object))]
 pub struct NativeRequest {
@@ -113,6 +114,29 @@ pub struct NativeClient {
 }
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl NativeClient {
+    /// Follow this signed-in account's drafts, pending input and confirmation
+    /// requests. Cost: bounded memory bookmark load; next opens the socket.
+    /// A reset requires authorized reload and a new stream with no bookmark.
+    pub async fn subscribe_account(
+        &self,
+        bookmark: Option<String>,
+        cancellation: Arc<NativeCancellation>,
+    ) -> Result<Arc<crate::NativeAccountLive>, NativeError> {
+        crate::NativeAccountLive::open(&self.client, bookmark, cancellation).await
+    }
+
+    /// Follow up to 16 spaces with platform-restored bookmarks (`{spaceUUID: token}`).
+    /// Returns a pull-based async stream with shared cancellation. Loads bounded
+    /// memory state, then next opens the socket. No platform persistence occurs.
+    pub async fn subscribe(
+        &self,
+        spaces: Vec<String>,
+        bookmarks_json: String,
+        cancellation: Arc<NativeCancellation>,
+    ) -> Result<Arc<crate::NativeLive>, NativeError> {
+        crate::NativeLive::open(&self.client, spaces, bookmarks_json, cancellation).await
+    }
+
     /// Accept a session credential from trusted passkey/OIDC endpoints, or an explicitly
     /// selected disposable development token. Current transport accepts loopback HTTP.
     /// Allocates Arc/header/HTTP state without network I/O; invalid origins/tokens fail.

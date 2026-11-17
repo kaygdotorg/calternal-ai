@@ -45,6 +45,15 @@ export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/appdata/dev-tokens/owner.token"
 
 For mutation retries, retain the `--request-id` and repeat exactly the same operation and input. A transport failure can mean the server committed even though the reply was lost. Tokens are accepted from a protected file or environment, never a command-line token argument.
 
+Space changes can be followed with `calternal watch <space-uuid> --token-file
+<credential-file>` (`--json` emits one event per line). The shared client follows
+one SSE connection, retains accepted bookmarks, invalidates bounded item caches,
+and drains ordered offline input after reconnect. Swift exposes a cancellable
+async stream. [Private drafts, pending submissions and the account feed](docs/account-input.md)
+use per-account storage, explicit-delete retention and seven-day confirmation
+for old offline input. See the [drafts lane report](docs/reviews/drafts-2026-11-17.md)
+for qualification and remaining platform work.
+
 ## Verification
 
 `./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs SDK/Rust tests and backend integration checks.
@@ -60,7 +69,7 @@ Every public code change includes matching reference comments. Run `npm run chec
 - Each space's SQLite databases in appdata are authoritative for its revisions and request receipts; Markdown files in userdata are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
 - Only repository-shipped, digest-pinned plugin bundles run. Node permission flags and cleared environments are defense in depth, **not an OS sandbox**. No arbitrary community plugin installation or provider credentials.
 - Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. There is no real AI conversation, machine pairing, provider login, voice or memory integration yet.
-- UniFFI exposes generated contract/validation scaffolding. This is not a finished native networking/sync core or a working Apple app.
+- UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.
 - Two low-severity npm audit findings affect a build-tool dependency; the UI report records their review. No production-readiness claim is made.
 
 The full product plan remains separate from this deliberately bounded implementation:

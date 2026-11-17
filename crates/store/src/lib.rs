@@ -134,6 +134,7 @@ struct Inner {
     tx: Option<mpsc::Sender<writer::Cmd>>,
     writer_thread: Option<std::thread::JoinHandle<rusqlite::Connection>>,
     live: broadcast::Sender<Arc<JournalEntry>>,
+    admission: std::sync::Mutex<()>,
 }
 
 impl Drop for Inner {
@@ -332,6 +333,7 @@ impl SpaceStore {
             shared: shared.clone(),
             tx: Some(tx),
             writer_thread: Some(writer_thread),
+            admission: std::sync::Mutex::new(()),
             live,
         });
         if shared.guard.is_some() {
@@ -358,6 +360,25 @@ impl SpaceStore {
     /// Cost: Allocates receiver bookkeeping; no writer lock, SQLite or disk I/O.
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<JournalEntry>> {
         self.inner.live.subscribe()
+    }
+
+    /// Registers a receiver only while fewer than `limit` listeners exist.
+    /// A per-space admission mutex protects check-and-subscribe; it spans no I/O,
+    /// writer wait or cross-thread work. Cost: one short lock and receiver clone.
+    /// Existing unbounded host subscriptions count toward the limit. Failure
+    /// returns InvalidInput; the host maps saturation to its safe overload error.
+    pub fn subscribe_bounded(
+        &self,
+        limit: usize,
+    ) -> Result<broadcast::Receiver<Arc<JournalEntry>>> {
+        let _guard = self.inner.admission.lock().map_err(Error::internal)?;
+        if self.listeners() >= limit {
+            return Err(Error::new(
+                ErrorCode::InvalidInput,
+                "subscriber limit reached",
+            ));
+        }
+        Ok(self.subscribe())
     }
 
     /// How many live listeners (connected clients) there are right now.

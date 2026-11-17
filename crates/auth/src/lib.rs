@@ -16,6 +16,7 @@ mod http_facing;
 pub mod limit;
 mod passkey;
 mod passkeys;
+pub mod private_fs;
 mod session;
 mod setup;
 pub mod spaces;

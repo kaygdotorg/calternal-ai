@@ -25,6 +25,7 @@ clap.workspace = true
 tokio.workspace = true
 time = { workspace = true, features = ["formatting", "parsing", "local-offset"] }
 rustix = { workspace = true, features = ["termios", "stdio"] }
+unicode-width = "0.2"
 
 [dev-dependencies]
 calternal-cli = { path = ".", features = ["testing"] }

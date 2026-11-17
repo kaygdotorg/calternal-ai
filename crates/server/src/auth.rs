@@ -35,6 +35,12 @@ pub struct Identity {
 /// invokes authorization on blocking tasks to keep SQLite off async workers. Authentication
 /// must validate current sessions, never trust a caller-supplied account ID.
 pub trait Directory: Send + Sync + 'static {
+    /// Mutation hints for idle live connections. Implementations must include
+    /// membership and session sources; delivery still checks current authority.
+    /// Cost: bounded watch receiver clones, no I/O.
+    fn changes(&self) -> Vec<tokio::sync::watch::Receiver<u64>> {
+        Vec::new()
+    }
     /// Optional protected account HTTP service; absent for synthetic test directories.
     fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
         None
@@ -156,6 +162,14 @@ fn auth_error(e: calternal_auth::Error) -> Error {
     }
 }
 impl Directory for StoredDirectory {
+    fn changes(&self) -> Vec<tokio::sync::watch::Receiver<u64>> {
+        let mut changes = vec![self.spaces.changes()];
+        if let Some(service) = self.http_auth() {
+            changes.push(service.auth.changes());
+        }
+        changes
+    }
+
     fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
         self.http.as_ref()
     }

@@ -112,33 +112,34 @@ pub fn validate_request(request: &OperationRequest) -> Result<(), Error> {
 }
 /// Test membership in the fixed preview operation catalog without allocation or authority checks.
 pub fn is_known_operation(operation: &str) -> bool {
-    matches!(
-        operation,
-        "spaces.list"
-            | "spaces.create"
-            | "spaces.members"
-            | "spaces.set_role"
-            | "spaces.remove_member"
-            | "spaces.leave"
-            | "spaces.transfer"
-            | "spaces.delete"
-            | "notes.list"
-            | "notes.get"
-            | "resolve"
-            | "notes.create"
-            | "notes.update"
-            | "notes.history"
-            | "plugins.list"
-            | "plugins.enable"
-            | "plugins.disable"
-            | "plugins.preview"
-            | "notes-insights.summarize"
-            | "jobs.get"
-            | "jobs.cancel"
-            | "secrets.request"
-            | "secrets.list"
-            | "secrets.revoke"
-    )
+    is_account_input_operation(operation)
+        || matches!(
+            operation,
+            "spaces.list"
+                | "spaces.create"
+                | "spaces.members"
+                | "spaces.set_role"
+                | "spaces.remove_member"
+                | "spaces.leave"
+                | "spaces.transfer"
+                | "spaces.delete"
+                | "notes.list"
+                | "notes.get"
+                | "resolve"
+                | "notes.create"
+                | "notes.update"
+                | "notes.history"
+                | "plugins.list"
+                | "plugins.enable"
+                | "plugins.disable"
+                | "plugins.preview"
+                | "notes-insights.summarize"
+                | "jobs.get"
+                | "jobs.cancel"
+                | "secrets.request"
+                | "secrets.list"
+                | "secrets.revoke"
+        )
 }
 /// Validate the envelope and known operation inputs; leave unknown operation schemas to server discovery for forward compatibility. Cost is proportional to serialized input.
 ///
@@ -173,6 +174,9 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, Error> {
 /// # Errors
 /// Returns invalid input for schema/value violations, too large for oversized Markdown, or not found for unknown operations.
 pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(), Error> {
+    if is_account_input_operation(operation) {
+        return validate_account_input(operation, input);
+    }
     if matches!(
         operation,
         "notes.get" | "notes.history" | "notes.update" | "notes-insights.summarize"
@@ -511,7 +515,7 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             output_schema: object(serde_json::to_value(schemars::schema_for!(O)).unwrap()),
         }
     }
-    vec![
+    let mut catalog = vec![
         entry::<SpacesListInput, SpacesListResult>(
             "spaces.list",
             "List current account memberships",
@@ -600,5 +604,7 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             "Destroy a secret or withdraw a pending request",
             true,
         ),
-    ]
+    ];
+    catalog.extend(account_input_catalog());
+    catalog
 }

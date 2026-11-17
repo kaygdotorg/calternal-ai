@@ -47,34 +47,54 @@ fn rows(v: &Value, key: &str) -> Vec<Value> {
 
 /// The reply for `operation`'s successful `data`; `--json` carries `data` unchanged.
 pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -> Reply {
+    if calternal_core::is_account_input_operation(operation) {
+        return calternal_cli::account_input::render(out, operation, request_id, data);
+    }
     let reply = Reply::new(data.clone()).request_id(request_id);
     match operation {
-        "notes.list" => reply.table(
-            &["ID", "TITLE", "UPDATED", "REVISION"],
-            rows(&data, "notes")
-                .iter()
-                .map(|n| {
-                    vec![
-                        s(n, "id").into(),
-                        s(n, "title").into(),
-                        out.local_rfc3339(s(n, "updated_at")),
-                        s(n, "revision").into(),
-                    ]
-                })
-                .collect(),
-            "No notes in this space.",
-        ),
+        "notes.list" => {
+            let notes = rows(&data, "notes");
+            let hint = if notes.is_empty() {
+                "Next: run `cl notes create --help`."
+            } else {
+                "Next: run `cl notes get ID`."
+            };
+            reply
+                .table(
+                    &["ID", "TITLE", "UPDATED", "REVISION"],
+                    notes
+                        .iter()
+                        .map(|n| {
+                            vec![
+                                s(n, "id").into(),
+                                s(n, "title").into(),
+                                out.local_rfc3339(s(n, "updated_at")),
+                                s(n, "revision").into(),
+                            ]
+                        })
+                        .collect(),
+                    "This space has no notes yet; run `cl notes create` to add one.",
+                )
+                .hint(hint)
+        }
         "notes.get" | "notes.create" | "notes.update" => {
             let note = &data["note"];
+            let hint = match operation {
+                "notes.create" => "Next: run `cl notes get ID` to open the note.",
+                "notes.update" => "Next: run `cl notes get ID` to check the saved version.",
+                _ => "Next: run `cl notes update ID` to edit this note.",
+            };
             reply
                 .fields(note_fields(out, note))
                 .blank()
                 .text(s(note, "markdown"))
+                .hint(hint)
         }
         "notes.history" => {
+            let versions = rows(&data, "versions");
             let mut r = reply.table(
                 &["REVISION", "TITLE", "UPDATED"],
-                rows(&data, "versions")
+                versions
                     .iter()
                     .map(|v| {
                         vec![
@@ -84,7 +104,7 @@ pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -
                         ]
                     })
                     .collect(),
-                "No earlier versions.",
+                "No earlier versions were found. Run `cl notes get ID` to view the current version.",
             );
             if let Some(c) = data.get("next_cursor").and_then(Value::as_str) {
                 r = r
@@ -93,27 +113,38 @@ pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -
             }
             r
         }
-        "plugins.list" => reply.table(
-            &["ID", "NAME", "VERSION", "ENABLED", "GENERATION"],
-            rows(&data, "plugins")
-                .iter()
-                .map(|p| {
-                    let m = &p["manifest"];
-                    vec![
-                        s(m, "id").into(),
-                        s(m, "name").into(),
-                        s(m, "version").into(),
-                        yes(p["enabled"].as_bool()).into(),
-                        p["generation"].to_string(),
-                    ]
-                })
-                .collect(),
-            "No plugins are installed.",
-        ),
+        "plugins.list" => {
+            let plugins = rows(&data, "plugins");
+            let hint = if plugins.is_empty() {
+                "Next: run `cl describe` to see what this server offers."
+            } else {
+                "Next: run `cl plugins preview ID`."
+            };
+            reply
+                .table(
+                    &["ID", "NAME", "VERSION", "ENABLED", "GENERATION"],
+                    plugins
+                        .iter()
+                        .map(|p| {
+                            let m = &p["manifest"];
+                            vec![
+                                s(m, "id").into(),
+                                s(m, "name").into(),
+                                s(m, "version").into(),
+                                yes(p["enabled"].as_bool()).into(),
+                                p["generation"].to_string(),
+                            ]
+                        })
+                        .collect(),
+                    "No plugins are installed. Ask a space owner to install one.",
+                )
+                .hint(hint)
+        }
         "plugins.enable" | "plugins.disable" => reply.fields(plugin_fields(&data["plugin"])),
         "plugins.preview" => reply
             .line("Preview of the plugin's GenUI view (nothing was changed):")
-            .text(json_text(&data["view"])),
+            .text(json_text(&data["view"]))
+            .hint("Next: run `cl plugins enable ID` to turn it on."),
         _ => reply.text(json_text(&data)),
     }
 }
@@ -151,13 +182,18 @@ pub fn describe(result: &DescribeResult) -> Reply {
             ("principal", result.principal.id.clone()),
         ])
         .blank()
-        .table(&["SPACE", "ROLE"], spaces, "This principal has no spaces.")
+        .table(
+            &["SPACE", "ROLE"],
+            spaces,
+            "No spaces are available to this account yet. Ask a space owner to invite you.",
+        )
         .blank()
         .table(
             &["OPERATION", "ACCESS", "DESCRIPTION"],
             ops,
-            "The server offers no operations.",
+            "This server offers no operations yet. Ask its owner to enable a plugin.",
         )
+        .hint("Next: run `cl notes list` to see notes in your space.")
 }
 
 /// The failure for a server or client error: its stable code, the message, and a
@@ -183,7 +219,38 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
         ErrorCode::Unavailable => "Check that the server is running at --base-url, then retry.",
         ErrorCode::Internal => "Retry; if it keeps failing, look at the server's log.",
     };
-    let mut e = CliError::new(code, error.message).hint(hint);
+    let human_hint = match error.code {
+        ErrorCode::Unauthorized => {
+            "Check `CALTERNAL_TOKEN` or `--token-file`, and make sure the credential belongs to this server."
+        }
+        ErrorCode::Forbidden => "Ask a space owner to grant your account the needed access.",
+        ErrorCode::NotFound => {
+            "Check the ID and space; `cl notes list` shows the notes you can access."
+        }
+        ErrorCode::Conflict => "Run `cl notes get ID` for the latest revision, then try again.",
+        ErrorCode::InvalidInput => {
+            "Fix the input named in the message, then run the command again; use `--help` for examples."
+        }
+        ErrorCode::TooLarge => "Shorten the input, then try again.",
+        ErrorCode::Unavailable => "Check `--base-url` and the server's status, then try again.",
+        ErrorCode::Internal => {
+            "Retry once; if it keeps failing, ask the server owner to check the log."
+        }
+    };
+    let human = match error.code {
+        ErrorCode::Unauthorized => format!("Sign-in was not accepted: {}", error.message),
+        ErrorCode::Forbidden => format!("Your account does not have access: {}", error.message),
+        ErrorCode::NotFound => format!("We couldn't find that item: {}", error.message),
+        ErrorCode::Conflict => format!("The saved version has changed: {}", error.message),
+        ErrorCode::InvalidInput => format!("The server couldn't use that input: {}", error.message),
+        ErrorCode::TooLarge => format!("That input is too large: {}", error.message),
+        ErrorCode::Unavailable => format!("The server is unavailable: {}", error.message),
+        ErrorCode::Internal => format!("The server hit an unexpected problem: {}", error.message),
+    };
+    let mut e = CliError::new(code, error.message)
+        .hint(hint)
+        .human_message(human)
+        .human_hint(human_hint);
     if let Some(id) = request_id {
         e = e.request_id(id);
     }
@@ -241,10 +308,16 @@ mod tests {
                 json!({"versions":[version],"next_cursor":"c-2"}),
             ),
             (
+                "notes.history",
+                "notes-history-empty",
+                json!({"versions": []}),
+            ),
+            (
                 "plugins.list",
                 "plugins-list",
                 json!({"plugins":[plugin.clone()]}),
             ),
+            ("plugins.list", "plugins-list-empty", json!({"plugins": []})),
             (
                 "plugins.enable",
                 "plugins-enable",
@@ -304,6 +377,70 @@ mod tests {
         let text = out.render(&operation(&out, "notes.list", "r", data));
         assert_golden(&golden("notes-list-narrow.txt"), &text);
         assert!(text.lines().all(|l| l.chars().count() <= 60));
+    }
+    #[test]
+    fn list_goldens_cover_120_80_and_40_column_terminals() {
+        let note = json!({
+            "id":"12345678-1234-4abc-8def-123456789012",
+            "space_id":"22222222-2222-4222-8222-222222222222",
+            "title":"東京 groceries and a very long shopping list",
+            "revision":"revision-2026-11-17",
+            "updated_at":"2026-11-17T06:12:03Z"
+        });
+        let version = json!({
+            "title":"東京 groceries and a very long shopping list",
+            "markdown":"- milk\n",
+            "revision":"revision-2026-11-17",
+            "updated_at":"2026-11-17T06:12:03Z"
+        });
+        let plugin = json!({
+            "manifest":{"id":"calternal-example-plugin-with-a-long-id","name":"Example plugin with a long name","version":"0.1.0","api_version":1,"description":"example","dependencies":[],"capabilities":[],"operations":[],"views":[]},
+            "enabled":true,
+            "generation":123456
+        });
+        let lists = [
+            ("notes.list", "notes-list-width", json!({"notes":[note]})),
+            (
+                "notes.history",
+                "notes-history-width",
+                json!({"versions":[version]}),
+            ),
+            (
+                "plugins.list",
+                "plugins-list-width",
+                json!({"plugins":[plugin]}),
+            ),
+        ];
+        for width in [120, 80, 40] {
+            for (op, name, data) in lists.clone() {
+                let out = Output::fixed_terminal(false, width, tz(), true);
+                let text = out.render(&operation(&out, op, "req-1", data));
+                assert_golden(&golden(&format!("{name}-{width}.txt")), &text);
+            }
+            let result: DescribeResult = serde_json::from_value(json!({
+                "protocol_version":1,
+                "genui_version":1,
+                "principal":{"id":"12345678-1234-4abc-8def-123456789012","spaces":[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","role":"owner"}]},
+                "operations":[{"id":"notes.list","description":"List notes in the selected space","mutates":false,"input_schema":{},"output_schema":{}}]
+            })).unwrap();
+            let out = Output::fixed_terminal(false, width, tz(), true);
+            assert_golden(
+                &golden(&format!("describe-width-{width}.txt")),
+                &out.render(&describe(&result)),
+            );
+        }
+    }
+    #[test]
+    fn list_hints_can_be_disabled_without_changing_the_result() {
+        let data = json!({"notes": []});
+        let with_hint = Output::fixed_terminal(false, 80, tz(), true);
+        let without_hint = Output::fixed_terminal(false, 80, tz(), false);
+        let reply = operation(&with_hint, "notes.list", "req-1", data);
+        assert_golden(&golden("notes-list-hint.txt"), &with_hint.render(&reply));
+        assert_golden(
+            &golden("notes-list-no-hint.txt"),
+            &without_hint.render(&reply),
+        );
     }
     #[test]
     fn describe_golden() {

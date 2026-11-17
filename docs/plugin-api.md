@@ -116,6 +116,24 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   provider's program in the person's own sandbox home, a persistent volume that follows
   them, so they sign in once. The server process never reads, copies or stores it. Evidence and provider wording:
   `docs/reviews/provider-terms-2026-11-17.md`.
+- One way to run untrusted code (2026-11-17, measured in
+  `docs/measurements/plugin-workers-in-sandboxes.md`): plugin workers run in containers
+  started through the machine role, like agents; about 0.3 ms extra per operation, no
+  network. Plugins never run directly on the server, first-party ones included.
+- In the cloud each person has one microVM, with a container per thread
+  (`docs/measurements/sandbox-hybrid.md`). CPU is shared by weights at both levels.
+- Drafts live until sent or erased, capped by count and size per account. A message queued
+  while offline stays until sent or cancelled; after 7 days it asks before sending.
+- Plugin network access: none by default. A plugin declares destinations in its manifest;
+  a Manager approves them at enable time; the plugin fetches through the server, which
+  logs the request, attaches secrets by handle and may cache results. No raw sockets.
+- Protocols that need long-lived connections (mail: IMAP, JMAP, SMTP) are Rust engines in
+  the server behind a contract, with every outbound connection through one guard
+  (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
+- Agent files live in each space's visible `AI/` folder (2026-11-17, replacing the earlier
+  hidden location): `AI/Chats/`, `AI/Skills/<name>/SKILL.md`, `AI/Automations/<name>.md`,
+  and the space's instructions at `AI/Instructions.md`. A person's own skills, automations,
+  instructions and starred prompts are the same files in their personal space.
 
 ## Open
 

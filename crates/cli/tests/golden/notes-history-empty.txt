@@ -1,0 +1,1 @@
+No earlier versions were found. Run `cl notes get ID` to view the current version.

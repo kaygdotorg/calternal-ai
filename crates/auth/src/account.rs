@@ -25,6 +25,12 @@ pub enum LoginPurpose {
 }
 
 impl Auth {
+    /// Watches authentication worker mutations so idle connections can promptly
+    /// recheck revoked sessions. Constant watch state, no I/O or extra worker.
+    pub fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.inner.db.changes()
+    }
+
     /// Opens `state/system/auth.db` and builds the WebAuthn verifier.
     /// The host must validate and lock its state root first; this creates missing
     /// database parents and does not implement recovery of lost security state.

@@ -20,6 +20,7 @@ test-plugins = []
 [dependencies]
 calternal-types.workspace = true
 calternal-content.workspace = true
+calternal-store.workspace = true
 calternal-roots.workspace = true
 calternal-recovery.workspace = true
 calternal-auth.workspace = true
@@ -28,13 +29,14 @@ calternal-core.workspace = true
 calternal-plugin-host.workspace = true
 calternal-machine.workspace = true
 calternal-cli.workspace = true
+calternal-client.workspace = true
 calternal-secrets.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
 tower-http = { version = "0.7", features = ["fs"] }
 rusqlite.workspace = true
 hex.workspace = true
