@@ -24,6 +24,7 @@ const SPECS: &[(&str, char, &str)] = &[
     ("groups", '3', "id"),
     ("invites", '4', "id"),
     ("invite_groups", '4', "invite_id"),
+    ("owner_secret_keys", '0', ""),
     ("roles", '0', ""),
     ("role_capabilities", '0', ""),
     ("space_roles", '0', ""),
