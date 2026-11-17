@@ -198,6 +198,10 @@ see [`docs/cli.md`](../../docs/cli.md).
 
 Timings from these tests are development-host smoke numbers, not performance gates.
 
+Manual provider jobs and their CLI, scoped credentials, risk review, machine homes
+and durable retry waits are documented in [manual turns](../../docs/agent-turns.md).
+The provider test suite uses an account-free fake official CLI.
+
 `GET /api/v1/live?subscriptions=<JSON array>` follows 1–16 distinct space UUIDs.
 Each array element is `{ "space_id": "<uuid>", "bookmark": null | "<opaque>" }`.
 The authenticated feed emits SSE `data` containing core `LiveFrame` values:
@@ -214,3 +218,5 @@ Account-private drafts, pending submissions and `/api/v1/account/live` are
 implemented in separate owner-local modules; see [account input](../../docs/account-input.md).
 The live space/subscriber defaults above are operator-configurable through
 `CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.
+
+Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.

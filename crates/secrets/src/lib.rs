@@ -1,7 +1,6 @@
 //! Secret storage: values encrypted at rest, released only through audited use.
 //!
-//! A secret belongs to exactly one [`Owner`]: an account (provider logins, personal
-//! plugin secrets) or a space. Plugins and agents never receive a value; they get
+//! A secret belongs to exactly one [`Owner`]: an account (personal credentials) or a space. Plugins and agents never receive a value; they get
 //! an opaque [`HandleToken`] that names (owner, name, version). The value leaves the
 //! store only through [`SecretStore::use_value`], which names the [`Consumer`] (one
 //! sandbox environment variable for one thread, or one outbound request header) and
@@ -16,7 +15,18 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+/// Recovery barrier for owner key metadata. Implementations synchronously publish
+/// fingerprint/tombstone changes before returning; key bytes never enter the log.
+/// Called only at first key creation and erasure, from a blocking thread while
+/// the owner's SQLite write transaction prevents competing use or deletion.
+pub trait KeyLifecycle: Send + Sync {
+    /// Record a fingerprint, or irreversibly mark it erasing. Refuse a different
+    /// fingerprint or an attempt to revive an erasing owner. Failure denies use.
+    fn record(&self, owner: &Owner, fingerprint: &[u8; 32], erasing: bool) -> Result<()>;
+}
+
 mod key;
+mod lifecycle;
 mod local;
 mod types;
 
@@ -45,13 +55,13 @@ pub enum Error {
     /// The owner already holds [`LIMITS`]' maximum of secrets or pending requests.
     #[error("too many secrets or pending requests for this owner")]
     Limit,
-    /// `system/secret.key` is absent while encrypted secrets exist. Restore it from
+    /// The owner’s `secret.key` is absent while encrypted secrets exist. Restore it from
     /// backup; a new key would make every stored value unreadable.
-    #[error("secret key is missing; restore appdata/system/secret.key from backup")]
+    #[error("secret key is missing; restore the owner’s secret.key from backup")]
     KeyMissing,
-    /// `system/secret.key` is not the key the stored secrets were written with,
+    /// The owner’s `secret.key` is not the key the stored secrets were written with,
     /// or it is not a regular 32-byte file with mode 0600.
-    #[error("secret key is unusable; restore the matching appdata/system/secret.key")]
+    #[error("secret key is unusable; restore the matching owner secret.key")]
     KeyUnusable,
     /// Storage, entropy or cipher failure. Details are deliberately dropped.
     #[error("secret storage failed")]
@@ -109,7 +119,8 @@ pub trait SecretStore: Send + Sync {
     fn handle(&self, owner: &Owner, name: &SecretName) -> Result<Handle>;
 
     /// Opaque wire form of a handle, safe to give to a plugin or agent.
-    fn token(&self, handle: &Handle) -> HandleToken;
+    /// Reads the owner key; refuses a missing, malformed or erased key.
+    fn token(&self, handle: &Handle) -> Result<HandleToken>;
 
     /// Resolve a wire token presented in `owner`'s context back to its handle.
     /// A token minted for another owner, or for a destroyed version, is not found.
@@ -128,7 +139,8 @@ pub trait SecretStore: Send + Sync {
     fn delete(&self, owner: &Owner, name: &SecretName, actor: &Actor) -> Result<()>;
 
     /// Record that `actor` asks for a secret. The value is supplied later, through
-    /// [`provide`](Self::provide), by a trusted surface.
+    /// [`provide`](Self::provide), by a trusted surface. Expires after 15 minutes;
+    /// asking again removes expired rows before enforcing the pending limit.
     fn request(
         &self,
         owner: &Owner,
@@ -138,7 +150,7 @@ pub trait SecretStore: Send + Sync {
         actor: &Actor,
     ) -> Result<RequestId>;
 
-    /// Pending requests of this owner, oldest first.
+    /// Unexpired pending requests of this owner, oldest first (15-minute TTL).
     fn pending(&self, owner: &Owner) -> Result<Vec<PendingRequest>>;
 
     /// Answer a pending request: store (or rotate) the named secret and remove the
@@ -161,3 +173,26 @@ pub trait SecretStore: Send + Sync {
 
 #[cfg(test)]
 mod tests;
+
+/// Validate a private 32-byte key and return only its fingerprint for restore
+/// checks. Missing keys refuse; malformed files, modes and symlinks refuse.
+/// Cost: one stat, one bounded read and one hash; raw bytes are wiped on drop.
+pub fn key_fingerprint(path: &std::path::Path) -> Result<[u8; 32]> {
+    use std::os::unix::fs::PermissionsExt;
+    let m = std::fs::symlink_metadata(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            Error::KeyMissing
+        } else {
+            Error::KeyUnusable
+        }
+    })?;
+    if !m.is_file() || m.permissions().mode() & 0o777 != 0o600 || m.len() != 32 {
+        return Err(Error::KeyUnusable);
+    }
+    let bytes = zeroize::Zeroizing::new(std::fs::read(path).map_err(|_| Error::KeyUnusable)?);
+    let bytes: &[u8; 32] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::KeyUnusable)?;
+    Ok(blake3::derive_key("calternal secret key id v1", bytes))
+}

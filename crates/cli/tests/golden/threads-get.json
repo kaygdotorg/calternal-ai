@@ -1,0 +1,16 @@
+{
+  "data": {
+    "thread": {
+      "address": "/threads/019a8c00-0000-7000-8000-000000000001",
+      "id": "019a8c00-0000-7000-8000-000000000001",
+      "markdown": "---\ntitle: Plan\n---\nHello\n",
+      "metadata": {
+        "archived": false,
+        "deleted": false,
+        "title": "Plan"
+      },
+      "revision": "v1.fixture"
+    }
+  },
+  "ok": true
+}

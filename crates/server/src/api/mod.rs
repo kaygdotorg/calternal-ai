@@ -171,15 +171,44 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
         .cloned()
         .expect("guard inserts principal");
     let st = state.clone();
-    let principal = match tokio::task::spawn_blocking(move || st.directory.describe(&p)).await {
-        Ok(p) => p,
+    let agent = req
+        .extensions()
+        .get::<crate::turns::access::Authority>()
+        .cloned();
+    let scoped = agent.is_some();
+    let (principal, operations) = match tokio::task::spawn_blocking(move || {
+        let mut principal = st.directory.describe(&p);
+        let mut operations = calternal_core::cached_operation_catalog().to_vec();
+        if let Some(a) = agent {
+            principal.spaces.retain(|s| s.id == a.space);
+            let sample =
+                serde_json::from_value(serde_json::json!({"space_id":a.space,"job_id":a.job}))
+                    .unwrap_or_default();
+            operations.retain(|o| a.check(&o.id, &sample).is_ok());
+        }
+        (principal, operations)
+    })
+    .await
+    {
+        Ok(v) => v,
         Err(_) => return failure(None, Error::internal("directory task failed")),
     };
-    let result = DescribeReply {
+    if !scoped {
+        return json_response(
+            StatusCode::OK,
+            &DescribeReply {
+                protocol_version: PROTOCOL_VERSION,
+                genui_version: GENUI_VERSION,
+                principal,
+                operations: operation_catalog_json(),
+            },
+        );
+    }
+    let result = calternal_core::DescribeResult {
         protocol_version: PROTOCOL_VERSION,
         genui_version: GENUI_VERSION,
         principal,
-        operations: operation_catalog_json(),
+        operations,
     };
     json_response(StatusCode::OK, &result)
 }
@@ -205,6 +234,14 @@ fn operation_catalog_json() -> &'static serde_json::value::RawValue {
 }
 
 async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
+    let machines = req
+        .extensions()
+        .get::<Arc<crate::machines::MachineService>>()
+        .cloned();
+    let agent = req
+        .extensions()
+        .get::<crate::turns::access::Authority>()
+        .cloned();
     let p = req
         .extensions()
         .get::<Identity>()
@@ -250,15 +287,85 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         Err(e) => return failure(salvage_request_id(&bytes), e.into()),
     };
     let rid = request.request_id.clone();
-    let result = dispatch(
-        state,
-        p,
-        session,
-        &request.request_id,
-        &request.operation,
-        request.input,
-    )
-    .await;
+    let scheduling_space = request
+        .input
+        .get("space_id")
+        .and_then(Value::as_str)
+        .and_then(|s| SpaceId::parse(s).ok())
+        .map(|s| s.to_string());
+    let thread_account = p.id;
+    let state_for_threads = state.clone();
+    let thread_scheduler = machines.clone();
+    let mut result = if calternal_core::AGENT_OPERATIONS
+        .iter()
+        .any(|(id, _, _)| *id == request.operation)
+    {
+        match machines {
+            Some(m) => {
+                crate::turns::dispatch(
+                    state,
+                    m,
+                    p,
+                    session,
+                    agent,
+                    &request.request_id,
+                    &request.operation,
+                    request.input,
+                )
+                .await
+            }
+            None => Err(Error::unavailable("machines are not enabled")),
+        }
+    } else {
+        dispatch_scoped(
+            state,
+            p,
+            session,
+            &request.request_id,
+            &request.operation,
+            request.input,
+            agent,
+        )
+        .await
+    };
+    if request.operation == "threads.stop" {
+        if let (Some(machines), Ok(value)) = (&thread_scheduler, &result) {
+            if let Err(error) =
+                crate::turns::finish_thread_stop(&state_for_threads, machines, value).await
+            {
+                result = Err(error);
+            }
+        }
+    }
+    if matches!(
+        request.operation.as_str(),
+        "threads.send" | "pending.submit" | "pending.confirm"
+    ) {
+        if let (Some(machines), Ok(value)) = (thread_scheduler, result.as_ref()) {
+            let value = if request.operation.starts_with("pending.") {
+                &value["result"]
+            } else {
+                value
+            };
+            if let (Some(space), Some(id)) = (
+                value["job"]["space_id"].as_str(),
+                value["job"]["id"].as_str(),
+            ) {
+                if scheduling_space
+                    .as_ref()
+                    .is_none_or(|expected| expected == space)
+                {
+                    crate::turns::schedule_thread(
+                        &state_for_threads,
+                        &machines,
+                        space.to_owned(),
+                        id.to_owned(),
+                        thread_account,
+                    );
+                }
+            }
+        }
+    }
     fault::hit(FaultPoint::BeforeReply);
     match result {
         Ok(data) => json_response(StatusCode::OK, &OperationResponse::success(rid, data)),

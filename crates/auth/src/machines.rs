@@ -34,6 +34,8 @@ pub struct MachineRecord {
     pub arch: String,
     /// A revoked machine never authenticates again.
     pub revoked: bool,
+    /// Owner permitted unisolated execution; pool machines always stay sandboxed.
+    pub direct: bool,
 }
 
 /// Machine authority over one `auth.db` handle; clones share its worker and
@@ -61,6 +63,7 @@ fn record(
     String,
     String,
     bool,
+    bool,
 )> {
     Ok((
         r.get(0)?,
@@ -70,17 +73,19 @@ fn record(
         r.get(4)?,
         r.get(5)?,
         r.get(6)?,
+        r.get(7)?,
     ))
 }
 
 fn decode(
-    (id, owner, public_key, name, os, arch, revoked): (
+    (id, owner, public_key, name, os, arch, revoked, direct): (
         String,
         Option<String>,
         Vec<u8>,
         String,
         String,
         String,
+        bool,
         bool,
     ),
 ) -> Result<MachineRecord> {
@@ -94,6 +99,7 @@ fn decode(
         os,
         arch,
         revoked,
+        direct,
     })
 }
 
@@ -142,6 +148,7 @@ impl Machines {
         name: String,
         os: String,
         arch: String,
+        direct: bool,
     ) -> Result<Option<MachineRecord>> {
         self.db.run_blocking(move |c| {
             let tx = c
@@ -159,6 +166,7 @@ impl Machines {
             let Some(owner) = owner else {
                 return Ok(None);
             };
+            if direct && owner.is_none() { return Err(Error::new(crate::ErrorCode::Forbidden,"pool machines require a sandbox")); }
             let row = MachineRecord {
                 id: Uuid::new_v4(),
                 owner: owner
@@ -169,10 +177,11 @@ impl Machines {
                 os,
                 arch,
                 revoked: false,
+                direct,
             };
             tx.execute(
-                "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms) VALUES(?1,?2,?3,?4,?5,?6,?7)",
-                params![row.id.to_string(), owner_text(row.owner), row.public_key, row.name, row.os, row.arch, now],
+                "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms,direct) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+                params![row.id.to_string(), owner_text(row.owner), row.public_key, row.name, row.os, row.arch, now, direct],
             )
             .map_err(sql)?;
             commit(tx)?;
@@ -221,11 +230,48 @@ impl Machines {
         })
     }
 
+    /// Change isolation policy only for the enrolled owner. Pool machines refuse
+    /// direct execution. One protected transaction; call from a blocking task.
+    pub fn set_direct(&self, account: AccountId, machine: Uuid, direct: bool) -> Result<()> {
+        self.db.run_blocking(move |c| {
+            let tx=c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
+            let n=tx.execute("UPDATE machines SET direct=?1 WHERE id=?2 AND owner_account=?3 AND revoked_ms IS NULL",params![direct,machine.to_string(),account.to_string()]).map_err(sql)?;
+            if n!=1 { return Err(Error::new(crate::ErrorCode::Forbidden,"only the machine owner may change isolation")); }
+            commit(tx)
+        })
+    }
+
+    /// Authorize explicit removal of one retained thread workspace. This does not
+    /// delete files: delivery is fenced by this exact lease. Bounded to 1024
+    /// outstanding authorizations per account; repeated requests replace one row.
+    /// One protected transaction on the existing auth worker, called blocking.
+    pub fn authorize_discard(&self, account: AccountId, thread: Uuid, lease: Uuid) -> Result<()> {
+        self.db.run_blocking(move |c| {
+            let tx=c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
+            let count:i64=tx.query_row("SELECT count(*) FROM agent_discards WHERE account=?1 AND thread!=?2",params![account.to_string(),thread.to_string()],|r|r.get(0)).map_err(sql)?;
+            if count>=1024{return Err(Error::invalid("too many retained discard authorizations"))}
+            let changed=tx.execute("UPDATE agent_discards SET lease=?1,authorized_ms=?2 WHERE account=?3 AND thread=?4",params![lease.to_string(),calternal_types::now_ms(),account.to_string(),thread.to_string()]).map_err(sql)?;
+            if changed==0 {tx.execute("INSERT INTO agent_discards VALUES(?1,?2,?3,?4)",params![account.to_string(),thread.to_string(),lease.to_string(),calternal_types::now_ms()]).map_err(sql)?;}
+
+            commit(tx)
+        })
+    }
+    /// Check a pending delivery against protected authority. One indexed read;
+    /// absence or any changed lease refuses deletion. Call blocking.
+    pub fn discard_authorized(
+        &self,
+        account: AccountId,
+        thread: Uuid,
+        lease: Uuid,
+    ) -> Result<bool> {
+        self.db.run_blocking(move |c|c.query_row("SELECT EXISTS(SELECT 1 FROM agent_discards WHERE account=?1 AND thread=?2 AND lease=?3)",params![account.to_string(),thread.to_string(),lease.to_string()],|r|r.get(0)).map_err(sql))
+    }
+
     /// Every enrolled machine, revoked ones included. Cost: one read job.
     pub fn list(&self) -> Result<Vec<MachineRecord>> {
         self.db.run_blocking(|c| {
             let mut st = c
-                .prepare("SELECT id,owner_account,public_key,name,os,arch,revoked_ms IS NOT NULL FROM machines ORDER BY enrolled_ms,id")
+                .prepare("SELECT id,owner_account,public_key,name,os,arch,revoked_ms IS NOT NULL,direct FROM machines ORDER BY enrolled_ms,id")
                 .map_err(sql)?;
             let rows = st.query_map([], record).map_err(sql)?;
             rows.map(|r| decode(r.map_err(sql)?)).collect()

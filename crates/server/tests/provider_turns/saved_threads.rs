@@ -1,0 +1,127 @@
+//! Saved-thread assertions through the real machine/provider fixture.
+use super::*;
+
+/// Verify output placement, identity and deletion of retained permission state.
+pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
+    // Saved threads use this same provider/session path and checkpoint to Markdown.
+    let thread = op(
+        server,
+        "threads.create",
+        json!({"space_id":space,"title":"Saved provider output"}),
+    )
+    .await;
+    let thread_id = thread["thread"]["id"].as_str().unwrap();
+    let turn = op(
+        server,
+        "threads.send",
+        json!({"id":thread_id,"message":"hello saved thread checkpoint-story"}),
+    )
+    .await;
+    let (finished, _) = until(server, turn["job"]["id"].as_str().unwrap(), |j| {
+        j["state"] == "done"
+    })
+    .await;
+    assert_eq!(finished["state"], "done");
+    let saved = op(server, "threads.get", json!({"id":thread_id})).await;
+    let markdown = saved["thread"]["markdown"].as_str().unwrap();
+    assert!(markdown.contains("hello saved thread"));
+    assert_eq!(markdown.matches("Hello 🌏").count(), 1, "{markdown}");
+    assert!(!markdown.contains("PRIVATE_LOGIN_SENTINEL"));
+    assert_eq!(
+        markdown.matches("role:agent").count(),
+        1,
+        "checkpoints split one response into multiple messages"
+    );
+    for n in 0..6 {
+        assert_eq!(
+            markdown
+                .matches(&format!("segment-{n}:{}\n", n.to_string().repeat(8192)))
+                .count(),
+            1
+        );
+    }
+
+    let text = std::fs::read_to_string(data.join(&format!(
+        "userdata-ssd/spaces/{space}/AI/Chats/Saved provider output.md"
+    )))
+    .unwrap();
+    assert!(text.contains(&format!("calternal-id: {thread_id}")));
+    assert!(text.contains("Hello 🌏"));
+    // A send applies wider and narrower modes without a fresh passkey ceremony.
+    let auth = rusqlite::Connection::open(data.join("appdata/system/auth.db")).unwrap();
+    for mode in ["full_access", "least_access", "approve_for_me"] {
+        let turn = op(
+            server,
+            "threads.send",
+            json!({"id":thread_id,"message":"apply the chosen mode","mode":mode}),
+        )
+        .await;
+        until(server, turn["job"]["id"].as_str().unwrap(), |j| {
+            j["state"] == "done"
+        })
+        .await;
+        let scope: String = auth
+            .query_row(
+                "SELECT scope FROM agent_access WHERE space=?1 AND thread=?2",
+                rusqlite::params![space, thread_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(serde_json::from_str::<Value>(&scope).unwrap()["mode"], mode);
+        let saved = op(server, "threads.get", json!({"id":thread_id})).await;
+        assert_eq!(saved["thread"]["metadata"]["mode"], mode);
+    }
+    // A content commit failure must not remove the saved permission mode.
+    let count = || {
+        auth.query_row(
+            "SELECT count(*) FROM agent_access WHERE space=?1 AND thread=?2",
+            rusqlite::params![space, thread_id],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(count(), 1);
+    let saved_scope: String = auth
+        .query_row(
+            "SELECT scope FROM agent_access WHERE space=?1 AND thread=?2",
+            rusqlite::params![space, thread_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let content =
+        rusqlite::Connection::open(data.join(&format!("appdata/spaces/{space}/content.db")))
+            .unwrap();
+    content.execute_batch("CREATE TRIGGER refuse_thread_delete BEFORE UPDATE ON items WHEN json_extract(NEW.metadata,'$.deleted')=1 BEGIN SELECT RAISE(ABORT,'injected delete commit failure'); END;").unwrap();
+    let (status,_)=server.call(&server.owner,"/api/v1/operations",Some(json!({"request_id":Uuid::new_v4(),"operation":"threads.delete","input":{"id":thread_id}}))).await;
+    assert_eq!(status, 500);
+    assert_eq!(
+        count(),
+        1,
+        "failed deletion forgot the retained permission mode"
+    );
+    let unchanged: String = auth
+        .query_row(
+            "SELECT scope FROM agent_access WHERE space=?1 AND thread=?2",
+            rusqlite::params![space, thread_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(unchanged, saved_scope);
+    let preserved = op(server, "threads.get", json!({"id":thread_id})).await;
+    assert_eq!(preserved["thread"]["metadata"]["deleted"], false);
+    content
+        .execute_batch("DROP TRIGGER refuse_thread_delete")
+        .unwrap();
+    op(server, "threads.delete", json!({"id":thread_id})).await;
+    let retained: i64 = auth
+        .query_row(
+            "SELECT count(*) FROM agent_access WHERE space=?1 AND thread=?2",
+            rusqlite::params![space, thread_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        retained, 0,
+        "thread deletion retained its saved permission mode"
+    );
+}

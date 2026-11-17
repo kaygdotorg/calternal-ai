@@ -8,11 +8,12 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use super::Session;
-use super::jobs::{Job, Jobs, MAX_FINAL_PER_SPACE, MAX_RUNS, RETAIN_FINAL};
+use super::jobs::{ChildResult, Job, Jobs, MAX_FINAL_PER_SPACE, MAX_RUNS, RETAIN_FINAL};
 use calternal_types::Error;
 
 pub(super) const SCHEMA: &str = "BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,plugin TEXT NOT NULL,account TEXT NOT NULL,session TEXT NOT NULL,operation TEXT NOT NULL,input TEXT NOT NULL,parent TEXT,state TEXT NOT NULL,checkpoint TEXT NOT NULL,checkpoint_seq INTEGER NOT NULL,checkpoints INTEGER NOT NULL,result TEXT NOT NULL,runs INTEGER NOT NULL,generation INTEGER NOT NULL,request_key TEXT UNIQUE,finished_ms INTEGER) STRICT;
+CREATE INDEX IF NOT EXISTS jobs_thread ON jobs(json_extract(input,'$.request.thread_id')) WHERE operation='agent.turn';
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;
@@ -28,6 +29,8 @@ pub(super) fn state_name(state: JobState) -> &'static str {
     match state {
         JobState::Admitted => "admitted",
         JobState::Running => "running",
+        JobState::RetryWaiting => "retry_waiting",
+        JobState::Interrupted => "interrupted",
         JobState::Waiting => "waiting",
         JobState::Done => "done",
         JobState::Failed => "failed",
@@ -40,6 +43,8 @@ pub(super) fn parse_state(name: &str) -> JobState {
     match name {
         "admitted" => JobState::Admitted,
         "running" => JobState::Running,
+        "retry_waiting" => JobState::RetryWaiting,
+        "interrupted" => JobState::Interrupted,
         "waiting" => JobState::Waiting,
         "done" => JobState::Done,
         "cancelled" => JobState::Cancelled,
@@ -48,9 +53,9 @@ pub(super) fn parse_state(name: &str) -> JobState {
     }
 }
 
-pub(super) const ACTIVE: &str = "('admitted','running','waiting')";
+pub(super) const ACTIVE: &str = "('admitted','running','waiting','interrupted','retry_waiting')";
 
-pub(super) use calternal_types::now_ms;
+pub(crate) use calternal_types::now_ms;
 
 pub(super) const COLUMNS: &str = "id,plugin,account,session,operation,input,parent,state,checkpoint,checkpoint_seq,checkpoints,result,runs,generation";
 
@@ -203,6 +208,10 @@ impl Jobs {
                 drop(st);
                 let mut wake = vec![];
                 for Active { id, state, plugin, operation, runs, parent } in rows {
+                    if operation == "agent.turn" {
+                        if state!="retry_waiting" {set_state(tx, &id, JobState::Interrupted, "null")?;}
+                        continue;
+                    }
                     match state.as_str() {
                         "running" if resumable(&plugin, &operation) && runs < MAX_RUNS => {
                             tx.execute("UPDATE jobs SET state='admitted' WHERE id=?1", [&id]).map_err(db_err)?;
@@ -229,5 +238,26 @@ impl Jobs {
         out.sort();
         out.dedup();
         Ok(out)
+    }
+}
+
+impl Jobs {
+    /// Child results recorded for `parent`, in report order. Cost: one indexed scan.
+    pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, Error> {
+        let conn = self.conn(space)?;
+        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let mut st = c
+            .prepare("SELECT child,state,result FROM child_results WHERE parent=?1 ORDER BY rowid")
+            .map_err(db_err)?;
+        st.query_map([parent], |r| {
+            Ok(ChildResult {
+                job_id: r.get(0)?,
+                state: parse_state(&r.get::<_, String>(1)?),
+                result: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or(Value::Null),
+            })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)
     }
 }

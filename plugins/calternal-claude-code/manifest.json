@@ -1,0 +1,24 @@
+{
+  "id": "calternal-claude-code",
+  "name": "Claude Code",
+  "icon": "terminal",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [],
+  "operations": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": [],
+  "provider": {
+    "protocol_version": 1,
+    "executable": "calternal-provider-claude-code",
+    "default_model": "sonnet"
+  }
+}

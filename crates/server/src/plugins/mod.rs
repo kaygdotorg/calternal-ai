@@ -14,9 +14,15 @@
 //!
 //! Workers are NOT an OS security sandbox; see [`worker`] for what one can still reach.
 
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
+pub mod agent_access;
+pub mod agent_settings;
 pub mod broker;
 pub mod job_api;
 pub mod job_sql;
+mod job_streams;
 pub mod jobs;
 pub mod live;
 pub mod runner;
@@ -141,6 +147,13 @@ impl Plugin {
             .iter()
             .map(|kind| {
                 let placement = match &kind.storage {
+                    ManifestPlacement::VisibleTree {
+                        folder,
+                        subdirectories,
+                    } => Placement::VisibleTree {
+                        folder: folder.clone(),
+                        subdirectories: subdirectories.clone(),
+                    },
                     ManifestPlacement::Visible { folder } => Placement::Visible {
                         folder: folder.clone(),
                     },
@@ -170,6 +183,7 @@ impl Plugin {
 #[derive(Debug, Default)]
 pub struct Registry {
     plugins: Vec<Arc<Plugin>>,
+    tool_index: std::sync::OnceLock<String>,
     /// Operation ID -> (owning plugin index, derived policy).
     operations: BTreeMap<String, (usize, Policy)>,
 }
@@ -210,6 +224,23 @@ pub fn host_capability(capability: ManifestCapability) -> Option<Capability> {
 }
 
 impl Registry {
+    /// Generated one-line operation index, built once after registry construction.
+    /// Includes manifest operations as well as host operations; never grants access.
+    pub fn tool_index(&self) -> &str {
+        self.tool_index.get_or_init(|| {
+            let mut rows: Vec<_> = calternal_core::operation_catalog()
+                .into_iter()
+                .map(|d| format!("{}: {} ({:?})", d.id, d.description, d.risk))
+                .collect();
+            for p in &self.plugins {
+                for op in &p.manifest.operations {
+                    rows.push(format!("{}: {} ({:?})", op.id, p.manifest.name, op.risk));
+                }
+            }
+            rows.join("\n")
+        })
+    }
+
     /// An empty registry: no plugin operations exist. Cost: none.
     pub fn empty() -> Self {
         Self::default()
@@ -419,3 +450,6 @@ pub fn verify_digest(path: &Path, expected: Option<&str>) -> Result<(), String> 
         None => Err("worker bundle digest not pinned in trusted registry".into()),
     }
 }
+
+#[cfg(test)]
+mod job_claim_tests;

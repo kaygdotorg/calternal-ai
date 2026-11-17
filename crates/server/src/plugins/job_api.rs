@@ -13,6 +13,7 @@
 //! - `reset` — `{ epoch, from }`: the chunks the client asked for are gone (another
 //!   run started, or they were evicted from the bounded buffer). The client keeps
 //!   the snapshot's checkpoint and continues from `from`.
+//! - `state` — manual turns only: retry state and pending approval requests.
 //! - `end` — the final record; the stream then closes.
 //!
 //! A client resumes with `?after=<epoch>:<seq>` (or `Last-Event-ID`). Every delivery
@@ -71,7 +72,12 @@ async fn visible<D: Directory>(
     job: &Job,
     required: Capability,
 ) -> bool {
-    if !session.is_live(&state.directory).await {
+    if let Session::Agent { space, job: id, .. } = session {
+        if space != &job.space || id != &job.id || identity.id != job.account {
+            return false;
+        }
+    }
+    if !session.is_live_in(state).await {
         return false;
     }
     let Ok(space) = SpaceId::parse(&job.space) else {
@@ -209,6 +215,7 @@ pub async fn events<D: Directory>(
         epoch: String::new(),
         started: false,
         done: false,
+        last_state: Value::Null,
     };
     let body = Body::from_stream(futures_util::stream::unfold(stream, |mut s| async move {
         let frame = s.next_frame().await?;
@@ -241,6 +248,7 @@ struct Stream<D: Directory> {
     epoch: String,
     started: bool,
     done: bool,
+    last_state: Value,
 }
 
 impl<D: Directory> Stream<D> {
@@ -276,7 +284,11 @@ impl<D: Directory> Stream<D> {
                         Some(seq + 1)
                     }
                     Some(_) => None,
-                    None => Some(job.checkpoint_seq),
+                    None => Some(if job.operation == "agent.turn" {
+                        batch.oldest
+                    } else {
+                        job.checkpoint_seq
+                    }),
                 };
                 self.epoch = batch.epoch.clone();
             }
@@ -309,7 +321,20 @@ impl<D: Directory> Stream<D> {
                 next = chunk.seq + 1;
             }
             self.next = Some(next);
-            if job.state.is_final() {
+            let requests = if job.operation == "agent.turn" {
+                let (st, space, id) = (self.state.clone(), self.space.clone(), self.id.clone());
+                blocking(move || st.jobs.agent_requests(&space, &id))
+                    .await
+                    .ok()?
+            } else {
+                vec![]
+            };
+            let current = json!({"job":job.view(),"requests":requests});
+            if job.operation == "agent.turn" && current != self.last_state {
+                self.last_state = current.clone();
+                out.push_str(&event("state", None, &current));
+            }
+            if job.state.is_final() || job.state == calternal_core::JobState::Interrupted {
                 self.done = true;
                 out.push_str(&event("end", None, &json!({ "job": job.view() })));
                 return Some(out);

@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS leases (
     created_ms INTEGER NOT NULL,
     updated_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workspace_discards(
+ lease TEXT NOT NULL,machine TEXT NOT NULL,request_id TEXT NOT NULL UNIQUE,account TEXT NOT NULL,thread TEXT NOT NULL,
+ state TEXT NOT NULL,updated_ms INTEGER NOT NULL,PRIMARY KEY(lease,machine)
+) STRICT;
+CREATE INDEX IF NOT EXISTS workspace_discards_pending ON workspace_discards(machine,state);
+CREATE INDEX IF NOT EXISTS leases_thread_history ON leases(account,thread,created_ms DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE state != 'ended';
 ";
 
@@ -102,6 +108,8 @@ pub struct MachineRow {
     pub revoked: bool,
     /// Draining machines receive no new placements.
     pub draining: bool,
+    /// Owner permitted direct execution, stored in protected authority.
+    pub direct: bool,
 }
 
 impl MachineRow {
@@ -116,6 +124,7 @@ impl MachineRow {
             arch: record.arch,
             revoked: record.revoked,
             draining,
+            direct: record.direct,
         }
     }
 }
@@ -251,4 +260,14 @@ pub fn lease(c: &Connection, id: Uuid) -> rusqlite::Result<Option<LeaseRow>> {
         lease_from,
     )
     .optional()
+}
+
+/// after explicit resume or a later turn. Cost: one indexed history read.
+pub(crate) fn last_thread_machine(
+    c: &Connection,
+    account: AccountId,
+    thread: Uuid,
+) -> rusqlite::Result<Option<Uuid>> {
+    let id:Option<String>=c.query_row("SELECT last_machine FROM leases WHERE account=?1 AND thread=?2 AND last_machine IS NOT NULL ORDER BY created_ms DESC LIMIT 1",params![account.to_string(),thread.to_string()],|r|r.get(0)).optional()?;
+    Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }

@@ -85,8 +85,7 @@ Working record of what kayg has decided; the design itself is still being settle
   applies, with CSS as a web-only extra.
 - Secrets (2026-11-17): rotation is immediate (old handles stop working); a member's
   personal secrets are invisible to everyone else, managers included; a space's secrets
-  are managed under a separate `secrets.manage` capability. How secrets are keyed (a
-  server key, or keys derived from each person's passkey) is still open.
+  are managed under a separate `secrets.manage` capability. Keys are per owner as specified below; no passkey-derived key or unlock step.
 - Entitlements come from groups (2026-11-17): groups are named after the plans offered; an
   invite assigns its groups (existing app ADR 0059, 0060). A group decides access to the
   shared pool of cloud machines and the limits that apply (concurrent agent runs, storage).
@@ -137,5 +136,5 @@ Working record of what kayg has decided; the design itself is still being settle
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
 - Agent files live in each space's visible `AI/` folder (2026-11-17, replacing the earlier
   hidden location): `AI/Chats/`, `AI/Skills/<name>/SKILL.md`, `AI/Automations/<name>.md`,
-  and the space's instructions at `AI/Instructions.md`. A person's own skills, automations,
+  and the space's instructions at `AI/AGENTS.md`. A person's own skills, automations,
   instructions and starred prompts are the same files in their personal space.

@@ -67,7 +67,8 @@
       "target": {
         "kind": "notes",
         "field": "id"
-      }
+      },
+      "risk": "read"
     }
   ],
   "collections": [],

@@ -9,6 +9,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod account;
+pub mod agents;
 mod ceremony;
 mod config;
 pub mod db;
@@ -17,6 +18,7 @@ pub mod limit;
 pub mod machines;
 mod passkey;
 mod passkeys;
+mod secret_keys;
 mod session;
 mod setup;
 pub mod spaces;

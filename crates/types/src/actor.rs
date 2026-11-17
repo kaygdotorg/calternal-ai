@@ -9,7 +9,7 @@ use uuid::Uuid;
 /// behalf, and never adds access. Secrets audit, turn records and (later) content
 /// journals all record this type, so they read alike: "<account>", "an agent for
 /// <account>, in thread <id>", "plugin <id> for <account>".
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Actor {
     /// The account on whose authority the action ran.
     pub account: AccountId,
@@ -19,7 +19,7 @@ pub struct Actor {
 }
 
 /// A route acting on an account's behalf.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Via {
     /// An agent acting for the account in one thread.
     Agent {

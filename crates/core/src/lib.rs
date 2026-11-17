@@ -20,6 +20,12 @@ pub use validation::*;
 mod plugin_manifest;
 pub use plugin_manifest::*;
 
+mod provider;
+pub use provider::*;
+
+mod agent;
+pub use agent::*;
+
 mod live;
 pub use live::*;
 

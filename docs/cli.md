@@ -154,6 +154,15 @@ command and an error case each: `crates/cli/src/render.rs` (all of `cl`),
 forced to UTC+1 and codes, ids, paths and ports replaced by placeholders).
 `UPDATE_GOLDEN=1` rewrites them; review the diff.
 
+## Manual agents
+
+`calternal agent check|run|stop|resume|discard` supervises an official CLI on an enrolled
+machine. `agent mode` and `agent approve` require a freshly verified person
+session. `run` and `resume` stream text/tool steps in human mode and NDJSON with
+`--json`. The same binary exposes `describe` and `invoke` inside a sandbox using
+its thread credential; no provider credential is passed to these commands.
+See [manual turns](agent-turns.md) for flags, settings and isolation limits.
+
 `calternal watch <space-uuid> --token-file <owner-only-file>` follows the server's
 space journal over one SSE connection. `cl watch` accepts the same arguments.
 With `--json`, each event is one compact `{ "ok": true, "data": ... }` line.
@@ -163,7 +172,14 @@ That directory must be exclusive to this server and signed-in account; discard i
 on sign-out or account changes. Without the option, bookmarks stay in memory.
 A reset stops watch: reload the authorized space before discarding its old bookmark.
 
+`calternal agent discard <job-id>` keeps the account login home and reports pending
+until the machines confirm deletion. Stop the latest turn first. Inspect a failed
+cleanup before `discard <job-id> --retry`. A machine owner can stop its role and
+use `calternal machine discard --account-id <uuid> --thread-id <uuid>` for retained
+local work; `--json` returns the same confirmation and identifiers.
 `calternal drafts` and `calternal pending` manage private account input through
 the same shared operation route and output renderer as `cl drafts` / `cl pending`.
 See [account input](account-input.md) for queue files, stable nested request IDs,
 seven-day confirmation, examples and operator safety ceilings.
+
+`calternal threads create|list|get|send|stop|archive|delete` operates on saved conversations using manifest-backed operations. See [threads](threads.md) for arguments, file format, retry behavior and current limits. Every subcommand supports `--json` and shared terminal hints.

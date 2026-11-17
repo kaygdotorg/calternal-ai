@@ -2,21 +2,19 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-17 22:50 IST.
+[glossary](glossary.md). Updated 2026-11-18 02:25 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| 4 | When to start performance budgets and benchmarks on the perf VMs | After the simplification lane merges | Performance |
-| 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | Keep the provisional choice unless it looks wrong on the preview | Materials |
-| 6 | Light renditions of the eight default wallpapers (they suit dark mode): derive a lighter version automatically (provisional), or kayg supplies light ones | Automatic for now | Light theme |
-| 7 | Spaces in the shell: where the space switcher lives, what the current space limits, Settings groups, groups holding space roles, an automatic personal space (five questions asked 2026-11-17) | See chat; recommendations stand as provisional | Shell, Settings |
-| 8 | One editor engine everywhere, or a native field for short text and the full editor only for notes? The lane built the second: every inline field shares the editor's transaction layer but short fields stay native, which keeps first paint light (2 KB against the full editor's size). kayg said every inline field should be the block editor | Keep the split unless kayg wants identical behaviour in short fields | Editor |
-| 9 | Live editing of a note needs the server to accept small text changes, not whole-note replacement. Port the existing app's live rooms (a shared document per open note), or a simpler patch operation? | Port the existing app's rooms | Editor stage 3 |
-| 10 | Native apps: Google Sans Flex (shipped with the app) or the system font? The web rule is no system font; the native study measured the system's own | Google Sans Flex, to match the web and your brand | Native apps |
-| 11 | Native icons: our own icon set drawn from the web's paths, or SF Symbols? | Our own set, for one look everywhere | Native apps |
-| 12 | On a Mac the wordmark is tight beside the window's traffic lights: widen the sidebar, put the wordmark under the lights, or hide that row | Under the lights | Native shell |
+| 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | kayg wants to see it: a comparison is being built on the preview | Materials |
+| 21 | Light mode over a photo: derive a lighter photo and keep showing a lot of it (built), or do as Craft does and put a nearly opaque light surface over any photo (92% white, about 8% of the photo shows), which works with every photo but shows little of it | See both on the preview, then choose | Light theme |
+| 10 | Native font: decide after seeing both on a Mac and an iPhone (deferred by kayg) | Build a switch in the native preview | Native apps |
+| 24 | Appearance: a Clear-to-Tinted slider like Apple's for how much wallpaper shows. Does it replace the Blur, Dim and Tint checkboxes or sit beside them? (The web cannot read the system's own setting; it can only default from the reduced-transparency and contrast preferences.) | Try both on the preview's Compare control | Appearance |
+| 25 | Composer chips: show more icons, or icons with text, when the composer is wide (kayg wants to discuss, 2026-11-18) | To grill | Composer |
+
+| 19 | Which Manager-only operation writes reserved `AI/AGENTS.md`? Generic kinds cannot claim or write it | Narrow space-settings operation, or a general protected space-file writer; costs in morning-decisions.md | Agents |
 
 ## Design rounds
 
@@ -28,12 +26,26 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Queued, no decision needed
 
 - Rewrite git history to drop old images at the next quiet point.
-- A documentation site generated from the code (`/docs/user`, `/docs/admin`, `/docs/dev`, `llms.txt`, Markdown for every page).
+- Try phone navigation (swipe back, dragging the card) on a real phone: it is merged but not counted as done until checked on a device.
 
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
-
+- The Members screen can give a role in a space to a group as well as a person (2026-11-18).
+- The record that a deleted owner's secret key was erased is kept permanently (owner sign-off, 2026-11-18).
+- Sidebars are resizable by a handle at the vertical centre beside the middle card, shown on hover; wide mode is the default on desktop (2026-11-18).
+- Agent sandbox home: one per space per person, with the provider sign-in shared; a thread reaches another space's thread only through the `calternal` command and its permissions (2026-11-18).
+- Spaces in the shell: the switcher is a row of dots at the bottom centre of the left sidebar, as Aside's profile switcher; the sidebar shows only the current space (the palette still searches all); Settings gets a third section for the current space; everyone gets a personal space at sign-up (2026-11-18).
+- Native apps: SF Symbols for icons; the wordmark sits under the traffic lights on a Mac (2026-11-18).
+- Backups are external for now (a PBS job for the production VM); the app has no retention setting (2026-11-18).
+- A space's standing instructions for agents live in `AI/AGENTS.md` (the familiar name); only Managers and the Owner may edit it (2026-11-18).
+- The thread token stays in the agent's environment for now, redacted by the server; a private channel only the `calternal` command reads comes later (2026-11-18).
+- Approval lifetimes: build "once" and "this thread" with thread storage; "always in this space" later (2026-11-18).
+- Text behaves the same in every field: one implementation, the block editor extending a base text field, never two kept in step (2026-11-18).
+- Performance: fix startup, save and the account feed first, then adopt measured values as limits for paths the existing app never limited. Aim to beat the inherited budgets, not just meet them (2026-11-18).
+- A permission mode picked in the composer applies directly to the next turn, wider or narrower; no extra passkey check (2026-11-18).
+- Live editing of notes: port the existing app's live rooms, rewritten for the plugin architecture (2026-11-18).
+- The documentation site is built and on the preview at `/docs/`.
 - Provider logins: each person signs in to the official programs inside their own sandbox; the server never stores a provider login.
 - State lives on the server; clients subscribe to it and cache what they need, as the existing app does. There is no sync protocol to design. A client whose bookmark is too old reloads.
 - Agent questions and approvals share the sticky bar with secret requests and do not expire.
@@ -47,3 +59,5 @@ move to the decision record they belong to and leave this list. Terms: see
 - A secret request shows in a sticky bar above the composer and expires after 15 minutes; it can be asked again at any time.
 - Secrets: one key file per owner in appdata; provider logins on a person's own machines stay on the machine.
 - Request IDs are unique per account and space. The root guard and recovery log are wired into the server.
+
+- Thread deletion removes all saved account modes; the 1,024-per-account bound remains (threads lane #28).

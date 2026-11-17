@@ -33,7 +33,8 @@ fn visible_folders(m: &ManifestV1) -> BTreeSet<String> {
     m.kinds
         .iter()
         .filter_map(|k| match &k.storage {
-            ManifestPlacement::Visible { folder } => Some(fold(folder)),
+            ManifestPlacement::Visible { folder }
+            | ManifestPlacement::VisibleTree { folder, .. } => Some(fold(folder)),
             _ => None,
         })
         .collect()
@@ -118,18 +119,43 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
     {
         return Err(Error::Invalid);
     }
+    if m.provider.as_ref().is_some_and(|p| {
+        p.protocol_version != 1
+            || !identifier(&p.executable)
+            || p.executable.contains('.')
+            || p.default_model.is_empty()
+            || p.default_model.len() > 128
+    }) {
+        return Err(Error::Invalid);
+    }
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     if m.kinds.iter().any(|x| {
         !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
             || !match &x.storage {
                 ManifestPlacement::Visible { folder } => folder_name(folder),
+                ManifestPlacement::VisibleTree {
+                    folder,
+                    subdirectories,
+                } => {
+                    folder_name(folder)
+                        && !subdirectories.is_empty()
+                        && subdirectories.len() <= 8
+                        && subdirectories.iter().all(|s| folder_name(s))
+                        && !calternal_types::is_reserved_space_path(
+                            &std::iter::once(folder.as_str())
+                                .chain(subdirectories.iter().map(String::as_str))
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        )
+                }
                 ManifestPlacement::Hidden { hidden } => *hidden,
             }
     }) || m.operations.iter().any(|x| {
         !x.target.as_ref().is_none_or(|t| target(t, &x.input_schema))
             || !schema(&x.input_schema)
             || !schema(&x.output_schema)
+            || x.mutates == (x.risk == calternal_core::OperationRisk::Read)
             || x.mutates == (x.idempotency == ManifestIdempotency::ReadOnly)
             || (x.mutates && x.required_capability == ManifestCapability::SpaceRead)
     }) {

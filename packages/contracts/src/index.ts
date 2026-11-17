@@ -216,15 +216,23 @@ export type ManifestSettingType = "string" | "boolean" | "number";
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
 
-export type ManifestPlacement = { "Visible": {
+export type ManifestPlacement = {
+/**
+ * One safe visible top-level folder.
+ */
+folder: string,
+/**
+ * Safe directory components below the folder; never a filesystem path.
+ */
+subdirectories: Array<string>, } | {
 /**
  * One NFC folder component, with no leading dot or reserved name.
  */
-folder: string, } } | { "Hidden": {
+folder: string, } | {
 /**
  * Must be true; placement is `.calternal/<plugin-id>/<kind>/` within userdata.
  */
-hidden: boolean, } };
+hidden: boolean, };
 /**
  * Kind identity remains independent of plugin identity.
  */
@@ -273,6 +281,10 @@ field: string, };
  */
 
 export type ManifestOperation = {
+/**
+ * Required risk declaration; capability checks still apply in every mode.
+ */
+risk: OperationRisk,
 /**
  * Globally unique operation identifier.
  */
@@ -431,11 +443,33 @@ id: string,
  */
 stylesheet: string, };
 /**
+ * Machine-side provider declaration; executable is installed in the sandbox
+ * image or account home, never downloaded or run by the server.
+ */
+
+export type ManifestProvider = {
+/**
+ * Version of the bounded stdio contract, currently one.
+ */
+protocol_version: number,
+/**
+ * Basename resolved inside the sandbox's PATH; no shell, path or arguments.
+ */
+executable: string,
+/**
+ * Default installed-CLI model identifier, at most 128 UTF-8 bytes.
+ */
+default_model: string, };
+/**
  * Plugin menu read without running plugin code. Every top-level field is required;
  * only the documented optional fields inside declarations may be omitted.
  */
 
 export type ManifestV1 = {
+/**
+ * Machine-side provider adapter; omitted by plugins that offer no provider.
+ */
+provider?: ManifestProvider,
 /**
  * Stable plugin identifier.
  */
@@ -505,11 +539,305 @@ themes: Array<ManifestTheme>,
  */
 host_calls: Array<HostCallKind>, };
 /**
+ * Declared risk class, evaluated in addition to capabilities and token scope.
+ */
+
+export type OperationRisk = "read" | "reversible" | "irreversible" | "external" | "widens_access";
+/**
+ * Thread permission mode; every change revokes the previous thread token.
+ */
+
+export type AgentMode = "least_access" | "approve_for_me" | "full_access";
+/**
+ * Input union for manual-turn operations. Each operation rejects irrelevant fields.
+ * UUIDs are full resource identifiers; model work never starts without a space check.
+ */
+
+export type AgentInput = {
+/**
+ * Explicit retry of a failed workspace discard; never implied by status polling.
+ */
+retry_failed: boolean,
+/**
+ * Owning space UUID, required for check/run, otherwise derived from the job.
+ */
+space_id: string,
+/**
+ * Machine UUID for owner-controlled execution settings.
+ */
+machine_id: string,
+/**
+ * Fenced lease UUID for explicit machine-level resumption.
+ */
+lease_id: string,
+/**
+ * Whether an account-owned machine runs directly; pool machines refuse this.
+ */
+direct: boolean,
+/**
+ * Thread UUID for check/run; no thread file is created in step one.
+ */
+thread_id: string,
+/**
+ * Job UUID for events/stop/resume/mode/access operations.
+ */
+job_id: string,
+/**
+ * Person's prompt; at most 16 KiB, required for run.
+ */
+prompt: string,
+/**
+ * Labelled context contributions, bounded by the provider command budget.
+ */
+context: Array<ProviderContext>,
+/**
+ * Official CLI model; empty uses `sonnet`.
+ */
+model: string,
+/**
+ * Options declared by the selected provider, bounded by the command budget.
+ */
+options: { [key in string]?: unknown },
+/**
+ * Enabled provider plugin; empty selects calternal-claude-code.
+ */
+provider_id: string,
+/**
+ * Permission mode; defaults to Approve for me.
+ */
+mode: AgentMode,
+/**
+ * Per-thread recovery override; absent uses the account defaults.
+ */
+retry_settings: AgentRetrySettings | null,
+/**
+ * Originating app operation prefix; empty grants no originating-app access.
+ */
+source_app: string,
+/**
+ * Requested app prefix for an access request.
+ */
+app: string,
+/**
+ * Whether the requested grant allows mutations as well as reads.
+ */
+write: boolean,
+/**
+ * Approval UUID for a freshly verified person to approve.
+ */
+approval_id: string,
+/**
+ * Stream epoch last seen, empty on first read.
+ */
+epoch: string,
+/**
+ * Next job sequence requested; zero on first read.
+ */
+after: number, };
+/**
+ * Provider-declared failure category; only transient and usage-limit failures
+ * with no pending tool effect may be retried automatically.
+ */
+
+export type ProviderFailureClass = "transient" | "usage_limit" | "authentication" | "refusal" | "permanent" | "unknown";
+/**
+ * Billing route reported by the official program, never inferred from credentials.
+ */
+
+export type ProviderBilling = "api" | "subscription" | "unknown";
+/**
+ * Typed automatic provider recovery settings; manifest defaults apply per account
+ * and a manual turn may override them. Neither permits machine re-placement.
+ */
+
+export type AgentRetrySettings = {
+/**
+ * Retry explicit transient provider errors, with no pending tool effect.
+ */
+provider_errors: boolean,
+/**
+ * Resume subscription usage limits at the reset reported by the provider.
+ */
+subscription_limits: boolean, };
+/**
+ * A labelled contribution; data, never authority or system instructions.
+ */
+
+export type ProviderContext = {
+/**
+ * Plugin or attachment label, at most 128 UTF-8 bytes.
+ */
+source: string,
+/**
+ * Contribution text; included in the command's total bound.
+ */
+text: string, };
+/**
+ * Commands accepted by an adapter; one active turn per adapter.
+ */
+
+export type ProviderCommand = { "type": "check" } | { "type": "start",
+/**
+ * Model name understood by the official CLI.
+ */
+model: string,
+/**
+ * Provider-declared typed options; unknown keys are refused by its adapter.
+ */
+options: { [key in string]?: unknown },
+/**
+ * Sandbox workspace; the machine supplies this, never a provider login path.
+ */
+cwd: string,
+/**
+ * Trusted instruction layers, appended through the harness's documented channel.
+ */
+instructions: string,
+/**
+ * Official CLI session to resume; null starts a new session.
+ */
+resume: string | null, } | { "type": "send",
+/**
+ * Person's message, preserved verbatim.
+ */
+prompt: string,
+/**
+ * At most 32 contributions, bounded by the command budget.
+ */
+context: Array<ProviderContext>, } | { "type": "steer",
+/**
+ * New message, bounded by the command budget.
+ */
+prompt: string, } | { "type": "stop" };
+/**
+ * A command envelope. `seq` starts at one and increases exactly once per command.
+ */
+
+export type ProviderRequest = {
+/**
+ * Must equal [`PROVIDER_VERSION`].
+ */
+version: 1,
+/**
+ * Consecutive command number, independent of event sequence numbers.
+ */
+seq: number,
+/**
+ * Action to perform.
+ */
+command: ProviderCommand, };
+/**
+ * Normalized provider output. Untrusted provider text conveys no authority.
+ */
+
+export type ProviderEventKind = { "type": "check",
+/**
+ * Official program was found.
+ */
+installed: boolean,
+/**
+ * Official program reports a current login.
+ */
+signed_in: boolean,
+/**
+ * Command the person runs in their sandbox, never run by the adapter.
+ */
+sign_in_command: string, } | { "type": "session",
+/**
+ * Opaque provider session identifier; never a login or access token.
+ */
+session_id: string, } | { "type": "text_delta",
+/**
+ * At most 4 KiB of UTF-8 text.
+ */
+text: string, } | { "type": "tool_started",
+/**
+ * Provider-issued step identity.
+ */
+id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short description, at most 512 bytes.
+ */
+summary: string, } | { "type": "tool_finished",
+/**
+ * Provider-issued step identity.
+ */
+id: string,
+/**
+ * Whether the tool reported failure.
+ */
+failed: boolean,
+/**
+ * Bounded detail, at most 4 KiB; never raw stderr or credentials.
+ */
+detail: string, } | { "type": "question",
+/**
+ * Short question, at most 4 KiB.
+ */
+text: string, } | { "type": "approval_request",
+/**
+ * Short action description, at most 4 KiB.
+ */
+summary: string, } | { "type": "usage",
+/**
+ * Input tokens reported for the completed turn.
+ */
+input_tokens: number,
+/**
+ * Output tokens reported for the completed turn.
+ */
+output_tokens: number, } | { "type": "error",
+/**
+ * Stable category, at most 128 bytes.
+ */
+code: string,
+/**
+ * Stable class; auth/refusal/unknown failures are never retried.
+ */
+class: ProviderFailureClass,
+/**
+ * Billing route from the official CLI status, without login details.
+ */
+billing: ProviderBilling,
+/**
+ * Reported subscription reset in Unix milliseconds; absent if unknown.
+ */
+reset_at_ms?: number,
+/**
+ * Fixed human-readable description, at most 512 bytes.
+ */
+message: string, } | { "type": "done",
+/**
+ * `done`, `failed`, `cancelled` or `outcome_unknown`.
+ */
+outcome: string, };
+/**
+ * Ordered event envelope. Sequence numbers start at one for each adapter process.
+ */
+
+export type ProviderEvent = {
+/**
+ * Must equal [`PROVIDER_VERSION`].
+ */
+version: 1,
+/**
+ * Consecutive event number; duplicates or gaps fail the run.
+ */
+seq: number,
+/**
+ * Normalized output.
+ */
+event: ProviderEventKind, };
+/**
  * Lifecycle of a job. `admitted`, `running` and `waiting` are active; the rest are
  * final and never change again.
  */
 
-export type JobState = "admitted" | "running" | "waiting" | "done" | "failed" | "cancelled" | "outcome_unknown";
+export type JobState = "admitted" | "running" | "waiting" | "interrupted" | "retry_waiting" | "done" | "failed" | "cancelled" | "outcome_unknown";
 /**
  * Input for `jobs.get` and `jobs.cancel`. Possessing a job ID grants nothing: a job
  * in a space the caller cannot read answers exactly like a missing one.
@@ -1303,6 +1631,10 @@ spaces: Array<SpaceGrant>, };
  */
 
 export type OperationDescription = {
+/**
+ * Declared risk used by the permission-mode reviewer, independent of capabilities.
+ */
+risk: OperationRisk,
 /**
  * Versioned operation identifier used for dispatch; never a URL or executable path.
  */

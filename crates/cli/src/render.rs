@@ -421,7 +421,7 @@ mod tests {
                 "protocol_version":1,
                 "genui_version":2,
                 "principal":{"id":"12345678-1234-4abc-8def-123456789012","spaces":[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","role":"owner"}]},
-                "operations":[{"id":"notes.list","description":"List notes in the selected space","mutates":false,"input_schema":{},"output_schema":{}}]
+                "operations":[{"id":"notes.list","description":"List notes in the selected space","mutates":false,"risk":"read","input_schema":{},"output_schema":{}}]
             })).unwrap();
             let out = Output::fixed_terminal(false, width, tz(), true);
             assert_golden(
@@ -447,7 +447,7 @@ mod tests {
         let result: DescribeResult = serde_json::from_value(json!({
             "protocol_version":1,"genui_version":2,
             "principal":{"id":"acct-1","spaces":[{"id":"space-1","role":"owner"}]},
-            "operations":[{"id":"notes.list","description":"List notes","mutates":false,"input_schema":{},"output_schema":{}}]
+            "operations":[{"id":"notes.list","description":"List notes","risk":"read","mutates":false,"input_schema":{},"output_schema":{}}]
         })).unwrap();
         let human = Output::fixed(false, None, tz()).render(&describe(&result));
         assert_golden(&golden("describe.txt"), &human);

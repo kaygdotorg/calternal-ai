@@ -1,0 +1,305 @@
+{
+  "id": "calternal-orchestrator",
+  "name": "Threads",
+  "icon": "terminal",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [
+    {
+      "id": "threads",
+      "storage": {
+        "folder": "AI",
+        "subdirectories": [
+          "Chats"
+        ]
+      },
+      "claimed_text": true,
+      "schema": {
+        "type": "object"
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "threads.create",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "least_access",
+              "approve_for_me",
+              "full_access"
+            ]
+          },
+          "parent_thread": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "spawned_by": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "space_id",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "risk": "reversible",
+      "idempotency": "request_id"
+    },
+    {
+      "id": "threads.list",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "parent_thread": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "archived": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "space_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "risk": "read",
+      "idempotency": "read_only"
+    },
+    {
+      "id": "threads.get",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "space.read",
+      "mutates": false,
+      "risk": "read",
+      "idempotency": "read_only",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    },
+    {
+      "id": "threads.send",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "least_access",
+              "approve_for_me",
+              "full_access"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "plugins.use",
+      "mutates": true,
+      "risk": "external",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    },
+    {
+      "id": "threads.stop",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "plugins.use",
+      "mutates": true,
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    },
+    {
+      "id": "threads.archive",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    },
+    {
+      "id": "threads.delete",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "risk": "irreversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [
+    {
+      "id": "retry-provider-errors",
+      "value_type": "boolean",
+      "default": true
+    },
+    {
+      "id": "snooze-subscription-limits",
+      "value_type": "boolean",
+      "default": true
+    }
+  ],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": []
+}

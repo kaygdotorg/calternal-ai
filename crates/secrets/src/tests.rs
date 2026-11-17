@@ -50,7 +50,7 @@ fn put_use_round_trip_audits_without_value() {
         .put(&owner, &name("openai"), "OpenAI key", value(CANARY), &me)
         .unwrap();
     assert_eq!(handle.version, 1);
-    let token = store.token(&handle);
+    let token = store.token(&handle).unwrap();
     assert!(token.as_str().starts_with("sh-") && token.as_str().len() == 43);
     assert_eq!(
         store
@@ -86,7 +86,7 @@ fn rotate_destroys_old_version_and_its_handle() {
     let old = store
         .put(&owner, &name("k"), "K", value(b"one"), &me)
         .unwrap();
-    let old_token = store.token(&old);
+    let old_token = store.token(&old).unwrap();
     let new = store
         .rotate(&owner, &name("k"), value(b"two"), &me)
         .unwrap();
@@ -125,16 +125,16 @@ fn wrong_owner_and_copied_rows_fail() {
     };
     assert_eq!(used(&store, &forged).unwrap_err(), Error::NotFound);
     assert_eq!(
-        store.resolve(&b, &store.token(&ha)).unwrap_err(),
+        store.resolve(&b, &store.token(&ha).unwrap()).unwrap_err(),
         Error::NotFound
     );
     // Copy A's whole database over B's: the token MAC and the AEAD binding refuse it.
     std::fs::copy(db(dir.path(), &a), db(dir.path(), &b)).unwrap();
     assert_eq!(
-        store.resolve(&b, &store.token(&ha)).unwrap_err(),
-        Error::NotFound
+        store.resolve(&b, &store.token(&ha).unwrap()).unwrap_err(),
+        Error::KeyUnusable
     );
-    assert_eq!(used(&store, &forged).unwrap_err(), Error::NotFound);
+    assert_eq!(used(&store, &forged).unwrap_err(), Error::KeyUnusable);
     // A row renamed inside its own owner fails too (name is bound).
     let c = rusqlite::Connection::open(db(dir.path(), &a)).unwrap();
     c.execute("UPDATE secrets SET name='renamed'", []).unwrap();
@@ -182,28 +182,29 @@ fn tampered_ciphertext_is_refused_and_not_audited_as_use() {
 #[test]
 fn missing_or_wrong_key_is_refused_once_secrets_exist() {
     let dir = tempfile::tempdir().unwrap();
-    let key = dir.path().join("system/secret.key");
-    // No secrets yet: a lost key is simply recreated.
-    drop(LocalStore::open(dir.path()).unwrap());
-    std::fs::remove_file(&key).unwrap();
+    let owner = account();
+    let key = dir
+        .path()
+        .join("accounts")
+        .join(owner.uuid().to_string())
+        .join("secret.key");
     let store = LocalStore::open(dir.path()).unwrap();
-    assert_eq!(
-        std::fs::metadata(&key).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
     store
         .put(
-            &account(),
+            &owner,
             &name("k"),
             "K",
             value(b"v"),
             &actor(AccountId::new()),
         )
         .unwrap();
-    drop(store);
+    assert_eq!(
+        std::fs::metadata(&key).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
     let saved = std::fs::read(&key).unwrap();
     std::fs::remove_file(&key).unwrap();
-    assert_eq!(LocalStore::open(dir.path()).err(), Some(Error::KeyMissing));
+    assert_eq!(store.list(&owner).err(), Some(Error::KeyMissing));
     assert!(
         !key.exists(),
         "a refused open must not mint a replacement key"
@@ -211,12 +212,12 @@ fn missing_or_wrong_key_is_refused_once_secrets_exist() {
     // A different key of the right shape is refused by fingerprint.
     std::fs::write(&key, [7u8; 32]).unwrap();
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
-    assert_eq!(LocalStore::open(dir.path()).err(), Some(Error::KeyUnusable));
+    assert_eq!(store.list(&owner).err(), Some(Error::KeyUnusable));
     std::fs::write(&key, &saved).unwrap();
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).unwrap();
-    assert_eq!(LocalStore::open(dir.path()).err(), Some(Error::KeyUnusable));
+    assert_eq!(store.list(&owner).err(), Some(Error::KeyUnusable));
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o600)).unwrap();
-    assert!(LocalStore::open(dir.path()).is_ok());
+    assert!(store.list(&owner).is_ok());
 }
 
 #[test]
@@ -247,7 +248,7 @@ fn accounts_and_spaces_are_isolated() {
         assert_eq!(store.list(owner).unwrap().len(), 1);
         for other in owners.iter().filter(|o| *o != owner) {
             assert_eq!(
-                store.resolve(other, &store.token(&h)).unwrap_err(),
+                store.resolve(other, &store.token(&h).unwrap()).unwrap_err(),
                 Error::NotFound
             );
         }
@@ -446,7 +447,7 @@ fn value_never_reaches_disk_audit_metadata_errors_or_debug() {
         store.list(&owner).unwrap(),
         store.audit(&owner, 100).unwrap(),
         store.pending(&owner).unwrap(),
-        store.token(&h2),
+        store.token(&h2).unwrap(),
     );
     for e in [
         Error::NotFound,
@@ -483,6 +484,10 @@ fn crash_child() {
     let store = LocalStore::open(Path::new(&dir)).unwrap();
     let me = actor(AccountId::new());
     match std::env::var("CALTERNAL_SECRETS_CRASH").unwrap().as_str() {
+        "key-published" | "key-recorded" => {
+            drop(store.put(&owner, &name("new"), "N", value(b"new"), &me))
+        }
+        "erase-recorded" | "erase-unlinked" => drop(store.erase_owner(&owner)),
         "put" => drop(store.put(&owner, &name("crashing"), "C", value(b"new"), &me)),
         "rotate" => drop(store.rotate(&owner, &name("existing"), value(b"new"), &me)),
         _ => unreachable!(),
@@ -566,3 +571,5 @@ fn pending_requests_are_bounded_per_owner() {
         .request(&account(), &name("over"), "L", "R", &me)
         .unwrap();
 }
+
+mod keys;

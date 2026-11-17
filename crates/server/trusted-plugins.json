@@ -13,8 +13,24 @@
       "version": "0.1.0",
       "manifest": "notes-insights/manifest.json",
       "worker": "notes-insights/dist/worker.js",
-      "worker_sha256": "b360ab26533f6785c424a90b555d8f39cea6108f63b0d90431275ae368d56c93",
+      "worker_sha256": "8c6af5b31bff39dafe983090ef044e0fc23cd5965285f6245f9c731f2cfd2ae6",
       "default_enabled": false
+    },
+    {
+      "id": "calternal-claude-code",
+      "version": "0.1.0",
+      "manifest": "calternal-claude-code/manifest.json",
+      "worker": null,
+      "worker_sha256": null,
+      "default_enabled": true
+    },
+    {
+      "id": "calternal-orchestrator",
+      "version": "0.1.0",
+      "manifest": "calternal-orchestrator/manifest.json",
+      "worker": null,
+      "worker_sha256": null,
+      "default_enabled": true
     }
   ]
 }

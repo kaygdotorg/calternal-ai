@@ -4,6 +4,8 @@
 /// Durable write boundaries available to disposable crash tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultPoint {
+    /// Thread message and replay intent placed, before durable turn admission.
+    AfterThreadMessage,
     /// SQLite committed the revision and receipt, before materialization.
     AfterCommit,
     /// Materialization is about to publish the new file bytes.
@@ -18,6 +20,7 @@ impl FaultPoint {
     #[cfg_attr(not(debug_assertions), allow(dead_code))]
     fn name(self) -> &'static str {
         match self {
+            Self::AfterThreadMessage => "after_thread_message",
             Self::AfterCommit => "after_commit",
             Self::BeforePlacement => "before_placement",
             Self::AfterPlacement => "after_placement",

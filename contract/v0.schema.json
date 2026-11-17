@@ -1038,7 +1038,8 @@
         "input_schema",
         "mutates",
         "output_schema",
-        "required_capability"
+        "required_capability",
+        "risk"
       ],
       "properties": {
         "id": {
@@ -1071,6 +1072,14 @@
             }
           ]
         },
+        "risk": {
+          "description": "Required risk declaration; capability checks still apply in every mode.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OperationRisk"
+            }
+          ]
+        },
         "target": {
           "description": "Item the operation targets; absent (or null) for a space-scoped operation, whose wire input names its space in `space_id`.",
           "anyOf": [
@@ -1088,6 +1097,28 @@
     "ManifestPlacement": {
       "description": "Placement inside a space userdata tree; hidden files belong to the declaring plugin.",
       "anyOf": [
+        {
+          "description": "Visible subtree claimed by one plugin, with at most eight safe components.",
+          "type": "object",
+          "required": [
+            "folder",
+            "subdirectories"
+          ],
+          "properties": {
+            "folder": {
+              "description": "One safe visible top-level folder.",
+              "type": "string"
+            },
+            "subdirectories": {
+              "description": "Safe directory components below the folder; never a filesystem path.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
         {
           "description": "User-visible top-level folder; the host rejects cross-plugin folder claims.",
           "type": "object",
@@ -1117,6 +1148,32 @@
           "additionalProperties": false
         }
       ]
+    },
+    "ManifestProvider": {
+      "description": "Machine-side provider declaration; executable is installed in the sandbox image or account home, never downloaded or run by the server.",
+      "type": "object",
+      "required": [
+        "default_model",
+        "executable",
+        "protocol_version"
+      ],
+      "properties": {
+        "default_model": {
+          "description": "Default installed-CLI model identifier, at most 128 UTF-8 bytes.",
+          "type": "string"
+        },
+        "executable": {
+          "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
+          "type": "string"
+        },
+        "protocol_version": {
+          "description": "Version of the bounded stdio contract, currently one.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
     },
     "ManifestRegion": {
       "description": "Shell region populated by a component reference.",
@@ -1341,6 +1398,17 @@
           "items": {
             "$ref": "#/definitions/ManifestOperation"
           }
+        },
+        "provider": {
+          "description": "Machine-side provider adapter; omitted by plugins that offer no provider.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestProvider"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "schedules": {
           "description": "Schedule declarations.",
@@ -1758,7 +1826,8 @@
         "id",
         "input_schema",
         "mutates",
-        "output_schema"
+        "output_schema",
+        "risk"
       ],
       "properties": {
         "description": {
@@ -1782,6 +1851,14 @@
           "description": "Generated JSON Schema object for the successful operation result.",
           "type": "object",
           "additionalProperties": true
+        },
+        "risk": {
+          "description": "Declared risk used by the permission-mode reviewer, independent of capabilities.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OperationRisk"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -1830,6 +1907,46 @@
             {
               "$ref": "#/definitions/Failure"
             }
+          ]
+        }
+      ]
+    },
+    "OperationRisk": {
+      "description": "Declared risk class, evaluated in addition to capabilities and token scope.",
+      "oneOf": [
+        {
+          "description": "Reads data without changing durable state.",
+          "type": "string",
+          "enum": [
+            "read"
+          ]
+        },
+        {
+          "description": "Changes that ordinary application history can undo.",
+          "type": "string",
+          "enum": [
+            "reversible"
+          ]
+        },
+        {
+          "description": "Effects that cannot reliably be undone; reviewer seam may advise here only.",
+          "type": "string",
+          "enum": [
+            "irreversible"
+          ]
+        },
+        {
+          "description": "Communicates or publishes outside the space; approval is scoped.",
+          "type": "string",
+          "enum": [
+            "external"
+          ]
+        },
+        {
+          "description": "Expands authority or changes access; always requires a person.",
+          "type": "string",
+          "enum": [
+            "widens_access"
           ]
         }
       ]

@@ -14,7 +14,7 @@
       "output_schema": { "type": "object" },
       "required_capability": "content.write",
       "mutates": true,
-      "idempotency": "request_id"
+      "idempotency": "request_id", "risk": "reversible"
     },
     {
       "id": "jobs-demo.start",
@@ -33,7 +33,7 @@
       "output_schema": { "type": "object", "properties": { "job_id": { "type": "string" } }, "required": ["job_id"] },
       "required_capability": "plugins.use",
       "mutates": true,
-      "idempotency": "request_id"
+      "idempotency": "request_id", "risk": "reversible"
     },
     {
       "id": "jobs-demo.run",
@@ -46,7 +46,7 @@
       "output_schema": { "type": "object", "properties": { "status": { "enum": ["done", "waiting"] } }, "required": ["status"] },
       "required_capability": "plugins.use",
       "mutates": false,
-      "idempotency": "read_only"
+      "idempotency": "read_only", "risk": "read"
     }
   ],
   "collections": [],

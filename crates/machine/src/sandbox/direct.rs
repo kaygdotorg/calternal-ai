@@ -1,11 +1,11 @@
-//! Plain-process sandboxes, for tests and development.
+//! Direct workspace processes on a machine its account owner marked direct.
 //!
-//! Each thread gets `<root>/<thread-id>/work`; each exec runs there in its own
-//! process group with an empty environment apart from `PATH`, `HOME` (the work
+//! Each thread gets `<root>/accounts/<account-id>/threads/<thread-id>/work`; each exec runs there in its own
+//! process group with an empty environment apart from `PATH`, `HOME` (the persistent account
 //! directory) and what the exec asks for. Freeze, resume and stop signal the
 //! process groups (`SIGSTOP`, `SIGCONT`, `SIGKILL`).
 //!
-//! This is not isolation: processes share the machine user's file system, network
+//! Direct mode provides no isolation: processes share the machine user's file system, network
 //! and resources, and resource limits are not enforced. If the machine role is
 //! killed with `SIGKILL`, running execs are orphaned rather than stopped.
 
@@ -20,35 +20,60 @@ use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, Sandbo
 use crate::protocol::SandboxSpec;
 
 /// Starts process sandboxes under one root directory.
-pub struct ProcessBackend {
+pub struct DirectBackend {
     root: PathBuf,
 }
 
-impl ProcessBackend {
-    /// Sandboxes live under `root/<thread-id>`.
+impl DirectBackend {
+    /// Workspaces and persistent homes live under `root/accounts/<account-id>`.
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
     }
 }
 
-impl Backend for ProcessBackend {
+impl Backend for DirectBackend {
     fn name(&self) -> &'static str {
-        "process"
+        "direct"
     }
 
+    fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            let dir = self
+                .root
+                .join("accounts")
+                .join(account.to_string())
+                .join("threads")
+                .join(thread.to_string());
+            match tokio::fs::remove_dir_all(dir).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(SandboxError::new(e)),
+            }
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
-            let dir = self.root.join(spec.thread_id.to_string());
+            let account = self.root.join("accounts").join(spec.account_id.to_string());
+            let home = account.join("home");
+            let dir = account.join("threads").join(spec.thread_id.to_string());
+            tokio::fs::create_dir_all(&home)
+                .await
+                .map_err(SandboxError::new)?;
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
+                .await
+                .map_err(SandboxError::new)?;
             let work = dir.join("work");
             tokio::fs::create_dir_all(&work)
                 .await
                 .map_err(|e| SandboxError(format!("cannot create work directory: {}", e.kind())))?;
-            Ok(Arc::new(ProcessSandbox {
+            Ok(Arc::new(DirectSandbox {
                 dir,
                 work,
+                home,
                 groups: Mutex::new(HashSet::new()),
             }) as Arc<dyn Sandbox>)
         })
@@ -56,14 +81,15 @@ impl Backend for ProcessBackend {
 }
 
 /// One thread's process sandbox.
-pub struct ProcessSandbox {
+pub struct DirectSandbox {
     dir: PathBuf,
     work: PathBuf,
+    home: PathBuf,
     /// Process groups started here; pruned lazily when they no longer exist.
     groups: Mutex<HashSet<i32>>,
 }
 
-impl ProcessSandbox {
+impl DirectSandbox {
     fn signal_all(&self, signal: Signal) {
         let groups = self.groups.lock().expect("groups");
         for &g in groups.iter() {
@@ -74,24 +100,32 @@ impl ProcessSandbox {
     }
 }
 
-impl Sandbox for ProcessSandbox {
+impl Sandbox for DirectSandbox {
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>> {
         Box::pin(async move {
             let Some((program, args)) = request.argv.split_first() else {
                 return Err(SandboxError("empty command".into()));
             };
             let mut cmd = tokio::process::Command::new(program);
+            request.validate_env_names()?;
+            let mut paths = vec![self.home.join(".local/bin")];
+            if let Some(exe) = super::cli_program().await
+                && let Some(parent) = exe.parent()
+            {
+                paths.push(parent.to_path_buf());
+            }
+            paths.extend(std::env::split_paths(
+                &std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
+            ));
+            let path = std::env::join_paths(paths).map_err(SandboxError::new)?;
             cmd.args(args)
                 .current_dir(&self.work)
                 .env_clear()
-                .env(
-                    "PATH",
-                    std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
-                )
-                .env("HOME", &self.work)
+                .env("PATH", path)
+                .env("HOME", &self.home)
                 .envs(request.env.iter().map(|(k, v)| (k, v)));
             cmd.as_std_mut().process_group(0);
-            let (exec, pid) = super::spawn_streaming(cmd)?;
+            let (exec, pid) = super::spawn_streaming(cmd, request.stdin)?;
             let mut groups = self.groups.lock().expect("groups");
             groups
                 .retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
@@ -147,6 +181,7 @@ mod tests {
 
     fn spec() -> SandboxSpec {
         SandboxSpec {
+            account_id: Uuid::new_v4(),
             thread_id: Uuid::new_v4(),
             image: None,
             limits: Limits::default(),
@@ -156,6 +191,7 @@ mod tests {
     fn argv(a: &[&str]) -> ExecRequest {
         ExecRequest {
             argv: a.iter().map(|s| s.to_string()).collect(),
+            stdin: String::new(),
             env: vec![("ONLY".into(), "this".into())],
         }
     }
@@ -163,7 +199,7 @@ mod tests {
     #[tokio::test]
     async fn runs_in_own_directory_with_clean_environment() {
         let dir = tempfile::tempdir().unwrap();
-        let backend = ProcessBackend::new(dir.path());
+        let backend = DirectBackend::new(dir.path());
         let (a, b) = (spec(), spec());
         let sa = backend.start(&a).await.unwrap();
         let sb = backend.start(&b).await.unwrap();
@@ -175,7 +211,13 @@ mod tests {
         .await;
         assert_eq!(exit.code, Some(0));
         let out = String::from_utf8(out).unwrap();
-        let wd = dir.path().join(a.thread_id.to_string()).join("work");
+        let wd = dir
+            .path()
+            .join("accounts")
+            .join(a.account_id.to_string())
+            .join("threads")
+            .join(a.thread_id.to_string())
+            .join("work");
         assert!(out.starts_with(&format!("{}\n", wd.display())), "{out}");
         assert!(out.contains("ONLY=this"));
         assert!(!out.contains("CARGO"), "machine environment leaked: {out}");
@@ -189,7 +231,7 @@ mod tests {
     #[tokio::test]
     async fn stop_kills_the_whole_group_and_removes_files() {
         let dir = tempfile::tempdir().unwrap();
-        let backend = ProcessBackend::new(dir.path());
+        let backend = DirectBackend::new(dir.path());
         let s = spec();
         let sb = backend.start(&s).await.unwrap();
         // A grandchild that would outlive its parent shell without group kill.
@@ -209,16 +251,20 @@ mod tests {
             }
         };
         assert_eq!(exit.signal, Some(9));
-        assert!(!dir.path().join(s.thread_id.to_string()).exists());
+        assert!(
+            !dir.path()
+                .join("accounts")
+                .join(s.account_id.to_string())
+                .join("threads")
+                .join(s.thread_id.to_string())
+                .exists()
+        );
     }
 
     #[tokio::test]
     async fn freeze_pauses_and_resume_continues() {
         let dir = tempfile::tempdir().unwrap();
-        let sb = ProcessBackend::new(dir.path())
-            .start(&spec())
-            .await
-            .unwrap();
+        let sb = DirectBackend::new(dir.path()).start(&spec()).await.unwrap();
         let mut exec = sb
             .exec(argv(&[
                 "sh",
@@ -246,10 +292,7 @@ mod tests {
     #[tokio::test]
     async fn slow_reader_blocks_the_writer() {
         let dir = tempfile::tempdir().unwrap();
-        let sb = ProcessBackend::new(dir.path())
-            .start(&spec())
-            .await
-            .unwrap();
+        let sb = DirectBackend::new(dir.path()).start(&spec()).await.unwrap();
         // Writes 64 MiB; with nobody reading it must block well before finishing.
         let exec = sb
             .exec(argv(&[

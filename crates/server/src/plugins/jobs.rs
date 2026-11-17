@@ -26,6 +26,9 @@
 //! [`MAX_SUBSCRIBERS`] stream subscribers. Final jobs are deleted [`RETAIN_FINAL`]
 //! after they finish, and beyond the newest [`MAX_FINAL_PER_SPACE`] per space.
 
+mod checkpoint;
+mod claim;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -42,7 +45,7 @@ use super::Session;
 use super::job_sql::{
     ACTIVE, COLUMNS, SCHEMA, all_reported, db_err, parse_state, report, retain, row, set_state,
 };
-use super::live::{Live, LiveMap, Subscription};
+use super::live::{Live, LiveMap};
 use super::worker::CancelFlag;
 use calternal_types::{AccountId, Error};
 
@@ -169,6 +172,12 @@ pub enum RunEnd {
     Done(Value),
     /// The plugin parked the job until its children report.
     Waiting,
+    /// Turn lost its machine; explicit resume is required.
+    Interrupted,
+    /// Provider error is durably waiting for its scheduled retry.
+    RetryWaiting,
+    /// Provider exited without a definite outcome.
+    OutcomeUnknown,
     /// The run failed, was refused or broke protocol.
     Failed,
 }
@@ -189,16 +198,25 @@ type OpenSpace = (Arc<Mutex<Connection>>, u64);
 
 /// Durable job records plus live streams. Cheap to share behind the app state.
 pub struct Jobs {
-    root: Option<PathBuf>,
+    pub(super) root: Option<PathBuf>,
+    pub(super) security: Option<calternal_auth::agents::Agents>,
     spaces: Mutex<HashMap<String, OpenSpace>>,
     tick: AtomicUsize,
     pub(super) routes: RwLock<HashMap<String, String>>,
-    live: LiveMap,
-    subscribers: Arc<AtomicUsize>,
+    pub(super) live: LiveMap,
+    pub(super) subscribers: Arc<AtomicUsize>,
     permits: Arc<Semaphore>,
 }
 
 impl Jobs {
+    /// Latest turn for one UUID thread inside an already authorized space. Cost:
+    /// one indexed space-local query, one bounded job decode; no cross-space scan.
+    pub(crate) fn thread_latest(&self, space: &str, thread: &str) -> Result<Option<Job>, Error> {
+        let conn = self.conn(space)?;
+        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
+    }
+
     /// Permits for concurrent runs ([`super::runner::MAX_RUNNING`]). Cost: one clone.
     pub fn permits(&self) -> Arc<Semaphore> {
         self.permits.clone()
@@ -235,10 +253,18 @@ impl Jobs {
         Ok(jobs)
     }
 
+    /// Attach agent authority from the already guarded directory handle. No new
+    /// connection or worker. Without it agent credential operations fail closed.
+    pub fn with_security(mut self, security: calternal_auth::agents::Agents) -> Self {
+        self.security = Some(security);
+        self
+    }
+
     /// A job service that refuses every admission (for hosts without job storage).
     pub fn disabled() -> Self {
         Self {
             root: None,
+            security: None,
             spaces: Mutex::new(HashMap::new()),
             tick: AtomicUsize::new(0),
             routes: RwLock::new(HashMap::new()),
@@ -250,7 +276,7 @@ impl Jobs {
 
     /// The space's job connection, opening (and applying retention to) it on first
     /// use and closing the least recently used beyond [`MAX_OPEN_SPACES`].
-    fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, Error> {
+    pub(super) fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, Error> {
         let root = self
             .root
             .as_ref()
@@ -350,6 +376,11 @@ impl Jobs {
             {
                 return Ok(id);
             }
+            if a.operation=="agent.turn" {
+                let thread=a.input["request"]["thread_id"].as_str().ok_or_else(||Error::invalid_input("turn needs a thread UUID"))?;
+                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
+                if active{return Err(Error::conflict("this thread already has active or interrupted work"));}
+            }
             let active: i64 = tx
                 .query_row(&format!("SELECT count(*) FROM jobs WHERE state IN {ACTIVE}"), [], |r| r.get(0))
                 .map_err(db_err)?;
@@ -386,55 +417,6 @@ impl Jobs {
             .unwrap_or_else(|p| p.into_inner())
             .insert(id.clone(), space);
         Ok(id)
-    }
-
-    /// Move an admitted job to running and start a fresh stream epoch whose sequence
-    /// continues from the checkpoint. `None` when the job is no longer admitted.
-    /// Cost: one FULL transaction.
-    pub fn claim(&self, space: &str, id: &str) -> Result<Option<Claimed>, Error> {
-        let job = self.tx(space, |tx| {
-            let n = tx
-                .execute(
-                    "UPDATE jobs SET state='running',runs=runs+1 WHERE id=?1 AND state='admitted'",
-                    [id],
-                )
-                .map_err(db_err)?;
-            if n == 0 {
-                return Ok(None);
-            }
-            tx.query_row(
-                &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
-                [id],
-                |r| row(space, r),
-            )
-            .optional()
-            .map_err(db_err)
-        })?;
-        let Some(job) = job else { return Ok(None) };
-        let live = self.live(id);
-        let cancel = CancelFlag::new();
-        {
-            let mut b = live.lock();
-            b.epoch = Uuid::now_v7().to_string();
-            b.run = job.runs;
-            b.next_seq = job.checkpoint_seq;
-            b.chunks.clear();
-            b.bytes = 0;
-            b.cancel = Some(cancel.clone());
-            b.running = true;
-        }
-        live.bump();
-        Ok(Some(Claimed { job, live, cancel }))
-    }
-
-    /// The live stream of a job, created on demand. Cost: one map lock.
-    pub fn live(&self, id: &str) -> Arc<Live> {
-        self.live
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .entry(id.to_owned())
-            .or_insert_with(|| Arc::new(Live::new()))
-            .clone()
     }
 
     /// Durably record a checkpoint from the current run; the next run resumes from it
@@ -480,6 +462,9 @@ impl Jobs {
                 Err(_) => (JobState::Failed, "null".into()),
             },
             RunEnd::Waiting => (JobState::Waiting, "null".into()),
+            RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
+            RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
+            RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
         let wake = self.tx(space, |tx| {
@@ -522,7 +507,7 @@ impl Jobs {
             }
             Ok(wake)
         })?;
-        self.settle(id);
+        self.settle_run(id, run);
         Ok(wake)
     }
 
@@ -575,70 +560,5 @@ impl Jobs {
             self.settle(&job);
         }
         Ok(wake)
-    }
-
-    /// Stop a job's stream after its run ended: wake subscribers and drop the buffer
-    /// once nobody is subscribed. Cost: two map/stream locks.
-    fn settle(&self, id: &str) {
-        let mut live = self.live.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(l) = live.get(id).cloned() {
-            let idle = {
-                let mut b = l.lock();
-                b.running = false;
-                b.cancel = None;
-                b.subscribers == 0
-            };
-            l.bump();
-            if idle {
-                live.remove(id);
-            }
-        }
-    }
-
-    /// Child results recorded for `parent`, in report order. Cost: one indexed scan.
-    pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, Error> {
-        let conn = self.conn(space)?;
-        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
-        let mut st = c
-            .prepare("SELECT child,state,result FROM child_results WHERE parent=?1 ORDER BY rowid")
-            .map_err(db_err)?;
-        st.query_map([parent], |r| {
-            Ok(ChildResult {
-                job_id: r.get(0)?,
-                state: parse_state(&r.get::<_, String>(1)?),
-                result: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or(Value::Null),
-            })
-        })
-        .map_err(db_err)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(db_err)
-    }
-
-    /// Take a subscriber slot on a job's stream; refused beyond the per-job and
-    /// server-wide bounds. Cost: one map lock and one stream lock.
-    pub fn subscribe(&self, id: &str) -> Result<Subscription, Error> {
-        let busy = || {
-            Error::unavailable("too many job subscribers; retry shortly")
-                .with_details(serde_json::json!({"reason": "subscriber_capacity"}))
-        };
-        if self.subscribers.fetch_add(1, Ordering::AcqRel) >= MAX_SUBSCRIBERS {
-            self.subscribers.fetch_sub(1, Ordering::AcqRel);
-            return Err(busy());
-        }
-        let live = self.live(id);
-        let mut b = live.lock();
-        if b.subscribers >= MAX_SUBSCRIBERS_PER_JOB {
-            drop(b);
-            self.subscribers.fetch_sub(1, Ordering::AcqRel);
-            return Err(busy());
-        }
-        b.subscribers += 1;
-        drop(b);
-        Ok(Subscription {
-            live,
-            id: id.to_owned(),
-            map: self.live.clone(),
-            total: self.subscribers.clone(),
-        })
     }
 }

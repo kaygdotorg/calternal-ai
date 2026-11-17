@@ -87,11 +87,53 @@ pub(super) async fn guard<D: Directory>(
             } else {
                 None
             };
-            match session.or_else(|| {
-                bearer(req.headers())
-                    .and_then(|t| state.directory.authenticate(t))
-                    .map(|p| (p, Session::Static))
-            }) {
+            let thread_token = if let Some(raw) = bearer(req.headers())
+                .and_then(|b| std::str::from_utf8(b).ok())
+                .filter(|t| t.starts_with("ct1_"))
+            {
+                if path != "/api/v1/operations"
+                    && path != "/api/v1/describe"
+                    && !(path.starts_with("/api/v1/jobs/") && path.ends_with("/events"))
+                {
+                    break 'resp deny(Error::forbidden(
+                        "thread tokens may only call operations or discovery",
+                    ));
+                }
+                let (st, token) = (state.clone(), raw.to_owned());
+                tokio::task::spawn_blocking(move || {
+                    st.jobs
+                        .agent_authenticate(&token)
+                        .map(|a| a.map(|a| (a, calternal_auth::token::hash32(&token).to_vec())))
+                })
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .flatten()
+            } else {
+                None
+            };
+            if let Some((a, _)) = &thread_token {
+                req.extensions_mut().insert(a.clone());
+            }
+            match thread_token
+                .map(|(a, hash)| {
+                    (
+                        Identity {
+                            id: a.actor.account,
+                        },
+                        Session::Agent {
+                            space: a.space,
+                            job: a.job,
+                            token_hash: hash,
+                        },
+                    )
+                })
+                .or(session)
+                .or_else(|| {
+                    bearer(req.headers())
+                        .and_then(|t| state.directory.authenticate(t))
+                        .map(|p| (p, Session::Static))
+                }) {
                 Some((p, session)) => {
                     req.extensions_mut().insert(p);
                     req.extensions_mut().insert(session);
@@ -103,6 +145,10 @@ pub(super) async fn guard<D: Directory>(
         }
         let credentials = req.headers().clone();
         let admitted = req.extensions().get::<Identity>().cloned();
+        let agent_admitted = req
+            .extensions()
+            .get::<crate::turns::access::Authority>()
+            .cloned();
         let response = next.run(req).await;
         if api && !account_route && response.status().is_success() {
             let session = if let Some(service) = state.directory.http_auth() {
@@ -112,7 +158,25 @@ pub(super) async fn guard<D: Directory>(
             } else {
                 None
             };
-            let current = session
+            let agent_current = if agent_admitted.is_some() {
+                let token = bearer(&credentials)
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .unwrap_or("")
+                    .to_owned();
+                let st = state.clone();
+                tokio::task::spawn_blocking(move || st.jobs.agent_authenticate(&token))
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .flatten()
+                    .map(|a| Identity {
+                        id: a.actor.account,
+                    })
+            } else {
+                None
+            };
+            let current = agent_current
+                .or(session)
                 .or_else(|| bearer(&credentials).and_then(|t| state.directory.authenticate(t)));
             if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
                 || current.is_none()
