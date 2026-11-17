@@ -211,6 +211,7 @@ pub(super) fn apply<D: Directory>(
             if current.metadata["deleted"] == true {
                 return Err(Error::not_found("item not found"));
             }
+            let mut result = document::view(current);
             if let Some(job) = st
                 .jobs
                 .thread_latest(&space.to_string(), &item.id.to_string())?
@@ -225,8 +226,14 @@ pub(super) fn apply<D: Directory>(
                 }
                 st.jobs.cancel(&job.space, &job.id)?;
                 st.jobs.agent_revoke(&job.space, &job.id)?;
+                result["job"] = json!(
+                    st.jobs
+                        .get(&job.space, &job.id)?
+                        .ok_or_else(|| Error::not_found("turn not found"))?
+                        .view()
+                );
             }
-            Ok(document::view(current))
+            Ok(result)
         });
     }
     if !matches!(operation, "threads.archive" | "threads.delete") {

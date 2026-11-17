@@ -160,3 +160,14 @@ prints terminal-only hints. JSON is one document. Use the
 ordinary jobs stream to follow the returned job. Offline submissions use the
 existing account-owned `pending.queue` and `pending.submit` operations; reconnect
 rechecks access before the ordinary thread operation runs.
+
+A stop receipt includes the exact canceled job. HTTP acknowledgment releases that
+job's machine lease using the existing turn cleanup; replay never selects a later
+job. This adds one job refresh inside cancellation and one indexed job load for
+lease cleanup, plus the existing machine release commit.
+
+Native lease admission and its first checkpoint share the existing per-space job
+lock: one indexed current-run check precedes machine admission. Cancellation
+therefore either sees the saved lease ID or prevents admission. The callback
+never re-enters jobs/content; publication failure releases the lease. This also
+closes the stop race before the first lease checkpoint exists.

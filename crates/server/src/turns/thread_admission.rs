@@ -48,3 +48,26 @@ pub(crate) async fn admit<D: Directory>(
     }
     Ok(job)
 }
+
+/// Release only the exact job named by a committed thread-stop receipt. Replays
+/// cannot stop a later send. Missing jobs are expired no-ops; other failures are
+/// retryable. Cost: one job read and the existing bounded machine release commit,
+/// entirely on blocking workers. Called after ordinary authorization/dispatch.
+pub(crate) async fn finish_stop<D: Directory>(
+    state: &Shared<D>,
+    machines: &Arc<MachineService>,
+    result: &Value,
+) -> Result<(), Error> {
+    let Some(id) = result["job"]["id"].as_str() else {
+        return Ok(());
+    };
+    let job = match load(state, id).await {
+        Ok(job) => job,
+        Err(error) if error.code == calternal_types::ErrorCode::NotFound => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    if result["job"]["space_id"] != job.space {
+        return Err(Error::internal("invalid stopped job"));
+    }
+    stop_machine(machines, &job).await
+}

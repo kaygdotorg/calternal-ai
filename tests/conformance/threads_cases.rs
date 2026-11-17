@@ -312,11 +312,15 @@ async fn omitted_send_mode_uses_the_senders_saved_mode_not_another_members_choic
         .await;
     created.ok();
     let thread = &created.body["data"]["thread"]["id"];
-    for (who, mode, expected) in [
+    let mut previous_stop: Option<(usize, String)> = None;
+    for (index, (who, mode, expected)) in [
         (1, None, "least_access"),
         (2, Some("full_access"), "full_access"),
         (1, None, "least_access"),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let mut input = json!({"id":thread,"message":"mode isolation fixture"});
         if let Some(mode) = mode {
             input["mode"] = json!(mode);
@@ -325,17 +329,45 @@ async fn omitted_send_mode_uses_the_senders_saved_mode_not_another_members_choic
         sent.ok();
         let job = &sent.body["data"]["job"]["id"];
         let deadline = Instant::now() + Duration::from_secs(10);
-        loop {
+        let lease = loop {
             let event = f.op(who, "agent.events", json!({"job_id":job})).await;
             event.ok();
             if event.body["data"]["job"]["checkpoint"]["lease_id"].is_string() {
-                break;
+                break event.body["data"]["job"]["checkpoint"]["lease_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned();
             }
             assert!(
                 Instant::now() < deadline,
-                "mode admission did not reach its queued checkpoint"
+                "mode admission did not reach its queued checkpoint for account {who}: {}",
+                event.body
             );
             tokio::time::sleep(Duration::from_millis(25)).await;
+        };
+        if let Some((previous_who, request_id)) = &previous_stop {
+            f.op_id(
+                *previous_who,
+                "threads.stop",
+                json!({"id":thread}),
+                request_id,
+            )
+            .await
+            .ok();
+            let current = f
+                .req(
+                    "GET",
+                    &format!("/api/v1/machines/runs/{lease}"),
+                    Some(&f.cookies[who]),
+                    json!({}),
+                    Some(ORIGIN),
+                )
+                .await;
+            current.ok();
+            assert_ne!(
+                current.body["state"], "ended",
+                "replayed stop ended a later lease"
+            );
         }
         let saved = f.op(who, "threads.get", json!({"id":thread})).await;
         saved.ok();
@@ -344,7 +376,25 @@ async fn omitted_send_mode_uses_the_senders_saved_mode_not_another_members_choic
             saved.body["data"]["thread"]["metadata"]["mode_for"],
             f.ids[who]
         );
-        f.op(who, "threads.stop", json!({"id":thread})).await.ok();
+        let request_id = format!("mode-stop-{index}");
+        f.op_id(who, "threads.stop", json!({"id":thread}), &request_id)
+            .await
+            .ok();
+        let ended = f
+            .req(
+                "GET",
+                &format!("/api/v1/machines/runs/{lease}"),
+                Some(&f.cookies[who]),
+                json!({}),
+                Some(ORIGIN),
+            )
+            .await;
+        ended.ok();
+        assert_eq!(
+            ended.body["state"], "ended",
+            "stop returned before its lease ended"
+        );
+        previous_stop = Some((who, request_id));
     }
     f.op(1, "threads.delete", json!({"id":thread})).await.ok();
 }

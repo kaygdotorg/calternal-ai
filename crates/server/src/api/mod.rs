@@ -296,7 +296,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let thread_account = p.id;
     let state_for_threads = state.clone();
     let thread_scheduler = machines.clone();
-    let result = if calternal_core::AGENT_OPERATIONS
+    let mut result = if calternal_core::AGENT_OPERATIONS
         .iter()
         .any(|(id, _, _)| *id == request.operation)
     {
@@ -328,6 +328,15 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         )
         .await
     };
+    if request.operation == "threads.stop" {
+        if let (Some(machines), Ok(value)) = (&thread_scheduler, &result) {
+            if let Err(error) =
+                crate::turns::finish_thread_stop(&state_for_threads, machines, value).await
+            {
+                result = Err(error);
+            }
+        }
+    }
     if matches!(
         request.operation.as_str(),
         "threads.send" | "pending.submit" | "pending.confirm"

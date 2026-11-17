@@ -163,19 +163,11 @@ async fn execute<D: Directory>(
         s.jobs.agent_prepare_scope(&scope, issuing_run)
     })
     .await?;
-    let (m, t) = (machines.clone(), thread);
-    let lease = blocking(move || m.request_run(space, account, t, None)).await?;
-    let lease_id = lease.lease_id;
-    let mut checkpoint = job.checkpoint.clone();
-    if !checkpoint.is_object() {
-        checkpoint = json!({});
-    }
-    checkpoint["lease_id"] = json!(lease_id);
-    if let Err(e) = save(state, job, live, &mut checkpoint).await {
-        let m = machines.clone();
-        let _ = blocking(move || m.release_run(account, lease_id)).await;
-        return Err(e);
-    }
+    let mut checkpoint = super::lease::prepare(state, machines, job, live, space, thread).await?;
+    let lease_id = checkpoint["lease_id"]
+        .as_str()
+        .and_then(|id| Uuid::parse_str(id).ok())
+        .ok_or_else(|| Error::internal("invalid admitted lease"))?;
     let previous_machine = job
         .checkpoint
         .get("machine_id")
