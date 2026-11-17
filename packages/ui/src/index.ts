@@ -25,3 +25,4 @@ export { default as Popover } from "./components/Popover.svelte";
 export { place, type Anchor } from "./lib/place";
 export type { MenuItem } from "./components/Menu.svelte";
 export { initInputModality, modality, type Modality } from "./lib/input";
+export { Toasts, toast, undoable, failed, notify, track, dismiss, type UndoToken } from "./toast";
