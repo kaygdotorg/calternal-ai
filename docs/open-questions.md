@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-17 20:40 IST.
+[glossary](glossary.md). Updated 2026-11-17 22:50 IST.
 
 ## Waiting now
 
@@ -12,6 +12,11 @@ move to the decision record they belong to and leave this list. Terms: see
 | 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | Keep the provisional choice unless it looks wrong on the preview | Materials |
 | 6 | Light renditions of the eight default wallpapers (they suit dark mode): derive a lighter version automatically (provisional), or kayg supplies light ones | Automatic for now | Light theme |
 | 7 | Spaces in the shell: where the space switcher lives, what the current space limits, Settings groups, groups holding space roles, an automatic personal space (five questions asked 2026-11-17) | See chat; recommendations stand as provisional | Shell, Settings |
+| 8 | One editor engine everywhere, or a native field for short text and the full editor only for notes? The lane built the second: every inline field shares the editor's transaction layer but short fields stay native, which keeps first paint light (2 KB against the full editor's size). kayg said every inline field should be the block editor | Keep the split unless kayg wants identical behaviour in short fields | Editor |
+| 9 | Live editing of a note needs the server to accept small text changes, not whole-note replacement. Port the existing app's live rooms (a shared document per open note), or a simpler patch operation? | Port the existing app's rooms | Editor stage 3 |
+| 10 | Native apps: Google Sans Flex (shipped with the app) or the system font? The web rule is no system font; the native study measured the system's own | Google Sans Flex, to match the web and your brand | Native apps |
+| 11 | Native icons: our own icon set drawn from the web's paths, or SF Symbols? | Our own set, for one look everywhere | Native apps |
+| 12 | On a Mac the wordmark is tight beside the window's traffic lights: widen the sidebar, put the wordmark under the lights, or hide that row | Under the lights | Native shell |
 
 ## Design rounds
 
