@@ -228,3 +228,10 @@ The live space/subscriber defaults above are operator-configurable through
 `CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.
 
 Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.
+
+
+## People over HTTP
+
+See the [people and access reference](../../docs/people.md) for account profiles,
+space grants, groups and single-use passkey invitations. The people operations use
+the same protected authority and recovery publication as existing space changes.

@@ -1,0 +1,89 @@
+---
+title: "people.list"
+---
+
+<!-- Generated from: contract/operations.json. Rebuild: npm run docs:site -->
+
+> **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
+
+List server accounts.
+
+Capability: people.manage.
+
+## Declaration
+
+```json
+{
+  "risk": "read",
+  "required_capability": "people.manage",
+  "target": "server",
+  "id": "people.list",
+  "description": "List server accounts.",
+  "mutates": false
+}
+```
+
+## Input
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "description": "An operation scoped to the authenticated account or server with no input fields.",
+  "title": "DirectoryInput",
+  "type": "object"
+}
+```
+
+## Output
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "DirectoryPerson": {
+      "description": "A person in the authorized server directory.",
+      "properties": {
+        "account_id": {
+          "description": "The account's stable UUID.",
+          "type": "string"
+        },
+        "disabled": {
+          "description": "Whether the account may sign in and exercise its grants.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Current display name.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Server role, independent of space access.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "disabled",
+        "name",
+        "role"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "Server people visible to the operator.",
+  "properties": {
+    "people": {
+      "description": "Current accounts, including disabled records.",
+      "items": {
+        "$ref": "#/definitions/DirectoryPerson"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "people"
+  ],
+  "title": "PeopleResult",
+  "type": "object"
+}
+```

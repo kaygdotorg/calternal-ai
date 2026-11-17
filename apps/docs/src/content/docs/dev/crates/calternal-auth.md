@@ -8,8 +8,9 @@ title: "calternal-auth"
 
 Protected identity storage primitives ported from Calternal's auth crate.
 
-This crate preserves the v1–15 legacy schema, including sharing tables.
-It supplies stored space authority, but no login endpoints or recovery coordinator.
+`auth.db` has one current schema (`schema.sql`); there is no migration
+chain and no sharing, DAV or host-cookie state.
+It supplies protected account and space authority to the host HTTP adapter.
 Callers must validate and lock installation roots before opening the DB;
 opening a missing path creates it and is not safe recovery of lost state.
 
