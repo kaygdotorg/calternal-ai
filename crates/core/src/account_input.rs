@@ -144,6 +144,7 @@ pub fn account_input_catalog() -> Vec<crate::OperationDescription> {
             OPERATIONS
                 .iter()
                 .map(|(id, mutates, shape)| crate::OperationDescription {
+                    risk: crate::builtin_operation_risk(id, *mutates),
                     id: (*id).into(),
                     description: id.replace('.', " "),
                     mutates: *mutates,

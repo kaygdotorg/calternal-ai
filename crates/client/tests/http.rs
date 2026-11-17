@@ -139,10 +139,9 @@ async fn mismatched_request_id_rejected() {
     task.await.unwrap();
 }
 #[test]
-fn reject_credential_urls_remote_destinations_and_header_injection() {
+fn allow_https_and_reject_insecure_remote_or_credential_origins() {
     for url in [
         "http://user:secret@localhost:3210",
-        "https://localhost",
         "http://example.org",
         "http://localhost/?token=secret",
         "http://localhost/#secret",
@@ -152,6 +151,8 @@ fn reject_credential_urls_remote_destinations_and_header_injection() {
     }
     assert!(Client::new("http://localhost:3210", "token\nheader").is_err());
     assert!(Client::new("http://[::1]:3210", "token").is_ok());
+    assert!(Client::new("https://example.org", "token").is_ok());
+    assert!(Client::new("https://user:secret@example.org", "token").is_err());
 }
 #[tokio::test]
 async fn predispatch_auth_failure_can_have_null_identity() {

@@ -213,6 +213,8 @@ pub struct Principal {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct OperationDescription {
+    /// Declared risk used by the permission-mode reviewer, independent of capabilities.
+    pub risk: crate::OperationRisk,
     /// Versioned operation identifier used for dispatch; never a URL or executable path.
     pub id: String,
     /// Human-readable description for discovery; carries no execution authority.

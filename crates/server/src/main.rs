@@ -34,6 +34,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Run, watch and control official provider sessions in machine sandboxes.
+    Agent {
+        #[command(flatten)]
+        args: calternal_cli::agent::Args,
+    },
+    /// Invoke a discovered operation with structured JSON input.
+    Invoke {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        operation: String,
+        #[arg(long, default_value = "{}")]
+        input: String,
+    },
+    /// Discover available operations using the current person or thread credential.
+    Describe {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+    },
     /// Save, read and erase private account compositions.
     Drafts {
         #[command(flatten)]
@@ -165,6 +183,15 @@ fn main() {
     // Reads the local time zone, which is only safe before any thread starts.
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
+        Cmd::Agent { args } => calternal_cli::agent::main(args, &out),
+        Cmd::Invoke {
+            connection,
+            operation,
+            input,
+        } => calternal_cli::agent::invoke(connection, Some(operation), input, &out),
+        Cmd::Describe { connection } => {
+            calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
+        }
         Cmd::Drafts { connection, cmd } => {
             let (op, input) = cmd.operation();
             out.finish(calternal_cli::account_input::run(
@@ -469,8 +496,9 @@ async fn serve(
             hosts.push(authority);
         }
     }
-    let jobs =
-        plugins::Jobs::open(&data_dir).map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    let jobs = plugins::Jobs::open(&data_dir)
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
+        .with_security(directory.spaces.agents());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         inputs: calternal_server::account_input::Inputs::new(
@@ -498,6 +526,9 @@ async fn serve(
             ));
         }
     }
+    calternal_server::turns::retry::recover(&state, &machines)
+        .await
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
 
     let base_url = if development {

@@ -975,6 +975,7 @@ fn machine_authority_is_published_before_acknowledgement() {
             "laptop".into(),
             "linux".into(),
             "x86_64".into(),
+            false,
         )
         .unwrap()
         .unwrap();

@@ -68,6 +68,7 @@ pub(super) struct Exec {
     pub lease: Uuid,
     pub account: AccountId,
     pub argv: Vec<String>,
+    pub stdin: String,
     pub env: Vec<(String, String)>,
     pub state: ExecState,
     pub chunks: VecDeque<(Chunk, usize)>,
@@ -90,6 +91,7 @@ impl Exec {
             lease,
             account,
             argv,
+            stdin: String::new(),
             env,
             state,
             chunks: VecDeque::new(),
@@ -173,6 +175,7 @@ impl State {
             space_id: l.row.space,
             account_id: l.row.account,
             spec: SandboxSpec {
+                account_id: l.row.account.as_uuid(),
                 thread_id: l.row.thread,
                 image: l.row.image.clone(),
                 limits: settings.limits,
@@ -201,6 +204,7 @@ impl State {
                     fence,
                     exec_id: *id,
                     argv: e.argv.clone(),
+                    stdin: e.stdin.clone(),
                     env: e.env.clone(),
                 });
             }
@@ -221,7 +225,7 @@ impl State {
 
     /// Fence a lease and put it back in the queue (its machine went silent).
     /// One commit.
-    pub fn requeue(&mut self, lease: Uuid, why: &str) {
+    pub fn interrupt(&mut self, lease: Uuid, why: &str) {
         self.lose_execs(lease, why);
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
@@ -229,13 +233,23 @@ impl State {
         l.row.fence += 1;
         l.row.machine = None;
         l.row.reason = Some(why.into());
-        l.state = LeaseState::Waiting;
+        l.state = LeaseState::Interrupted;
         self.persist(lease);
     }
 
     /// End a lease, fence it, fail its execs and tell its machine to stop the
     /// sandbox. One commit, plus any placements it frees capacity for.
     pub fn end_lease(&mut self, lease: Uuid, why: &str, settings: &Settings) {
+        self.end_with_files(lease, why, settings, false)
+    }
+
+    pub(super) fn end_with_files(
+        &mut self,
+        lease: Uuid,
+        why: &str,
+        settings: &Settings,
+        keep_files: bool,
+    ) {
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
         };
@@ -260,6 +274,7 @@ impl State {
                 Down::Stop {
                     lease_id: lease,
                     reason: why.into(),
+                    keep_files,
                 },
             );
         }
@@ -373,6 +388,7 @@ impl State {
                     Down::Stop {
                         lease_id: r.lease_id,
                         reason: "unknown lease".into(),
+                        keep_files: false,
                     },
                 );
                 continue;
@@ -408,6 +424,7 @@ impl State {
                     Down::Stop {
                         lease_id: r.lease_id,
                         reason: "lease no longer held by this machine".into(),
+                        keep_files: true,
                     },
                 );
             }
@@ -452,6 +469,7 @@ impl State {
             name: m.row.name.clone(),
             os: m.row.os.clone(),
             arch: m.row.arch.clone(),
+            direct: m.row.direct && m.row.owner != Owner::Pool,
             owner: m.row.owner,
             state,
             capacity: m.live.as_ref().map(|l| l.capacity).unwrap_or_default(),

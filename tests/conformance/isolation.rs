@@ -17,6 +17,7 @@ use std::{
 use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 
+mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
@@ -594,6 +595,7 @@ async fn all_operations_hide_foreign_ids() {
     catalog.ok();
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
+    covered.extend(agent_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([
         "drafts.save",
@@ -2652,7 +2654,7 @@ async fn machines_and_runs_are_owner_private() {
         .await;
     code.ok();
     let key = MachineKey::generate().unwrap();
-    let enrol = json!({"code":code.body["code"],"public_key":key.public_key_b64(),"name":"a","os":"linux","arch":"x86_64"});
+    let enrol = json!({"code":code.body["code"],"public_key":key.public_key_b64(),"name":"a","os":"linux","arch":"x86_64","direct":false});
     let first = f
         .machine("/api/v1/machine/enroll", None, enrol.clone())
         .await;
@@ -2673,7 +2675,7 @@ async fn machines_and_runs_are_owner_private() {
     let forged = MachineKey::generate()
         .unwrap()
         .sign_session(machine, &challenge);
-    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":1});
+    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":2,"backend":"podman"});
     assert_eq!(
         f.machine(
             "/api/v1/machine/session/finish",

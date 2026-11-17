@@ -3,12 +3,12 @@
 //! - Base image by reference (`docker.io/library/alpine:3` or a digest); the image
 //!   must already be present or pullable by the machine user.
 //! - The container's own overlay upper layer is the thread's private writable layer.
-//! - `<root>/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
+//! - `<root>/accounts/<account-id>/threads/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
 //! - Limits map to `--memory`, `--cpus` and `--pids-limit`; defaults are 1 GiB and
 //!   256 processes, the configuration measured on perf-01.
 //! - Freeze and resume are `podman pause` / `unpause` (about 0.1 s each, memory
 //!   stays resident). Stop is `podman rm -f -t 0` plus removing the work directory.
-//! - Containers are named `calternal-thread-<thread-id>` and labelled
+//! - Containers are named `calternal-account-<account-id>-thread-<thread-id>` and labelled
 //!   `org.calternal.thread`, so a restarted machine role adopts them.
 //!
 //! The server never runs any of this: only the machine role calls Podman.
@@ -62,9 +62,15 @@ impl PodmanBackend {
             .is_ok_and(|s| s.success())
     }
 
-    /// Container name of a thread.
-    pub fn container_name(thread_id: Uuid) -> String {
-        format!("calternal-thread-{thread_id}")
+    /// Whether this configured engine can answer commands; no container is started.
+    pub(super) async fn engine_available(&self) -> bool {
+        Self::available(&self.podman).await
+    }
+
+    /// Account-qualified container name, so a caller reusing another account's
+    /// thread UUID can never adopt its mounts or login home.
+    pub fn container_name(account_id: Uuid, thread_id: Uuid) -> String {
+        format!("calternal-account-{account_id}-thread-{thread_id}")
     }
 }
 
@@ -98,13 +104,31 @@ impl Backend for PodmanBackend {
         "podman"
     }
 
+    fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            let name = Self::container_name(account, thread);
+            podman(&self.podman, &["rm", "-f", "--ignore", &name]).await?;
+            super::direct::DirectBackend::new(self.root.clone())
+                .discard(account, thread)
+                .await
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
-            let name = Self::container_name(spec.thread_id);
-            let dir = self.root.join(spec.thread_id.to_string());
+            let name = Self::container_name(spec.account_id, spec.thread_id);
+            let account = self.root.join("accounts").join(spec.account_id.to_string());
+            let home = account.join("home");
+            let dir = account.join("threads").join(spec.thread_id.to_string());
+            tokio::fs::create_dir_all(&home)
+                .await
+                .map_err(SandboxError::new)?;
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
+                .await
+                .map_err(SandboxError::new)?;
             let work = dir.join("work");
             tokio::fs::create_dir_all(&work)
                 .await
@@ -136,6 +160,7 @@ impl Backend for PodmanBackend {
                     } = spec.limits;
                     let image = spec.image.as_deref().unwrap_or(&self.default_image);
                     let label = format!("org.calternal.thread={}", spec.thread_id);
+                    let home_mount = format!("{}:/home/agent", home.display());
                     let mount = format!("{}:/work", work.display());
                     let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
                     let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
@@ -153,14 +178,29 @@ impl Backend for PodmanBackend {
                         &pids,
                         "--volume",
                         &mount,
+                        "--volume",
+                        &home_mount,
                         "--workdir",
                         "/work",
                         "--env",
-                        "HOME=/work",
+                        "HOME=/home/agent",
                     ]
                     .iter()
                     .map(|s| s.to_string())
                     .collect();
+                    // Linux hosts supply the matching operation CLI read-only. Other
+                    // host platforms must put a Linux CLI in the container image.
+                    // Nix builds retain immutable store references for their libraries.
+                    #[cfg(target_os = "linux")]
+                    if let Some(exe) = super::cli_program().await {
+                        args.extend([
+                            "--volume".into(),
+                            format!("{}:/usr/local/bin/calternal:ro", exe.display()),
+                        ]);
+                        if tokio::fs::try_exists("/nix/store").await.unwrap_or(false) {
+                            args.extend(["--volume".into(), "/nix/store:/nix/store:ro".into()]);
+                        }
+                    }
                     if let Some(m) = cpu_millis {
                         args.push("--cpus".into());
                         args.push(format!("{}.{:03}", m / 1000, m % 1000));
@@ -195,14 +235,17 @@ impl Sandbox for PodmanSandbox {
             if request.argv.is_empty() {
                 return Err(SandboxError("empty command".into()));
             }
+            request.validate_env_names()?;
             let mut cmd = tokio::process::Command::new(&self.podman);
-            cmd.args(["exec", "--workdir", "/work"]);
+            cmd.args(["exec", "-i", "--workdir", "/work"]);
             for (k, v) in &request.env {
-                cmd.arg("--env").arg(format!("{k}={v}"));
+                // Podman resolves a name-only --env from its own environment.
+                // Values, especially thread credentials, never enter host argv.
+                cmd.arg("--env").arg(k).env(k, v);
             }
             cmd.arg(&self.name).args(&request.argv);
             cmd.as_std_mut().process_group(0);
-            let (exec, pid) = super::spawn_streaming(cmd)?;
+            let (exec, pid) = super::spawn_streaming(cmd, request.stdin)?;
             let mut clients = self.clients.lock().expect("clients");
             clients
                 .retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
@@ -243,6 +286,9 @@ impl Sandbox for PodmanSandbox {
 
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            // Stop the container's processes while retaining its layer and mounts.
+            // Killing only the local podman exec client can leave the CLI running.
+            podman(&self.podman, &["stop", "--time", "0", &self.name]).await?;
             for &g in self.clients.lock().expect("clients").iter() {
                 if let Some(pid) = Pid::from_raw(g) {
                     let _ = kill_process_group(pid, Signal::KILL);
@@ -250,5 +296,77 @@ impl Sandbox for PodmanSandbox {
             }
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod argv_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn podman_exec_keeps_environment_values_out_of_host_argv() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = dir.path().join("podman");
+        // A fake engine records argv and verifies the child environment, without
+        // requiring Podman or emitting the credential in test output.
+        tokio::fs::write(&engine,b"#!/bin/sh\nfor arg do printf '%s\\n' \"$arg\"; done\n[ \"$CALTERNAL_AGENT_TOKEN\" = 'synthetic-private-token' ] || exit 42\n[ \"$MULTILINE\" = 'first\nsecond=value' ] || exit 43\n").await.unwrap();
+        tokio::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o700))
+            .await
+            .unwrap();
+        let sandbox = PodmanSandbox {
+            podman: engine,
+            name: "fixture".into(),
+            dir: dir.path().join("work"),
+            clients: Mutex::new(HashSet::new()),
+        };
+        let mut exec = sandbox
+            .exec(ExecRequest {
+                argv: vec!["true".into()],
+                stdin: String::new(),
+                env: vec![
+                    (
+                        "CALTERNAL_AGENT_TOKEN".into(),
+                        "synthetic-private-token".into(),
+                    ),
+                    ("MULTILINE".into(), "first\nsecond=value".into()),
+                ],
+            })
+            .await
+            .unwrap();
+        let mut output = Vec::new();
+        let mut status = None;
+        while let Some(event) = exec.events.recv().await {
+            match event {
+                super::super::OutputEvent::Data(_, bytes) => output.extend(bytes),
+                super::super::OutputEvent::Exit(info) => status = info.code,
+            }
+        }
+        assert_eq!(
+            status,
+            Some(0),
+            "engine did not receive the environment intact"
+        );
+        let argv = String::from_utf8(output).unwrap();
+        assert!(argv.lines().any(|s| s == "CALTERNAL_AGENT_TOKEN"));
+        assert!(
+            !argv.contains("synthetic-private-token"),
+            "credential entered host argv"
+        );
+        assert!(
+            !argv.contains("second=value"),
+            "multiline value entered host argv"
+        );
+        let invalid = sandbox
+            .exec(ExecRequest {
+                argv: vec!["true".into()],
+                env: vec![("NAME=inline-secret".into(), String::new())],
+                ..ExecRequest::default()
+            })
+            .await;
+        assert!(
+            invalid.is_err(),
+            "inline environment values must not become names"
+        );
     }
 }

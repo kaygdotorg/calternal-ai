@@ -1,4 +1,4 @@
-//! Wire protocol between the server role and the machine role, version 1.
+//! Wire protocol between the server role and the machine role, version 2.
 //!
 //! The machine always connects out; the server never opens a connection to a
 //! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
@@ -28,14 +28,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
 pub const PATH_PREFIX: &str = "/api/v1/machine/";
 
 /// Domain separation prefix of the signed session challenge.
-pub const SESSION_CONTEXT: &[u8] = b"calternal-machine-session-v1\n";
+pub const SESSION_CONTEXT: &[u8] = b"calternal-machine-session-v2\n";
 
 /// Bytes a machine signs to open a session: context, machine id, challenge.
 /// Binding the machine id stops a signature for one machine opening another's session.
@@ -75,6 +75,8 @@ pub struct EnrolRequest {
     pub os: String,
     /// `std::env::consts::ARCH` of the machine.
     pub arch: String,
+    /// Owner chose direct execution at enrollment; refused for pool machines.
+    pub direct: bool,
 }
 
 /// Answer to a successful enrolment.
@@ -116,11 +118,15 @@ pub struct SessionFinish {
     pub boot_id: Uuid,
     /// Must equal [`PROTOCOL_VERSION`].
     pub protocol: u32,
+    /// Requested backend, or auto for the owner's setting; direct requires owner consent.
+    pub backend: String,
 }
 
 /// An open session. Opening another session for the same machine ends this one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionGranted {
+    /// Actual backend authorized for this session: podman or direct.
+    pub backend: String,
     /// Bearer token for `sync` and `output`; held in memory only, on both sides.
     pub token: String,
     /// How long the server keeps this machine's leases without a sync. The machine
@@ -178,12 +184,25 @@ pub struct LeaseReport {
 pub struct SyncRequest {
     /// Highest [`Envelope::seq`] received in this session (0 before any).
     pub ack: u64,
+    /// Completed explicit workspace deletions, retransmitted until a successful sync.
+    /// At most 128. An absent batch means no completed deletions.
+    #[serde(default)]
+    pub discards: Vec<DiscardReport>,
     /// Current capacity.
     pub capacity: Capacity,
     /// True once the machine is shutting down: place nothing new on it.
     pub draining: bool,
     /// Every lease the machine holds.
     pub leases: Vec<LeaseReport>,
+}
+
+/// A machine's result for a durable owner-requested workspace discard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscardReport {
+    /// Unique deletion attempt UUID; its session binds the target machine.
+    pub request_id: Uuid,
+    /// True only after workspace/container removal completed; account home remains.
+    pub success: bool,
 }
 
 /// Messages for the machine, in order. Empty after the hold time elapsed.
@@ -217,6 +236,8 @@ pub struct Limits {
 /// What to start for a thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxSpec {
+    /// Account owning the persistent login home; validated UUID from the server.
+    pub account_id: Uuid,
     /// The thread; one sandbox per thread, reused across leases.
     pub thread_id: Uuid,
     /// Base image by reference; `None` uses the machine's configured default.
@@ -229,6 +250,15 @@ pub struct SandboxSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Down {
+    /// Explicit owner discard; never inferred from lease expiry or elapsed time.
+    Discard {
+        /// Durable request identity, scoped to this enrolled machine.
+        request_id: Uuid,
+        /// Account whose workspace is being discarded.
+        account_id: Uuid,
+        /// Thread workspace to discard; its persistent account home is retained.
+        thread_id: Uuid,
+    },
     /// Run work for (space, account, thread): start or adopt the thread's sandbox.
     Assign {
         /// The lease.
@@ -252,6 +282,8 @@ pub enum Down {
         exec_id: Uuid,
         /// Program and arguments; no shell is implied.
         argv: Vec<String>,
+        /// Bounded UTF-8 stdin, delivered once then closed; at most 128 KiB.
+        stdin: String,
         /// Extra environment; the sandbox starts from an empty environment.
         /// Never a credential: secret values reach a sandbox only as
         /// `calternal_secrets::Consumer::SandboxEnv { thread, variable }`,
@@ -265,6 +297,8 @@ pub enum Down {
         lease_id: Uuid,
         /// Short reason for logs.
         reason: String,
+        /// Provider turns retain workspace files and the account login home.
+        keep_files: bool,
     },
 }
 

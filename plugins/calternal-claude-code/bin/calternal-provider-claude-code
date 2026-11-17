@@ -1,0 +1,12 @@
+#!/bin/sh
+# Install this launcher beside the built adapter (../dist) in each sandbox image.
+# Startup failures use the provider protocol, so the server never needs stderr.
+if [ ! -f "$(dirname "$0")/../dist/main.js" ] || [ ! -f "$(dirname "$0")/../dist/adapter.js" ]; then
+    printf '%s\n' '{"version":1,"seq":1,"event":{"type":"error","code":"adapter_not_built","class":"permanent","billing":"unknown","message":"Claude Code adapter build is missing; run npm run build:plugins."}}' '{"version":1,"seq":2,"event":{"type":"done","outcome":"failed"}}'
+    exit 1
+fi
+if ! command -v node >/dev/null 2>&1; then
+    printf '%s\n' '{"version":1,"seq":1,"event":{"type":"error","code":"adapter_runtime_missing","class":"permanent","billing":"unknown","message":"Node.js is missing; install Node.js in this machine sandbox to run the provider adapter."}}' '{"version":1,"seq":2,"event":{"type":"done","outcome":"failed"}}'
+    exit 1
+fi
+exec node "$(dirname "$0")/../dist/main.js"

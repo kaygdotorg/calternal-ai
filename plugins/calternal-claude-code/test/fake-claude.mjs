@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+// Account-free fixture of the documented stream-json output, selected by prompt.
+import { existsSync,readFileSync,writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+const args=process.argv.slice(2);
+if(args.join(' ')==='auth status'){
+  // Raw status and stderr must never reach the adapter's caller.
+  console.log(JSON.stringify({authMethod:existsSync(join(process.env.HOME,'subscription'))?'claude.ai':'api_key',private:'PRIVATE_LOGIN_SENTINEL'})); console.error('PRIVATE_LOGIN_SENTINEL');
+  process.exit(existsSync(join(process.env.HOME,'signed-in'))?0:1);
+}
+// The machine supplies the same operation CLI inside both execution backends.
+if(process.env.CALTERNAL_AGENT_TOKEN) execFileSync('calternal',['--help'],{stdio:'ignore'});
+let prompt='';for await(const data of process.stdin)prompt+=data;
+const emit=m=>process.stdout.write(JSON.stringify(m)+'\n');
+if(!args.includes('--append-system-prompt')||!args.includes('--disallowedTools')||process.env.ANTHROPIC_API_KEY||process.env.CLAUDE_CODE_OAUTH_TOKEN)process.exit(93);
+if(args.includes('--resume')&&!existsSync(join(process.cwd(),'.fake-session')))process.exit(87);
+writeFileSync(join(process.cwd(),'.fake-session'),'fixture session');
+emit({type:'system',subtype:'init',session_id:'11111111-1111-4111-8111-111111111111'});
+emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Hello 🌏\n'}}});
+const scenarioFile=join(process.cwd(),'.fake-scenario');
+if(/transient-|usage-limit|auth-failure/.test(prompt))writeFileSync(scenarioFile,prompt);
+const scenario=existsSync(scenarioFile)?readFileSync(scenarioFile,'utf8'):prompt;
+const counter=join(process.cwd(),'.fake-attempt');
+const attempt=existsSync(counter)?Number(readFileSync(counter,'utf8'))+1:1;
+if(/transient-|usage-limit|auth-failure/.test(scenario))writeFileSync(counter,String(attempt));
+if(scenario.includes('transient-always')||(scenario.includes('transient-once')&&attempt===1)||scenario.includes('usage-limit')||scenario.includes('auth-failure')){
+ if(scenario.includes('usage-limit'))emit({type:'rate_limit_event',rate_limit_info:{status:'rejected',resetsAt:Math.floor(Date.now()/1000)+3600}});
+ emit({type:'assistant',error:scenario.includes('usage-limit')?'rate_limit':scenario.includes('auth-failure')?'authentication_failed':'server_error',message:{content:[]}});
+ emit({type:'result',subtype:'error_during_execution',is_error:true,usage:{input_tokens:0,output_tokens:0}});process.exit(0);
+}
+emit({type:'assistant',message:{content:[{type:'tool_use',id:'step-1',name:prompt.includes('question')?'AskUserQuestion':'Read',input:{secret:'PRIVATE_LOGIN_SENTINEL'}}]}});
+if(prompt.includes('crash'))process.exit(71);
+if(prompt.includes('hang'))await new Promise(()=>setInterval(()=>{},1000));
+emit({type:'user',message:{content:[{type:'tool_result',tool_use_id:'step-1',content:'PRIVATE_LOGIN_SENTINEL',is_error:false}]}});
+if(prompt.includes('oversized'))process.stdout.write('x'.repeat(1024*1024+1));
+emit({type:'result',subtype:prompt.includes('fail')?'error_during_execution':'success',is_error:prompt.includes('fail'),usage:{input_tokens:10,output_tokens:3}});

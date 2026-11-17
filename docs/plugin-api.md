@@ -140,3 +140,19 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Skills and automations management: needs fleshing out.
 - What a sandbox is on a cloud machine (being measured:
   `docs/measurements/sandbox-containers-vs-microvms.md`).
+
+## Provider and risk contract (step 1)
+
+Manifest v1 operations require `risk`: `read`, `reversible`, `irreversible`,
+`external`, or `widens_access`. Read risk is consistent with `mutates: false`;
+other classes require a mutating operation. There are no defaults or legacy
+readers for missing declarations. The SDK and Rust host reject unknown classes.
+Capabilities remain mandatory in every permission mode. The rules reviewer uses
+the matrix in [manual turns](agent-turns.md), with a seam for a future model
+reviewer restricted to irreversible actions.
+
+A provider plugin additionally declares `provider` with protocol version one,
+an executable basename inside the sandbox and its default model. See
+[provider protocol](provider-protocol.md). This is machine-side metadata; the
+server never launches or signs in to a provider. The first provider is
+`calternal-claude-code`.

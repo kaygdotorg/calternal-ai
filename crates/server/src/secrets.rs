@@ -29,8 +29,8 @@ use calternal_core::{
     SecretsRevokeInput, SecretsRevokeResult,
 };
 use calternal_secrets::{LocalStore, Owner, RequestId, SecretName, SecretStore, SecretValue};
-use calternal_types::Actor;
 use calternal_types::SpaceId;
+use calternal_types::{Actor, Via};
 use serde_json::{Value, json};
 
 use crate::api::Shared;
@@ -106,7 +106,8 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
 }
 
 /// Run an admitted `secrets.*` operation. `policy` is its registry row; its
-/// `required` capability applies when the input names a space.
+/// `required` capability applies when the input names a space. `via` is trusted
+/// session provenance, never a value from operation input.
 /// Cost: one directory read for a space owner, then one owner-database open and
 /// at most one fsync'd transaction on a blocking task.
 pub async fn dispatch<D: Directory>(
@@ -114,14 +115,12 @@ pub async fn dispatch<D: Directory>(
     p: Identity,
     policy: Policy,
     input: JsonObject,
+    via: Option<Via>,
 ) -> Result<Value, Error> {
     tokio::task::spawn_blocking(move || {
         let op = policy.operation.as_ref();
         let secrets = store(&state)?;
-        let actor = Actor {
-            account: p.id,
-            via: None,
-        };
+        let actor = Actor { account: p.id, via };
         match op {
             "secrets.request" => {
                 let i: SecretsRequestInput = decode(input)?;

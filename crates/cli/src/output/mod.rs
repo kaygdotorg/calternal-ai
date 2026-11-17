@@ -21,6 +21,8 @@
 
 mod table;
 
+mod agent;
+
 use std::io::{IsTerminal, Write};
 
 use serde_json::{Map, Value, json};

@@ -324,6 +324,10 @@ impl Spaces {
             receipt_retention,
         }
     }
+    /// Agent authority sharing this handle and recovery barrier. Cost: an Arc clone.
+    pub fn agents(&self) -> crate::agents::Agents {
+        crate::agents::Agents::new(self.db.clone())
+    }
     /// Machine authority over this same `auth.db` handle, sharing its worker and
     /// recovery barrier. Cost: one Arc clone.
     pub fn machines(&self) -> crate::machines::Machines {

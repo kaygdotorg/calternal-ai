@@ -134,6 +134,13 @@ pub fn now_rfc3339() -> String {
         .expect("timestamp format")
 }
 impl Content {
+    /// Return the validated SSD userdata root for descriptor-relative, authorized
+    /// metadata reads. The caller must retain root guards and check space access.
+    /// Cost: one path clone, no I/O or content/space locks.
+    pub fn userdata_root(&self) -> PathBuf {
+        self.roots.userdata_ssd.clone()
+    }
+
     /// Opens the identifier-only catalog and replays unfinished space intents.
     /// `receipt_retention` bounds how long each space keeps request receipts
     /// ([`DEFAULT_RECEIPT_RETENTION`] unless the operator sets another); a retry

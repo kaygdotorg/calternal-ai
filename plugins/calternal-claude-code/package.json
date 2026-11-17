@@ -1,0 +1,7 @@
+{
+  "name": "@calternal/claude-code", "version": "0.1.0", "private": true,
+  "type": "module",
+  "scripts": {"build": "tsc -p tsconfig.json", "test": "npm run build && node --test test/*.test.mjs"},
+  "dependencies": {"@calternal/plugin-sdk": "*"},
+  "devDependencies": {"typescript": "^5.9.3", "@types/node": "^22.0.0"}
+}
