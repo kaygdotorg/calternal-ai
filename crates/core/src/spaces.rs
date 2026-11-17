@@ -77,10 +77,13 @@ pub struct SpaceMember {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceMembersResult {
-    /// Current account memberships, including exactly one Owner.
+    /// Direct account grants on this page. Exactly one Owner has a direct grant.
     pub members: Vec<SpaceMember>,
     /// Direct group grants, including names and active member counts.
     pub groups: Vec<crate::SpaceGroupMember>,
+    /// Continue after the last grant, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 /// A completed membership mutation or directory-record deletion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

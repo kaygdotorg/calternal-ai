@@ -29,17 +29,24 @@ Capability: members.invite.
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Input for members, leave and directory-record deletion.",
+  "description": "A continuation scoped to one space.",
   "properties": {
+    "cursor": {
+      "description": "The previous page's cursor for this space and operation.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "space_id": {
-      "description": "Space UUID; names are never accepted in its place.",
+      "description": "Space UUID.",
       "type": "string"
     }
   },
   "required": [
     "space_id"
   ],
-  "title": "SpaceInput",
+  "title": "SpaceDirectoryPageInput",
   "type": "object"
 }
 ```
@@ -149,6 +156,13 @@ Capability: members.invite.
         "$ref": "#/definitions/DirectoryInvite"
       },
       "type": "array"
+    },
+    "next_cursor": {
+      "description": "Continuation after the last row, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

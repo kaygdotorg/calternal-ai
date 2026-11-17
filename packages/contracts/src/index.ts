@@ -1419,13 +1419,17 @@ role: SpaceRole, };
 
 export type SpaceMembersResult = {
 /**
- * Current account memberships, including exactly one Owner.
+ * Direct account grants on this page. Exactly one Owner has a direct grant.
  */
 members: Array<SpaceMember>,
 /**
  * Direct group grants, including names and active member counts.
  */
-groups: Array<SpaceGroupMember>, };
+groups: Array<SpaceGroupMember>,
+/**
+ * Continue after the last grant, omitted at the end.
+ */
+next_cursor: string | null, };
 /**
  * A completed membership mutation or directory-record deletion.
  */
@@ -1500,6 +1504,41 @@ member_count: number, };
  */
 
 export type DirectoryInput = Record<string, never>;
+/**
+ * A continuation for a server directory.
+ */
+
+export type DirectoryPageInput = {
+/**
+ * The previous page's cursor. Omit it to start at the first row.
+ */
+cursor: string | null, };
+/**
+ * A continuation scoped to one space.
+ */
+
+export type SpaceDirectoryPageInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * The previous page's cursor for this space and operation.
+ */
+cursor: string | null, };
+/**
+ * List groups or continue an individual group's member page.
+ */
+
+export type GroupDirectoryPageInput = {
+/**
+ * Group UUID when reading one group's members.
+ */
+group_id: string | null,
+/**
+ * Use the group list cursor or, with `group_id`, its member cursor.
+ */
+cursor: string | null, };
 /**
  * A space role and its currently declared capabilities.
  */
@@ -1582,7 +1621,11 @@ export type PeopleResult = {
 /**
  * Current accounts, including disabled records.
  */
-people: Array<DirectoryPerson>, };
+people: Array<DirectoryPerson>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
 /**
  * A completed account disable.
  */
@@ -1660,16 +1703,24 @@ source: string,
 /**
  * Account UUIDs for each active member.
  */
-members: Array<string>, };
+members: Array<string>,
+/**
+ * Continue these members with this group's UUID, omitted at the end.
+ */
+members_next_cursor: string | null, };
 /**
  * Server group directory result.
  */
 
 export type GroupsResult = {
 /**
- * Groups ordered by display name and UUID.
+ * Groups ordered by UUID.
  */
-groups: Array<DirectoryGroup>, };
+groups: Array<DirectoryGroup>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
 /**
  * Create a single-use invitation to a space.
  */
@@ -1754,7 +1805,11 @@ export type InvitesResult = {
 /**
  * Authorized invitation records.
  */
-invites: Array<DirectoryInvite>, };
+invites: Array<DirectoryInvite>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
 /**
  * A revoked invitation's public identity.
  */

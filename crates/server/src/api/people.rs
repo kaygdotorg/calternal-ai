@@ -28,6 +28,7 @@ pub(super) async fn dispatch<D: Directory>(
         let fp = fingerprint(op, &input);
         let receipt = (request_id.as_str(), op, fp.as_str());
         let text = |key: &str| field(&input, key);
+        let cursor = input.get("cursor").and_then(Value::as_str);
         let account = || AccountId::parse(text("account_id")?);
         let group = || GroupId::parse(text("group_id")?);
         let space = if operation.target() == PeopleTarget::Space {
@@ -42,9 +43,22 @@ pub(super) async fn dispatch<D: Directory>(
                 PeopleOperation::SetProfile => {
                     spaces.set_profile(actor, text("name")?.to_owned(), receipt)
                 }
-                PeopleOperation::ListPeople => spaces.people_list(actor),
+                PeopleOperation::ListPeople => {
+                    spaces.people_list(actor, cursor.map(AccountId::parse).transpose()?)
+                }
                 PeopleOperation::DisablePerson => auth.disable_person(actor, account()?, receipt),
-                PeopleOperation::ListGroups => spaces.groups_list(actor),
+                PeopleOperation::ListGroups
+                    if input.get("group_id").is_some_and(Value::is_string) =>
+                {
+                    spaces.group_members_page(
+                        actor,
+                        group()?,
+                        cursor.map(AccountId::parse).transpose()?,
+                    )
+                }
+                PeopleOperation::ListGroups => {
+                    spaces.groups_list(actor, cursor.map(GroupId::parse).transpose()?)
+                }
                 PeopleOperation::CreateGroup => spaces.change_group(
                     actor,
                     GroupChange::Create {
@@ -86,7 +100,9 @@ pub(super) async fn dispatch<D: Directory>(
                     input.get("expires_at").and_then(Value::as_i64),
                     receipt,
                 ),
-                PeopleOperation::ListInvites => auth.list_invites(actor, scope()?),
+                PeopleOperation::ListInvites => {
+                    auth.list_invites(actor, scope()?, cursor.map(InviteId::parse).transpose()?)
+                }
                 PeopleOperation::RevokeInvite => auth.revoke_invite(
                     actor,
                     scope()?,
@@ -183,6 +199,8 @@ pub(crate) fn auth_error(error: calternal_auth::Error) -> Error {
         ErrorCode::InvalidInput => {
             Error::invalid_input("check the name, role or expiry and try again")
         }
+        ErrorCode::InviteLimit => Error::conflict("this space has reached its live invitation limit")
+            .with_details(serde_json::json!({"reason":"invite_limit","limit":calternal_auth::invites::MAX_LIVE_SPACE_INVITES})),
         ErrorCode::Conflict => Error::request_reused(),
         _ => Error::internal("people database operation failed"),
     }

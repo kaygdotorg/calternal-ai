@@ -1,5 +1,6 @@
 //! Single-use space invitations, adapted from the source invite actions and setup.
 use crate::db::{now_ms, sql};
+use crate::people::{page_value, take_one_more};
 use crate::spaces::{assignable_role, is_owner, privileged, require};
 use crate::{AccountId, Auth, Error, ErrorCode, Result, SpaceId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -10,6 +11,12 @@ use serde_json::{Value, json};
 
 const PREFIX: &str = "invite_";
 const DEFAULT_TTL: i64 = 7 * 24 * 60 * 60 * 1000;
+const PURGE_BATCH: usize = 256;
+
+/// Default days to keep an invitation after its first terminal event.
+pub const DEFAULT_INVITE_RETENTION_DAYS: u32 = 7;
+/// Maximum usable invitations each space may hold concurrently.
+pub const MAX_LIVE_SPACE_INVITES: usize = 100;
 
 pub(crate) fn invalid() -> Error {
     Error::new(ErrorCode::SetupTokenInvalid, "invite invalid or expired")
@@ -117,10 +124,17 @@ impl Auth {
                 if expires_at <= now {
                     return Err(Error::invalid("invite expiry must be in the future"));
                 }
-                // Expired links cannot be activated again. Clean them up with the
-                // next creation in this space, including used and revoked rows.
-                tx.execute("DELETE FROM invites WHERE space_id=?1 AND expires_at<=?2",
-                    params![space.to_string(),now]).map_err(sql)?;
+                let live: i64 = tx.query_row(
+                    "SELECT count(*) FROM (
+                       SELECT 1 FROM invites WHERE space_id=?1 AND expires_at>?2
+                        AND used_at IS NULL AND revoked_at IS NULL LIMIT ?3
+                     )",
+                    params![space.to_string(), now, MAX_LIVE_SPACE_INVITES as i64],
+                    |row| row.get(0),
+                ).map_err(sql)?;
+                if live >= MAX_LIVE_SPACE_INVITES as i64 {
+                    return Err(Error::new(ErrorCode::InviteLimit, "live invitation limit reached"));
+                }
                 let id = InviteId::new().to_string();
                 let secret = format!("{PREFIX}{}", URL_SAFE_NO_PAD.encode(crate::token::random32()?));
                 let hash = inner.invite_key.lookup(&secret);
@@ -135,9 +149,15 @@ impl Auth {
         })
     }
 
-    /// Lists invitations in one snapshot. Managers see their own ordinary grants.
-    /// The Owner can see all grants. Only usable links can be copied.
-    pub fn list_invites(&self, actor: AccountId, space: SpaceId) -> Result<Value> {
+    /// Lists one UUID-ordered invitation page in an authorized snapshot.
+    /// Managers see their own ordinary grants. The Owner can see all grants.
+    /// The server decrypts only usable links on the returned page.
+    pub fn list_invites(
+        &self,
+        actor: AccountId,
+        space: SpaceId,
+        after: Option<InviteId>,
+    ) -> Result<Value> {
         let inner = self.inner.clone();
         self.spaces().run(move |c| {
             let tx = c.transaction().map_err(sql)?;
@@ -151,18 +171,20 @@ impl Auth {
                                     WHERE editor.role='editor' AND editor.capability=r.capability)
                  )
                  SELECT id,space_role,created_at,expires_at,used_at,revoked_at,secret
-                 FROM invites WHERE space_id=?1 AND expires_at>?2
+                 FROM invites WHERE space_id=?1 AND id>?5 AND expires_at>?2
                    AND (?3 OR (created_by=?4 AND space_role NOT IN (SELECT role FROM privileged)))
-                 ORDER BY created_at,id",
+                 ORDER BY id LIMIT ?6",
             ).map_err(sql)?;
-            let mut rows = stmt.query(params![space.to_string(), now, owner, actor.to_string()]).map_err(sql)?;
+            let after = after.map_or_else(String::new, |id| id.to_string());
+            let mut rows = stmt.query(params![space.to_string(), now, owner, actor.to_string(), after, take_one_more() as i64]).map_err(sql)?;
             let mut invites = Vec::new();
             while let Some(row) = rows.next().map_err(sql)? {
                 let id: String = row.get(0).map_err(sql)?;
                 let role: String = row.get(1).map_err(sql)?;
                 let used: Option<i64> = row.get(4).map_err(sql)?;
                 let revoked: Option<i64> = row.get(5).map_err(sql)?;
-                let link = if used.is_none() && revoked.is_none() {
+                let link = if invites.len() < calternal_core::DIRECTORY_PAGE_SIZE
+                    && used.is_none() && revoked.is_none() {
                     let blob: Vec<u8> = row.get(6).map_err(sql)?;
                     Some(format!("{}/invites/{}", inner.config.origin.as_str().trim_end_matches('/'),
                         inner.invite_key.decrypt(&blob, &id)?))
@@ -170,8 +192,34 @@ impl Auth {
                 invites.push(json!({"invite_id":id,"role":role,"created_at":row.get::<_,i64>(2).map_err(sql)?,
                     "expires_at":row.get::<_,i64>(3).map_err(sql)?,"used_at":used,"revoked_at":revoked,"link":link}));
             }
-            Ok(json!({"invites":invites}))
+            Ok(page_value("invites", invites, "invite_id"))
         })
+    }
+
+    /// Remove one indexed batch of up to 256 invitation rows older than
+    /// retention, measured from the first of expiry, redemption and revocation.
+    /// Publishes deletions through the protected authority commit. Returns true
+    /// if a full batch was deleted and another batch may be due.
+    pub async fn purge_invites(&self) -> Result<bool> {
+        let age = i64::try_from(self.inner.config.invite_retention.as_millis()).unwrap_or(i64::MAX);
+        let cutoff = now_ms().saturating_sub(age);
+        self.inner.db.run(move |c| {
+            let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            let deleted = tx.execute(
+                "DELETE FROM invites WHERE id IN (
+                   SELECT id FROM invites
+                   WHERE min(expires_at, coalesce(used_at, expires_at), coalesce(revoked_at, expires_at))<=?1
+                   ORDER BY min(expires_at, coalesce(used_at, expires_at), coalesce(revoked_at, expires_at))
+                   LIMIT ?2
+                 )",
+                params![cutoff, PURGE_BATCH as i64],
+            ).map_err(sql)?;
+            if deleted > 0 {
+                crate::spaces::commit(tx)?;
+            }
+            Ok(deleted == PURGE_BATCH)
+        }).await
     }
 
     /// Revokes an unused link in its own space. Rechecks the grant before replay

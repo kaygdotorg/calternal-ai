@@ -59,10 +59,11 @@ pub struct AppState<D: Directory = StoredDirectory> {
     /// and receipts take only their space's lock; a new item's first catalog route
     /// takes the one catalog writer (see [`Store`]).
     pub store: Store,
-    /// Identity and membership directory; read for every authorization. The stored
-    /// directory runs every read and write on one bounded auth worker (one
-    /// connection), so authorization queues behind other auth work, including
-    /// recovery fsyncs: it is installation-wide, not per space.
+    /// Identity and membership directory, read for each authorization. The
+    /// stored directory has one bounded auth.db worker for ordered authority
+    /// reads, security writes and their recovery publication. Each content
+    /// space keeps its own store and journal. See the auth database worker's
+    /// documentation for the exact serialized interval.
     pub directory: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,

@@ -82,9 +82,9 @@ fn first_owner_has_capabilities_and_cannot_be_demoted_or_removed() {
     }
     assert_eq!(
         f.spaces
-            .members(o, s)
+            .members(o, s, None)
             .unwrap()
-            .0
+            .members
             .iter()
             .filter(|m| m.role == "owner")
             .count(),
@@ -185,7 +185,7 @@ fn two_concurrent_transfers_have_one_winner() {
         1
     );
     let new = if first.is_ok() { a } else { b };
-    let (members, _) = f.spaces.members(new, s).unwrap();
+    let members = f.spaces.members(new, s, None).unwrap().members;
     assert_eq!(members.iter().filter(|m| m.role == "owner").count(), 1);
     assert_eq!(
         members.iter().find(|m| m.account_id == o).unwrap().role,
@@ -213,9 +213,9 @@ fn transfer_racing_target_removal_preserves_owner_membership() {
         let owner = if transferred.is_ok() { a } else { o };
         assert_eq!(
             f.spaces
-                .members(owner, s)
+                .members(owner, s, None)
                 .unwrap()
-                .0
+                .members
                 .iter()
                 .filter(|m| m.role == "owner")
                 .count(),
@@ -293,9 +293,9 @@ fn managers_manage_only_readers_and_editors() {
     .unwrap(); // last Manager may be demoted
     assert_eq!(
         f.spaces
-            .members(o, s)
+            .members(o, s, None)
             .unwrap()
-            .0
+            .members
             .iter()
             .filter(|m| m.role == "manager")
             .count(),
@@ -342,7 +342,7 @@ fn owner_role_requires_explicit_transfer() {
     ));
     f.change(f.ids.owner, f.ids.shared, SpaceChange::Leave)
         .unwrap();
-    forbidden(f.spaces.members(f.ids.owner, f.ids.shared));
+    forbidden(f.spaces.members(f.ids.owner, f.ids.shared, None));
 }
 #[test]
 fn database_requires_owner_membership_and_existing_accounts() {
@@ -377,7 +377,11 @@ fn database_requires_owner_membership_and_existing_accounts() {
         }
     }
     assert_eq!(
-        f.spaces.members(f.ids.owner, f.ids.shared).unwrap().0.len(),
+        f.spaces
+            .members(f.ids.owner, f.ids.shared, None)
+            .unwrap()
+            .members
+            .len(),
         2
     );
 }
@@ -425,8 +429,8 @@ fn identifiers_are_fresh_v7_and_memberships_are_space_scoped() {
             .contains(calternal_types::Capability::from_name("space.delete").unwrap())
     );
     forbidden(f.change(f.ids.guest, f.ids.shared, SpaceChange::Delete));
-    forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
-    forbidden(f.spaces.members(f.ids.guest, SpaceId::new()));
+    forbidden(f.spaces.members(f.ids.guest, f.ids.personal, None));
+    forbidden(f.spaces.members(f.ids.guest, SpaceId::new(), None));
 }
 #[test]
 fn server_admin_gains_no_content_or_membership_access() {
@@ -443,7 +447,7 @@ fn server_admin_gains_no_content_or_membership_access() {
             .unwrap()
             .is_none()
     );
-    forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
+    forbidden(f.spaces.members(f.ids.guest, f.ids.personal, None));
     assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 2);
 }
 #[test]
@@ -496,7 +500,11 @@ fn revocations_and_transfer_survive_restart() {
             .is_none()
     );
     assert_eq!(
-        reopened.members(f.ids.guest, f.ids.shared).unwrap().0[0].role,
+        reopened
+            .members(f.ids.guest, f.ids.shared, None)
+            .unwrap()
+            .members[0]
+            .role,
         "owner"
     );
 }
@@ -614,7 +622,7 @@ fn directory_group_management_cannot_expose_another_spaces_members() {
         [f.ids.owner.to_string()],
     )
     .unwrap();
-    forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
+    forbidden(f.spaces.members(f.ids.guest, f.ids.personal, None));
     assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 2);
     assert!(
         f.spaces

@@ -57,8 +57,14 @@ redemption error. An exact retry of an authenticated redemption can replay its
 private receipt while the account retains space access. Invite secrets are keyed for lookup and encrypted at rest
 using the installation's private `system/invite.key`. Back up that key with the
 installation state. Receipts and recovery records never carry plaintext links.
-Expired invitation records disappear from the list and are pruned on the next
-creation in the same space.
+A space can have at most **100 live invitations**. A space at the limit can
+issue another after a live invitation expires, is redeemed, or is revoked.
+The server keeps terminal rows for **seven days** from the first of expiry,
+redemption, and revocation. Set `CALTERNAL_INVITE_RETENTION_DAYS` or pass
+`calternal serve --invite-retention-days DAYS` to change that period. The server
+purges a batch at startup and checks for more every minute, including for idle
+spaces. Each protected purge commits at most 256 rows. Expired rows are hidden
+as soon as they expire.
 
 ## Account and server directory
 
@@ -76,5 +82,15 @@ Server group administrators use `groups.list`, `groups.create`,
 `groups.remove_member`. These actions edit local groups. Deleting a group
 removes its memberships and grants without deleting accounts or content.
 Membership and role changes take effect on the next authorization check.
+
+## Directory pages
+
+`spaces.members`, `people.list`, `groups.list`, and `invites.list` return
+at most 50 entries per page. Continue by passing the response's `next_cursor`
+as `cursor` with the same operation and scope. Space grants share one bound
+across people and groups. Account grants come first, then group grants, in UUID
+order within each kind. A group's member list is independently bounded to 50.
+Continue it through `groups.list` with that `group_id` and its
+`members_next_cursor`. The server checks current authority for every page.
 
 See the [CLI reference](/docs/admin/cli/) for commands and credential options.

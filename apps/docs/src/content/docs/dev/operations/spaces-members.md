@@ -29,17 +29,24 @@ Capability: space.read.
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Input for members, leave and directory-record deletion.",
+  "description": "A continuation scoped to one space.",
   "properties": {
+    "cursor": {
+      "description": "The previous page's cursor for this space and operation.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "space_id": {
-      "description": "Space UUID; names are never accepted in its place.",
+      "description": "Space UUID.",
       "type": "string"
     }
   },
   "required": [
     "space_id"
   ],
-  "title": "SpaceInput",
+  "title": "SpaceDirectoryPageInput",
   "type": "object"
 }
 ```
@@ -157,11 +164,18 @@ Capability: space.read.
       "type": "array"
     },
     "members": {
-      "description": "Current account memberships, including exactly one Owner.",
+      "description": "Direct account grants on this page. Exactly one Owner has a direct grant.",
       "items": {
         "$ref": "#/definitions/SpaceMember"
       },
       "type": "array"
+    },
+    "next_cursor": {
+      "description": "Continue after the last grant, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

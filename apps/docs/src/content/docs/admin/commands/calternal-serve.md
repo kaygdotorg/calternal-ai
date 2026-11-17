@@ -8,7 +8,7 @@ title: "calternal serve"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `serve --data-dir DIR [--port N] [--web-dir DIR] [--development] [--origin URL] [--trusted-proxies CIDRS] [--plugin-root DIR] [--node PATH] [--machine-lease-ttl-ms N] [--machine-poll-hold-ms N]` | Run the server on 127.0.0.1 until stopped. Prints one startup block, then logs to stderr. | Title line, then `url`, one `<name> token file` per development token (paths only, never tokens), `startup info`. | `profile`, `url`, `token_files` (name → path), `startup_file` |
+| `serve --appdata DIR --userdata-ssd DIR --userdata-hdd DIR --installation-id UUID [--create] [--receipt-retention-days N] [--invite-retention-days DAYS] [--port N] [--web-dir DIR] [--development] [--origin URL] [--trusted-proxies CIDRS] [--plugin-root DIR] [--node PATH] [--machine-lease-ttl-ms N] [--machine-poll-hold-ms N]` | Run the server on 127.0.0.1 until stopped. The installation ID (`--installation-id`, or `CALTERNAL_INSTALLATION_ID` in the server's configuration) is required; the roots are validated and locked against it first: `--create` pairs empty or missing roots on first setup; missing, swapped or foreign roots are refused (exit 1) before anything is created. Prints one startup block, then logs to stderr. | Title line, then `url`, one `<name> token file` per development token (paths only, never tokens), `startup info`. | `profile`, `url`, `token_files` (name → path), `startup_file` |
 
 ## JSON data shape
 

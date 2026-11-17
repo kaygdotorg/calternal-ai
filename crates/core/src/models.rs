@@ -288,6 +288,12 @@ pub struct Contract {
     pub space_group_member: crate::SpaceGroupMember,
     /// Schema representative for DirectoryInput in the people contract.
     pub directory_input: crate::DirectoryInput,
+    /// Server directory pagination.
+    pub directory_page_input: crate::DirectoryPageInput,
+    /// Scoped directory pagination.
+    pub space_directory_page_input: crate::SpaceDirectoryPageInput,
+    /// Group and group member pagination.
+    pub group_directory_page_input: crate::GroupDirectoryPageInput,
     /// Schema representative for RoleDefinition in the people contract.
     pub role_definition: crate::RoleDefinition,
     /// Schema representative for RolesResult in the people contract.

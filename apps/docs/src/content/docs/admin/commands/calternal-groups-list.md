@@ -8,7 +8,7 @@ title: "calternal groups list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `groups list` | List server groups and current member IDs. | Group and member tables. | `groups` |
+| `groups list [--group GROUP] [--cursor CURSOR]` | List server groups and current member IDs. | Group and member tables. | `groups` |
 
 ## JSON data shape
 
@@ -21,9 +21,11 @@ title: "calternal groups list"
       "source": "string",
       "members": [
         "string"
-      ]
+      ],
+      "members_next_cursor?": "string"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 

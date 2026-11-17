@@ -8,7 +8,7 @@ title: "calternal invites list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `invites list --space SPACE` | List invitations and copy usable links. | Invite state and complete usable links. | `invites` |
+| `invites list --space SPACE [--cursor CURSOR]` | List invitations and copy usable links. | Invite state and complete usable links. | `invites` |
 
 ## JSON data shape
 
@@ -24,7 +24,8 @@ title: "calternal invites list"
       "revoked_at": "any",
       "link": "string?"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 

@@ -41,6 +41,9 @@ pub enum People {
         /// Space UUID.
         #[arg(long)]
         space: String,
+        /// Continue from the previous members page.
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Add a person or group to a space.
     Add {
@@ -91,7 +94,11 @@ pub enum People {
         name: String,
     },
     /// List server accounts. Requires server people administration.
-    List,
+    List {
+        /// Continue from the previous people page.
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Disable a server account and sign it out.
     Disable {
         /// Account UUID.
@@ -103,7 +110,14 @@ pub enum People {
 #[derive(Debug, Subcommand)]
 pub enum Groups {
     /// List groups and their active member IDs.
-    List,
+    List {
+        /// Continue the members of this group, instead of listing groups.
+        #[arg(long)]
+        group: Option<String>,
+        /// Continue from the last group page or the selected group's member page.
+        #[arg(long)]
+        cursor: Option<String>,
+    },
     /// Create a local group.
     Create {
         /// Display name.
@@ -157,6 +171,9 @@ pub enum Invites {
         /// Space UUID.
         #[arg(long)]
         space: String,
+        /// Continue from the previous invitation page.
+        #[arg(long)]
+        cursor: Option<String>,
     },
     /// Revoke an unused invitation.
     Revoke {
@@ -178,7 +195,10 @@ impl People {
     /// Convert to the shared operation and input without I/O.
     pub fn operation(self) -> (&'static str, Value) {
         match self {
-            Self::Members { space } => (Op::ListSpaceMembers.id(), json!({"space_id":space})),
+            Self::Members { space, cursor } => (
+                Op::ListSpaceMembers.id(),
+                json!({"space_id":space,"cursor":cursor}),
+            ),
             Self::Add {
                 space,
                 recipient,
@@ -198,7 +218,7 @@ impl People {
             ),
             Self::Roles => (Op::ListRoles.id(), json!({})),
             Self::SetProfile { name } => (Op::SetProfile.id(), json!({"name":name})),
-            Self::List => (Op::ListPeople.id(), json!({})),
+            Self::List { cursor } => (Op::ListPeople.id(), json!({"cursor":cursor})),
             Self::Disable { account } => (Op::DisablePerson.id(), json!({"account_id":account})),
         }
     }
@@ -208,7 +228,9 @@ impl Groups {
     /// Convert to the shared operation and input without I/O.
     pub fn operation(self) -> (&'static str, Value) {
         let (op, input) = match self {
-            Self::List => (Op::ListGroups, json!({})),
+            Self::List { group, cursor } => {
+                (Op::ListGroups, json!({"group_id":group,"cursor":cursor}))
+            }
             Self::Create { name } => (Op::CreateGroup, json!({"name":name})),
             Self::Rename { group, name } => {
                 (Op::RenameGroup, json!({"group_id":group,"name":name}))
@@ -240,7 +262,9 @@ impl Invites {
                 Op::CreateInvite,
                 json!({"space_id":space,"role":role,"expires_at":expires_at}),
             ),
-            Self::List { space } => (Op::ListInvites, json!({"space_id":space})),
+            Self::List { space, cursor } => {
+                (Op::ListInvites, json!({"space_id":space,"cursor":cursor}))
+            }
             Self::Revoke { space, invite } => (
                 Op::RevokeInvite,
                 json!({"space_id":space,"invite_id":invite}),
@@ -366,6 +390,16 @@ pub fn render(out: &Output, operation: &str, id: &str, data: &Value) -> Option<R
                             "No active members.",
                         );
                 }
+                for group in values("groups") {
+                    if let Some(cursor) = group["members_next_cursor"].as_str() {
+                        reply = reply
+                            .fields([
+                                ("group", text(group, "group_id")),
+                                ("member cursor", cursor.to_owned()),
+                            ])
+                            .hint("Next: use groups list --group GROUP --cursor CURSOR.");
+                    }
+                }
                 if data["groups"].as_array().is_some_and(Vec::is_empty) {
                     reply.line("No server groups.")
                 } else {
@@ -440,6 +474,14 @@ pub fn render(out: &Output, operation: &str, id: &str, data: &Value) -> Option<R
                 .hint("Next: calternal groups list"),
         }
     };
+    if let Some(cursor) = data["next_cursor"].as_str() {
+        return Some(
+            reply
+                .blank()
+                .fields([("next cursor", cursor)])
+                .hint("Next: repeat with --cursor."),
+        );
+    }
     Some(reply)
 }
 

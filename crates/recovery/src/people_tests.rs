@@ -136,7 +136,7 @@ async fn every_people_write_publishes_current_authority_before_acknowledgement()
             .unwrap();
         let id = InviteId::parse(invite["invite_id"].as_str().unwrap()).unwrap();
         let image = witnessed();
-        let invites = auth.list_invites(operator, space).unwrap();
+        let invites = auth.list_invites(operator, space, None).unwrap();
         let token = invites["invites"][0]["link"]
             .as_str()
             .unwrap()
@@ -166,7 +166,7 @@ async fn every_people_write_publishes_current_authority_before_acknowledgement()
         )
         .unwrap();
         witnessed();
-        let invites = auth.list_invites(operator, space).unwrap();
+        let invites = auth.list_invites(operator, space, None).unwrap();
         let token = invites["invites"]
             .as_array()
             .unwrap()

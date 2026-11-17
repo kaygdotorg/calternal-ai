@@ -29,8 +29,24 @@ Capability: groups.manage.
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "An operation scoped to the authenticated account or server with no input fields.",
-  "title": "DirectoryInput",
+  "description": "List groups or continue an individual group's member page.",
+  "properties": {
+    "cursor": {
+      "description": "Use the group list cursor or, with `group_id`, its member cursor.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "group_id": {
+      "description": "Group UUID when reading one group's members.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "GroupDirectoryPageInput",
   "type": "object"
 }
 ```
@@ -55,6 +71,13 @@ Capability: groups.manage.
           },
           "type": "array"
         },
+        "members_next_cursor": {
+          "description": "Continue these members with this group's UUID, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "description": "Current display name.",
           "type": "string"
@@ -76,11 +99,18 @@ Capability: groups.manage.
   "description": "Server group directory result.",
   "properties": {
     "groups": {
-      "description": "Groups ordered by display name and UUID.",
+      "description": "Groups ordered by UUID.",
       "items": {
         "$ref": "#/definitions/DirectoryGroup"
       },
       "type": "array"
+    },
+    "next_cursor": {
+      "description": "Continuation after the last row, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [

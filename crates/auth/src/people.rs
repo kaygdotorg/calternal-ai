@@ -4,7 +4,7 @@ use crate::spaces::Spaces;
 use crate::{AccountId, Auth, Error, ErrorCode, InstallationId, Result};
 use calternal_core::PeopleOperation;
 use calternal_types::{Capability, GroupId};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
 fn missing() -> Error {
@@ -148,46 +148,72 @@ impl Spaces {
         })
     }
 
-    /// List server accounts for a current people manager. No credentials, space
-    /// grants or private quota data are returned. Cost: one check and one scan.
-    pub fn people_list(&self, actor: AccountId) -> Result<Value> {
+    /// List at most 50 accounts in UUID order after checking people authority.
+    /// Cost: one authorization check and one bounded indexed seek.
+    pub fn people_list(&self, actor: AccountId, after: Option<AccountId>) -> Result<Value> {
         self.run(move |c| {
             require(c, actor, PeopleOperation::ListPeople.capability())?;
             let mut stmt = c.prepare_cached(
-                "SELECT id,name,role,disabled_at IS NOT NULL FROM users ORDER BY name,id",
+                "SELECT id,name,role,disabled_at IS NOT NULL FROM users
+                 WHERE id>?1 ORDER BY id LIMIT ?2",
             ).map_err(sql)?;
-            let people = stmt.query_map([], |r| Ok(json!({"account_id":r.get::<_,String>(0)?,
+            let after = after.map_or_else(String::new, |id| id.to_string());
+            let people = stmt.query_map(params![after, take_one_more() as i64], |r| Ok(json!({"account_id":r.get::<_,String>(0)?,
                 "name":r.get::<_,String>(1)?,"role":r.get::<_,String>(2)?,"disabled":r.get::<_,bool>(3)?})))
                 .map_err(sql)?.collect::<rusqlite::Result<Vec<_>>>().map_err(sql)?;
-            Ok(json!({"people":people}))
+            Ok(page_value("people", people, "account_id"))
         })
     }
 
-    /// List group metadata and current active member IDs for a group manager.
-    /// Cost: one authority check and one ordered group/member scan.
-    pub fn groups_list(&self, actor: AccountId) -> Result<Value> {
+    /// List one UUID-ordered page of groups and the first page of each group's
+    /// active members. Cost: one authority check, one group seek and at most 50
+    /// bounded group member seeks, in one SQLite snapshot.
+    pub fn groups_list(&self, actor: AccountId, after: Option<GroupId>) -> Result<Value> {
         self.run(move |c| {
-            require(c, actor, PeopleOperation::ListGroups.capability())?;
-            let mut stmt = c.prepare_cached(
-                "SELECT g.id,g.name,g.source,u.id FROM groups g
-                 LEFT JOIN (group_members m JOIN users u ON u.id=m.user_id AND u.disabled_at IS NULL)
-                 ON m.group_id=g.id ORDER BY g.name,g.id,u.id",
-            ).map_err(sql)?;
-            let mut rows = stmt.query([]).map_err(sql)?;
-            let mut groups = Vec::new();
-            let mut previous = String::new();
-            while let Some(r) = rows.next().map_err(sql)? {
-                let id: String = r.get(0).map_err(sql)?;
-                if id != previous {
-                    groups.push(json!({"group_id": id, "name": r.get::<_,String>(1).map_err(sql)?,
-                        "source": r.get::<_,String>(2).map_err(sql)?, "members": []}));
-                    previous = id;
-                }
-                if let Some(member) = r.get::<_,Option<String>>(3).map_err(sql)? {
-                    groups.last_mut().unwrap()["members"].as_array_mut().unwrap().push(json!(member));
-                }
+            let tx = c.transaction().map_err(sql)?;
+            require(&tx, actor, PeopleOperation::ListGroups.capability())?;
+            let groups = {
+                let mut stmt = tx
+                    .prepare_cached(
+                        "SELECT id,name,source FROM groups WHERE id>?1 ORDER BY id LIMIT ?2",
+                    )
+                    .map_err(sql)?;
+                let after = after.map_or_else(String::new, |id| id.to_string());
+                stmt.query_map(params![after, take_one_more() as i64], group_row)
+                    .map_err(sql)?
+                    .collect::<rusqlite::Result<Vec<_>>>()
+                    .map_err(sql)?
+            };
+            let mut page = page_value("groups", groups, "group_id");
+            for group in page["groups"].as_array_mut().expect("group array") {
+                fill_members(&tx, group, None)?;
             }
-            Ok(json!({"groups":groups}))
+            Ok(page)
+        })
+    }
+
+    /// Continue a group's active members by UUID under current server group
+    /// authority. Cost: one authority check, one group lookup and one bounded seek.
+    pub fn group_members_page(
+        &self,
+        actor: AccountId,
+        group: GroupId,
+        after: Option<AccountId>,
+    ) -> Result<Value> {
+        self.run(move |c| {
+            let tx = c.transaction().map_err(sql)?;
+            require(&tx, actor, PeopleOperation::ListGroups.capability())?;
+            let mut group = tx
+                .query_row(
+                    "SELECT id,name,source FROM groups WHERE id=?1",
+                    [group.to_string()],
+                    group_row,
+                )
+                .optional()
+                .map_err(sql)?
+                .ok_or_else(missing)?;
+            fill_members(&tx, &mut group, after)?;
+            Ok(json!({"groups":[group]}))
         })
     }
 
@@ -238,6 +264,52 @@ impl Spaces {
             })
         })
     }
+}
+
+pub(crate) fn take_one_more() -> usize {
+    calternal_core::DIRECTORY_PAGE_SIZE + 1
+}
+
+pub(crate) fn page_value(key: &str, mut rows: Vec<Value>, id: &str) -> Value {
+    let next = if rows.len() == take_one_more() {
+        rows.pop();
+        rows.last().map(|row| row[id].clone())
+    } else {
+        None
+    };
+    let mut result = json!({key: rows});
+    if let Some(next) = next {
+        result["next_cursor"] = next;
+    }
+    result
+}
+
+fn group_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    Ok(
+        json!({"group_id":row.get::<_, String>(0)?,"name":row.get::<_, String>(1)?,"source":row.get::<_, String>(2)?}),
+    )
+}
+
+fn fill_members(c: &Connection, group: &mut Value, after: Option<AccountId>) -> Result<()> {
+    let after = after.map_or_else(String::new, |id| id.to_string());
+    let mut stmt = c.prepare_cached(
+        "SELECT m.user_id FROM group_members m JOIN users u ON u.id=m.user_id
+         WHERE m.group_id=?1 AND m.user_id>?2 AND u.disabled_at IS NULL ORDER BY m.user_id LIMIT ?3",
+    ).map_err(sql)?;
+    let mut members = stmt
+        .query_map(
+            params![group["group_id"].as_str(), after, take_one_more() as i64],
+            |r| r.get::<_, String>(0),
+        )
+        .map_err(sql)?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(sql)?;
+    if members.len() == take_one_more() {
+        members.pop();
+        group["members_next_cursor"] = json!(members.last());
+    }
+    group["members"] = json!(members);
+    Ok(())
 }
 
 fn apply_group(c: &Connection, actor: AccountId, change: GroupChange) -> Result<Value> {

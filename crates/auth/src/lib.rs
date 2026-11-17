@@ -61,6 +61,8 @@ pub enum ErrorCode {
     PasskeyFailed,
     /// Admission/back-off limit exceeded.
     TooManyRequests,
+    /// The space already holds the maximum number of live invitations.
+    InviteLimit,
     /// Setup token is unknown, used or expired.
     SetupTokenInvalid,
     /// Removing this key would leave the account without a passkey.

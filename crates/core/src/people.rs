@@ -56,6 +56,41 @@ pub struct SpaceGroupMember {
 #[serde(deny_unknown_fields)]
 pub struct DirectoryInput {}
 
+/// Maximum rows in a directory page, including an individual group's members.
+pub const DIRECTORY_PAGE_SIZE: usize = 50;
+
+/// A continuation for a server directory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct DirectoryPageInput {
+    /// The previous page's cursor. Omit it to start at the first row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// A continuation scoped to one space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct SpaceDirectoryPageInput {
+    /// Space UUID.
+    pub space_id: String,
+    /// The previous page's cursor for this space and operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// List groups or continue an individual group's member page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct GroupDirectoryPageInput {
+    /// Group UUID when reading one group's members.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+    /// Use the group list cursor or, with `group_id`, its member cursor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
 /// A space role and its currently declared capabilities.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct RoleDefinition {
@@ -115,6 +150,9 @@ pub struct DirectoryPerson {
 pub struct PeopleResult {
     /// Current accounts, including disabled records.
     pub people: Vec<DirectoryPerson>,
+    /// Continuation after the last row, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// A completed account disable.
@@ -173,13 +211,19 @@ pub struct DirectoryGroup {
     pub source: String,
     /// Account UUIDs for each active member.
     pub members: Vec<String>,
+    /// Continue these members with this group's UUID, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub members_next_cursor: Option<String>,
 }
 
 /// Server group directory result.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 pub struct GroupsResult {
-    /// Groups ordered by display name and UUID.
+    /// Groups ordered by UUID.
     pub groups: Vec<DirectoryGroup>,
+    /// Continuation after the last row, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// Create a single-use invitation to a space.
@@ -244,6 +288,9 @@ pub struct DirectoryInvite {
 pub struct InvitesResult {
     /// Authorized invitation records.
     pub invites: Vec<DirectoryInvite>,
+    /// Continuation after the last row, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// A revoked invitation's public identity.
@@ -333,23 +380,23 @@ pub enum PeopleTarget {
 }
 
 operations! {
-    ListSpaceMembers: "spaces.members", "List direct account and group grants.", SpaceRead, Read, Space, SpaceInput => crate::SpaceMembersResult;
+    ListSpaceMembers: "spaces.members", "List direct account and group grants.", SpaceRead, Read, Space, SpaceDirectoryPageInput => crate::SpaceMembersResult;
     TransferOwnership: "spaces.transfer", "Transfer ownership to a current account in the space.", SpaceTransfer, WidensAccess, Space, crate::SpaceMemberInput => SpaceChangedResult;
     AddSpaceMember: "spaces.add_member", "Grant a person or group access to a space.", MembersInvite, WidensAccess, Space, SpaceGrantRoleInput => SpaceChangedResult;
     SetSpaceRole: "spaces.set_role", "Change a direct account or group grant.", MembersManage, WidensAccess, Space, SpaceGrantRoleInput => SpaceChangedResult;
     RemoveSpaceMember: "spaces.remove_member", "Remove a direct account or group grant.", MembersManage, Irreversible, Space, SpaceGrantInput => SpaceChangedResult;
     ListRoles: "roles.list", "List the space roles and their capabilities.", RolesList, Read, Account, DirectoryInput => RolesResult;
     SetProfile: "account.set_profile", "Change your own display name.", AccountProfile, Reversible, Account, ProfileInput => ProfileResult;
-    ListPeople: "people.list", "List server accounts.", PeopleManage, Read, Server, DirectoryInput => PeopleResult;
+    ListPeople: "people.list", "List server accounts.", PeopleManage, Read, Server, DirectoryPageInput => PeopleResult;
     DisablePerson: "people.disable", "Disable an account and revoke its sessions.", PeopleManage, Irreversible, Server, PersonInput => DisabledPerson;
-    ListGroups: "groups.list", "List server groups.", GroupsManage, Read, Server, DirectoryInput => GroupsResult;
+    ListGroups: "groups.list", "List server groups.", GroupsManage, Read, Server, GroupDirectoryPageInput => GroupsResult;
     CreateGroup: "groups.create", "Create a local group.", GroupsManage, WidensAccess, Server, GroupCreateInput => GroupInput;
     RenameGroup: "groups.rename", "Rename a local group.", GroupsManage, Reversible, Server, GroupRenameInput => GroupInput;
     DeleteGroup: "groups.delete", "Delete a local group and remove its grants.", GroupsManage, Irreversible, Server, GroupInput => GroupInput;
     AddGroupMember: "groups.add_member", "Add a person to a local group.", GroupsManage, WidensAccess, Server, GroupPersonInput => GroupInput;
     RemoveGroupMember: "groups.remove_member", "Remove a person from a local group.", GroupsManage, Irreversible, Server, GroupPersonInput => GroupInput;
     CreateInvite: "invites.create", "Create a single-use space invitation.", MembersInvite, WidensAccess, Space, InviteCreateInput => InviteCreated;
-    ListInvites: "invites.list", "List and copy current space invitations.", MembersInvite, Read, Space, SpaceInput => InvitesResult;
+    ListInvites: "invites.list", "List and copy current space invitations.", MembersInvite, Read, Space, SpaceDirectoryPageInput => InvitesResult;
     RevokeInvite: "invites.revoke", "Revoke an unused space invitation.", MembersInvite, Irreversible, Space, InviteInput => InviteRevoked;
     RedeemInvite: "invites.redeem", "Redeem a space invitation as the signed-in account.", InviteRedeem, WidensAccess, Invitation, InviteRedeemInput => SpaceInput;
 }
@@ -359,6 +406,9 @@ fn validate_target(input: &JsonObject) -> Result<(), Error> {
     // presented as IDs. Leave UUID scope parsing to that boundary.
     if let Some(space) = input.get("space_id").and_then(|v| v.as_str()) {
         crate::validate_id(space)?;
+    }
+    if let Some(cursor) = input.get("cursor").and_then(|v| v.as_str()) {
+        crate::validate_id(cursor)?;
     }
     for field in ["account_id", "group_id", "invite_id"] {
         if let Some(value) = input.get(field).and_then(|v| v.as_str()) {

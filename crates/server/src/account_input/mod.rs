@@ -125,8 +125,8 @@ fn internal(_: impl std::fmt::Display) -> Error {
 }
 
 /// Determine accounts whose input must be erased by a successful membership
-/// removal. Runs on a blocking worker before the mutation; at most one members
-/// query for a whole-space deletion, otherwise no extra I/O. Does not grant access.
+/// removal. Runs on a blocking worker before the mutation; bounded member pages
+/// for a whole-space deletion, otherwise no extra I/O. Does not grant access.
 pub(crate) fn revoked_targets(
     d: &impl crate::auth::Directory,
     p: &crate::auth::Identity,
@@ -144,17 +144,31 @@ pub(crate) fn revoked_targets(
             .collect()),
         "spaces.leave" => Ok(vec![p.id]),
         "spaces.delete" => {
-            let members = d.space_operation(p, "input-cleanup-members", "spaces.members", input)?;
-            Ok(members["members"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|m| {
-                    m["account_id"]
-                        .as_str()
-                        .and_then(|a| AccountId::parse(a).ok())
-                })
-                .collect())
+            let mut input = input.clone();
+            let mut accounts = Vec::new();
+            loop {
+                let page =
+                    d.space_operation(p, "input-cleanup-members", "spaces.members", &input)?;
+                accounts.extend(
+                    page["members"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|m| {
+                            m["account_id"]
+                                .as_str()
+                                .and_then(|id| AccountId::parse(id).ok())
+                        }),
+                );
+                let Some(cursor) = page["next_cursor"]
+                    .as_str()
+                    .filter(|cursor| cursor.starts_with("account:"))
+                else {
+                    break;
+                };
+                input.insert("cursor".into(), Value::String(cursor.to_owned()));
+            }
+            Ok(accounts)
         }
         _ => Ok(Vec::new()),
     }

@@ -11,7 +11,7 @@ mod membership;
 mod recovery;
 pub use development::DevelopmentIds;
 use membership::*;
-pub use membership::{GroupMember, MemberTarget};
+pub use membership::{GroupMember, MemberPage, MemberTarget};
 pub(crate) use membership::{assignable_role, privileged};
 pub use recovery::RecoverySink;
 pub(crate) use recovery::{commit, commit_with};

@@ -230,3 +230,56 @@ async fn separate_managers_cannot_copy_or_revoke_each_others_invites() {
     .await
     .ok();
 }
+
+#[tokio::test]
+async fn invite_cap_and_startup_retention_bound_live_and_terminal_rows() {
+    let mut f = Fixture::new().await;
+    f.stop();
+    let path = f.appdata().join("system/auth.db");
+    let db = Connection::open(&path).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let day = 86_400_000;
+    let insert = |expires, used, revoked| {
+        let id = uuid::Uuid::now_v7().to_string();
+        db.execute(
+            "INSERT INTO invites (id,created_by,hash,secret,created_at,expires_at,used_at,revoked_at,space_id,space_role)
+             VALUES (?1,?2,?3,x'01',?4,?5,?6,?7,?8,'reader')",
+            params![id,f.ids[1],id.as_bytes(),now-9*day,expires,used,revoked,f.spaces[0]],
+        ).unwrap();
+        id
+    };
+    let old = [
+        insert(now - 8 * day, None, None),
+        insert(now + day, Some(now - 8 * day), None),
+        insert(now + day, None, Some(now - 8 * day)),
+    ];
+    let recent = insert(now + day, None, Some(now - day));
+    let active: Vec<_> = (0..100).map(|_| insert(now + day, None, None)).collect();
+    drop(db);
+    f.start().await;
+
+    let db = Connection::open(&path).unwrap();
+    let exists = |id: &str| {
+        db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM invites WHERE id=?1)",
+            [id],
+            |row| row.get::<_, bool>(0),
+        )
+        .unwrap()
+    };
+    assert!(old.iter().all(|id| !exists(id)));
+    assert!(exists(&recent));
+    let input = json!({"space_id":f.spaces[0],"role":"reader"});
+    assert_eq!(f.op(1, "invites.create", input.clone()).await.status, 409);
+    f.op(
+        1,
+        "invites.revoke",
+        json!({"space_id":f.spaces[0],"invite_id":active[0]}),
+    )
+    .await
+    .ok();
+    f.op(1, "invites.create", input).await.ok();
+}

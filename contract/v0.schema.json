@@ -9,9 +9,11 @@
     "directory_group",
     "directory_input",
     "directory_invite",
+    "directory_page_input",
     "directory_person",
     "disabled_person",
     "group_create_input",
+    "group_directory_page_input",
     "group_input",
     "group_person_input",
     "group_rename_input",
@@ -57,6 +59,7 @@
     "secrets_revoke_input",
     "secrets_revoke_result",
     "space_changed_result",
+    "space_directory_page_input",
     "space_grant_input",
     "space_grant_role_input",
     "space_group_member",
@@ -110,6 +113,14 @@
         }
       ]
     },
+    "directory_page_input": {
+      "description": "Server directory pagination.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DirectoryPageInput"
+        }
+      ]
+    },
     "directory_person": {
       "description": "Schema representative for DirectoryPerson in the people contract.",
       "allOf": [
@@ -131,6 +142,14 @@
       "allOf": [
         {
           "$ref": "#/definitions/GroupCreateInput"
+        }
+      ]
+    },
+    "group_directory_page_input": {
+      "description": "Group and group member pagination.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupDirectoryPageInput"
         }
       ]
     },
@@ -494,6 +513,14 @@
         }
       ]
     },
+    "space_directory_page_input": {
+      "description": "Scoped directory pagination.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceDirectoryPageInput"
+        }
+      ]
+    },
     "space_grant_input": {
       "description": "Schema representative for SpaceGrantInput in the people contract.",
       "allOf": [
@@ -739,6 +766,13 @@
             "type": "string"
           }
         },
+        "members_next_cursor": {
+          "description": "Continue these members with this group's UUID, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "description": "Current display name.",
           "type": "string"
@@ -810,6 +844,20 @@
           "format": "int64"
         }
       }
+    },
+    "DirectoryPageInput": {
+      "description": "A continuation for a server directory.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor. Omit it to start at the first row.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
     },
     "DirectoryPerson": {
       "description": "A person in the authorized server directory.",
@@ -994,6 +1042,27 @@
       },
       "additionalProperties": false
     },
+    "GroupDirectoryPageInput": {
+      "description": "List groups or continue an individual group's member page.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "description": "Use the group list cursor or, with `group_id`, its member cursor.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when reading one group's members.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
     "GroupInput": {
       "description": "Target group UUID.",
       "type": "object",
@@ -1054,11 +1123,18 @@
       ],
       "properties": {
         "groups": {
-          "description": "Groups ordered by display name and UUID.",
+          "description": "Groups ordered by UUID.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/DirectoryGroup"
           }
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -1225,6 +1301,13 @@
           "items": {
             "$ref": "#/definitions/DirectoryInvite"
           }
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -2525,6 +2608,13 @@
         "people"
       ],
       "properties": {
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "people": {
           "description": "Current accounts, including disabled records.",
           "type": "array",
@@ -3086,6 +3176,27 @@
       "type": "object",
       "additionalProperties": false
     },
+    "SpaceDirectoryPageInput": {
+      "description": "A continuation scoped to one space.",
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor for this space and operation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "SpaceGrant": {
       "description": "Space membership exposed by `GET /api/v1/describe` for the authenticated principal.",
       "type": "object",
@@ -3285,11 +3396,18 @@
           }
         },
         "members": {
-          "description": "Current account memberships, including exactly one Owner.",
+          "description": "Direct account grants on this page. Exactly one Owner has a direct grant.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/SpaceMember"
           }
+        },
+        "next_cursor": {
+          "description": "Continue after the last grant, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false

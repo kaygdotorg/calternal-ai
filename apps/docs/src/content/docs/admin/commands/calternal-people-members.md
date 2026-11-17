@@ -8,7 +8,7 @@ title: "calternal people members"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `people members --space SPACE` | List direct people and group grants in a space. | ID, name, role, recipient type, group member count. | `members`, `groups` |
+| `people members --space SPACE [--cursor CURSOR]` | List direct people and group grants in a space. | ID, name, role, recipient type, group member count. | `members`, `groups` |
 
 ## JSON data shape
 
@@ -28,7 +28,8 @@ title: "calternal people members"
       "role": "string",
       "member_count": "integer"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 

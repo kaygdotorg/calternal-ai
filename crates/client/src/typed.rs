@@ -65,7 +65,7 @@ pub mod operations {
     operation!(
         SpacesMembers,
         "spaces.members",
-        SpaceInput,
+        SpaceDirectoryPageInput,
         SpaceMembersResult
     );
     operation!(

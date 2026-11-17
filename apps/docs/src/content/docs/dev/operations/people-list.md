@@ -29,8 +29,17 @@ Capability: people.manage.
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "An operation scoped to the authenticated account or server with no input fields.",
-  "title": "DirectoryInput",
+  "description": "A continuation for a server directory.",
+  "properties": {
+    "cursor": {
+      "description": "The previous page's cursor. Omit it to start at the first row.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "DirectoryPageInput",
   "type": "object"
 }
 ```
@@ -72,6 +81,13 @@ Capability: people.manage.
   },
   "description": "Server people visible to the operator.",
   "properties": {
+    "next_cursor": {
+      "description": "Continuation after the last row, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "people": {
       "description": "Current accounts, including disabled records.",
       "items": {

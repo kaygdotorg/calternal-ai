@@ -106,6 +106,6 @@ options, implementation costs and the placement revocation problem.
   Extending expiry in place keeps the issued link alive, while revoking and
   replacing issues a new credential. Server-plan invitations carrying group and
   quota grants need an explicit server-scoped enrollment policy.
-- **Directory size.** Choose explicit group and invite ceilings or cursor pages.
-  Ceilings give bounded output and straightforward administration. Cursor pages
-  let larger installations grow and add traversal state to clients.
+- **Visible people picker.** A visibility-filtered picker can help non-admins
+  grant access to people whose accounts they can see. Inviting by link keeps
+  the directory smaller and requires no lookup by name.

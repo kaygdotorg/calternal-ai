@@ -8,7 +8,7 @@ title: "calternal people list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `people list` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |
+| `people list [--cursor CURSOR]` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |
 
 ## JSON data shape
 
@@ -21,7 +21,8 @@ title: "calternal people list"
       "role": "string",
       "disabled": "bool"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 

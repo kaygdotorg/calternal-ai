@@ -208,14 +208,18 @@ impl Directory for StoredDirectory {
             .and_then(Value::as_str)
             .and_then(|s| SpaceId::parse(s).ok());
         if op == "spaces.members" {
-            let (members, groups) = self
+            let page = self
                 .spaces
                 .members(
                     actor,
                     space.ok_or_else(|| Error::forbidden("no access to this space"))?,
+                    input
+                        .get("cursor")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
                 )
                 .map_err(auth_error)?;
-            return Ok(json!({"members":members,"groups":groups}));
+            return serde_json::to_value(page).map_err(|_| Error::internal("encode members"));
         }
         let target = || {
             input

@@ -1,4 +1,4 @@
--- auth.db, version 7: the current schema in one definition (no migration chain).
+-- auth.db, version 8: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -95,7 +95,12 @@ CREATE TABLE invites (
     space_id       TEXT REFERENCES spaces(id) ON DELETE CASCADE,
     space_role     TEXT REFERENCES space_roles(name) CHECK (space_role <> 'owner')
 );
-CREATE INDEX invites_space_expiry ON invites(space_id, expires_at);
+CREATE INDEX invites_live ON invites(space_id, expires_at)
+ WHERE used_at IS NULL AND revoked_at IS NULL;
+CREATE INDEX invites_page ON invites(space_id, id);
+CREATE INDEX invites_terminal ON invites(
+ min(expires_at, coalesce(used_at, expires_at), coalesce(revoked_at, expires_at))
+);
 CREATE TABLE invite_groups (
     invite_id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
     group_id  TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,

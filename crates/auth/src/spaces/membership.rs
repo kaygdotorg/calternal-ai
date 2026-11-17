@@ -141,47 +141,86 @@ pub(super) fn change_member(
     Ok(())
 }
 
+/// One page of direct space grants, ordered by subject kind then stable UUID.
+#[derive(Debug, Serialize)]
+pub struct MemberPage {
+    /// Direct grants to accounts.
+    pub members: Vec<Member>,
+    /// Direct grants to groups.
+    pub groups: Vec<GroupMember>,
+    /// Continuation after the last displayed grant when more grants exist.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
 impl Spaces {
-    /// Returns direct account and group grants in one read snapshot after checking
-    /// space access. Cost: one authorization query and two indexed grant scans.
+    /// Return at most 50 direct grants after checking space access in one read
+    /// snapshot. Cost: one authorization query and up to two indexed grant seeks.
     pub fn members(
         &self,
         actor: AccountId,
         space: SpaceId,
-    ) -> Result<(Vec<Member>, Vec<GroupMember>)> {
+        cursor: Option<String>,
+    ) -> Result<MemberPage> {
         self.run(move |c| {
             let tx = c.transaction().map_err(sql)?;
             require(&tx, actor, space, PeopleOperation::ListSpaceMembers.capability().name())?;
             let scope = space.to_string();
-            let members = {
+            let (after_account, after_group) = match cursor.as_deref() {
+                None => (Some(""), ""),
+                Some(value) if let Some(id) = value.strip_prefix("account:") => {
+                    AccountId::parse(id).map_err(Error::invalid)?;
+                    (Some(id), "")
+                }
+                Some(value) if let Some(id) = value.strip_prefix("group:") => {
+                    GroupId::parse(id).map_err(Error::invalid)?;
+                    (None, id)
+                }
+                Some(_) => return Err(Error::invalid("invalid member cursor")),
+            };
+            let limit = calternal_core::DIRECTORY_PAGE_SIZE;
+            let mut members = if let Some(after) = after_account {
                 let mut stmt = tx.prepare_cached(
                     "SELECT m.account_id,u.name,CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
                      FROM space_memberships m JOIN spaces s ON s.id=m.space_id JOIN users u ON u.id=m.account_id
-                     WHERE s.id=?1 ORDER BY m.account_id",
+                     WHERE s.id=?1 AND m.account_id>?2 ORDER BY m.account_id LIMIT ?3",
                 ).map_err(sql)?;
-                stmt.query_map([&scope], |r| Ok((r.get::<_,String>(0)?,r.get(1)?,r.get(2)?)))
+                stmt.query_map(params![scope, after, (limit + 1) as i64], |r| Ok((r.get::<_,String>(0)?,r.get(1)?,r.get(2)?)))
                     .map_err(sql)?.map(|row| {
                         let (id, name, role) = row.map_err(sql)?;
                         Ok(Member { account_id: account(id)?, name, role })
                     }).collect::<Result<Vec<_>>>()?
+            } else {
+                Vec::new()
             };
-            let groups = {
+            let mut groups = Vec::new();
+            let mut more = members.len() > limit;
+            members.truncate(limit);
+            if !more {
+                let slots = limit - members.len();
                 let mut stmt = tx.prepare_cached(
                     "SELECT m.group_id,g.name,m.role,
                       (SELECT count(*) FROM group_members p JOIN users u ON u.id=p.user_id
                        WHERE p.group_id=g.id AND u.disabled_at IS NULL)
                      FROM space_group_memberships m JOIN groups g ON g.id=m.group_id
-                     WHERE m.space_id=?1 ORDER BY m.group_id",
+                     WHERE m.space_id=?1 AND m.group_id>?2 ORDER BY m.group_id LIMIT ?3",
                 ).map_err(sql)?;
-                stmt.query_map([&scope], |r| Ok((r.get::<_,String>(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))
+                groups = stmt.query_map(params![scope, after_group, (slots + 1) as i64], |r| Ok((r.get::<_,String>(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))
                     .map_err(sql)?.map(|row| {
                         let (id, name, role, member_count) = row.map_err(sql)?;
                         let group_id = GroupId::parse(&id).map_err(sql)?;
                         Ok(GroupMember { group_id, name, role, member_count })
-                    }).collect::<Result<Vec<_>>>()?
+                    }).collect::<Result<Vec<_>>>()?;
+                more = groups.len() > slots;
+                groups.truncate(slots);
+            }
+            let next_cursor = if more {
+                groups.last().map(|g| format!("group:{}", g.group_id))
+                    .or_else(|| members.last().map(|m| format!("account:{}", m.account_id)))
+            } else {
+                None
             };
-            tx.commit().map_err(sql)?;
-            Ok((members, groups))
+            Ok(MemberPage { members, groups, next_cursor })
         })
     }
 }

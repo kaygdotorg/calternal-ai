@@ -4315,17 +4315,24 @@
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "Input for members, leave and directory-record deletion.",
+      "description": "A continuation scoped to one space.",
       "properties": {
+        "cursor": {
+          "description": "The previous page's cursor for this space and operation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
+          "description": "Space UUID.",
           "type": "string"
         }
       },
       "required": [
         "space_id"
       ],
-      "title": "SpaceInput",
+      "title": "SpaceDirectoryPageInput",
       "type": "object"
     },
     "output_schema": {
@@ -4438,11 +4445,18 @@
           "type": "array"
         },
         "members": {
-          "description": "Current account memberships, including exactly one Owner.",
+          "description": "Direct account grants on this page. Exactly one Owner has a direct grant.",
           "items": {
             "$ref": "#/definitions/SpaceMember"
           },
           "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continue after the last grant, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -4822,8 +4836,17 @@
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "An operation scoped to the authenticated account or server with no input fields.",
-      "title": "DirectoryInput",
+      "description": "A continuation for a server directory.",
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor. Omit it to start at the first row.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "DirectoryPageInput",
       "type": "object"
     },
     "output_schema": {
@@ -4860,6 +4883,13 @@
       },
       "description": "Server people visible to the operator.",
       "properties": {
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "people": {
           "description": "Current accounts, including disabled records.",
           "items": {
@@ -4929,8 +4959,24 @@
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "An operation scoped to the authenticated account or server with no input fields.",
-      "title": "DirectoryInput",
+      "description": "List groups or continue an individual group's member page.",
+      "properties": {
+        "cursor": {
+          "description": "Use the group list cursor or, with `group_id`, its member cursor.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when reading one group's members.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "GroupDirectoryPageInput",
       "type": "object"
     },
     "output_schema": {
@@ -4949,6 +4995,13 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "members_next_cursor": {
+              "description": "Continue these members with this group's UUID, omitted at the end.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "name": {
               "description": "Current display name.",
@@ -4971,11 +5024,18 @@
       "description": "Server group directory result.",
       "properties": {
         "groups": {
-          "description": "Groups ordered by display name and UUID.",
+          "description": "Groups ordered by UUID.",
           "items": {
             "$ref": "#/definitions/DirectoryGroup"
           },
           "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -5307,17 +5367,24 @@
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "Input for members, leave and directory-record deletion.",
+      "description": "A continuation scoped to one space.",
       "properties": {
+        "cursor": {
+          "description": "The previous page's cursor for this space and operation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
+          "description": "Space UUID.",
           "type": "string"
         }
       },
       "required": [
         "space_id"
       ],
-      "title": "SpaceInput",
+      "title": "SpaceDirectoryPageInput",
       "type": "object"
     },
     "output_schema": {
@@ -5422,6 +5489,13 @@
             "$ref": "#/definitions/DirectoryInvite"
           },
           "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

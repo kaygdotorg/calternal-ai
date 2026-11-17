@@ -458,3 +458,116 @@ async fn space_people_grants_hide_targets_and_update_effective_access_immediatel
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0]["account_id"], f.ids[2]);
 }
+
+#[tokio::test]
+async fn people_directories_bound_rows_and_continue_by_cursor() {
+    let mut f = Fixture::new().await;
+    f.stop();
+    let db = Connection::open(f.appdata().join("system/auth.db")).unwrap();
+    let large_group = uuid::Uuid::now_v7().to_string();
+    db.execute(
+        "INSERT INTO groups(id,name) VALUES (?1,'Large group')",
+        [&large_group],
+    )
+    .unwrap();
+    for n in 0..55 {
+        let account = uuid::Uuid::now_v7().to_string();
+        let group = uuid::Uuid::now_v7().to_string();
+        let name = format!("Page fixture {n}");
+        db.execute(
+            "INSERT INTO users(id,name,username,created_at) VALUES (?1,?2,?1,0)",
+            params![account, name],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO space_memberships VALUES (?1,?2,'reader')",
+            params![f.spaces[0], account],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO groups(id,name) VALUES (?1,?2)",
+            params![group, name],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO group_members(group_id,user_id) VALUES (?1,?2)",
+            params![large_group, account],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO space_group_memberships VALUES (?1,?2,'reader')",
+            params![f.spaces[0], group],
+        )
+        .unwrap();
+    }
+    drop(db);
+    f.start().await;
+    for (op, who, original, key) in [
+        ("people.list", 0, json!({}), "people"),
+        ("groups.list", 0, json!({}), "groups"),
+        (
+            "spaces.members",
+            1,
+            json!({"space_id":f.spaces[0]}),
+            "members",
+        ),
+    ] {
+        let first = f.op(who, op, original.clone()).await;
+        first.ok();
+        let records = first.body["data"][key].as_array().unwrap();
+        assert_eq!(records.len(), 50, "{op}");
+        let cursor = first.body["data"]["next_cursor"].as_str().unwrap();
+        let mut continuation = original;
+        continuation["cursor"] = json!(cursor);
+        let second = f.op(who, op, continuation).await;
+        second.ok();
+        let remainder = second.body["data"][key].as_array().unwrap();
+        assert!(!remainder.is_empty(), "{op}");
+        assert!(remainder.iter().all(|row| !records.contains(row)), "{op}");
+        if op == "spaces.members" {
+            let first_groups = second.body["data"]["groups"].as_array().unwrap();
+            let cursor = second.body["data"]["next_cursor"].as_str().unwrap();
+            assert_eq!(remainder.len() + first_groups.len(), 50);
+            let third = f
+                .op(who, op, json!({"space_id":f.spaces[0],"cursor":cursor}))
+                .await;
+            third.ok();
+            assert_eq!(third.body["data"]["members"], json!([]));
+            let groups = third.body["data"]["groups"].as_array().unwrap();
+            assert_eq!(first_groups.len() + groups.len(), 55);
+            assert!(groups.iter().all(|row| !first_groups.contains(row)));
+            assert!(third.body["data"]["next_cursor"].is_null());
+            continue;
+        }
+        assert!(second.body["data"]["next_cursor"].is_null(), "{op}");
+    }
+    let first = f
+        .op(0, "groups.list", json!({"group_id":large_group}))
+        .await;
+    first.ok();
+    let group = &first.body["data"]["groups"][0];
+    assert_eq!(group["members"].as_array().unwrap().len(), 50);
+    let second = f
+        .op(
+            0,
+            "groups.list",
+            json!({"group_id":large_group,"cursor":group["members_next_cursor"]}),
+        )
+        .await;
+    second.ok();
+    assert_eq!(
+        second.body["data"]["groups"][0]["members"]
+            .as_array()
+            .unwrap()
+            .len(),
+        5
+    );
+    let hidden = f
+        .op(2, "groups.list", json!({"group_id":large_group}))
+        .await;
+    let missing = f
+        .op(2, "groups.list", json!({"group_id":uuid::Uuid::now_v7()}))
+        .await;
+    assert_eq!(hidden.status, 404);
+    assert_eq!(hidden.signature(), missing.signature());
+}

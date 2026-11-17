@@ -1,27 +1,31 @@
 //! `auth.db`: users, passkeys, setup tokens and Installations.
 //!
 //! One global SQLite file in WAL mode with `synchronous=FULL`: a signed-in
-//! session or a used-up setup token must survive a power cut. Sign-in work
-//! is tiny and rare, so one connection is enough. Every call runs on a
-//! blocking thread, never on the async workers, so a slow disk never stalls
-//! anyone else's requests.
+//! session or a used-up setup token must survive a power cut. The auth worker
+//! owns its SQLite connection and orders authority checks and writes against
+//! acknowledged recovery publication. Queueing or disk latency can delay other
+//! auth work without blocking the async executor.
 
 use crate::{Error, Result};
 use rusqlite::Connection;
 use std::path::Path;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 /// The one schema version this build reads; [`migrate`] creates it on an empty file.
-const VERSION: i64 = 7;
+const VERSION: i64 = 8;
 
-/// A handle to `auth.db`. Cheap to clone; clones share one connection, one worker
-/// thread and one recovery sink, so the account and space services open the file
-/// once (see [`crate::Auth::spaces`]).
+/// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
+/// authority reads, authentication writes and recovery publication for this
+/// installation. A read sees the state before or after the worker's protected
+/// commit. The worker owns its connection directly. The recovery sink lock
+/// spans only the recoverable commit itself (proposal, SQLite commit, in-memory
+/// revoke fence and publication). This worker holds no mutex while waiting on
+/// its mailbox or delivering a result to another thread. Separate space stores
+/// own their own content and journal connections.
 #[derive(Clone)]
 pub struct Db {
-    conn: Arc<Mutex<Connection>>,
-    worker: Arc<OnceLock<tokio::sync::mpsc::Sender<Job>>>,
+    worker: tokio::sync::mpsc::Sender<Job>,
     sink: Arc<OnceLock<Sink>>,
     changes: Arc<tokio::sync::watch::Sender<u64>>,
 }
@@ -53,19 +57,29 @@ impl Db {
     /// Does not validate root pairing or recover lost installation state;
     /// callers must apply those guards before allowing database creation.
     pub fn open(path: &Path) -> Result<Self> {
-        if let Some(dir) = path.parent() {
-            create_parent(dir)?;
-        }
-        calternal_fsio::private::file(path).map_err(Error::internal)?;
-        let conn = Connection::open(path).map_err(Error::internal)?;
-        configure(&conn).map_err(Error::internal)?;
-        migrate(&conn).map_err(Error::internal)?;
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-            worker: Arc::new(OnceLock::new()),
+        let mut connection = open_conn(path)?;
+        let (worker, mut inbox) = tokio::sync::mpsc::channel::<Job>(64);
+        let db = Self {
+            worker,
             sink: Arc::new(OnceLock::new()),
             changes: Arc::new(tokio::sync::watch::channel(0).0),
-        })
+        };
+        let sink = db.sink.clone();
+        let changes = db.changes.clone();
+        std::thread::Builder::new()
+            .name("auth-db".into())
+            .spawn(move || {
+                while let Some(job) = inbox.blocking_recv() {
+                    ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
+                    let before = connection.total_changes();
+                    job(&mut connection);
+                    if connection.total_changes() != before {
+                        changes.send_modify(|n| *n = n.wrapping_add(1));
+                    }
+                }
+            })
+            .map_err(Error::internal)?;
+        Ok(db)
     }
 
     /// The job that attaches `sink`: reconcile pending proposals on this database's
@@ -104,21 +118,20 @@ impl Db {
     /// One call allocates a boxed closure and a oneshot result channel, sends
     /// once through a bounded MPSC queue, and receives once through the oneshot.
     /// Admission is O(1); latency includes waiting for capacity, earlier jobs,
-    /// connection locking and `f` itself (including SQLite's 5 s busy timeout).
-    /// The first call also starts one OS thread shared by all handle clones.
+    /// and `f` itself (including SQLite's 5 s busy timeout).
+    /// The already-open worker is shared by all handle clones.
     /// At most 64 jobs are queued, plus one executing; waiting caller futures
     /// retain their own closures outside the queue. No general Tokio blocking
     /// pool slot is used. Use [`Self::try_run`] for immediate overload refusal.
     /// Dropping the future after admission does not cancel `f`.
     ///
     /// Returns an internal error if the worker or result channel stops.
-    /// Like the source, panics if the first worker thread cannot be started.
     pub async fn run<T, F>(&self, f: F) -> Result<T>
     where
         T: Send + 'static,
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
-        let worker = self.worker();
+        let worker = &self.worker;
         let (tx, rx) = tokio::sync::oneshot::channel();
         worker
             .send(Box::new(move |c| {
@@ -141,7 +154,7 @@ impl Db {
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.worker()
+        self.worker
             .try_send(Box::new(move |c| {
                 let _ = tx.send(f(c));
             }))
@@ -165,7 +178,7 @@ impl Db {
         F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.worker()
+        self.worker
             .blocking_send(Box::new(move |c| {
                 let _ = tx.send(f(c));
             }))
@@ -180,32 +193,6 @@ impl Db {
     pub fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
         self.changes.subscribe()
     }
-
-    fn worker(&self) -> &tokio::sync::mpsc::Sender<Job> {
-        // One dedicated worker owns the serialized database workload. Its bounded
-        // queue never occupies Tokio's general blocking pool while waiting.
-        self.worker.get_or_init(|| {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<Job>(64);
-            let conn = self.conn.clone();
-            let sink = self.sink.clone();
-            let changes = self.changes.clone();
-            std::thread::Builder::new()
-                .name("auth-db".into())
-                .spawn(move || {
-                    while let Some(job) = rx.blocking_recv() {
-                        ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
-                        let mut conn = conn.lock().unwrap_or_else(|p| p.into_inner());
-                        let before = conn.total_changes();
-                        job(&mut conn);
-                        if conn.total_changes() != before {
-                            changes.send_modify(|n| *n = n.wrapping_add(1));
-                        }
-                    }
-                })
-                .expect("could not start auth database worker");
-            tx
-        })
-    }
 }
 
 /// Opens a configured, migrated connection for synchronous host/CLI work.
@@ -215,11 +202,13 @@ impl Db {
 /// SQLite work off async request workers. Root validation remains the caller's
 /// responsibility, including refusal to recreate unexpectedly missing auth state.
 pub fn open_conn(path: &Path) -> Result<Connection> {
-    let db = Db::open(path)?;
-    let conn = Arc::try_unwrap(db.conn)
-        .map_err(|_| Error::internal("auth.db still shared"))?
-        .into_inner()
-        .unwrap_or_else(|p| p.into_inner());
+    if let Some(dir) = path.parent() {
+        create_parent(dir)?;
+    }
+    calternal_fsio::private::file(path).map_err(Error::internal)?;
+    let conn = Connection::open(path).map_err(Error::internal)?;
+    configure(&conn).map_err(Error::internal)?;
+    migrate(&conn).map_err(Error::internal)?;
     Ok(conn)
 }
 
@@ -332,7 +321,7 @@ mod port_tests {
             assert!(future.as_mut().poll(&mut cx).is_pending());
             admitted.push(future);
         }
-        assert_eq!(db.worker().capacity(), 0);
+        assert_eq!(db.worker.capacity(), 0);
         let mut refused =
             Box::pin(db.try_run(|_| -> Result<()> { panic!("refused job executed") }));
         assert!(matches!(
@@ -342,14 +331,14 @@ mod port_tests {
         // Source run waits without growing the queue, while try_run refuses.
         let mut waiting = Box::pin(db.run(|_| Ok(65)));
         assert!(waiting.as_mut().poll(&mut cx).is_pending());
-        assert_eq!(db.worker().capacity(), 0);
+        assert_eq!(db.worker.capacity(), 0);
         release.send(()).unwrap();
         first.await.unwrap().unwrap();
         for (n, future) in admitted.into_iter().enumerate() {
             assert_eq!(future.await.unwrap(), n);
         }
         assert_eq!(waiting.await.unwrap(), 65);
-        assert_eq!(db.worker().capacity(), 64);
+        assert_eq!(db.worker.capacity(), 64);
     }
 
     // Ported from reliability_review.rs:805–846; probe the database directly
