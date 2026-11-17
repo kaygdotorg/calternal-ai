@@ -22,6 +22,7 @@ move to the decision record they belong to and leave this list. Terms: see
 | 16 | The composer asks for a wider permission mode than the thread's saved one: apply it, or require the separate mode change with a fresh passkey check (today it is ignored) | Require the mode change | Agents |
 | 17 | Grant lifetimes "once", "this thread" and "always in this space" are not built; every grant lasts the current turn | Build "once" and "this thread" with thread storage; "always" later | Requests UI |
 | 18 | Saved thread modes are capped at 1024 per account and nothing deletes them yet, so thread 1025 would fail | Delete with the thread once thread storage exists; raise no cap | Orchestrator step 2 |
+| 19 | Nothing yet limits who may write a space's `AI/Instructions.md`, which every agent in the space reads (it is context, never authority) | Managers and the Owner only | Agents |
 
 ## Design rounds
 
