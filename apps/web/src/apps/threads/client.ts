@@ -21,10 +21,40 @@ export interface ThreadEvents {
   onStreamEnd?(): void;
 }
 
-/** The Threads app's whole data surface. */
-export interface ThreadsClient {
+/** The composer's choices: which provider and model, how much the agent may do, where it runs. They apply to the next message (on the server they travel with `send`). */
+export interface ChoicesClient {
   /** The providers and models offered. */
   providers(): Promise<ProviderOption[]>;
+  /** Changes the provider and model for the next message. Nothing visible happens in the thread. */
+  setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void>;
+  /** How much the agent may do without asking, for the next message. */
+  setPermission(threadId: string, permission: Permission): Promise<void>;
+  /** The machines this person can run a thread on (their own, and the pool if their group allows it). */
+  machines(): Promise<string[]>;
+  /** Where the thread runs next: a machine, sandboxed or direct. Never moves work that is already running. */
+  setRunsOn(threadId: string, runsOn: RunsOn): Promise<void>;
+}
+
+/** What waits on the person (questions, approvals, secret requests): the request bar and the attention card. Its own interface because the server serves it from its own operations. */
+export interface RequestsClient {
+  /** Open requests across the space, newest first. */
+  requests(): Promise<Request[]>;
+  /** Subscribes to changes of the open requests. */
+  watchRequests(cb: (requests: Request[]) => void): () => void;
+  /** Answers a request. For a secret the value leaves the client here and is not kept. */
+  answer(requestId: string, answer: Answer): Promise<void>;
+}
+
+/** The right panel's tabs (Changes, Run). */
+export interface PanelsClient {
+  /** The Changes tab. */
+  changes(threadId: string): Promise<Change[]>;
+  /** The Run tab. */
+  run(threadId: string): Promise<RunInfo>;
+}
+
+/** The Threads app's whole data surface: the threads themselves, plus the three smaller surfaces above (each is what a server serves from its own operations). */
+export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClient {
   /** All threads the person can see in the current space, children included (`parentId`). */
   listThreads(): Promise<ThreadSummary[]>;
   /** One thread as it is now, with its real message count (the list does not know it); undefined when it does not exist or cannot be seen. */
@@ -43,28 +73,10 @@ export interface ThreadsClient {
   send(threadId: string, text: string, requestId: string): Promise<void>;
   /** Stops the running turn. */
   stop(threadId: string): Promise<void>;
-  /** Changes the provider and model for the next message. Nothing visible happens in the thread. */
-  setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void>;
   /** Renames a thread. */
   rename(threadId: string, title: string): Promise<void>;
   /** Archives a thread (and its finished children): it leaves the list and keeps its file. */
   archive(threadId: string): Promise<void>;
   /** Takes back the last archive of this thread (and the finished children that went with it). Resolves false if it cannot. */
   unarchive(threadId: string): Promise<boolean>;
-  /** How much the agent may do without asking, for the next message. */
-  setPermission(threadId: string, permission: Permission): Promise<void>;
-  /** The machines this person can run a thread on (their own, and the pool if their group allows it). */
-  machines(): Promise<string[]>;
-  /** Where the thread runs next: a machine, sandboxed or direct. Never moves work that is already running. */
-  setRunsOn(threadId: string, runsOn: RunsOn): Promise<void>;
-  /** Open requests across the space, newest first. */
-  requests(): Promise<Request[]>;
-  /** Subscribes to changes of the open requests. */
-  watchRequests(cb: (requests: Request[]) => void): () => void;
-  /** Answers a request. For a secret the value leaves the client here and is not kept. */
-  answer(requestId: string, answer: Answer): Promise<void>;
-  /** The Changes tab. */
-  changes(threadId: string): Promise<Change[]>;
-  /** The Run tab. */
-  run(threadId: string): Promise<RunInfo>;
 }

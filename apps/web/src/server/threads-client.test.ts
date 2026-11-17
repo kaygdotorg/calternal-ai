@@ -123,7 +123,52 @@ describe("ServerThreads", () => {
     const d = double({});
     await expect(d.client.rename()).rejects.toBeInstanceOf(Unsupported);
     expect(await d.client.unarchive()).toBe(false);
-    expect(await d.client.requests()).toEqual([]);
     expect(await d.client.machines()).toEqual([]);
+  });
+});
+
+describe("requests (issue #32's operations; the wire shape is the lane's stated goal)", () => {
+  const list = { requests: [
+    { id: "q1", kind: "question", thread_id: T1, title: "Before I open the pull request", form: "Form([],\"x\")" },
+    { id: "a1", kind: "approval", thread_id: T1, title: "Run a command", action: "Push the branch", command: "git push origin lane/x" },
+    { id: "s1", kind: "secret", thread_id: T2, name: "FORGEJO_TOKEN", label: "Forgejo token", why: "To publish", scope: "personal", required: true, expires_ms: 1_800_000 },
+    { id: "z", kind: "something-new", thread_id: T1 },
+  ] };
+  test("a list maps to the three kinds the bar draws and drops what it cannot", async () => {
+    const d = double({ "requests.list": () => list });
+    const r = await d.client.requests();
+    expect(r.map((x) => [x.id, x.kind, x.threadId])).toEqual([["q1", "question", T1], ["a1", "approval", T1], ["s1", "secret", T2]]);
+    expect(r[2]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
+    expect(d.calls[0]).toMatchObject({ operation: "requests.list", input: { space_id: SPACE } });
+  });
+  test("answers become the operations: answer, approve once or for the thread, deny; a secret's value goes in the answer", async () => {
+    const d = double({ "requests.list": () => ({ requests: [] }), "requests.answer": () => ({}), "requests.approve": () => ({}), "requests.deny": () => ({}) });
+    await d.client.answer("q1", { kind: "question", values: { branch: "x" } });
+    await d.client.answer("a1", { kind: "approval", decision: "once" });
+    await d.client.answer("a2", { kind: "approval", decision: "thread" });
+    await d.client.answer("a3", { kind: "approval", decision: "deny" });
+    await d.client.answer("s1", { kind: "secret", value: "hunter2" });
+    await d.client.answer("s2", { kind: "secret-skip" });
+    expect(d.calls.filter((c) => c.operation !== "requests.list").map((c) => [c.operation, c.input])).toEqual([
+      ["requests.answer", { id: "q1", values: { branch: "x" } }],
+      ["requests.approve", { id: "a1", lifetime: "once" }],
+      ["requests.approve", { id: "a2", lifetime: "thread" }],
+      ["requests.deny", { id: "a3" }],
+      ["requests.answer", { id: "s1", secret: "hunter2" }],
+      ["requests.deny", { id: "s2" }],
+    ]);
+  });
+  test("after an answer the watchers hear the new list", async () => {
+    let open = true;
+    const d = double({ "requests.list": () => ({ requests: open ? [list.requests[0]] : [] }), "requests.approve": () => { open = false; return {}; } });
+    const seen: number[] = [];
+    const off = d.client.watchRequests((r) => seen.push(r.length));
+    await d.client.answer("a1", { kind: "approval", decision: "once" });
+    off();
+    expect(seen).toEqual([0]);
+  });
+  test("a refused answer is thrown as the server said it", async () => {
+    const d = double({ "requests.approve": () => fail("forbidden", "an agent cannot approve") });
+    await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toBeDefined();
   });
 });

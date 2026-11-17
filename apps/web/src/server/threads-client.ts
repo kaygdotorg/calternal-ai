@@ -7,14 +7,14 @@
  *   - An open thread follows its job's stream for steps and the working state, and re-reads the file every 3 s while open (agent text is appended to the file at checkpoints, so a reload mid-turn still
  *     shows it). The thread list is re-read every 5 s while watched, and after every change made here. (A journal subscription replaces both polls when the server offers a per-kind feed.)
  *   - The list has no per-thread job state: a turn started elsewhere shows as idle until it ends and the file changes. Running state is known for turns started here.
- *   - No operation renames or un-archives a thread, offers machines, or records where a thread runs, and requests (questions, approvals) are not in the server yet: those calls say so (`unsupported`)
- *     or return empty, and the permission mode, provider and model chosen in the composer are sent with the next `threads.send` (`mode`, `provider`, `model`), where the server applies them directly.
+ *   - No operation renames or un-archives a thread, offers machines, or records where a thread runs: those calls say so (`unsupported`) or return empty. Requests go through `ServerRequests` (issue #32's operations, not in dev yet), and the permission mode, provider and model chosen in the composer are sent with the next `threads.send` (`mode`, `provider`, `model`), where the server applies them directly.
  * Cost: one operation per call; one parse per revision; two timers while a thread is open.
  */
 import { spaces } from "../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "../apps/threads/client";
 import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, Step, ThreadState, ThreadSummary } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
+import { ServerRequests } from "./requests";
 import { parseMessages, providerPlugin, stateOfJob, summaryOf, updatedAtOf, wireMode, type WireJob, type WireRow, type WireThread } from "./thread-file";
 
 /** What the server cannot do yet, as a failure the UI can show. */
@@ -35,7 +35,7 @@ export class ServerThreads implements ThreadsClient {
   private listTimer = 0;
   private lastList: ThreadSummary[] = [];
 
-  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) {}
+  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) { this.asks = new ServerRequests(server, space); }
 
   private known(id: string) { return this.local.get(id) ?? {}; }
   private patch(id: string, p: Partial<ThreadSummary> & { job?: string }) { this.local.set(id, { ...this.known(id), ...p }); }
@@ -200,9 +200,11 @@ export class ServerThreads implements ThreadsClient {
   async machines(): Promise<string[]> { return []; }
   async setRunsOn(id: string, runsOn: RunsOn): Promise<void> { this.patch(id, { runsOn }); this.announce(id); }
 
-  async requests(): Promise<Request[]> { return []; }
-  watchRequests(): () => void { return () => {}; }
-  async answer(_id: string, _a: Answer): Promise<void> { throw new Unsupported("Answering a request"); }
+  // Requests (questions, approvals, secrets) have their own operations and their own small client.
+  private asks: ServerRequests;
+  requests = () => this.asks.requests();
+  watchRequests = (cb: (r: Request[]) => void) => this.asks.watchRequests(cb);
+  answer = (id: string, a: Answer) => this.asks.answer(id, a);
   async changes(): Promise<Change[]> { return []; }
   async run(id: string): Promise<RunInfo> {
     const s = (await this.getThread(id)) ?? this.lastList.find((t) => t.id === id);
