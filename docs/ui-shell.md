@@ -24,11 +24,14 @@ All three change with the current app and are exposed to the plugin API, with go
 
 Not a card: it sits directly on the tinted background.
 
-- Header: the current app's name with a simple icon (not an emoji), fixed. No horizontal
-  scrolling app strip.
+- Header: the app's name as a wordmark in a cursive font, with no icon. The name and its
+  font are set in Settings → Appearance. No horizontal scrolling app strip.
 - Attention card: things that need the user's attention, at most 3 items. It is a card
   because it asks for attention. With nothing to show, the card is absent.
-- Body: app-specific.
+- Body: app-specific. In Threads the person makes their own sections and drags threads
+  freely between them; nothing is grouped under an automatic project label. Double-click
+  renames a thread; right-click opens a context menu.
+- The sidebar's content fades out at its top and bottom edges; no hard cut-off.
 - Footer: account picture on the left; the app switcher in the middle; a search icon on
   the right. Switching always happens at the bottom: apps in the sidebar footer, panels
   as tabs at the bottom of the right card, the tab bar on phones. The header's app name is
@@ -81,6 +84,22 @@ Decided by kayg, 2026-11-17, from the first live preview.
   right sidebar's chat with the selection quoted).
 - Interaction craft follows Emil Kowalski's and Jakub Krehel's published guidance and the
   Hallmark skill; visual presets follow the Craft study in the existing app's repo.
+
+- Nothing draws out of bounds: rings, menus and popovers stay inside the window and their
+  container.
+- The accent colour is inferred from the wallpaper by default, never a fixed brown; it can
+  be overridden.
+- One design system defines every surface (pill, capsule, toolbar, card, menu) with its
+  transparency and blur, and those adapt to the contrast of what is behind them, as the
+  existing app's primitives do.
+- Sidebars fade at top and bottom; no solid bands anywhere.
+- Pickers (model, machine) show an icon per provider and have an inline search field.
+- Message text is not streamed by default: a turn shows that it is working and its steps,
+  and the finished message appears at once. Streaming is a setting.
+- Keyboard shortcuts are discoverable with Cmd-/ or ? and configurable, as in the
+  existing app.
+- The composer doubles as a command and search palette that understands plain language,
+  after the existing app's unified composer.
 
 ## Preview
 

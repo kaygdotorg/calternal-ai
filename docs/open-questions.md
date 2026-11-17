@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-17 17:10 IST.
+[glossary](glossary.md). Updated 2026-11-17 19:10 IST.
 
 ## Waiting now
 
@@ -10,11 +10,12 @@ move to the decision record they belong to and leave this list. Terms: see
 | --- | --- | --- | --- |
 | 2 | When to rewrite git history to drop old images | At the next quiet point | Repo size |
 | 3 | Where per-person files live (personal instructions, starred prompts) | The personal space's `.calternal/` folder | Personal instructions |
+| 4 | When to start performance budgets and benchmarks on the perf VMs | After the simplification lane merges | Performance |
 
 ## Design rounds
 
-- The Settings screen: its own round (retry and snooze, permission defaults, fonts, wallpapers, machines).
-- Composer and chat experience: mentions, commands, context chips, the request bar.
+- **Next: the Settings screen.** Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- The composer as a unified command and search palette (plain-language input, mentions, commands, context chips), after the existing app's.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
 
