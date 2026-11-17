@@ -11,6 +11,8 @@ peer_port=34134
 base_url=http://127.0.0.1:$local_port
 origin=https://preview.calternal.cloud
 installation=91c2ed9a-5a98-4b01-ac58-7376ab499c34
+browser_installation=825bd622-44d8-4171-b5f7-c90a8702b34e
+browser_port=34136
 owner_token=$root/appdata/dev-tokens/owner.token
 
 die() { echo "$*" >&2; exit 1; }
@@ -42,7 +44,8 @@ build() {
   case ${1:-fixture} in
     fixture) ! active server && ! active machine || die 'Stop the installation before rebuilding.' ;;
     browser)
-      ! active browser-server || die 'Stop the browser installation before rebuilding.'
+      ! active browser-server && ! active browser-machine ||
+        die 'Stop the browser installation before rebuilding.'
       destination=$root/browser/bin/calternal
       ;;
     *) die 'Choose fixture or browser.' ;;
@@ -99,18 +102,7 @@ start_relay() {
   wait_for relay_ready "$1"
 }
 
-start() {
-  local mode=$1 address node current account identity machine_id
-  [[ -x $binary ]] || die 'Run service.sh build first.'
-  podman image exists "localhost/calternal-e2e-$mode:dev" ||
-    die "Build the $mode image with image.sh $mode first."
-  address=$(netbird_address)
-  node=$(nix develop -c which node)
-  start_unit server "$binary" serve --appdata "$root/appdata" --userdata-ssd "$root/userdata-ssd" \
-    --userdata-hdd "$root/userdata-hdd" --installation-id "$installation" --create --development \
-    --port "$local_port" --origin "$origin" --plugin-root "$checkout/plugins" --node "$node"
-  wait_for server_ready
-  account=$(cal describe | jq -er '.data.principal.id')
+enroll_machine() {
   if [[ ! -e $root/machine/credentials ]]; then
     # Pass the enrollment code directly to stdin. Neither role logs it.
     "$binary" --json machines code --appdata "$root/appdata" \
@@ -121,12 +113,28 @@ start() {
         --server "$base_url" --dir "$root/machine" \
         --name calternal-e2e-dev-01 --code - >/dev/null
   fi
+  local identity
   identity=$("$binary" --json machine status --dir "$root/machine")
-  machine_id=$(jq -er '.data.machine_id' <<<"$identity")
-  [[ $(jq -er '.data.owner' <<<"$identity") == "account:$account" ]] ||
+  [[ $(jq -er '.data.owner' <<<"$identity") == "account:$account" &&
+     $(jq -er '.data.server' <<<"$identity") == "$base_url" ]] ||
     die 'The enrolled machine does not belong to the disposable account.'
   install -d -m 0700 "$root/machine/sandboxes/accounts/$account/home"
+  jq -er '.data.machine_id' <<<"$identity"
+}
 
+start() {
+  local mode=$1 address node current account machine_id
+  [[ -x $binary ]] || die 'Run service.sh build first.'
+  podman image exists "localhost/calternal-e2e-$mode:dev" ||
+    die "Build the $mode image with image.sh $mode first."
+  address=$(netbird_address)
+  node=$(nix develop -c which node)
+  start_unit server "$binary" serve --appdata "$root/appdata" --userdata-ssd "$root/userdata-ssd" \
+    --userdata-hdd "$root/userdata-hdd" --installation-id "$installation" --create --development \
+    --port "$local_port" --origin "$origin" --plugin-root "$checkout/plugins" --node "$node"
+  wait_for server_ready
+  account=$(cal describe | jq -er '.data.principal.id')
+  machine_id=$(enroll_machine)
   current=$(systemctl --user show -p ExecStart --value calternal-e2e-machine.service)
   if active machine && [[ $current != *"localhost/calternal-e2e-$mode:dev"* ]]; then
     die 'Stop the installation before switching provider images. Use a fresh thread after switching.'
@@ -147,17 +155,40 @@ browser_ready() {
 # Start with an empty protected account directory. Only the operator redeems
 # the resulting setup token with their actual browser authenticator.
 start_browser() {
-  local browser=$root/browser local_port=34136 peer_port=34137 address
+  local browser=$root/browser local_port=$browser_port peer_port=34137 address
   [[ -x $browser/bin/calternal ]] || die 'Run service.sh build browser first.'
   address=$(netbird_address)
   start_unit browser-server "$browser/bin/calternal" serve --appdata "$browser/appdata" \
     --userdata-ssd "$browser/userdata-ssd" --userdata-hdd "$browser/userdata-hdd" \
-    --installation-id 825bd622-44d8-4171-b5f7-c90a8702b34e --create \
+    --installation-id "$browser_installation" --create \
     --port "$local_port" --origin "$origin" --plugin-root "$checkout/plugins"
   wait_for browser_ready
   start_relay browser-relay
   printf 'NetBird listener  %s:%s\nSetup token path  %s\n' \
     "$address" "$peer_port" "$browser/appdata/setup.token"
+}
+
+# The browser owner proof supplies its verified account UUID. Switching images
+# restarts just this machine role and retains its enrollment.
+start_browser_machine() {
+  local account=$1 mode=$2 current machine_id
+  local root=$root/browser
+  local binary=$root/bin/calternal base_url=http://127.0.0.1:$browser_port
+  local installation=$browser_installation
+  [[ $account =~ ^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$ ]] ||
+    die 'Expected a browser account UUID.'
+  [[ $mode == fixture || $mode == claude ]] || die 'Choose fixture or claude.'
+  active browser-server || die 'Start the browser installation first.'
+  podman image exists "localhost/calternal-e2e-$mode:dev" ||
+    die "Build the $mode image with image.sh $mode first."
+  machine_id=$(enroll_machine)
+  current=$(systemctl --user show -p ExecStart --value calternal-e2e-browser-machine.service)
+  if active browser-machine && [[ $current != *"localhost/calternal-e2e-$mode:dev"* ]]; then
+    stop_unit browser-machine
+  fi
+  start_unit browser-machine "$binary" machine run --dir "$root/machine" --backend podman \
+    --podman "$(command -v podman)" --image "localhost/calternal-e2e-$mode:dev" --max-sandboxes 2
+  printf '%s\n' "$machine_id"
 }
 
 stop() {
@@ -199,8 +230,10 @@ case ${1:-} in
     ;;
   stop) stop ;;
   start-browser) start_browser ;;
+  browser-machine) start_browser_machine "${2:-}" "${3:-}" ;;
   stop-browser)
     stop_unit browser-relay
+    stop_unit browser-machine
     stop_unit browser-server
     ;;
   reset) reset "${2:-}" ;;

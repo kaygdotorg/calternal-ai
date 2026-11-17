@@ -124,6 +124,35 @@ bearer flow works through Vite on dev-01 when `CAL_SERVER` points at
 If testing incremental text in Threads, enable **Stream messages as written**
 in Settings.
 
+### Morning steps
+
+1. Open [the preview](https://preview.calternal.cloud/ai/?server=1). Paste
+   the private setup code from the file below into the first-owner screen.
+2. Create your passkey and stay signed in. In the browser’s developer tools,
+   open storage for `https://preview.calternal.cloud` and copy the value of
+   `__Host-calternal_session` for the next step.
+3. Run the post-setup script and paste the session value at its hidden
+   prompt. Clear the clipboard after pasting. The script uses the session
+   only in memory against dev-01’s loopback server. It enrolls the browser
+   account’s machine, verifies a fixture turn, switches the machine to the
+   Claude Code image, and prints the private sandbox home.
+
+   ```sh
+   ssh -t claude@calternal-dev-01-compute02 'cd ~/Developer/lanes/e2e-dev && ./scripts/dev-e2e/after-owner-setup.sh'
+   ```
+
+4. Sign in to Claude Code in that home. The coordinator can place a reduced
+   sign-in copy there using the file names and modes above. Alternatively,
+   replace `ACCOUNT_UUID` with the UUID from the printed path and run this
+   interactive command. The container mounts the same private home as the
+   account’s thread sandboxes. The server receives no provider credentials.
+
+   ```sh
+   ssh -t claude@calternal-dev-01-compute02 'podman run --rm -it -e HOME=/home/agent -v /home/claude/calternal-e2e/browser/machine/sandboxes/accounts/ACCOUNT_UUID/home:/home/agent localhost/calternal-e2e-claude:dev claude auth login'
+   ```
+
+5. Back in the preview, open a new Thread in your space and send a message.
+
 ### First owner token
 
 The fresh server starts without `--development` and writes the one-use

@@ -6,16 +6,20 @@ import sys
 import time
 import uuid
 from contextlib import contextmanager
+from getpass import getpass
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 
 ROOT = Path.home() / "calternal-e2e"
 PORT = 34135
+BROWSER_SESSION = None
 
 
 @contextmanager
 def request(path, body=None):
-    token = (ROOT / "appdata/dev-tokens/owner.token").read_text().strip()
+    token = BROWSER_SESSION
+    if token is None:
+        token = (ROOT / "appdata/dev-tokens/owner.token").read_text().strip()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     data = None if body is None else json.dumps(body).encode()
     connection = HTTPConnection("127.0.0.1", PORT, timeout=25)
@@ -83,6 +87,48 @@ def create(title):
     space, = (s["id"] for s in spaces if s["role"] == "owner" and s["name"] == "personal")
     thread = op("threads.create", space_id=space, title=title)["thread"]["id"]
     return space, thread
+
+
+def browser_machine(account, mode):
+    service = Path(__file__).with_name("service.sh")
+    machine = subprocess.check_output([service, "browser-machine", account, mode], text=True).strip()
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        if any(m["id"] == machine and m["state"] == "online" for m in call("machines")["machines"]):
+            return
+        time.sleep(0.25)
+    raise TimeoutError("Browser machine did not come online")
+
+
+def after_owner_setup():
+    global PORT, BROWSER_SESSION
+    PORT = 34136
+    BROWSER_SESSION = (getpass("Preview session cookie value: ") if sys.stdin.isatty()
+                       else sys.stdin.readline()).strip()
+    verify(BROWSER_SESSION and BROWSER_SESSION.isascii(), "Enter the browser's session cookie value")
+    account = str(uuid.UUID(call("auth/me")["user"]["id"]))
+    home = ROOT / "browser/machine/sandboxes/accounts" / account / "home"
+    proof = home.parent / "fixture-verified"
+    if not proof.is_file():
+        verify(not any(home.iterdir()) if home.is_dir() else True,
+               "Finish the fixture proof before placing provider sign-in files")
+        browser_machine(account, "fixture")
+        owned = [s["id"] for s in op("spaces.list")["spaces"] if s["role"] == "owner"]
+        space = owned[0] if owned else op("spaces.create", name="Personal")["space"]["id"]
+        title = "Morning machine fixture"
+        thread = op("threads.create", space_id=space, title=title)["thread"]["id"]
+        job = op("threads.send", id=thread, message="Verify the fixture machine")["job"]["id"]
+        text = ""
+        for event, payload in stream(job):
+            text += output(event, payload) or ""
+            if event == "end":
+                verify(payload["job"]["state"] == "done", "Browser fixture turn did not finish")
+        verify(text == "Hello 🌏\n", "Browser fixture turn emitted unexpected text")
+        op("threads.archive", id=thread)
+        proof.touch()
+        print("Browser fixture turn streamed and completed", flush=True)
+    browser_machine(account, "claude")
+    print(f"Sandbox home  {home}")
 
 
 def run_fixture():
@@ -180,12 +226,15 @@ def run_real():
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] == ["fixture"]:
+    if sys.argv[1:] in (["fixture"], ["after-owner-setup"]):
         try:
-            run_fixture()
+            if sys.argv[1] == "fixture":
+                run_fixture()
+            else:
+                after_owner_setup()
         except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError) as error:
             sys.exit(str(error))
     elif sys.argv[1:] == ["claude"]:
         sys.exit(0 if run_real() else 1)
     else:
-        sys.exit("Usage: prove.py fixture|claude")
+        sys.exit("Usage: prove.py fixture|claude|after-owner-setup")
