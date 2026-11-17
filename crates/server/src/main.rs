@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+mod admin_cli;
+use admin_cli::MachinesCmd;
+use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
 use calternal_server::auth::TokenTable;
 use calternal_server::machines::MachineService;
@@ -14,6 +17,9 @@ use clap::{Parser, Subcommand};
     about = "Calternal-AI localhost development preview host (disposable data only)"
 )]
 struct Cli {
+    /// Print one JSON document instead of text (errors too, on stdout); see docs/cli.md.
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -28,7 +34,7 @@ enum Cmd {
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
-        /// Built web assets served same-origin (e.g. apps/web/dist).
+        /// Built web assets served same-origin (any static directory).
         #[arg(long)]
         web_dir: Option<PathBuf>,
         /// Enable disposable development accounts and bearer token files (off by default).
@@ -57,7 +63,7 @@ enum Cmd {
         #[arg(long, default_value_t = 20_000)]
         machine_poll_hold_ms: u64,
     },
-    /// Machine role: enrol this computer and run threads for a server.
+    /// Machine role: enroll this computer and run threads for a server.
     Machine {
         #[command(subcommand)]
         cmd: calternal_machine::cli::Command,
@@ -74,107 +80,6 @@ enum Cmd {
     },
 }
 
-#[derive(Subcommand)]
-enum MachinesCmd {
-    /// Print a one-time enrolment code (for an account, or the shared pool).
-    Code {
-        #[arg(long)]
-        data_dir: PathBuf,
-        /// Code for a pool machine the operator runs.
-        #[arg(long, conflicts_with = "account")]
-        pool: bool,
-        /// Code for a machine owned by this account UUID.
-        #[arg(long)]
-        account: Option<String>,
-        /// Validity in minutes.
-        #[arg(long, default_value_t = 60)]
-        minutes: u64,
-    },
-    /// List enrolled machines.
-    List {
-        #[arg(long)]
-        data_dir: PathBuf,
-    },
-    /// Revoke a machine; a running server applies it within a second.
-    Revoke {
-        #[arg(long)]
-        data_dir: PathBuf,
-        /// Machine UUID.
-        machine: String,
-    },
-    /// Allow (or with --remove, stop allowing) an account to use pool machines.
-    PoolGrant {
-        #[arg(long)]
-        data_dir: PathBuf,
-        /// Account UUID.
-        account: String,
-        #[arg(long)]
-        remove: bool,
-    },
-}
-
-fn machines_admin(cmd: MachinesCmd) -> i32 {
-    use calternal_server::machines::admin;
-    let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| "not an account UUID");
-    let result: Result<(), String> = (|| match cmd {
-        MachinesCmd::Code {
-            data_dir,
-            pool,
-            account: acct,
-            minutes,
-        } => {
-            let owner = match (pool, acct) {
-                (true, _) => calternal_machine::protocol::Owner::Pool,
-                (false, Some(a)) => {
-                    calternal_machine::protocol::Owner::Account { id: account(&a)? }
-                }
-                (false, None) => return Err("pass --pool or --account <uuid>".into()),
-            };
-            let ttl = std::time::Duration::from_secs(minutes * 60);
-            let (code, _) = admin::issue_code(&data_dir, owner, ttl).map_err(|e| e.message)?;
-            println!("{code}");
-            Ok(())
-        }
-        MachinesCmd::List { data_dir } => {
-            for m in admin::list(&data_dir).map_err(|e| e.message)? {
-                let owner = calternal_server::machines::db::owner_text(m.owner);
-                let state = if m.revoked {
-                    "revoked"
-                } else if m.draining {
-                    "draining"
-                } else {
-                    "enrolled"
-                };
-                println!(
-                    "{}\t{}\t{}\t{}/{}\t{}",
-                    m.id, owner, m.name, m.os, m.arch, state
-                );
-            }
-            Ok(())
-        }
-        MachinesCmd::Revoke { data_dir, machine } => {
-            let id = uuid::Uuid::parse_str(&machine).map_err(|_| "not a machine UUID")?;
-            if admin::revoke(&data_dir, id).map_err(|e| e.message)? {
-                Ok(())
-            } else {
-                Err("no such machine".into())
-            }
-        }
-        MachinesCmd::PoolGrant {
-            data_dir,
-            account: acct,
-            remove,
-        } => admin::pool_grant(&data_dir, account(&acct)?, !remove).map_err(|e| e.message),
-    })();
-    match result {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("calternal machines: {e}");
-            1
-        }
-    }
-}
-
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -183,11 +88,16 @@ fn main() {
         )
         .with_writer(std::io::stderr)
         .init();
-    let cli = Cli::parse();
+    let cli = match calternal_cli::output::parse_args::<Cli>() {
+        Ok(cli) => cli,
+        Err(code) => std::process::exit(code),
+    };
+    // Reads the local time zone, which is only safe before any thread starts.
+    let out = Output::detect(cli.json);
     let code = match cli.cmd {
-        Cmd::PluginDigest { plugin_root } => digest(&plugin_root),
-        Cmd::Machine { cmd } => calternal_machine::cli::main(cmd),
-        Cmd::Machines { cmd } => machines_admin(cmd),
+        Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
+        Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
+        Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
         Cmd::Serve {
             data_dir,
             port,
@@ -201,12 +111,6 @@ fn main() {
             machine_poll_hold_ms,
             test_plugin_root,
         } => {
-            if test_plugin_root.is_some() && plugins::test_entries().is_empty() {
-                eprintln!(
-                    "calternal: --test-plugin-root needs a build with the test-plugins feature"
-                );
-                std::process::exit(1);
-            }
             let machines = calternal_server::machines::Settings {
                 lease_ttl: std::time::Duration::from_millis(machine_lease_ttl_ms),
                 poll_hold: std::time::Duration::from_millis(machine_poll_hold_ms),
@@ -218,42 +122,39 @@ fn main() {
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
-            rt.block_on(serve(
-                data_dir,
-                port,
-                web_dir,
-                plugin_root,
-                node,
-                development,
-                origin,
-                trusted_proxies,
-                test_plugin_root,
-                machines,
-            ))
+            let result = if test_plugin_root.is_some() && plugins::test_entries().is_empty() {
+                Err(CliError::new(
+                    "invalid_input",
+                    "--test-plugin-root needs a build with the test-plugins feature",
+                )
+                .hint("Rebuild with `--features test-plugins`, or drop --test-plugin-root."))
+            } else {
+                rt.block_on(serve(
+                    data_dir,
+                    port,
+                    web_dir,
+                    plugin_root,
+                    node,
+                    development,
+                    origin,
+                    trusted_proxies,
+                    test_plugin_root,
+                    machines,
+                    &out,
+                ))
+            };
+            match result {
+                Ok(()) => 0,
+                Err(e) => out.failure(&e),
+            }
         }
     };
     std::process::exit(code);
 }
 
-fn digest(root: &Path) -> i32 {
-    for e in plugins::registry_entries() {
-        if let Some(w) = &e.worker {
-            match plugins::file_sha256(&root.join(w)) {
-                Ok(d) => {
-                    let pinned = e.worker_sha256.as_deref() == Some(d.as_str());
-                    println!(
-                        "{}\t{}\t{}\t{}",
-                        e.id,
-                        w,
-                        d,
-                        if pinned { "pinned" } else { "NOT PINNED" }
-                    );
-                }
-                Err(why) => println!("{}\t{}\t-\t{}", e.id, w, why),
-            }
-        }
-    }
-    0
+/// A startup failure: `message` says what failed, `hint` what to do, `exit` is the process status.
+fn boot(exit: i32, code: &str, message: impl Into<String>, hint: &str) -> CliError {
+    CliError::new(code, message).hint(hint).exit(exit)
 }
 
 async fn serve(
@@ -267,25 +168,28 @@ async fn serve(
     trusted_proxies: String,
     test_plugin_root: Option<PathBuf>,
     machine_settings: calternal_server::machines::Settings,
-) -> i32 {
-    if let Err(e) = calternal_fsio::private::directory(&data_dir) {
-        eprintln!("calternal: cannot prepare data dir: {e}");
-        return 1;
-    }
-    let data_dir = match std::fs::canonicalize(&data_dir) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("calternal: data dir: {e}");
-            return 1;
-        }
-    };
-    let store = match Store::open(&data_dir) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("calternal: {}", e.message);
-            return 2;
-        }
-    };
+    out: &Output,
+) -> Result<(), CliError> {
+    const DATA_HINT: &str =
+        "Check that --data-dir exists (or can be created) and that you can write to it.";
+    calternal_fsio::private::directory(&data_dir).map_err(|e| {
+        boot(
+            1,
+            "io",
+            format!("cannot prepare the data directory: {e}"),
+            DATA_HINT,
+        )
+    })?;
+    let data_dir = std::fs::canonicalize(&data_dir)
+        .map_err(|e| boot(1, "io", format!("data directory: {e}"), DATA_HINT))?;
+    let store = Store::open(&data_dir).map_err(|e| {
+        boot(
+            1,
+            "failed",
+            e.message,
+            "Is another server using this data directory? Check its log.",
+        )
+    })?;
     let machines = {
         let dir = data_dir.clone();
         match tokio::task::spawn_blocking(move || MachineService::open(&dir, machine_settings))
@@ -293,10 +197,21 @@ async fn serve(
         {
             Ok(Ok(m)) => m,
             Ok(Err(e)) => {
-                eprintln!("calternal: machines: {}", e.message);
-                return 2;
+                return Err(boot(
+                    1,
+                    "failed",
+                    format!("machines: {}", e.message),
+                    DATA_HINT,
+                ));
             }
-            Err(_) => return 2,
+            Err(_) => {
+                return Err(boot(
+                    1,
+                    "internal",
+                    "the machines service did not start",
+                    DATA_HINT,
+                ));
+            }
         }
     };
     let _sweeper = machines.spawn_sweeper();
@@ -321,8 +236,12 @@ async fn serve(
     let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("calternal: bind 127.0.0.1:{port}: {e}");
-            return 1;
+            return Err(boot(
+                1,
+                "unavailable",
+                format!("cannot listen on 127.0.0.1:{port}: {e}"),
+                "Pick another --port (0 picks a free one), or stop the program using it.",
+            ));
         }
     };
     let port = listener.local_addr().expect("bound").port();
@@ -330,36 +249,43 @@ async fn serve(
     let mut config = match calternal_auth::AuthConfig::new(&public_origin) {
         Ok(c) => c,
         Err(_) => {
-            eprintln!("calternal: invalid origin");
-            return 1;
+            return Err(boot(
+                1,
+                "invalid_input",
+                "invalid --origin",
+                "Use the exact public origin, for example https://cal.example.org.",
+            ));
         }
     };
     if config.set_trusted_proxies(&trusted_proxies).is_err() {
-        eprintln!("calternal: invalid trusted proxies");
-        return 1;
+        return Err(boot(
+            1,
+            "invalid_input",
+            "invalid --trusted-proxies",
+            "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
+        ));
     }
     let tokens = match TokenTable::open(&data_dir, config, development) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("calternal: account directory: {e}");
-            return 1;
+            return Err(boot(
+                1,
+                "failed",
+                format!("account directory: {e}"),
+                DATA_HINT,
+            ));
         }
     };
     let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
         match service.auth.first_owner_token().await {
             Ok(Some(token)) => {
                 let path = data_dir.join("setup.token");
-                if let Err(e) = write_private_atomic(&path, token.as_bytes()) {
-                    eprintln!("calternal: setup token file: {e}");
-                    return 1;
-                }
+                write_private_atomic(&path, token.as_bytes())
+                    .map_err(|e| boot(1, "io", format!("setup token file: {e}"), DATA_HINT))?;
                 Some(path)
             }
             Ok(None) => None,
-            Err(e) => {
-                eprintln!("calternal: setup: {e}");
-                return 1;
-            }
+            Err(e) => return Err(boot(1, "failed", format!("setup: {e}"), DATA_HINT)),
         }
     } else {
         None
@@ -377,13 +303,8 @@ async fn serve(
             hosts.push(authority);
         }
     }
-    let jobs = match plugins::Jobs::open(&data_dir) {
-        Ok(j) => j,
-        Err(e) => {
-            eprintln!("calternal: {}", e.message);
-            return 2;
-        }
-    };
+    let jobs =
+        plugins::Jobs::open(&data_dir).map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
         store,
@@ -397,8 +318,12 @@ async fn serve(
         Ok(0) => {}
         Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),
         Err(e) => {
-            eprintln!("calternal: job recovery: {}", e.message);
-            return 2;
+            return Err(boot(
+                1,
+                "failed",
+                format!("job recovery: {}", e.message),
+                DATA_HINT,
+            ));
         }
     }
     let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
@@ -420,18 +345,33 @@ async fn serve(
         "web_dir": web_dir,
     });
     let startup_path = data_dir.join("startup.json");
-    if let Err(e) =
-        write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap())
-    {
-        eprintln!("calternal: write startup.json: {e}");
-        return 1;
-    }
-    println!("Calternal-AI development preview (disposable data; not production)");
-    println!("  url:          {base_url}");
-    for (p, f) in &token_files {
-        println!("  {p} token file: {}", f.display());
-    }
-    println!("  startup info: {}", startup_path.display());
+    write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap()).map_err(
+        |e| {
+            boot(
+                1,
+                "io",
+                format!("cannot write startup.json: {e}"),
+                DATA_HINT,
+            )
+        },
+    )?;
+    let mut fields = vec![("url".to_owned(), base_url.clone())];
+    fields.extend(
+        token_files
+            .iter()
+            .map(|(p, f)| (format!("{p} token file"), f.display().to_string())),
+    );
+    fields.push(("startup info".into(), startup_path.display().to_string()));
+    out.success(
+        &Reply::new(serde_json::json!({
+            "profile": "development-preview",
+            "url": base_url,
+            "token_files": token_files.iter().map(|(p, f)| (p.to_string(), serde_json::json!(f))).collect::<serde_json::Map<_, _>>(),
+            "startup_file": startup_path,
+        }))
+        .line("Calternal-AI development preview (disposable data; not production)")
+        .fields(fields),
+    );
 
     let served = axum::serve(
         listener,
@@ -440,13 +380,14 @@ async fn serve(
     .with_graceful_shutdown(shutdown_signal())
     .await;
     let _ = std::fs::remove_file(&startup_path);
-    match served {
-        Ok(()) => 0,
-        Err(e) => {
-            eprintln!("calternal: server error: {e}");
-            1
-        }
-    }
+    served.map_err(|e| {
+        boot(
+            1,
+            "internal",
+            format!("server error: {e}"),
+            "Look at the server log above for the cause.",
+        )
+    })
 }
 
 fn write_private_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {

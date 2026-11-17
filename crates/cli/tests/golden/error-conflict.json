@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "conflict",
+    "hint": "Fetch the current version (`cl notes get`), then retry with its revision.",
+    "message": "revision is stale"
+  },
+  "ok": false,
+  "request_id": "req-1"
+}

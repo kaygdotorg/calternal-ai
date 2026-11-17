@@ -1,0 +1,5 @@
+exit: 2
+--- stdout ---
+--- stderr ---
+error: a value is required for '--plugin-root <PLUGIN_ROOT>' but none was supplied
+hint: run the command with --help to see its usage

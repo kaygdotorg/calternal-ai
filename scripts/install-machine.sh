@@ -1,12 +1,12 @@
 #!/bin/sh
-# Install the Calternal machine role for the current user and enrol it.
+# Install the Calternal machine role for the current user and enroll it.
 #
 #   scripts/install-machine.sh --server https://cal.example.org --code CODE [--binary PATH]
 #                              [--backend podman|process] [--max-sandboxes N]
 #
 # Deterministic, no agent involved. Steps, each idempotent:
 #   1. copy the `calternal` binary to ~/.local/bin/calternal (mode 0755);
-#   2. enrol with the one-time code (skipped when credentials already exist);
+#   2. enroll with the one-time code (skipped when credentials already exist);
 #   3. install and start a user-level service:
 #      Linux: ~/.config/systemd/user/calternal-machine.service, enabled with
 #             `systemctl --user enable --now`; run `loginctl enable-linger $USER`
@@ -44,8 +44,8 @@ echo "install-machine: binary $target"
 if [ -f "$machine_dir/credentials" ]; then
   echo "install-machine: already enrolled ($machine_dir/credentials)"
 else
-  [ -n "$code" ] || { echo "install-machine: --code is required to enrol" >&2; exit 2; }
-  CALTERNAL_ENROL_CODE=$code "$target" machine enrol --server "$server" --dir "$machine_dir"
+  [ -n "$code" ] || { echo "install-machine: --code is required to enroll" >&2; exit 2; }
+  CALTERNAL_ENROLL_CODE=$code "$target" machine enroll --server "$server" --dir "$machine_dir"
 fi
 
 run_args="machine run --dir $machine_dir --backend $backend --max-sandboxes $max"

@@ -1,0 +1,5 @@
+exit: 2
+--- stdout ---
+--- stderr ---
+error: pass --pool or --account <uuid>
+hint: --pool makes a machine the operator runs; --account makes one a person owns.

@@ -1,0 +1,15 @@
+exit: 0
+--- stdout ---
+{
+  "data": {
+    "profile": "development-preview",
+    "startup_file": "<DATA>/startup.json",
+    "token_files": {
+      "guest": "<DATA>/dev-tokens/guest.token",
+      "owner": "<DATA>/dev-tokens/owner.token"
+    },
+    "url": "http://127.0.0.1:<PORT>"
+  },
+  "ok": true
+}
+--- stderr ---

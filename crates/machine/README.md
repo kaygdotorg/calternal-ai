@@ -14,7 +14,7 @@ calternal machines code --data-dir DATA --account <account-uuid>   # or --pool
 # On the machine:
 scripts/install-machine.sh --server https://cal.example.org --code CODE
 # which runs, in order:
-calternal machine enrol --server https://cal.example.org --code CODE
+calternal machine enroll --server https://cal.example.org --code CODE
 calternal machine run                    # --backend podman|process, --max-sandboxes 10
 calternal machine status
 ```

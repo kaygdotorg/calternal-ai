@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "unauthorized",
+    "hint": "The code may be used, expired or mistyped: ask for a new one (`calternal machines code`) and enroll again.",
+    "message": "machine enroll: server refused (404): unknown, used or expired enrollment code"
+  },
+  "ok": false
+}

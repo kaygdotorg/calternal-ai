@@ -1,0 +1,5 @@
+exit: 2
+--- stdout ---
+--- stderr ---
+error: unrecognized subcommand 'frobnicate'
+hint: run the command with --help to see its usage

@@ -1,0 +1,4 @@
+exit: 0
+--- stdout ---
+Revoked machine aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa. A running server applies it within a second.
+--- stderr ---

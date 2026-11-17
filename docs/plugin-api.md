@@ -9,8 +9,8 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - No compatibility with bb plugins.
 - A plugin fills the three shell regions (`docs/ui-shell.md`) and contributes kinds and
   collections addressed per `docs/addresses.md`.
-- Starting an agent run needs a connection. Offline, a client can read cached threads and
-  keep drafts; nothing is queued to run later.
+- A message sent while offline is queued as a visible pending submission that can be
+  edited or cancelled, and is submitted on reconnect after access is re-checked.
 - UI: the product ships a rich library of native components that plugins use by default.
   A plugin or an agent may also bring its own components written in HTML and CSS, created
   dynamically. This supersedes "portable GenUI only" as the early scope.
@@ -88,11 +88,34 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   Limits are not arbitrary constants: product limits come from the plan and from real
   capacity; the server keeps only high, operator-configurable safety ceilings against a
   runaway plugin.
-- Machines: when a machine goes silent mid-run the work moves to another machine and the
-  person is told; while waiting for capacity they see their queue position.
+- Machines: when a machine goes silent mid-run the turn shows as interrupted and the
+  person is told; work never moves by itself, and Resume restarts it from its checkpoint; while waiting for capacity they see their queue position.
 - Jobs: a running job stops only when its account loses access to the space, not when a
   device signs out; any member who can read the space can watch its output; the person
   who started it or a Manager can cancel.
+- Secrets are keyed with one key file per owner (account or space) in that owner's appdata
+  folder; no server-wide key, no unlock step. On a person's own machines, provider logins
+  stay on the machine. A plugin declares the secrets it needs in its manifest (name, label,
+  why, space or personal, required or optional); they belong to the space that enabled the
+  plugin. A secret request appears in a sticky bar above the composer, expires after 15
+  minutes and can be asked again.
+- Cloud machines keep a small warm pool of pre-started sandboxes.
+- Drafts sync across a person's devices and stay until sent or erased. After sign-out,
+  unsent edits are kept as drafts. After revocation the device offers an export of what it
+  holds, then deletes it; revocation is immediate and never waits for the export.
+- Clients do not sync. All state lives on the server; a client subscribes to a space's
+  journal over one live connection, shows it, and caches what it needs (the existing app's
+  model: `/api/v1/live`, resume with a bookmark, reload when the bookmark has expired).
+  Drafts work the same way. The only things a client holds that the server lacks are
+  edits typed while offline, which it sends on reconnect.
+- Agent questions and approvals appear in the same sticky bar as secret requests and do
+  not expire.
+- Provider logins (2026-11-17): Calternal is an orchestrator, not a harness. It launches the
+  providers' official, unmodified programs (Claude Code, Codex), and each person signs in
+  to them through the provider's own flow inside their own sandbox. The login is saved by the
+  provider's program in the person's own sandbox home, a persistent volume that follows
+  them, so they sign in once. The server process never reads, copies or stores it. Evidence and provider wording:
+  `docs/reviews/provider-terms-2026-11-17.md`.
 
 ## Open
 

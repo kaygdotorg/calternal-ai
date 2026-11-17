@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "revoked",
+    "hint": "Ask the owner for a new code, delete the credentials file, then run `calternal machine enroll` again.",
+    "message": "machine run: this machine was revoked; enroll it again to use it"
+  },
+  "ok": false
+}

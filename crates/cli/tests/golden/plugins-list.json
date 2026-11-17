@@ -1,0 +1,23 @@
+{
+  "data": {
+    "plugins": [
+      {
+        "enabled": true,
+        "generation": 3,
+        "manifest": {
+          "api_version": 1,
+          "capabilities": [],
+          "dependencies": [],
+          "description": "d",
+          "id": "word-count",
+          "name": "Word count",
+          "operations": [],
+          "version": "0.1.0",
+          "views": []
+        }
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "req-1"
+}

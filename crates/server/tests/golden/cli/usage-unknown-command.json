@@ -1,0 +1,11 @@
+exit: 2
+--- stdout ---
+{
+  "error": {
+    "code": "usage",
+    "hint": "run the command with --help to see its usage",
+    "message": "unrecognized subcommand 'frobnicate'"
+  },
+  "ok": false
+}
+--- stderr ---

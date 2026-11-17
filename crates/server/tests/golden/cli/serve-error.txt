@@ -1,0 +1,5 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+error: invalid --origin
+hint: Use the exact public origin, for example https://cal.example.org.

@@ -1,0 +1,5 @@
+id:          word-count
+name:        Word count
+version:     0.1.0
+enabled:     yes
+generation:  3

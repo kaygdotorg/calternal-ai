@@ -1,0 +1,26 @@
+exit: 0
+--- stdout ---
+{
+  "data": {
+    "machines": [
+      {
+        "arch": "x86_64",
+        "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "name": "build-box",
+        "os": "linux",
+        "owner": "pool",
+        "state": "revoked"
+      },
+      {
+        "arch": "aarch64",
+        "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "name": "laptop",
+        "os": "macos",
+        "owner": "account:cccccccc-cccc-7ccc-8ccc-cccccccccccc",
+        "state": "enrolled"
+      }
+    ]
+  },
+  "ok": true
+}
+--- stderr ---

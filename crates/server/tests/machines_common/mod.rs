@@ -292,7 +292,7 @@ impl Server {
 pub fn enrol(server: &str, code: &str, dir: &Path) -> i32 {
     Command::new(BIN)
         .args([
-            "machine", "enrol", "--server", server, "--code", code, "--name", "test", "--dir",
+            "machine", "enroll", "--server", server, "--code", code, "--name", "test", "--dir",
         ])
         .arg(dir)
         .stdout(Stdio::null())

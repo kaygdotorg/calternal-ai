@@ -26,6 +26,7 @@ calternal-fsio.workspace = true
 calternal-core.workspace = true
 calternal-plugin-host.workspace = true
 calternal-machine.workspace = true
+calternal-cli.workspace = true
 calternal-secrets.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -55,4 +56,5 @@ http-body-util = "0.1"
 webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
 webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
 tempfile = "3.27"
+calternal-cli = { workspace = true, features = ["testing"] }
 url = "2.5.8"

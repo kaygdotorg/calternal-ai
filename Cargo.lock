@@ -444,10 +444,13 @@ dependencies = [
 name = "calternal-cli"
 version = "0.1.0"
 dependencies = [
+ "calternal-cli",
  "calternal-client",
  "calternal-core",
  "clap",
+ "rustix",
  "serde_json",
+ "time",
  "tokio",
 ]
 
@@ -519,6 +522,7 @@ name = "calternal-machine"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "calternal-cli",
  "calternal-fsio",
  "calternal-types",
  "clap",
@@ -529,6 +533,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tracing",
  "uuid",
@@ -600,6 +605,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "calternal-auth",
+ "calternal-cli",
  "calternal-content",
  "calternal-core",
  "calternal-fsio",
@@ -1723,6 +1729,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_threads"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cabcc654086861f9e1bc5115258de62ef92c79b20f4615a1b0cc57c4e82027d4"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "oid-registry"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2658,7 +2673,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "libc",
  "num-conv",
+ "num_threads",
  "powerfmt",
  "serde_core",
  "time-core",

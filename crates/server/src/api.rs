@@ -1,5 +1,5 @@
 //! HTTP surface: `/api/v1/describe`, `/api/v1/operations`, same-origin static
-//! web assets with SPA fallback, Host/Origin checks, account sessions, optional development bearers
+//! files (`--web-dir`, no SPA fallback), Host/Origin checks, account sessions, optional development bearers
 //! and security headers.
 
 #![deny(missing_docs)]
@@ -11,7 +11,6 @@ use std::sync::Arc;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Request, State};
-use axum::handler::HandlerWithoutStateExt;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -92,17 +91,9 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         app = app.merge(crate::secrets::routes::<D>());
     }
 
-    app = match web_dir {
-        Some(dir) if dir.join("index.html").is_file() => {
-            let index = dir.join("index.html");
-            let spa = move |uri: axum::http::Uri| {
-                let index = index.clone();
-                async move { spa_fallback(uri, index).await }
-            };
-            app.fallback_service(ServeDir::new(dir).fallback(spa.into_service()))
-        }
-        _ => app.fallback(web_not_built),
-    };
+    if let Some(dir) = web_dir {
+        app = app.fallback_service(ServeDir::new(dir));
+    }
     let app = app
         .layer(middleware::from_fn_with_state(state.clone(), guard::<D>))
         .with_state(state);
@@ -148,43 +139,6 @@ pub(crate) fn error_response(e: Error) -> Response {
 
 async fn api_not_found() -> Response {
     failure(None, Error::not_found("unknown API route"))
-}
-
-/// Client-side routes (e.g. `/notes/<id>`) get index.html; a
-/// missing asset (`/assets/...` or any last segment with an extension) is a
-/// plain 404, never SPA HTML.
-async fn spa_fallback(uri: axum::http::Uri, index: PathBuf) -> Response {
-    let path = uri.path();
-    let last = path.rsplit('/').next().unwrap_or("");
-    if path.starts_with("/assets/") || last.contains('.') {
-        return (StatusCode::NOT_FOUND, "not found\n").into_response();
-    }
-    match tokio::fs::read(&index).await {
-        Ok(bytes) => {
-            let mut r = (StatusCode::OK, bytes).into_response();
-            r.headers_mut().insert(
-                header::CONTENT_TYPE,
-                HeaderValue::from_static("text/html; charset=utf-8"),
-            );
-            r.headers_mut()
-                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-            r
-        }
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "web UI index missing\n").into_response(),
-    }
-}
-
-async fn web_not_built() -> Response {
-    let mut r = (
-        StatusCode::SERVICE_UNAVAILABLE,
-        "Calternal-AI development preview: web UI is not built. Run `npm run build:web`, then restart with --web-dir apps/web/dist.\n",
-    )
-        .into_response();
-    r.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/plain; charset=utf-8"),
-    );
-    r
 }
 
 // --------------------------------------------------------------- guard

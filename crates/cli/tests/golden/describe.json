@@ -1,0 +1,25 @@
+{
+  "data": {
+    "genui_version": 1,
+    "operations": [
+      {
+        "description": "List notes",
+        "id": "notes.list",
+        "input_schema": {},
+        "mutates": false,
+        "output_schema": {}
+      }
+    ],
+    "principal": {
+      "id": "acct-1",
+      "spaces": [
+        {
+          "id": "space-1",
+          "role": "owner"
+        }
+      ]
+    },
+    "protocol_version": 1
+  },
+  "ok": true
+}

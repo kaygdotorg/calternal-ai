@@ -1,0 +1,4 @@
+REVISION  TITLE      UPDATED
+r-6       Groceries  2026-11-16 21:00:00 +01:00
+
+More versions: repeat with --cursor c-2

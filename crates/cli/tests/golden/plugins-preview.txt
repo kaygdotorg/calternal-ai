@@ -1,0 +1,5 @@
+Preview of the plugin's GenUI view (nothing was changed):
+{
+  "text": "hello",
+  "type": "text"
+}

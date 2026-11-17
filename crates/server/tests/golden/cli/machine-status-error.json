@@ -1,0 +1,11 @@
+exit: 1
+--- stdout ---
+{
+  "error": {
+    "code": "not_found",
+    "hint": "Run `calternal machine enroll --server URL --code CODE`, or pass the right --dir.",
+    "message": "this computer is not enrolled (no credentials in <DIR>)"
+  },
+  "ok": false
+}
+--- stderr ---

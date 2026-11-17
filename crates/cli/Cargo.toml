@@ -4,10 +4,18 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+description = "Calternal-AI command-line layer: the `cl` program and the output module every command uses"
 
 [[bin]]
 name = "cl"
 path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# Golden-file and JSON-shape helpers for tests; dev-dependencies only.
+testing = []
 
 [dependencies]
 calternal-core.workspace = true
@@ -15,3 +23,8 @@ calternal-client.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 tokio.workspace = true
+time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
+rustix = { version = "1.1", features = ["termios", "stdio"] }
+
+[dev-dependencies]
+calternal-cli = { path = ".", features = ["testing"] }

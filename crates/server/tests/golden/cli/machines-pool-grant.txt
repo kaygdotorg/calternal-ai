@@ -1,0 +1,4 @@
+exit: 0
+--- stdout ---
+Account cccccccc-cccc-7ccc-8ccc-cccccccccccc may now use pool machines.
+--- stderr ---

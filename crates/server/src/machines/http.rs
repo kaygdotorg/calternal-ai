@@ -2,7 +2,7 @@
 //!
 //! Machine-facing, under [`calternal_machine::protocol::PATH_PREFIX`]
 //! (`/api/v1/machine/`): the request guard does not require an account session
-//! there; `enrol` and `session/*` are authenticated by the code and the machine
+//! there; `enroll` and `session/*` are authenticated by the code and the machine
 //! key, `sync` and `output` by the machine's bearer token.
 //!
 //! Account-facing, under `/api/v1/machines` (signed-in account required, bare
@@ -10,7 +10,7 @@
 //!
 //! | Method and path | Body → result |
 //! | --- | --- |
-//! | `POST /api/v1/machines/codes` | `{}` → `{code, expires_ms}`: enrol one of your machines |
+//! | `POST /api/v1/machines/codes` | `{}` → `{code, expires_ms}`: enroll one of your machines |
 //! | `GET /api/v1/machines` | → `{machines: [MachineView]}`: your machines |
 //! | `POST /api/v1/machines/{id}/revoke` | `{}` → `{}` |
 //! | `POST /api/v1/machines/{id}/drain` | `{draining}` → `{}` |
@@ -59,7 +59,7 @@ type Svc = Option<Extension<Arc<MachineService>>>;
 /// extension is installed (tests that build the router without one).
 pub fn routes<D: Directory>() -> Router<Shared<D>> {
     Router::new()
-        .route("/api/v1/machine/enrol", post(enrol))
+        .route("/api/v1/machine/enroll", post(enrol))
         .route("/api/v1/machine/session/start", post(session_start))
         .route("/api/v1/machine/session/finish", post(session_finish))
         .route("/api/v1/machine/sync", post(sync))
