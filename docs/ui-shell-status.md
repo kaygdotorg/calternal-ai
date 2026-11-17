@@ -370,3 +370,10 @@ Shell states: **reconnecting** (any call or stream that cannot reach the server:
 | Admin | Storage | `storage.status` for the three roots |
 | Admin | Server settings, people, invites by the operator | `people.invite`, `people.manage`, `server.settings` operations |
 | Shell | Personal space | server creates it at sign-up (then delete `withPersonal` in `spaces.svelte.ts`) |
+
+## First use, failures, accessibility, light wallpapers (2026-11-18)
+
+- **Empty states (server mode):** Notes, Machines (what a machine is, Make a code, the enroll command), Secrets, Members, Plugins each say what the thing is and offer the one next action. Failures use `server/say.ts` (plain words plus the next step, by code, never the server's message). Screens for server unreachable, version mismatch and a wrong or used setup code.
+- **Accessibility:** `e2e/a11y.mjs` (fixtures, every screen and Settings page, both schemes, desktop and phone) and `e2e/a11y-server.mjs` (real server: setup, sign-in, shell, every Settings page, failure screens; 56 checks) are clean. `e2e/a11y-walk.mjs`: keyboard walk with focus indicator and names on the threads, notes and three Settings pages in both schemes, the palette opens, keeps focus and returns it on Escape, reduced motion leaves no movement, 200% zoom (720 px) has no sideways scroll and no axe violation. Found and fixed: Plugins group headings jumped from h1 to h3; the sheet returned focus to a field that had gone (now to where focus was before any sheet).
+- **Light wallpapers:** the eight built-ins checked in a headed GPU Chrome (screenshots on issue #15); nothing to fix. Phone width needs a real device or the WebKit simulator, not that Chrome.
+- **Served by the server itself:** deep-link reload and `blob:` wallpapers work with the current server (CSP and fallback in dev); the personal space comes from `personal: true`.
