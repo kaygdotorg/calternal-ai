@@ -1,0 +1,58 @@
+<!doctype html><meta charset=utf-8><title>Calm mesh + grain, rendered once</title>
+<!-- Self-contained, no network. Each image is generated ONCE on a canvas (OKLab blend, seeded, optional grain),
+     exported to a blob and shown as a plain <img>: nothing animates, nothing blurs per frame.
+     The strip under a picture amplifies local luma differences: band edges appear as lines, grain as fine noise. -->
+<style>
+body{margin:0;padding:16px;font:13px/1.4 system-ui;background:#101012;color:#cfcfd4}
+h2{font:600 13px system-ui;margin:18px 0 8px;color:#fff}
+.g{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+figure{margin:0}figcaption{margin-top:6px;opacity:.75}
+.i{width:100%;aspect-ratio:16/10;border-radius:10px;display:block;background-size:cover}
+</style>
+<h2>Slop vs calm (same canvas size)</h2><div class=g id=a></div>
+<h2>Banding: CSS gradient vs generated, no grain vs grain (strip: pixel-difference revealer)</h2><div class=g id=b></div>
+<script>
+const lin=c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4,gam=c=>c<=.0031308?12.92*c:1.055*c**(1/2.4)-.055;
+function lab(h){const n=parseInt(h.slice(1),16),r=lin((n>>16&255)/255),g=lin((n>>8&255)/255),b=lin((n&255)/255);
+ const l=Math.cbrt(.4122214708*r+.5363325363*g+.0514459929*b),m=Math.cbrt(.2119034982*r+.6806995451*g+.1073969566*b),s=Math.cbrt(.0883024619*r+.2817188376*g+.6299787005*b);
+ return[.2104542553*l+.793617785*m-.0040720468*s,1.9779984951*l-2.428592205*m+.4505937099*s,.0259040371*l+.7827717662*m-.808675766*s]}
+function rgb(L,a,b){const l=(L+.3963377774*a+.2158037573*b)**3,m=(L-.1055613458*a-.0638541728*b)**3,s=(L-.0894841775*a-1.291485548*b)**3;
+ return[gam(4.0767416621*l-3.3077115913*m+.2309699292*s),gam(-1.2684380046*l+2.6097574011*m-.3413193965*s),gam(-.0041960863*l-.7034186147*m+1.707614701*s)]}
+const rng=s=>()=>(s=s+0x6D2B79F5|0,s=Math.imul(s^s>>>15,s|1),s^=s+Math.imul(s^s>>>7,s|61),((s^s>>>14)>>>0)/4294967296);
+/** Mesh in OKLab: Gaussian-weighted colour points, gentle domain warp, optional monochrome grain (amp in 8-bit steps). */
+function mesh(cols,w,h,{seed=1,sigma=.5,warp=.05,grain=0}={}){
+ const R=rng(seed),P=cols.map((c,i)=>({c:lab(c),x:(i%3+.2+R()*.6)/3,y:(Math.floor(i/3)+.2+R()*.6)/Math.ceil(cols.length/3)}));
+ const cv=document.createElement('canvas');cv.width=w;cv.height=h;const x=cv.getContext('2d'),im=x.createImageData(w,h),d=im.data,k=-1/(2*sigma*sigma);
+ for(let j=0;j<h;j++)for(let i=0;i<w;i++){
+  const u=i/w+warp*Math.sin(j/h*5+seed),v=j/h+warp*Math.sin(i/w*4+seed*2);let t=0,L=0,A=0,B=0;
+  for(const p of P){const dx=(u-p.x)*1.6,dy=v-p.y,q=Math.exp((dx*dx+dy*dy)*k);t+=q;L+=q*p.c[0];A+=q*p.c[1];B+=q*p.c[2]}
+  const c=rgb(L/t,A/t,B/t),n=grain?(R()+R()-1)*grain:0,o=(j*w+i)*4;
+  for(let z=0;z<3;z++)d[o+z]=Math.max(0,Math.min(255,Math.round(c[z]*255+n+(grain?0:0))));d[o+3]=255}
+ x.putImageData(im,0,0);return cv}
+/** Banding revealer: 128 + 40 x (luma difference between a pixel and one 3 px away). Flat = grey, a band edge = a thin line, grain = fine noise. */
+function reveal(cv){const w=cv.width,h=cv.height,x=cv.getContext('2d'),d=x.getImageData(0,h-120,w,120).data,o=document.createElement('canvas');o.width=w;o.height=120;
+ const ox=o.getContext('2d'),im=ox.createImageData(w,120),q=im.data,y=(i)=>.3*d[i]+.59*d[i+1]+.11*d[i+2];
+ for(let j=0;j<120;j++)for(let i=0;i<w;i++){const a=(j*w+i)*4,b=a+12,v=i+3<w?128+40*(y(a)-y(b)):128;q[a]=q[a+1]=q[a+2]=Math.max(0,Math.min(255,v));q[a+3]=255}
+ ox.putImageData(im,0,0);o.className='i';o.style.cssText='height:70px;aspect-ratio:auto;image-rendering:pixelated;border-radius:6px;margin-top:6px;object-fit:cover';return o}
+const fig=(host,node,cap,cv)=>{const f=document.createElement('figure');f.append(node);if(cv)f.append(reveal(cv));
+ const c=document.createElement('figcaption');c.textContent=cap;f.append(c);host.append(f)};
+const img=cv=>{const e=new Image();e.className='i';cv.toBlob(b=>e.src=URL.createObjectURL(b),'image/jpeg',.9);return e};
+const css=bg=>{const e=document.createElement('div');e.className='i';e.style.background=bg;return e};
+const lg=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,w*.35,h);
+ g.addColorStop(0,'#241f3a');g.addColorStop(.55,'#6e5273');g.addColorStop(1,'#d9a58f');x.fillStyle=g;x.fillRect(0,0,w,h);return c};
+const A=document.getElementById('a'),B=document.getElementById('b');
+const W=1280,H=800,t0=performance.now();
+const dusk=['#241f3a','#3d3358','#6e5273','#2a2b45','#a2707a','#d9a58f'],
+ sage=['#e8ecde','#cfdccb','#b4cbb8','#f3efe0','#d4e1df','#c2d3c4'],
+ slate=['#10141c','#18202e','#27384f','#1a2030','#3a4a60','#223045'];
+fig(A,css('linear-gradient(135deg,#7f00ff,#e100ff 45%,#00c6ff)'),'Slop: saturated 3-stop sRGB gradient');
+fig(A,css('radial-gradient(at 20% 20%,#ff0080,transparent 50%),radial-gradient(at 80% 30%,#00e5ff,transparent 50%),radial-gradient(at 50% 90%,#7cff00,transparent 50%),#1b1038'),'Slop: rainbow blobs on dark');
+fig(A,img(mesh(dusk,W,H,{seed:4,grain:2.5})),'Calm: 6 low-chroma points, analogous hues, grain 2.5');
+fig(B,css('linear-gradient(160deg,#241f3a,#6e5273 55%,#d9a58f)'),'CSS 3-stop gradient: 8-bit steps, no dither',lg(W,H));
+{const c=mesh(dusk,W,H,{seed:4,grain:0});fig(B,img(c),'Generated, no grain: shallow ramps still step',c)}
+{const c=mesh(dusk,W,H,{seed:4,grain:2.5});fig(B,img(c),'Generated + grain 2.5/255: steps hidden',c)}
+{const c=mesh(sage,W,H,{seed:7,grain:2.5});fig(B,img(c),'Sage (light)',c)}
+{const c=mesh(slate,W,H,{seed:3,grain:2.5});fig(B,img(c),'Slate (dark)',c)}
+{const c=mesh(dusk,W,H,{seed:4,grain:6});fig(B,img(c),'Grain 6/255: visible film grain; costs bytes',c)}
+document.title+=' ('+Math.round(performance.now()-t0)+' ms for 6 canvases)';
+</script>
