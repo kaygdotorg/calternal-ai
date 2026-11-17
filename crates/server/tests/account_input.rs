@@ -4,13 +4,13 @@ use calternal_core::AccountFrame;
 use calternal_server::account_input::{Inputs, Limits};
 use calternal_server::{
     api::{self, AppState, Shared},
-    auth::{Directory, Identity, TokenTable},
+    auth::{Directory, Identity, StoredDirectory},
     plugins::{Jobs, Registry, WorkerPool},
     store::Store,
 };
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -28,11 +28,17 @@ impl Fixture {
         let (dir, tokens, token, guest_token, owner, spaces, store) =
             tokio::task::spawn_blocking(|| {
                 let dir = tempfile::tempdir().unwrap();
-                let tokens = TokenTable::load_or_create(dir.path()).unwrap();
+                let roots = calternal_roots::Roots {
+                    appdata: dir.path().join("appdata"),
+                    userdata_ssd: dir.path().join("userdata-ssd"),
+                    userdata_hdd: dir.path().join("userdata-hdd"),
+                };
+                let store = Store::open(&roots, true).unwrap();
+                let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
                 let token =
-                    std::fs::read_to_string(dir.path().join("dev-tokens/owner.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/owner.token")).unwrap();
                 let guest_token =
-                    std::fs::read_to_string(dir.path().join("dev-tokens/guest.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/guest.token")).unwrap();
                 let owner = tokens.authenticate(token.as_bytes()).unwrap();
                 let spaces = tokens
                     .describe(&owner)
@@ -40,7 +46,6 @@ impl Fixture {
                     .into_iter()
                     .map(|s| s.id)
                     .collect();
-                let store = Store::open(dir.path()).unwrap();
                 (dir, tokens, token, guest_token, owner, spaces, store)
             })
             .await
@@ -62,8 +67,8 @@ impl Fixture {
                 Arc::new(move || injected.load(Ordering::SeqCst)),
             )
             .with_content(store.shared_content()),
-            store: Mutex::new(store),
-            tokens,
+            store,
+            directory: tokens,
             registry: Registry::load(std::path::Path::new("/missing")),
             workers: WorkerPool::new(None),
             jobs: Jobs::disabled(),
@@ -271,11 +276,11 @@ async fn pending_cap_age_transition_and_revocation_cleanup() {
     let st = f.state.clone();
     // Direct directory removal is also filtered on the next account operation.
     tokio::task::spawn_blocking(move || {
-        st.tokens
+        st.directory
             .spaces
             .delete(
-                calternal_auth::AccountId::parse(&owner).unwrap(),
-                calternal_auth::SpaceId::parse(&space).unwrap(),
+                calternal_types::AccountId::parse(&owner).unwrap(),
+                calternal_types::SpaceId::parse(&space).unwrap(),
             )
             .unwrap()
     })

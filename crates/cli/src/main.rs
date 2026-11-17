@@ -497,7 +497,8 @@ mod tests {
     }
     #[test]
     fn no_hints_is_global_and_command_help_has_examples_and_see_also() {
-        let cli = Cli::try_parse_from(["cl", "notes", "list", "--no-hints"]).unwrap();
+        let space = calternal_types::SpaceId::new().to_string();
+        let cli = Cli::try_parse_from(["cl", "notes", "list", "--space", &space, "--no-hints"]).unwrap();
         assert!(cli.no_hints);
         let commands: &[&[&str]] = &[
             &["cl", "--help"],
