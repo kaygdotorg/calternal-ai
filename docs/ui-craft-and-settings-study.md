@@ -13,7 +13,7 @@ third-party file was committed; the eight Unsplash photos were fetched into `/tm
    92% opaque, and the only adaptive step in the code is one yes-or-no test on the backdrop's colour that flips
    the header's text colour. There is no function from background contrast to blur, dim or tint. The measured
    Craft numbers are in section 3.
-2. A Calternal function that does adapt (section 6) is small: it solves one number per surface, the opacity of a
+2. A Calternal function that does adapt (section 5) is small: it solves one number per surface, the opacity of a
    veil, so that the primary ink reaches 7:1 on the worst 1% of the surface, then moves ink-2 and ink-3 toward the
    primary ink for that surface until they reach 5.5:1 and 4.5:1. Blur, Dim and Tint choose the look; the readability
    floor is always applied.
@@ -33,7 +33,7 @@ third-party file was committed; the eight Unsplash photos were fetched into `/tm
 | CODE | Read from Craft's public shared-page JavaScript bundle (`share/static/js/main.248864bd.js`, served to every visitor, fetched 2026-11-17) |
 | AX | Accessibility frame in points from a macOS app (the VM is 1x: 1 pt = 1 px, so about ±1 pt) |
 | px | Measured from a screenshot |
-| calc | Computed by the reference function in section 6 on real pixels (Chromium-compatible gamma-space compositing) |
+| calc | Computed by the reference function in section 5 on real pixels (Chromium-compatible gamma-space compositing) |
 | earlier | Measured by an earlier study in the existing app's repo, not re-measured here |
 
 ## 2. What could and could not be opened
@@ -70,7 +70,7 @@ or 0.27 (dark), and Faded blends it down the window toward a neutral.
 | 3 | Immersive and Faded were read from pixels only. | In the viewer's code the background has `size: "full" | "faded"`. Faded is one overlay: `position: fixed; height: 80vh; bottom: 0; background: linear-gradient(to top, <page colour>, <page colour at alpha 0>)`, where the page colour is `#FFFFFF` (light) or `#222222` (dark) (CODE). The picture itself is not changed. The native app's Faded (`earlier`) blends the *sidebar* linearly over the whole window height instead, so the two are different mechanisms with the same name. A blurred image is `filter: blur(10px)` on a layer scaled 1.03 (CODE), and a solid backdrop with no picture is `#F7F7F7` (light) or `#1A1A1A` (dark) (DOM). |
 | 4 | The preset's contents were listed from the UI. | The style record the viewer reads is `{styleId, textColor, background, paperBackgroundColor, paragraphSpacingType, themeColor, themeId, lineThemeStyle, cardThemeStyle, pageWidthType}`, with `background = {type: none \| solid \| gradient \| image, size: full \| faded, solidColor, gradientColors{start, end, direction: topToBottom \| leftToRight \| radial}, image{url, isBlurred, blurHash}}` and a per-style `dynamic \| fix` flag (CODE). A preset is **data**, 10 fields, and every field has an override. |
 | 5 | Dark mode of the *app chrome* over a styled page. | In the viewer the app's light or dark follows the system; the page's own colours do not change with it unless the style is dynamic. Same document, dark scheme: the sidebar goes from white to `#292929` at 0.92, the page from `#FFFFFF` to `#222222`, and the header colour and backdrop **do not change at all** (DOM, `headerBackground` is `rgb(130,181,252)` at 0.8 in both schemes on the same document). |
-| 6 | Text over the *sidebar* in the native app. | Not guarded by the app; guarded by the 0.775 or 0.73 neutral share (immersive) and by Craft's choice of ink. With the same ink as Calternal's ink-3, Craft's native sidebar gives 1.9 to 4.9:1 on the eight wallpapers (section 8), so it relies on ink choice and on typical backdrops being light flat colours. |
+| 6 | Text over the *sidebar* in the native app. | Not guarded by the app; guarded by the 0.775 or 0.73 neutral share (immersive) and by Craft's choice of ink. With the same ink as Calternal's ink-3, Craft's native sidebar gives 1.9 to 4.9:1 on the eight wallpapers (section 7), so it relies on ink choice and on typical backdrops being light flat colours. |
 | 7 | The contrast guard. | Only the editor has it (`earlier`: a warning triangle that snaps text to the nearest readable grey, about 4.1 to 4.5:1). The viewer's code has no contrast function (a search found none); `GM` is the only luminance test and it is a threshold. |
 
 ### 3.3 Measured values (light and dark)
@@ -99,7 +99,7 @@ and the getting-started guide's "Styling Documents" page
 Craft's native sidebar (`earlier`, light / dark): backdrop weight 0.225 / 0.27 over neutral `#E9E9E9` / `#454545`.
 Its chroma is a fixed share of the backdrop's: measured here from the earlier table, the sidebar's OKLCH chroma is
 0.23 to 0.26 of the backdrop's in light and 0.32 to 0.35 in dark (four flat colours), so the "tint" is
-proportional, not adaptive. That is where the tint gain in section 6 comes from.
+proportional, not adaptive. That is where the tint gain in section 5 comes from.
 
 ### 3.4 Presets and gallery: why it feels curated
 
@@ -135,7 +135,7 @@ readable in light and dark. Wallpaper is per person; a preset sets everything at
 exists; the accent is inferred from the wallpaper. Craft's own count (4 toggles, about 18 pickers, 0 sliders) is
 the same shape: choose visually, never type a number.
 
-Apple's current settings window is the same idea at system level (section 10.3): **Appearance** (Auto, Light,
+Apple's current settings window is the same idea at system level (section 10.2): **Appearance** (Auto, Light,
 Dark), **Liquid Glass: Clear or Tinted**, and a switch "Tint window background with wallpaper color", all
 checkbox-like choices without a value. That is a good precedent for the owner's three boxes.
 
@@ -174,7 +174,7 @@ estimate from two numbers.
 
 | Output | How |
 | --- | --- |
-| `blurPx` | `blur` ? 12 (sidebars) or 75 (card) : 0. Constant per role; it is a look, not a readability tool (a 12 px blur moves the sidebar floor by at most 0.06, section 7.2). Phones scale by 0.7 (existing token). |
+| `blurPx` | `blur` ? 12 (sidebars) or 75 (card) : 0. Constant per role; it is a look, not a readability tool (a 12 px blur moves the sidebar floor by at most 0.06, section 6.2). Phones scale by 0.7 (existing token). |
 | `tint` | `{alpha: flags.tint ? 0.35 or 0.85 : 0, colour: paper with OKLCH chroma c at the mean hue}` where `c = min(g * mean chroma, 0.05)`, gain `g = 0.25` light and `0.33` dark (Craft's own measured ratio), reduced until it fits sRGB at the paper's lightness |
 | `dim` | `{alpha: flags.dim ? 0.25 or 0.60 : 0, colour: paper}`, then raised by the floor |
 | `veil total` | `1 - (1 - a_tint)(1 - a_dim)`; the raised layer is capped at 0.9, so a total can reach 0.935 |
