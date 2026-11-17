@@ -4,6 +4,11 @@ Tokens are data; surfaces are components. Visual language is ported from the moc
 (`origin/review/switcher-a-pills`: `packages/ui/src/styles/tokens.css`, `glass.css`, `Pill`, `Toolbar`,
 `Icon`); `docs/ui-shell.md` wins where they differ. Deviations are listed in `docs/ui-shell-status.md`.
 
+## Native
+
+The Apple clients' design system is `apps/apple/CalternalUI` (SwiftUI, macOS 26 and iOS 27). Its tokens are generated from the same `tokens/tokens.json`;
+its README lists what matches this system exactly, what differs because the platform differs, and what is open.
+
 ## Tokens
 
 - **One source:** `packages/ui/tokens/tokens.json`. `scripts/build-tokens.mjs` emits
