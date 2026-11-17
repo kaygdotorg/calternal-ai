@@ -6,10 +6,10 @@ const out = process.argv[2] ?? "e2e/out";
 mkdirSync(out, { recursive: true });
 const stop = await serve();
 const browser = await launch();
-const shot = async (name, device, scheme, path, act) => {
+const shot = async (name, device, scheme, path, act, clip) => {
   const { ctx, page } = await open(browser, device, scheme, path);
   if (act) await act(page);
-  await page.screenshot({ path: `${out}/${name}.jpg`, type: "jpeg", quality: 90 });
+  await page.screenshot({ path: `${out}/${name}.jpg`, type: "jpeg", quality: 92, ...(clip ? { clip } : {}) });
   await ctx.close();
   console.log("shot", name);
 };
@@ -24,6 +24,7 @@ try {
   await shot("desktop-light-switcher", "desktop", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Threads", exact: true }).last().click(); await p.waitForTimeout(300); });
   await shot("desktop-light-permission-menu", "desktop", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Approve for me" }).click(); await p.waitForTimeout(300); });
   await shot("phone-light-permission-menu", "phone", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "dev-02-std · Sandboxed" }).click(); await p.waitForTimeout(300); });
+  await shot("desktop-light-brand-crop", "desktop", "light", "/threads/t-run", async () => {}, { x: 0, y: 0, width: 340, height: 72 });
   await shot("desktop-light-settings", "desktop", "light", "/settings/appearance");
   await shot("desktop-dark-settings-fonts", "desktop", "dark", "/settings/appearance", async (p) => { await p.getByRole("button", { name: /Interface/ }).click(); await p.waitForTimeout(400); });
   await shot("desktop-dark-wallpaper-aurora", "desktop", "dark", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "ember" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
