@@ -8,7 +8,7 @@ title: "Threads"
 
 ## Client reads and live updates
 
-`threads.list` returns rows with `id`, `address`, `revision`, `turn_state` and
+`threads.list` returns rows with `id`, `address`, `revision`, `turn_state`, `turn_reason` and
 `metadata`. The file-derived metadata includes `provider`, `model` (null until
 known), `mode`, `message_count`, `last_activity_at`, `archived` and an optional
 `parent_thread`. Last activity is the creation time or the time of the latest
@@ -18,8 +18,8 @@ mode when the input omits one.
 
 A warm list executes **one index query and zero thread file reads** for N threads.
 The bounded content index scan joins the space's current turn index with one
-indexed seek per candidate. It reads no message bytes or job checkpoint payloads
-and has zero flushes. The jobs connection attaches the same space's content
+indexed seek per candidate. It reads no message bytes and selects only the reason fields from the retained
+checkpoint. It has zero flushes. The jobs connection attaches the same space's content
 database read-only, once per cached connection. A cold read also opens the
 existing indexes. Static metadata is mirrored in Markdown and can be indexed
 again from its envelope. Live state comes from the retained jobs index. Full
@@ -33,7 +33,7 @@ checkpoint. The turn labels are `idle`, `queued`, `running`, `waiting`,
 waiting, and successful or canceled work returns to idle. Final failure remains
 visible for the existing job retention period. The requests lane parks turns waiting on a person in this same durable
 `waiting` state. Reading a thread exposes its job state without exposing private
-request contents.
+request contents. The turn reason is also returned at `thread.turn_reason`.
 
 Subscribe to the owning space on `/api/v1/live` and save its journal bookmark.
 Refresh the list or open thread for an entry whose `item` is the thread UUID and
@@ -49,7 +49,7 @@ whose `kind` is one of these values.
 | Deleted | `threads.delete` |
 
 The turn-state entry carries `data.job_id`, `data.state` (the sidebar label) and
-`data.job_state` (the underlying job lifecycle value). The same committed journal
+`data.job_state` (the underlying job lifecycle value) and `data.turn_reason`. The same committed journal
 wakes both list and detail subscribers. The feed rechecks current space access and
 item ownership on replay and delivery. Turn state uses a space-local outbox
 written in the existing job transaction. One drain per cached space job connection reads at
