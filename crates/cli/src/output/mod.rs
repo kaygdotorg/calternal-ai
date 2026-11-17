@@ -345,8 +345,13 @@ fn sorted(v: Value) -> Value {
     }
 }
 
+/// `v` as indented JSON with alphabetical keys, for showing a structure as text.
+pub fn json_text(v: &Value) -> String {
+    serde_json::to_string_pretty(&sorted(v.clone())).expect("JSON value serializes")
+}
+
 fn pretty(doc: Value) -> String {
-    let mut s = serde_json::to_string_pretty(&sorted(doc)).expect("JSON value serializes");
+    let mut s = json_text(&doc);
     s.push('\n');
     s
 }

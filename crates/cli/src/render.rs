@@ -4,7 +4,7 @@
 //! Server data is read as untyped JSON on purpose: a newer server's extra fields
 //! must not break an older `cl`.
 
-use calternal_cli::output::{CliError, Output, Reply};
+use calternal_cli::output::{CliError, Output, Reply, json_text};
 use calternal_core::{ApiError, DescribeResult, ErrorCode};
 use serde_json::Value;
 
@@ -113,8 +113,8 @@ pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -
         "plugins.enable" | "plugins.disable" => reply.fields(plugin_fields(&data["plugin"])),
         "plugins.preview" => reply
             .line("Preview of the plugin's GenUI view (nothing was changed):")
-            .text(serde_json::to_string_pretty(&data["view"]).unwrap_or_default()),
-        _ => reply.text(serde_json::to_string_pretty(&data).unwrap_or_default()),
+            .text(json_text(&data["view"])),
+        _ => reply.text(json_text(&data)),
     }
 }
 
