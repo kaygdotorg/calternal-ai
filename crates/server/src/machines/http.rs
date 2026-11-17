@@ -10,7 +10,7 @@
 //!
 //! | Method and path | Body → result |
 //! | --- | --- |
-//! | `POST /api/v1/machines/codes` | `{}` → `{code, expires_ms}`: enrol one of your machines |
+//! | `POST /api/v1/machines/codes` | `{}` → `{code, expires_ms}`: enroll one of your machines |
 //! | `GET /api/v1/machines` | → `{machines: [MachineView]}`: your machines |
 //! | `POST /api/v1/machines/{id}/revoke` | `{}` → `{}` |
 //! | `POST /api/v1/machines/{id}/drain` | `{draining}` → `{}` |
