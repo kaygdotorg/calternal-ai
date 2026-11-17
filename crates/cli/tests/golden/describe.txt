@@ -1,0 +1,9 @@
+protocol:   1
+genui:      1
+principal:  acct-1
+
+SPACE    ROLE
+space-1  owner
+
+OPERATION   ACCESS  DESCRIPTION
+notes.list  reads   List notes

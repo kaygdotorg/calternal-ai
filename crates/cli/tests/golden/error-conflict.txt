@@ -1,0 +1,2 @@
+error: revision is stale
+hint: Fetch the current version (`cl notes get`), then retry with its revision.

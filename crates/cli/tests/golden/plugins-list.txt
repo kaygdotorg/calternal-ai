@@ -1,0 +1,2 @@
+ID          NAME        VERSION  ENABLED  GENERATION
+word-count  Word count  0.1.0    yes      3
