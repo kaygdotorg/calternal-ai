@@ -33,7 +33,7 @@
     return () => ro.disconnect();
   });
   $effect(() => {
-    const read = () => (barH = Math.round(cssPx("--bar-h", 52)));
+    const read = () => (barH = Math.round(cssPx("--bar-h", 52) + cssPx("--safe-top", 0)));
     void appearance.prefs.uiSize;
     read();
     matchMedia("(min-width: 760px)").addEventListener("change", read);
@@ -119,7 +119,7 @@
 <style>
   .thread { position: absolute; inset: 0; }
   /* The header and the composer float over the list; the list fades out under them (VirtualList), so there is no opaque band at the top of the card. */
-  header { position: absolute; z-index: 3; top: 0; left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region); pointer-events: none; }
+  header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region); pointer-events: none; }
   header > :global(*) { pointer-events: auto; }
   .grow { flex: 1; pointer-events: none; }
   :global(.title) { display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }

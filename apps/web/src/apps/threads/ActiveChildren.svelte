@@ -26,6 +26,6 @@
   :global(.kids:hover), :global(.kids:focus-within) { opacity: 1; }
   /* The link is a full-size target (the pill height); the bar drawn in it is thin. */
   .n { font-size: var(--text-label); font-variant-numeric: tabular-nums; color: var(--ink-2); }
-  .seg { width: 2rem; height: var(--pill-h); display: grid; align-items: center; }
+  .seg { width: max(2rem, var(--pill-h)); height: var(--pill-h); display: grid; align-items: center; }
   .seg::before { content: ""; height: var(--s-2); border-radius: var(--r-pill); background: var(--accent); }
 </style>

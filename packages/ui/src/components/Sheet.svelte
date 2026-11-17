@@ -46,7 +46,7 @@
   .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); }
   :global(.sheet:focus) { outline: none; }
   :global(.sheet) { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
-  :global(.sheet.bottom) { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
+  :global(.sheet.bottom) { left: var(--inset); right: var(--inset); bottom: var(--inset); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
   :global(.sheet.right) { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
   /* The palette: centred under the top edge. */
   :global(.sheet.top) { top: 10dvh; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: top center; translate: -50% 0; max-height: 80dvh; }

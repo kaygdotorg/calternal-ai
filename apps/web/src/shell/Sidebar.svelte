@@ -47,7 +47,7 @@
 
 <style>
   /* The bars float over one scrolling column; its fades are as tall as the bars. */
-  .side { --foot-h: calc(var(--pill-h) + var(--s-4) + max(var(--s-4), var(--safe-bottom))); position: relative; height: 100%; min-height: 0; }
+  .side { --foot-h: calc(var(--pill-h) + var(--s-4) + var(--foot-inset)); position: relative; height: 100%; min-height: 0; }
   header { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s-4) 0 var(--s-6); }
   .mark { font-family: var(--font-brand); font-size: var(--text-title); font-weight: var(--strong-weight); line-height: 1; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--bar-h) var(--s-4) var(--foot-h); --fade-t: var(--bar-h); --fade-b: var(--foot-h); }

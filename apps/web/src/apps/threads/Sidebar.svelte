@@ -8,6 +8,7 @@
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
   import StateMark from "./StateMark.svelte";
+  import { swipe } from "../../lib/swipe";
   import type { ThreadSummary } from "./model";
   import { client, store } from "./store.svelte";
 
@@ -136,9 +137,17 @@
       ondblclick={(e) => { e.preventDefault(); edit("thread", t.id, t.title); }}
       onkeydown={(e) => keyRow(e, t, c, i, n)}
     >
-      <Row title={t.title} href={href(`/threads/${t.id}`)} selected={current === t.id}>
-        {#snippet trailing()}<span class="tail"><span class="when">{time(t.updatedAt)}</span><StateMark state={t.state} /><span class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span></span>{/snippet}
-      </Row>
+      <div class="swrap">
+        <div class="sw" aria-hidden={false}>
+          <button type="button" class="sb" aria-label="More actions for {t.title}" onclick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, thread: t }; }}><Icon name="more" /></button>
+          <button type="button" class="sb arch" aria-label="Archive {t.title}" onclick={() => archive(t)}><Icon name="archive" /></button>
+        </div>
+        <div class="slide" use:swipe={{ reveal: 130, onlong: (x, y) => (ctx = { x, y, thread: t }) }}>
+          <Row title={t.title} href={href(`/threads/${t.id}`)} selected={current === t.id}>
+            {#snippet trailing()}<span class="tail"><span class="when">{time(t.updatedAt)}</span><StateMark state={t.state} /><span class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span></span>{/snippet}
+          </Row>
+        </div>
+      </div>
       <span class="ra"><IconButton small icon="archive" label="Archive" onclick={() => archive(t)} /></span>
       {#each kids(t.id) as k (k.id)}
         <Row depth={1} title={k.title} href={href(`/threads/${k.id}`)} selected={current === k.id} onclick={() => {}}>
@@ -195,6 +204,16 @@
 <Menu open={!!ctx} items={ctxItems} label={ctx?.thread ? `Thread: ${ctx.thread.title}` : "Section"} anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
 
 <style>
+  /* Swipe actions (touch): the row slides left 130 px over two 50 px round buttons, 10 apart, 10 from the edge (docs/native-ui-study.md 13.2). */
+  .swrap { position: relative; }
+  .slide { position: relative; z-index: 1; touch-action: pan-y; translate: var(--sx, 0px) 0; transition: translate var(--dur-sheet) var(--ease-sheet); background: transparent; }
+  .slide:global(.dragging) { transition: none; }
+  .sw { display: none; position: absolute; top: 50%; right: var(--s-4); translate: 0 -50%; gap: var(--s-3); }
+  .sb { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--ink-rgb) / 0.12); color: var(--ink); }
+  .sb.arch { background: color-mix(in oklab, var(--danger) 18%, rgb(var(--tint) / 0.6)); color: var(--danger); }
+  .sw { opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out); }
+  .swrap:has(.slide:global(.dragging)) .sw, .swrap:has(.slide:global([data-open="true"])) .sw { opacity: 1; pointer-events: auto; }
+  @media (hover: none) { .sw { display: flex; } }
   .tail { display: inline-flex; align-items: center; gap: var(--s-3); color: var(--ink-3); }
   .ra { position: absolute; right: var(--s-3); top: calc(var(--row-h) / 2); translate: 0 -50%; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out); }
   li:hover > .ra, li:focus-within > .ra { opacity: 1; pointer-events: auto; }
