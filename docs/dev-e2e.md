@@ -36,6 +36,14 @@ for the owner once, passes its one-use code over stdin, and waits for the
 machine to report online. Passkey setup uses an empty installation as
 described below.
 
+The morning build requires fresh roots for auth schema 8 and jobs schema 2.
+When refreshing an existing preview, build the server and both images from
+the same tree first. Stop one installation at a time and set aside its
+three server roots and machine enrollment before starting the new binary.
+Keep its sandbox homes in place. The seeded installation enrolls a new
+machine for its new account. The empty browser installation generates a new
+first-owner code for the coordinator.
+
 The server listens on `127.0.0.1:34135`. The relay binds `34134` to dev-01's
 NetBird IPv4 address on `wt0`, observed as `10.69.69.237`. The three
 `calternal-e2e-*.service` user units write to the systemd journal, with
@@ -80,6 +88,21 @@ To check continuation, use `./scripts/dev-e2e/prove.py claude-continuation`
 in place of `prove.py claude`. It verifies a two-message exchange and reports
 only timing and outcome.
 
+From dev-01, run the cached readiness command for the seeded account and its
+personal space after a real turn:
+
+```sh
+export CALTERNAL_URL=http://127.0.0.1:34135
+export CALTERNAL_TOKEN_FILE="$HOME/calternal-e2e/appdata/dev-tokens/owner.token"
+cal="$HOME/calternal-e2e/bin/calternal"
+space=$("$cal" --json invoke spaces.list --input '{}' |
+  jq -er '.data.spaces[] | select(.personal and .role == "owner") | .id')
+"$cal" agent readiness --space-id "$space"
+```
+
+Readiness uses the latest machine observation. It shows `Unknown` for provider
+sign-in until a turn or Check reports it.
+
 ## Browser installation and Caddy
 
 Use a separate empty installation for the real browser passkey. On dev-01,
@@ -97,6 +120,10 @@ This installs a separate binary and pairs three roots under
 `service.sh stop-browser` stops just those two units. `service.sh logs`
 includes both installations. The fixture reset only resets the seeded
 installation.
+After a refresh, the rehearsal uses a third installation with its own roots,
+machine unit, and software passkey. The same post-setup script verifies a
+fixture turn and prints the login command. The live browser token stays
+available for the owner.
 
 Inside the coordinator’s existing `preview.calternal.cloud` Caddy site,
 route the absolute API paths ahead of the static SPA fallback:
@@ -258,6 +285,7 @@ and [job stream implementation](../crates/server/src/plugins/job_api.rs).
 | Threads decoded a flat provider chunk | The merged browser adapter reads `chunk.data.event` for provider output. Rendering the separate placement and session notices remains a UI follow-up. |
 | Browser setup and sign-in need their own first owner | Caddy reaches the separate browser server. The post-setup script passed with a fresh software passkey and its provisioned Personal space. The preview’s actual owner ceremony remains to be exercised. |
 | Podman startup exhausted the dev-01 account’s kernel keyring quota | The instrumented worker test saw `crun` reject 14 starts with exit 126. Individual failures took 301–1,912 ms, and the test surfaced a 10-second worker-drain timeout. Adjusting a test deadline would leave the sandbox startup fault in place. |
+| An enrolled plugin worker hit the three-second cold deadline | The cached-image diagnostic measured a 2.184-second p99 on dev-01. The lane adds a three-second allowance for the first call to a fresh enrolled worker. See the [measurement](reviews/dev-e2e-2026-11-17.md#enrolled-worker-cold-starts-on-dev-01). |
 
 See [Forgejo #34](https://git.kayg.org/kayg/calternal-ai/issues/34) for the
 active qualification status.
