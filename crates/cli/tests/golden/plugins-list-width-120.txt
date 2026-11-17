@@ -1,0 +1,3 @@
+ID                                       NAME                             VERSION  ENABLED  GENERATION
+calternal-example-plugin-with-a-long-id  Example plugin with a long name  0.1.0    yes      123456
+Next: run `cl plugins preview ID`.

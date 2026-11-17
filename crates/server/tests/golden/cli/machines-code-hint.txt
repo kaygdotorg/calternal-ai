@@ -1,0 +1,6 @@
+code:     <CODE>
+owner:    pool
+expires:  <TIME>
+
+This code works once. Share it with the machine's owner now.
+Next: run `calternal machine enroll` on that computer.

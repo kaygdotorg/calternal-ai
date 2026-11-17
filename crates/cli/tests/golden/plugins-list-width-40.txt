@@ -1,0 +1,6 @@
+ID: calternal-example-…in-with-a-long-id
+NAME: Example plugin with a long name
+VERSION: 0.1.0
+ENABLED: yes
+GENERATION: 123456
+Next: run `cl plugins preview ID`.

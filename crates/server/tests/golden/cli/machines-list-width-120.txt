@@ -1,0 +1,2 @@
+ID                                    OWNER  NAME                            PLATFORM      STATE
+aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa  pool   build-machine-with-a-long-name  linux/x86_64  enrolled

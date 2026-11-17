@@ -1,2 +1,2 @@
-error: machine run: this machine was revoked; enroll it again to use it
+error: The server revoked this machine.
 hint: Ask the owner for a new code, delete the credentials file, then run `calternal machine enroll` again.

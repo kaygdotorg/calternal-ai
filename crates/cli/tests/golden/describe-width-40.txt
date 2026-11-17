@@ -1,0 +1,11 @@
+protocol:   1
+genui:      1
+principal:  12345678-1234-4abc-8def-123456789012
+
+SPACE: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa…
+ROLE: owner
+
+OPERATION: notes.list
+ACCESS: reads
+DESCRIPTION: List notes in the selected…
+Next: run `cl notes list` to see notes …

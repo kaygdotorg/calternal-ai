@@ -16,8 +16,8 @@
 //! exists to issue them.
 //!
 //! Colour: only bold table headers, only when stdout is a terminal, `NO_COLOR` is
-//! unset and `TERM` is not `dumb`. Width: `COLUMNS`, else the terminal's, else
-//! unlimited (pipes get untruncated tables).
+//! unset and `TERM` is not `dumb`. Width: `COLUMNS`, else the terminal's; pipes
+//! are never shortened. A successful command may add one terminal-only hint.
 
 mod table;
 
@@ -60,6 +60,7 @@ pub struct Reply {
     json: Value,
     request_id: Option<String>,
     blocks: Vec<Block>,
+    hint: Option<String>,
 }
 
 impl Reply {
@@ -69,6 +70,7 @@ impl Reply {
             json: data,
             request_id: None,
             blocks: Vec::new(),
+            hint: None,
         }
     }
     /// Add the request identity (shown as `request_id` in JSON and as a field line in human mode only when asked for).
@@ -115,6 +117,14 @@ impl Reply {
         });
         self
     }
+    /// Add one short next-step hint for terminal human output.
+    ///
+    /// The hint is omitted from JSON and from piped output. Calling this more
+    /// than once replaces the earlier hint, so a reply can show at most one.
+    pub fn hint(mut self, hint: impl Into<String>) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
 }
 
 /// A failed command: what happened (`message`), what to do next (`hint`), and a
@@ -131,6 +141,8 @@ pub struct CliError {
     pub exit: i32,
     request_id: Option<String>,
     details: Option<Box<Value>>,
+    human_message: Option<String>,
+    human_hint: Option<String>,
 }
 
 impl CliError {
@@ -143,6 +155,8 @@ impl CliError {
             exit: EXIT_FAILURE,
             request_id: None,
             details: None,
+            human_message: None,
+            human_hint: None,
         }
     }
     /// A command line that does not parse: code `usage`, exit status 2.
@@ -152,6 +166,16 @@ impl CliError {
     /// Set the next-step sentence.
     pub fn hint(mut self, hint: impl Into<String>) -> Self {
         self.hint = Some(hint.into());
+        self
+    }
+    /// Set wording for terminal output while keeping JSON `message` unchanged.
+    pub fn human_message(mut self, message: impl Into<String>) -> Self {
+        self.human_message = Some(message.into());
+        self
+    }
+    /// Set terminal-only next-step wording while keeping JSON `hint` unchanged.
+    pub fn human_hint(mut self, hint: impl Into<String>) -> Self {
+        self.human_hint = Some(hint.into());
         self
     }
     /// Set the process exit status.
@@ -177,31 +201,42 @@ impl CliError {
 pub struct Output {
     json: bool,
     bold: bool,
+    dim: bool,
+    hints: bool,
     width: Option<usize>,
     offset: UtcOffset,
 }
 
 impl Output {
     /// Output for this process: `json` from `--json`; colour, width and time
-    /// zone from the environment. Call from `main` before starting a runtime.
+    /// zone from the environment. Reads `--no-hints` from the argument vector.
+    /// Call from `main` before starting a runtime.
     pub fn detect(json: bool) -> Self {
+        let no_hints_arg = std::env::args_os().any(|arg| arg == "--no-hints");
+        Self::detect_with_options(json, no_hints_arg)
+    }
+
+    /// Output for a process when its parser has already read the hint option.
+    ///
+    /// `CALTERNAL_NO_HINTS=1` also disables hints. A width is used only when
+    /// stdout is a terminal, so redirected output is never shortened.
+    pub fn detect_with_options(json: bool, no_hints_arg: bool) -> Self {
         let stdout = std::io::stdout();
         let tty = stdout.is_terminal();
         let plain = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
             || std::env::var("TERM").is_ok_and(|t| t == "dumb");
-        let width = std::env::var("COLUMNS")
-            .ok()
-            .and_then(|c| c.parse::<usize>().ok())
-            .filter(|w| *w >= 20)
-            .or_else(|| {
-                tty.then(|| rustix::termios::tcgetwinsize(&stdout).ok())
-                    .flatten()
-                    .map(|s| usize::from(s.ws_col))
-                    .filter(|w| *w >= 20)
-            });
+        let measured_width = tty
+            .then(|| rustix::termios::tcgetwinsize(&stdout).ok())
+            .flatten()
+            .map(|size| usize::from(size.ws_col));
+        let columns = std::env::var("COLUMNS").ok();
+        let width = terminal_width(tty, columns.as_deref(), measured_width);
+        let hints_disabled = std::env::var_os("CALTERNAL_NO_HINTS");
         Self {
             json,
             bold: tty && !plain && !json,
+            dim: tty && !plain && !json,
+            hints: hints_enabled(tty, json, no_hints_arg, hints_disabled.as_deref()),
             width: if json { None } else { width },
             offset: UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC),
         }
@@ -211,7 +246,24 @@ impl Output {
         Self {
             json,
             bold: false,
+            dim: false,
+            hints: false,
             width,
+            offset,
+        }
+    }
+    /// Output with a simulated terminal for fixed-width tests and golden files.
+    ///
+    /// `hints` simulates the default terminal behavior after `--no-hints` and
+    /// `CALTERNAL_NO_HINTS=1` have been applied. Colour remains disabled.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn fixed_terminal(json: bool, width: usize, offset: UtcOffset, hints: bool) -> Self {
+        Self {
+            json,
+            bold: false,
+            dim: false,
+            hints: hints && !json,
+            width: if json { None } else { Some(width.max(1)) },
             offset,
         }
     }
@@ -282,6 +334,19 @@ impl Output {
                 Block::Blank => out.push('\n'),
             }
         }
+        if self.hints
+            && let Some(hint) = &reply.hint
+        {
+            let hint = table::fit_line(hint, self.width);
+            if self.dim {
+                out.push_str("\x1b[2m");
+                out.push_str(&hint);
+                out.push_str("\x1b[0m\n");
+            } else {
+                out.push_str(&hint);
+                out.push('\n');
+            }
+        }
         out
     }
     /// The `(stdout, stderr)` text for a failure: JSON on stdout with `--json`,
@@ -303,8 +368,10 @@ impl Output {
             }
             return (pretty(Value::Object(doc)), String::new());
         }
-        let mut err = format!("error: {}\n", e.message);
-        if let Some(h) = &e.hint {
+        let message = e.human_message.as_ref().unwrap_or(&e.message);
+        let hint = e.human_hint.as_ref().or(e.hint.as_ref());
+        let mut err = format!("error: {message}\n");
+        if let Some(h) = hint {
             err.push_str(&format!("hint: {h}\n"));
         }
         (String::new(), err)
@@ -328,6 +395,27 @@ impl Output {
             Err(e) => self.failure(&e),
         }
     }
+}
+
+/// Whether a successful result may show a next-step hint.
+fn hints_enabled(
+    terminal: bool,
+    json: bool,
+    no_hints_arg: bool,
+    no_hints_env: Option<&std::ffi::OsStr>,
+) -> bool {
+    terminal && !json && !no_hints_arg && no_hints_env != Some(std::ffi::OsStr::new("1"))
+}
+
+/// Use a width only when stdout is a terminal; a pipe always keeps full cells.
+fn terminal_width(terminal: bool, columns: Option<&str>, measured: Option<usize>) -> Option<usize> {
+    if !terminal {
+        return None;
+    }
+    columns
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|width| *width > 0)
+        .or_else(|| measured.filter(|width| *width > 0))
 }
 
 /// Rebuild `v` with object keys in alphabetical order, so the printed order is
@@ -374,4 +462,70 @@ pub fn parse_args<C: clap::Parser>() -> Result<C, i32> {
         let error = CliError::usage(first).hint("run the command with --help to see its usage");
         Output::detect(json).failure(&error)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn hints_show_once_only_for_human_terminal_output() {
+        let reply = Reply::new(json!({"ok": true}))
+            .line("Done.")
+            .hint("Next: run `cl notes list`.")
+            .hint("Next: run `cl notes create`.");
+        let terminal = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
+        let text = terminal.render(&reply);
+        assert!(text.ends_with("Next: run `cl notes create`.\n"));
+        assert_eq!(text.matches("Next:").count(), 1);
+
+        let disabled = Output::fixed_terminal(false, 80, UtcOffset::UTC, false);
+        assert_eq!(disabled.render(&reply), "Done.\n");
+
+        let json = Output::fixed_terminal(true, 80, UtcOffset::UTC, true);
+        assert_eq!(
+            json.render(&reply),
+            "{\n  \"data\": {\n    \"ok\": true\n  },\n  \"ok\": true\n}\n"
+        );
+        assert!(!hints_enabled(
+            true,
+            false,
+            false,
+            Some(std::ffi::OsStr::new("1"))
+        ));
+        assert!(!hints_enabled(true, false, true, None));
+        assert!(!hints_enabled(false, false, false, None));
+        assert!(!hints_enabled(true, true, false, None));
+        assert!(hints_enabled(true, false, false, None));
+    }
+
+    #[test]
+    fn redirected_output_ignores_columns_and_keeps_full_width() {
+        assert_eq!(terminal_width(false, Some("40"), Some(80)), None);
+        assert_eq!(terminal_width(true, Some("40"), Some(80)), Some(40));
+        assert_eq!(terminal_width(true, Some("0"), Some(80)), Some(80));
+        assert_eq!(terminal_width(true, Some("invalid"), None), None);
+    }
+
+    #[test]
+    fn json_errors_keep_original_text_while_human_output_can_be_friendly() {
+        let error = CliError::new("not_found", "no machine id")
+            .hint("run the list command")
+            .human_message("No machine with that ID was found.")
+            .human_hint("Next: run `calternal machines list`.");
+        let human = Output::fixed(false, None, UtcOffset::UTC)
+            .render_error(&error)
+            .1;
+        assert_eq!(
+            human,
+            "error: No machine with that ID was found.\nhint: Next: run `calternal machines list`.\n"
+        );
+        let json = Output::fixed(true, None, UtcOffset::UTC)
+            .render_error(&error)
+            .0;
+        assert!(json.contains("no machine id"));
+        assert!(json.contains("run the list command"));
+        assert!(!json.contains("No machine with that ID was found."));
+    }
 }
