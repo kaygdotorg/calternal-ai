@@ -228,7 +228,9 @@
   .acts { position: absolute; right: var(--s-2); top: 50%; translate: 0 -50%; display: inline-flex; gap: var(--s-1); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out); }
   @media (hover: hover) and (pointer: fine) {
     .rw:hover .acts, .rw:focus-within .acts { opacity: 1; pointer-events: auto; }
-    .rw:hover .tail, .rw:focus-within .tail { visibility: hidden; }
+    /* The state steps aside and the title leaves room for the three actions (it never runs under them). */
+    .rw:hover .tail, .rw:focus-within .tail { display: none; }
+    .rw:hover :global(.row), .rw:focus-within :global(.row) { padding-right: calc(var(--s-2) * 2 + 3 * var(--ib-small) + 2 * var(--s-1)); }
   }
   nav { display: grid; gap: var(--s-1); padding-bottom: var(--s-6); }
   ul { display: grid; gap: var(--s-1); }
