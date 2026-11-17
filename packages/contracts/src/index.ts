@@ -58,6 +58,12 @@ storage: ManifestPlacement,
  */
 claimed_text: boolean,
 /**
+ * Lowercase ASCII file extension without the dot (1 to 16 letters or digits).
+ * Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one;
+ * the host stores their bytes unparsed under it.
+ */
+extension?: string,
+/**
  * Stable kind name used in item addresses.
  */
 id: string,

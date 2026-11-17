@@ -102,6 +102,11 @@ fn manifest_validation_vectors() {
         ("/operations/0/target", json!({"kind":"notes","field":"id","extra":1})),
         ("/operations/0/target/field", json!("Id")),
         ("/kinds", json!([{"id":"notes","schema":null}])),
+        // Non-text kinds must name a safe extension; text kinds are Markdown.
+        ("/kinds", json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false}])),
+        ("/kinds", json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"../x"}])),
+        ("/kinds", json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"PNG"}])),
+        ("/kinds", json!([{"id":"t","schema":{},"storage":{"hidden":true},"claimed_text":true,"extension":"txt"}])),
         (
             "/collections",
             json!([{"id":"all","kind":"bad/kind","name":"All"}]),
@@ -211,6 +216,7 @@ fn collisions_are_atomic_and_policy_is_data_only() {
         a.kinds.push(ManifestKind {
             storage: ManifestPlacement::Hidden { hidden: true },
             claimed_text: true,
+            extension: None,
             id: "notes".into(),
             schema: json!(true),
         });
@@ -465,6 +471,7 @@ fn storage_placement_names_and_cross_plugin_folder_claims() {
             folder: "Notes".into(),
         },
         claimed_text: true,
+        extension: None,
     });
     assert!(validate_manifest(&m).is_ok());
     for folder in [
@@ -493,6 +500,9 @@ fn storage_placement_names_and_cross_plugin_folder_claims() {
     assert!(validate_manifest(&hidden).is_err());
     hidden.kinds[0].storage = ManifestPlacement::Hidden { hidden: true };
     hidden.kinds[0].claimed_text = false;
+    // A non-text kind must name its file extension.
+    assert!(validate_manifest(&hidden).is_err());
+    hidden.kinds[0].extension = Some("png".into());
     assert!(validate_manifest(&hidden).is_ok());
     let mut registry = Registry::default();
     registry.register(m.clone()).unwrap();
@@ -555,6 +565,7 @@ fn failed_registration_does_not_reserve_other_names() {
             folder: "Tasks".into(),
         },
         claimed_text: true,
+        extension: None,
     });
     assert_eq!(r.register(collision.clone()), Err(Error::Collision));
     collision.operations.clear();

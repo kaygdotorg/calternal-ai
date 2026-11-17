@@ -44,13 +44,15 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   const operations = new Set<string>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
     schema(r.schema); if (typeof r.claimed_text !== "boolean") fail();
+    // Claimed text is Markdown; other kinds name a safe lowercase extension.
+    if (r.extension === undefined ? !r.claimed_text : typeof r.extension !== "string" || !/^[a-z0-9]{1,16}$/.test(r.extension) || (r.claimed_text && r.extension !== "md")) fail();
     if (!r.storage || typeof r.storage !== "object" || Array.isArray(r.storage)) fail();
     const placement = r.storage as Record<string, unknown>;
     if (Object.hasOwn(placement, "folder")) {
       record(placement, ["folder"]); const folder = text(placement.folder, 255);
       if (folder !== folder.trim() || folder.startsWith(".") || /[/\\:\p{Cc}]/u.test(folder) || folder.normalize("NFC") !== folder || folder.toLowerCase() === "trash") fail();
     } else { record(placement, ["hidden"]); if (placement.hidden !== true) fail(); }
-  });
+  }, ["extension"]);
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency"], r => {
     operations.add(identifier(r.id)); schema(r.input_schema); schema(r.output_schema);
     if (!capabilities.has(String(r.required_capability)) || typeof r.mutates !== "boolean" || !["read_only", "request_id", "never"].includes(String(r.idempotency)) || r.mutates === (r.idempotency === "read_only") || (r.mutates && r.required_capability === "space.read")) fail();

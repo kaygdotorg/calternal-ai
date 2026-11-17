@@ -363,3 +363,47 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     assert_eq!(wrong.code, ErrorCode::InvalidInput);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// Whether any file under `root` has extension `ext`.
+fn has_extension(root: &Path, ext: &str) -> bool {
+    std::fs::read_dir(root).into_iter().flatten().flatten().any(|e| {
+        let p = e.path();
+        p.extension().is_some_and(|x| x == ext) || (p.is_dir() && has_extension(&p, ext))
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
+    let dir = tmp("blob-worker");
+    let worker = support::worker(
+        &dir,
+        "call(f,'write_item',{kind:'shapes',text:m.input.body})",
+        "done(f,m.ok?{id:m.data.id}:{})",
+    );
+    let manifest = support::manifest(json!({
+        "id": "shapes",
+        "kinds": [{"id": "shapes", "storage": {"hidden": true}, "claimed_text": false,
+                   "extension": "geojson", "schema": {"type": "object"}}],
+        "operations": [{
+            "id": "shapes.save",
+            "input_schema": {"type": "object", "properties": {"body": {"type": "string"}}, "required": ["body"]},
+            "output_schema": {"type": "object"},
+            "required_capability": "content.write", "mutates": true, "idempotency": "request_id"
+        }],
+        "host_calls": ["write_item"]
+    }));
+    let f = fixture("shapes", vec![support::plugin(manifest, Some(&worker), false)], None).await;
+    f.op("owner", "e", "plugins.enable", json!({"space_id": "shared", "plugin_id": "shapes"}))
+        .await
+        .unwrap();
+    let body = r#"{"type":"Point","coordinates":[0,0]}"#;
+    let r = f
+        .op("owner", "s1", "shapes.save", json!({"space_id": "shared", "body": body}))
+        .await
+        .unwrap();
+    let id = r["id"].as_str().unwrap().to_owned();
+    let item = f.state.store.lock().unwrap().read_item("shared", "shapes", &id).unwrap();
+    assert_eq!(item.bytes, body.as_bytes(), "opaque bytes are stored unchanged");
+    assert!(has_extension(&f.root.join("data"), "geojson"), "file not stored under its extension");
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -50,5 +50,8 @@ test('kind storage placement enforces hidden and visible NFC components',()=>{
  const m=structuredClone(manifest);m.kinds=[{id:'notes',schema:true,storage:{folder:'Notes'},claimed_text:true}];assert.doesNotThrow(()=>validateManifestV1(m));
  for(const folder of ['', '.calternal','.private','Trash','TRASH','../Notes','a/b','a\\b','a:b','a\0b',' Notes','Notes ','Cafe\u0301']) { const bad=structuredClone(m);bad.kinds[0].storage={folder};assert.throws(()=>validateManifestV1(bad),folder); }
  for(const storage of [{hidden:false},{folder:'Notes',hidden:true},{hidden:true,extra:true}]) {const bad=structuredClone(m);bad.kinds[0].storage=storage;assert.throws(()=>validateManifestV1(bad));}
- m.kinds[0].storage={hidden:true};m.kinds[0].claimed_text=false;assert.doesNotThrow(()=>validateManifestV1(m));
+ m.kinds[0].storage={hidden:true};m.kinds[0].claimed_text=false;assert.throws(()=>validateManifestV1(m),'non-text kinds name an extension');
+ for(const extension of ['','../x','PNG','a'.repeat(17)]) {const bad=structuredClone(m);bad.kinds[0].extension=extension;assert.throws(()=>validateManifestV1(bad),extension);}
+ m.kinds[0].extension='png';assert.doesNotThrow(()=>validateManifestV1(m));
+ const text=structuredClone(m);text.kinds[0].claimed_text=true;text.kinds[0].extension='txt';assert.throws(()=>validateManifestV1(text));text.kinds[0].extension='md';assert.doesNotThrow(()=>validateManifestV1(text));
 });

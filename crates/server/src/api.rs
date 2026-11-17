@@ -689,7 +689,7 @@ async fn dispatch_checked<D: Directory>(
                     s.provision_plugin(
                         &i.space_id,
                         &principal,
-                        &plugin.kind_registrations()?,
+                        &plugin.kind_registrations(),
                         &collections,
                     )?;
                 }

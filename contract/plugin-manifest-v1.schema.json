@@ -406,6 +406,13 @@
           "description": "True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.",
           "type": "boolean"
         },
+        "extension": {
+          "description": "Lowercase ASCII file extension without the dot (1 to 16 letters or digits). Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one; the host stores their bytes unparsed under it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "description": "Stable kind name used in item addresses.",
           "type": "string"

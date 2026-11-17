@@ -124,19 +124,14 @@ impl Plugin {
 
     /// Content registrations for every kind this plugin declares, in manifest order.
     /// Visible kinds become top-level folders; hidden kinds live under
-    /// `.calternal/<plugin-id>/<kind>/`. Claimed text is stored as Markdown.
-    /// Kinds without claimed text fail closed: manifest v1 does not yet declare a file
-    /// extension, so the host cannot choose one. Cost: O(kinds) small allocations.
-    pub fn kind_registrations(&self) -> Result<Vec<(String, Placement, FileFormat)>, HostError> {
+    /// `.calternal/<plugin-id>/<kind>/`. Claimed text is stored as Markdown; any other
+    /// kind is stored unparsed under its declared extension (manifest validation
+    /// guarantees one). Cost: O(kinds) small allocations.
+    pub fn kind_registrations(&self) -> Vec<(String, Placement, FileFormat)> {
         self.manifest
             .kinds
             .iter()
             .map(|kind| {
-                if !kind.claimed_text {
-                    return Err(HostError::unavailable(
-                        "plugin declares a non-text kind; its file format is not supported yet",
-                    ));
-                }
                 let placement = match &kind.storage {
                     ManifestPlacement::Visible { folder } => Placement::Visible {
                         folder: folder.clone(),
@@ -145,7 +140,13 @@ impl Plugin {
                         plugin_id: self.manifest.id.clone(),
                     },
                 };
-                Ok((kind.id.clone(), placement, FileFormat::Markdown))
+                let format = match (&kind.extension, kind.claimed_text) {
+                    (Some(extension), false) => FileFormat::Opaque {
+                        extension: extension.clone(),
+                    },
+                    _ => FileFormat::Markdown,
+                };
+                (kind.id.clone(), placement, format)
             })
             .collect()
     }

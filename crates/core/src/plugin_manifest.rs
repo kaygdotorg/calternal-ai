@@ -148,6 +148,12 @@ pub struct ManifestKind {
     pub storage: ManifestPlacement,
     /// True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.
     pub claimed_text: bool,
+    /// Lowercase ASCII file extension without the dot (1 to 16 letters or digits).
+    /// Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one;
+    /// the host stores their bytes unparsed under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub extension: Option<String>,
     /// Stable kind name used in item addresses.
     pub id: String,
     /// JSON Schema for the kind content; no executable code.
