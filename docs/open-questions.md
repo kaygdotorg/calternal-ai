@@ -13,7 +13,6 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Design rounds
 
-- macOS sandboxing for agents on a person's own Mac: which mechanism, tested on the macOS VM.
 - Composer and chat experience: mentions, commands, context chips, the request bar.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
