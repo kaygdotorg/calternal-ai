@@ -124,3 +124,20 @@ the palette field all run on it. Measured on the dev VM, Chromium at **4x CPU sl
 | Key press to the next frame after the field changed | median 7.3 ms, p95 10.1 ms, worst 31.7 ms | composer key p95 8 ms (gated there; the probe measures to paint, which includes the frame) |
 | Added to the first paint | 7.0 KB minified, **2.0 KB brotli** (the whole package) | under 3 KB |
 | Palette keystroke to painted rows (`e2e/perf-suite.mjs`) | one frame, unchanged | one frame |
+
+## The block editor, stage 2 of the editor port (2026-11-17)
+
+`packages/editor/src/block` (CodeMirror 6 over plain Markdown, hidden syntax, parse-ahead, blocks, lists, handles) hosts a note in the Notes middle card. `e2e/editor-perf.mjs` on a fixture note of about 50,000 words
+(`longNote()` in `apps/notes/client.ts`: headings, paragraphs, nested lists, tasks, code, quotes), Chromium on the dev VM, **4x CPU slowdown** like the existing app's budgets (1x in brackets):
+
+| Budget (existing app) | Result |
+| --- | --- |
+| Keystroke to paint, 50,000-word note, p50 150 ms (a ceiling; typing at about 16 keys a second): near the end | median **8.2 ms**, p95 17.9 ms, worst 19.3 ms [9.1 / 19.5 / 22.8] |
+| the same, in the middle of the note | median **9.4 ms**, p95 18.4 ms [10.3 / 17.3] |
+| Open a note, short, from the list | 36 ms [30] |
+| Open the long note from the list (warm) | median 30 ms, worst 49 ms [28 / 48]; the document is parsed to the end of the viewport before the frame, the rest at idle |
+| Open the long note cold (a fresh page to the first drawn heading, including the lazy editor chunk) | 410 ms [192] (the existing app's cold-note boot budget is 3.5 s) |
+| Scroll the long note, 200 wheel steps up and down, frame p95 50 ms | frame median 16.7 ms, p95 16.8 ms, **0 frames over 50 ms** [same] |
+| Bundle | the editor is a lazy chunk, **90.8 KB brotli**, loaded when a note opens; the first-paint chunk is unchanged (105 KB brotli in total) |
+
+What is not measured yet: typing inside a table cell and a 1,000-item nested list (tables are deferred; the long note has nested lists), and the Safari/WebKit target (p50 50 ms in the existing app); both belong with stage 3.

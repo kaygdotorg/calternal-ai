@@ -76,7 +76,7 @@ One small package, `packages/editor` (TypeScript, no framework, no CodeMirror), 
 
 ## 5. Stages
 
-**Status 2026-11-17: stage 1 is built and measured; the work stops here for review before stage 2.** What exists: `packages/editor` (`origins`, `transaction`, `history`, `ime`, `probe`, `field`; 16 tests), `InlineEditor` running on `FieldEditor`
+**Status 2026-11-17: stages 1 and 2 are built and measured; the work stops here for review before stage 3 (which needs a server decision).** What exists: `packages/editor` (`origins`, `transaction`, `history`, `ime`, `probe`, `field`; 16 tests), `InlineEditor` running on `FieldEditor`
 (callers unchanged; a picked mention is one undo step), the probe wired to `?test=1`, and numbers in `docs/ui-performance.md` (key to paint median 7.3 ms at 4x CPU, 2.0 KB brotli).
 
 
@@ -91,6 +91,10 @@ unit tests for the ported modules pass; typing in a 50,000-word note meets p50 1
 **Stage 3: live editing against the server.** Needs a server operation the server does not have yet: **a text patch against a base revision** (and a live feed of accepted patches in the space stream), because `notes.update` replaces the whole
 note. The client emits patches with an origin and a base revision; the server orders them, rejects stale ones with the current revision, and echoes accepted ones; "Saved" is a server receipt (the existing `receipts.ts` rule, simplified to one authority).
 Drafts and pending submissions (already wired) carry offline input. Exit: two browsers edit one note against a real server without loss; a dropped connection replays unsent input once.
+
+**Stage 2 as built.** `packages/editor/src/block`: `blocks` (derived from the parse tree; a nested list item is a block of its own; the host classifies kinds), `hidden` (syntax drawn away: headings, emphasis, code, quotes, links as chips, bullets, task boxes, rules, fenced code; blank lines as small gaps),
+`parse` (parse ahead of the frame, the rest at idle), `lists` (Enter continues, Tab indents), `headings` (for the rail), `triggers` (`@`, `[[`, `#`, `/`: the host draws the picker), `chrome` (one handle that moves with the pointer: press for the menu, drag to move a block), `editor` (`createBlockEditor`). 32 tests in `packages/editor/test`, 16 checks in `e2e/editor.mjs`.
+Notes (`apps/notes/NoteEditor.svelte`) supplies the document, says which blocks are tasks, draws the block menu with the design system's Menu, and saves: the text is autosaved after a pause (and kept as a private draft after a shorter one), with no Save button. Not built: tables, vim, embeds, frontmatter drawing, block ids (`^id` markers), the host's pickers for the triggers (the editor reports them; Notes does not draw one yet), code-block grammars.
 
 ## 6. Open points for the owner
 
