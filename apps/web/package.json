@@ -6,7 +6,7 @@
   "description": "Calternal's web client: the shell (docs/ui-shell.md) and the Threads app on fixture data.",
   "license": "AGPL-3.0-only",
   "scripts": {
-    "prepare:assets": "node scripts/fonts.mjs && npm run tokens --workspace @calternal/ui && npm run build --workspace @calternal/genui",
+    "prepare:assets": "node scripts/fonts.mjs && node scripts/wallpapers.mjs && npm run tokens --workspace @calternal/ui && npm run build --workspace @calternal/genui",
     "dev": "npm run prepare:assets && vite --host 0.0.0.0",
     "build": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json && vite build",
     "preview": "vite preview --host 0.0.0.0",

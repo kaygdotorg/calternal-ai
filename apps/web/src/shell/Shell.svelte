@@ -5,26 +5,42 @@
   // over the middle card from the right; the app and its panels are the bottom bar.
   import { Card } from "@calternal/ui";
   import type { AppDef } from "../apps/registry";
+  import { appearance } from "../appearance/prefs.svelte";
+  import { route } from "../lib/route.svelte";
+  import AppSwitcher from "./AppSwitcher.svelte";
   import Backdrop from "./Backdrop.svelte";
   import PhoneTabs from "./PhoneTabs.svelte";
   import RightSidebar from "./RightSidebar.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
   let { app, id }: { app: AppDef; id?: string } = $props();
+  // `?switcher=card|sidebar` picks where the app switcher lives (and is remembered), so both layouts can be compared live; Appearance has the same choice.
+  $effect(() => {
+    const q = route.query.get("switcher");
+    if ((q === "card" || q === "sidebar") && appearance.prefs.switcher !== q) appearance.change((x) => (x.switcher = q));
+  });
+  const hasRight = $derived(app.panels.length > 0);
+  const rightOpen = $derived(shell.rightOpen && hasRight);
+  const cardSwitcher = $derived(!shell.narrow && appearance.prefs.switcher === "card");
 </script>
 
 <Backdrop />
-<div class="shell" class:narrow={shell.narrow} data-sidebar={shell.sidebarOpen} data-right={shell.rightOpen}>
+<div class="shell" class:narrow={shell.narrow} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
   <aside class="side" aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" inert={shell.narrow && (shell.sidebarOpen || shell.rightOpen)}>
-    <Card label={app.name} class="mid-card"><app.Main {id} /></Card>
+  <main class="mid" inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+    <Card label={app.name} class="mid-card">
+      <div class="col">
+        <div class="app"><app.Main {id} /></div>
+        {#if cardSwitcher}<div class="appbar"><AppSwitcher {app} /></div>{/if}
+      </div>
+    </Card>
   </main>
 
   {#if shell.narrow && shell.sidebarOpen}<button type="button" class="peek" aria-label="Close the sidebar" onclick={() => shell.closeOver()}></button>{/if}
-  {#if shell.narrow && shell.rightOpen}<button type="button" class="scrim" aria-label="Close the side panel" onclick={() => shell.closeOver()}></button>{/if}
+  {#if shell.narrow && rightOpen}<button type="button" class="scrim" aria-label="Close the side panel" onclick={() => shell.closeOver()}></button>{/if}
 
-  <aside class="right" aria-label="{app.name} side panel" inert={!shell.rightOpen}><RightSidebar {app} {id} /></aside>
+  {#if hasRight}<aside class="right" aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
 </div>
 {#if shell.narrow && !shell.sidebarOpen}<PhoneTabs {app} />{/if}
 
@@ -45,6 +61,9 @@
   /* The middle card's top and bottom edges touch the viewport; it keeps one gap on each side. */
   .mid { min-width: 0; padding: 0 var(--inset); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
+  .col { height: 100%; display: flex; flex-direction: column; }
+  .app { flex: 1; min-height: 0; position: relative; }
+  .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }
   .right { min-width: 0; overflow: hidden; }
   .right > :global(.rs) { width: var(--right-w); }
 

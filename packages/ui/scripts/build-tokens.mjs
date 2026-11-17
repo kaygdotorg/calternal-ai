@@ -17,10 +17,14 @@ for (const [token, style] of Object.entries(t.touchText)) {
   t.touch[token] = `calc(${row[LARGE][0]} * var(--type-px))`;
 }
 
+// One "UI size" scale (--ui-scale, set from Settings, 1 by default) multiplies the whole interface together: type (through --type-px, a rem fraction), and every
+// spacing, radius, control and region size below. Blur radii and safe-area insets are not sized by it.
+const SCALED = /^(s-\d+|r-card|r-pane|r-select|inset|tier-cap|cap-offset|side-w|right-w|row-h(-settings)?|bar-h|pill-h|pad-region)$/;
+const scaled = (k, v) => (SCALED.test(k) && /^\d+(\.\d+)?px$/.test(v) ? `calc(${v} * var(--ui-scale, 1))` : k === "type-px" ? `calc(${v} * var(--ui-scale, 1))` : v);
 const decl = (obj, pad = "  ") =>
   Object.entries(obj)
     .filter(([k]) => !k.startsWith("$"))
-    .map(([k, v]) => `${pad}--${k}: ${v};`)
+    .map(([k, v]) => `${pad}--${k}: ${scaled(k, v)};`)
     .join("\n");
 
 /** A spring as a CSS linear() easing (Apple's damping-ratio/response model); never longer than 300 ms. */

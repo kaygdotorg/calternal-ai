@@ -10,7 +10,7 @@
  *   - the wash the sidebars need for legible ink (`washFor`).
  * Cost: two canvas draws and one 24 by 14 read per change of wallpaper, blur or window size (resize is debounced 400 ms); nothing per frame.
  */
-import { backdropRange, luminance, scheduleMaterial, setBackdropField, washFor, currentScheme, type Field } from "@calternal/ui";
+import { backdropRange, cssPx, luminance, scheduleMaterial, setBackdropField, washFor, currentScheme, type Field } from "@calternal/ui";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -134,16 +134,15 @@ function fieldOf(c: HTMLCanvasElement): Field {
 
 /** The sidebars' rectangles as fractions of the viewport (the whole viewport on a narrow screen, where one sidebar fills it). */
 function sidebarRects(): { x0: number; y0: number; x1: number; y1: number }[] {
-  const cs = getComputedStyle(document.documentElement);
   const w = innerWidth || 1;
   if (w < 760) return [{ x0: 0, y0: 0, x1: 1, y1: 1 }];
-  const side = parseFloat(cs.getPropertyValue("--side-w")) / w;
-  const right = parseFloat(cs.getPropertyValue("--right-w")) / w;
+  const side = cssPx("--side-w", 240) / w;
+  const right = cssPx("--right-w", 340) / w;
   return [{ x0: 0, y0: 0, x1: side, y1: 1 }, { x0: 1 - right, y0: 0, x1: 1, y1: 1 }];
 }
 
 /** Recomputes the wash from the current field and scheme (also called when the scheme changes). */
-export function updateWash(sideTintBase = 0.35): void {
+export function updateWash(sideTintBase = 0.35, cardTintBase = 0.85): void {
   const scheme = currentScheme();
   let min = 1, max = 0;
   for (const r of sidebarRects()) {
@@ -152,6 +151,9 @@ export function updateWash(sideTintBase = 0.35): void {
     max = Math.max(max, range.max);
   }
   root().setProperty("--wash", source ? washFor(scheme, { min, max }, sideTintBase).toFixed(3) : "");
+  // The card's tint is raised the same way from the brightness under the card itself, so it holds text contrast with Tint off or on.
+  const c = document.querySelector(".mid-card")?.getBoundingClientRect();
+  if (source && c && c.width > 0) root().setProperty("--card-tint-a", Math.max(cardTintBase, washFor(scheme, backdropRange(scheme, { x0: c.left / innerWidth, y0: c.top / innerHeight, x1: c.right / innerWidth, y1: c.bottom / innerHeight }), 0)).toFixed(3));
   scheduleMaterial();
 }
 

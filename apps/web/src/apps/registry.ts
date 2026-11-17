@@ -13,6 +13,8 @@ import { store as threads } from "./threads/store.svelte";
 import Notes from "./notes/Notes.svelte";
 import NotesPanels from "./notes/Panels.svelte";
 import NotesSidebar from "./notes/Sidebar.svelte";
+import SettingsMain from "./settings/Main.svelte";
+import SettingsSidebar from "./settings/Sidebar.svelte";
 
 /** One thing that needs the person. The shell shows at most three. */
 export interface AttentionItem {
@@ -83,6 +85,9 @@ export const APPS: AppDef[] = [
     ],
   },
 ];
+
+/** Settings is an app like the others: sections in the sidebar, the page in the middle card, no right panels. */
+APPS.push({ kind: "settings", name: "Settings", icon: "settings", Sidebar: SettingsSidebar, Main: SettingsMain, panels: [] });
 
 /** The app that opens an address kind, or undefined for a kind no installed app handles. */
 export const appFor = (kind: string | undefined): AppDef | undefined => APPS.find((a) => a.kind === kind);

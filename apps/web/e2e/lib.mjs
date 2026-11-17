@@ -26,6 +26,7 @@ export const DEVICES = {
 /** Opens a page on a device in a scheme and waits until the app has painted (fonts in). */
 export async function open(browser, device, scheme, path) {
   const ctx = await browser.newContext({ ...DEVICES[device], colorScheme: scheme, reducedMotion: "no-preference" });
+  if (!process.env.CAL_FIRSTRUN) await ctx.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ } });
   const page = await ctx.newPage();
   await page.goto(BASE + path);
   await page.waitForSelector("html[data-ready]");

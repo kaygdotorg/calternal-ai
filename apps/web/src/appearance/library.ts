@@ -44,21 +44,7 @@ export interface WallpaperLibrary {
 interface Blob2 { x: number; y: number; r: number; c: string }
 interface Def { id: string; name: string; base: [string, string]; blobs: Blob2[] }
 
-/**
- * The built-in set: eight photographs chosen to blur well (a warm field, a storm, a fjord, hills, two seas, a pine lake, a night city, a sunrise),
- * shipped under `public/wallpapers` with their credits in `credits.json` and `CREDITS.md`. They are openly licensed Unsplash photos (the Unsplash
- * licence: free to use, credit appreciated), fetched once through Lorem Picsum; no page loads from either site.
- */
-const BUILTIN: { id: string; name: string }[] = [
-  { id: "golden-field", name: "Golden field" },
-  { id: "storm-sea", name: "Storm" },
-  { id: "fjord", name: "Fjord" },
-  { id: "green-hills", name: "Green hills" },
-  { id: "calm-sea", name: "Calm sea" },
-  { id: "pine-lake", name: "Pine lake" },
-  { id: "night-bridge", name: "Night bridge" },
-  { id: "sunrise-farm", name: "Sunrise" },
-];
+/** The default photographs are fetched at build time (scripts/wallpapers.mjs, list in wallpapers.json) into `public/wallpapers` and are never committed. */
 const BASE = import.meta.env.BASE_URL;
 
 /** A simple string hash, for deterministic fake stock pictures. */
@@ -107,16 +93,14 @@ export class FixtureLibrary implements WallpaperLibrary {
 
   private async builtins(): Promise<Wallpaper[]> {
     this.built ??= (async () => {
-      // Generated looks first (the default set), rendered once per scheme; then the photo shelf.
+      // Generated looks, rendered once per scheme, then the fetched photographs.
       const looks = await Promise.all(
         [{ id: "haze", name: "Haze" }, ...RECIPES].map(async (r) => ({ id: r.id, name: r.name, source: "builtin" as const, url: await renderRecipe(r.id, "light", 1600, 900), urlDark: await renderRecipe(r.id, "dark", 1600, 900), thumb: await renderRecipe(r.id, "light", 240, 150) })),
       );
-      const credits: { id: string; author: string; link: string }[] = await fetch(`${BASE}wallpapers/credits.json`).then((r) => r.json()).catch(() => []);
-      const photos = BUILTIN.map((d) => {
-        const c = credits.find((x) => x.id === d.id);
-        return { id: d.id, name: d.name, source: "builtin" as const, url: `${BASE}wallpapers/${d.id}.jpg`, thumb: `${BASE}wallpapers/${d.id}-thumb.jpg`, credit: c ? { author: c.author, link: c.link } : undefined };
-      });
-      return [...looks, ...photos];
+      const credits: { id: string; name: string; author: string; link: string }[] = await fetch(`${BASE}wallpapers/credits.json`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+      const photos = credits.map((c) => ({ id: c.id, name: `Photo by ${c.author}`, source: "builtin" as const, url: `${BASE}wallpapers/${c.id}.jpg`, thumb: `${BASE}wallpapers/${c.id}-thumb.jpg`, credit: { author: c.author, link: c.link } }));
+      // Photos first (the defaults), then the generated looks.
+      return [...photos, ...looks];
     })();
     return this.built;
   }

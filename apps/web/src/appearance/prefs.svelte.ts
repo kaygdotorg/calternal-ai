@@ -18,10 +18,15 @@ export type AccentMode = "wallpaper" | "custom" | "theme";
 export interface Prefs {
   /** A library id, `"auto"` (the default look, `appearance.default-wallpaper` in tokens.json) or null for none. */
   wallpaperId: string | null;
-  /** The sidebars' copy of the wallpaper: blur radius in px, and the strength of the tint over it (percent). */
-  side: { blur: number; tint: number };
-  /** The middle card's copy: blur radius, tint strength and dim strength (percent). */
-  card: { blur: number; tint: number; dim: number };
+  /**
+   * The glass, as three switches (no sliders). Each one's strength is computed, not chosen: the sidebar wash and the card's tint are raised from the
+   * wallpaper's own brightness under each surface until text passes contrast in the current scheme (`washFor`), whatever the switches say.
+   */
+  materials: { blur: boolean; dim: boolean; tint: boolean };
+  /** The UI size, percent: one scale for type, spacing and controls together (`--ui-scale`). */
+  uiSize: number;
+  /** Where the app switcher lives: in the sidebar's footer, or as a capsule at the bottom of the middle card (an experiment). */
+  switcher: "sidebar" | "card";
   /** The theme (palette) in use: a preset id whose palette applies, or null for the built-in tokens. Independent of the wallpaper. */
   themeId: string | null;
   /** The preset last applied, for the gallery's selected tile. */
@@ -38,8 +43,9 @@ export interface Prefs {
 /** The defaults, after the plugin's: a lightly blurred wallpaper behind the sidebars, a heavily blurred, deeper card. */
 export const DEFAULTS: Prefs = {
   wallpaperId: "auto",
-  side: { blur: 12, tint: 35 },
-  card: { blur: 75, tint: 85, dim: 30 },
+  materials: { blur: true, dim: true, tint: true },
+  uiSize: 100,
+  switcher: "sidebar",
   themeId: null,
   presetId: tokens.appearance["default-preset"],
   accent: "wallpaper",
@@ -49,12 +55,14 @@ export const DEFAULTS: Prefs = {
   fonts: DEFAULT_FONTS,
 };
 
+/** What each switch turns on. The sidebar tint and the card tint are floors: the wash is raised above them where the wallpaper needs it for contrast. */
+const SIDE_BLUR = 12, CARD_BLUR = 75, SIDE_TINT = 0.35, CARD_TINT = 0.85, CARD_DIM = 0.3;
 const KEY = "cal.appearance";
 
 function read(): Prefs {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Prefs> | null;
-    return s ? { ...DEFAULTS, ...s, side: { ...DEFAULTS.side, ...s.side }, card: { ...DEFAULTS.card, ...s.card }, fonts: { ...DEFAULTS.fonts, ...s.fonts } } : structuredClone(DEFAULTS);
+    return s ? { ...DEFAULTS, ...s, materials: { ...DEFAULTS.materials, ...s.materials }, fonts: { ...DEFAULTS.fonts, ...s.fonts } } : structuredClone(DEFAULTS);
   } catch {
     return structuredClone(DEFAULTS);
   }
@@ -72,7 +80,8 @@ class Appearance {
   /** The chosen wallpaper, if the library has it. */
   get wallpaper(): Wallpaper | undefined {
     const id = this.prefs.wallpaperId === "auto" ? tokens.appearance["default-wallpaper"] : this.prefs.wallpaperId;
-    return this.wallpapers.find((w) => w.id === id);
+    // The default is a photo fetched at build time; if it is not there (an offline build), the generated look stands in.
+    return this.wallpapers.find((w) => w.id === id) ?? (this.prefs.wallpaperId === "auto" ? this.wallpapers.find((w) => w.id === "haze") : undefined);
   }
 
   /** Loads the library and applies everything. Call once at start. */
@@ -93,13 +102,16 @@ class Appearance {
   apply(): void {
     const p = this.prefs;
     const st = document.documentElement.style;
-    st.setProperty("--side-tint-a", String(p.side.tint / 100));
-    st.setProperty("--card-tint-a", String(p.card.tint / 100));
-    st.setProperty("--card-dim-a", String(p.card.dim / 100));
+    const m = p.materials;
+    const base = { side: m.tint ? SIDE_TINT : 0, card: m.tint ? CARD_TINT : 0 };
+    st.setProperty("--side-tint-a", String(base.side));
+    st.setProperty("--card-tint-a", String(base.card));
+    st.setProperty("--card-dim-a", String(m.dim ? CARD_DIM : 0));
+    st.setProperty("--ui-scale", String(Math.min(150, Math.max(80, p.uiSize)) / 100));
     const w = this.wallpaper;
-    setWallpaper(w ? (currentScheme() === "dark" && w.urlDark ? w.urlDark : w.url) : null, { sideBlur: p.side.blur, cardBlur: p.card.blur });
+    setWallpaper(w ? (currentScheme() === "dark" && w.urlDark ? w.urlDark : w.url) : null, { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 });
     applyTheme(p.themeId ? (presetById(p.themeId)?.theme ?? null) : null, currentScheme());
-    updateWash(p.side.tint / 100);
+    updateWash(base.side, base.card);
     this.applyAccent();
     void applyFonts(p.fonts);
     try {
@@ -139,7 +151,7 @@ class Appearance {
       x.themeId = pre.theme ? pre.id : null;
       x.wallpaperId = pre.wallpaper === "none" ? null : pre.wallpaper === tokens.appearance["default-wallpaper"] ? "auto" : pre.wallpaper;
       x.accent = pre.theme ? "theme" : pre.accentFromWallpaper ? "wallpaper" : "custom";
-      x.card = { ...x.card, tint: pre.material === "paper" ? 100 : 85, dim: pre.material === "paper" ? 0 : 30 };
+      x.materials = { ...x.materials, dim: pre.material !== "paper" };
     });
   }
 

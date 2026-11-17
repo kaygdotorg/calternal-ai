@@ -44,13 +44,23 @@ describe("appearance settings", () => {
     expect(appearance.prefs.wallpaperId).toBe("us-1");
   });
 
-  it("glass sliders change the stored strengths", async () => {
+  it("materials are three checkboxes and the card tint stays a computed floor", async () => {
     render(SettingsSheet, { open: true, onclose() {} });
-    const blur = screen.getByLabelText("Card blur") as HTMLInputElement;
-    blur.value = "40";
-    blur.dispatchEvent(new Event("input", { bubbles: true }));
-    expect(appearance.prefs.card.blur).toBe(40);
-    expect(document.documentElement.style.getPropertyValue("--card-tint-a")).toBe("0.85");
+    expect(screen.queryByLabelText("Card blur")).toBeNull();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Blur/ }));
+    expect(appearance.prefs.materials.blur).toBe(false);
+    await userEvent.click(screen.getByRole("checkbox", { name: /Tint/ }));
+    expect(appearance.prefs.materials).toEqual({ blur: false, dim: true, tint: false });
+    expect(document.documentElement.style.getPropertyValue("--card-tint-a")).toBe("0");
+  });
+
+  it("UI size sets one scale for the whole interface", async () => {
+    render(SettingsSheet, { open: true, onclose() {} });
+    const size = screen.getByLabelText("UI size") as HTMLInputElement;
+    size.value = "120";
+    size.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(appearance.prefs.uiSize).toBe(120);
+    expect(document.documentElement.style.getPropertyValue("--ui-scale")).toBe("1.2");
   });
 
   it("chooses a font per role: the shipped one applies, one only the server can fetch says so", async () => {
@@ -78,9 +88,9 @@ describe("appearance settings", () => {
 
   it("restores defaults", async () => {
     render(SettingsSheet, { open: true, onclose() {} });
-    appearance.change((x) => (x.card.dim = 80));
+    appearance.change((x) => (x.materials.dim = false));
     await userEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
-    expect(appearance.prefs.card.dim).toBe(30);
+    expect(appearance.prefs.materials.dim).toBe(true);
   });
 
   it("has no accessibility violations on either view", async () => {

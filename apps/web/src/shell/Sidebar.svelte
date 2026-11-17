@@ -13,6 +13,8 @@
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
+  // The switcher is here unless the experiment moved it under the middle card (a phone keeps it here; its bottom bar is the app's panels).
+  const inFooter = $derived(shell.narrow || appearance.prefs.switcher === "sidebar");
   let menu = $state(false);
   let account = $state(false);
   let trigger = $state<HTMLButtonElement>();
@@ -32,10 +34,10 @@
 
   <footer>
     <button type="button" class="avatar" aria-label="Account: Kay" onclick={() => (account = true)}><span aria-hidden="true">K</span></button>
-    <span class="switch">
+    {#if inFooter}<span class="switch">
       <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
       <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
-    </span>
+    </span>{:else}<span class="switch"></span>{/if}
     <IconButton icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
   </footer>
 </div>

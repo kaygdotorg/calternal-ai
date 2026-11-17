@@ -4,6 +4,7 @@
  * person can change either afterwards. Community palettes keep their own paper and take no stock wallpaper ("none": a mesh derived from the palette).
  * Licences and sources are kept with each community palette. The choices (which twelve, which defaults) are data here, not code.
  */
+import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
 import type { Palette, Theme } from "./theme";
 
 /** A preset. `theme` null means the built-in tokens; `wallpaper` is a library id or "none". */
@@ -22,7 +23,7 @@ const pal = (paper: string, ink: string, accent: string, danger: string, good: s
 const theme = (id: string, name: string, light: Palette, dark: Palette, licence: string, source: string): Theme => ({ id, name, light, dark, licence, source });
 
 export const PRESETS: Preset[] = [
-  { id: "calternal", name: "Calternal", wallpaper: "haze", theme: null, accentFromWallpaper: true, material: "glass" },
+  { id: "calternal", name: "Calternal", wallpaper: tokens.appearance["default-wallpaper"], theme: null, accentFromWallpaper: true, material: "glass" },
   { id: "paper", name: "Paper", wallpaper: "none", theme: null, accentFromWallpaper: false, material: "paper" },
   { id: "slate", name: "Slate", wallpaper: "slate", theme: null, accentFromWallpaper: true, material: "glass" },
   { id: "dune", name: "Dune", wallpaper: "dune", theme: null, accentFromWallpaper: true, material: "glass" },

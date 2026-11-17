@@ -9,14 +9,16 @@
   import { shell } from "./shell/shell.svelte";
   import Unknown from "./shell/Unknown.svelte";
   import SettingsSheet from "./appearance/SettingsSheet.svelte";
+  import FirstRun from "./appearance/FirstRun.svelte";
   import { shortcuts } from "./lib/shortcuts.svelte";
   import ShortcutsSheet from "./shell/ShortcutsSheet.svelte";
   import { client, store } from "./apps/threads/store.svelte";
 
   const NONE: AppDef = { kind: "", name: "Calternal", icon: "apps", Sidebar: Unknown, Main: Unknown, panels: [{ id: "none", label: "Nothing", icon: "info", component: Unknown }] };
   const seg = $derived(segments());
-  const settings = $derived(seg[0] === "settings");
-  const app = $derived(appFor(seg[0]) ?? (settings ? APPS[0]! : NONE));
+  // /settings/appearance opens the appearance sheet over the Settings app (its page is not built yet).
+  const settings = $derived(seg[0] === "settings" && seg[1] === "appearance");
+  const app = $derived(appFor(seg[0]) ?? NONE);
   // The commands, registered once. Each also exists as a button, a menu entry or a sheet, so a shortcut is never the only way.
   const threadIds = () => [...store.threads].filter((t) => !t.parentId).sort((x, y) => y.updatedAt - x.updatedAt).map((t) => t.id);
   const step = (by: 1 | -1): boolean => {
@@ -54,7 +56,8 @@
   });
 </script>
 
-{#if route.path !== "/"}<Shell {app} id={settings ? undefined : seg[1]} />{/if}
+{#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
-<SettingsSheet open={settings} onclose={() => navigate("/threads")} />
+<FirstRun />
+<SettingsSheet open={settings} onclose={() => navigate("/settings")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

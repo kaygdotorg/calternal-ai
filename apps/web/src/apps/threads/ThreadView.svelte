@@ -2,7 +2,8 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
-  import { InlineEditor, Panel, Pill } from "@calternal/ui";
+  import { cssPx, InlineEditor, Panel, Pill } from "@calternal/ui";
+  import { appearance } from "../../appearance/prefs.svelte";
   import VirtualList from "../../lib/VirtualList.svelte";
   import { href } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -31,7 +32,8 @@
     return () => ro.disconnect();
   });
   $effect(() => {
-    const read = () => (barH = Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--bar-h")) || 52));
+    const read = () => (barH = Math.round(cssPx("--bar-h", 52)));
+    void appearance.prefs.uiSize;
     read();
     matchMedia("(min-width: 760px)").addEventListener("change", read);
     return () => matchMedia("(min-width: 760px)").removeEventListener("change", read);

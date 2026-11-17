@@ -2,9 +2,9 @@
   // Appearance settings in a sheet (a side panel on a desktop, a bottom sheet on a phone): wallpaper (built-in, own upload, Unsplash search),
   // glass strengths, colour scheme and accent, and a font per role (interface, chat, code) from Google Fonts, Fontsource, Fontshare, the person's own
   // files or the system. Everything goes through the adapters in library.ts and fonts.ts, so the real server plugs in without changes here.
-  import { Button, Capsule, Icon, IconButton, Row, Sheet, Switch } from "@calternal/ui";
+  import { Button, Capsule, Icon, IconButton, Row, Sheet, Switch, tip } from "@calternal/ui";
+  import PresetGallery from "./PresetGallery.svelte";
   import Slider from "./Slider.svelte";
-  import { PRESETS } from "./presets";
   import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import type { StockResult } from "./library";
   import { appearance as A } from "./prefs.svelte";
@@ -102,18 +102,7 @@
 
       <section aria-labelledby="s-theme">
         <h2 id="s-theme">Themes</h2>
-        <div class="presets" role="radiogroup" aria-label="Theme presets">
-          {#each PRESETS as pr (pr.id)}
-            {@const th = pr.theme ? pr.theme[A.drawn] : null}
-            {@const wp = pr.wallpaper === "none" ? null : A.wallpapers.find((w) => w.id === pr.wallpaper)}
-            <button type="button" role="radio" class="preset" aria-checked={p.presetId === pr.id} aria-label={pr.name} onclick={() => A.applyPreset(pr.id)}>
-              <span class="mini" style:--bg={th ? th.paper : "var(--paper)"} style:--ink={th ? th.ink : "var(--ink)"} style:--acc={th ? th.accent : "var(--accent-base)"} style:background-image={wp ? `url(${wp.thumb})` : "none"} aria-hidden="true">
-                <i class="ms"></i><i class="mc"><b></b><b></b></i><i class="mr"></i>
-              </span>
-              <span class="pn">{pr.name}</span>
-            </button>
-          {/each}
-        </div>
+        <PresetGallery />
         <p class="note">A preset sets the backdrop and the palette together. Each can still be changed on its own below.</p>
       </section>
 
@@ -123,7 +112,7 @@
           <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === "auto"} aria-label="Automatic: follows the colour scheme" onclick={() => A.change((x) => (x.wallpaperId = "auto"))}><Icon name="sun" /></button>
           <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === null} aria-label="No wallpaper" onclick={() => A.change((x) => (x.wallpaperId = null))}><Icon name="image" /></button>
           {#each A.wallpapers as w (w.id)}
-            <button type="button" role="radio" class="tile" aria-checked={p.wallpaperId === w.id} aria-label={w.name} style:background-image="url({w.thumb})" onclick={() => A.change((x) => (x.wallpaperId = w.id))}></button>
+            <button type="button" role="radio" class="tile" aria-checked={p.wallpaperId === w.id} aria-label={w.name} use:tip={{ label: w.credit ? `Photo by ${w.credit.author} on Unsplash` : "" }} style:background-image="url({w.thumb})" onclick={() => A.change((x) => (x.wallpaperId = w.id))}></button>
           {/each}
         </div>
         <div class="actions">
@@ -147,13 +136,22 @@
       </section>
 
       <section aria-labelledby="s-glass">
-        <h2 id="s-glass">Glass</h2>
-        <Slider label="Sidebar blur" unit=" px" min={0} max={40} value={p.side.blur} onchange={(v) => A.change((x) => (x.side.blur = v))} />
-        <Slider label="Sidebar tint" unit=" %" min={0} max={100} value={p.side.tint} onchange={(v) => A.change((x) => (x.side.tint = v))} />
-        <Slider label="Card blur" unit=" px" min={0} max={100} value={p.card.blur} onchange={(v) => A.change((x) => (x.card.blur = v))} />
-        <Slider label="Card tint" unit=" %" min={0} max={100} value={p.card.tint} onchange={(v) => A.change((x) => (x.card.tint = v))} />
-        <Slider label="Card dim" unit=" %" min={0} max={100} value={p.card.dim} onchange={(v) => A.change((x) => (x.card.dim = v))} />
-        <p class="note">Text stays readable whatever the picture: the sidebar tint grows where the picture is too bright or too dark for it.</p>
+        <h2 id="s-glass">Materials</h2>
+        {#each ([["blur", "Blur", "Frosts the picture behind the sidebars and the card."], ["dim", "Dim", "Darkens the picture under the card so text stays calm."], ["tint", "Tint", "Washes the surfaces with the colour scheme."]] as const) as [k, name, hint]}
+          <label class="check"><input type="checkbox" checked={p.materials[k]} onchange={(e) => A.change((x) => (x.materials[k] = e.currentTarget.checked))} /><span class="cl">{name}<small>{hint}</small></span></label>
+        {/each}
+        <p class="note">How strong each one is comes from the picture itself: where it is too bright or too dark for text, the wash grows until the text passes contrast, whatever is ticked.</p>
+      </section>
+
+      <section aria-labelledby="s-size">
+        <h2 id="s-size">Size</h2>
+        <Slider label="UI size" unit=" %" min={80} max={150} value={p.uiSize} onchange={(v) => A.change((x) => (x.uiSize = v))} />
+        <p class="note">One scale for type, spacing and controls together.</p>
+      </section>
+
+      <section aria-labelledby="s-switch">
+        <h2 id="s-switch">App switcher (trying it out)</h2>
+        <Capsule label="App switcher place" kind="radio" glass={false} items={[{ id: "sidebar", label: "In the sidebar" }, { id: "card", label: "Under the middle card" }]} value={p.switcher} onchange={(v) => A.change((x) => (x.switcher = v as never))} />
       </section>
 
       <section aria-labelledby="s-col">
@@ -237,15 +235,10 @@
   .field, .search input { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); width: 100%; }
   .search input { flex: 1 1 7rem; width: auto; }
   :global(.sources) { --seg-pad: var(--s-2); }
-  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr)); gap: var(--s-4); }
-  .preset { display: grid; gap: var(--s-2); text-align: start; border-radius: var(--r-card); }
-  .preset[aria-checked="true"] .mini { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .mini { aspect-ratio: 4 / 3; border-radius: var(--r-card); background: var(--bg) center / cover; display: grid; grid-template-columns: 22% 1fr 22%; gap: 6%; padding: 6%; overflow: hidden; box-shadow: inset 0 0 0 1px rgb(var(--ink-rgb) / 0.08); }
-  .mini i { display: block; border-radius: var(--r-select); }
-  .mc { background: var(--bg); box-shadow: 0 1px 4px rgb(0 0 0 / 0.18); padding: 12% 10%; display: grid; align-content: start; gap: 12%; }
-  .mc b { height: 3px; border-radius: 2px; background: var(--ink); opacity: 0.6; }
-  .mc b:first-child { width: 55%; background: var(--acc); opacity: 1; }
-  .pn { font-size: var(--text-label); font-weight: var(--strong-weight); padding: 0 var(--s-1); }
+  .check { display: flex; align-items: flex-start; gap: var(--s-4); min-height: var(--pill-h); }
+  .check input { margin-top: var(--s-2); width: 1.1em; height: 1.1em; accent-color: var(--accent); flex: none; }
+  .cl { display: grid; font-weight: var(--strong-weight); }
+  .cl small { font-weight: inherit; font-size: var(--text-label); color: var(--ink-3); }
   .color { display: flex; align-items: center; justify-content: space-between; font-weight: var(--strong-weight); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   .note a { color: var(--accent); }
