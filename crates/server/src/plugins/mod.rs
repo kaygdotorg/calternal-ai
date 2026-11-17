@@ -25,6 +25,7 @@ pub mod job_sql;
 mod job_streams;
 pub mod jobs;
 pub mod live;
+mod machine_worker;
 mod requests;
 pub mod runner;
 pub mod session;

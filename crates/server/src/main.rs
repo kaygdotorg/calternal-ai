@@ -136,7 +136,8 @@ enum Cmd {
         /// Root of repository-shipped trusted plugins.
         #[arg(long, default_value = "plugins")]
         plugin_root: PathBuf,
-        /// Absolute Node executable for plugin workers (default: node on PATH).
+        /// Explicit direct development worker runtime; requires --development.
+        /// Shipped servers route workers to enrolled machines.
         #[arg(long)]
         node: Option<PathBuf>,
         /// Root of the test-only plugins (`tests/plugins`); refused unless the server
@@ -382,15 +383,32 @@ async fn serve(
         Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
         None => Registry::load(&plugin_root),
     };
-    let node = match plugins::resolve_node(node.as_deref()).await {
-        Ok(n) => {
-            tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");
-            Some(n)
-        }
-        Err(why) => {
-            tracing::warn!(reason = %why, "Node unavailable; plugin workers disabled");
-            None
-        }
+    let local_test_workers = cfg!(feature = "test-plugins")
+        && test_root.is_some()
+        && std::env::var_os("CALTERNAL_WORKER_TEST_BACKEND").is_some();
+    if node.is_some() && !development && !local_test_workers {
+        return Err(boot(
+            1,
+            "invalid_input",
+            "--node requires --development or test-only plugins",
+            "Use enrolled machines for plugin workers.",
+        ));
+    }
+    let node = if local_test_workers || node.is_some() {
+        let runtime = plugins::resolve_node(node.as_deref())
+            .await
+            .map_err(|why| {
+                boot(
+                    1,
+                    "unavailable",
+                    why,
+                    "Install Node >= 22.13 for direct development workers.",
+                )
+            })?;
+        tracing::info!(node = %runtime.path.display(), version = %runtime.version, "explicit development worker runtime");
+        Some(runtime)
+    } else {
+        None
     };
     let web_dir = web_dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d));
 
@@ -527,7 +545,11 @@ async fn serve(
         store,
         directory,
         registry,
-        workers: plugins::WorkerPool::new(node),
+        workers: if let Some(node) = node {
+            plugins::WorkerPool::new(Some(node))
+        } else {
+            plugins::WorkerPool::machines(machines.clone())
+        },
         jobs,
         allowed_hosts: hosts,
     });

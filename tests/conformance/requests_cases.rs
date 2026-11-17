@@ -68,7 +68,7 @@ impl Machine {
         let ch = challenge.body["challenge"].as_str().unwrap();
         let r = f.machine("/api/v1/machine/session/finish",None,json!({
             "machine_id":self.id,"challenge":ch,"signature":self.key.sign_session(self.id,ch),
-            "boot_id":self.boot,"protocol":2,"backend":"podman",
+            "boot_id":self.boot,"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":"podman",
         })).await;
         r.ok();
         self.token = r.body["token"].as_str().unwrap().to_owned();

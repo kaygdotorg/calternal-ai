@@ -45,6 +45,7 @@
 //! caller-facing API; the HTTP endpoints are thin wrappers over them.
 
 pub mod admin;
+mod admission;
 pub mod db;
 mod discards;
 mod execs;
@@ -53,8 +54,9 @@ mod owners;
 pub mod provider;
 mod sessions;
 mod state;
+mod workers;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -117,6 +119,8 @@ pub enum LeaseState {
     Running,
     /// Fenced after machine silence; only explicit resume returns it to placement.
     Interrupted,
+    /// Internal worker teardown awaiting authenticated machine confirmation.
+    Stopping,
     /// Over; see the reason.
     Ended,
 }
@@ -129,6 +133,7 @@ impl LeaseState {
             Self::Assigned => "assigned",
             Self::Running => "running",
             Self::Ended => "ended",
+            Self::Stopping => "stopping",
             Self::Interrupted => "interrupted",
         }
     }
@@ -139,6 +144,7 @@ impl LeaseState {
             "assigned" => Self::Assigned,
             "running" => Self::Running,
             "interrupted" => Self::Interrupted,
+            "stopping" => Self::Stopping,
             _ => Self::Ended,
         }
     }
@@ -203,6 +209,7 @@ pub struct OutputView {
 pub struct MachineService {
     state: Mutex<State>,
     settings: Settings,
+    worker_changes: tokio::sync::Notify,
 }
 
 const EXEC_RETENTION: Duration = Duration::from_secs(600);
@@ -270,12 +277,37 @@ impl MachineService {
             leases: HashMap::new(),
             threads: HashMap::new(),
             execs: HashMap::new(),
+            workers: HashMap::new(),
+            worker_stops: HashMap::new(),
+            recovery_stops: HashSet::new(),
             next_order: 0,
             db,
             authority,
         };
         db::prune_ended(&st.db, settings.ended_lease_retention).map_err(sql)?;
-        for row in db::active_leases(&st.db).map_err(sql)? {
+        for mut row in db::active_leases(&st.db).map_err(sql)? {
+            if row.worker {
+                row.fence += 1;
+                row.reason = Some("plugin workers ended by server restart".into());
+                if let Some(machine) = row.machine {
+                    row.state = "stopping".into();
+                    st.worker_stops.insert(row.id, (machine, [0; 32], u64::MAX));
+                    st.recovery_stops.insert(row.id);
+                    db::put_lease(&st.db, &row).map_err(sql)?;
+                    st.leases.insert(
+                        row.id,
+                        Lease {
+                            row,
+                            state: LeaseState::Stopping,
+                            order: 0,
+                        },
+                    );
+                } else {
+                    row.state = "ended".into();
+                    db::put_lease(&st.db, &row).map_err(sql)?;
+                }
+                continue;
+            }
             st.next_order += 1;
             st.threads.insert(row.thread, row.id);
             let state = LeaseState::parse(&row.state);
@@ -285,6 +317,7 @@ impl MachineService {
         Ok(Arc::new(Self {
             state: Mutex::new(st),
             settings,
+            worker_changes: tokio::sync::Notify::new(),
         }))
     }
 
@@ -295,73 +328,6 @@ impl MachineService {
     }
 
     // ------------------------------------------------------------ callers
-
-    /// Ask to run work for (space, account, thread); blocks (one commit). Returns
-    /// the existing run when the thread already has an active lease for this
-    /// account and space. The caller must have checked the account's authority.
-    pub fn request_run(
-        &self,
-        space: SpaceId,
-        account: AccountId,
-        thread: Uuid,
-        image: Option<String>,
-    ) -> Result<RunView, Error> {
-        self.request_run_on(space, account, thread, image, None)
-    }
-
-    /// Admit a lease optionally pinned to the machine that last ran the turn
-    /// before its person request. A missing or busy pin waits for that machine.
-    /// Cost: the normal lease admission commit and placement pass.
-    pub(crate) fn request_run_on(
-        &self,
-        space: SpaceId,
-        account: AccountId,
-        thread: Uuid,
-        image: Option<String>,
-        pinned_machine: Option<Uuid>,
-    ) -> Result<RunView, Error> {
-        let mut st = self.lock()?;
-        let st = &mut *st;
-        if let Some(id) = st.threads.get(&thread).copied() {
-            let l = &st.leases[&id];
-            if l.row.account != account
-                || l.row.space != space
-                || l.row.pinned_machine != pinned_machine
-            {
-                return Err(Error::conflict("thread is running for another context"));
-            }
-            return Ok(st.view(id));
-        }
-        let row = db::LeaseRow {
-            id: Uuid::new_v4(),
-            space,
-            account,
-            thread,
-            image,
-            machine: None,
-            last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
-            pinned_machine,
-            fence: 0,
-            state: LeaseState::Waiting.as_str().into(),
-            reason: None,
-            created_ms: db::now_ms(),
-        };
-        db::put_lease(&st.db, &row).map_err(sql)?;
-        st.next_order += 1;
-        let id = row.id;
-        st.threads.insert(thread, id);
-        let order = st.next_order;
-        st.leases.insert(
-            id,
-            Lease {
-                row,
-                state: LeaseState::Waiting,
-                order,
-            },
-        );
-        st.place_waiting(&self.settings);
-        Ok(st.view(id))
-    }
 
     /// Current view of a run owned by `account`; not found otherwise. Blocks
     /// (reads SQLite only for runs no longer in memory).
@@ -464,22 +430,28 @@ impl MachineService {
         }))
     }
 
-    /// The space of a run, for re-checking the caller's authority. Blocks.
+    /// The space of a publicly addressable agent run; internal worker leases
+    /// return None. Cost: registry lookup or one SQLite read after retention.
     pub fn run_space(&self, lease: Uuid) -> Result<Option<SpaceId>, Error> {
         let st = self.lock()?;
         Ok(match st.leases.get(&lease) {
-            Some(l) => Some(l.row.space),
-            None => db::lease(&st.db, lease).map_err(sql)?.map(|r| r.space),
+            Some(l) => (!l.row.worker).then_some(l.row.space),
+            None => db::lease(&st.db, lease)
+                .map_err(sql)?
+                .filter(|r| !r.worker)
+                .map(|r| r.space),
         })
     }
 
-    /// The space of an exec's run, for re-checking the caller's authority.
+    /// The space of a public agent exec; internal worker streams stay hidden.
+    /// Cost: one registry lock and two memory lookups, no I/O.
     pub fn exec_space(&self, exec: Uuid) -> Result<Option<SpaceId>, Error> {
         let st = self.lock()?;
         Ok(st
             .execs
             .get(&exec)
             .and_then(|e| st.leases.get(&e.lease))
+            .filter(|l| !l.row.worker)
             .map(|l| l.row.space))
     }
 
@@ -570,7 +542,10 @@ impl MachineService {
             let leases: Vec<Uuid> = st
                 .leases
                 .values()
-                .filter(|l| l.row.machine == Some(machine) && l.state != LeaseState::Ended)
+                .filter(|l| {
+                    l.row.machine == Some(machine)
+                        && !matches!(l.state, LeaseState::Ended | LeaseState::Stopping)
+                })
                 .map(|l| l.row.id)
                 .collect();
             for lease in leases {

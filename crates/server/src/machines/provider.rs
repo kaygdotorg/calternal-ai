@@ -67,10 +67,12 @@ impl MachineService {
     pub fn release_run(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
         let mut st = self.lock()?;
         match st.leases.get(&lease) {
-            Some(l) if l.row.account == account => (),
+            Some(l) if l.row.account == account && !l.row.worker => (),
             None if super::db::lease(&st.db, lease)
                 .map_err(super::sql)?
-                .is_some_and(|row| row.account == account && row.state == "ended") =>
+                .is_some_and(|row| {
+                    row.account == account && !row.worker && row.state == "ended"
+                }) =>
             {
                 return Ok(());
             }
