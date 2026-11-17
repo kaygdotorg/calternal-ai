@@ -4008,7 +4008,7 @@
   },
   {
     "id": "secrets.list",
-    "description": "List secret metadata and pending requests, never values",
+    "description": "List personal secret metadata and requests; space metadata requires secrets.manage",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -4133,7 +4133,7 @@
   },
   {
     "id": "secrets.revoke",
-    "description": "Destroy a secret or withdraw a pending request",
+    "description": "Destroy a personal secret or request; space management requires secrets.manage",
     "mutates": true,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",

@@ -149,10 +149,10 @@ const ROLES: [Option<&str>; 5] = [
     Some("manager"),
     Some("owner"),
 ];
-// request needs plugins.use, list needs space.read, revoke needs space.settings.
+// request needs plugins.use; management requires secrets.manage.
 const MATRIX: &[(&str, [bool; 5])] = &[
     ("secrets.request", [false, false, true, true, true]),
-    ("secrets.list", [false, true, true, true, true]),
+    ("secrets.list", [false, false, false, true, true]),
     ("secrets.revoke", [false, false, false, true, true]),
 ];
 

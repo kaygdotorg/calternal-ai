@@ -6,7 +6,7 @@ title: "secrets.revoke"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Destroy a secret or withdraw a pending request
+Destroy a personal secret or request; space management requires secrets.manage
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -15,7 +15,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 ```json
 {
   "id": "secrets.revoke",
-  "description": "Destroy a secret or withdraw a pending request",
+  "description": "Destroy a personal secret or request; space management requires secrets.manage",
   "mutates": true
 }
 ```

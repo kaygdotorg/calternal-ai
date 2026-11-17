@@ -6,7 +6,7 @@ title: "secrets.list"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-List secret metadata and pending requests, never values
+List personal secret metadata and requests; space metadata requires secrets.manage
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -15,7 +15,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 ```json
 {
   "id": "secrets.list",
-  "description": "List secret metadata and pending requests, never values",
+  "description": "List personal secret metadata and requests; space metadata requires secrets.manage",
   "mutates": false
 }
 ```

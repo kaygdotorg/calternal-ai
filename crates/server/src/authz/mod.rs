@@ -193,13 +193,13 @@ pub const POLICIES: &[Policy] = &[
     },
     Policy {
         operation: Cow::Borrowed("secrets.list"),
-        required: Capability::SpaceRead,
+        required: Capability::SecretsManage,
         scope: Scope::Account,
         constraint: Constraint::None,
     },
     Policy {
         operation: Cow::Borrowed("secrets.revoke"),
-        required: Capability::SpaceSettings,
+        required: Capability::SecretsManage,
         scope: Scope::Account,
         constraint: Constraint::None,
     },

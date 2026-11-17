@@ -111,7 +111,7 @@ INSERT INTO space_role_capabilities VALUES
  ('reader','space.read'),
  ('editor','space.read'),('editor','content.write'),('editor','plugins.use'),
  ('manager','space.read'),('manager','content.write'),('manager','plugins.use'),
- ('manager','plugins.manage'),('manager','members.invite'),('manager','members.manage'),('manager','space.settings');
+ ('manager','plugins.manage'),('manager','members.invite'),('manager','members.manage'),('manager','space.settings'),('manager','secrets.manage');
 INSERT INTO space_role_capabilities SELECT 'owner',capability FROM space_role_capabilities WHERE role='manager';
 INSERT INTO space_role_capabilities VALUES('owner','managers.manage'),('owner','space.transfer'),('owner','space.delete');
 CREATE TABLE spaces(

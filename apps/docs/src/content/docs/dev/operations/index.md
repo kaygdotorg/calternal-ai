@@ -30,8 +30,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [jobs.get](./jobs-get/): Read a plugin job's durable record
 - [jobs.cancel](./jobs-cancel/): Cancel a plugin job and its active child jobs
 - [secrets.request](./secrets-request/): Ask for a secret; a person supplies the value through the trusted prompt
-- [secrets.list](./secrets-list/): List secret metadata and pending requests, never values
-- [secrets.revoke](./secrets-revoke/): Destroy a secret or withdraw a pending request
+- [secrets.list](./secrets-list/): List personal secret metadata and requests; space metadata requires secrets.manage
+- [secrets.revoke](./secrets-revoke/): Destroy a personal secret or request; space management requires secrets.manage
 - [drafts.save](./drafts-save/): drafts save
 - [drafts.list](./drafts-list/): drafts list
 - [drafts.get](./drafts-get/): drafts get

@@ -42,7 +42,7 @@ use calternal_types::Error;
 /// Path of the trusted endpoint that supplies a value for a pending request.
 pub const PROVIDE_PATH: &str = "/api/v1/auth/secrets/provide";
 /// Capability a member needs to supply a space secret's value.
-pub const PROVIDE_CAPABILITY: Capability = Capability::SpaceSettings;
+pub const PROVIDE_CAPABILITY: Capability = Capability::SecretsManage;
 /// Largest provide body: a 64 KiB value plus JSON escaping and the other fields.
 const PROVIDE_BODY_MAX: usize = 400 * 1024;
 
