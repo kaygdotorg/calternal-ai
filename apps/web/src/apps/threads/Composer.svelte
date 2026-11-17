@@ -125,7 +125,7 @@
   }
 </script>
 
-<Panel class="composer" radius="pane">
+<Panel class="composer" radius="pane" data-ring-host>
   <div class="ctx" aria-label="Context">
     <span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
@@ -143,20 +143,20 @@
       <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
       </Pill>
-      <Menu open={menuOpen} {items} search label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
+      <Menu open={menuOpen} {items} search morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
     </span>
     <span class="chip permc">
       <Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>
         <span class="perm">{permissionLabel(thread.permission)}</span>
       </Pill>
-      <Menu open={permOpen} items={permItems} label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
+      <Menu open={permOpen} items={permItems} morph label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
     </span>
     <span class="chip where">
       <Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel glass={false} aria-haspopup="dialog" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => (whereOpen = !whereOpen)}>
         <span class="rl">{thread.runsOn.machine} · {thread.runsOn.mode === "sandboxed" ? "Sandboxed" : "Direct"}</span><span class="rm">{thread.runsOn.machine}</span><span class="mode"><Icon inline name={thread.runsOn.mode === "sandboxed" ? "shield" : "folder"} /></span>
       </Pill>
       {#if !sheet}
-        <Popover open={whereOpen} anchor={whereTrigger} label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
+        <Popover open={whereOpen} anchor={whereTrigger} morph label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
       {/if}
     </span>
   </div>
@@ -169,7 +169,7 @@
 {/if}
 
 <style>
-  :global(.composer) { container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
+  :global(.composer) { --ring-offset: 2px; container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
   .ctx { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-3) 0 0; }
   .cx { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink-2); font-size: var(--text-label); }
   .cx > span:not(:first-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -179,8 +179,7 @@
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
   :global(.field-input) { flex: 1; padding: var(--s-3) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
-  :global(:root[data-input="key"] .composer:has(.field-input:focus-visible)) { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
+    .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
   .chip { position: relative; flex: 0 1 auto; min-width: var(--pill-h); }
   .chip :global(.pill) { max-width: 100%; overflow: hidden; }
   .pl, .pm, .perm, .rl, .rm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
