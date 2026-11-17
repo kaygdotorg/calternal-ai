@@ -45,6 +45,16 @@ fn index_error(error: rusqlite::Error) -> Error {
     Error::internal("could not read the thread index")
 }
 
+// The unary plus removes the content column's TEXT affinity without changing its
+// value. This lets SQLite seek the affinity-free JSON expression in jobs_thread.
+const SUMMARIES: &str = "SELECT i.id, i.metadata, i.revision, (
+         SELECT j.state FROM main.jobs j
+         WHERE j.operation='agent.turn' AND json_extract(j.input,'$.request.thread_id') = +i.id
+         ORDER BY j.rowid DESC LIMIT 1
+     )
+     FROM thread_content.items i WHERE i.kind='threads'
+     ORDER BY i.updated_at DESC, i.id LIMIT 1000";
+
 fn read(conn: &JobDatabase) -> Result<Vec<Row>, Error> {
     let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
     if !is_attached(&conn) {
@@ -66,17 +76,7 @@ fn read(conn: &JobDatabase) -> Result<Vec<Row>, Error> {
         conn.execute("ATTACH DATABASE ?1 AS thread_content", [&uri])
             .map_err(index_error)?;
     }
-    let mut stmt = conn
-        .prepare_cached(
-            "SELECT i.id, i.metadata, i.revision, (
-             SELECT j.state FROM main.jobs j
-             WHERE j.operation='agent.turn' AND json_extract(j.input,'$.request.thread_id')=i.id
-             ORDER BY j.rowid DESC LIMIT 1
-         )
-         FROM thread_content.items i WHERE i.kind='threads'
-         ORDER BY i.updated_at DESC, i.id LIMIT 1000",
-        )
-        .map_err(index_error)?;
+    let mut stmt = conn.prepare_cached(SUMMARIES).map_err(index_error)?;
     let rows = stmt
         .query_map([], |r| {
             Ok((
@@ -100,4 +100,49 @@ fn read(conn: &JobDatabase) -> Result<Vec<Row>, Error> {
         })
     })
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::Jobs;
+
+    #[test]
+    fn list_seeks_the_jobs_thread_index_for_each_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let jobs = Jobs::open(dir.path()).unwrap();
+        let space = SpaceId::new().to_string();
+        let conn = jobs.conn(&space).unwrap();
+        let conn = conn.lock().unwrap();
+        conn.execute_batch(
+            "ATTACH DATABASE ':memory:' AS thread_content;
+             CREATE TABLE thread_content.items(
+                id TEXT PRIMARY KEY, kind TEXT NOT NULL, metadata TEXT NOT NULL,
+                revision TEXT NOT NULL, updated_at TEXT NOT NULL
+             ) STRICT;
+             CREATE INDEX thread_content.item_list ON items(kind,updated_at DESC,id);",
+        )
+        .unwrap();
+
+        let mut stmt = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {SUMMARIES}"))
+            .unwrap();
+        let nodes: Vec<String> = stmt
+            .query_map([], |row| row.get(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            nodes
+                .iter()
+                .any(|row| row.contains("SEARCH i USING INDEX item_list")),
+            "{nodes:?}"
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|row| { row.contains("SEARCH j USING INDEX jobs_thread") }),
+            "{nodes:?}"
+        );
+    }
 }
