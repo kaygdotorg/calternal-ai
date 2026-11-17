@@ -34,11 +34,23 @@ fn native_claim_checks_operation_and_account_in_the_claim_transaction() {
             .unwrap()
             .is_none()
     );
+    let claim = jobs
+        .claim_turn(&space, &native, Some(account))
+        .unwrap()
+        .unwrap();
+    let queued = jobs.get(&space, &native).unwrap().unwrap().view();
+    assert_eq!(queued.state, calternal_core::JobState::Admitted);
     assert!(
         jobs.claim_turn(&space, &native, Some(account))
             .unwrap()
-            .is_some()
+            .is_none()
     );
+    let placement = json!({"machine_id":uuid::Uuid::new_v4()});
+    jobs.start_placed_turn(&space, &native, claim.job.runs, &claim.live, &placement)
+        .unwrap();
+    let running = jobs.get(&space, &native).unwrap().unwrap().view();
+    assert_eq!(running.state, calternal_core::JobState::Running);
+    assert_eq!(running.checkpoint, placement);
 }
 
 #[test]
@@ -59,7 +71,7 @@ fn cancellation_observes_the_prepared_resource_and_prevents_late_preparation() {
             request_key: "lease-fence".into(),
         })
         .unwrap();
-    let claimed = jobs.claim(&space, &id).unwrap().unwrap();
+    let claimed = jobs.claim_turn(&space, &id, None).unwrap().unwrap();
     let (entered_tx, entered_rx) = std::sync::mpsc::channel();
     let (cancel_tx, cancel_rx) = std::sync::mpsc::channel();
     let (worker_jobs, worker_space, worker_id) = (jobs.clone(), space.clone(), id.clone());

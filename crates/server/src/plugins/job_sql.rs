@@ -42,7 +42,7 @@ pub(super) fn state_name(state: JobState) -> &'static str {
 /// Decode the existing job storage state for trusted host readers in constant time.
 pub(crate) fn parse_state(name: &str) -> JobState {
     match name {
-        "admitted" => JobState::Admitted,
+        "admitted" | "placing" => JobState::Admitted,
         "running" => JobState::Running,
         "retry_waiting" => JobState::RetryWaiting,
         "interrupted" => JobState::Interrupted,
@@ -54,7 +54,8 @@ pub(crate) fn parse_state(name: &str) -> JobState {
     }
 }
 
-pub(super) const ACTIVE: &str = "('admitted','running','waiting','interrupted','retry_waiting')";
+pub(super) const ACTIVE: &str =
+    "('admitted','placing','running','waiting','interrupted','retry_waiting')";
 
 pub(crate) use calternal_types::now_ms;
 

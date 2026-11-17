@@ -401,3 +401,24 @@ pub async fn wait_online(server: &Server, token: &str, n: usize) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
+
+/// Wait for Podman to remove this exact test container, including stopped state.
+pub async fn wait_container_removed(account: uuid::Uuid, thread: uuid::Uuid, timeout: Duration) {
+    let name = calternal_machine::sandbox::podman::PodmanBackend::container_name(account, thread);
+    let waited = tokio::time::timeout(timeout, async {
+        loop {
+            let status = tokio::process::Command::new("podman")
+                .args(["container", "exists", &name])
+                .status()
+                .await
+                .unwrap();
+            match status.code() {
+                Some(1) => return,
+                Some(0) => tokio::time::sleep(Duration::from_millis(100)).await,
+                _ => panic!("could not check test container: {status}"),
+            }
+        }
+    })
+    .await;
+    assert!(waited.is_ok(), "container {name} was retained");
+}
