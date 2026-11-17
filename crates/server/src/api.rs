@@ -960,7 +960,7 @@ async fn invoke_plugin<D: Directory>(
     let host = SpaceHost::new(
         state.clone(),
         p.clone(),
-        session,
+        session.clone(),
         space.clone(),
         space_id.as_uuid().to_string(),
         plugin.clone(),
@@ -986,6 +986,9 @@ async fn invoke_plugin<D: Directory>(
         .await;
     // Delivery checks run whatever the worker answered, so a refusal caused by a
     // revocation reports the same error the revocation itself would.
+    if !session.is_live(&state.tokens).await {
+        return Err(HostError::unauthorized("missing or invalid session"));
+    }
     let (space_key, plugin2) = (space.clone(), plugin.clone());
     let still = blocking(&state, move |s| activation(s, &space_key, &plugin2)).await?;
     if !still.enabled || still.generation != generation {

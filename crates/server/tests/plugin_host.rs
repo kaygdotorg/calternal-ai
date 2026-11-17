@@ -609,7 +609,7 @@ async fn host_calls_recheck_the_callers_sign_in() {
     )
     .await
     .unwrap_err();
-    assert_eq!(e.code, ErrorCode::Unavailable);
+    assert_eq!(e.code, ErrorCode::Unauthorized);
     assert!(
         !find(&f.root.join("data/userdata-ssd"), "late.md"),
         "write landed without a live sign-in"

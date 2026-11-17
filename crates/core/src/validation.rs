@@ -172,9 +172,13 @@ pub fn validate_client_request(request: &OperationRequest) -> Result<(), Validat
     Ok(())
 }
 /// Decode and validate an operation body, bounding bytes before JSON allocation. Cost and allocations are O(body bytes).
+/// Inputs of operations in this catalog are checked here; any other operation (a
+/// plugin's manifest-declared one) is left to the server, which answers an
+/// unregistered name like a hidden target and checks the declared input schema.
 ///
 /// # Errors
-/// Returns too large above 2 MiB, invalid input for malformed JSON/schema, or not found for an unknown operation.
+/// Returns too large above 2 MiB, or invalid input for a malformed envelope or a
+/// catalog operation's malformed input.
 pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> {
     if bytes.len() > MAX_BODY_BYTES {
         return Err(ValidationError {
@@ -184,7 +188,7 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> 
     }
     let request: OperationRequest = serde_json::from_slice(bytes)
         .map_err(|_| ValidationError::invalid("malformed operation envelope"))?;
-    validate_request(&request)?;
+    validate_client_request(&request)?;
     Ok(request)
 }
 /// Decode a known operation input and enforce its value constraints; allocates a temporary JSON clone proportional to input size. Does not check access.
