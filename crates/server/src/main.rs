@@ -71,6 +71,13 @@ enum Cmd {
         #[command(subcommand)]
         cmd: calternal_cli::account_input::Pending,
     },
+    /// List, answer, approve or deny the requests waiting on you.
+    Requests {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::requests::Command,
+    },
     /// Follow a space journal; --json prints one compact JSON object per event.
     Watch {
         space: String,
@@ -205,6 +212,9 @@ fn main() {
             ))
         }
         Cmd::Pending { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
+        Cmd::Requests { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
             calternal_cli::account_input::run(connection, op, input, &out)
         })),
         Cmd::Watch {

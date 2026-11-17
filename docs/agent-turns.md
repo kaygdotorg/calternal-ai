@@ -184,3 +184,7 @@ The old credential is rotated on a mode change; thread credentials cannot choose
 a mode or reissue themselves. Explicit in-flight `agent.mode` retains its existing
 fresh-person check and explicit-resume flow. Source apps must match an enabled registered
 plugin prefix/kind or a built-in operation group.
+
+Turns waiting on a question or approval release their machine lease and resume
+only on the recorded machine after the recipient resolves the request. See
+[person requests](requests.md).

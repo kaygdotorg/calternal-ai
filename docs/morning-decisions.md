@@ -60,15 +60,23 @@ only for the same account/provider (small context cost, session identity lifecyc
 or hand off explicit conversation context (portable across accounts/providers,
 requires a bounded context/summary policy). Current sends admit fresh jobs.
 
-## Standing instruction writer (owner decision 2026-11-18)
+## Standing instructions and requests (owner direction 2026-11-18)
 
-`AI/AGENTS.md` is reserved and may only be written by Managers/Owner. There is no
-existing Manager-only file-write operation to reuse. Options: a narrow standing-
-instructions operation under `space.settings` (small surface, needs a durable
-file/receipt intent), or a general Manager-owned space-file operation (reusable,
-larger path-policy and recovery proof). No operation name or new write port is
-invented in this lane; generic kind writers are denied the reserved path.
+The requests lane implements the narrow `space.instructions` operation under
+`space.settings`. It writes the reserved Markdown with a durable placement
+intent and space journal receipt. A general protected-file writer is outside
+this direction.
 
-Approval lifetimes are handed to a separate lane: once-only grants need atomic
-consumption with request receipt replay, and thread grants need protected storage
-that survives jobs and is erased by thread deletion. Always-in-space remains later.
+- Credential rotation after consuming a once approval. A same-machine provider
+  restart can reuse the existing credential bootstrap but interrupts the calling
+  tool and needs a receipt-only replay path for the old invocation. A protected
+  local credential socket or file avoids the restart and changes how each
+  provider and CLI receives its credential.
+- Once approval for writers without a durable receipt. An operation can add a
+  recoverable intent and receipt before becoming eligible. An outside service
+  could supply a stable idempotency key and a result lookup instead, adding
+  service-specific delivery and reconciliation requirements.
+- Feed recovery across request and bookmark commits. A bounded outbox in each
+  source store preserves precise invalidations across a crash and adds recovery
+  coordination. An account snapshot on reconnect keeps the inbox authoritative
+  with fewer writes and can delay invalidation on an already open connection.
