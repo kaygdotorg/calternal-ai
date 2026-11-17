@@ -17,6 +17,17 @@ impl Space {
     /// Complete durable pending heads in this space. Called under its slot lock
     /// by lazy recovery and the existing lifecycle worker, never an async worker.
     pub(crate) fn materialize_pending(&mut self, fault: fn(crate::FaultPoint)) -> Result<()> {
+        // A later failed publication can coexist with an older acknowledged head.
+        // Never let its old wake publish newer file bytes before journal recovery.
+        let unpublished: bool = self
+            .conn
+            .query_row("SELECT EXISTS(SELECT 1 FROM outbox)", [], |r| r.get(0))
+            .map_err(internal)?;
+        if unpublished {
+            return Err(crate::Error::unavailable(
+                "pending journal publication; retry the request",
+            ));
+        }
         let mut stmt = self
             .conn
             .prepare("SELECT id FROM items WHERE mat_state='pending'")

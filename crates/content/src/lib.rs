@@ -394,7 +394,10 @@ impl Content {
     /// at most the old/new file, then fsio fsyncs file and parent plus one NORMAL replayable SQL
     /// bookkeeping update. Materialized items need only metadata reads.
     pub fn materialize(&self, space: SpaceId, id: Uuid) -> Result<()> {
-        self.with_space(space, |s| s.place(id, self.fault))
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            s.place(id, self.fault)
+        })
     }
     /// Reads one per-space control value, such as a plugin's enablement, from the
     /// space's own database. Callers authorize the space first.
