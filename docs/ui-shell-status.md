@@ -377,3 +377,17 @@ Shell states: **reconnecting** (any call or stream that cannot reach the server:
 - **Accessibility:** `e2e/a11y.mjs` (fixtures, every screen and Settings page, both schemes, desktop and phone) and `e2e/a11y-server.mjs` (real server: setup, sign-in, shell, every Settings page, failure screens; 56 checks) are clean. `e2e/a11y-walk.mjs`: keyboard walk with focus indicator and names on the threads, notes and three Settings pages in both schemes, the palette opens, keeps focus and returns it on Escape, reduced motion leaves no movement, 200% zoom (720 px) has no sideways scroll and no axe violation. Found and fixed: Plugins group headings jumped from h1 to h3; the sheet returned focus to a field that had gone (now to where focus was before any sheet).
 - **Light wallpapers:** the eight built-ins checked in a headed GPU Chrome (screenshots on issue #15); nothing to fix. Phone width needs a real device or the WebKit simulator, not that Chrome.
 - **Served by the server itself:** deep-link reload and `blob:` wallpapers work with the current server (CSP and fallback in dev); the personal space comes from `personal: true`.
+
+## Notes on the real server (2026-11-18)
+
+Through the same adapter interface as fixtures (`apps/web/src/apps/notes/client.ts`): list, open, create, edit and save (whole-note replacement checked against the revision), rename (the first heading is the title), and following the space journal (live stream, no polling). The state of the open note is said in the header: Not saved yet, Saving, Saved, Changed elsewhere, or "Can't reach the server. Your text is still here and saves when it is back". The editor's text is never replaced by a save, so typing during a save is safe; a conflict keeps the typed text on screen and offers Keep mine or Use theirs; drafts use the account's `drafts.*` operations. Tested end to end in `e2e/notes-server.mjs` (real server, virtual authenticator): first note, saving, rename, a change from elsewhere (appeared in about 100 ms), conflict, offline and back, and a 10,000-line note.
+
+Development-host numbers (dev-02, debug server, Chromium): typing in the 10,000-line note while saves ran, 135 keystrokes, median 2.1 ms, p95 3.1 ms, worst 6.8 ms to paint; operations round trips seen by the page (saves, list refreshes, draft writes), median 5 ms, p95 118 ms, max 438 ms.
+
+| Page | Control | Operation needed |
+| --- | --- | --- |
+| Notes | Delete to trash, restore, empty trash | `notes.delete`, `notes.restore`, `notes.trash.list` (a note is a file; trash is `.trash`) |
+| Notes | Rename from the list (without opening) | `notes.rename` (today renaming is editing the first heading) |
+| Notes | `#` tag picker | `notes.tags` (tags in use in the space); hidden in server mode |
+| Notes | `@` people | a members-with-names operation (also needed for Members); only agents and threads are offered |
+| Notes | Live co-editing | rooms; until then saves are whole-note with a revision check |

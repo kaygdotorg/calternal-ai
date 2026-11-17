@@ -7,6 +7,7 @@ import { server, serverMode } from "../../server/client";
 import { FixtureNotes, ServerNotes, type Note, type NoteSummary, type NotesClient, type Space } from "./client";
 import { FixtureInput, ServerInput, type Draft, type InputClient, type PendingWrite } from "./input";
 import { ServerError } from "../../server/client";
+import { say } from "../../server/say";
 
 class NotesStore {
   client: NotesClient = serverMode() ? new ServerNotes(server) : new FixtureNotes();
@@ -20,7 +21,16 @@ class NotesStore {
   spaces = $state<Space[]>([]);
   space = $state<Space | null>(null);
   list = $state<NoteSummary[]>([]);
+  /** The saved note: the revision the next save is checked against. What the editor shows is `view`, which a save never touches (so typing during a save is never overwritten). */
   note = $state<Note | null>(null);
+  /** What the editor shows: set when a note is opened, replaced from elsewhere, or when the person takes the other version; `seq` says it is new. */
+  view = $state<{ id: string; text: string; seq: number }>({ id: "", text: "", seq: 0 });
+  /** Where the open note stands: `saved`, `dirty` (typed, not sent yet), `saving`, `conflict` (the server has a newer version), `waiting` (offline: kept on this device, sent when the server is back), `failed`. */
+  saveState = $state<"saved" | "dirty" | "saving" | "conflict" | "waiting" | "failed">("saved");
+  /** The server's newer version, while `saveState` is `conflict`. */
+  conflict = $state<Note | null>(null);
+  /** Saving took this long the last time, in milliseconds (shown nowhere; the performance report reads it). */
+  lastSaveMs = 0;
   error = $state("");
   private stop: (() => void) | null = null;
   private stopInput: (() => void) | null = null;
@@ -35,11 +45,11 @@ class NotesStore {
       this.spaces = serverMode() ? shellSpaces.list : await this.client.spaces();
       this.space = this.spaces.find((s) => s.id === shellSpaces.current.id) ?? this.spaces[0] ?? null;
       await this.refresh();
-      if (this.space) this.stop = this.client.watch(this.space.id, () => void this.refresh());
+      if (this.space) this.stop = this.client.watch(this.space.id, () => void this.follow());
       await this.reloadInput();
       this.stopInput = this.input.watch(() => void this.reloadInput());
     } catch (e) {
-      this.error = (e as Error).message;
+      this.error = say(e, "load the notes");
     }
   }
   /** Follows the shell's current space: the list is that space's notes. The open note stays open. */
@@ -48,9 +58,26 @@ class NotesStore {
     if (!next || next.id === this.space?.id) return;
     this.space = next;
     this.stop?.();
-    this.stop = this.client.watch(next.id, () => void this.refresh());
+    this.stop = this.client.watch(next.id, () => void this.follow());
     await this.refresh();
   }
+  /**
+   * A change came from elsewhere (the space journal, no polling): refresh the list, and if the open note changed there, show it (nothing being typed), or remember it as the conflict the next save will meet.
+   */
+  async follow(): Promise<void> {
+    await this.refresh().catch(() => {});
+    const n = this.note;
+    if (!n || !this.space) return;
+    try {
+      const latest = await this.client.get(this.space.id, n.id);
+      if (latest.revision === n.revision) return;
+      if (this.saveState === "saved") { this.note = latest; this.show(latest); await this.reloadInput(); }
+      else if (this.saveState !== "saving") { this.conflict = latest; this.saveState = "conflict"; }
+    } catch { /* gone or away: the list refresh and the banner tell it */ }
+  }
+  private show(n: Note): void { this.view = { id: n.id, text: n.markdown, seq: this.view.seq + 1 }; }
+  /** The person typed: the note is no longer in step with the server. */
+  touch(): void { if (this.saveState === "saved" || this.saveState === "failed" || this.saveState === "waiting") this.saveState = "dirty"; }
   async refresh(): Promise<void> {
     if (!this.space) return;
     this.list = await this.client.list(this.space.id);
@@ -75,44 +102,70 @@ class NotesStore {
     if (!id || !this.space) { this.note = null; return; }
     try {
       this.note = await this.client.get(this.space.id, id);
+      this.show(this.note); this.saveState = "saved"; this.conflict = null;
       this.error = "";
       if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
-    } catch (e) { this.note = null; this.error = (e as Error).message; }
+    } catch (e) { this.note = null; this.error = say(e, "open the note"); }
     await this.reloadInput();
   }
-  /** Saves the open note. A conflict reloads it and says so. */
+  /**
+   * Saves the open note: the whole text replaces it, checked against the revision last read. The editor keeps what is typed meanwhile. If the server is away the write is queued (with its time) and the draft stays;
+   * if the server has a newer version the state is `conflict` and the person chooses (`keepMine`, `takeTheirs`); nothing typed is dropped either way.
+   */
   async save(title: string, markdown: string): Promise<boolean> {
     if (!this.note || !this.space) return false;
+    this.saveState = "saving";
+    const t0 = performance.now();
     try {
-      this.note = await this.client.update(this.space.id, this.note.id, this.note.revision, title, markdown);
-      await this.input.dropDraft(this.note.spaceId, this.note.id).catch(() => {});
-      await this.refresh();
-      await this.reloadInput();
-      this.error = "";
+      const saved = await this.client.update(this.space.id, this.note.id, this.note.revision, title, markdown);
+      this.lastSaveMs = performance.now() - t0;
+      this.note = saved;
+      this.saveState = "saved"; this.conflict = null; this.error = "";
+      void this.input.dropDraft(saved.spaceId, saved.id).catch(() => {});
+      void this.refresh().then(() => this.reloadInput());
       return true;
     } catch (e) {
       if (e instanceof ServerError && e.code === "unavailable") {
         // The server could not be reached: the write waits, with its creation time, and is sent when the person says so (or on reconnect).
         const n = this.note;
-        await this.input.queue({ id: crypto.randomUUID(), spaceId: n.spaceId, itemId: n.id, createdAtMs: Date.now(), operation: "notes.update", input: { space_id: n.spaceId, id: n.id, base_revision: n.revision, title, markdown } });
+        await this.input.queue({ id: crypto.randomUUID(), spaceId: n.spaceId, itemId: n.id, createdAtMs: Date.now(), operation: "notes.update", input: { space_id: n.spaceId, id: n.id, base_revision: n.revision, title, markdown } }).catch(() => {});
         await this.reloadInput();
-        this.error = "";
+        this.saveState = "waiting"; this.error = "";
         return true;
       }
-      this.error = (e as Error).message;
-      await this.open(this.note.id);
+      if (e instanceof ServerError && e.code === "conflict") {
+        try { this.conflict = await this.client.get(this.space.id, this.note.id); this.saveState = "conflict"; } catch { this.saveState = "failed"; this.error = say(e, "save the note"); }
+        return false;
+      }
+      this.saveState = "failed"; this.error = say(e, "save the note");
       return false;
     }
   }
+  /** Conflict: keep what was typed and save it over the server's newer version. */
+  async keepMine(title: string, markdown: string): Promise<void> {
+    if (!this.conflict) return;
+    this.note = this.conflict; this.conflict = null; this.saveState = "dirty";
+    await this.save(title, markdown);
+  }
+  /** Conflict: drop what was typed here and show the server's version. */
+  async takeTheirs(): Promise<void> {
+    const theirs = this.conflict;
+    if (!theirs) return;
+    this.note = theirs; this.conflict = null; this.show(theirs); this.saveState = "saved";
+    await this.input.dropDraft(theirs.spaceId, theirs.id).catch(() => {});
+    await this.reloadInput();
+  }
   async create(title: string): Promise<Note | null> {
     if (!this.space) return null;
-    const n = await this.client.create(this.space.id, title, `# ${title}\n`);
-    await this.refresh();
-    return n;
+    try {
+      const n = await this.client.create(this.space.id, title, `# ${title}\n`);
+      await this.refresh();
+      return n;
+    } catch (e) { this.error = say(e, "make the note"); return null; }
   }
   /** Sends a waiting write now; if the server is still away it stays queued. */
   async sendWaiting(id: string): Promise<void> {
-    try { await this.input.send(id); await this.refresh(); await this.open(this.note?.id); this.error = ""; } catch (e) { this.error = (e as Error).message; }
+    try { await this.input.send(id); await this.refresh(); await this.open(this.note?.id); this.error = ""; } catch (e) { this.error = say(e, "send the waiting change"); }
     await this.reloadInput();
   }
   async cancelWaiting(id: string): Promise<void> { await this.input.cancel(id); await this.reloadInput(); }
