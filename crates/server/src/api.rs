@@ -2,6 +2,9 @@
 //! web assets with SPA fallback, loopback Host/Origin checks, dev bearer auth
 //! and security headers.
 
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -252,10 +255,15 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
         .get::<Identity>()
         .cloned()
         .expect("guard inserts principal");
+    let st = state.clone();
+    let principal = match tokio::task::spawn_blocking(move || st.tokens.describe(&p)).await {
+        Ok(p) => p,
+        Err(_) => return failure(None, HostError::internal("directory task failed")),
+    };
     let result = DescribeResult {
         protocol_version: PROTOCOL_VERSION,
         genui_version: GENUI_VERSION,
-        principal: state.tokens.describe(&p),
+        principal,
         operations: operation_catalog(),
     };
     json_response(StatusCode::OK, &result)
@@ -364,7 +372,7 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
 /// The caller supplies a verified identity; supplied fixture grants are discarded
 /// by conversion for legacy development callers. Each attempt reads current capability sets.
 /// Summarize additionally rechecks membership after the worker before delivery.
-/// Successful checks add no allocation or locking beyond the directory lookup.
+/// Stored directory lookups run on blocking tasks; identities contain no grants.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
     p: impl Into<Identity>,
@@ -380,7 +388,39 @@ pub async fn dispatch<D: Directory>(
             HostError::not_found("unknown operation")
         });
     };
-    policy.authorize(&state.tokens, &p, &input)?;
+    let st = state.clone();
+    let identity = p.clone();
+    let checked = input.clone();
+    tokio::task::spawn_blocking(move || policy.authorize(&st.tokens, &identity, &checked))
+        .await
+        .map_err(|_| HostError::internal("directory task failed"))??;
+    if op.starts_with("spaces.") {
+        let st = state.clone();
+        let rid = request_id.to_owned();
+        let operation = op.to_owned();
+        return tokio::task::spawn_blocking(move || {
+            // Serialize receipt namespace checks across directory/content DBs.
+            // Each mutation still commits its own change and receipt atomically.
+            let mut store = st
+                .store
+                .lock()
+                .map_err(|_| HostError::internal("store poisoned"))?;
+            if !matches!(operation.as_str(), "spaces.list" | "spaces.members")
+                && store.receipt(&p.id, &rid)?.is_some()
+            {
+                return Err(HostError::conflict(
+                    "request_id was already used with different input",
+                ));
+            }
+            st.tokens.space_operation(&p, &rid, &operation, &input)
+        })
+        .await
+        .map_err(|_| HostError::internal("directory task failed"))?;
+    }
+    let mut input = input;
+    if let Some(Value::String(space)) = input.get_mut("space_id") {
+        *space = state.tokens.content_space(space);
+    }
     if policy.constraint == Constraint::PluginInvocation {
         let i: NotesGetInput = decode(input)?;
         let lp = state
@@ -389,10 +429,49 @@ pub async fn dispatch<D: Directory>(
             .ok_or_else(|| HostError::not_found("unknown operation"))?
             .clone();
         let result = summarize(state.clone(), lp, &i).await?;
-        policy.authorize_space(&state.tokens, &p, &i.space_id)?;
-        return Ok(result);
+        let st = state.clone();
+        let space = i.space_id.clone();
+        tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &space))
+            .await
+            .map_err(|_| HostError::internal("directory task failed"))??;
+        return Ok(wire_spaces(&state.tokens, result));
     }
-    dispatch_checked(state, p, request_id, op, input).await
+    let delivery_space = input
+        .get("space_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let value = dispatch_checked(state.clone(), p.clone(), request_id, op, input).await?;
+    if let Some(space) = delivery_space {
+        let st = state.clone();
+        tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &space))
+            .await
+            .map_err(|_| HostError::internal("directory task failed"))??;
+    }
+    Ok(wire_spaces(&state.tokens, value))
+}
+
+// Expose UUIDs while the development store retains its explicit root bindings.
+fn wire_spaces(directory: &impl Directory, mut value: Value) -> Value {
+    match &mut value {
+        Value::Object(object) => {
+            for (key, item) in object {
+                if key == "space_id" {
+                    if let Value::String(space) = item {
+                        *space = directory.wire_space(space);
+                    }
+                } else {
+                    *item = wire_spaces(directory, item.take());
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                *item = wire_spaces(directory, item.take());
+            }
+        }
+        _ => {}
+    }
+    value
 }
 
 /// Private handler entry: called exclusively after the dispatch policy gate.
@@ -447,6 +526,23 @@ async fn dispatch_checked<D: Directory>(
             let st = state.clone();
             let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
             blocking(&state, move |s| {
+                authz::policy(&op).expect("bound policy").authorize_space(
+                    &st.tokens,
+                    &Identity {
+                        id: principal.clone(),
+                    },
+                    &i.space_id,
+                )?;
+                if st.tokens.has_space_receipt(
+                    &Identity {
+                        id: principal.clone(),
+                    },
+                    &rid,
+                )? {
+                    return Err(HostError::conflict(
+                        "request_id was already used with different input",
+                    ));
+                }
                 if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
                     return Ok(v);
                 }
@@ -672,7 +768,30 @@ async fn mutate_note<D: Directory>(
     let rid = request_id.to_string();
     let op = op.to_string();
     let principal = p.id;
+    let st = state.clone();
+    let space = create
+        .as_ref()
+        .map(|i| i.space_id.clone())
+        .or_else(|| update.as_ref().map(|i| i.space_id.clone()))
+        .expect("note scope");
     blocking(&state, move |s| {
+        authz::policy(&op).expect("bound policy").authorize_space(
+            &st.tokens,
+            &Identity {
+                id: principal.clone(),
+            },
+            &space,
+        )?;
+        if st.tokens.has_space_receipt(
+            &Identity {
+                id: principal.clone(),
+            },
+            &rid,
+        )? {
+            return Err(HostError::conflict(
+                "request_id was already used with different input",
+            ));
+        }
         if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
             return Ok(v);
         }

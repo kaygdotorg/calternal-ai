@@ -20,7 +20,7 @@
 //! - [`write_atomic_from`]: [`write_atomic`] for a stream (an upload). Big
 //!   writes go to the disk in steps, so they never make a note save wait
 //!   behind them ([`paced`]).
-//! - [`beneath`]: opening and writing files below a folder (a Home) by a
+//! - [`beneath`]: opening and writing files below a folder (a space) by a
 //!   path a person gave, without any way to reach outside it.
 
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]

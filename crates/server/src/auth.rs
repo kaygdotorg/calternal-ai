@@ -1,12 +1,14 @@
 //! Development-preview principals and bearer tokens. Not production auth.
 //!
-//! Two fixed dev principals (never real accounts):
-//! - `owner`: manager in `personal` and `shared`
-//! - `guest`: reader in `shared` only
+//! Two development tokens authenticate seeded accounts with independent UUIDv7
+//! identities. Their spaces and current memberships live in system/auth.db.
 //!
 //! Each gets a separate random 256-bit token stored raw (no newline) in
 //! `<data>/dev-tokens/<principal>.token`, mode 0600, directory 0700. Token
 //! values are never printed or logged.
+
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
@@ -17,9 +19,16 @@ use std::sync::Arc;
 use calternal_core::{Principal, SpaceGrant, SpaceRole};
 use subtle::ConstantTimeEq;
 
-use crate::authz::capabilities::{CapabilitySet, development_role};
+use crate::authz::capabilities::{Capability, CapabilitySet};
+use crate::error::HostError;
+use calternal_auth::{
+    AccountId, SpaceId,
+    spaces::{DevelopmentIds, SpaceChange, Spaces},
+};
+use calternal_core::JsonObject;
+use serde_json::{Value, json};
 
-/// Fixed development spaces; membership, rather than this list, grants access.
+/// Temporary development content-root bindings. Stored UUID memberships grant access.
 pub const SPACES: [&str; 2] = ["personal", "shared"];
 
 /// Verified identity without cached authority. Cloning only increments an Arc.
@@ -33,8 +42,8 @@ pub struct Identity {
 ///
 /// Implementations must read current grants on each `capabilities` call and distinguish
 /// neither unknown spaces nor absent membership: both return `None`. Fail closed
-/// on lookup failure. Dispatch adds no locks or allocations to capability lookup;
-/// storage implementations own their lookup/synchronization cost. Authentication
+/// on lookup failure. Storage implementations own lookup and synchronization costs; the host
+/// invokes authorization on blocking tasks to keep SQLite off async workers. Authentication
 /// must validate current sessions, never trust a caller-supplied account ID.
 pub trait Directory: Send + Sync + 'static {
     /// Resolve a current bearer token to identity only, without caching grants.
@@ -45,14 +54,43 @@ pub trait Directory: Send + Sync + 'static {
     /// Build the discovery snapshot; these grants are informational, not authority.
     /// Allocation is confined to discovery, outside the operation check path.
     fn describe(&self, principal: &Identity) -> Principal;
+    /// Resolve a temporary development content-root binding after authorization.
+    /// Stored UUIDs remain the directory identity; new spaces use their UUID root.
+    fn content_space(&self, space: &str) -> String {
+        space.to_owned()
+    }
+    /// Return a stable public UUID for an explicit development content binding.
+    fn wire_space(&self, space: &str) -> String {
+        space.to_owned()
+    }
+    /// Check the directory receipt namespace before a content mutation. The host
+    /// holds its content store lock while checking and applying either domain.
+    fn has_space_receipt(
+        &self,
+        _principal: &Identity,
+        _request_id: &str,
+    ) -> Result<bool, HostError> {
+        Ok(false)
+    }
+    /// Execute a stored-directory operation on a blocking host thread.
+    /// Implementations without a stored directory fail closed.
+    fn space_operation(
+        &self,
+        _principal: &Identity,
+        _rid: &str,
+        _op: &str,
+        _input: &JsonObject,
+    ) -> Result<Value, HostError> {
+        Err(HostError::unavailable("stored space directory unavailable"))
+    }
 }
 
 /// Development fixture account; grants are fixtures, never request authority.
 #[derive(Debug, Clone)]
 pub struct DevPrincipal {
-    /// Stable fixture account identifier.
+    /// Fixture label resolved by the stored directory; token identities use UUIDs.
     pub id: &'static str,
-    /// Static fixture memberships used by the development directory.
+    /// Static test claims; conversion to Identity deliberately discards these grants.
     pub grants: Vec<(&'static str, SpaceRole)>,
 }
 
@@ -80,15 +118,12 @@ impl DevPrincipal {
     }
 }
 
-/// Construct the two disposable development accounts and their fixture grants.
+/// Construct legacy test labels and claimed grants; these never confer authority.
 pub fn dev_principals() -> Vec<DevPrincipal> {
     vec![
         DevPrincipal {
             id: "owner",
-            grants: vec![
-                ("personal", SpaceRole::Manager),
-                ("shared", SpaceRole::Manager),
-            ],
+            grants: vec![("personal", SpaceRole::Owner), ("shared", SpaceRole::Owner)],
         },
         DevPrincipal {
             id: "guest",
@@ -105,60 +140,199 @@ impl From<DevPrincipal> for Identity {
     }
 }
 
-/// Development directory with constant-time token comparison and fixed grants.
-/// Capability reads map wire fixture roles to built-in sets and scan two accounts without allocation or synchronization.
+/// Development tokens mapped to stored accounts. Memberships are never cached.
 pub struct TokenTable {
-    entries: Vec<(Vec<u8>, Identity, DevPrincipal)>,
-    /// Private token file locations for startup discovery; never token values.
+    entries: Vec<(Vec<u8>, Identity)>,
+    /// Private token file paths, never token values.
     pub files: Vec<(&'static str, PathBuf)>,
+    /// Protected persisted space service for development host integration.
+    pub spaces: Spaces,
+    ids: DevelopmentIds,
 }
-
 impl TokenTable {
-    /// Load or create token files for all dev principals.
+    /// Open system/auth.db and seed disposable fixtures once, then open tokens.
+    /// Only development startup calls this; it supplies no production sign-in.
     pub fn load_or_create(data_dir: &Path) -> std::io::Result<Self> {
+        // This synchronous constructor is also used by async integration fixtures.
+        // Join a dedicated startup thread so bounded-worker blocking admission is
+        // never attempted from inside a Tokio runtime context.
+        let path = data_dir.join("system/auth.db");
+        let (spaces, ids) = std::thread::spawn(move || -> calternal_auth::Result<_> {
+            let spaces = Spaces::open(&path)?;
+            let ids = spaces.seed_development()?;
+            Ok((spaces, ids))
+        })
+        .join()
+        .map_err(|_| std::io::Error::other("directory startup failed"))?
+        .map_err(std::io::Error::other)?;
         let dir = data_dir.join("dev-tokens");
         fs::create_dir_all(&dir)?;
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         let mut entries = Vec::new();
         let mut files = Vec::new();
-        for p in dev_principals() {
-            let path = dir.join(format!("{}.token", p.id));
-            let token = load_or_create_token(&path)?;
-            files.push((p.id, path));
-            entries.push((token, p.clone().into(), p));
+        for (name, id) in [("owner", ids.owner), ("guest", ids.guest)] {
+            let path = dir.join(format!("{name}.token"));
+            entries.push((
+                load_or_create_token(&path)?,
+                Identity {
+                    id: Arc::from(id.to_string()),
+                },
+            ));
+            files.push((name, path));
         }
-        Ok(Self { entries, files })
+        Ok(Self {
+            entries,
+            files,
+            spaces,
+            ids,
+        })
+    }
+    fn account(&self, value: &str) -> Option<AccountId> {
+        match value {
+            "owner" => Some(self.ids.owner),
+            "guest" => Some(self.ids.guest),
+            _ => AccountId::parse(value),
+        }
+    }
+    fn space(&self, value: &str) -> Option<SpaceId> {
+        match value {
+            "personal" => Some(self.ids.personal),
+            "shared" => Some(self.ids.shared),
+            _ => SpaceId::parse(value),
+        }
     }
 }
-
+fn auth_error(e: calternal_auth::Error) -> HostError {
+    match e.code() {
+        calternal_auth::ErrorCode::InvalidInput => {
+            HostError::invalid_input("invalid space operation")
+        }
+        calternal_auth::ErrorCode::Forbidden | calternal_auth::ErrorCode::NotFound => {
+            HostError::forbidden("no access to this space")
+        }
+        calternal_auth::ErrorCode::Conflict => {
+            HostError::conflict("request_id was already used with different input")
+        }
+        _ => HostError::internal("space database operation failed"),
+    }
+}
 impl Directory for TokenTable {
     fn authenticate(&self, presented: &[u8]) -> Option<Identity> {
         let mut found = None;
-        for (token, identity, _) in &self.entries {
+        for (token, identity) in &self.entries {
             if bool::from(token.as_slice().ct_eq(presented)) {
                 found = Some(identity.clone());
             }
         }
         found
     }
-
     fn capabilities(&self, principal: &str, space: &str) -> Option<CapabilitySet> {
-        self.entries
+        let names = self
+            .spaces
+            .capabilities(self.account(principal)?, self.space(space)?)
+            .ok()??;
+        let caps = names
             .iter()
-            .find(|(_, _, p)| p.id == principal)
-            .and_then(|(_, _, p)| p.role(space))
-            .map(|role| development_role(&role))
+            .filter_map(|name| Capability::from_name(name))
+            .collect::<Vec<_>>();
+        Some(CapabilitySet::new(&caps))
     }
-
     fn describe(&self, principal: &Identity) -> Principal {
-        self.entries
-            .iter()
-            .find(|(_, _, p)| p.id == principal.id.as_ref())
-            .map(|(_, _, p)| p.to_wire())
-            .unwrap_or_else(|| Principal {
-                id: principal.id.to_string(),
-                spaces: vec![],
-            })
+        let spaces = self
+            .account(&principal.id)
+            .and_then(|id| self.spaces.list(id).ok())
+            .unwrap_or_default();
+        Principal {
+            id: self
+                .account(&principal.id)
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| principal.id.to_string()),
+            spaces: spaces
+                .into_iter()
+                .filter_map(|s| serde_json::from_value(json!({"id":s.id,"role":s.role})).ok())
+                .collect(),
+        }
+    }
+    fn content_space(&self, space: &str) -> String {
+        // Temporary explicit binding keeps preview file/retry/CLI fixtures working.
+        // No account ID is ever used to select this content root.
+        match self.space(space) {
+            Some(id) if id == self.ids.personal => "personal".into(),
+            Some(id) if id == self.ids.shared => "shared".into(),
+            _ => space.to_owned(),
+        }
+    }
+    fn wire_space(&self, space: &str) -> String {
+        self.space(space)
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| space.to_owned())
+    }
+    fn has_space_receipt(&self, principal: &Identity, request_id: &str) -> Result<bool, HostError> {
+        self.spaces
+            .has_receipt(
+                self.account(&principal.id)
+                    .ok_or_else(|| HostError::forbidden("no access to this space"))?,
+                request_id,
+            )
+            .map_err(auth_error)
+    }
+    fn space_operation(
+        &self,
+        principal: &Identity,
+        rid: &str,
+        op: &str,
+        input: &JsonObject,
+    ) -> Result<Value, HostError> {
+        calternal_core::validate_operation_input(op, input)?;
+        let actor = self
+            .account(&principal.id)
+            .ok_or_else(|| HostError::forbidden("no access to this space"))?;
+        if op == "spaces.list" {
+            return Ok(json!({"spaces":self.spaces.list(actor).map_err(auth_error)?}));
+        }
+        let space = input
+            .get("space_id")
+            .and_then(Value::as_str)
+            .and_then(|s| self.space(s));
+        if op == "spaces.members" {
+            return Ok(
+                json!({"members":self.spaces.members(actor,space.ok_or_else(||HostError::forbidden("no access to this space"))?).map_err(auth_error)?}),
+            );
+        }
+        let target = || {
+            input
+                .get("account_id")
+                .and_then(Value::as_str)
+                .and_then(AccountId::parse)
+                .ok_or_else(|| HostError::invalid_input("account UUID required"))
+        };
+        let change = match op {
+            "spaces.create" => SpaceChange::Create {
+                name: input
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| HostError::invalid_input("name required"))?
+                    .into(),
+            },
+            "spaces.set_role" => SpaceChange::SetRole {
+                target: target()?,
+                role: input
+                    .get("role")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| HostError::invalid_input("role required"))?
+                    .into(),
+            },
+            "spaces.remove_member" => SpaceChange::Remove { target: target()? },
+            "spaces.leave" => SpaceChange::Leave,
+            "spaces.transfer" => SpaceChange::Transfer { target: target()? },
+            "spaces.delete" => SpaceChange::Delete,
+            _ => return Err(HostError::not_found("unknown operation")),
+        };
+        let fp =
+            crate::store::sha256_hex(calternal_core::canonical_request_input(input).as_bytes());
+        self.spaces
+            .change_with_receipt(actor, space, change, Some((rid, op, &fp)))
+            .map_err(auth_error)
     }
 }
 

@@ -35,3 +35,15 @@ Source requirements: arc-swap `1.9.2` (published counter snapshots), tracing
 Disposable workspace resolution: **1.9.5, 0.1.44, 0.1.26, 1.1.6**, respectively.
 No SQL dependency is introduced. See `../roots/PORTING.md` for verification and
 shared-checkout lockfile limits.
+
+## Space terminology (2026-11-17)
+
+- Source `crates/fsio/src/{lib.rs:23,beneath.rs:1–34,306–397}`: folder boundary
+  comments and fixtures now call the protected content root a space.
+- Source `crates/fsio/src/usage.rs:19–125,355–end` and `usage/files.rs:45–56,102–end`:
+  usage roots and provider folders now use `spaces/<space-id>` in data and
+  state. Counter fields, variable names, comments, nesting errors and fixtures
+  use space terminology. The counter algorithm and all assertions are retained;
+  this remains a single-tree primitive, not joined-tier accounting or quota
+  authorization. No account ID is inferred as a journal or content owner.
+- No dependency changes. All 56 filesystem tests pass; no ignored tests.

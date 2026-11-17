@@ -1,7 +1,7 @@
 //! Files inside one folder, and never outside it.
 //!
 //! A path that comes from a person (an attachment's address, an upload's
-//! name) must never reach a file outside their Home: no `..`, no absolute
+//! name) must never reach a file outside their space: no `..`, no absolute
 //! path, no symlink that points out. A [`Folder`] is an open folder, and
 //! every path below it is resolved by the kernel *inside* it
 //! (`openat2` with `RESOLVE_BENEATH` on Linux; one component at a time
@@ -30,7 +30,7 @@ pub struct Folder {
 
 impl Folder {
     /// Opens (and creates, if missing) a folder the server itself chose,
-    /// like a Home. Only call this with trusted paths.
+    /// like a space. Only call this with trusted paths.
     pub fn open(path: &Path) -> io::Result<Self> {
         std::fs::create_dir_all(path)?;
         let fd = rustix::fs::open(
@@ -326,15 +326,15 @@ mod tests {
     #[test]
     fn paths_that_climb_out_are_refused() {
         let root = tmp();
-        let home = root.join("home");
-        std::fs::create_dir_all(home.join("Photos")).unwrap();
+        let space = root.join("space");
+        std::fs::create_dir_all(space.join("Photos")).unwrap();
         crate::write_atomic(&root.join("secret.txt"), b"secret").unwrap();
-        crate::write_atomic(&home.join("Photos/ok.txt"), b"ok").unwrap();
-        // Symlinks out of the Home, as a file and as a folder.
-        std::os::unix::fs::symlink(root.join("secret.txt"), home.join("Photos/link.txt")).unwrap();
-        std::os::unix::fs::symlink(&root, home.join("Documents")).unwrap();
-        std::os::unix::fs::symlink("../../secret.txt", home.join("Photos/rel.txt")).unwrap();
-        let f = Folder::open(&home).unwrap();
+        crate::write_atomic(&space.join("Photos/ok.txt"), b"ok").unwrap();
+        // Symlinks out of the space, as a file and as a folder.
+        std::os::unix::fs::symlink(root.join("secret.txt"), space.join("Photos/link.txt")).unwrap();
+        std::os::unix::fs::symlink(&root, space.join("Documents")).unwrap();
+        std::os::unix::fs::symlink("../../secret.txt", space.join("Photos/rel.txt")).unwrap();
+        let f = Folder::open(&space).unwrap();
 
         let mut s = String::new();
         f.open_file("Photos/ok.txt")
@@ -369,11 +369,11 @@ mod tests {
     #[test]
     fn walking_without_openat2_refuses_symlinks_too() {
         let root = tmp();
-        let home = root.join("home");
-        std::fs::create_dir_all(home.join("a")).unwrap();
+        let space = root.join("space");
+        std::fs::create_dir_all(space.join("a")).unwrap();
         crate::write_atomic(&root.join("secret.txt"), b"secret").unwrap();
-        std::os::unix::fs::symlink(&root, home.join("a/up")).unwrap();
-        let f = Folder::open(&home).unwrap();
+        std::os::unix::fs::symlink(&root, space.join("a/up")).unwrap();
+        let f = Folder::open(&space).unwrap();
         assert!(walk(&f.fd, "a/up/secret.txt", OFlags::RDONLY).is_err());
         assert!(walk(&f.fd, "../secret.txt", OFlags::RDONLY).is_err());
         std::fs::remove_dir_all(root).unwrap();

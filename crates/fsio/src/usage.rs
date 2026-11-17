@@ -1,7 +1,7 @@
 //! Incremental logical disk usage. File mutations refresh only their changed paths;
 //! reconciliation walks without holding either the counter or authentication locks.
 //!
-//! This source-compatible counter keys `users/<id>` as a person. It is retained
+//! This counter keys `spaces/<id>` by owning space directory. It is retained
 //! for the filesystem port's mutation hooks and regression tests, not integrated
 //! as the new application's space quota policy. Joined-tier accounting and
 //! validated owning-space bindings belong to the later quota/storage port.
@@ -21,21 +21,21 @@ struct State {
     directory_generation: u64,
     changes: HashMap<PathBuf, u64>,
 }
-/// A counter for the person Homes beneath a data root. With a separate
-/// state root, what plugins report for a person's app data there (see
+/// A counter for the spaces beneath a data root. With a separate
+/// state root, what plugins report for a space's app data there (see
 /// [`provide`]) counts too.
 pub struct Usage {
     root: PathBuf,
-    /// `<state>/users`, when it is not the data root.
-    state_users: Option<PathBuf>,
+    /// `<state>/spaces`, when it is not the data root.
+    state_spaces: Option<PathBuf>,
     state: Mutex<State>,
     totals: arc_swap::ArcSwap<HashMap<String, u64>>,
     reconcile: Mutex<()>,
     ready: std::sync::atomic::AtomicBool,
 }
 
-/// What a plugin keeps for one person on the state root, in bytes, given
-/// that person's folder there (`<state>/users/<id>`).
+/// What a plugin keeps for one space on the state root, in bytes, given
+/// that space's folder there (`<state>/spaces/<id>`).
 pub type Provider = Arc<dyn Fn(&Path) -> u64 + Send + Sync>;
 
 fn providers() -> &'static Mutex<Vec<(String, Provider)>> {
@@ -43,7 +43,7 @@ fn providers() -> &'static Mutex<Vec<(String, Provider)>> {
     PROVIDERS.get_or_init(Default::default)
 }
 
-/// Lets plugin `name` report what it keeps for a person on the state root
+/// Lets plugin `name` report what it keeps for a space on the state root
 /// (the contacts plugin: every version of their cards, photos included),
 /// so storage limits count it although no file there has that size. A
 /// second call with the same name replaces the first.
@@ -59,15 +59,15 @@ impl Usage {
         Self::with_state(data, data)
     }
 
-    /// A counter for the Homes under `data` that also counts what plugins
-    /// report (see [`provide`]) for each person's app data under `state`.
+    /// A counter for the spaces under `data` that also counts what plugins
+    /// report (see [`provide`]) for each space's app data under `state`.
     /// On a single root the files themselves are counted instead.
     pub fn with_state(data: &Path, state: &Path) -> Arc<Self> {
-        let root = data.join("users");
-        let state_users = Some(state.join("users")).filter(|s| *s != root);
+        let root = data.join("spaces");
+        let state_spaces = Some(state.join("spaces")).filter(|s| *s != root);
         let counter = Arc::new(Self {
             root,
-            state_users,
+            state_spaces,
             state: Mutex::new(State::default()),
             totals: arc_swap::ArcSwap::from_pointee(HashMap::new()),
             reconcile: Mutex::new(()),
@@ -99,10 +99,10 @@ impl Usage {
             }
         });
     }
-    fn person(&self, path: &Path) -> Option<String> {
+    fn space(&self, path: &Path) -> Option<String> {
         let rel = path.strip_prefix(&self.root).ok()?;
         let mut parts = rel.components();
-        let person = parts.next()?.as_os_str().to_str()?.to_owned();
+        let space = parts.next()?.as_os_str().to_str()?.to_owned();
         if parts.any(|p| {
             p.as_os_str()
                 .to_string_lossy()
@@ -110,17 +110,17 @@ impl Usage {
         }) {
             return None;
         }
-        Some(person)
+        Some(space)
     }
-    /// The person's files, from the maintained snapshot without locking or
+    /// The space's files, from the maintained snapshot without locking or
     /// touching the disk, plus what plugins report for their app data on a
     /// separate state root (a small read each).
-    pub fn bytes(&self, person: &str) -> u64 {
-        let files = self.totals.load().get(person).copied().unwrap_or(0);
-        let Some(users) = &self.state_users else {
+    pub fn bytes(&self, space: &str) -> u64 {
+        let files = self.totals.load().get(space).copied().unwrap_or(0);
+        let Some(spaces) = &self.state_spaces else {
             return files;
         };
-        let dir = users.join(person);
+        let dir = spaces.join(space);
         let all: Vec<Provider> = providers()
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -141,7 +141,7 @@ impl Usage {
         });
     }
     fn refresh_using(&self, path: &Path, observe: impl Fn() -> u64) {
-        let Some(person) = self.person(path) else {
+        let Some(space) = self.space(path) else {
             return;
         };
         loop {
@@ -162,7 +162,7 @@ impl Usage {
             } else {
                 state.files.insert(path, size).unwrap_or(0)
             };
-            let total = state.totals.entry(person.clone()).or_default();
+            let total = state.totals.entry(space.clone()).or_default();
             *total = total.saturating_sub(old).saturating_add(size);
             state.generation = state.generation.wrapping_add(1);
             let version = state.generation;
@@ -208,7 +208,7 @@ impl Usage {
                 depth: usize,
             ) -> std::io::Result<()> {
                 if depth > 64 {
-                    return Err(std::io::Error::other("Home is nested too deeply"));
+                    return Err(std::io::Error::other("space is nested too deeply"));
                 }
                 for name in folder.names()? {
                     if name.starts_with(crate::TEMP_PREFIX) {
@@ -226,7 +226,7 @@ impl Usage {
                 let root = crate::beneath::Folder::open(&self.root)?;
                 walk(&root, &self.root, &mut files, 0)?;
             }
-            let mut totals = files.totals(|path| self.person(path));
+            let mut totals = files.totals(|path| self.space(path));
             if let Some(after_walk) = after_walk.take() {
                 after_walk();
             }
@@ -246,8 +246,8 @@ impl Usage {
                 if current > 0 {
                     files.insert(path, current);
                 }
-                if let Some(person) = self.person(path) {
-                    let total = totals.entry(person).or_default();
+                if let Some(space) = self.space(path) {
+                    let total = totals.entry(space).or_default();
                     *total = total.saturating_sub(old).saturating_add(current);
                 }
             }
@@ -308,7 +308,7 @@ pub(crate) fn moved(from: &Path, to: &Path) {
         .filter_map(Weak::upgrade)
         .collect::<Vec<_>>();
     for counter in counters {
-        if counter.person(from).is_none() && counter.person(to).is_none() {
+        if counter.space(from).is_none() && counter.space(to).is_none() {
             continue;
         }
         let directory = to.is_dir();
@@ -327,8 +327,8 @@ pub(crate) fn moved(from: &Path, to: &Path) {
             };
             let version = state.generation.wrapping_add(1);
             state.changes.insert(old.clone(), version);
-            if let Some(person) = counter.person(&old) {
-                let total = state.totals.entry(person).or_default();
+            if let Some(space) = counter.space(&old) {
+                let total = state.totals.entry(space).or_default();
                 *total = total.saturating_sub(size);
             }
             let suffix = old.strip_prefix(from).unwrap();
@@ -338,13 +338,13 @@ pub(crate) fn moved(from: &Path, to: &Path) {
                 to.join(suffix)
             };
             state.changes.insert(new.clone(), version);
-            if let Some(person) = counter.person(&new) {
+            if let Some(space) = counter.space(&new) {
                 // The destination can already be counted: a walk that ran while
                 // the file was being renamed may have listed both names. Its
                 // old size leaves the total, or the file counts twice until the
                 // next recount.
                 let replaced = state.files.insert(&new, size).unwrap_or(0);
-                let total = state.totals.entry(person).or_default();
+                let total = state.totals.entry(space).or_default();
                 *total = total.saturating_sub(replaced).saturating_add(size);
             }
         }
@@ -369,27 +369,27 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let home = root.join("users/person");
-        std::fs::create_dir_all(home.join("Notes")).unwrap();
-        std::fs::create_dir_all(home.join("Trash")).unwrap();
+        let space = root.join("spaces/space");
+        std::fs::create_dir_all(space.join("Notes")).unwrap();
+        std::fs::create_dir_all(space.join("Trash")).unwrap();
         let usage = Usage::new(&root);
         usage.ensure().unwrap();
-        let note = home.join("Notes/a.md");
+        let note = space.join("Notes/a.md");
         crate::write_atomic(&note, b"one").unwrap();
-        assert_eq!(usage.bytes("person"), 3);
+        assert_eq!(usage.bytes("space"), 3);
         crate::write_unless_changed(&note, b"second", |_| true).unwrap();
-        assert_eq!(usage.bytes("person"), 6);
-        crate::rename_safely(&note, &home.join("Trash/a.md")).unwrap();
-        assert_eq!(usage.bytes("person"), 6, "trash still consumes disk");
-        crate::remove_file(home.join("Trash/a.md")).unwrap();
-        assert_eq!(usage.bytes("person"), 0);
+        assert_eq!(usage.bytes("space"), 6);
+        crate::rename_safely(&note, &space.join("Trash/a.md")).unwrap();
+        assert_eq!(usage.bytes("space"), 6, "trash still consumes disk");
+        crate::remove_file(space.join("Trash/a.md")).unwrap();
+        assert_eq!(usage.bytes("space"), 0);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn stale_metadata_cannot_replace_a_newer_update() {
         let root =
             std::env::temp_dir().join(format!("calternal-usage-race-{}", std::process::id()));
-        let dir = root.join("users/person");
+        let dir = root.join("spaces/space");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a.md");
         let usage = Usage::new(&root);
@@ -418,7 +418,7 @@ mod tests {
         crate::write_atomic(&path, b"newest").unwrap();
         continue_tx.send(()).unwrap();
         worker.join().unwrap();
-        assert_eq!(usage.bytes("person"), 6);
+        assert_eq!(usage.bytes("space"), 6);
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -429,7 +429,7 @@ mod tests {
     fn a_move_onto_a_name_the_walk_already_counted_counts_the_file_once() {
         let root =
             std::env::temp_dir().join(format!("calternal-usage-both-{}", std::process::id()));
-        let dir = root.join("users/person");
+        let dir = root.join("spaces/space");
         std::fs::create_dir_all(&dir).unwrap();
         let (from, to) = (dir.join("from"), dir.join("moved"));
         let usage = Usage::new(&root);
@@ -439,14 +439,14 @@ mod tests {
             // What the half-seen rename published: both names, each counted.
             let mut state = usage.state.lock().unwrap();
             state.files.insert(&to, 137);
-            *state.totals.entry("person".into()).or_default() += 137;
+            *state.totals.entry("space".into()).or_default() += 137;
             usage.publish(&state);
         }
-        assert_eq!(usage.bytes("person"), 274);
+        assert_eq!(usage.bytes("space"), 274);
         crate::rename_safely(&from, &to).unwrap();
-        assert_eq!(usage.bytes("person"), 137);
+        assert_eq!(usage.bytes("space"), 137);
         usage.recount().unwrap();
-        assert_eq!(usage.bytes("person"), 137, "the recount agrees");
+        assert_eq!(usage.bytes("space"), 137, "the recount agrees");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -454,7 +454,7 @@ mod tests {
     fn recount_preserves_concurrent_writes_and_deletes() {
         let root =
             std::env::temp_dir().join(format!("calternal-usage-recount-{}", std::process::id()));
-        let dir = root.join("users/person");
+        let dir = root.join("spaces/space");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a.md");
         let gone = dir.join("gone.md");
@@ -467,14 +467,14 @@ mod tests {
                 crate::remove_file(&gone).unwrap();
             })
             .unwrap();
-        assert_eq!(usage.bytes("person"), 6);
+        assert_eq!(usage.bytes("space"), 6);
         std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn bulk_writes_and_published_folders_count_without_a_recount() {
         let root =
             std::env::temp_dir().join(format!("calternal-usage-bulk-{}", std::process::id()));
-        let notes = root.join("users/person/Notes");
+        let notes = root.join("spaces/space/Notes");
         std::fs::create_dir_all(notes.join("Old")).unwrap();
         let usage = Usage::new(&root);
         usage.ensure().unwrap();
@@ -485,7 +485,7 @@ mod tests {
             .collect();
         let placed = crate::write_new_many(&files).unwrap();
         assert!(placed[0].is_err());
-        assert_eq!(usage.bytes("person"), 4 + 99 * 10);
+        assert_eq!(usage.bytes("space"), 4 + 99 * 10);
         #[cfg(target_os = "linux")]
         {
             let image: Vec<_> = (0..70)
@@ -499,13 +499,9 @@ mod tests {
                 .unwrap()
                 .synced
                 .unwrap();
-            assert_eq!(usage.bytes("person"), 4 + 99 * 10 + 70 * 3);
+            assert_eq!(usage.bytes("space"), 4 + 99 * 10 + 70 * 3);
             usage.recount().unwrap();
-            assert_eq!(
-                usage.bytes("person"),
-                4 + 99 * 10 + 70 * 3,
-                "recount agrees"
-            );
+            assert_eq!(usage.bytes("space"), 4 + 99 * 10 + 70 * 3, "recount agrees");
         }
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -514,12 +510,12 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("calternal-usage-provide-{}", std::process::id()));
         let (data, state) = (root.join("data"), root.join("state"));
-        std::fs::create_dir_all(data.join("users/person")).unwrap();
-        crate::write_atomic(&data.join("users/person/a.md"), b"abc").unwrap();
+        std::fs::create_dir_all(data.join("spaces/space")).unwrap();
+        crate::write_atomic(&data.join("spaces/space/a.md"), b"abc").unwrap();
         provide(
             "usage-test",
             Arc::new(|dir: &Path| {
-                if dir.ends_with("users/person") {
+                if dir.ends_with("spaces/space") {
                     1000
                 } else {
                     0
@@ -528,11 +524,11 @@ mod tests {
         );
         let split = Usage::with_state(&data, &state);
         split.ensure().unwrap();
-        assert_eq!(split.bytes("person"), 1003);
+        assert_eq!(split.bytes("space"), 1003);
         // One root: its files are counted as they are, not reported twice.
         let single = Usage::new(&data);
         single.ensure().unwrap();
-        assert_eq!(single.bytes("person"), 3);
+        assert_eq!(single.bytes("space"), 3);
         provide("usage-test", Arc::new(|_: &Path| 0));
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -543,7 +539,7 @@ mod tests {
         let guard = usage.state.lock().unwrap();
         let counter = usage.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        let reader = std::thread::spawn(move || tx.send(counter.bytes("person")).unwrap());
+        let reader = std::thread::spawn(move || tx.send(counter.bytes("space")).unwrap());
         let result = rx.recv_timeout(std::time::Duration::from_millis(50));
         drop(guard);
         reader.join().unwrap();
@@ -556,8 +552,8 @@ mod tests {
             "calternal-usage-folder-race-{}",
             std::process::id()
         ));
-        let old = root.join("users/alice/Old");
-        let new = root.join("users/bob/New");
+        let old = root.join("spaces/alice/Old");
+        let new = root.join("spaces/bob/New");
         std::fs::create_dir_all(old.join("sub")).unwrap();
         std::fs::create_dir_all(new.parent().unwrap()).unwrap();
         crate::write_atomic(&old.join("a.md"), b"abc").unwrap();

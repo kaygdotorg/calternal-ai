@@ -1,3 +1,58 @@
+# Stored spaces port (step 5)
+
+Source revision: `ea57b84b9c9e40e8b67b7d1e1f1805915123b040` in
+`/home/kayg/Developer/calternal`, read with git only. This section supersedes
+historical statements below that the library has no space authority.
+
+- `crates/auth/src/roles.rs:11–44,65–112`: retain capability rows, current
+  lookup/require, known-role validation and parameterized SQL. New `spaces.rs`
+  joins memberships and the owning space rather than `users.role`; deployment
+  roles/capabilities remain unchanged. The owner relation supplies the effective
+  Owner role; its ordinary membership stores Manager. A deferred composite FK
+  requires the owner membership at commit. Identity-separation triggers prevent
+  an account and space from sharing a UUID even through direct inserts.
+- `roles.rs:65–94`: replace the **space** last-people-manager projection with the
+  user's explicit sole-owner/transfer rule. Demoting the last ordinary Manager
+  is permitted; removing/demoting/leaving as Owner is refused. Only the owner may
+  appoint/remove Managers, including equivalent capability-bearing custom roles.
+  The legacy deployment role tables and their first-admin trigger are untouched;
+  no server people-role mutation API is introduced in this lane.
+- `crates/auth/src/people.rs:28–44,66–90`: retain checks before receipt replay and
+  inside the same IMMEDIATE write transaction. Replace old ActionSpec/Outcome/
+  EventDraft/engine bindings with documented library methods and the rewrite's
+  registry/policy/HTTP adapters. Directory mutations and their private actor-bound
+  receipts commit together in auth.db. The server's existing store lock also
+  serializes cross-database receipt namespace checks; no content schema changes.
+  No private account event is sent into a shared content journal.
+- `db.rs:334–452`: reuse the dedicated bounded worker, WAL/FULL/FK and migration
+  transaction. Add synchronous blocking admission to that same worker for the
+  rewrite's synchronous Directory trait; host requests call it on blocking tasks.
+  Migration 16 adds spaces/role sets/memberships/receipts/development bindings.
+  Migrations 1–15 SQL values remain byte-for-byte identical to the pinned source.
+- `crates/auth/src/setup.rs:209,293` (identity allocation sites): new accounts
+  now allocate UUIDv7 through AccountId; SpaceId is a separate type allocating a
+  fresh UUIDv7. Installation allocation also uses the shared UUIDv7 constructor.
+  Existing persisted identifiers/credentials are never rewritten. No legacy Home
+  import, file move, engine/server/plugin dependency or recovery coordinator is
+  added to the auth library.
+- There is no source space service to copy verbatim: membership joins, explicit
+  ownership, target restrictions, new wire operations and development bindings
+  are the required account-versus-space adaptation. Seed once in disposable
+  development mode; retain bindings after deletion so restart cannot resurrect
+  memberships. UUID directory identities bind explicitly to the preview's
+  `personal`/`shared` content roots until the routing/storage step. Wire space
+  references are UUIDs; input aliases are accepted only for those two fixtures.
+- Deletion removes directory/membership rows only; bytes/history remain for the
+  later content deletion step. FO1 security publication and real passkey HTTP
+  sign-in remain later steps; these APIs establish neither production readiness
+  nor validated recovery after losing auth state.
+
+Source-test projections and exact commands/results, pending path exceptions,
+UI findings, dependencies and alias inventory are in `SPACES-VALIDATION.md`.
+No ported test is ignored or weakened to obtain a pass.
+
+---
+
 # Account authentication port
 
 Source: `/home/kayg/Developer/calternal` at `ea57b84b9c9e40e8b67b7d1e1f1805915123b040`,

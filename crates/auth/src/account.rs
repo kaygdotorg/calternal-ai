@@ -28,7 +28,7 @@ impl Auth {
     /// Opens `state/system/auth.db` and builds the WebAuthn verifier.
     /// The host must validate and lock its state root first; this creates missing
     /// database parents and does not implement recovery of lost security state.
-    /// No Home or account directory is created.
+    /// No space or account directory is created.
     pub fn open(state: &Path, config: AuthConfig) -> Result<Self> {
         let webauthn = crate::passkey::build(&config)?;
         Ok(Self {

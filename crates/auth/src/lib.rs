@@ -1,7 +1,7 @@
 //! Protected identity storage primitives ported from Calternal's auth crate.
 //!
 //! This crate preserves the v1–15 legacy schema, including sharing tables.
-//! It supplies no login endpoints, space authority or recovery coordinator.
+//! It supplies stored space authority, but no login endpoints or recovery coordinator.
 //! Callers must validate and lock installation roots before opening the DB;
 //! opening a missing path creates it and is not safe recovery of lost state.
 #![deny(missing_docs)]
@@ -16,6 +16,8 @@ mod passkey;
 mod passkeys;
 mod session;
 mod setup;
+pub mod spaces;
+pub use spaces::SpaceId;
 pub mod token;
 pub use account::{Auth, LoginPurpose};
 pub use config::AuthConfig;
@@ -52,9 +54,9 @@ pub struct InstallationId(
 macro_rules! identity_impl {
     ($name:ident) => {
         impl $name {
-            /// Allocates a random version-four identity.
+            /// Allocates a fresh version-seven identity.
             pub fn new() -> Self {
-                Self(uuid::Uuid::new_v4())
+                Self(uuid::Uuid::now_v7())
             }
             /// Parses UUID syntax; this does not establish authority.
             pub fn parse(value: &str) -> Option<Self> {
@@ -76,14 +78,16 @@ macro_rules! identity_impl {
 identity_impl!(AccountId);
 identity_impl!(InstallationId);
 
-/// Stable refusal categories for account library operations.
+/// Stable refusal categories for account and stored-space operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
+    /// A request identifier was reused with different input.
+    Conflict,
     /// Invalid configuration, name or identifier.
     InvalidInput,
     /// No matching account-owned object exists.
     NotFound,
-    /// Interactive proof is absent or unsuitable.
+    /// Interactive proof or current scoped authority is absent or unsuitable.
     Forbidden,
     /// WebAuthn verification failed or its ceremony is unavailable.
     PasskeyFailed,
@@ -106,7 +110,7 @@ pub enum Error {
     /// The dedicated worker already has 64 queued jobs; retry with backpressure.
     #[error("auth database queue full")]
     QueueFull,
-    /// An account operation refused with a stable code and private diagnostic.
+    /// An account or space operation refused with a stable code and private diagnostic.
     #[error("account operation refused ({code:?}): {detail}")]
     Refused {
         /// Machine-readable refusal category.
@@ -141,7 +145,7 @@ impl Error {
         Self::Internal(error.to_string())
     }
 }
-/// Result returned by identity storage and token primitives.
+/// Result returned by identity storage, stored spaces and token primitives.
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]

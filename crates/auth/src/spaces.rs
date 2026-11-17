@@ -1,0 +1,545 @@
+//! Stored space authority, adapted from the source auth roles and people actions.
+//!
+//! All APIs block on SQLite and must run on a blocking host thread. Mutations
+//! acquire an IMMEDIATE transaction before checking current capability rows.
+//! State commits are durable; FO1 recovery publication is a later coordinator.
+use crate::{AccountId, Error, ErrorCode, Result};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+
+/// Stable UUIDv7 space identity, distinct from an account identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SpaceId(
+    /// UUID value; allocating a new space always uses UUIDv7.
+    pub uuid::Uuid,
+);
+impl SpaceId {
+    /// Allocates a fresh UUIDv7; never copies an account identifier.
+    pub fn new() -> Self {
+        Self(uuid::Uuid::now_v7())
+    }
+    /// Parses a persisted UUID without establishing access.
+    pub fn parse(value: &str) -> Option<Self> {
+        uuid::Uuid::parse_str(value).ok().map(Self)
+    }
+}
+impl Default for SpaceId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl std::fmt::Display for SpaceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+/// A space and the caller's effective role; no content or account secrets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Space {
+    /// Independent stable space UUID.
+    pub id: SpaceId,
+    /// Display name, unrelated to identity or authority.
+    pub name: String,
+    /// Sole owner account; ownership changes only through transfer.
+    pub owner: AccountId,
+    /// Creation timestamp in Unix milliseconds.
+    pub created: i64,
+    /// Effective role including the owner relation.
+    pub role: String,
+}
+/// One membership visible to a current space reader.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Member {
+    /// Stable account UUID.
+    pub account_id: AccountId,
+    /// Effective role; the sole owner is derived from the space record.
+    pub role: String,
+}
+/// Protected stored directory. Clones share the bounded dedicated auth worker.
+/// Independent opens are serialized by SQLite's IMMEDIATE transactions.
+#[derive(Clone)]
+pub struct Spaces {
+    db: crate::db::Db,
+}
+fn sql(e: impl std::fmt::Display) -> Error {
+    Error::internal(e)
+}
+fn denied() -> Error {
+    Error::new(ErrorCode::Forbidden, "no access to this space")
+}
+fn account(s: String) -> Result<AccountId> {
+    AccountId::parse(&s).ok_or_else(|| sql("invalid account UUID"))
+}
+fn space_id(s: String) -> Result<SpaceId> {
+    SpaceId::parse(&s).ok_or_else(|| sql("invalid space UUID"))
+}
+fn role(c: &Connection, actor: AccountId, space: SpaceId) -> Result<Option<String>> {
+    c.query_row(
+        "SELECT CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
+        FROM space_memberships m JOIN spaces s ON s.id=m.space_id
+        WHERE m.account_id=?1 AND s.id=?2",
+        params![actor.to_string(), space.to_string()],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(sql)
+}
+fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
+    c.query_row("SELECT EXISTS(SELECT 1 FROM space_memberships m JOIN spaces s ON s.id=m.space_id
+        JOIN space_role_capabilities rc ON rc.role=CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
+        WHERE m.account_id=?1 AND s.id=?2 AND rc.capability=?3)", params![actor.to_string(),space.to_string(),cap], |r|r.get(0)).map_err(sql)
+}
+fn require(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<()> {
+    if has(c, actor, space, cap)? {
+        Ok(())
+    } else {
+        Err(denied())
+    }
+}
+fn exists_account(c: &Connection, actor: AccountId) -> Result<()> {
+    let exists: bool = c
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id=?1)",
+            [actor.to_string()],
+            |r| r.get(0),
+        )
+        .map_err(sql)?;
+    if exists { Ok(()) } else { Err(denied()) }
+}
+fn list(c: &Connection, actor: AccountId) -> Result<Vec<Space>> {
+    exists_account(c, actor)?;
+    let mut st=c.prepare("SELECT s.id,s.name,s.owner_account,s.created,
+        CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
+        FROM spaces s JOIN space_memberships m ON m.space_id=s.id WHERE m.account_id=?1 ORDER BY s.created,s.id").map_err(sql)?;
+    let rows = st
+        .query_map([actor.to_string()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get(1)?,
+                r.get::<_, String>(2)?,
+                r.get(3)?,
+                r.get(4)?,
+            ))
+        })
+        .map_err(sql)?;
+    rows.map(|r| {
+        let (id, name, owner, created, role) = r.map_err(sql)?;
+        Ok(Space {
+            id: space_id(id)?,
+            name,
+            owner: account(owner)?,
+            created,
+            role,
+        })
+    })
+    .collect()
+}
+fn create(c: &Connection, actor: AccountId, name: &str) -> Result<Space> {
+    exists_account(c, actor)?;
+    if name.trim().is_empty() || name.chars().count() > 256 || name.chars().any(char::is_control) {
+        return Err(Error::invalid("invalid space name"));
+    }
+    let id = SpaceId::new();
+    let created = crate::db::now_ms();
+    c.execute(
+        "INSERT INTO spaces(id,name,owner_account,created) VALUES(?1,?2,?3,?4)",
+        params![id.to_string(), name, actor.to_string(), created],
+    )
+    .map_err(sql)?;
+    c.execute(
+        "INSERT INTO space_memberships VALUES(?1,?2,'manager')",
+        params![id.to_string(), actor.to_string()],
+    )
+    .map_err(sql)?;
+    Ok(Space {
+        id,
+        name: name.into(),
+        owner: actor,
+        created,
+        role: "owner".into(),
+    })
+}
+/// A capability-checked mutation. Target restrictions are additional to its grant.
+#[derive(Debug, Clone)]
+pub enum SpaceChange {
+    /// Create a space; any existing authenticated account may create one.
+    Create {
+        /// Display name.
+        name: String,
+    },
+    /// Change an existing member's role; this never admits a new member.
+    SetRole {
+        /// Member account.
+        target: AccountId,
+        /// Stored role name; owner is assigned only by transfer.
+        role: String,
+    },
+    /// Remove a member; Managers may remove only Readers and Editors.
+    Remove {
+        /// Member account.
+        target: AccountId,
+    },
+    /// Leave one's own membership; an owner must transfer first.
+    Leave,
+    /// Explicitly transfer to an existing member; the former owner becomes Manager.
+    Transfer {
+        /// New owner, already a member.
+        target: AccountId,
+    },
+    /// Delete directory records only. Content cleanup is a later step.
+    Delete,
+}
+impl SpaceChange {
+    fn capability(&self) -> &'static str {
+        match self {
+            Self::Create { .. } => "spaces.create",
+            Self::SetRole { .. } | Self::Remove { .. } => "members.manage",
+            Self::Leave => "space.read",
+            Self::Transfer { .. } => "space.transfer",
+            Self::Delete => "space.delete",
+        }
+    }
+}
+fn check(
+    c: &Connection,
+    actor: AccountId,
+    space: Option<SpaceId>,
+    change: &SpaceChange,
+) -> Result<()> {
+    if matches!(change, SpaceChange::Create { .. }) {
+        return exists_account(c, actor);
+    }
+    let space = space.ok_or_else(Error::invalid_space)?;
+    require(c, actor, space, change.capability())?;
+    // Even a custom role with a transfer/delete grant cannot bypass sole ownership.
+    if matches!(change, SpaceChange::Transfer { .. } | SpaceChange::Delete)
+        && role(c, actor, space)?.as_deref() != Some("owner")
+    {
+        return Err(denied());
+    }
+    Ok(())
+}
+fn apply(
+    c: &Connection,
+    actor: AccountId,
+    space: Option<SpaceId>,
+    change: &SpaceChange,
+) -> Result<serde_json::Value> {
+    if let SpaceChange::Create { name } = change {
+        return serde_json::to_value(serde_json::json!({"space":create(c,actor,name)?}))
+            .map_err(sql);
+    }
+    let space = space.ok_or_else(Error::invalid_space)?;
+    let sid = space.to_string();
+    match change {
+        SpaceChange::SetRole {
+            target,
+            role: new_role,
+        } => {
+            protect_target(c, actor, space, *target)?;
+            let known: bool = c
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM space_roles WHERE name=?1 AND name<>'owner')",
+                    [new_role],
+                    |r| r.get(0),
+                )
+                .map_err(sql)?;
+            if !known {
+                return Err(Error::invalid("unknown or nonassignable space role"));
+            }
+            let privileged:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_role_capabilities WHERE role=?1 AND capability NOT IN ('space.read','content.write','plugins.use'))",[new_role],|r|r.get(0)).map_err(sql)?;
+            if privileged {
+                require(c, actor, space, "managers.manage")?;
+                if role(c, actor, space)?.as_deref() != Some("owner") {
+                    return Err(denied());
+                }
+            }
+            c.execute(
+                "UPDATE space_memberships SET role=?3 WHERE space_id=?1 AND account_id=?2",
+                params![sid, target.to_string(), new_role],
+            )
+            .map_err(sql)?;
+        }
+        SpaceChange::Remove { target } => {
+            protect_target(c, actor, space, *target)?;
+            c.execute(
+                "DELETE FROM space_memberships WHERE space_id=?1 AND account_id=?2",
+                params![sid, target.to_string()],
+            )
+            .map_err(sql)?;
+        }
+        SpaceChange::Leave => {
+            if role(c, actor, space)?.as_deref() == Some("owner") {
+                return Err(denied());
+            }
+            c.execute(
+                "DELETE FROM space_memberships WHERE space_id=?1 AND account_id=?2",
+                params![sid, actor.to_string()],
+            )
+            .map_err(sql)?;
+        }
+        SpaceChange::Transfer { target } => {
+            if *target == actor || role(c, *target, space)?.is_none() {
+                return Err(denied());
+            }
+            c.execute("UPDATE space_memberships SET role='manager' WHERE space_id=?1 AND account_id IN (?2,?3)",params![sid,actor.to_string(),target.to_string()]).map_err(sql)?;
+            c.execute(
+                "UPDATE spaces SET owner_account=?2 WHERE id=?1",
+                params![sid, target.to_string()],
+            )
+            .map_err(sql)?;
+        }
+        SpaceChange::Delete => {
+            c.execute("DELETE FROM spaces WHERE id=?1", [sid])
+                .map_err(sql)?;
+        }
+        SpaceChange::Create { .. } => unreachable!(),
+    }
+    Ok(serde_json::json!({}))
+}
+fn protect_target(
+    c: &Connection,
+    actor: AccountId,
+    space: SpaceId,
+    target: AccountId,
+) -> Result<()> {
+    let target_role = role(c, target, space)?.ok_or_else(denied)?;
+    if target_role == "owner" {
+        return Err(denied());
+    }
+    // Protect authority-bearing custom roles as well as the built-in Manager.
+    let privileged:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_role_capabilities WHERE role=?1 AND capability NOT IN ('space.read','content.write','plugins.use'))",[&target_role],|r|r.get(0)).map_err(sql)?;
+    if privileged {
+        require(c, actor, space, "managers.manage")?;
+        if role(c, actor, space)?.as_deref() != Some("owner") {
+            return Err(denied());
+        }
+    }
+    Ok(())
+}
+impl Error {
+    fn invalid_space() -> Self {
+        Self::invalid("space required")
+    }
+}
+impl Spaces {
+    /// Opens a configured migrated database. The host must validate roots first.
+    pub fn open(path: &Path) -> Result<Self> {
+        Ok(Self {
+            db: crate::db::Db::open(path)?,
+        })
+    }
+    fn run<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&mut Connection) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        self.db.run_blocking(f)
+    }
+    /// Creates a space with a fresh UUIDv7 and the creator as its sole owner.
+    pub fn create(&self, actor: AccountId, name: &str) -> Result<Space> {
+        let value = self.change(
+            actor,
+            None,
+            SpaceChange::Create {
+                name: name.to_owned(),
+            },
+        )?;
+        serde_json::from_value(value["space"].clone()).map_err(sql)
+    }
+    /// Changes an existing membership after current capability and target checks.
+    /// Appointing Managers requires the owner; Owner requires explicit transfer.
+    pub fn set_role(
+        &self,
+        actor: AccountId,
+        space: SpaceId,
+        target: AccountId,
+        role: &str,
+    ) -> Result<()> {
+        self.change(
+            actor,
+            Some(space),
+            SpaceChange::SetRole {
+                target,
+                role: role.to_owned(),
+            },
+        )
+        .map(|_| ())
+    }
+    /// Removes a member; the owner cannot be removed, and Managers cannot remove Managers.
+    pub fn remove(&self, actor: AccountId, space: SpaceId, target: AccountId) -> Result<()> {
+        self.change(actor, Some(space), SpaceChange::Remove { target })
+            .map(|_| ())
+    }
+    /// Leaves a space; its owner must first transfer to another existing member.
+    pub fn leave(&self, actor: AccountId, space: SpaceId) -> Result<()> {
+        self.change(actor, Some(space), SpaceChange::Leave)
+            .map(|_| ())
+    }
+    /// Transfers sole ownership to an existing member and makes the former owner Manager.
+    pub fn transfer(&self, actor: AccountId, space: SpaceId, target: AccountId) -> Result<()> {
+        self.change(actor, Some(space), SpaceChange::Transfer { target })
+            .map(|_| ())
+    }
+    /// Removes directory and membership records only; content deletion is a later step.
+    pub fn delete(&self, actor: AccountId, space: SpaceId) -> Result<()> {
+        self.change(actor, Some(space), SpaceChange::Delete)
+            .map(|_| ())
+    }
+    /// Lists only the account's current memberships; server admin adds no access.
+    pub fn list(&self, actor: AccountId) -> Result<Vec<Space>> {
+        self.run(move |c| list(c, actor))
+    }
+    /// Reads current capability rows. Missing space and missing membership coincide.
+    pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<Vec<String>>> {
+        self.run(move |c| {
+        let Some(role)=role(c,actor,space)? else {return Ok(None)};
+        let mut st=c.prepare("SELECT capability FROM space_role_capabilities WHERE role=?1 ORDER BY capability").map_err(sql)?;
+        st.query_map([role],|r|r.get(0)).map_err(sql)?.collect::<rusqlite::Result<Vec<_>>>().map(Some).map_err(sql)
+    })
+    }
+    /// Lists members after checking `space.read` in one read snapshot.
+    pub fn members(&self, actor: AccountId, space: SpaceId) -> Result<Vec<Member>> {
+        self.run(move |c| {
+        let tx=c.transaction().map_err(sql)?;
+        require(&tx,actor,space,"space.read")?;
+        let out={let mut st=tx.prepare("SELECT m.account_id,CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END FROM space_memberships m JOIN spaces s ON s.id=m.space_id WHERE s.id=?1 ORDER BY m.account_id").map_err(sql)?;
+        st.query_map([space.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get(1)?))).map_err(sql)?.map(|r|{let(id,role)=r.map_err(sql)?;Ok(Member{account_id:account(id)?,role})}).collect::<Result<Vec<_>>>()?};
+        tx.commit().map_err(sql)?; Ok(out)
+    })
+    }
+    /// Tests whether this actor has a directory mutation receipt for a request ID.
+    /// The server serializes this check with its content store to preserve the
+    /// existing principal/request-ID namespace across the two databases.
+    pub fn has_receipt(&self, actor: AccountId, request_id: &str) -> Result<bool> {
+        let request_id = request_id.to_owned();
+        self.run(move |c| {
+            c.query_row(
+                "SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND request_id=?2)",
+                params![actor.to_string(), request_id],
+                |r| r.get(0),
+            )
+            .map_err(sql)
+        })
+    }
+
+    /// Executes a mutation with fresh capability and target checks under a write lock.
+    pub fn change(
+        &self,
+        actor: AccountId,
+        space: Option<SpaceId>,
+        change: SpaceChange,
+    ) -> Result<serde_json::Value> {
+        self.change_with_receipt(actor, space, change, None)
+    }
+    /// Executes or replays atomically. Authority is rechecked before reading receipts.
+    /// Receipts are private to the actor and bind the exact operation and fingerprint.
+    /// Target checks execute on first application; retries cannot repeat a transfer.
+    pub fn change_with_receipt(
+        &self,
+        actor: AccountId,
+        space: Option<SpaceId>,
+        change: SpaceChange,
+        receipt: Option<(&str, &str, &str)>,
+    ) -> Result<serde_json::Value> {
+        let receipt = receipt.map(|(rid, op, fp)| (rid.to_owned(), op.to_owned(), fp.to_owned()));
+        self.run(move |c| {
+        let tx=c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
+        check(&tx,actor,space,&change)?;
+        if let Some((rid,op,fp))=&receipt {
+            let saved:Option<(String,String,String)>=tx.query_row("SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND request_id=?2",params![actor.to_string(),rid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(sql)?;
+            if let Some((saved_op,saved_fp,result))=saved {
+                if saved_op!=*op || saved_fp!=*fp {return Err(Error::new(ErrorCode::Conflict,"request_id reused"));}
+                return serde_json::from_str(&result).map_err(sql);
+            }
+        }
+        let value=apply(&tx,actor,space,&change)?;
+        if let Some((rid,op,fp))=&receipt { tx.execute("INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5)",params![actor.to_string(),rid,op,fp,value.to_string()]).map_err(sql)?; }
+        tx.commit().map_err(sql)?;Ok(value)
+    })
+    }
+}
+
+/// Persistent development fixture identities; only explicit preview startup uses this.
+#[derive(Debug, Clone)]
+pub struct DevelopmentIds {
+    /// Account associated with the development owner token.
+    pub owner: AccountId,
+    /// Account associated with the development guest token.
+    pub guest: AccountId,
+    /// Space displayed as personal, with an explicit temporary preview root binding.
+    pub personal: SpaceId,
+    /// Space displayed as shared, with an explicit temporary preview root binding.
+    pub shared: SpaceId,
+}
+impl Spaces {
+    /// Creates development fixtures exactly once, preserving later revocations,
+    /// transfers and deletions across restart. Never call for real installations.
+    /// Accounts and spaces each receive a separate freshly allocated UUIDv7.
+    pub fn seed_development(&self) -> Result<DevelopmentIds> {
+        self.run(move |c| {
+            let tx = c
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            let existing: bool = tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM development_directory)",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(sql)?;
+            if !existing {
+                let owner = AccountId::new();
+                let guest = AccountId::new();
+                for (name, id) in [("owner", owner), ("guest", guest)] {
+                    tx.execute(
+                        "INSERT INTO users(id,name,username,created_at) VALUES(?1,?2,?3,?4)",
+                        params![
+                            id.to_string(),
+                            name,
+                            format!("dev-{name}"),
+                            crate::db::now_ms()
+                        ],
+                    )
+                    .map_err(sql)?;
+                    tx.execute(
+                        "INSERT INTO development_directory VALUES(?1,?2)",
+                        params![name, id.to_string()],
+                    )
+                    .map_err(sql)?;
+                }
+                for name in ["personal", "shared"] {
+                    let s = create(&tx, owner, name)?;
+                    tx.execute(
+                        "INSERT INTO development_directory VALUES(?1,?2)",
+                        params![name, s.id.to_string()],
+                    )
+                    .map_err(sql)?;
+                    if name == "shared" {
+                        tx.execute(
+                            "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
+                            params![s.id.to_string(), guest.to_string()],
+                        )
+                        .map_err(sql)?;
+                    }
+                }
+            }
+            let get = |name| {
+                tx.query_row(
+                    "SELECT id FROM development_directory WHERE name=?1",
+                    [name],
+                    |r| r.get::<_, String>(0),
+                )
+                .map_err(sql)
+            };
+            let ids = DevelopmentIds {
+                owner: account(get("owner")?)?,
+                guest: account(get("guest")?)?,
+                personal: space_id(get("personal")?)?,
+                shared: space_id(get("shared")?)?,
+            };
+            tx.commit().map_err(sql)?;
+            Ok(ids)
+        })
+    }
+}

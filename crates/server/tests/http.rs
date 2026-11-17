@@ -521,7 +521,9 @@ fn host_origin_and_bearer_checks() {
     let get = |h: &[(&str, &str)]| raw(p, "GET", "/api/v1/describe", h, None).unwrap();
     let ok = get(&[("Authorization", &auth)]);
     assert_eq!(ok.status, 200);
-    assert_eq!(ok.body["principal"]["id"], "owner");
+    let principal = uuid::Uuid::parse_str(ok.body["principal"]["id"].as_str().unwrap()).unwrap();
+    assert_eq!(principal.get_version_num(), 7);
+    assert_eq!(get(&[("Authorization", &auth)]).body["principal"]["id"], principal.to_string());
     assert!(
         ok.headers
             .contains("content-security-policy: default-src 'self'")

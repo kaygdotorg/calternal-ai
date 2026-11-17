@@ -10,7 +10,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 const MARKER: &str = ".calternal-install-id";
-const ROLES: [&str; 3] = ["ssd-home", "hdd-home", "app-state"];
+const ROLES: [&str; 3] = ["ssd-space", "hdd-space", "app-state"];
 const RETRY: Duration = Duration::from_millis(100);
 
 /// Lifetime ownership of all three roots. Dropping releases every acquired lock.
@@ -30,7 +30,7 @@ pub struct RootLocks {
 /// create neither directories nor lock files; I/O failures during explicit setup
 /// may leave partial setup which requires deliberate offline recovery.
 pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<RootLocks> {
-    let paths = [&roots.ssd_home, &roots.hdd_home, &roots.state].map(|p| absolute_plain(p));
+    let paths = [&roots.ssd_space, &roots.hdd_space, &roots.state].map(|p| absolute_plain(p));
     let [a, b, c] = paths;
     let paths = [a?, b?, c?];
     for (i, a) in paths.iter().enumerate() {
@@ -155,7 +155,7 @@ pub fn re_pair(roots: &Roots, installation: Uuid, confirmed: bool) -> io::Result
     if !confirmed {
         return Err(invalid("offline re-pair requires explicit confirmation"));
     }
-    let paths = [&roots.ssd_home, &roots.hdd_home, &roots.state]
+    let paths = [&roots.ssd_space, &roots.hdd_space, &roots.state]
         .into_iter()
         .map(|p| absolute_plain(p))
         .collect::<io::Result<Vec<_>>>()?;
@@ -413,19 +413,19 @@ fn has_data(dir: &OwnedFd) -> io::Result<bool> {
 
 // Preserve the source's legacy auth/history presence fence. This is not a
 // provenance or content-equivalence check, nor a registry of future space stores.
-fn check_legacy(home: &OwnedFd, state: &OwnedFd) -> io::Result<()> {
+fn check_legacy(space: &OwnedFd, state: &OwnedFd) -> io::Result<()> {
     let mut relative = vec![PathBuf::from("system/auth.db")];
-    match fs::openat(home, "users", dir_flags(), Mode::empty()) {
-        Ok(users) => {
-            for user in names(&users)? {
-                relative.push(Path::new("users").join(user).join("notes/history.db"));
+    match fs::openat(space, "spaces", dir_flags(), Mode::empty()) {
+        Ok(spaces) => {
+            for user in names(&spaces)? {
+                relative.push(Path::new("spaces").join(user).join("notes/history.db"));
             }
         }
         Err(rustix::io::Errno::NOENT) => {}
         Err(e) => return Err(e.into()),
     }
     for rel in relative {
-        if exists_plain(home, &rel)? && !exists_plain(state, &rel)? {
+        if exists_plain(space, &rel)? && !exists_plain(state, &rel)? {
             return Err(invalid(format!(
                 "copy {} to app state while stopped before splitting storage",
                 rel.display()

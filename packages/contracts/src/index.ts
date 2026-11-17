@@ -563,17 +563,140 @@ genui_version: 1,
  */
 root: GenUiNode, };
 /**
+ * Empty input for account-scoped space listing.
+ */
+
+export type SpacesListInput = Record<string, never>;
+/**
+ * Input for creation; the authenticated account becomes owner.
+ */
+
+export type SpacesCreateInput = {
+/**
+ * Display name, with the same length and control constraints as a title.
+ */
+name: string, };
+/**
+ * Input for members, leave and directory-record deletion.
+ */
+
+export type SpaceInput = {
+/**
+ * Stable space UUID; development inputs temporarily accept seeded aliases.
+ */
+space_id: string, };
+/**
+ * Target account for removal or explicit ownership transfer.
+ */
+
+export type SpaceMemberInput = {
+/**
+ * Stable space UUID; development inputs temporarily accept seeded aliases.
+ */
+space_id: string,
+/**
+ * Stable target account UUID, independently allocated from the space.
+ */
+account_id: string, };
+/**
+ * Change an existing member's role; assigning Owner requires transfer instead.
+ */
+
+export type SpaceSetRoleInput = {
+/**
+ * Stable space UUID; development inputs temporarily accept seeded aliases.
+ */
+space_id: string,
+/**
+ * Stable target account UUID.
+ */
+account_id: string,
+/**
+ * Requested membership role; Owner is refused here.
+ */
+role: SpaceRole, };
+/**
+ * Space metadata and the caller's current effective role.
+ */
+
+export type StoredSpace = {
+/**
+ * Independent stable UUIDv7 space identity.
+ */
+id: string,
+/**
+ * Display name, never an authority key.
+ */
+name: string,
+/**
+ * Account UUID of the sole owner.
+ */
+owner: string,
+/**
+ * Creation time in Unix milliseconds.
+ */
+created: bigint,
+/**
+ * Caller role, including the effective Owner role.
+ */
+role: SpaceRole, };
+/**
+ * Account's visible spaces; server administration does not add memberships.
+ */
+
+export type SpacesListResult = {
+/**
+ * Current memberships only.
+ */
+spaces: Array<StoredSpace>, };
+/**
+ * Newly created space.
+ */
+
+export type SpaceResult = {
+/**
+ * Metadata for the new owned space.
+ */
+space: StoredSpace, };
+/**
+ * Account membership in a space.
+ */
+
+export type SpaceMember = {
+/**
+ * Member's stable account UUID.
+ */
+account_id: string,
+/**
+ * Current effective role.
+ */
+role: SpaceRole, };
+/**
+ * Member directory visible to a current space reader.
+ */
+
+export type SpaceMembersResult = {
+/**
+ * Current account memberships, including exactly one Owner.
+ */
+members: Array<SpaceMember>, };
+/**
+ * A completed membership mutation or directory-record deletion.
+ */
+
+export type SpaceChangedResult = Record<string, never>;
+/**
  * Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.
  */
 
-export type SpaceRole = "reader" | "editor" | "manager";
+export type SpaceRole = "reader" | "editor" | "manager" | "owner";
 /**
  * Space membership exposed by `GET /api/v1/describe` for the authenticated principal.
  */
 
 export type SpaceGrant = {
 /**
- * Space identifier, 1..80 ASCII letters, digits or `_.:-`.
+ * Stable space UUID in stored directories; fixture directories may expose aliases.
  */
 id: string,
 /**

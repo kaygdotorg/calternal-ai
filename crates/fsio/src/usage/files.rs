@@ -48,7 +48,7 @@ impl Files {
             if let Some(owner) = person(parent) {
                 *totals.entry(owner).or_default() += entries.values().sum::<u64>();
             } else {
-                // Preserve accounting for files directly under the users root.
+                // Preserve accounting for files directly under the spaces root.
                 for (name, bytes) in entries {
                     if let Some(owner) = person(&parent.join(Path::new(name))) {
                         *totals.entry(owner).or_default() += bytes;
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn retained_keys_fit_a_small_per_file_budget() {
         let mut files = Files::default();
-        let parent = PathBuf::from(format!("/{}users/person/Notes", "long-root/".repeat(20)));
+        let parent = PathBuf::from(format!("/{}spaces/person/Notes", "long-root/".repeat(20)));
         for n in 0..10_000 {
             files.insert_in(&parent, OsStr::new(&format!("note-{n:05}.md")), n);
         }
@@ -125,7 +125,7 @@ mod tests {
             rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
             let person = if rng & 8 == 0 { "a" } else { "ab" };
             let path = PathBuf::from(format!(
-                "/homes/{person}/Notes/f{}/n{}.md",
+                "/spaces/{person}/Notes/f{}/n{}.md",
                 rng % 7,
                 rng % 89
             ));
@@ -135,7 +135,7 @@ mod tests {
             }
             assert_eq!(compact.get(&path), flat.get(&path).copied());
             if step % 50 == 0 {
-                for prefix in ["/homes/a", "/homes/ab/Notes", "/homes"] {
+                for prefix in ["/spaces/a", "/spaces/ab/Notes", "/spaces"] {
                     let mut got = compact.under(Path::new(prefix));
                     let mut want = flat
                         .keys()
@@ -153,12 +153,12 @@ mod tests {
     #[test]
     fn identical_names_in_different_folders_keep_separate_totals() {
         let mut files = Files::default();
-        files.insert(Path::new("/homes/a/Notes/n.md"), 3);
-        files.insert(Path::new("/homes/a/Trash/n.md"), 5);
-        files.insert(Path::new("/homes/b/Notes/n.md"), 7);
+        files.insert(Path::new("/spaces/a/Notes/n.md"), 3);
+        files.insert(Path::new("/spaces/a/Trash/n.md"), 5);
+        files.insert(Path::new("/spaces/b/Notes/n.md"), 7);
         let totals = files.totals(|p| {
             Some(
-                p.strip_prefix("/homes")
+                p.strip_prefix("/spaces")
                     .ok()?
                     .components()
                     .next()?
@@ -169,16 +169,16 @@ mod tests {
         });
         assert_eq!(totals.get("a"), Some(&8));
         assert_eq!(totals.get("b"), Some(&7));
-        assert_eq!(files.remove(Path::new("/homes/a/Trash/n.md")), Some(5));
-        assert_eq!(files.get(Path::new("/homes/a/Notes/n.md")), Some(3));
-        assert!(files.under(Path::new("/homes/a/Trash")).is_empty());
+        assert_eq!(files.remove(Path::new("/spaces/a/Trash/n.md")), Some(5));
+        assert_eq!(files.get(Path::new("/spaces/a/Notes/n.md")), Some(3));
+        assert!(files.under(Path::new("/spaces/a/Trash")).is_empty());
     }
 
     #[cfg(unix)]
     #[test]
     fn filenames_keep_their_exact_os_bytes() {
         use std::os::unix::ffi::OsStrExt;
-        let parent = Path::new("/homes/a/Notes");
+        let parent = Path::new("/spaces/a/Notes");
         let name = OsStr::from_bytes(b"note-\xff.md");
         let mut files = Files::default();
         files.insert_in(parent, name, 9);

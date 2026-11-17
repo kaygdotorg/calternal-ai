@@ -14,6 +14,7 @@ path = "src/main.rs"
 path = "src/lib.rs"
 
 [dependencies]
+calternal-auth.workspace = true
 calternal-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

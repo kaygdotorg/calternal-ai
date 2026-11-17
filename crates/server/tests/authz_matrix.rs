@@ -264,6 +264,21 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         registered.extend(plugin.manifest.operations.iter().map(|op| op.id.clone()));
     }
     assert_eq!(rows.len(), MATRIX.len(), "duplicate matrix row");
+    // The real stored-directory matrix lives in spaces_matrix.rs, where every
+    // directory handler and its target invariants are exercised against SQLite.
+    let stored_rows: BTreeSet<_> = [
+        "spaces.list",
+        "spaces.create",
+        "spaces.members",
+        "spaces.set_role",
+        "spaces.remove_member",
+        "spaces.leave",
+        "spaces.transfer",
+        "spaces.delete",
+    ]
+    .into_iter()
+    .collect();
+    let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
             .copied()
@@ -272,7 +287,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         registered
     );
     assert_eq!(rows, POLICIES.iter().map(|p| p.operation).collect());
-    assert_eq!(POLICIES.len(), MATRIX.len(), "duplicate host policy");
+    assert_eq!(
+        POLICIES.len(),
+        MATRIX.len() + stored_rows.len(),
+        "duplicate host policy"
+    );
     // Include the repository registry even though execution uses a controlled worker.
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     for plugin in Registry::load(&root).plugins {
@@ -655,7 +674,11 @@ fn built_in_roles_cover_exact_documented_capabilities() {
         assert!(
             BUILTIN_ROLES
                 .iter()
-                .any(|role| role.capabilities.contains(capability)),
+                .any(|role| role.capabilities.contains(capability))
+                || matches!(
+                    capability,
+                    Capability::SpacesList | Capability::SpacesCreate
+                ),
             "unheld capability: {}",
             capability.name()
         );

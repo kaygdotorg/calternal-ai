@@ -128,3 +128,21 @@ checks above passed. Disposable-copy verification also passed (141 workspace tes
 workspace package links, SDK declarations and Node types; running `npm ci
 --ignore-scripts --no-audit --no-fund` in that disposable copy provided the normal
 workspace dependencies. No shared product TypeScript files were edited.
+
+## Space terminology and directory binding (2026-11-17)
+
+The preceding port ledger describes the earlier lane. This lane changes only
+terminology and the new layout, retaining every test assertion and refusal:
+
+- Source `crates/calternal/src/storage.rs:85–131,178–219`, adapted in
+  `src/{lib,guard}.rs`: `Roots::{ssd_home,hdd_home}` become
+  `Roots::{ssd_space,hdd_space}`. Marker bytes remain `UUID\nrole\n`, with role
+  strings changed from `ssd-home`/`hdd-home` to `ssd-space`/`hdd-space`;
+  `app-state` is unchanged. No old marker aliases are accepted. The new layout
+  has no deployed data, so no compatibility migration is needed or performed.
+- Source `storage.rs:237–261`, adapted in `check_legacy`: both space trees and
+  app state now use `spaces/<space-id>/notes/history.db`, replacing the old
+  per-person `users/<uuid>` spelling. This retains the source's history presence
+  fence; it does not establish migration provenance or a complete registry.
+- Every startup fixture uses the new field names, roles and directory prefix.
+  All 15 existing startup tests pass unchanged in meaning.

@@ -602,12 +602,14 @@ pub enum SpaceRole {
     Editor,
     /// Read, edit and manage space plugins.
     Manager,
+    /// Sole owner; includes Manager grants plus management of Managers, transfer and deletion.
+    Owner,
 }
 /// Space membership exposed by `GET /api/v1/describe` for the authenticated principal.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceGrant {
-    /// Space identifier, 1..80 ASCII letters, digits or `_.:-`.
+    /// Stable space UUID in stored directories; fixture directories may expose aliases.
     pub id: String,
     /// Current preview membership role for this space.
     pub role: SpaceRole,
@@ -755,6 +757,24 @@ pub enum WorkerResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
+    /// Schema representative for the stored space directory spaces list input.
+    pub spaces_list_input: crate::SpacesListInput,
+    /// Schema representative for the stored space directory spaces create input.
+    pub spaces_create_input: crate::SpacesCreateInput,
+    /// Schema representative for the stored space directory space input.
+    pub space_input: crate::SpaceInput,
+    /// Schema representative for the stored space directory space member input.
+    pub space_member_input: crate::SpaceMemberInput,
+    /// Schema representative for the stored space directory space set role input.
+    pub space_set_role_input: crate::SpaceSetRoleInput,
+    /// Schema representative for the stored space directory spaces list result.
+    pub spaces_list_result: crate::SpacesListResult,
+    /// Schema representative for the stored space directory space result.
+    pub space_result: crate::SpaceResult,
+    /// Schema representative for the stored space directory space members result.
+    pub space_members_result: crate::SpaceMembersResult,
+    /// Schema representative for the stored space directory space changed result.
+    pub space_changed_result: crate::SpaceChangedResult,
     /// Schema export representative for `request`; not a field accepted by operation dispatch.
     pub request: OperationRequest,
     /// Schema export representative for `response`; not a field accepted by operation dispatch.

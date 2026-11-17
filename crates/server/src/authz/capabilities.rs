@@ -7,11 +7,11 @@
 //! operations. Read-only plugin operations require `space.read`; `plugins.use`
 //! permits the broader use granted to Editors, without changing Reader behavior.
 //!
-//! Owner is server-only: the wire still exposes Reader, Editor and Manager.
-//! The development account named `owner` remains Manager for compatibility.
-//! A stored directory can resolve auth.db role rows into these sets without
-//! changing dispatch. Membership mutations are not bound in this preview;
-//! future handlers must enforce target restrictions and ownership invariants.
+//! Stored directories resolve the role-capability rows on every request.
+//! Target and ownership constraints are checked again in the write transaction.
+
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 /// One host-defined space permission; unknown names cannot confer authority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,11 +37,15 @@ pub enum Capability {
     SpaceTransfer = 1 << 8,
     /// Delete the space through its protected deletion protocol.
     SpaceDelete = 1 << 9,
+    /// List memberships of the authenticated account, without space authority.
+    SpacesList = 1 << 10,
+    /// Create a space as the authenticated account, without existing membership.
+    SpacesCreate = 1 << 11,
 }
 
 impl Capability {
     /// Every defined capability, used for coverage and closed-set decoding.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 12] = [
         Self::SpaceRead,
         Self::ContentWrite,
         Self::PluginsUse,
@@ -52,6 +56,8 @@ impl Capability {
         Self::SpaceSettings,
         Self::SpaceTransfer,
         Self::SpaceDelete,
+        Self::SpacesList,
+        Self::SpacesCreate,
     ];
 
     /// Stable dotted name suitable for future auth.db role-capability rows.
@@ -67,6 +73,8 @@ impl Capability {
             Self::SpaceSettings => "space.settings",
             Self::SpaceTransfer => "space.transfer",
             Self::SpaceDelete => "space.delete",
+            Self::SpacesList => "spaces.list",
+            Self::SpacesCreate => "spaces.create",
         }
     }
 
@@ -110,9 +118,9 @@ impl CapabilitySet {
     }
 }
 
-/// Named role definition; dispatch consumes only its resolved capability set.
+/// Named role definition; space dispatch consumes only its resolved capability set.
 pub struct RoleSet {
-    /// Stable built-in role name; Owner is not yet represented on the wire.
+    /// Stable built-in role name; Owner is derived from the stored ownership relation.
     pub name: &'static str,
     /// Complete grants, with no rank or implicit role inheritance at lookup time.
     pub capabilities: CapabilitySet,
@@ -162,7 +170,7 @@ pub const BUILTIN_ROLES: [RoleSet; 4] = [
     },
 ];
 
-/// Adapt legacy wire memberships to built-in data; Owner remains server-only.
+/// Adapt legacy wire memberships to built-in data; includes the stored Owner role.
 /// This adapter is solely for development fixtures, never an operation check.
 pub fn development_role(role: &calternal_core::SpaceRole) -> CapabilitySet {
     use calternal_core::SpaceRole;
@@ -170,5 +178,6 @@ pub fn development_role(role: &calternal_core::SpaceRole) -> CapabilitySet {
         SpaceRole::Reader => BUILTIN_ROLES[0].capabilities,
         SpaceRole::Editor => BUILTIN_ROLES[1].capabilities,
         SpaceRole::Manager => BUILTIN_ROLES[2].capabilities,
+        SpaceRole::Owner => BUILTIN_ROLES[3].capabilities,
     }
 }

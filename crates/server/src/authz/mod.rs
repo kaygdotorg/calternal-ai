@@ -1,9 +1,12 @@
 //! Host-owned operation policy, applied before dispatch and retry replay.
 //!
-//! A constant table scan (ten entries) plus one directory capability lookup adds no
-//! allocation or lock to a successful authorization. Denial messages allocate
+//! A bounded table scan selects the policy; the directory then reads current
+//! capability rows. The stored implementation runs on the auth worker. Denial messages allocate
 //! only when constructing the existing wire error. Resource IDs are always bound
 //! to the authorized space by the storage APIs; possession of an ID grants nothing.
+
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
 
 use calternal_core::JsonObject;
 
@@ -17,6 +20,8 @@ use crate::error::HostError;
 /// Input scope whose space must be authorized before any resource lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
+    /// Account-scoped operation; the stored handler verifies account existence.
+    Account,
     /// The input's `space_id` is the complete access boundary.
     Space,
     /// The input's `space_id` is authorized first, then storage binds `id` to it.
@@ -51,6 +56,54 @@ pub struct Policy {
 /// Exhaustive host binding policies; new bindings must add a policy and matrix row.
 /// Unbound plugin operations fail closed instead of receiving inferred authority.
 pub const POLICIES: &[Policy] = &[
+    Policy {
+        operation: "spaces.list",
+        required: Capability::SpacesList,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.create",
+        required: Capability::SpacesCreate,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.members",
+        required: Capability::SpaceRead,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.set_role",
+        required: Capability::MembersManage,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.remove_member",
+        required: Capability::MembersManage,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.leave",
+        required: Capability::SpaceRead,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.transfer",
+        required: Capability::SpaceTransfer,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: "spaces.delete",
+        required: Capability::SpaceDelete,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
     Policy {
         operation: "notes.list",
         required: Capability::SpaceRead,
@@ -122,13 +175,16 @@ impl Policy {
     /// Check current directory membership before resource access or receipt replay.
     /// Both an unknown space and a missing grant return the same denial. This does
     /// not validate the full wire schema (the transport does that independently).
-    /// Successful checks borrow `space_id` and incur only the directory lookup cost.
+    /// Successful checks borrow `space_id`; the directory owns lookup costs.
     pub fn authorize(
         &self,
         directory: &impl Directory,
         principal: &Identity,
         input: &JsonObject,
     ) -> Result<(), HostError> {
+        if self.scope == Scope::Account {
+            return Ok(());
+        }
         let space = input
             .get("space_id")
             .and_then(|v| v.as_str())

@@ -435,6 +435,7 @@ name = "calternal-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "calternal-auth",
  "calternal-core",
  "clap",
  "getrandom 0.3.4",
@@ -451,6 +452,22 @@ dependencies = [
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "calternal-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "calternal-fsio",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "uuid",
 ]
 

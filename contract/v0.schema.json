@@ -21,6 +21,15 @@
     "plugins_list_result",
     "request",
     "response",
+    "space_changed_result",
+    "space_input",
+    "space_member_input",
+    "space_members_result",
+    "space_result",
+    "space_set_role_input",
+    "spaces_create_input",
+    "spaces_list_input",
+    "spaces_list_result",
     "summarize_result",
     "worker_request",
     "worker_response"
@@ -159,6 +168,78 @@
       "allOf": [
         {
           "$ref": "#/definitions/OperationResponse_for_AnyValue"
+        }
+      ]
+    },
+    "space_changed_result": {
+      "description": "Schema representative for the stored space directory space changed result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceChangedResult"
+        }
+      ]
+    },
+    "space_input": {
+      "description": "Schema representative for the stored space directory space input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceInput"
+        }
+      ]
+    },
+    "space_member_input": {
+      "description": "Schema representative for the stored space directory space member input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceMemberInput"
+        }
+      ]
+    },
+    "space_members_result": {
+      "description": "Schema representative for the stored space directory space members result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceMembersResult"
+        }
+      ]
+    },
+    "space_result": {
+      "description": "Schema representative for the stored space directory space result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceResult"
+        }
+      ]
+    },
+    "space_set_role_input": {
+      "description": "Schema representative for the stored space directory space set role input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceSetRoleInput"
+        }
+      ]
+    },
+    "spaces_create_input": {
+      "description": "Schema representative for the stored space directory spaces create input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpacesCreateInput"
+        }
+      ]
+    },
+    "spaces_list_input": {
+      "description": "Schema representative for the stored space directory spaces list input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpacesListInput"
+        }
+      ]
+    },
+    "spaces_list_result": {
+      "description": "Schema representative for the stored space directory spaces list result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpacesListResult"
         }
       ]
     },
@@ -1310,6 +1391,11 @@
       },
       "additionalProperties": false
     },
+    "SpaceChangedResult": {
+      "description": "A completed membership mutation or directory-record deletion.",
+      "type": "object",
+      "additionalProperties": false
+    },
     "SpaceGrant": {
       "description": "Space membership exposed by `GET /api/v1/describe` for the authenticated principal.",
       "type": "object",
@@ -1319,7 +1405,7 @@
       ],
       "properties": {
         "id": {
-          "description": "Space identifier, 1..80 ASCII letters, digits or `_.:-`.",
+          "description": "Stable space UUID in stored directories; fixture directories may expose aliases.",
           "type": "string"
         },
         "role": {
@@ -1327,6 +1413,97 @@
           "allOf": [
             {
               "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceInput": {
+      "description": "Input for members, leave and directory-record deletion.",
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "space_id": {
+          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceMember": {
+      "description": "Account membership in a space.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "role"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Member's stable account UUID.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Current effective role.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceMemberInput": {
+      "description": "Target account for removal or explicit ownership transfer.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "space_id"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Stable target account UUID, independently allocated from the space.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceMembersResult": {
+      "description": "Member directory visible to a current space reader.",
+      "type": "object",
+      "required": [
+        "members"
+      ],
+      "properties": {
+        "members": {
+          "description": "Current account memberships, including exactly one Owner.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SpaceMember"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceResult": {
+      "description": "Newly created space.",
+      "type": "object",
+      "required": [
+        "space"
+      ],
+      "properties": {
+        "space": {
+          "description": "Metadata for the new owned space.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/StoredSpace"
             }
           ]
         }
@@ -1356,8 +1533,79 @@
           "enum": [
             "manager"
           ]
+        },
+        {
+          "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
+          "type": "string",
+          "enum": [
+            "owner"
+          ]
         }
       ]
+    },
+    "SpaceSetRoleInput": {
+      "description": "Change an existing member's role; assigning Owner requires transfer instead.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "role",
+        "space_id"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Stable target account UUID.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Requested membership role; Owner is refused here.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        },
+        "space_id": {
+          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpacesCreateInput": {
+      "description": "Input for creation; the authenticated account becomes owner.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "Display name, with the same length and control constraints as a title.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpacesListInput": {
+      "description": "Empty input for account-scoped space listing.",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "SpacesListResult": {
+      "description": "Account's visible spaces; server administration does not add memberships.",
+      "type": "object",
+      "required": [
+        "spaces"
+      ],
+      "properties": {
+        "spaces": {
+          "description": "Current memberships only.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/StoredSpace"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "Stats": {
       "description": "Read-only Markdown statistics returned by `notes-insights.summarize`.",
@@ -1385,6 +1633,45 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "StoredSpace": {
+      "description": "Space metadata and the caller's current effective role.",
+      "type": "object",
+      "required": [
+        "created",
+        "id",
+        "name",
+        "owner",
+        "role"
+      ],
+      "properties": {
+        "created": {
+          "description": "Creation time in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "id": {
+          "description": "Independent stable UUIDv7 space identity.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name, never an authority key.",
+          "type": "string"
+        },
+        "owner": {
+          "description": "Account UUID of the sole owner.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Caller role, including the effective Owner role.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
         }
       },
       "additionalProperties": false

@@ -124,7 +124,15 @@ pub fn validate_request(request: &OperationRequest) -> Result<(), ValidationErro
 pub fn is_known_operation(operation: &str) -> bool {
     matches!(
         operation,
-        "notes.list"
+        "spaces.list"
+            | "spaces.create"
+            | "spaces.members"
+            | "spaces.set_role"
+            | "spaces.remove_member"
+            | "spaces.leave"
+            | "spaces.transfer"
+            | "spaces.delete"
+            | "notes.list"
             | "notes.get"
             | "notes.create"
             | "notes.update"
@@ -172,6 +180,32 @@ pub fn validate_operation_input(
     input: &JsonObject,
 ) -> Result<(), ValidationError> {
     match operation {
+        "spaces.list" => {
+            let _: SpacesListInput = decode(input)?;
+            Ok(())
+        }
+        "spaces.create" => {
+            let i: SpacesCreateInput = decode(input)?;
+            validate_title(&i.name)
+        }
+        "spaces.members" | "spaces.leave" | "spaces.delete" => {
+            let i: SpaceInput = decode(input)?;
+            space(&i.space_id)
+        }
+        "spaces.remove_member" | "spaces.transfer" => {
+            let i: SpaceMemberInput = decode(input)?;
+            space(&i.space_id)?;
+            validate_resource_id(&i.account_id)
+        }
+        "spaces.set_role" => {
+            let i: SpaceSetRoleInput = decode(input)?;
+            space(&i.space_id)?;
+            validate_resource_id(&i.account_id)?;
+            require(
+                i.role != SpaceRole::Owner,
+                "use explicit ownership transfer",
+            )
+        }
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
             space(&i.space_id)
@@ -490,7 +524,7 @@ impl PendingRequest {
     }
 }
 
-/// Build discovery metadata and JSON Schemas for all ten preview operations. Allocates fresh schema trees on each call; callers may cache the result outside the pure core.
+/// Build discovery metadata and JSON Schemas for all preview operations including the stored space directory. Allocates fresh schema trees on each call; callers may cache the result outside the pure core.
 pub fn operation_catalog() -> Vec<OperationDescription> {
     fn entry<I: schemars::JsonSchema, O: schemars::JsonSchema>(
         id: &str,
@@ -507,6 +541,38 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         }
     }
     vec![
+        entry::<SpacesListInput, SpacesListResult>(
+            "spaces.list",
+            "List current account memberships",
+            false,
+        ),
+        entry::<SpacesCreateInput, SpaceResult>("spaces.create", "Create an owned space", true),
+        entry::<SpaceInput, SpaceMembersResult>("spaces.members", "List current members", false),
+        entry::<SpaceSetRoleInput, SpaceChangedResult>(
+            "spaces.set_role",
+            "Change an existing member role",
+            true,
+        ),
+        entry::<SpaceMemberInput, SpaceChangedResult>(
+            "spaces.remove_member",
+            "Remove a member",
+            true,
+        ),
+        entry::<SpaceInput, SpaceChangedResult>(
+            "spaces.leave",
+            "Leave after transferring ownership if necessary",
+            true,
+        ),
+        entry::<SpaceMemberInput, SpaceChangedResult>(
+            "spaces.transfer",
+            "Transfer ownership to an existing member",
+            true,
+        ),
+        entry::<SpaceInput, SpaceChangedResult>(
+            "spaces.delete",
+            "Delete directory records; content cleanup is a later step",
+            true,
+        ),
         entry::<NotesListInput, NotesListResult>("notes.list", "List up to 100 notes", false),
         entry::<NotesGetInput, NoteResult>("notes.get", "Read a note", false),
         entry::<NotesCreateInput, NoteResult>("notes.create", "Create a Markdown note", true),

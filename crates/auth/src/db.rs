@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 /// Bump when the schema changes, and add a step to [`migrate`].
-const VERSION: i64 = 15;
+const VERSION: i64 = 16;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE users (
@@ -417,6 +417,25 @@ impl Db {
         rx.await.map_err(Error::internal)?
     }
 
+    /// Runs a job synchronously on the same bounded dedicated worker.
+    /// Host adapters with synchronous directory traits must call this only from
+    /// blocking threads, never a Tokio async worker. Admission waits for capacity
+    /// and preserves the source worker's 64 queued-job bound and ordering.
+    /// Cancellation after admission does not cancel the job.
+    pub fn run_blocking<T, F>(&self, f: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Connection) -> Result<T> + Send + 'static,
+    {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.worker()
+            .blocking_send(Box::new(move |c| {
+                let _ = tx.send(f(c));
+            }))
+            .map_err(|_| Error::internal("auth database worker stopped"))?;
+        rx.blocking_recv().map_err(Error::internal)?
+    }
+
     fn worker(&self) -> &tokio::sync::mpsc::Sender<Job> {
         // One dedicated worker owns the serialized database workload. Its bounded
         // queue never occupies Tokio's general blocking pool while waiting.
@@ -481,6 +500,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         (13, SCHEMA_V13),
         (14, SCHEMA_V14),
         (15, SCHEMA_V15),
+        (16, include_str!("spaces_schema.sql")),
     ] {
         if have < version {
             tx.execute_batch(schema)?;
@@ -761,9 +781,23 @@ mod port_tests {
     use std::future::Future;
     use std::task::{Context, Poll, Waker};
 
-    const MIGRATIONS: [&str; 15] = [
-        SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8,
-        SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12, SCHEMA_V13, SCHEMA_V14, SCHEMA_V15,
+    const MIGRATIONS: [&str; 16] = [
+        SCHEMA_V1,
+        SCHEMA_V2,
+        SCHEMA_V3,
+        SCHEMA_V4,
+        SCHEMA_V5,
+        SCHEMA_V6,
+        SCHEMA_V7,
+        SCHEMA_V8,
+        SCHEMA_V9,
+        SCHEMA_V10,
+        SCHEMA_V11,
+        SCHEMA_V12,
+        SCHEMA_V13,
+        SCHEMA_V14,
+        SCHEMA_V15,
+        include_str!("spaces_schema.sql"),
     ];
 
     // Physical rootpage numbers are allocation details, not schema. Include all
@@ -782,9 +816,9 @@ mod port_tests {
         let dir = TempDir::new();
         let fresh = open_conn(&dir.path().join("fresh.db")).unwrap();
         let expected = schema(&fresh);
-        assert_eq!(expected.iter().filter(|r| r.0 == "table").count(), 23);
+        assert_eq!(expected.iter().filter(|r| r.0 == "table").count(), 29);
         // Every historical version is independently a supported opening point.
-        for have in 0..=15 {
+        for have in 0..=16 {
             let path = dir.path().join(format!("version-{have}.db"));
             let mut old = Connection::open(&path).unwrap();
             for (index, sql) in MIGRATIONS.iter().take(have).enumerate() {
@@ -801,7 +835,7 @@ mod port_tests {
                 upgraded
                     .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
                     .unwrap(),
-                15
+                16
             );
             drop(upgraded);
             let reopened = open_conn(&path).unwrap();
@@ -895,7 +929,7 @@ mod port_tests {
             reopened
                 .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
                 .unwrap(),
-            15
+            16
         );
     }
 

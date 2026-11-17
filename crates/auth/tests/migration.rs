@@ -24,6 +24,8 @@ async fn schema_two_copy_keeps_real_credentials_sessions_and_recovery() {
     fixture
         .execute_batch(
             "PRAGMA foreign_keys=OFF;
+        DROP TRIGGER account_identity_separate; DROP TABLE space_receipts; DROP TABLE development_directory;
+        DROP TABLE space_memberships; DROP TABLE spaces; DROP TABLE space_role_capabilities; DROP TABLE space_roles;
         DROP TRIGGER installation_scopes_insert; DROP TRIGGER installation_scopes_update; ALTER TABLE installations DROP COLUMN registration_session; ALTER TABLE installations DROP COLUMN assertion_at; ALTER TABLE installations DROP COLUMN scopes;
         DROP TRIGGER first_person_admin;
         DROP TRIGGER user_role_insert;
@@ -104,7 +106,7 @@ async fn schema_two_copy_keeps_real_credentials_sessions_and_recovery() {
     let version: i64 = fixture
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 15);
+    assert_eq!(version, 16);
     assert_eq!(
         fixture
             .query_row(
@@ -196,7 +198,7 @@ async fn origin_dev_schema_migrates_idempotently_and_rolls_back_partial_failure(
     assert_eq!(
         c.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        15
+        16
     );
     drop(c);
     let restored = app_in(d, |_| {});

@@ -13,7 +13,7 @@
 //! Bind-mount ancestry under different path spellings is not detected. These checks do not
 //! prove separate devices, mount IDs, SSD/HDD hardware, mount continuity, or
 //! provenance of copied markers/auth files. No device separation is enforced:
-//! SSD Home and app state are allowed on the same filesystem. An unavailable
+//! SSD space and app state are allowed on the same filesystem. An unavailable
 //! mount is detected through missing roots/markers/identity, not a mount-table
 //! check. Hostile concurrent mutation of real directories or marker bytes is
 //! outside the cooperative root-lock contract; this is not a tenant sandbox.
@@ -28,11 +28,11 @@ use std::path::PathBuf;
 /// The installation's three separate role directories.
 #[derive(Clone, Debug)]
 pub struct Roots {
-    /// Claim-validated text Home tree, normally on SSD.
-    pub ssd_home: PathBuf,
-    /// Other original files Home tree, normally on HDD.
-    pub hdd_home: PathBuf,
-    /// Protected app state, normally on SSD; never a Home directory.
+    /// Claim-validated text space tree, normally on SSD.
+    pub ssd_space: PathBuf,
+    /// Other original files space tree, normally on HDD.
+    pub hdd_space: PathBuf,
+    /// Protected app state, normally on SSD; never a space directory.
     pub state: PathBuf,
 }
 
