@@ -663,7 +663,7 @@ fn log_path(f: &Fixture) -> PathBuf {
 }
 
 #[test]
-fn telemetry_and_sharing_delivery_changes_do_not_publish() {
+fn telemetry_changes_do_not_publish() {
     let f = Fixture::new();
     let installation = calternal_types::InstallationId::new();
     f.connection().execute("INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at,expires_at) VALUES(?1,?2,'browser','test',x'0123',1,1,100)",rusqlite::params![installation.to_string(),f.owner.to_string()]).unwrap();
@@ -693,19 +693,12 @@ fn telemetry_and_sharing_delivery_changes_do_not_publish() {
     .unwrap();
     tx.execute("UPDATE passkeys SET last_used_at=50", [])
         .unwrap();
-    tx.execute(
-        "INSERT INTO sharing_installation_resets VALUES(?1,50)",
-        [installation.to_string()],
-    )
-    .unwrap();
     let id = c.prepare(&tx).unwrap();
     assert_eq!(id, "");
     tx.commit().unwrap();
     c.complete(&db, &id).unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     let snapshot = c.validate_and_read_at(&pin).unwrap();
-    assert!(!snapshot.tables.contains_key("sharing_installation_resets"));
-    assert!(!snapshot.tables.contains_key("share_fanout"));
     let expiry = snapshot.tables["installations"]
         .columns
         .iter()

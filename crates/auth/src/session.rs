@@ -30,8 +30,6 @@ pub enum InstallationKind {
     Cli,
     /// An AI agent, through MCP or the API.
     Agent,
-    /// An app password that may speak DAV or use scoped Notes API actions.
-    Dav,
 }
 
 impl InstallationKind {
@@ -41,7 +39,6 @@ impl InstallationKind {
             Self::Native => "native",
             Self::Cli => "cli",
             Self::Agent => "agent",
-            Self::Dav => "dav",
         }
     }
 
@@ -51,7 +48,6 @@ impl InstallationKind {
             "native" => Self::Native,
             "cli" => Self::Cli,
             "agent" => Self::Agent,
-            "dav" => Self::Dav,
             _ => return None,
         })
     }
@@ -208,7 +204,6 @@ pub(crate) async fn identify(
 /// can shorten a recovered session, while explicit revocations use the barrier.
 fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) {
     let ttl = inner.config.session_ttl.as_millis() as i64;
-    let last_seen_at = live.touched_at;
     live.touched_at = now;
     live.expires_at = now + ttl;
     {
@@ -224,7 +219,6 @@ fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) 
     tokio::spawn(async move {
         let r = db
             .run(move |c| {
-                mark_stale_installation(c, &id, last_seen_at, now)?;
                 c.execute(
                     "UPDATE installations SET last_seen_at = ?2, expires_at = ?3
                      WHERE id = ?1 AND revoked_at IS NULL",
@@ -450,32 +444,6 @@ mod tests {
         }
         assert_eq!(clean_name("a\u{061c}b\u{00ad}c\u{e0041}d\u{fe0f}"), "abcd");
     }
-}
-
-/// Preserve the source's dormant-device reset marker when touching legacy rows.
-/// This carries no authority or content into the session result.
-/// Sharing delivery/reset bookkeeping never triggers recovery publication. A
-/// future rebuild discards it and forces every device through an authorized resync.
-fn mark_stale_installation(
-    c: &rusqlite::Connection,
-    installation: &str,
-    last_seen_at: i64,
-    now: i64,
-) -> Result<()> {
-    const SHARING_INSTALLATION_TTL_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-    if last_seen_at >= now.saturating_sub(SHARING_INSTALLATION_TTL_MS) {
-        return Ok(());
-    }
-    c.execute(
-        "INSERT OR IGNORE INTO sharing_installation_resets(installation_id,required_at)
-         SELECT i.id,?2 FROM installations i
-         WHERE i.id=?1 AND i.revoked_at IS NULL
-           AND (i.expires_at IS NULL OR i.expires_at>?2)
-           AND EXISTS (SELECT 1 FROM share_grants g WHERE g.person_id=i.user_id)",
-        params![installation, now],
-    )
-    .map_err(sql)?;
-    Ok(())
 }
 
 #[cfg(test)]

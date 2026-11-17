@@ -27,17 +27,16 @@ resolution sequence/hash (the current resolved chain head).
 
 The existing transactional dirty-owner triggers and indexed capture remain.
 Account records contain credentials, enrollment-token hashes, installations and
-revocations, server roles, group membership, sharing authority and retry receipts.
+revocations, server roles, group membership and retry receipts.
 Space records contain only space metadata and memberships. Groups/invites have
 separate records; global policy holds the closed schema/role inventory and unbound
 enrollment tokens. Unknown auth tables refuse configuration. AccountId and SpaceId
 remain distinct; a snapshot refuses accounts and spaces sharing a UUID.
 
-Last-used/last-seen telemetry, rolling session-expiry touches, rate limits and
-sharing delivery/reset bookkeeping do not publish. Recovered expiry is the last
-protected capture's absolute value; rebuilding must enforce wall-clock expiry,
-preserve revocation, discard delivery state and force all devices to resync under
-current authority. Stored schema text is descriptive, never SQL to execute blindly.
+Last-used/last-seen telemetry, rolling session-expiry touches and rate limits do
+not publish. Recovered expiry is the last protected capture's absolute value;
+rebuilding must enforce wall-clock expiry, preserve revocation and force all
+devices to resync under current authority. Stored schema text is descriptive, never SQL to execute blindly.
 The write audit and regression inventory are in [REVIEW.md](REVIEW.md).
 
 Publication and proof
