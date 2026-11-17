@@ -7,10 +7,13 @@
  * are made: the sidebars' (light blur) and the middle card's (heavy blur). From the sidebars' copy the same pass reads, once:
  *   - a brightness grid (so surfaces know how bright it is behind them: `setBackdropField`, no pixels read later),
  *   - the average tone and the most vivid hue (for the accent),
- *   - the wash the sidebars need for legible ink (`washFor`).
+ *   - the pixels under each surface (the two sidebars and the card), from which `veil.ts` solves how much veil the text needs (`updateVeil`).
  * Cost: two canvas draws and one 24 by 14 read per change of wallpaper, blur or window size (resize is debounced 400 ms); nothing per frame.
  */
-import { backdropRange, cssPx, luminance, scheduleMaterial, setBackdropField, washFor, currentScheme, type Field } from "@calternal/ui";
+import { cssPx, luminance, scheduleMaterial, setBackdropField, currentScheme, type Field } from "@calternal/ui";
+import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
+import { surfaces } from "./surfaces.svelte";
+import { solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -132,28 +135,83 @@ function fieldOf(c: HTMLCanvasElement): Field {
   return { cols: GRID.cols, rows: GRID.rows, lum };
 }
 
-/** The sidebars' rectangles as fractions of the viewport (the whole viewport on a narrow screen, where one sidebar fills it). */
-function sidebarRects(): { x0: number; y0: number; x1: number; y1: number }[] {
-  const w = innerWidth || 1;
-  if (w < 760) return [{ x0: 0, y0: 0, x1: 1, y1: 1 }];
+type Frac = { x0: number; y0: number; x1: number; y1: number };
+
+/** The surfaces' rectangles as fractions of the viewport. On a narrow screen one sidebar fills it; the card is the viewport. */
+function rects(): { left: Frac; right: Frac; card: Frac } {
+  const w = innerWidth || 1, h = innerHeight || 1;
+  if (w < 760) { const all = { x0: 0, y0: 0, x1: 1, y1: 1 }; return { left: all, right: all, card: all }; }
   const side = cssPx("--side-w", 240) / w;
   const right = cssPx("--right-w", 340) / w;
-  return [{ x0: 0, y0: 0, x1: side, y1: 1 }, { x0: 1 - right, y0: 0, x1: 1, y1: 1 }];
+  const c = document.querySelector(".mid-card")?.getBoundingClientRect();
+  const card = c && c.width > 0 ? { x0: c.left / w, y0: c.top / h, x1: c.right / w, y1: c.bottom / h } : { x0: side, y0: 0, x1: 1 - right, y1: 1 };
+  return { left: { x0: 0, y0: 0, x1: side, y1: 1 }, right: { x0: 1 - right, y0: 0, x1: 1, y1: 1 }, card };
 }
 
-/** Recomputes the wash from the current field and scheme (also called when the scheme changes). */
-export function updateWash(sideTintBase = 0.35, cardTintBase = 0.85): void {
+const SAMPLE = 48; // at most 48 by 48 pixels per surface
+/** The pixels of a copy inside a rectangle (fractions of the viewport), as encoded RGB. */
+function sample(c: HTMLCanvasElement, r: Frac): RGB[] {
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = SAMPLE;
+  const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+  const sx = r.x0 * c.width, sy = r.y0 * c.height;
+  ctx.drawImage(c, sx, sy, Math.max(1, (r.x1 - r.x0) * c.width), Math.max(1, (r.y1 - r.y0) * c.height), 0, 0, SAMPLE, SAMPLE);
+  const d = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
+  const out: RGB[] = [];
+  for (let i = 0; i < d.length; i += 4) out.push([d[i]!, d[i + 1]!, d[i + 2]!]);
+  return out;
+}
+
+const hex = (h: string): RGB => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+/** A colour token as the browser resolves it (a theme may have replaced it), as encoded RGB; `fallback` when it cannot be read. */
+function resolved(name: string, fallback: RGB): RGB {
+  const e = document.createElement("span");
+  e.style.cssText = `position:absolute;visibility:hidden;color:var(${name})`;
+  document.body.append(e);
+  const m = getComputedStyle(e).color.match(/[\d.]+/g);
+  e.remove();
+  return m && m.length >= 3 && m.slice(0, 3).every((v) => !Number.isNaN(parseFloat(v))) ? [Math.round(+m[0]!), Math.round(+m[1]!), Math.round(+m[2]!)] : fallback;
+}
+const inkOf = (s: Scheme): Ink => ({ ink: hex(tokens[s].ink), ink2: hex(tokens[s]["ink-2"]), ink3: hex(tokens[s]["ink-3"]), paper: hex(tokens[s].paper) });
+const rgbCss = (c: RGB): string => `${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])}`;
+
+let copies: { side: HTMLCanvasElement; card: HTMLCanvasElement } | null = null;
+/** The most recent solutions, for tests and the settings page. */
+export const lastVeils: { left?: Veil; right?: Veil; card?: Veil } = {};
+
+/**
+ * Solves the veil of each surface from the pixels under it and writes the result as CSS variables: for each of `l` (left sidebar), `r` (right sidebar) and
+ * `c` (the card) the tint and dim layers (`--l-tint`, `--l-tint-a`, `--l-dim`, `--l-dim-a`), the surface's own secondary inks (`--l-ink2`, `--l-ink3`) and the
+ * ready-made background `--veil-l`. Called when a wallpaper is read, and when the scheme, the three boxes or the window change. Reads: the two copies
+ * already made (no decode); cost: see veil.ts.
+ */
+export function updateVeil(want: Flags): void {
+  // Reduced transparency asks for opaque surfaces: the same fallback as having every box off.
+  const flags: Flags = matchMedia("(prefers-reduced-transparency: reduce)").matches ? { blur: false, dim: false, tint: false } : want;
   const scheme = currentScheme();
-  let min = 1, max = 0;
-  for (const r of sidebarRects()) {
-    const range = backdropRange(scheme, r);
-    min = Math.min(min, range.min);
-    max = Math.max(max, range.max);
+  const T: Ink = { ink: resolved("--ink", inkOf(scheme).ink), ink2: resolved("--ink-2", inkOf(scheme).ink2), ink3: resolved("--ink-3", inkOf(scheme).ink3), paper: resolved("--paper", inkOf(scheme).paper) };
+  const other = inkOf(scheme === "light" ? "dark" : "light");
+  const r = rects();
+  const flat = (): RGB[] => [resolved("--backdrop", inkOf(scheme).paper)];
+  const px = (c: HTMLCanvasElement | undefined, f: Frac): RGB[] => (source && c ? sample(c, f) : flat());
+  const jobs: [string, Role, RGB[]][] = [["l", "side", px(copies?.side, r.left)], ["r", "side", px(copies?.side, r.right)], ["c", "card", px(copies?.card, r.card)]];
+  const out: Record<string, Veil> = {};
+  for (const [k, role, pixels] of jobs) {
+    const v = solve(scheme, role, flags, pixels, T, other);
+    out[k] = v;
+    const ink2 = v.scheme === scheme ? v.ink2 : v.ink2, ink3 = v.ink3;
+    root().setProperty(`--${k}-tint`, rgbCss(v.tint.rgb));
+    root().setProperty(`--${k}-tint-a`, v.tint.a.toFixed(3));
+    root().setProperty(`--${k}-dim`, rgbCss(v.dim.rgb));
+    root().setProperty(`--${k}-dim-a`, v.dim.a.toFixed(3));
+    root().setProperty(`--${k}-ink2`, `rgb(${rgbCss(ink2)})`);
+    root().setProperty(`--${k}-ink3`, `rgb(${rgbCss(ink3)})`);
+    root().setProperty(`--veil-${k}`, `linear-gradient(rgb(var(--${k}-dim) / var(--${k}-dim-a)) 0 0), linear-gradient(rgb(var(--${k}-tint) / var(--${k}-tint-a)) 0 0)`);
   }
-  root().setProperty("--wash", source ? washFor(scheme, { min, max }, sideTintBase).toFixed(3) : "");
-  // The card's tint is raised the same way from the brightness under the card itself, so it holds text contrast with Tint off or on.
-  const c = document.querySelector(".mid-card")?.getBoundingClientRect();
-  if (source && c && c.width > 0) root().setProperty("--card-tint-a", Math.max(cardTintBase, washFor(scheme, backdropRange(scheme, { x0: c.left / innerWidth, y0: c.top / innerHeight, x1: c.right / innerWidth, y1: c.bottom / innerHeight }), 0)).toFixed(3));
+  lastVeils.left = out.l; lastVeils.right = out.r; lastVeils.card = out.c;
+  const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
+  surfaces.left = flip(out.l);
+  surfaces.right = flip(out.r);
   scheduleMaterial();
 }
 
@@ -163,8 +221,9 @@ function clear(): void {
     if (urls[l]) URL.revokeObjectURL(urls[l]!);
     delete urls[l];
   }
-  root().removeProperty("--wash");
+  copies = null;
   setBackdropField(null);
+  updateVeil(flagsNow);
   for (const fn of listeners) fn(null);
 }
 
@@ -188,8 +247,9 @@ async function update(): Promise<void> {
       root().setProperty(`--wall-${l}`, `url("${u}")`);
       if (old) URL.revokeObjectURL(old);
     }
+    copies = { side, card };
     setBackdropField(fieldOf(side));
-    updateWash();
+    updateVeil(flagsNow);
     const c = colours(img);
     for (const fn of listeners) fn(c);
   } catch {
@@ -203,6 +263,12 @@ function schedule(ms = 60): void {
 }
 
 /** Shows a wallpaper (an image URL: a blob, a data URL or a same-origin file) or none. The blur is done here, once. */
+let flagsNow: Flags = { blur: true, dim: true, tint: true };
+/** The three boxes as currently chosen; the veil is solved with them whenever the pictures are re-read. */
+export function setFlags(f: Flags): void {
+  flagsNow = f;
+}
+
 export function setWallpaper(src: string | null, l?: WallpaperLook): void {
   if (l) look = l;
   if (src === source && !l) return;

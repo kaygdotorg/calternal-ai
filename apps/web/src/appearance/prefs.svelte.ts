@@ -9,7 +9,7 @@ import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "js
 import { accentFor } from "./accent";
 import { PRESETS, presetById } from "./presets";
 import { applyTheme } from "./theme";
-import { onWallpaperColours, setWallpaper, updateWash, type WallpaperColours } from "./wallpaper";
+import { onWallpaperColours, setFlags, setWallpaper, updateVeil, type WallpaperColours } from "./wallpaper";
 
 /** How the accent colour is chosen. */
 export type AccentMode = "wallpaper" | "custom" | "theme";
@@ -58,10 +58,8 @@ export const DEFAULTS: Prefs = {
   fonts: DEFAULT_FONTS,
 };
 
-/** What each switch turns on. The sidebar tint and the card tint are floors: the wash is raised above them where the wallpaper needs it for contrast. */
-const SIDE_BLUR = 12, CARD_BLUR = 75, SIDE_TINT = 0.35, CARD_DIM = 0.3;
-/** The card tint floor per scheme: light keeps more of the picture (depth) because the contrast floor, not this number, guarantees legibility there. */
-const CARD_TINT = { light: 0.7, dark: 0.85 } as const;
+/** What Blur turns on: the blur radii (px) of the sidebars' and the card's copies of the picture. Tint and Dim have no fixed strength: the veil is solved (veil.ts). */
+const SIDE_BLUR = 12, CARD_BLUR = 75;
 const KEY = "cal.appearance";
 
 function read(): Prefs {
@@ -108,15 +106,12 @@ class Appearance {
     const p = this.prefs;
     const st = document.documentElement.style;
     const m = p.materials;
-    const base = { side: m.tint ? SIDE_TINT : 0, card: m.tint ? CARD_TINT[currentScheme()] : 0 };
-    st.setProperty("--side-tint-a", String(base.side));
-    st.setProperty("--card-tint-a", String(base.card));
-    st.setProperty("--card-dim-a", String(m.dim ? CARD_DIM : 0));
     st.setProperty("--ui-scale", String(Math.min(150, Math.max(80, p.uiSize)) / 100));
+    setFlags(m);
     const w = this.wallpaper;
     setWallpaper(w ? (currentScheme() === "dark" && w.urlDark ? w.urlDark : w.url) : null, { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 });
     applyTheme(p.themeId ? (presetById(p.themeId)?.theme ?? null) : null, currentScheme());
-    updateWash(base.side, base.card);
+    updateVeil(m);
     this.applyAccent();
     void applyFonts(p.fonts);
     try {
