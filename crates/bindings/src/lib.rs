@@ -60,7 +60,7 @@ mod tests {
     }
     #[test]
     fn exports_real_schema() {
-        assert!(contract_schema_json().contains("WorkerRequest"));
+        assert!(contract_schema_json().contains("OperationRequest"));
     }
 }
 

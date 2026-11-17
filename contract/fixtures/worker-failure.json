@@ -1,9 +1,0 @@
-{
-  "protocol_version": 1,
-  "invocation_id": "fixture-1",
-  "ok": false,
-  "error": {
-    "code": "internal",
-    "message": "Worker failed"
-  }
-}

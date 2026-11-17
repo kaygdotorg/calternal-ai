@@ -47,8 +47,6 @@ pub struct Receipt {
     /// Item whose file placement must finish before replay.
     pub note_id: Option<String>,
 }
-/// Placement bookkeeping shared with the generic content layer.
-pub use calternal_content::Materialization as MatState;
 /// Persisted plugin enablement and asynchronous-result invalidation generation.
 #[derive(Debug, Clone)]
 pub struct PluginRow {
@@ -240,16 +238,6 @@ impl Store {
             return Err(Error::not_found("item not found"));
         }
         Ok(note(&item))
-    }
-    /// Reads materialization state by trusted internal ID. Cost: one global indexed
-    /// route and one space metadata lookup; no membership scan, content file read or fsync.
-    pub fn mat_state(&self, id: &str) -> Result<Option<MatState>, Error> {
-        let Some(space) = self.locate("notes", id)? else {
-            return Ok(None);
-        };
-        self.content
-            .materialization(space, item_id(id)?)
-            
     }
     /// Reads newest immutable versions using an item-bound opaque cursor. Cost:
     /// cache/space locks, bounded indexed reads and at most 1,001 body allocations;
@@ -629,10 +617,4 @@ impl Store {
         self.publish_plugin_pending(account, space_id, request_id)?;
         Ok((next, value))
     }
-}
-/// External bytes prevented checked placement. Cost: short error/JSON allocations;
-/// no I/O, locks or fsync. The generic content materializer uses the same reason.
-pub fn blocked_error() -> Error {
-    Error::conflict("note file was changed outside Calternal; writes are blocked")
-        .with_details(serde_json::json!({"reason":"external_change"}))
 }

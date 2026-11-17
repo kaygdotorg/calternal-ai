@@ -90,16 +90,6 @@ pub enum FaultPoint {
     /// Bytes and parent entry durable, before placement bookkeeping.
     AfterPlacement,
 }
-/// Relation between a committed head and its portable file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Materialization {
-    /// The committed revision still needs checked file placement.
-    Pending,
-    /// The current bytes and their parent entry are durable.
-    Materialized,
-    /// Foreign bytes or a missing placed file block further writes.
-    Blocked,
-}
 /// Logical collection ownership; account ownership never confers space access.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "scope", content = "id", rename_all = "snake_case")]

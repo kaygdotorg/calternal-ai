@@ -47,7 +47,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub use types::{
-    Collection, CollectionOwner, FaultPoint, FileFormat, Item, Materialization, Placement,
+    Collection, CollectionOwner, FaultPoint, FileFormat, Item, Placement,
     Receipt, Request, Result, Summary,
 };
 use uuid::Uuid;
@@ -372,11 +372,6 @@ impl Content {
                 .ok_or_else(missing)?;
             Ok(s.files.join(path))
         })
-    }
-    /// Reads placement bookkeeping without opening a file.
-    /// Cost: cache/space locks and one indexed SQLite lookup, no fsync or byte allocation.
-    pub fn materialization(&self, space: SpaceId, id: Uuid) -> Result<Option<Materialization>> {
-        self.with_space(space, |s| s.materialization(id))
     }
     /// Finishes pending file placement without changing the committed revision.
     /// Cost: cache/space locks, head bytes/hash allocation; pending placement reads

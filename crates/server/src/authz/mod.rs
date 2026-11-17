@@ -10,9 +10,7 @@ use std::borrow::Cow;
 
 use calternal_core::JsonObject;
 
-pub mod capabilities;
 
-pub use capabilities::{BUILTIN_ROLES, RoleSet};
 
 use crate::auth::{Directory, Identity};
 use calternal_types::{Capability, CapabilitySet, Error, SpaceId};

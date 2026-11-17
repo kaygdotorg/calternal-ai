@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Contract",
-  "description": "Schema export root grouping all operation and worker types; never an HTTP request body.",
+  "description": "Schema export root grouping all operation types; never an HTTP request body.",
   "type": "object",
   "required": [
     "describe",
@@ -40,9 +40,7 @@
     "spaces_create_input",
     "spaces_list_input",
     "spaces_list_result",
-    "summarize_result",
-    "worker_request",
-    "worker_response"
+    "summarize_result"
   ],
   "properties": {
     "describe": {
@@ -338,22 +336,6 @@
       "allOf": [
         {
           "$ref": "#/definitions/SummarizeResult"
-        }
-      ]
-    },
-    "worker_request": {
-      "description": "Schema export representative for `worker_request`; not a field accepted by operation dispatch.",
-      "allOf": [
-        {
-          "$ref": "#/definitions/WorkerRequest"
-        }
-      ]
-    },
-    "worker_response": {
-      "description": "Schema export representative for `worker_response`; not a field accepted by operation dispatch.",
-      "allOf": [
-        {
-          "$ref": "#/definitions/WorkerResponse"
         }
       ]
     }
@@ -2100,240 +2082,6 @@
     "True": {
       "type": "boolean",
       "const": true
-    },
-    "WorkerError": {
-      "description": "Safe failure payload from the `notes-insights.summarize` worker.",
-      "type": "object",
-      "required": [
-        "code",
-        "message"
-      ],
-      "properties": {
-        "code": {
-          "description": "Stable machine-readable failure category; callers should branch on this rather than message text.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/WorkerErrorCode"
-            }
-          ]
-        },
-        "message": {
-          "description": "Human-readable safe diagnostic; never include credentials or raw private exception details.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
-    "WorkerErrorCode": {
-      "description": "Safe worker failure categories for `notes-insights.summarize`; transport failures are handled by the host.",
-      "oneOf": [
-        {
-          "description": "Input violates the contract (HTTP 400 in operation errors).",
-          "type": "string",
-          "enum": [
-            "invalid_input"
-          ]
-        },
-        {
-          "description": "An internal failure occurred; expose only safe diagnostics (HTTP 500 in operation errors).",
-          "type": "string",
-          "enum": [
-            "internal"
-          ]
-        }
-      ]
-    },
-    "WorkerFailure": {
-      "description": "Failed `notes-insights.summarize` worker envelope correlated to one invocation.",
-      "type": "object",
-      "required": [
-        "error",
-        "invocation_id",
-        "ok",
-        "protocol_version"
-      ],
-      "properties": {
-        "error": {
-          "description": "Safe structured failure returned instead of successful data.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/WorkerError"
-            }
-          ]
-        },
-        "invocation_id": {
-          "description": "Host-issued worker correlation identifier; must match the expected invocation.",
-          "type": "string"
-        },
-        "ok": {
-          "description": "Exact boolean discriminant required by this envelope; the opposite value cannot deserialize.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/False"
-            }
-          ]
-        },
-        "protocol_version": {
-          "description": "Transport contract version; exactly 1 in this preview.",
-          "type": "integer",
-          "format": "uint32",
-          "maximum": 1.0,
-          "minimum": 1.0
-        }
-      },
-      "additionalProperties": false
-    },
-    "WorkerOperation": {
-      "description": "Worker protocol operations supported by the trusted `notes-insights.summarize` process.",
-      "oneOf": [
-        {
-          "description": "Compute read-only Markdown statistics for an authorized snapshot.",
-          "type": "string",
-          "enum": [
-            "notes-insights.summarize"
-          ]
-        }
-      ]
-    },
-    "WorkerRequest": {
-      "description": "Single invocation sent to the `notes-insights.summarize` worker over standard input.",
-      "type": "object",
-      "required": [
-        "invocation_id",
-        "operation",
-        "protocol_version",
-        "resource"
-      ],
-      "properties": {
-        "invocation_id": {
-          "description": "Host-issued worker correlation identifier; must match the expected invocation.",
-          "type": "string"
-        },
-        "operation": {
-          "description": "Versioned operation identifier; operation envelopes and actions require 1..128 UTF-8 bytes.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/WorkerOperation"
-            }
-          ]
-        },
-        "protocol_version": {
-          "description": "Transport contract version; exactly 1 in this preview.",
-          "type": "integer",
-          "format": "uint32",
-          "maximum": 1.0,
-          "minimum": 1.0
-        },
-        "resource": {
-          "description": "Authorized immutable note snapshot delivered to this worker invocation.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/WorkerResource"
-            }
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "WorkerResource": {
-      "description": "Authorized note snapshot supplied to the `notes-insights.summarize` worker; contains no ambient storage access.",
-      "type": "object",
-      "required": [
-        "id",
-        "markdown",
-        "revision",
-        "space_id",
-        "title"
-      ],
-      "properties": {
-        "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
-          "type": "string"
-        },
-        "markdown": {
-          "description": "UTF-8 Markdown content, at most 1 MiB; byte size differs from character count.",
-          "type": "string"
-        },
-        "revision": {
-          "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
-          "type": "string"
-        },
-        "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-          "type": "string",
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[a-zA-Z0-9_.:-]+$"
-        },
-        "title": {
-          "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
-          "type": "string",
-          "maxLength": 256,
-          "minLength": 1
-        }
-      },
-      "additionalProperties": false
-    },
-    "WorkerResponse": {
-      "description": "Discriminated response from the `notes-insights.summarize` worker.",
-      "anyOf": [
-        {
-          "description": "A correlated successful result with its exact true discriminant.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/WorkerSuccess"
-            }
-          ]
-        },
-        {
-          "description": "A correlated failure with its exact false discriminant.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/WorkerFailure"
-            }
-          ]
-        }
-      ]
-    },
-    "WorkerSuccess": {
-      "description": "Successful `notes-insights.summarize` worker envelope correlated to one invocation.",
-      "type": "object",
-      "required": [
-        "data",
-        "invocation_id",
-        "ok",
-        "protocol_version"
-      ],
-      "properties": {
-        "data": {
-          "description": "Operation-specific successful result payload.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/SummarizeResult"
-            }
-          ]
-        },
-        "invocation_id": {
-          "description": "Host-issued worker correlation identifier; must match the expected invocation.",
-          "type": "string"
-        },
-        "ok": {
-          "description": "Exact boolean discriminant required by this envelope; the opposite value cannot deserialize.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/True"
-            }
-          ]
-        },
-        "protocol_version": {
-          "description": "Transport contract version; exactly 1 in this preview.",
-          "type": "integer",
-          "format": "uint32",
-          "maximum": 1.0,
-          "minimum": 1.0
-        }
-      },
-      "additionalProperties": false
     }
   }
 }

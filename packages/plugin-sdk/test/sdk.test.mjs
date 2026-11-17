@@ -7,15 +7,11 @@ import test from "node:test";
 import {
   ContractValidationError,
   parseOperationRequest,
-  parseWorkerRequest,
-  parseWorkerResponse,
   validateExtensionView,
   validateGenUiView,
   validateOperationRequest,
   validateManifestV1,
   validatePluginManifest,
-  validateWorkerRequest,
-  validateWorkerResponse,
 } from "../dist/index.js";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -144,22 +140,3 @@ test("GenUI enforces depth, node, text, string-budget and serialized-size limits
   expectInvalid(() => validateGenUiView({ genui_version: 1, root: manyNodes }), /128 nodes/);
 });
 
-test("worker fixtures, strict framing, identity, stats and size limits validate", async () => {
-  const requestValue = await fixture("contract/fixtures/worker-request.json");
-  const success = await fixture("contract/fixtures/worker-success.json");
-  const failure = await fixture("contract/fixtures/worker-failure.json");
-  assert.deepEqual(parseWorkerRequest(JSON.stringify(requestValue)), requestValue);
-  assert.equal(parseWorkerResponse(JSON.stringify(success), "fixture-1").ok, true);
-  assert.equal(parseWorkerResponse(JSON.stringify(failure), "fixture-1").ok, false);
-
-  expectInvalid(() => validateWorkerRequest({ ...requestValue, injected: true }), /unknown field/);
-  expectInvalid(() => parseWorkerRequest(Buffer.alloc(2 * 1024 * 1024 + 1)), /exceeds/);
-  expectInvalid(() => parseWorkerRequest('{"protocol_version":1} {}'), /malformed/);
-  expectInvalid(() => validateWorkerResponse(success, "different-invocation"), /mismatch/);
-  expectInvalid(() => parseWorkerResponse(Buffer.alloc(256 * 1024 + 1), "fixture-1"), /exceeds/);
-  expectInvalid(() => validateWorkerResponse({
-    ...success,
-    data: { ...success.data, stats: { ...success.data.stats, words: -1 } },
-  }, "fixture-1"), /non-negative/);
-  expectInvalid(() => validateWorkerResponse({ ...success, unexpected: "field" }, "fixture-1"), /unknown field/);
-});

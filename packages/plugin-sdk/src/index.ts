@@ -3,8 +3,6 @@ import type {
   GenUiView,
   OperationRequest,
   PluginManifest,
-  WorkerRequest,
-  WorkerResponse,
 } from "@calternal/contracts";
 
 /** Frozen preview operation/snapshot-worker version; worker-v2 envelopes carry version 2. */
@@ -15,10 +13,6 @@ export const GENUI_VERSION = 1 as const;
 export const MAX_DOCUMENT_BYTES = 1024 * 1024;
 /** Maximum serialized operation request size, in bytes (2 MiB). */
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
-/** Maximum worker standard-input size, in bytes (2 MiB), checked before JSON decoding. */
-export const MAX_WORKER_INPUT_BYTES = 2 * 1024 * 1024;
-/** Maximum worker standard-output size, in bytes (256 KiB), checked before JSON decoding. */
-export const MAX_WORKER_OUTPUT_BYTES = 256 * 1024;
 /** Host diagnostic capture budget, in bytes (16 KiB); never include private request content. */
 export const MAX_WORKER_STDERR_BYTES = 16 * 1024;
 /** Host worker execution timeout, in milliseconds (3 seconds). */
@@ -451,84 +445,6 @@ export function validateExtensionView(value: unknown, manifest: PluginManifest):
   visit(view.root);
   return view;
 }
-
-function validateWorkerResource(value: unknown): void {
-  if (!isRecord(value)) fail("invalid worker resource");
-  exactKeys(value, ["id", "space_id", "revision", "title", "markdown"]);
-  validateResourceId(value.id);
-  validateSpace(value.space_id);
-  validateTitle(value.title);
-  validateMarkdown(value.markdown);
-  const revision = requireString(value.revision, "missing resource revision");
-  if (revision.length === 0) fail("missing resource revision");
-}
-
-/**
- * Validate a notes-insights.summarize invocation and its authorized snapshot. Does not check access or issue storage capabilities. Costs O(snapshot bytes).
- * @returns The validated value without an additional clone.
- * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
- */
-export function validateWorkerRequest(value: unknown): WorkerRequest {
-  if (!isRecord(value)) fail("invalid worker request");
-  exactKeys(value, ["protocol_version", "invocation_id", "operation", "resource"]);
-  if (value.protocol_version !== PROTOCOL_VERSION) fail("unsupported worker protocol");
-  validateId(value.invocation_id);
-  if (value.operation !== "notes-insights.summarize") fail("unknown worker operation");
-  validateWorkerResource(value.resource);
-  return value as unknown as WorkerRequest;
-}
-
-/**
- * Decode at most 2 MiB of strict UTF-8 JSON and validate a worker invocation. Allocates O(input bytes).
- * @returns The validated value without an additional clone.
- * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
- */
-export function parseWorkerRequest(input: string | Uint8Array): WorkerRequest {
-  return validateWorkerRequest(decodeJson(input, MAX_WORKER_INPUT_BYTES, "worker input"));
-}
-
-/**
- * Validate response correlation, version, safe failure shape or successful statistics and portable view. Costs O(response bytes). The expected invocationId must come from the host.
- * @returns The validated value without an additional clone.
- * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
- */
-export function validateWorkerResponse(value: unknown, invocationId: string): WorkerResponse {
-  if (!isRecord(value)) fail("invalid worker response");
-  if (value.protocol_version !== PROTOCOL_VERSION) fail("worker protocol/invocation mismatch");
-  if (value.invocation_id !== invocationId) fail("worker protocol/invocation mismatch");
-  if (value.ok === true) {
-    exactKeys(value, ["protocol_version", "invocation_id", "ok", "data"]);
-    if (!isRecord(value.data)) fail("invalid worker result");
-    exactKeys(value.data, ["stats", "view"]);
-    if (!isRecord(value.data.stats)) fail("invalid statistics");
-    exactKeys(value.data.stats, ["words", "characters", "lines"]);
-    for (const key of ["words", "characters", "lines"] as const) {
-      const number = value.data.stats[key];
-      if (typeof number !== "number" || !Number.isInteger(number) || number < 0 || number > 0xffff_ffff) fail("statistics must be non-negative integers");
-    }
-    validateGenUiView(value.data.view);
-  } else if (value.ok === false) {
-    exactKeys(value, ["protocol_version", "invocation_id", "ok", "error"]);
-    if (!isRecord(value.error)) fail("invalid worker error");
-    exactKeys(value.error, ["code", "message"]);
-    if (value.error.code !== "invalid_input" && value.error.code !== "internal") fail("invalid worker error code");
-    requireString(value.error.message, "worker error message must be a string");
-  } else {
-    fail("invalid worker response");
-  }
-  return value as unknown as WorkerResponse;
-}
-
-/**
- * Decode at most 256 KiB of strict UTF-8 JSON and validate response correlation with the host-issued invocationId. Allocates O(input bytes).
- * @returns The validated value without an additional clone.
- * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
- */
-export function parseWorkerResponse(input: string | Uint8Array, invocationId: string): WorkerResponse {
-  const response = validateWorkerResponse(decodeJson(input, MAX_WORKER_OUTPUT_BYTES, "worker output"), invocationId);
-  return response;
-}
-
 
 /** Manifest v1: validateManifestV1; validation requests no authority and performs no I/O. */
 export { validateManifestV1 } from "./manifest-v1.js";

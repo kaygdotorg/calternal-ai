@@ -9,21 +9,8 @@ use calternal_core::ResolveResult;
 use calternal_types::{Capability, CapabilitySet, Error};
 
 /// Resolves a kind and global item UUID to its owning space and current access.
-/// Wrong kind, absent item and missing read access have identical refusals.
-/// Takes no lock beyond the catalog read pool. Cost: one indexed global route lookup,
-/// one current capability check, and one bounded capability-vector allocation;
-/// no content reads, membership scans or fsyncs.
-pub fn resolve(
-    directory: &impl Directory,
-    store: &Store,
-    account: &Identity,
-    kind: &str,
-    id: &str,
-) -> Result<ResolveResult, Error> {
-    resolve_for(directory, store, account, kind, id, Capability::SpaceRead).map(|(r, _)| r)
-}
-
-/// Internal mutation lookup permits explicit write authority without implicit read grants.
+/// Wrong kind, absent item and missing access have identical refusals. A mutation
+/// lookup (`required` = content.write) permits write authority without read.
 /// Returns the caller's capabilities in the owning space so admission needs no second
 /// lookup. Cost: one indexed global route, one authority check and a small access vector;
 /// no content database or file I/O and no work proportional to membership count.

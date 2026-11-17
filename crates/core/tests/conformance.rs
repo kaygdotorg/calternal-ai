@@ -36,19 +36,6 @@ fn genui_fixture_corpus() {
     }
 }
 #[test]
-fn worker_real_protocol_and_frame_rejection() {
-    let request: WorkerRequest = serde_json::from_str(&fixture("worker-request.json")).unwrap();
-    validate_worker_request(&request).unwrap();
-    for name in ["worker-success.json", "worker-failure.json"] {
-        let bytes = fixture(name);
-        parse_worker_response(bytes.as_bytes(), "fixture-1").unwrap();
-        assert!(parse_worker_response(bytes.as_bytes(), "wrong-id").is_err());
-        assert!(parse_worker_response(format!("{bytes}{{}}").as_bytes(), "fixture-1").is_err());
-    }
-    let invalid = fixture("worker-success.json").replace("\"ok\": true", "\"ok\": false");
-    assert!(parse_worker_response(invalid.as_bytes(), "fixture-1").is_err());
-}
-#[test]
 fn schema_and_catalog_snapshots_do_not_drift() {
     let schema: Value =
         serde_json::from_str(include_str!("../../../contract/v0.schema.json")).unwrap();

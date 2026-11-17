@@ -14,7 +14,7 @@ use axum::http::{Request, StatusCode};
 use calternal_core::{Principal, SpaceGrant, SpaceRole, operation_catalog};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch, router};
 use calternal_server::auth::{Directory, Identity};
-use calternal_server::authz::{BUILTIN_ROLES, POLICIES};
+use calternal_server::authz::POLICIES;
 use calternal_types::{AccountId, Capability, CapabilitySet, SpaceId};
 use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
@@ -72,6 +72,38 @@ const MATRIX: &[(&str, Capability, [bool; 4])] = &[
 ];
 const TOKEN: &str = "matrix-token";
 
+/// Reader, Editor, Manager and Owner, as auth.db seeds them (schema.sql); written
+/// out here as independent expectations.
+fn roles() -> [CapabilitySet; 4] {
+    use Capability::*;
+    let sets: [&[Capability]; 4] = [
+        &[SpaceRead],
+        &[SpaceRead, ContentWrite, PluginsUse],
+        &[
+            SpaceRead,
+            ContentWrite,
+            PluginsUse,
+            PluginsManage,
+            MembersInvite,
+            MembersManage,
+            SpaceSettings,
+        ],
+        &[
+            SpaceRead,
+            ContentWrite,
+            PluginsUse,
+            PluginsManage,
+            MembersInvite,
+            MembersManage,
+            SpaceSettings,
+            ManagersManage,
+            SpaceTransfer,
+            SpaceDelete,
+        ],
+    ];
+    sets.map(CapabilitySet::new)
+}
+
 struct MutableDirectory {
     identity: Identity,
     space: SpaceId,
@@ -92,8 +124,7 @@ impl MutableDirectory {
     }
     fn role_set(role: u8) -> Option<CapabilitySet> {
         role.checked_sub(1)
-            .and_then(|index| BUILTIN_ROLES.get(index as usize))
-            .map(|role| role.capabilities)
+            .and_then(|index| roles().get(index as usize).copied())
     }
 
     fn set_role(&self, role: u8) {
@@ -671,40 +702,6 @@ async fn every_operation_checks_only_its_required_capability() {
 
 #[test]
 fn built_in_roles_cover_exact_documented_capabilities() {
-    use Capability::*;
-    let expected: &[&[Capability]] = &[
-        &[SpaceRead],
-        &[SpaceRead, ContentWrite, PluginsUse],
-        &[
-            SpaceRead,
-            ContentWrite,
-            PluginsUse,
-            PluginsManage,
-            MembersInvite,
-            MembersManage,
-            SpaceSettings,
-        ],
-        &[
-            SpaceRead,
-            ContentWrite,
-            PluginsUse,
-            PluginsManage,
-            MembersInvite,
-            MembersManage,
-            SpaceSettings,
-            ManagersManage,
-            SpaceTransfer,
-            SpaceDelete,
-        ],
-    ];
-    for (role, expected) in BUILTIN_ROLES.iter().zip(expected) {
-        assert_eq!(
-            role.capabilities,
-            CapabilitySet::new(expected),
-            "{}",
-            role.name
-        );
-    }
     let names: BTreeSet<_> = Capability::ALL
         .iter()
         .map(|capability| capability.name())
@@ -712,9 +709,7 @@ fn built_in_roles_cover_exact_documented_capabilities() {
     assert_eq!(names.len(), Capability::ALL.len());
     for capability in Capability::ALL {
         assert!(
-            BUILTIN_ROLES
-                .iter()
-                .any(|role| role.capabilities.contains(capability))
+            roles().iter().any(|role| role.contains(capability))
                 || matches!(
                     capability,
                     Capability::SpacesList | Capability::SpacesCreate

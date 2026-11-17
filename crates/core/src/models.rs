@@ -15,8 +15,6 @@ pub const GENUI_VERSION: u32 = 1;
 pub const MAX_DOCUMENT_BYTES: usize = 1024 * 1024;
 /// Maximum serialized operation body size in bytes (2 MiB).
 pub const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
-/// Maximum worker response size in bytes (256 KiB).
-pub const MAX_WORKER_OUTPUT_BYTES: usize = 256 * 1024;
 /// Default loopback development HTTP port; not an external deployment endpoint.
 pub const DEFAULT_PORT: u16 = 3210;
 
@@ -649,105 +647,8 @@ pub struct DescribeResult {
     /// Declared/discovered operation contracts; dispatch still checks current permissions.
     pub operations: Vec<OperationDescription>,
 }
-/// Authorized note snapshot supplied to the `notes-insights.summarize` worker; contains no ambient storage access.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerResource {
-    /// Stable UUID note identity; access is checked against the accompanying space.
-    pub id: String,
-    /// Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
-    #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
-    pub space_id: String,
-    /// Opaque nonempty server revision; compare for equality, never infer order or parse it.
-    pub revision: String,
-    /// Display title, nonblank, at most 256 Unicode scalars and without control characters.
-    #[schemars(length(min = 1, max = 256))]
-    pub title: String,
-    /// UTF-8 Markdown content, at most 1 MiB; byte size differs from character count.
-    pub markdown: String,
-}
-/// Worker protocol operations supported by the trusted `notes-insights.summarize` process.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-pub enum WorkerOperation {
-    /// Compute read-only Markdown statistics for an authorized snapshot.
-    #[serde(rename = "notes-insights.summarize")]
-    Summarize,
-}
-/// Single invocation sent to the `notes-insights.summarize` worker over standard input.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerRequest {
-    /// Transport contract version; exactly 1 in this preview.
-    #[schemars(range(min = 1, max = 1))]
-    #[ts(type = "1")]
-    pub protocol_version: u32,
-    /// Host-issued worker correlation identifier; must match the expected invocation.
-    pub invocation_id: String,
-    /// Versioned operation identifier; operation envelopes and actions require 1..128 UTF-8 bytes.
-    pub operation: WorkerOperation,
-    /// Authorized immutable note snapshot delivered to this worker invocation.
-    pub resource: WorkerResource,
-}
-/// Safe worker failure categories for `notes-insights.summarize`; transport failures are handled by the host.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkerErrorCode {
-    /// Input violates the contract (HTTP 400 in operation errors).
-    InvalidInput,
-    /// An internal failure occurred; expose only safe diagnostics (HTTP 500 in operation errors).
-    Internal,
-}
-/// Safe failure payload from the `notes-insights.summarize` worker.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerError {
-    /// Stable machine-readable failure category; callers should branch on this rather than message text.
-    pub code: WorkerErrorCode,
-    /// Human-readable safe diagnostic; never include credentials or raw private exception details.
-    pub message: String,
-}
-/// Successful `notes-insights.summarize` worker envelope correlated to one invocation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerSuccess {
-    /// Transport contract version; exactly 1 in this preview.
-    #[schemars(range(min = 1, max = 1))]
-    #[ts(type = "1")]
-    pub protocol_version: u32,
-    /// Host-issued worker correlation identifier; must match the expected invocation.
-    pub invocation_id: String,
-    /// Exact boolean discriminant required by this envelope; the opposite value cannot deserialize.
-    pub ok: True,
-    /// Operation-specific successful result payload.
-    pub data: SummarizeResult,
-}
-/// Failed `notes-insights.summarize` worker envelope correlated to one invocation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
-pub struct WorkerFailure {
-    /// Transport contract version; exactly 1 in this preview.
-    #[schemars(range(min = 1, max = 1))]
-    #[ts(type = "1")]
-    pub protocol_version: u32,
-    /// Host-issued worker correlation identifier; must match the expected invocation.
-    pub invocation_id: String,
-    /// Exact boolean discriminant required by this envelope; the opposite value cannot deserialize.
-    pub ok: False,
-    /// Safe structured failure returned instead of successful data.
-    pub error: WorkerError,
-}
-/// Discriminated response from the `notes-insights.summarize` worker.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(untagged)]
-pub enum WorkerResponse {
-    /// A correlated successful result with its exact true discriminant.
-    Success(WorkerSuccess),
-    /// A correlated failure with its exact false discriminant.
-    Failure(WorkerFailure),
-}
-
 // Schema export root groups every cross-lane type; not an HTTP request body.
-/// Schema export root grouping all operation and worker types; never an HTTP request body.
+/// Schema export root grouping all operation types; never an HTTP request body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
@@ -825,8 +726,4 @@ pub struct Contract {
     pub plugin_preview_result: PluginPreviewResult,
     /// Schema export representative for `summarize_result`; not a field accepted by operation dispatch.
     pub summarize_result: SummarizeResult,
-    /// Schema export representative for `worker_request`; not a field accepted by operation dispatch.
-    pub worker_request: WorkerRequest,
-    /// Schema export representative for `worker_response`; not a field accepted by operation dispatch.
-    pub worker_response: WorkerResponse,
 }

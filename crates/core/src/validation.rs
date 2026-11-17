@@ -435,52 +435,6 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), Error> {
     }
     Ok(())
 }
-/// Validate the `notes-insights.summarize` snapshot, invocation ID and protocol version in O(snapshot bytes). No I/O or permission lookup occurs.
-///
-/// # Errors
-/// Returns invalid input for malformed metadata or too large above the Markdown byte limit.
-pub fn validate_worker_request(request: &WorkerRequest) -> Result<(), Error> {
-    require(
-        request.protocol_version == PROTOCOL_VERSION,
-        "unsupported worker protocol",
-    )?;
-    validate_id(&request.invocation_id)?;
-    resource(&request.resource.space_id, &request.resource.id)?;
-    validate_title(&request.resource.title)?;
-    validate_markdown(&request.resource.markdown)?;
-    require(
-        !request.resource.revision.is_empty(),
-        "missing resource revision",
-    )
-}
-/// Decode one response of at most 256 KiB, verify protocol/invocation correlation and validate any successful view. Allocates O(response bytes).
-///
-/// # Errors
-/// Returns invalid input for excess bytes, malformed JSON, correlation mismatch or invalid portable views.
-pub fn parse_worker_response(
-    bytes: &[u8],
-    invocation_id: &str,
-) -> Result<WorkerResponse, Error> {
-    require(
-        bytes.len() <= MAX_WORKER_OUTPUT_BYTES,
-        "worker output exceeds 256 KiB",
-    )?;
-    let response: WorkerResponse = serde_json::from_slice(bytes)
-        .map_err(|_| Error::invalid_input("malformed worker output"))?;
-    let (version, id) = match &response {
-        WorkerResponse::Success(r) => {
-            validate_genui(&r.data.view)?;
-            (r.protocol_version, &r.invocation_id)
-        }
-        WorkerResponse::Failure(r) => (r.protocol_version, &r.invocation_id),
-    };
-    require(
-        version == PROTOCOL_VERSION && id == invocation_id,
-        "worker protocol/invocation mismatch",
-    )?;
-    Ok(response)
-}
-
 /// Object keys sorted recursively, independent of serde_json map-order features.
 /// No numeric/string coercion: differing typed values remain different inputs.
 /// Allocates O(input bytes) temporary values; each object sorts its keys in O(keys log keys).

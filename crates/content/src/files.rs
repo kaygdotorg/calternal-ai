@@ -2,7 +2,7 @@
 //! Committed path intents survive restart; outside changes are preserved and block writes.
 use crate::types::{blocked, internal, missing};
 use crate::{
-    Error, FaultPoint, FileFormat, Item, Materialization, Placement, Result, db::Space, file_hash,
+    Error, FaultPoint, FileFormat, Item, Placement, Result, db::Space, file_hash,
 };
 use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
@@ -221,23 +221,6 @@ impl Space {
             )
             .map_err(internal)?;
         Ok(())
-    }
-    pub(crate) fn materialization(&self, id: Uuid) -> Result<Option<Materialization>> {
-        self.conn
-            .query_row(
-                "SELECT mat_state FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(internal)
-            .map(|v| {
-                v.map(|s| match s.as_str() {
-                    "pending" => Materialization::Pending,
-                    "materialized" => Materialization::Materialized,
-                    _ => Materialization::Blocked,
-                })
-            })
     }
     pub(crate) fn place(&mut self, id: Uuid, fault: fn(FaultPoint)) -> Result<()> {
         let (state, expected, old): (String, Option<String>, Option<String>) = self
