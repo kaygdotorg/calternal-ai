@@ -122,6 +122,21 @@ try {
   await page.goto(`${url}/notes?server=1`); await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
   ok(true, "the restored note is back in the list");
   }
+  // The palette reaches every space and every note of the space: switch space from it, and find a note by title.
+  await api("spaces.create", { name: "Elsewhere" });
+  await page.goto(`${url}/notes?server=1`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+  await page.keyboard.press("Control+KeyK"); await page.getByRole("dialog").first().waitFor({ timeout: 4000 });
+  await page.keyboard.type("Elsewhere"); await page.waitForTimeout(700);
+  await page.getByRole("dialog").getByText(/Elsewhere/).first().waitFor({ timeout: 4000 });
+  await page.keyboard.press("Enter"); await page.waitForTimeout(800);
+  ok(true, "the palette lists a space to switch to");
+  ok((await page.evaluate(() => localStorage.getItem("cal.space"))) !== space, "choosing it makes that space current");
+  await page.evaluate((id) => { localStorage.setItem("cal.space", id); }, space);
+  await page.goto(`${url}/notes?server=1`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+  await page.keyboard.press("Control+KeyK"); await page.getByRole("dialog").first().waitFor({ timeout: 4000 });
+  await page.keyboard.type("Quarte"); await page.getByRole("dialog").getByText(/Quarter plan/).first().waitFor({ timeout: 6000 });
+  ok(true, "the palette finds a note of the space by the start of its title");
+  await page.keyboard.press("Escape");
   // A note that is not there says so and offers the way back.
   await page.goto(`${url}/notes/00000000-0000-7000-8000-000000000000?server=1`); await page.waitForSelector("html[data-ready]");
   await page.getByRole("heading", { name: /Note not found|You can't open/ }).waitFor({ timeout: 8000 });
