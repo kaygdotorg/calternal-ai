@@ -1,6 +1,6 @@
 //! Types every Calternal-AI crate shares: typed identifiers, the acting
 //! [`Actor`], the caller-safe error, the closed space capability vocabulary and the
-//! millisecond clock.
+//! millisecond clock and shared worker-frame bound.
 //!
 //! The crate does no I/O, holds no locks and depends only on `serde`,
 //! `serde_json` and `uuid` (plus `schemars`/`ts-rs` behind the `contract`
@@ -17,6 +17,10 @@ pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, ErrorCode, Result};
 pub use id::{AccountId, InstallationId, SpaceId};
+
+/// Maximum JSON bytes in a plugin worker frame, excluding its newline (256 KiB).
+/// Host validation and machine stdin admission share this bound; no I/O or allocation.
+pub const MAX_FRAME_BYTES: usize = 256 * 1024;
 
 /// Milliseconds since the Unix epoch, or 0 if the clock reads before 1970.
 ///

@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-/// Maximum bytes per JSON frame, excluding its terminating newline (256 KiB).
-pub const MAX_FRAME_BYTES: usize = 256 * 1024;
+pub use calternal_types::MAX_FRAME_BYTES;
 /// Maximum admitted invocations per worker.
 pub const MAX_IN_FLIGHT: usize = 32;
 /// Maximum queued host messages or worker deliveries per direction.
