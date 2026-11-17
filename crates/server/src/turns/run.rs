@@ -229,7 +229,7 @@ async fn execute<D: Directory>(
             }
         }
     }
-    save(state, job, live, &mut checkpoint, None).await?;
+    super::lease::publish_placement(state, job, live, &mut checkpoint).await?;
     let mut context = i.context.clone();
     if job.runs > 1 && local_session.is_none() {
         context.push(calternal_core::ProviderContext {

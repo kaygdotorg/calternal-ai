@@ -1,6 +1,8 @@
 //! Server wiring of the plugin host: manifest-derived policy, provisioning on
 //! enable, brokered host calls, and long-lived bounded workers.
 
+#[path = "../../../tests/support/podman_guard.rs"]
+mod podman_guard;
 mod support;
 
 use std::path::{Path, PathBuf};
@@ -21,10 +23,12 @@ struct Fixture {
     state: Shared<StoredDirectory>,
     root: PathBuf,
     dev: support::Dev,
+    containers: Option<podman_guard::PodmanGuard>,
 }
 
 impl Drop for Fixture {
     fn drop(&mut self) {
+        drop(self.containers.take());
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
@@ -83,10 +87,14 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
     .unwrap();
     let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13 on PATH");
-    let workers = match pool {
-        Some(cap) => WorkerPool::with_capacity(Some(node), cap),
-        None => WorkerPool::new(Some(node)),
-    };
+    let worker_root = root.join("worker-sandboxes");
+    let containers = (std::env::var("CALTERNAL_WORKER_TEST_BACKEND").as_deref() == Ok("podman"))
+        .then(|| podman_guard::PodmanGuard::new(&worker_root));
+    let workers = WorkerPool::with_local_root(
+        Some(node),
+        pool.unwrap_or(calternal_server::plugins::worker::MAX_WORKERS),
+        worker_root,
+    );
     let state = Arc::new(AppState {
         inputs: store.account_inputs(),
         store,
@@ -97,7 +105,12 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
         allowed_hosts: allowed_hosts(0),
     });
     let dev = support::dev(&state.directory);
-    Fixture { state, root, dev }
+    Fixture {
+        state,
+        root,
+        dev,
+        containers,
+    }
 }
 
 impl Fixture {

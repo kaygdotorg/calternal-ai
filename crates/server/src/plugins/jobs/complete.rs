@@ -45,7 +45,7 @@ impl Jobs {
             let Some((s, runs, parent, operation)) = current else {
                 return Ok(vec![]);
             };
-            if s != "running" || runs != run {
+            if !matches!(s.as_str(), "placing" | "running") || runs != run {
                 return Ok(vec![]);
             }
             let mut state = state;

@@ -666,7 +666,7 @@ async fn serve(
             "Check the Notes Trash retention setting.",
         )
     })?;
-    let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
+    let app = api::router(state.clone(), web_dir.clone()).layer(axum::Extension(machines.clone()));
 
     let base_url = if development {
         format!("http://127.0.0.1:{port}")
@@ -717,7 +717,14 @@ async fn serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        let interrupt = tokio::task::spawn_blocking(move || machines.interrupt_on_shutdown());
+        state.workers.shutdown().await;
+        if !matches!(interrupt.await, Ok(Ok(()))) {
+            tracing::warn!("machine leases could not be fenced before shutdown");
+        }
+    })
     .await;
     let _ = std::fs::remove_file(&startup_path);
     served.map_err(|e| {

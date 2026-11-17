@@ -10,11 +10,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
-use tokio::sync::OnceCell;
+use tokio::sync::{OnceCell, RwLock};
 use uuid::Uuid;
 
 use crate::Error;
@@ -32,12 +32,16 @@ const POST_BYTES: usize = 1024 * 1024;
 /// Short wait to batch small writes into one upload.
 const COALESCE: Duration = Duration::from_millis(20);
 
+type SandboxCell = OnceCell<Result<Arc<dyn Sandbox>, String>>;
+
 struct Slot {
     lease_id: Uuid,
     fence: AtomicU64,
     spec: SandboxSpec,
-    sandbox: OnceCell<Result<Arc<dyn Sandbox>, String>>,
-    frozen: AtomicBool,
+    // Execs hold a read guard until output upload ends. An idle pass takes an
+    // uncontended write guard so it cannot remove a container during exec.
+    sandbox: RwLock<SandboxCell>,
+    last_use: Mutex<Instant>,
     /// Set when the slot left the map; whoever then sees a started sandbox stops it.
     removed: AtomicBool,
     stop: OnceCell<()>,
@@ -52,7 +56,7 @@ impl Slot {
     /// Stop the sandbox once, if the slot was removed and its start succeeded.
     async fn stop_if_removed(&self) -> bool {
         if self.removed.load(Ordering::Acquire)
-            && let Some(Ok(sb)) = self.sandbox.get()
+            && let Some(Ok(sb)) = self.sandbox.read().await.get()
         {
             return self
                 .stop
@@ -69,6 +73,7 @@ impl Slot {
                 .await
                 .is_ok();
         }
+        let _ = self.stop.set(());
         true
     }
 }
@@ -80,6 +85,7 @@ pub struct Runner {
     max_sandboxes: u32,
     slots: Mutex<HashMap<Uuid, Arc<Slot>>>,
     discards: Mutex<HashMap<Uuid, bool>>,
+    parking: tokio::sync::Mutex<()>,
 }
 
 impl Runner {
@@ -91,6 +97,7 @@ impl Runner {
             max_sandboxes,
             slots: Mutex::new(HashMap::new()),
             discards: Mutex::new(HashMap::new()),
+            parking: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -145,13 +152,18 @@ impl Runner {
             .map(|s| LeaseReport {
                 lease_id: s.lease_id,
                 fence: s.fence.load(Ordering::Acquire),
-                sandbox: match s.sandbox.get() {
-                    None => SandboxState::Starting,
-                    Some(Err(reason)) => SandboxState::Failed {
-                        reason: reason.clone(),
-                    },
-                    Some(Ok(_)) if s.frozen.load(Ordering::Acquire) => SandboxState::Frozen,
-                    Some(Ok(_)) => SandboxState::Running,
+                sandbox: if s.removed.load(Ordering::Acquire) {
+                    SandboxState::Failed {
+                        reason: "the local lease expired or is closing".into(),
+                    }
+                } else {
+                    match s.sandbox.try_read().ok().as_deref().and_then(OnceCell::get) {
+                        None => SandboxState::Starting,
+                        Some(Err(reason)) => SandboxState::Failed {
+                            reason: reason.clone(),
+                        },
+                        Some(Ok(_)) => SandboxState::Running,
+                    }
                 },
             })
             .collect()
@@ -163,7 +175,7 @@ impl Runner {
 
     /// Apply one message. Starting sandboxes and execs run on their own tasks, so
     /// assignments and execs return at once. Stop awaits cleanup before a later
-    /// assignment can adopt the same thread, preventing stop/start races.
+    /// assignment can reuse the same workspace.
     pub async fn handle(self: &Arc<Self>, message: Down) {
         match message {
             Down::Assign {
@@ -174,6 +186,32 @@ impl Runner {
             } => {
                 let slot = {
                     let mut slots = self.slots.lock().expect("slots");
+                    let closing_workspace = slots.iter().any(|(id, slot)| {
+                        *id != lease_id
+                            && slot.spec.account_id == spec.account_id
+                            && slot.spec.thread_id == spec.thread_id
+                    });
+                    let full = slots
+                        .values()
+                        .filter(|s| {
+                            s.stop.get().is_none()
+                                && !s
+                                    .sandbox
+                                    .try_read()
+                                    .ok()
+                                    .as_deref()
+                                    .and_then(OnceCell::get)
+                                    .is_some_and(Result::is_err)
+                        })
+                        .count()
+                        >= self.max_sandboxes as usize;
+                    let denied = if closing_workspace {
+                        Some("previous sandbox is still closing")
+                    } else if full {
+                        Some("machine sandbox capacity exhausted")
+                    } else {
+                        None
+                    };
                     slots
                         .entry(lease_id)
                         .or_insert_with(|| {
@@ -181,8 +219,10 @@ impl Runner {
                                 lease_id,
                                 fence: AtomicU64::new(fence),
                                 spec,
-                                sandbox: OnceCell::new(),
-                                frozen: AtomicBool::new(false),
+                                sandbox: RwLock::new(OnceCell::new_with(
+                                    denied.map(|reason| Err(reason.into())),
+                                )),
+                                last_use: Mutex::new(Instant::now()),
                                 removed: AtomicBool::new(false),
                                 stop: OnceCell::new(),
                                 keep_files: AtomicBool::new(false),
@@ -195,11 +235,8 @@ impl Runner {
                 slot.fence.fetch_max(fence, Ordering::AcqRel);
                 let me = self.clone();
                 tokio::spawn(async move {
-                    if let Ok(sb) = me.sandbox(&slot).await
-                        && slot.frozen.swap(false, Ordering::AcqRel)
-                    {
-                        let _ = sb.resume().await;
-                    }
+                    let sandbox = slot.sandbox.read().await;
+                    let _ = me.sandbox(&slot, &sandbox).await;
                 });
             }
             Down::Exec {
@@ -226,13 +263,16 @@ impl Runner {
                     let slot = me
                         .slot(lease_id)
                         .filter(|s| s.fence.load(Ordering::Acquire) == fence);
-                    let exec = match &slot {
-                        None => failed_exec("lease not held by this machine"),
-                        Some(s) => {
+                    let guard = match &slot {
+                        Some(slot) => Some(slot.sandbox.read().await),
+                        None => None,
+                    };
+                    let exec = match (&slot, &guard) {
+                        (Some(s), Some(sandbox)) => {
                             if !s.execs.lock().expect("execs").insert(exec_id) {
                                 return; // delivered twice; already running
                             }
-                            match me.sandbox(s).await {
+                            match me.sandbox(s, sandbox).await {
                                 Err(reason) => failed_exec(reason),
                                 Ok(sb) => sb
                                     .exec(ExecRequest {
@@ -245,12 +285,15 @@ impl Runner {
                                     .unwrap_or_else(|e| failed_exec(e.0)),
                             }
                         }
+                        _ => failed_exec("lease not held by this machine"),
                     };
                     let _ = ready.send(exec.input.clone());
                     me.upload(lease_id, fence, exec_id, exec).await;
-                    if let Some(slot) = slot {
+                    if let Some(slot) = &slot {
+                        *slot.last_use.lock().expect("sandbox last use") = Instant::now();
                         slot.inputs.lock().expect("inputs").remove(&exec_id);
                     }
+                    drop(guard);
                 });
             }
             Down::Input {
@@ -283,8 +326,7 @@ impl Runner {
                     })
                     .await;
                     if !matches!(result, Ok(Ok(()))) {
-                        slot.removed.store(true, Ordering::Release);
-                        slot.stop_if_removed().await;
+                        Self::close(&slot, slot.spec.worker.is_none()).await;
                     }
                 }
             }
@@ -318,25 +360,36 @@ impl Runner {
                 reason,
                 keep_files,
             } => {
-                let slot = self.slots.lock().expect("slots").remove(&lease_id);
-                if let Some(slot) = slot {
+                if let Some(slot) = self.slot(lease_id) {
                     tracing::info!(lease = %lease_id, %reason, "stopping sandbox");
-                    slot.keep_files.store(keep_files, Ordering::Release);
-                    slot.removed.store(true, Ordering::Release);
-                    // A start still in flight stops the sandbox when it finishes.
-                    // Join any start already in flight, then join cleanup itself.
-                    let _ = self.sandbox(&slot).await;
-                    if !slot.stop_if_removed().await {
-                        self.slots.lock().expect("slots").insert(lease_id, slot);
+                    let keep_files = keep_files && slot.spec.worker.is_none();
+                    if Self::close(&slot, keep_files).await {
+                        let lacks_sandbox =
+                            slot.sandbox.read().await.get().is_some_and(Result::is_err);
+                        if !keep_files
+                            && slot.spec.worker.is_none()
+                            && lacks_sandbox
+                            && let Err(error) = self
+                                .backend
+                                .discard(slot.spec.account_id, slot.spec.thread_id)
+                                .await
+                        {
+                            tracing::warn!(lease = %lease_id, %error, "workspace removal failed");
+                            return;
+                        }
+                        self.slots.lock().expect("slots").remove(&lease_id);
                     }
                 }
             }
         }
     }
 
-    async fn sandbox(&self, slot: &Slot) -> Result<Arc<dyn Sandbox>, String> {
-        let result = slot
-            .sandbox
+    async fn sandbox(
+        &self,
+        slot: &Slot,
+        sandbox: &SandboxCell,
+    ) -> Result<Arc<dyn Sandbox>, String> {
+        let result = sandbox
             .get_or_init(|| async {
                 if slot.removed.load(Ordering::Acquire) {
                     return Err("lease ended before sandbox start".into());
@@ -344,73 +397,79 @@ impl Runner {
                 if slot.spec.worker.is_some() && self.backend.preference() == "direct" {
                     return Err("plugin workers require the container backend; run this machine with --backend auto or podman".into());
                 }
-                self.backend.start(&slot.spec).await.map_err(|e| {
+                let result = self.backend.start(&slot.spec).await.map_err(|e| {
                     tracing::warn!(lease = %slot.lease_id, error = %e, "sandbox start failed");
                     e.0
-                })
+                });
+                *slot.last_use.lock().expect("sandbox last use") = Instant::now();
+                result
             })
             .await
             .clone();
-        slot.stop_if_removed().await;
         if slot.removed.load(Ordering::Acquire) {
             return Err("lease ended".into());
         }
         result
     }
 
-    /// Freeze every started sandbox: the server stopped hearing from us for a
-    /// lease TTL and may have given the leases to another machine.
-    pub async fn freeze_all(&self) {
+    async fn close(slot: &Slot, keep_files: bool) -> bool {
+        slot.keep_files.store(keep_files, Ordering::Release);
+        slot.removed.store(true, Ordering::Release);
+        // Join any start already in progress. Closing remains visible in the
+        // slot map even if the connection future is cancelled during teardown.
+        slot.sandbox
+            .read()
+            .await
+            .get_or_init(|| async { Err("lease ended before sandbox start".into()) })
+            .await;
+        slot.stop_if_removed().await
+    }
+
+    /// Release idle turn containers after a lease TTL, keeping each logical
+    /// lease and its files. Its next exec starts a new container on this machine.
+    /// Scans at most the assigned slots; only a parked container incurs engine I/O.
+    pub async fn park_idle(&self, idle: Duration) {
+        if self.backend.name() == "direct" {
+            return;
+        }
+        // Slow engine cleanup can outlast a poll. Keep at most one idle sweep
+        // in progress while the connection continues to renew its leases.
+        let Ok(_parking) = self.parking.try_lock() else {
+            return;
+        };
         for slot in self.all() {
-            if let Some(Ok(sb)) = slot.sandbox.get()
-                && !slot.frozen.swap(true, Ordering::AcqRel)
-                && let Err(e) = sb.freeze().await
+            if slot.spec.worker.is_some() || slot.removed.load(Ordering::Acquire) {
+                continue;
+            }
+            let Ok(mut cell) = slot.sandbox.try_write() else {
+                continue;
+            };
+            let idle_for = slot.last_use.lock().expect("sandbox last use").elapsed();
+            if idle_for >= idle
+                && let Some(Ok(sb)) = cell.get()
             {
-                tracing::warn!(lease = %slot.lease_id, error = %e, "freeze failed");
+                match sb.release().await {
+                    Ok(()) => {
+                        cell.take();
+                    }
+                    Err(e) => {
+                        tracing::warn!(lease = %slot.lease_id, error = %e, "idle sandbox removal failed")
+                    }
+                }
             }
         }
     }
 
-    /// Resume frozen sandboxes whose leases survived (called after a sync that
-    /// carried the server's verdict on every reported lease).
-    pub async fn resume_all(&self) {
+    /// Close machine-owned sandboxes on orderly exit, revocation or lease expiry.
+    /// Provider work and homes remain; worker work is transient. On expiry,
+    /// closed slots stay as tombstones until the server reconciles them.
+    /// Joins in-flight starts. Returns false if any teardown needs a retry.
+    pub async fn release_all(&self) -> bool {
+        let mut closed = true;
         for slot in self.all() {
-            if let Some(Ok(sb)) = slot.sandbox.get()
-                && slot.frozen.swap(false, Ordering::AcqRel)
-                && let Err(e) = sb.resume().await
-            {
-                tracing::warn!(lease = %slot.lease_id, error = %e, "resume failed");
-            }
+            closed &= Self::close(&slot, slot.spec.worker.is_none()).await;
         }
-    }
-
-    /// Whether any sandbox is frozen.
-    pub fn any_frozen(&self) -> bool {
-        self.all().iter().any(|s| s.frozen.load(Ordering::Acquire))
-    }
-
-    /// Stop and delete every sandbox (revocation).
-    pub async fn stop_all(&self) {
-        let slots: Vec<_> = self
-            .slots
-            .lock()
-            .expect("slots")
-            .drain()
-            .map(|(_, s)| s)
-            .collect();
-        for slot in slots {
-            slot.removed.store(true, Ordering::Release);
-            slot.stop_if_removed().await;
-        }
-    }
-
-    /// End running execs but keep sandboxes for adoption (orderly exit).
-    pub async fn release_all(&self) {
-        for slot in self.all() {
-            if let Some(Ok(sb)) = slot.sandbox.get() {
-                let _ = sb.release().await;
-            }
-        }
+        closed
     }
 
     fn all(&self) -> Vec<Arc<Slot>> {

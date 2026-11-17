@@ -73,7 +73,8 @@ systemctl --user stop calternal-e2e-machine.service
 
 The real proof creates a fresh thread so its Podman sandbox uses the Claude
 Code image. It submits one prompt with retries disabled for that turn and
-reports time to first text, elapsed time and outcome. Existing thread containers retain their original image.
+reports time to first text, elapsed time and outcome. A finished turn releases
+its container and keeps its workspace and account home.
 A saved thread lives under `~/calternal-e2e/userdata-ssd/spaces/<space-uuid>/AI/Chats/`.
 To check continuation, use `./scripts/dev-e2e/prove.py claude-continuation`
 in place of `prove.py claude`. It verifies a two-message exchange and reports
@@ -260,3 +261,10 @@ and [job stream implementation](../crates/server/src/plugins/job_api.rs).
 
 See [Forgejo #34](https://git.kayg.org/kayg/calternal-ai/issues/34) for the
 active qualification status.
+
+On dev-01, prefix Rust test commands with `./scripts/dev-e2e/check-podman-tests.sh`
+inside the Nix shell. It gives the run a private temporary directory and fails
+if a container owned by that run remains after the test process returns, then
+attempts to remove those containers. Test fixtures also remove their own
+containers on unwinding. The check ignores
+containers from other test runs and the two live installations.

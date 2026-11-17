@@ -108,6 +108,10 @@ struct Event {
 
 impl Event {
     async fn publish(self, journal: &SpaceStore) -> Result<(), String> {
+        // The internal claim does not change the queued state seen by clients.
+        if self.state == "placing" {
+            return Ok(());
+        }
         let key = format!("threads/state/{}", self.event_id);
         let state = super::turn_status::label(crate::plugins::job_sql::parse_state(&self.state));
         let result = journal
