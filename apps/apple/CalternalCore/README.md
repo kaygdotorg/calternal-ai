@@ -40,3 +40,10 @@ python3 apps/apple/CalternalCore/test-server.py --probe
 `BridgeChecks` is shared by the XCTest adapter and `CalternalCoreProbe`; the latter
 proves execution without claiming a successful `swift test`. The package uses the
 inherited macOS 26.0 minimum. Other Apple platform qualification remains separate.
+
+Space journals are available through `NativeClient.subscribe` and the cancellable
+`NativeLive.next`/`accept` pair. `NativeLive.frames(cancellation:)` wraps this in
+`AsyncThrowingStream` with one buffered event. Overflow stops explicitly; reconnect
+uses the accepted bookmark. Apple owns persistence: apply/invalidate cache state,
+persist its bookmark, then accept the event. Supply restored bookmarks when opening
+the stream. No UI, Keychain storage or account draft/pending API is added here.

@@ -618,6 +618,13 @@ public protocol NativeClientProtocol: AnyObject, Sendable {
      */
     func resolve(kind: String, id: String, cancellation: NativeCancellation) async throws  -> String
 
+    /**
+     * Follow up to 16 spaces with platform-restored bookmarks (`{spaceUUID: token}`).
+     * Returns a pull-based async stream with shared cancellation. Loads bounded
+     * memory state, then next opens the socket. No platform persistence occurs.
+     */
+    func subscribe(spaces: [String], bookmarksJson: String, cancellation: NativeCancellation) async throws  -> NativeLive
+
 }
 /**
  * Reusable async HTTP session; platform code owns credential acquisition and storage.
@@ -757,6 +764,28 @@ open func resolve(kind: String, id: String, cancellation: NativeCancellation)asy
         )
 }
 
+    /**
+     * Follow up to 16 spaces with platform-restored bookmarks (`{spaceUUID: token}`).
+     * Returns a pull-based async stream with shared cancellation. Loads bounded
+     * memory state, then next opens the socket. No platform persistence occurs.
+     */
+open func subscribe(spaces: [String], bookmarksJson: String, cancellation: NativeCancellation)async throws  -> NativeLive  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativeclient_subscribe(
+                    self.uniffiClonePointer(),
+                    FfiConverterSequenceString.lower(spaces),FfiConverterString.lower(bookmarksJson),FfiConverterTypeNativeCancellation_lower(cancellation)
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_pointer,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_pointer,
+            freeFunc: ffi_calternal_bindings_rust_future_free_pointer,
+            liftFunc: FfiConverterTypeNativeLive_lift,
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
 
 }
 
@@ -816,9 +845,248 @@ public func FfiConverterTypeNativeClient_lower(_ value: NativeClient) -> UnsafeM
 
 
 /**
+ * Single-consumer live feed. The async mutex serializes calls across native
+ * tasks and intentionally spans a socket wait; cancellation has its own token
+ * and never needs this lock. At most one bounded SSE buffer is retained.
+ */
+public protocol NativeLiveProtocol: AnyObject, Sendable {
+
+    /**
+     * Acknowledge one applied event. Platform code must persist cache and bookmark
+     * before this call; memory then retains the bookmark for reconnect. No I/O.
+     */
+    func accept(frameJson: String) async throws
+
+    /**
+     * Read one server event as JSON. Cancellation interrupts network and backoff;
+     * O(event bytes) parsing/serialization with no platform writes. Swift persists
+     * its applied cache and bookmark before calling accept with the returned JSON.
+     */
+    func next() async throws  -> String
+
+    /**
+     * Return visible pending input as an ordered JSON array. O(queued bytes)
+     * serialization, no I/O; no credentials are included. Never restore into a
+     * different account. Unknown outcomes retain the same request envelope.
+     */
+    func pendingInput() async  -> String
+
+    /**
+     * Retain offline input on this connection with the caller's stable request ID.
+     * Validates the core envelope and queues at most 256 requests. O(input bytes),
+     * no network or persistence; Apple persists its offline input separately.
+     */
+    func queueInput(envelopeJson: String) async throws
+
+}
+/**
+ * Single-consumer live feed. The async mutex serializes calls across native
+ * tasks and intentionally spans a socket wait; cancellation has its own token
+ * and never needs this lock. At most one bounded SSE buffer is retained.
+ */
+open class NativeLive: NativeLiveProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_calternal_bindings_fn_clone_nativelive(self.pointer, $0) }
+    }
+    // No primary constructor declared for this class.
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_calternal_bindings_fn_free_nativelive(pointer, $0) }
+    }
+
+
+
+
+    /**
+     * Acknowledge one applied event. Platform code must persist cache and bookmark
+     * before this call; memory then retains the bookmark for reconnect. No I/O.
+     */
+open func accept(frameJson: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativelive_accept(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(frameJson)
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_void,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_void,
+            freeFunc: ffi_calternal_bindings_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
+    /**
+     * Read one server event as JSON. Cancellation interrupts network and backoff;
+     * O(event bytes) parsing/serialization with no platform writes. Swift persists
+     * its applied cache and bookmark before calling accept with the returned JSON.
+     */
+open func next()async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativelive_next(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_rust_buffer,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_rust_buffer,
+            freeFunc: ffi_calternal_bindings_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
+    /**
+     * Return visible pending input as an ordered JSON array. O(queued bytes)
+     * serialization, no I/O; no credentials are included. Never restore into a
+     * different account. Unknown outcomes retain the same request envelope.
+     */
+open func pendingInput()async  -> String  {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativelive_pending_input(
+                    self.uniffiClonePointer()
+
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_rust_buffer,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_rust_buffer,
+            freeFunc: ffi_calternal_bindings_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: nil
+
+        )
+}
+
+    /**
+     * Retain offline input on this connection with the caller's stable request ID.
+     * Validates the core envelope and queues at most 256 requests. O(input bytes),
+     * no network or persistence; Apple persists its offline input separately.
+     */
+open func queueInput(envelopeJson: String)async throws   {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativelive_queue_input(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(envelopeJson)
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_void,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_void,
+            freeFunc: ffi_calternal_bindings_rust_future_free_void,
+            liftFunc: { $0 },
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNativeLive: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = NativeLive
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeLive {
+        return NativeLive(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: NativeLive) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NativeLive {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: NativeLive, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeLive_lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeLive {
+    return try FfiConverterTypeNativeLive.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeLive_lower(_ value: NativeLive) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeNativeLive.lower(value)
+}
+
+
+
+
+
+
+/**
  * Validated immutable operation envelope with one request identity, retained for retry.
  * No credential is stored in this object. Persist identity/input before durable use;
- * this preview does not implement an offline outbox. Holds O(input bytes) in memory;
+ * the connection's in-memory outbox does not provide platform durability. Holds
+ * O(input bytes) in memory;
  * no credential, persistent writes or per-frame use.
  */
 public protocol NativeRequestProtocol: AnyObject, Sendable {
@@ -838,7 +1106,8 @@ public protocol NativeRequestProtocol: AnyObject, Sendable {
 /**
  * Validated immutable operation envelope with one request identity, retained for retry.
  * No credential is stored in this object. Persist identity/input before durable use;
- * this preview does not implement an offline outbox. Holds O(input bytes) in memory;
+ * the connection's in-memory outbox does not provide platform durability. Holds
+ * O(input bytes) in memory;
  * no credential, persistent writes or per-frame use.
  */
 open class NativeRequest: NativeRequestProtocol, @unchecked Sendable {
@@ -1121,6 +1390,31 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
         }
     }
 }
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
 private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
 private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
 
@@ -1234,6 +1528,21 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_calternal_bindings_checksum_method_nativeclient_resolve() != 24195) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativeclient_subscribe() != 25943) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativelive_accept() != 16181) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativelive_next() != 30698) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativelive_pending_input() != 52697) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativelive_queue_input() != 60355) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_calternal_bindings_checksum_method_nativerequest_envelope_json() != 29558) {
