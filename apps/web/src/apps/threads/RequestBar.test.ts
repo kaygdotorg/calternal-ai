@@ -19,7 +19,7 @@ describe("request bar", () => {
   it("question: draws the described form and answers with its values", async () => {
     const onanswer = vi.fn();
     render(RequestBar, { requests: [Q], onanswer, now });
-    expect(screen.getByRole("form", { name: "Before I open the pull request" })).toBeTruthy();
+    expect(await screen.findByRole("form", { name: "Before I open the pull request" })).toBeTruthy(); // the form renderer is a lazy chunk
     const input = screen.getByLabelText("Branch name") as HTMLInputElement;
     await userEvent.clear(input);
     await userEvent.type(input, "lane/invites");

@@ -99,3 +99,5 @@ File/directory syncs follow off the acknowledgement path. SQLite may still sync 
 WAL creation/checkpoint; those maintenance costs are measured separately. Work in one space never waits for another: each space has its own
 lock, the cache map lock covers lookups only, and journal calls run on the caller's
 thread.
+
+Threads reuse the same Markdown kind storage and guarded move outbox. `admit_item` fences a native engine admission against the current item head; `trash` runs a bounded lifecycle guard before moving an item to its space-local Trash. Callbacks cannot re-enter content.

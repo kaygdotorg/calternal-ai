@@ -4,7 +4,8 @@
   // text, one line says what Enter will do, Up and Down choose another row, Esc closes. Outward actions (Ask) are their own row and never the default.
   import { Icon, InlineEditor, Sheet, toast } from "@calternal/ui";
   import { marksOf, plan, setItems, type Row } from "../palette/engine";
-  import { fixtureItems, THIS_SPACE } from "../palette/fixtures";
+  import { fixtureItems } from "../palette/fixtures";
+  import { spaces } from "./spaces.svelte";
   import { navigate, segments } from "../lib/route.svelte";
   import { client, store } from "../apps/threads/store.svelte";
   import { shell } from "./shell.svelte";
@@ -17,9 +18,12 @@
     if (!open) return;
     text = "";
     sel = 0;
-    // The sheet focuses its dialog when it opens; the field takes focus right after.
-    requestAnimationFrame(() => document.querySelector<HTMLElement>(".pal-input")?.focus());
-    setItems([...store.threads.map((t) => ({ id: t.id, kind: "thread" as const, title: t.title, space: THIS_SPACE, go: `/threads/${t.id}` })), ...fixtureItems()], THIS_SPACE);
+    // The field takes focus in the same turn the dialog appears, so the first key after Ctrl+K lands in it. (It used to wait a frame, during which keys went to whatever had focus before.)
+    // The sheet keeps a focused field (its own focus step skips when focus is already inside); one frame later is the fallback if the field was not focusable yet.
+    const f = () => document.querySelector<HTMLElement>(".pal-input");
+    f()?.focus();
+    requestAnimationFrame(() => { if (document.activeElement !== f()) f()?.focus(); });
+    setItems([...store.threads.map((t) => ({ id: t.id, kind: "thread" as const, title: t.title, space: spaces.list.find((s) => s.id === t.spaceId)?.name ?? spaces.current.name, go: `/threads/${t.id}` })), ...fixtureItems()], spaces.current.name); // the palette searches every space; results from another one say which
   });
   const p = $derived(plan(text, provider));
   $effect(() => { p; sel = 0; });

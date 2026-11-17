@@ -26,6 +26,9 @@
 //! [`MAX_SUBSCRIBERS`] stream subscribers. Final jobs are deleted [`RETAIN_FINAL`]
 //! after they finish, and beyond the newest [`MAX_FINAL_PER_SPACE`] per space.
 
+mod checkpoint;
+mod claim;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -206,6 +209,14 @@ pub struct Jobs {
 }
 
 impl Jobs {
+    /// Latest turn for one UUID thread inside an already authorized space. Cost:
+    /// one indexed space-local query, one bounded job decode; no cross-space scan.
+    pub(crate) fn thread_latest(&self, space: &str, thread: &str) -> Result<Option<Job>, Error> {
+        let conn = self.conn(space)?;
+        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
+    }
+
     /// Permits for concurrent runs ([`super::runner::MAX_RUNNING`]). Cost: one clone.
     pub fn permits(&self) -> Arc<Semaphore> {
         self.permits.clone()
@@ -406,45 +417,6 @@ impl Jobs {
             .unwrap_or_else(|p| p.into_inner())
             .insert(id.clone(), space);
         Ok(id)
-    }
-
-    /// Move an admitted job to running and start a fresh stream epoch whose sequence
-    /// continues from the checkpoint. `None` when the job is no longer admitted.
-    /// Cost: one FULL transaction.
-    pub fn claim(&self, space: &str, id: &str) -> Result<Option<Claimed>, Error> {
-        let job = self.tx(space, |tx| {
-            let n = tx
-                .execute(
-                    "UPDATE jobs SET state='running',runs=runs+1 WHERE id=?1 AND state='admitted'",
-                    [id],
-                )
-                .map_err(db_err)?;
-            if n == 0 {
-                return Ok(None);
-            }
-            tx.query_row(
-                &format!("SELECT {COLUMNS} FROM jobs WHERE id=?1"),
-                [id],
-                |r| row(space, r),
-            )
-            .optional()
-            .map_err(db_err)
-        })?;
-        let Some(job) = job else { return Ok(None) };
-        let live = self.live(id);
-        let cancel = CancelFlag::new();
-        {
-            let mut b = live.lock();
-            b.epoch = Uuid::now_v7().to_string();
-            b.run = job.runs;
-            b.next_seq = job.checkpoint_seq;
-            b.chunks.clear();
-            b.bytes = 0;
-            b.cancel = Some(cancel.clone());
-            b.running = true;
-        }
-        live.bump();
-        Ok(Some(Claimed { job, live, cancel }))
     }
 
     /// Durably record a checkpoint from the current run; the next run resumes from it

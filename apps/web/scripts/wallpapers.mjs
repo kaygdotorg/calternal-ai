@@ -18,6 +18,10 @@ async function get(url, file) {
   writeFileSync(file, Buffer.from(await r.arrayBuffer()));
 }
 
+// The default photograph also gets a tiny pre-blurred rendition per scheme (about 3 KB each): index.html paints it before any script runs, so a first visit never shows a flat ground.
+const tokens = JSON.parse(readFileSync(join(here, "..", "..", "..", "packages", "ui", "tokens", "tokens.json"), "utf8"));
+const DEFAULT = tokens.appearance["default-wallpaper"];
+
 for (const p of list) {
   const full = join(out, `${p.id}.jpg`), thumb = join(out, `${p.id}-thumb.jpg`), light = join(out, `${p.id}-light.jpg`);
   try {
@@ -34,6 +38,14 @@ for (const p of list) {
       const lighter = new URL(sized(1600, 72));
       for (const [k, v] of Object.entries({ bri: 35, con: -25, sat: -8 })) lighter.searchParams.set(k, String(v));
       await get(lighter.href, light);
+    }
+    if (p.id === DEFAULT && (!existsSync(join(out, `${p.id}-blur.jpg`)) || !existsSync(join(out, `${p.id}-blur-light.jpg`)))) {
+      const head = await fetch(`https://unsplash.com/photos/${p.id}/download?force=true`, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(60000) });
+      const base = new URL(head.url);
+      for (const k of ["w", "h", "q", "dl"]) base.searchParams.delete(k);
+      const tiny = (extra) => { const u = new URL(base); u.searchParams.set("w", "96"); u.searchParams.set("q", "50"); u.searchParams.set("fit", "max"); u.searchParams.set("blur", "40"); for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, String(v)); return u.href; };
+      await get(tiny({}), join(out, `${p.id}-blur.jpg`));
+      await get(tiny({ bri: 35, con: -25, sat: -8 }), join(out, `${p.id}-blur-light.jpg`));
     }
     credits.push({ id: p.id, name: p.author, author: p.author, link: `https://unsplash.com/photos/${p.id}` });
   } catch (e) {

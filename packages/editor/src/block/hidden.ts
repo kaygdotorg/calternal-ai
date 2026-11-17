@@ -5,6 +5,7 @@
  * Simplified from the existing editor's `syntax/hidden.ts`: frontmatter, embeds and the table grid are not here.
  */
 import { syntaxTree } from "@codemirror/language";
+import { IterMode } from "@lezer/common";
 import type { EditorState, Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 
@@ -43,6 +44,7 @@ export function buildDrawn(state: EditorState, ranges: readonly { from: number; 
   for (const r of ranges) for (let p = r.from; p <= r.to; ) { const l = doc.lineAt(p); if (l.length === 0) deco.push(line("cm-blank").range(l.from)); p = l.to + 1; }
   for (const r of ranges) {
     syntaxTree(state).iterate({
+    mode: IterMode.IgnoreMounts, // never walk into a code fence's own grammar: nothing here looks at it, and a nested tree is many more nodes per key
       from: r.from, to: r.to,
       enter(n) {
         const { name, from, to } = n;

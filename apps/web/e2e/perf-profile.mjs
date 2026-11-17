@@ -39,7 +39,7 @@ if (what === "startup") {
   if (what === "palette") { await page.keyboard.press("Control+k"); await page.waitForSelector(".pal-input"); await page.locator(".pal-input").pressSequentially("call plumber friday 5pm about journal", { delay: 30 }); }
   if (what === "scroll") { const box = await page.getByRole("feed").boundingBox(); await page.mouse.move(box.x + 300, box.y + 300); for (let i = 0; i < 80; i++) { await page.mouse.wheel(0, -700); await page.waitForTimeout(16); } }
   if (what === "switch") for (let i = 1; i < 7; i++) { await page.locator("a.row").nth(i).click(); await page.waitForTimeout(250); }
-  if (what === "sheet") for (let i = 0; i < 4; i++) { await page.getByRole("button", { name: "Account: Kay" }).click(); await page.waitForTimeout(500); await page.keyboard.press("Escape"); await page.waitForTimeout(400); }
+  if (what === "sheet") for (let i = 0; i < 4; i++) { await page.getByRole("button", { name: "Search" }).click(); await page.waitForTimeout(500); await page.keyboard.press("Escape"); await page.waitForTimeout(400); }
   await page.waitForTimeout(500);
   await report();
 }

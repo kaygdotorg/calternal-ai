@@ -43,7 +43,7 @@ Durable final jobs last seven days (at most 1024 final jobs per space); at most
 account, with 32 approvals per turn. The current mode remains until superseded or
 the account or space is deleted, so later turns cannot recover a broader initial
 mode. Starting another turn replaces the token/grants row and removes old approvals;
-thread deletion will be wired through the thread-storage lane.
+`threads.delete` removes saved modes and credentials for every account using that thread.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
@@ -105,9 +105,10 @@ action hash. Approvals created by denials use that hash in every mode. Sensitive
 action approvals conservatively bind canonical operation input; an
 irreversible or widening action also binds its request ID. Reuse that ID after
 approval. An external scope covers identical canonical input. App grants name a
-prefix and read/write. Scope approval currently lasts this turn; once-only and
-always-in-space grants need a later settings implementation. This turn's grants
-already use protected recovery.
+prefix and read/write. Current grants still last this turn and use protected recovery. The owner's
+2026-11-18 decision is once-only (consumed on use) and this-thread (until thread
+deletion); a separate approval-lifetimes lane will add their protected storage
+and atomic consumption. Always-in-space is later work.
 An old token cannot approve, change mode, or reissue itself. Token changes revoke
 the old credential immediately and pause the turn; explicit Resume delivers its
 replacement to a fresh process. Tokens expire after ten minutes or turn end.
@@ -127,7 +128,7 @@ rules-only implementation asks the person. No model reviewer is selected.
 
 Core instructions live in `plugins/calternal-orchestrator/skills/core.md`. The
 provider appends core, the generated one-line operation index, then the space's
-`<userdata-ssd>/spaces/<space-id>/AI/Instructions.md` using the documented
+`<userdata-ssd>/spaces/<space-id>/AI/AGENTS.md` using the documented
 system-prompt append channel. The file is read through descriptor-relative fsio,
 with a 16 KiB cap and a visible truncation notice. Missing means no extra text.
 Instructions are context and never grant access. Personal instructions remain a
@@ -158,8 +159,8 @@ updates account defaults in that account's private appdata SQLite file. A run's
 thread's recovery settings. Account defaults affect later turns. No credential is
 part of these settings.
 
-Simplification opportunities: replace the small manual-turn admission port with
-`threads.send` when the file-storage lane lands. The CLI already follows the job
+Saved conversation admission now uses `threads.send`; see [threads](threads.md).
+Manual-turn controls retain their shared receipt adapter. The CLI already follows the job
 stream; its SSE decoder is shared with space live subscriptions. A Codex adapter
 reuses the machine, job, access, instruction and retry paths.
 
@@ -176,6 +177,10 @@ publication or checkpoint folding. A bounded pending prefix handles a credential
 split across text deltas; any extra flush keeps ordered event numbering and the
 4 KiB text bound. Checkpoints are scrubbed again before durable saves. Provider
 login handling and the choice of token transport remain outside this change.
-A later turn applies a narrower requested mode; a wider request retains the saved
-mode pending the owner's decision. Source apps must match an enabled registered
+Owner decision, 2026-11-18: a permission mode requested with `agent.run` or
+`threads.send` applies directly to that turn, wider or narrower, and becomes its
+saved thread mode. Choosing it on a send needs no additional passkey check.
+The old credential is rotated on a mode change; thread credentials cannot choose
+a mode or reissue themselves. Explicit in-flight `agent.mode` retains its existing
+fresh-person check and explicit-resume flow. Source apps must match an enabled registered
 plugin prefix/kind or a built-in operation group.

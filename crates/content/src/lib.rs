@@ -32,7 +32,7 @@ mod db;
 mod files;
 mod journal;
 mod lifecycle;
-mod mutation;
+mod mutations;
 mod pool;
 mod publication;
 mod recovery;
@@ -44,7 +44,7 @@ pub use collections::StoredCollection;
 use db::Space;
 use journal::{Journals, lock};
 pub use pool::ReadPool;
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::{
     path::PathBuf,
@@ -389,6 +389,16 @@ impl Content {
             Ok(s.files.join(path))
         })
     }
+    /// Finishes pending file placement without changing the committed revision.
+    /// Cost: cache/space locks, head bytes/hash allocation; pending placement reads
+    /// at most the old/new file, then fsio fsyncs file and parent plus one NORMAL replayable SQL
+    /// bookkeeping update. Materialized items need only metadata reads.
+    pub fn materialize(&self, space: SpaceId, id: Uuid) -> Result<()> {
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            s.place(id, self.fault)
+        })
+    }
     /// Reads one per-space control value, such as a plugin's enablement, from the
     /// space's own database. Callers authorize the space first.
     /// Cost: the space's lock and one indexed read; no other space is touched.
@@ -404,105 +414,20 @@ impl Content {
                 .transpose()
         })
     }
-    /// Changes one per-space control value and records the request's receipt, as
-    /// one admission: a stored receipt for the same request replays its response
-    /// (or is a conflict for different input) without calling `change`. `change`
-    /// gets the current value and returns the new value and the response (an
-    /// error writes nothing); both
-    /// commit with an outbox intent in one FULL transaction, then the receipt is
-    /// published to the space's journal. Callers authorize the space first.
-    /// Cost: the space's lock (this space only), one receipt read, one FULL
-    /// content transaction, one FULL journal commit and one FULL outbox retirement.
-    pub fn set_control(
-        &self,
-        space: SpaceId,
-        request: Request<'_>,
-        key: &str,
-        change: impl FnOnce(Option<Value>) -> Result<(Value, Value)>,
-    ) -> Result<Value> {
+    /// Reads one per-space control value, such as a plugin's enablement, from the
+    /// space's own database. Callers authorize the space first.
+    /// Cost: the space's lock and one indexed read; no other space is touched.
+    pub fn control(&self, space: SpaceId, key: &str) -> Result<Option<Value>> {
         self.with_space(space, |s| {
-            self.publish_pending(s)?;
-            if let Some(saved) = self.journals.receipt(&s.journal, request.account, request.id)? {
-                if saved.operation != request.operation || saved.fingerprint != request.fingerprint {
-                    return Err(Error::request_reused());
-                }
-                return Ok(saved.result);
-            }
-            let tx = s
-                .conn
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(internal)?;
-            let current = tx
+            s.conn
                 .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
                     r.get::<_, String>(0)
                 })
                 .optional()
                 .map_err(internal)?
                 .map(|v| serde_json::from_str(&v).map_err(internal))
-                .transpose()?;
-            let (next, response) = change(current)?;
-            tx.execute(
-                "INSERT INTO controls VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                params![key, next.to_string()],
-            )
-            .map_err(internal)?;
-            tx.execute(
-                "INSERT INTO outbox VALUES(?1,?2,?3,?4,NULL,'control',?5)",
-                params![
-                    request.account.to_string(),
-                    request.id,
-                    request.operation,
-                    request.fingerprint,
-                    response.to_string()
-                ],
-            )
-            .map_err(internal)?;
-            tx.commit().map_err(internal)?;
-            self.publish_pending(s)?;
-            Ok(response)
+                .transpose()
         })
     }
-    /// Admits one write whose effect lives outside this crate (a directory change
-    /// in a space) through the space's receipts, the same admission as every
-    /// content and control write there: a stored receipt replays (or conflicts),
-    /// otherwise `run` executes and its response becomes the receipt.
-    ///
-    /// The space's lock is held across `run` so that one request ID cannot start
-    /// two different writes in the space at once; `run` must be short and must
-    /// not touch this space's content. If the process stops after `run` commits
-    /// and before the receipt does, a retry calls `run` again, so `run` must
-    /// replay its own committed result (the directory keeps an atomic receipt).
-    /// Cost: the space's lock, one receipt read, `run`, and one FULL journal commit.
-    pub fn admit(
-        &self,
-        space: SpaceId,
-        request: Request<'_>,
-        run: impl FnOnce() -> Result<Value>,
-    ) -> Result<Value> {
-        self.with_space(space, |s| {
-            self.publish_pending(s)?;
-            if let Some(saved) = self
-                .journals
-                .receipt(&s.journal, request.account, request.id)?
-            {
-                if saved.operation != request.operation || saved.fingerprint != request.fingerprint
-                {
-                    return Err(Error::request_reused());
-                }
-                return Ok(saved.result);
-            }
-            let response = run()?;
-            self.journals.publish(
-                &s.journal,
-                request.account,
-                request.id,
-                request.operation,
-                request.fingerprint,
-                None,
-                "control",
-                response.clone(),
-            )?;
-            Ok(response)
-        })
-    }
+
 }

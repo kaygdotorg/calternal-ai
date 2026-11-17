@@ -10,6 +10,17 @@ use std::{
 };
 use uuid::Uuid;
 
+/// The reserved standing-instructions file is never an ordinary kind item.
+fn ensure_item_path(path: &str) -> Result<()> {
+    if calternal_types::is_reserved_space_path(path) {
+        Err(Error::forbidden(
+            "space instructions require a Manager-only operation",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn hash(path: &Path) -> Result<Option<String>> {
     match fs::symlink_metadata(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -59,7 +70,7 @@ pub(crate) fn validate_registration(placement: &Placement, format: &FileFormat) 
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         }
     };
-    if valid && encoding {
+    if valid && encoding && !calternal_types::is_reserved_space_path(&folder(placement, "")) {
         Ok(())
     } else {
         Err(Error::invalid_input("invalid kind file registration"))
@@ -143,7 +154,17 @@ impl Space {
             .optional()
             .map_err(internal)?
             .ok_or_else(missing)?;
+        ensure_item_path(&path)?;
         Ok(self.files.join(path))
+    }
+    /// UUID names avoid Trash collisions; placement remains the existing guarded move.
+    pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
+        let (_, format) = self.registration(kind)?;
+        let extension = match format {
+            FileFormat::Markdown => "md".to_owned(),
+            FileFormat::Opaque { extension } => extension,
+        };
+        Ok(format!(".trash/{id}.{extension}"))
     }
     pub(crate) fn choose_path(
         &mut self,
@@ -186,6 +207,7 @@ impl Space {
             } else {
                 format!("{stem} {number}.{extension}")
             };
+            ensure_item_path(&format!("{folder}/{candidate}"))?;
             if !taken(&names::fold(&candidate))? {
                 break candidate;
             }
@@ -257,6 +279,7 @@ impl Space {
         }
         let result = (|| {
             if let Some(old) = old {
+                ensure_item_path(&old)?;
                 let old = self.files.join(old);
                 let moving = dir.join(format!(".calternal-move-{id}"));
                 // A fixed private staging name makes both halves of case-only

@@ -4,6 +4,11 @@
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 import { serve, BASE, DEVICES } from "./lib.mjs";
+// This script needs a running development server and its owner token file; it cannot start one. Say so plainly instead of failing on an undefined path.
+if (!process.env.CAL_SERVER || !process.env.CAL_TOKEN_FILE) {
+  console.error("server-notes needs a running `calternal serve --development --data-dir <dir> --port <port>` and two variables:\n  CAL_SERVER=http://127.0.0.1:<port>  CAL_TOKEN_FILE=<dir>/dev-tokens/owner.token\nStart the server, set both, run `npm run build`, then run this script again.");
+  process.exit(2);
+}
 const token = readFileSync(process.env.CAL_TOKEN_FILE, "utf8").trim();
 const SERVER = process.env.CAL_SERVER;
 const stop = await serve();

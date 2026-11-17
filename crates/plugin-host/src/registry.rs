@@ -33,7 +33,8 @@ fn visible_folders(m: &ManifestV1) -> BTreeSet<String> {
     m.kinds
         .iter()
         .filter_map(|k| match &k.storage {
-            ManifestPlacement::Visible { folder } => Some(fold(folder)),
+            ManifestPlacement::Visible { folder }
+            | ManifestPlacement::VisibleTree { folder, .. } => Some(fold(folder)),
             _ => None,
         })
         .collect()
@@ -133,6 +134,21 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
             || !schema(&x.schema)
             || !match &x.storage {
                 ManifestPlacement::Visible { folder } => folder_name(folder),
+                ManifestPlacement::VisibleTree {
+                    folder,
+                    subdirectories,
+                } => {
+                    folder_name(folder)
+                        && !subdirectories.is_empty()
+                        && subdirectories.len() <= 8
+                        && subdirectories.iter().all(|s| folder_name(s))
+                        && !calternal_types::is_reserved_space_path(
+                            &std::iter::once(folder.as_str())
+                                .chain(subdirectories.iter().map(String::as_str))
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        )
+                }
                 ManifestPlacement::Hidden { hidden } => *hidden,
             }
     }) || m.operations.iter().any(|x| {

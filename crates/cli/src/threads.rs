@@ -1,0 +1,227 @@
+//! Saved thread commands use the same manifest operations as every client.
+use crate::{
+    agent::{self, Connection},
+    output::{CliError, Output, Reply},
+};
+use clap::{Args as ClapArgs, Subcommand};
+use serde_json::{Value, json};
+
+/// Non-interactive conversation command and connection options.
+#[derive(Debug, ClapArgs)]
+pub struct Args {
+    /// Server and private credential selection, plus a stable retry identity.
+    #[command(flatten)]
+    pub connection: Connection,
+    /// Requested operation; use --help for arguments.
+    #[command(subcommand)]
+    pub command: Command,
+}
+/// Conversation lifecycle; identifiers are full UUIDs independent of titles.
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Start an empty saved conversation in a space.
+    Create {
+        /// Owning space UUID.
+        #[arg(long)]
+        space_id: String,
+        /// Human-readable title, at most 256 UTF-8 bytes.
+        #[arg(long)]
+        title: String,
+        /// Enabled provider plugin.
+        #[arg(long, default_value = "calternal-claude-code")]
+        provider: String,
+        /// least_access, approve_for_me, or full_access.
+        #[arg(long, default_value = "approve_for_me")]
+        mode: String,
+        /// Parent thread UUID; archived children remain discoverable here.
+        #[arg(long)]
+        parent_thread: Option<String>,
+    },
+    /// List conversation metadata without reading their message bodies.
+    List {
+        /// Owning space UUID.
+        #[arg(long)]
+        space_id: String,
+        /// Include archived conversations.
+        #[arg(long)]
+        archived: bool,
+        /// List all children, including archived children, of this parent UUID.
+        #[arg(long)]
+        parent_thread: Option<String>,
+        /// Maximum rows, from 1 to 1000.
+        #[arg(long, default_value_t = 100)]
+        limit: u32,
+    },
+    /// Read the Markdown conversation and its metadata.
+    Get {
+        /// Thread UUID.
+        id: String,
+    },
+    /// Save your message and admit a provider turn; reuse request-id after failure.
+    Send {
+        /// Thread UUID.
+        id: String,
+        /// Message as typed, at most 16 KiB.
+        #[arg(long)]
+        message: String,
+        /// Provider change for this and later sends.
+        #[arg(long)]
+        provider: Option<String>,
+        /// Model for this turn; omitted uses provider default.
+        #[arg(long)]
+        model: Option<String>,
+        /// Mode for this and later sends; applies directly without another passkey check.
+        #[arg(long)]
+        mode: Option<String>,
+    },
+    /// Cancel the thread's current turn, preserving its files and checkpoints.
+    Stop {
+        /// Thread UUID.
+        id: String,
+    },
+    /// Archive a conversation; it remains addressable and visible under its parent.
+    Archive {
+        /// Thread UUID.
+        id: String,
+    },
+    /// Move a stopped conversation to its space's Trash and forget saved modes.
+    Delete {
+        /// Thread UUID.
+        id: String,
+    },
+}
+impl Command {
+    fn operation(self) -> (&'static str, Value) {
+        match self {
+            Self::Create {
+                space_id,
+                title,
+                provider,
+                mode,
+                parent_thread,
+            } => {
+                let mut v =
+                    json!({"space_id":space_id,"title":title,"provider":provider,"mode":mode});
+                if let Some(parent) = parent_thread {
+                    v["parent_thread"] = json!(parent);
+                }
+                ("threads.create", v)
+            }
+            Self::List {
+                space_id,
+                archived,
+                parent_thread,
+                limit,
+            } => {
+                let mut v = json!({"space_id":space_id,"archived":archived,"limit":limit});
+                if let Some(parent) = parent_thread {
+                    v["parent_thread"] = json!(parent);
+                }
+                ("threads.list", v)
+            }
+            Self::Get { id } => ("threads.get", json!({"id":id})),
+            Self::Stop { id } => ("threads.stop", json!({"id":id})),
+            Self::Archive { id } => ("threads.archive", json!({"id":id})),
+            Self::Delete { id } => ("threads.delete", json!({"id":id})),
+            Self::Send {
+                id,
+                message,
+                provider,
+                model,
+                mode,
+            } => {
+                let mut v = json!({"id":id,"message":message});
+                for (key, value) in [("provider", provider), ("model", model), ("mode", mode)] {
+                    if let Some(value) = value {
+                        v[key] = json!(value);
+                    }
+                }
+                ("threads.send", v)
+            }
+        }
+    }
+}
+/// Render server thread data with shared width adaptation, stable JSON and hints.
+/// Cost: O(returned rows or document bytes); no I/O. Unknown shapes fail visibly.
+pub fn reply(data: Value) -> Reply {
+    if let Some(rows) = data["threads"].as_array() {
+        let rows = rows
+            .iter()
+            .map(|r| {
+                vec![
+                    r["metadata"]["title"].as_str().unwrap_or("").into(),
+                    r["id"].as_str().unwrap_or("").into(),
+                    if r["metadata"]["deleted"] == true {
+                        "deleted".into()
+                    } else if r["metadata"]["archived"] == true {
+                        "archived".into()
+                    } else {
+                        "active".into()
+                    },
+                ]
+            })
+            .collect();
+        return Reply::new(data)
+            .table(&["TITLE", "ID", "STATE"], rows, "No threads in this space.")
+            .hint("Next: calternal threads create --help");
+    }
+    let thread = &data["thread"];
+    let fields = vec![
+        ("Thread", thread["id"].as_str().unwrap_or("").to_owned()),
+        (
+            "Title",
+            thread["metadata"]["title"]
+                .as_str()
+                .unwrap_or("")
+                .to_owned(),
+        ),
+        (
+            "Address",
+            thread["address"].as_str().unwrap_or("").to_owned(),
+        ),
+        (
+            "State",
+            if thread["metadata"]["deleted"] == true {
+                "deleted"
+            } else if thread["metadata"]["archived"] == true {
+                "archived"
+            } else {
+                "active"
+            }
+            .into(),
+        ),
+    ];
+    let mut result = Reply::new(data.clone()).fields(fields);
+    if let Some(job) = data.get("job") {
+        result = result.fields([
+            ("Turn", job["id"].as_str().unwrap_or("")),
+            ("Turn state", job["state"].as_str().unwrap_or("")),
+        ]);
+    }
+    if let Some(text) = thread["markdown"].as_str() {
+        result = result.blank().text(text);
+    }
+    result.hint(
+        "Next: calternal threads --help; retry an uncertain send with its original --request-id.",
+    )
+}
+/// Execute one operation on the shared client and output surface. Credential reads
+/// run on a blocking worker. JSON is a single document, including caller-safe errors.
+pub fn main(args: Args, out: &Output) -> i32 {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("thread runtime");
+    let result: Result<Reply, CliError> = runtime.block_on(async {
+        let connection = args.connection;
+        let settings = connection.clone();
+        let client = tokio::task::spawn_blocking(move || agent::client(&settings))
+            .await
+            .map_err(|_| CliError::new("internal", "Credential loading failed."))??;
+        let (operation, input) = args.command.operation();
+        agent::call(&client, operation, input, connection.request_id)
+            .await
+            .map(reply)
+    });
+    out.finish(result)
+}

@@ -47,6 +47,7 @@ Paths are plain (no `#/`), rooted at `/`.
   go in the query string of the collection's address and never identify anything.
 - A tag is named in files by its text; its list is a collection, so the list's address
   survives a rename.
+- A setting's ID is its stable name (`<plugin>.<setting>`), not a UUID.
 - IDs are UUIDs written in full, the same in files, API and URLs. They are never derived
   from a title or path. Accounts, spaces and items each have their own; none is shared.
 - There is no readable-name suffix. Clients show a title by looking the ID up.

@@ -7,17 +7,17 @@
   import { APPS, type AppDef } from "../apps/registry";
   import { navigate } from "../lib/route.svelte";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
-  import AccountSheet from "./AccountSheet.svelte";
   import Attention from "./Attention.svelte";
   import Palette from "./Palette.svelte";
   import { pull } from "../lib/pull";
+  import SpaceDots from "./SpaceDots.svelte";
+  import { spaces } from "./spaces.svelte";
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
   // The switcher is here unless the experiment moved it under the middle card (a phone keeps it here; its bottom bar is the app's panels).
   const inFooter = $derived(shell.narrow || appearance.prefs.switcher === "sidebar");
   let menu = $state(false);
-  let account = $state(false);
   let trigger = $state<HTMLButtonElement>();
   const items = $derived<MenuItem[]>(APPS.map((a) => ({ id: a.kind, label: a.name, icon: a.icon, checked: a.kind === app.kind })));
 </script>
@@ -25,25 +25,27 @@
 <div class="side">
   <header>
     <p class="mark">{appearance.prefs.brand}</p>
-    {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" onclick={() => shell.toggleSidebar()} />{/if}
+    {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{/if}
   </header>
 
   <div class="scroll edge-fade" use:pull={{ refresh: async () => { await app.refresh?.(); } }}>
     <Attention items={app.attention?.() ?? []} />
-    <div class="body"><app.Sidebar /></div>
+    {#key spaces.current.id}<div class="body"><app.Sidebar /></div>{/key}
   </div>
 
   <footer>
-    <button type="button" class="avatar" aria-label="Account: Kay" onclick={() => (account = true)}><span aria-hidden="true">K</span></button>
-    {#if inFooter}<span class="switch">
-      <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
-      <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
-    </span>{:else}<span class="switch"></span>{/if}
+    <button type="button" class="avatar" aria-label="Account and settings: Kay" onclick={() => navigate("/settings/appearance")}><span aria-hidden="true">K</span></button>
+    <span class="switch">
+      {#if inFooter}
+        <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
+        <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
+      {/if}
+      <SpaceDots />
+    </span>
     <Pill icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
   </footer>
 </div>
 
-<AccountSheet open={account} onclose={() => (account = false)} />
 <Palette open={shell.searchOpen} onclose={() => (shell.searchOpen = false)} />
 
 <style>
@@ -56,5 +58,7 @@
   footer { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: var(--foot-h); display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-2) var(--s-4) 0; }
   .avatar { flex: none; width: var(--pill-h); height: var(--pill-h); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-weight: var(--strong-weight); transition: scale var(--dur-fast) var(--ease-out); }
   .avatar:active { scale: var(--press-scale); }
-  .switch { flex: 1; min-width: 0; display: flex; justify-content: center; }
+  .switch { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
+  .body { animation: space-in var(--dur-base) var(--ease-out); }
+  @keyframes space-in { from { opacity: 0; } }
 </style>

@@ -234,3 +234,5 @@ scan. Maintenance still runs on authority changes and an absolute one-second
 heartbeat, including during continuous writes; actual content operations always
 recheck current authority. An idle-feed test advances the seven-day confirmation
 state without issuing another operation.
+
+Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.

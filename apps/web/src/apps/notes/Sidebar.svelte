@@ -2,7 +2,10 @@
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
   import { Button, Row } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
+  import { spaces } from "../../shell/spaces.svelte";
   import { notes } from "./store.svelte";
+  // The list follows the space the shell is showing.
+  $effect(() => { void notes.useSpace(spaces.current.id); });
   const current = $derived(segments()[0] === "notes" ? segments()[1] : undefined);
   async function create() {
     const n = await notes.create("Untitled");

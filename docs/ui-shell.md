@@ -32,10 +32,30 @@ Not a card: it sits directly on the tinted background.
   freely between them; nothing is grouped under an automatic project label. Double-click
   renames a thread; right-click opens a context menu.
 - The sidebar's content fades out at its top and bottom edges; no hard cut-off.
-- Footer: account picture on the left; the app switcher in the middle; a search icon on
-  the right. Switching always happens at the bottom: apps in the sidebar footer, panels
-  as tabs at the bottom of the right card, the tab bar on phones. The header's app name is
-  a label, not a control; discoverability wins over removing the switcher.
+- Footer: account picture on the left (it opens the Settings app, never a sheet); a row of
+  dots for the spaces in the middle (decided 2026-11-18, below); a search icon on the right.
+  Switching always happens at the bottom: apps in the capsule under the middle card (on a
+  phone, the pill in this footer), panels as tabs at the bottom of the right card, the tab
+  bar on phones. The header's app name is a label, not a control; discoverability wins over
+  removing the switcher.
+- The sidebar shows only the current space's threads and notes (2026-11-18). The palette
+  still searches every space and says which one a result is in. Addresses do not change:
+  items are addressed by ID, never by space, and opening an item of another space makes that
+  space current.
+- **Space switcher** (2026-11-18): a row of dots at the bottom centre of the footer, like the
+  Aside browser's profile switcher: one dot per space, the current one larger and filled,
+  the name on hover, focus or long-press, a click or tap switches. Everyone has a personal
+  space from sign-up, so there is always at least one dot. Motion from the tokens: press
+  scales the dot at once (`--press-scale`); the marker moves between dots as size and opacity
+  over `--dur-base` (220 ms) on `--ease-out`; the list under it fades in over the same; only CSS
+  transitions, so a second tap redirects them (interruptible). Code: `shell/SpaceDots.svelte`,
+  `shell/spaces.svelte.ts`.
+- A closed sidebar or side panel always has a way back: a button at the card's top corner on
+  that side, with its shortcut (Mod+\ and Mod+Shift+\) in the tooltip. The side panel has its
+  own hide button in its header, as the sidebar has.
+- Both sidebars are flat: no card, no border, and no strip or edge between a sidebar and the
+  area around the card. The wallpaper's veil is one continuous surface that runs on under the
+  gap beside the card (`e2e/flat-sidebars.mjs` measures it on rendered pixels).
 
 ### Middle card
 
@@ -48,7 +68,7 @@ Not a card: it sits directly on the tinted background.
 
 - Flat, directly on the tinted background like the left sidebar. It is not a card; only
   the middle is a card.
-- AI chat by default.
+- AI chat by default, in every app (the first tab).
 - Tabs at the bottom switch between AI chat and the current app's panels. The app's
   plugin decides which panels exist (for Notes: the inspector and style sheet).
 
@@ -67,6 +87,12 @@ Motion, in order, from the motion tokens (`touch` set):
 **Interruptible.** A touch while the card or panel is still settling takes hold of it where it is (its current transform, read from the computed style), stops the transition, and carries on as a drag; releasing decides again. `e2e/phone-nav.mjs` checks the hand-over does not jump.
 
 Measured: drag and settle at 4x CPU in Chromium: 56 frames, every one 16.7 ms (no frame over 33 ms), three runs. **Not yet checked on a real phone** (the Simulator cannot be driven with touch from here): the fluidity rule asks for that before this counts as done.
+
+## Sidebar width, wide chat (2026-11-18)
+
+- Each sidebar has a handle at the vertical centre of the gap beside the card: a slim bar that shows on hover, focus or drag. Drag it, or focus it and use Left/Right (16 px, Shift 64 px), Home/End, Enter or a double-click to reset. Left sidebar 200 to 420 px, right 260 to 560 px (unscaled); the width is kept per device. Code: `shell/ResizeHandle.svelte`, `e2e/resize.mjs`.
+- Chat is wide on a desktop by default (the calternal-ui plugin's wide chat): the column fills the card with a 3.25 rem left gutter (room for a contents rail) and a 1.5 rem right margin; your messages are bubbles on the right with an iMessage tail, the agent writes from the left across the full width. Appearance > Chat layout returns to a centred column.
+- The first-run chooser is a window-level dialog, not part of a sidebar.
 
 ## Backgrounds and fonts
 

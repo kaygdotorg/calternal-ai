@@ -21,6 +21,7 @@ mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
+mod threads_cases;
 
 mod drafts_cases;
 #[path = "live_cases.rs"]
@@ -165,6 +166,7 @@ impl Fixture {
         if self.development {
             command.arg("--development");
         }
+        let crash = self.dir.path().join("thread-send-fault").is_file();
         self.child = Some(
             command
                 .args(["--port", "0", "--origin", ORIGIN, "--create"])
@@ -185,6 +187,10 @@ impl Fixture {
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env("RUST_LOG", "warn")
+                .env(
+                    "CALTERNAL_FAULT",
+                    if crash { "after_thread_message" } else { "" },
+                )
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())

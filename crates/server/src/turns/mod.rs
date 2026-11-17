@@ -1,12 +1,16 @@
-//! Manual provider turns: durable jobs, machine exec streams and explicit resume.
-//! No conversation file is stored here; the Threads storage lane owns that step.
+//! Shared provider turns: durable jobs, machine exec streams and explicit resume.
+//! The Threads engine persists conversations through content and calls this admission path.
 pub mod access;
 mod admission;
 mod instructions;
 mod launch;
+mod lease;
 mod redact;
 pub mod retry;
 mod run;
+mod thread_admission;
+pub(crate) use run::schedule_for_account as schedule_thread;
+pub(crate) use thread_admission::{admit as admit_thread, finish_stop as finish_thread_stop};
 
 use crate::{
     api::Shared,

@@ -4,7 +4,9 @@ A file-first AI orchestrator and personal productivity app, under development. T
 
 ## Local development preview
 
-This branch implements a **disposable-data engineering preview**, not the complete orchestrator or a daily-use replacement for Calternal. It includes real Notes operations, version history, permission checks, a trusted TypeScript statistics extension and the `cl` CLI. There is no web UI yet; it will be built from [docs/ui-shell.md](docs/ui-shell.md).
+This branch implements a **disposable-data engineering preview**, not the complete orchestrator or a daily-use replacement for Calternal. It includes real Notes operations, version history, permission checks, a trusted TypeScript statistics extension and the `cl` CLI. Saved conversations now use manifest-owned thread operations,
+Markdown files and `calternal threads`; see [thread format and limits](docs/threads.md).
+There is no web UI yet; it will be built from [docs/ui-shell.md](docs/ui-shell.md).
 
 Requirements: Linux/macOS build environment, pinned Rust 1.99.1, a C linker, Node 22.13 or later, npm and Python 3 for the CLI integration check. The current server has been exercised on Linux; macOS and Apple bindings need their own execution checks. `scripts/with-toolchain.sh` uses an installed C compiler and limits Cargo concurrency; it does not install system packages.
 
@@ -72,7 +74,10 @@ Every public code change includes matching reference comments. Run `npm run chec
 
 - Each space's SQLite databases in appdata are authoritative for its revisions and request receipts; Markdown files in userdata are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
 - Only repository-shipped, digest-pinned plugin bundles run. Node permission flags and cleared environments are defense in depth, **not an OS sandbox**. No arbitrary community plugin installation or provider credentials.
-- Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. There is no real AI conversation, machine pairing, provider login, voice or memory integration yet.
+- Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. Saved thread files and manual provider turns are development slices, with steering,
+large-output storage and the public TypeScript product bridge still unfinished.
+See [manual turns](docs/agent-turns.md) and [threads](docs/threads.md). Voice and
+memory integration remain unfinished.
 - UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.
 - Two low-severity npm audit findings affect a build-tool dependency; the UI report records their review. No production-readiness claim is made.
 
