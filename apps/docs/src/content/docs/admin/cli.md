@@ -188,4 +188,4 @@ the same shared operation route and output renderer as `cl drafts` / `cl pending
 See account input for queue files, stable nested request IDs,
 seven-day confirmation, examples and operator safety ceilings.
 
-`calternal threads create|list|get|send|stop|archive|delete` operates on saved conversations using manifest-backed operations. See threads for arguments, file format, retry behavior and current limits. Every subcommand supports `--json` and shared terminal hints.
+`calternal threads create|list|get|send|stop|rename|archive|unarchive|delete` operates on saved conversations using manifest-backed operations. See threads for arguments, file format, retry behavior and current limits. Every subcommand supports `--json` and shared terminal hints.
