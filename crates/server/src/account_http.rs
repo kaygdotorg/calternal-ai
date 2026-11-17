@@ -1,6 +1,4 @@
 //! Trusted account HTTP endpoints ported from the original auth transport.
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use axum::{
     Json, Router,

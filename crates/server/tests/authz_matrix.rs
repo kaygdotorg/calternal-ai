@@ -178,7 +178,7 @@ impl Fixture {
         .unwrap();
         let state = Arc::new(AppState {
             store,
-            tokens,
+            directory: tokens,
             registry: Registry::from_plugins(vec![plugin]),
             workers: WorkerPool::new(Some(
                 resolve_node(None)
@@ -193,7 +193,7 @@ impl Fixture {
 
     /// The one space the mutable directory grants, as wire text.
     fn space(&self) -> String {
-        self.state.tokens.space.to_string()
+        self.state.directory.space.to_string()
     }
 
     fn input(&self, op: &str, space: &str) -> Value {
@@ -435,7 +435,7 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
         .call(Some(TOKEN), "retry", "notes.create", input.clone())
         .await;
     assert_eq!(first.0, StatusCode::OK);
-    fixture.state.tokens.set_role(1);
+    fixture.state.directory.set_role(1);
     denial(
         fixture
             .call(Some(TOKEN), "retry", "notes.create", input.clone())
@@ -443,14 +443,14 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
         StatusCode::FORBIDDEN,
         "insufficient role for this space",
     );
-    fixture.state.tokens.set_role(2);
+    fixture.state.directory.set_role(2);
     assert_eq!(
         first,
         fixture
             .call(Some(TOKEN), "retry", "notes.create", input)
             .await
     );
-    fixture.state.tokens.set_role(0);
+    fixture.state.directory.set_role(0);
     denial(
         fixture
             .call(
@@ -463,10 +463,10 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
         StatusCode::NOT_FOUND,
         "item not found",
     );
-    fixture.state.tokens.set_role(3);
+    fixture.state.directory.set_role(3);
     fixture
         .state
-        .tokens
+        .directory
         .session_valid
         .store(false, Ordering::SeqCst);
     denial(
@@ -518,7 +518,7 @@ async fn cross_space_note_ids_are_bound_to_the_authorized_space() {
 async fn membership_revocation_during_worker_discards_delivery() {
     let fixture = Fixture::new(1, true).await;
     let state = fixture.state.clone();
-    let identity = state.tokens.authenticate(TOKEN.as_bytes()).unwrap();
+    let identity = state.directory.authenticate(TOKEN.as_bytes()).unwrap();
     let input =
         serde_json::from_value(fixture.input("notes-insights.summarize", &fixture.space())).unwrap();
     let call = tokio::spawn(dispatch(
@@ -540,7 +540,7 @@ async fn membership_revocation_during_worker_discards_delivery() {
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    fixture.state.tokens.set_role(0);
+    fixture.state.directory.set_role(0);
     std::fs::write(fixture.root.join("go"), "").unwrap();
     let error = call
         .await
@@ -556,7 +556,7 @@ async fn directory_role_decides_and_plugin_retries_recheck_role() {
     let input = serde_json::from_value(fixture.input("plugins.disable", &fixture.space())).unwrap();
     let error = dispatch(
         fixture.state.clone(),
-        fixture.state.tokens.identity,
+        fixture.state.directory.identity,
         calternal_server::plugins::Session::Static,
         "forged",
         "plugins.disable",
@@ -567,7 +567,7 @@ async fn directory_role_decides_and_plugin_retries_recheck_role() {
     assert_eq!(error.code, calternal_core::ErrorCode::Forbidden);
     assert_eq!(error.message, "insufficient role for this space");
 
-    fixture.state.tokens.set_role(3);
+    fixture.state.directory.set_role(3);
     let input = fixture.input("plugins.disable", &fixture.space());
     let first = fixture
         .call(
@@ -578,7 +578,7 @@ async fn directory_role_decides_and_plugin_retries_recheck_role() {
         )
         .await;
     assert_eq!(first.0, StatusCode::OK);
-    fixture.state.tokens.set_role(2);
+    fixture.state.directory.set_role(2);
     denial(
         fixture
             .call(
@@ -591,7 +591,7 @@ async fn directory_role_decides_and_plugin_retries_recheck_role() {
         StatusCode::FORBIDDEN,
         "insufficient role for this space",
     );
-    fixture.state.tokens.set_role(3);
+    fixture.state.directory.set_role(3);
     assert_eq!(
         first,
         fixture
@@ -623,7 +623,7 @@ async fn no_grant_hides_summarize_binding_registration() {
         .await;
     assert_eq!(registered, absent);
     denial(absent, StatusCode::NOT_FOUND, "item not found");
-    fixture.state.tokens.set_role(1);
+    fixture.state.directory.set_role(1);
     assert_eq!(
         fixture
             .call(Some(TOKEN), "authorized", "notes-insights.summarize", input)
@@ -644,7 +644,7 @@ async fn every_operation_checks_only_its_required_capability() {
             } else {
                 CapabilitySet::new(&Capability::ALL).without(required)
             };
-            fixture.state.tokens.set_capabilities(grants);
+            fixture.state.directory.set_capabilities(grants);
             let response = fixture
                 .call(Some(TOKEN), "capability", op, fixture.input(op, &fixture.space()))
                 .await;

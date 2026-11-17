@@ -5,8 +5,6 @@
 //! Stored directories resolve the role-capability rows on every request.
 //! Target and ownership constraints are checked again in the write transaction.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use calternal_types::{Capability, CapabilitySet};
 

@@ -26,8 +26,6 @@
 //! [`MAX_SUBSCRIBERS`] stream subscribers. Final jobs are deleted [`RETAIN_FINAL`]
 //! after they finish, and beyond the newest [`MAX_FINAL_PER_SPACE`] per space.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

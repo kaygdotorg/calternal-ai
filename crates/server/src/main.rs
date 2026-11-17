@@ -5,7 +5,7 @@ mod admin_cli;
 use admin_cli::MachinesCmd;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
-use calternal_server::auth::TokenTable;
+use calternal_server::auth::StoredDirectory;
 use calternal_server::machines::MachineService;
 use calternal_server::plugins::{self, Registry};
 use calternal_server::store::Store;
@@ -293,7 +293,7 @@ async fn serve(
             "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
         ));
     }
-    let tokens = match TokenTable::open(&data_dir, config, development, Some(Arc::new(recovery))) {
+    let directory = match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
         Ok(t) => t,
         Err(e) => {
             return Err(boot(
@@ -304,7 +304,7 @@ async fn serve(
             ));
         }
     };
-    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
+    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
         match service.auth.first_owner_token().await {
             Ok(Some(token)) => {
                 let path = data_dir.join("setup.token");
@@ -319,7 +319,7 @@ async fn serve(
         None
     };
     let mut hosts = api::allowed_hosts(port);
-    if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
+    if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
         let authority = service
             .config
             .origin_header()
@@ -333,10 +333,10 @@ async fn serve(
     }
     let jobs =
         plugins::Jobs::open(&data_dir).map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
-    let token_files = tokens.files.clone();
+    let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         store,
-        tokens,
+        directory,
         registry,
         workers: plugins::WorkerPool::new(node),
         jobs,

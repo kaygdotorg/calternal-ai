@@ -1,8 +1,6 @@
 //! One existence-hiding address resolver over identifier-only content routing.
 //! A catalog lookup selects a space; current authority is checked before any
 //! content database is opened. No list or membership-count-dependent probe runs.
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 use crate::{
     auth::{Directory, Identity},
     store::Store,

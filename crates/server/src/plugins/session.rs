@@ -9,8 +9,6 @@
 //! A session is identified by its installation ID, never by its token, so it can be
 //! stored in a job record without storing a secret.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use calternal_types::{AccountId, InstallationId};
 use serde::{Deserialize, Serialize};

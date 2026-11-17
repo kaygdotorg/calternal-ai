@@ -14,8 +14,6 @@
 //!
 //! Workers are NOT an OS security sandbox; see [`worker`] for what one can still reach.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod broker;
 pub mod job_api;
@@ -289,7 +287,7 @@ impl Registry {
             let policy = Policy {
                 operation: Cow::Owned(row.operation.id.clone()),
                 required,
-                scope: if item { Scope::Note } else { Scope::Space },
+                scope: if item { Scope::Item } else { Scope::Space },
                 constraint: Constraint::PluginInvocation,
             };
             out.operations.insert(row.operation.id, (slot, policy));

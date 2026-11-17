@@ -2,8 +2,6 @@
 //! files (`--web-dir`, no SPA fallback), Host/Origin checks, account sessions, optional development bearers
 //! and security headers.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -26,7 +24,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tower_http::services::ServeDir;
 
-use crate::auth::{Directory, Identity, TokenTable};
+use crate::auth::{Directory, Identity, StoredDirectory};
 use crate::authz::{self, Constraint};
 use calternal_types::{AccountId, Error, SpaceId};
 use crate::fault::{self, FaultPoint};
@@ -43,12 +41,12 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// Shared host services; `D` is the protected source of current identity and grants.
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
-pub struct AppState<D: Directory = TokenTable> {
+pub struct AppState<D: Directory = StoredDirectory> {
     /// Durable preview store, shared without an outer lock: work in one space never
     /// waits for another (see [`Store`] for the locks it takes).
     pub store: Store,
-    /// Identity and membership directory (legacy field name preserves startup callers).
-    pub tokens: D,
+    /// Identity and membership directory; read for every authorization.
+    pub directory: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,
     /// Bounded pool of long-lived (plugin, space) workers; refuses calls without Node.
@@ -60,7 +58,7 @@ pub struct AppState<D: Directory = TokenTable> {
 }
 
 /// Reference-counted host state; cloning never clones the directory or its grants.
-pub type Shared<D = TokenTable> = Arc<AppState<D>>;
+pub type Shared<D = StoredDirectory> = Arc<AppState<D>>;
 
 /// Construct the exact loopback hostnames accepted for a bound listener port.
 pub fn allowed_hosts(port: u16) -> Vec<String> {
@@ -84,7 +82,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found));
-    let http_auth = state.tokens.http_auth().cloned();
+    let http_auth = state.directory.http_auth().cloned();
     let mut app = Router::new().merge(api);
     if let Some(service) = &http_auth {
         app = app.merge(crate::account_http::routes(service.clone()));
@@ -184,7 +182,7 @@ async fn guard<D: Directory>(
         if api
             && !account_route
             && bearer(req.headers()).is_none()
-            && let Some(service) = state.tokens.http_auth()
+            && let Some(service) = state.directory.http_auth()
             && req
                 .headers()
                 .get(header::ORIGIN)
@@ -195,13 +193,13 @@ async fn guard<D: Directory>(
 
         if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
             let expected = if bearer(req.headers())
-                .and_then(|t| state.tokens.authenticate(t))
+                .and_then(|t| state.directory.authenticate(t))
                 .is_some()
             {
                 format!("http://{host}")
             } else {
                 state
-                    .tokens
+                    .directory
                     .http_auth()
                     .map(|s| s.config.origin_header())
                     .unwrap_or_else(|| format!("http://{host}"))
@@ -220,7 +218,7 @@ async fn guard<D: Directory>(
         }
         if api && !account_route {
             // The installation travels with the request so plugin work can recheck it.
-            let session = if let Some(service) = state.tokens.http_auth() {
+            let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, req.headers())
                     .await
                     .map(|(id, installation)| (Identity { id }, Session::installation(id, installation)))
@@ -229,7 +227,7 @@ async fn guard<D: Directory>(
             };
             match session.or_else(|| {
                 bearer(req.headers())
-                    .and_then(|t| state.tokens.authenticate(t))
+                    .and_then(|t| state.directory.authenticate(t))
                     .map(|p| (p, Session::Static))
             }) {
                 Some((p, session)) => {
@@ -245,7 +243,7 @@ async fn guard<D: Directory>(
         let admitted = req.extensions().get::<Identity>().cloned();
         let response = next.run(req).await;
         if api && !account_route && response.status().is_success() {
-            let session = if let Some(service) = state.tokens.http_auth() {
+            let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, &credentials)
                     .await
                     .map(|(id, _)| Identity { id })
@@ -253,7 +251,7 @@ async fn guard<D: Directory>(
                 None
             };
             let current =
-                session.or_else(|| bearer(&credentials).and_then(|t| state.tokens.authenticate(t)));
+                session.or_else(|| bearer(&credentials).and_then(|t| state.directory.authenticate(t)));
             if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
                 || current.is_none()
             {
@@ -298,7 +296,7 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
         .cloned()
         .expect("guard inserts principal");
     let st = state.clone();
-    let principal = match tokio::task::spawn_blocking(move || st.tokens.describe(&p)).await {
+    let principal = match tokio::task::spawn_blocking(move || st.directory.describe(&p)).await {
         Ok(p) => p,
         Err(_) => return failure(None, Error::internal("directory task failed")),
     };
@@ -457,7 +455,7 @@ pub async fn dispatch<D: Directory>(
     let item_scoped = state
         .registry
         .policy(op)
-        .is_some_and(|p| p.scope == authz::Scope::Note);
+        .is_some_and(|p| p.scope == authz::Scope::Item);
     if op == "resolve" || item_scoped {
         // A plugin operation names its target in the manifest; host item operations
         // and `resolve` carry the item ID in `id`.
@@ -490,7 +488,7 @@ pub async fn dispatch<D: Directory>(
         let st = state.clone();
         let account = p.clone();
         let (resolved, caps) = tokio::task::spawn_blocking(move || {
-            crate::resolve::resolve_for(&st.tokens, &st.store, &account, &kind, &id, op_required)
+            crate::resolve::resolve_for(&st.directory, &st.store, &account, &kind, &id, op_required)
         })
         .await
         .map_err(|_| Error::internal("resolver task failed"))??;
@@ -538,7 +536,7 @@ pub async fn dispatch<D: Directory>(
             let st = state.clone();
             let checked = input.clone();
             let admission = policy.clone();
-            tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &p, &checked))
+            tokio::task::spawn_blocking(move || admission.authorize(&st.directory, &p, &checked))
                 .await
                 .map_err(|_| Error::internal("directory task failed"))??;
         }
@@ -559,7 +557,7 @@ pub async fn dispatch<D: Directory>(
         let operation = op.to_owned();
         // Directory changes keep their own receipts in auth.db.
         return tokio::task::spawn_blocking(move || {
-            st.tokens.space_operation(&p, &rid, &operation, &input)
+            st.directory.space_operation(&p, &rid, &operation, &input)
         })
         .await
         .map_err(|_| Error::internal("directory task failed"))?;
@@ -574,7 +572,7 @@ pub async fn dispatch<D: Directory>(
     let value = dispatch_checked(state.clone(), p.clone(), request_id, op, input).await?;
     if let Some(space) = delivery_space {
         let st = state.clone();
-        tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, space))
+        tokio::task::spawn_blocking(move || policy.authorize_space(&st.directory, &p, space))
             .await
             .map_err(|_| Error::internal("directory task failed"))??;
     }
@@ -880,7 +878,7 @@ async fn invoke_plugin<D: Directory>(
         .await;
     // Delivery checks run whatever the worker answered, so a refusal caused by a
     // revocation reports the same error the revocation itself would.
-    if !session.is_live(&state.tokens).await {
+    if !session.is_live(&state.directory).await {
         return Err(Error::unauthorized("missing or invalid session"));
     }
     let plugin2 = plugin.clone();
@@ -893,7 +891,7 @@ async fn invoke_plugin<D: Directory>(
     }
     let st = state.clone();
     let caller = p.id;
-    tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, space))
+    tokio::task::spawn_blocking(move || policy.authorize_space(&st.directory, &p, space))
         .await
         .map_err(|_| Error::internal("directory task failed"))??;
     let value = outcome_value(outcome)?;

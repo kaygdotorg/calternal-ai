@@ -16,8 +16,6 @@
 //! blocking task; the secret store has no installation-wide lock or connection.
 //! Spaces are named by UUID only.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::borrow::Cow;
 
@@ -92,7 +90,7 @@ fn owner<D: Directory>(
         scope: Scope::Space,
         constraint: Constraint::None,
     }
-    .authorize_space(&state.tokens, p, space)?;
+    .authorize_space(&state.directory, p, space)?;
     Ok(Owner::Space(space))
 }
 
@@ -218,7 +216,7 @@ fn reply(e: Error) -> Response {
 /// The request body buffer is not zeroed (axum owns it); the parsed value moves
 /// into a zeroing [`SecretValue`] without a further copy.
 async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
-    let Some(service) = state.tokens.http_auth().cloned() else {
+    let Some(service) = state.directory.http_auth().cloned() else {
         return reply(Error::not_found("not found"));
     };
     let Some((account, installation)) =

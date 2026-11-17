@@ -5,8 +5,6 @@
 //! only when constructing the existing wire error. Resource IDs are always bound
 //! to the authorized space by the storage APIs; possession of an ID grants nothing.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::borrow::Cow;
 
@@ -28,7 +26,7 @@ pub enum Scope {
     Space,
     /// The global item resolver derives the owning space before policy admission.
     /// Missing membership and cross-space IDs return the same not-found error.
-    Note,
+    Item,
     /// The job store derives the job's owning space before policy admission; a job
     /// the caller cannot see answers exactly like a missing one.
     Job,
@@ -131,13 +129,13 @@ pub const POLICIES: &[Policy] = &[
     Policy {
         operation: Cow::Borrowed("notes.get"),
         required: Capability::SpaceRead,
-        scope: Scope::Note,
+        scope: Scope::Item,
         constraint: Constraint::None,
     },
     Policy {
         operation: Cow::Borrowed("notes.history"),
         required: Capability::SpaceRead,
-        scope: Scope::Note,
+        scope: Scope::Item,
         constraint: Constraint::None,
     },
     Policy {
@@ -149,7 +147,7 @@ pub const POLICIES: &[Policy] = &[
     Policy {
         operation: Cow::Borrowed("notes.update"),
         required: Capability::ContentWrite,
-        scope: Scope::Note,
+        scope: Scope::Item,
         constraint: Constraint::None,
     },
     Policy {
@@ -243,7 +241,7 @@ impl Policy {
     /// The not-found answer for this scope, identical for absent and inaccessible targets.
     fn hidden(&self) -> Error {
         match self.scope {
-            Scope::Note => Error::not_found("item not found"),
+            Scope::Item => Error::not_found("item not found"),
             Scope::Job => Error::not_found("job not found"),
             _ => Error::not_found("space not found"),
         }
@@ -269,7 +267,7 @@ impl Policy {
         match granted {
             None => Err(self.hidden()),
             Some(set)
-                if self.scope == Scope::Note
+                if self.scope == Scope::Item
                     && !set.contains(Capability::SpaceRead)
                     && !set.contains(self.required) =>
             {

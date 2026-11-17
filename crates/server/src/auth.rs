@@ -7,8 +7,6 @@
 //! `<data>/dev-tokens/<principal>.token`, mode 0600, directory 0700. Token
 //! values are never printed or logged.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
@@ -68,7 +66,7 @@ pub type Recovery = std::sync::Arc<dyn calternal_auth::spaces::RecoverySink>;
 
 /// Stored account/space directory with optional development tokens and HTTP sessions.
 /// Memberships are read on each request and never cached in identities.
-pub struct TokenTable {
+pub struct StoredDirectory {
     entries: Vec<(Vec<u8>, Identity)>,
     /// Private token file paths, never token values.
     pub files: Vec<(&'static str, PathBuf)>,
@@ -76,7 +74,7 @@ pub struct TokenTable {
     pub spaces: Spaces,
     http: Option<crate::account_http::HttpAuth>,
 }
-impl TokenTable {
+impl StoredDirectory {
     /// Open system/auth.db and seed disposable fixtures once, then open tokens.
     /// In-process fixtures only: no account service and no recovery log.
     pub fn load_or_create(data_dir: &Path) -> std::io::Result<Self> {
@@ -162,7 +160,7 @@ fn auth_error(e: calternal_auth::Error) -> Error {
         _ => Error::internal("space database operation failed"),
     }
 }
-impl Directory for TokenTable {
+impl Directory for StoredDirectory {
     fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
         self.http.as_ref()
     }

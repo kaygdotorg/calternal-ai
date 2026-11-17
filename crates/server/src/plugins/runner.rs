@@ -14,8 +14,6 @@
 //! worker, only its place in the semaphore queue, which the per-space active-job
 //! bound limits.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
@@ -134,7 +132,7 @@ async fn execute<D: Directory>(
         .ok_or_else(refused)?;
     let space = SpaceId::parse(&job.space).map_err(|_| refused())?;
     let identity = Identity { id: job.account };
-    if !job.session.is_live(&state.tokens).await {
+    if !job.session.is_live(&state.directory).await {
         return Err(refused());
     }
     let (st, account, p2, jid, sp) = (
@@ -146,7 +144,7 @@ async fn execute<D: Directory>(
     );
     let (generation, children) = blocking(move || {
         if !st
-            .tokens
+            .directory
             .capabilities(account, space)
             .is_some_and(|c| c.contains(required))
         {

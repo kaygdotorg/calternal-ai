@@ -5,7 +5,7 @@ use axum::{
 };
 use calternal_server::{
     api::{AppState, Shared, allowed_hosts, router},
-    auth::{Directory, TokenTable},
+    auth::{Directory, StoredDirectory},
     plugins::Registry,
     store::Store,
 };
@@ -43,7 +43,7 @@ impl Fixture {
             let store = Store::open(&roots, true).unwrap();
             // Every later path is in appdata; `base` holds all three roots.
             let root = roots.appdata.clone();
-            let tokens = TokenTable::load_or_create(&root).unwrap();
+            let tokens = StoredDirectory::load_or_create(&root).unwrap();
             let token = std::fs::read_to_string(root.join("dev-tokens/guest.token")).unwrap();
             let owner_token = std::fs::read_to_string(root.join("dev-tokens/owner.token")).unwrap();
             let actor = tokens
@@ -106,7 +106,7 @@ impl Fixture {
             .unwrap();
             let state = Arc::new(AppState {
                 store,
-                tokens,
+                directory: tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),
                 jobs: calternal_server::plugins::Jobs::disabled(),
@@ -321,7 +321,7 @@ async fn discovery_and_alias_inputs_keep_stable_independent_uuid_identities() {
     let state = f.state.clone();
     let owner = f.owner.clone();
     let described = tokio::task::spawn_blocking(move || {
-        state.tokens.describe(&calternal_server::auth::Identity {
+        state.directory.describe(&calternal_server::auth::Identity {
             id: calternal_types::AccountId::parse(&owner).unwrap(),
         })
     })

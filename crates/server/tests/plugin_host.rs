@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use calternal_core::{ErrorCode, JsonObject};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch};
-use calternal_server::auth::TokenTable;
+use calternal_server::auth::StoredDirectory;
 use calternal_server::authz::{self, Constraint, Scope};
 use calternal_types::Capability;
 use calternal_types::Error;
@@ -18,7 +18,7 @@ use calternal_server::store::Store;
 use serde_json::{Value, json};
 
 struct Fixture {
-    state: Shared<TokenTable>,
+    state: Shared<StoredDirectory>,
     root: PathBuf,
     dev: support::Dev,
 }
@@ -83,13 +83,13 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
     };
     let state = Arc::new(AppState {
         store,
-        tokens: TokenTable::load_or_create(&data).unwrap(),
+        directory: StoredDirectory::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(plugins),
         workers,
         jobs: calternal_server::plugins::Jobs::open(&data).unwrap(),
         allowed_hosts: allowed_hosts(0),
     });
-    let dev = support::dev(&state.tokens);
+    let dev = support::dev(&state.directory);
     Fixture { state, root, dev }
 }
 
@@ -150,7 +150,7 @@ fn policy_rows_are_derived_from_manifests() {
 
     let summarize = registry.policy("notes-insights.summarize").unwrap();
     assert_eq!(summarize.required, Capability::SpaceRead);
-    assert_eq!(summarize.scope, Scope::Note);
+    assert_eq!(summarize.scope, Scope::Item);
     assert_eq!(summarize.constraint, Constraint::PluginInvocation);
     let tag = registry.policy("tagger.tag").unwrap();
     assert_eq!(tag.required, Capability::ContentWrite);
@@ -446,7 +446,7 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     let f = fixture("target", vec![plugin], None).await;
     assert_eq!(
         f.state.registry.policy("targeted.count").unwrap().scope,
-        Scope::Note
+        Scope::Item
     );
     let own = f.note(f.dev.personal, "one two three\n").await;
     let r = f

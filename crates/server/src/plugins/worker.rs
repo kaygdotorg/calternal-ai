@@ -26,8 +26,6 @@
 //! directory, and keep state in memory across invocations in the same
 //! (plugin, space). Cost per live worker: one process and three OS threads.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};

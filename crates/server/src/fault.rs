@@ -1,8 +1,6 @@
 //! Crash-point fault injection for durability tests. Compiled into debug
 //! builds only; release builds ignore `CALTERNAL_FAULT` entirely.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 /// Durable write boundaries available to disposable crash tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

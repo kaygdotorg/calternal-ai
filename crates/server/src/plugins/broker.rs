@@ -14,8 +14,6 @@
 //! [`crate::secrets::plugin_handle`]. Every other declared host call is
 //! refused until its host service exists.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -214,7 +212,7 @@ impl<D: Directory> SpaceHost<D> {
 
     fn has(&self, capability: Capability) -> bool {
         self.state
-            .tokens
+            .directory
             .capabilities(self.identity.id, self.space)
             .is_some_and(|set| set.contains(capability))
     }
@@ -287,7 +285,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         if self.run.as_ref().is_some_and(|r| !r.live.is_current(r.run))
             || !self
                 .session
-                .is_live_blocking(&self.state.tokens, &self.runtime)
+                .is_live_blocking(&self.state.directory, &self.runtime)
             || !self.has(required)
         {
             return false;

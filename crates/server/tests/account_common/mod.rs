@@ -8,7 +8,7 @@ use axum::{
 use calternal_auth::{Auth, AuthConfig};
 use calternal_server::{
     api::{self, AppState},
-    auth::{Directory, TokenTable},
+    auth::{Directory, StoredDirectory},
     plugins::Registry,
     store::Store,
 };
@@ -34,12 +34,12 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
     tweak(&mut config);
     let roots = calternal_roots::Roots { appdata: dir.path().join("appdata"), userdata_ssd: dir.path().join("userdata-ssd"), userdata_hdd: dir.path().join("userdata-hdd") };
     let store = Store::open(&roots, true).unwrap();
-    let tokens = TokenTable::open(&roots.appdata, config, false, None).unwrap();
+    let tokens = StoredDirectory::open(&roots.appdata, config, false, None).unwrap();
     let auth = tokens.http_auth().unwrap().auth.clone();
     let router = api::router(
         Arc::new(AppState {
             store,
-            tokens,
+            directory: tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),
             jobs: calternal_server::plugins::Jobs::disabled(),

@@ -158,15 +158,15 @@ impl Store {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(db_err)?;
-        if version != 0 && version != 3 {
+        if version != 0 && version != 4 {
             return Err(Error::unavailable(
                 "unsupported preview schema; use fresh disposable data",
             ));
         }
         conn.execute_batch("BEGIN;
             CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
-            CREATE TABLE IF NOT EXISTS plugin_outbox(principal TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(principal,space_id,request_id));
-            PRAGMA user_version=3;COMMIT;").map_err(db_err)?;
+            CREATE TABLE IF NOT EXISTS plugin_outbox(account TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(account,space_id,request_id));
+            PRAGMA user_version=4;COMMIT;").map_err(db_err)?;
         let content = Content::open(roots.clone(), secrets, Duration::from_secs(600), content_fault)?;
         // Fails closed: a missing or wrong secret key stops startup instead of
         // minting a key that cannot read the stored secrets.
@@ -183,15 +183,15 @@ impl Store {
         let pending = store
             .readers
             .read(|c| {
-                c.prepare("SELECT principal,space_id,request_id FROM plugin_outbox ORDER BY rowid")?
+                c.prepare("SELECT account,space_id,request_id FROM plugin_outbox ORDER BY rowid")?
                     .query_map([], |r| {
                         Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
                     })?
                     .collect::<Result<Vec<_>, _>>()
             })
             .map_err(db_err)?;
-        for (principal, space, request) in pending {
-            store.publish_plugin_pending(stored_id(&principal)?, stored_id(&space)?, &request)?;
+        for (account, space, request) in pending {
+            store.publish_plugin_pending(stored_id(&account)?, stored_id(&space)?, &request)?;
         }
         Ok(store)
     }
@@ -279,20 +279,20 @@ impl Store {
             next,
         ))
     }
-    /// Reads `principal`'s receipt for `request_id` in `space`, after the caller has
+    /// Reads `account`'s receipt for `request_id` in `space`, after the caller has
     /// checked current grants there. Request IDs are scoped to (account, space), so
     /// another account or space never sees it. A pending control intent for the same
     /// key finishes publication first. Cost: one indexed outbox read and one journal
     /// receipt read; journal fsyncs only during pending replay.
     pub fn receipt(
         &self,
-        principal: AccountId,
+        account: AccountId,
         space: SpaceId,
         request_id: &str,
     ) -> Result<Option<Receipt>, Error> {
-        self.publish_plugin_pending(principal, space, request_id)?;
+        self.publish_plugin_pending(account, space, request_id)?;
         self.content
-            .receipt(space, principal, request_id)
+            .receipt(space, account, request_id)
             .map(|r| {
                 r.map(|r| Receipt {
                     operation: r.operation,
@@ -304,20 +304,20 @@ impl Store {
     }
     fn publish_plugins_for_space(&self, space_id: SpaceId) -> Result<(), Error> {
         loop {
-            let first=self.readers.read(|c| c.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional()).map_err(db_err)?;
-            let Some((principal, request)) = first else {
+            let first=self.readers.read(|c| c.query_row("SELECT account,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional()).map_err(db_err)?;
+            let Some((account, request)) = first else {
                 return Ok(());
             };
-            self.publish_plugin_pending(stored_id(&principal)?, space_id, &request)?;
+            self.publish_plugin_pending(stored_id(&account)?, space_id, &request)?;
         }
     }
     fn publish_plugin_pending(
         &self,
-        principal: AccountId,
+        account: AccountId,
         space: SpaceId,
         request_id: &str,
     ) -> Result<(), Error> {
-        let pending=self.readers.read(|c| c.query_row("SELECT operation,fingerprint,result_json FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",params![principal.to_string(),space.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional()).map_err(db_err)?;
+        let pending=self.readers.read(|c| c.query_row("SELECT operation,fingerprint,result_json FROM plugin_outbox WHERE account=?1 AND space_id=?2 AND request_id=?3",params![account.to_string(),space.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional()).map_err(db_err)?;
         if let Some((operation, fingerprint, json)) = pending {
             let result = serde_json::from_str(&json)
                 .map_err(|_| Error::internal("corrupt plugin publication"))?;
@@ -325,7 +325,7 @@ impl Store {
                 .record_receipt(
                     space,
                     Request {
-                        account: principal,
+                        account: account,
                         id: request_id,
                         operation: &operation,
                         fingerprint: &fingerprint,
@@ -335,8 +335,8 @@ impl Store {
                 ?;
             self.writer()
                 .execute(
-                    "DELETE FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",
-                    params![principal.to_string(), space.to_string(), request_id],
+                    "DELETE FROM plugin_outbox WHERE account=?1 AND space_id=?2 AND request_id=?3",
+                    params![account.to_string(), space.to_string(), request_id],
                 )
                 .map_err(db_err)?;
         }
@@ -348,7 +348,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
-        principal: AccountId,
+        account: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -367,7 +367,7 @@ impl Store {
             )
             ?;
         let request = Request {
-            account: principal,
+            account: account,
             id: request_id,
             operation,
             fingerprint,
@@ -394,7 +394,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
-        principal: AccountId,
+        account: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -406,7 +406,7 @@ impl Store {
     ) -> Result<Note, Error> {
         let current = self.get(space_id, id)?;
         let request = Request {
-            account: principal,
+            account: account,
             id: request_id,
             operation,
             fingerprint,
@@ -442,7 +442,7 @@ impl Store {
     /// Cost: one per-space journal append with FULL durability.
     pub fn record_plugin_receipt(
         &self,
-        principal: AccountId,
+        account: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -450,7 +450,7 @@ impl Store {
         result: serde_json::Value,
     ) -> Result<(), Error> {
         let request = Request {
-            account: principal,
+            account: account,
             id: request_id,
             operation,
             fingerprint,
@@ -482,7 +482,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn write_item(
         &self,
-        principal: AccountId,
+        account: AccountId,
         request_id: &str,
         fingerprint: &str,
         space_id: SpaceId,
@@ -496,7 +496,7 @@ impl Store {
             self.read_item(space_id, kind, &id.to_string())?;
         }
         let request = Request {
-            account: principal,
+            account: account,
             id: request_id,
             operation: "plugin.write_item",
             fingerprint,
@@ -522,7 +522,7 @@ impl Store {
     pub fn provision_plugin(
         &self,
         space_id: SpaceId,
-        principal: AccountId,
+        account: AccountId,
         kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
@@ -550,7 +550,7 @@ impl Store {
             ?;
         for (kind, key, title) in collections {
             self.content
-                .ensure_standard_collection(space, principal, kind, key, title)
+                .ensure_standard_collection(space, account, kind, key, title)
                 ?;
         }
         Ok(())
@@ -578,7 +578,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn set_plugin_enabled(
         &self,
-        principal: AccountId,
+        account: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -615,7 +615,7 @@ impl Store {
         tx.execute(
             "INSERT INTO plugin_outbox VALUES(?1,?2,?3,?4,?5,?6)",
             params![
-                principal.to_string(),
+                account.to_string(),
                 request_id,
                 operation,
                 fingerprint,
@@ -626,7 +626,7 @@ impl Store {
         .map_err(db_err)?;
         tx.commit().map_err(db_err)?;
         drop(writer);
-        self.publish_plugin_pending(principal, space_id, request_id)?;
+        self.publish_plugin_pending(account, space_id, request_id)?;
         Ok((next, value))
     }
 }

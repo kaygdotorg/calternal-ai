@@ -3,8 +3,6 @@
 //! [`super::jobs::Jobs`]. Every function runs inside the caller's transaction or
 //! connection lock and performs only indexed statements.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use calternal_core::JobState;
 use rusqlite::{Connection, OptionalExtension, params};

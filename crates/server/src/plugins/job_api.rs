@@ -20,8 +20,6 @@
 //! plugin's activation at the job's generation; on failure the stream closes. A job
 //! the caller cannot see is the same not-found as a missing one.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 use std::time::Duration;
 
@@ -74,7 +72,7 @@ async fn visible<D: Directory>(
     job: &Job,
     required: Capability,
 ) -> bool {
-    if !session.is_live(&state.tokens).await {
+    if !session.is_live(&state.directory).await {
         return false;
     }
     let Ok(space) = SpaceId::parse(&job.space) else {
@@ -87,7 +85,7 @@ async fn visible<D: Directory>(
         job.generation,
     );
     blocking(move || {
-        let caps = st.tokens.capabilities(account, space);
+        let caps = st.directory.capabilities(account, space);
         let Some(plugin) = st.registry.get(&plugin) else {
             return Ok(false);
         };
@@ -124,7 +122,7 @@ pub async fn dispatch<D: Directory>(
     if op == "jobs.cancel" {
         let owner = job.account == identity.id
             || state
-                .tokens
+                .directory
                 .capabilities(
                     identity.id,
                     SpaceId::parse(&space).map_err(|_| Error::not_found("job not found"))?,

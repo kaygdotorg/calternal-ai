@@ -2,7 +2,7 @@
 mod support;
 use calternal_server::{
     api::{AppState, Shared, dispatch},
-    auth::{Identity, TokenTable},
+    auth::{Identity, StoredDirectory},
     plugins::Registry,
     store::Store,
 };
@@ -21,12 +21,12 @@ impl Fixture {
         let dir = tempfile::tempdir().unwrap();
         let roots = support::roots(dir.path());
         let store = Store::open(&roots, true).unwrap();
-        let tokens = TokenTable::load_or_create(&roots.appdata).unwrap();
+        let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
         let dev = support::dev(&tokens);
         let (owner, guest) = (dev.owner, dev.guest);
         let state = Arc::new(AppState {
             store,
-            tokens,
+            directory: tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),
             jobs: calternal_server::plugins::Jobs::disabled(),

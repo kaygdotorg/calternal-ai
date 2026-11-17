@@ -245,7 +245,7 @@ async fn authorize<D: Directory>(
 ) -> Result<(), Error> {
     let (state, id) = (state.clone(), who.id);
     blocking(
-        move || match state.tokens.capabilities(id, space) {
+        move || match state.directory.capabilities(id, space) {
             Some(caps) if caps.contains(Capability::PluginsUse) => Ok(()),
             _ => Err(Error::not_found("space not found")),
         },

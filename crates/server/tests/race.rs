@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use calternal_server::api::{AppState, allowed_hosts, dispatch};
-use calternal_server::auth::TokenTable;
+use calternal_server::auth::StoredDirectory;
 use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
 use serde_json::{Value, json};
@@ -40,13 +40,13 @@ async fn disable_during_invocation_discards_result() {
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
         store,
-        tokens: TokenTable::load_or_create(&data).unwrap(),
+        directory: StoredDirectory::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),
         workers: WorkerPool::new(Some(node)),
         jobs: calternal_server::plugins::Jobs::disabled(),
         allowed_hosts: allowed_hosts(0),
     });
-    let dev = support::dev(&state.tokens);
+    let dev = support::dev(&state.directory);
     let owner = dev.owner;
 
     let note = dispatch(

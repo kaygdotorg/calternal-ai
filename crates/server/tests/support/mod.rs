@@ -104,7 +104,7 @@ impl Dev {
 
 /// Read [`Dev`] from a development directory. Runs on its own thread because the
 /// directory blocks on its database worker.
-pub fn dev(table: &calternal_server::auth::TokenTable) -> Dev {
+pub fn dev(table: &calternal_server::auth::StoredDirectory) -> Dev {
     use calternal_server::auth::Directory;
     std::thread::scope(|scope| {
         scope

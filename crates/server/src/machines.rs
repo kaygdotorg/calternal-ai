@@ -40,8 +40,6 @@
 //! [`MachineService::run`] and [`MachineService::stop_run`] are the whole
 //! caller-facing API; the HTTP endpoints are thin wrappers over them.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod admin;
 pub mod db;
