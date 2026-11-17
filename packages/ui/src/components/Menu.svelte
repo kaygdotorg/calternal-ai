@@ -19,6 +19,7 @@
   // Anchored to `trigger` (a button) or to `anchor` (a point, for a context menu). `label` names the menu.
   import Icon from "./Icon.svelte";
   import Popover from "./Popover.svelte";
+  import { textField } from "../lib/textfield";
   import Sheet from "./Sheet.svelte";
   import { currentForm } from "../lib/theme";
   import { roving } from "../lib/roving";
@@ -65,7 +66,7 @@
   {#if search}
     <div class="s">
       <Icon inline name="search" />
-      <input type="search" placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" spellcheck="false" onkeydown={fromSearch} />
+      <input type="search" use:textField={{ kind: "search", cancels: true }} placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" onkeydown={fromSearch} />
     </div>
   {/if}
   <div bind:this={list} class="menu" role="presentation" use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
