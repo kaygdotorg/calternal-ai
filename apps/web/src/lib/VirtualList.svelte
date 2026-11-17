@@ -93,10 +93,6 @@
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 
-  /** Scrolls so row `i` is at the top. */
-  export function scrollToIndex(i: number) {
-    if (scroller) scroller.scrollTop = tree.prefix(i) + topInset;
-  }
   /** Scrolls to the end and keeps following it while the list grows. */
   export function scrollToBottom() {
     stuck = true;

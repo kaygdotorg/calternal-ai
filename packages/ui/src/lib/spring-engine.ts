@@ -99,21 +99,3 @@ export const active = () => jobs.size > 0;
 export const prefersReducedMotion = () =>
   typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/**
- * A spring as a CSS `linear()` easing, for motion that can stay on the compositor (a single
- * state change nobody will grab mid-flight).
- */
-export function springEasing(config: SpringConfig): { easing: string; duration: number } {
-  const s = new Spring(0, config, 0.001);
-  s.target = 1;
-  const points: number[] = [0];
-  const dt = 1 / 60;
-  let t = 0;
-  while (!s.settled && t < 4) {
-    s.step(dt);
-    t += dt;
-    points.push(s.value);
-  }
-  points[points.length - 1] = 1;
-  return { easing: `linear(${points.map((p) => p.toFixed(4)).join(", ")})`, duration: Math.round(t * 1000) };
-}
