@@ -1,0 +1,123 @@
+{
+  "breach": false,
+  "commit": "0126438",
+  "limitation": "three independent servers per size idle concurrently; no latency samples are taken here",
+  "observations": [
+    {
+      "after_mib": 23.37890625,
+      "before_mib": 23.375,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.00023582,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 0,
+      "spaces": 1,
+      "writers_after": 0,
+      "writers_before": 1
+    },
+    {
+      "after_mib": 23.30078125,
+      "before_mib": 23.3515625,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.003007938,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 1,
+      "spaces": 1,
+      "writers_after": 0,
+      "writers_before": 1
+    },
+    {
+      "after_mib": 23.3671875,
+      "before_mib": 23.359375,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.00530251,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 2,
+      "spaces": 1,
+      "writers_after": 0,
+      "writers_before": 1
+    },
+    {
+      "after_mib": 48.03125,
+      "before_mib": 52.546875,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.007500241,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 0,
+      "spaces": 100,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 47.7265625,
+      "before_mib": 52.25390625,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.139015915,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 1,
+      "spaces": 100,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 48.25,
+      "before_mib": 52.79296875,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.265954688,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 2,
+      "spaces": 100,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 56.53515625,
+      "before_mib": 61.23828125,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.392600922,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 0,
+      "spaces": 1000,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 56.61328125,
+      "before_mib": 61.25,
+      "budget_mib": 64.0,
+      "idle_seconds": 633.807168272,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 1,
+      "spaces": 1000,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 56.078125,
+      "before_mib": 60.71875,
+      "budget_mib": 64.0,
+      "idle_seconds": 635.995709283,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 2,
+      "spaces": 1000,
+      "writers_after": 0,
+      "writers_before": 64
+    }
+  ],
+  "reproduced": false,
+  "servers": 9,
+  "simultaneous_idle_only": true,
+  "space_cases": [
+    1,
+    100,
+    1000
+  ]
+}
