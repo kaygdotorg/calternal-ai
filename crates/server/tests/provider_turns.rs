@@ -114,6 +114,48 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
             .unwrap()
             .contains("PRIVATE_LOGIN_SENTINEL")
     );
+    // Exercise the public CLI through the full transport in both output modes.
+    for json_output in [false, true] {
+        let mut command = tokio::process::Command::new(BIN);
+        command.kill_on_drop(true);
+        if json_output {
+            command.arg("--json");
+        }
+        command
+            .args(["agent", "--base-url", &server.url(), "--token-file"])
+            .arg(data.join("dev-tokens/owner.token"))
+            .args([
+                "run",
+                "--space-id",
+                &space,
+                "--thread-id",
+                &Uuid::new_v4().to_string(),
+                "--prompt",
+                "hello",
+            ]);
+        let output = tokio::time::timeout(Duration::from_secs(20), command.output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        if json_output {
+            let frames: Vec<Value> = stdout
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert!(frames.iter().any(|e| e["event"]["type"] == "text_delta"));
+            assert!(frames.iter().any(|e| e["event"]["type"] == "tool_finished"));
+            assert_eq!(frames.last().unwrap()["job"]["state"], "done");
+        } else {
+            assert!(stdout.contains("Hello 🌏"));
+            assert!(stdout.contains("Step:"));
+        }
+    }
     // Check runs in the same persistent account home and reveals only status.
     let check = op(
         &server,

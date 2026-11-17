@@ -524,6 +524,7 @@ mod cli_output_tests {
             "build-machine-with-a-long-name",
             "linux",
             "x86_64",
+            false,
         )
         .unwrap()
         .unwrap();

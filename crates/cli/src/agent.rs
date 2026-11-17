@@ -1,4 +1,4 @@
-//! Non-interactive provider CLI, shared by `calternal` and `cl`.
+//! Non-interactive provider commands for `calternal`, using the shared output module.
 use crate::output::{CliError, Output};
 use calternal_client::{CancellationToken, Client};
 use calternal_core::{AgentInput, AgentMode, OperationRequest};
@@ -57,7 +57,7 @@ pub enum Command {
         /// Installed CLI model identifier.
         #[arg(long, default_value = "sonnet")]
         model: String,
-        /// Permission mode: least_access or approve_for_me (default).
+        /// Permission mode: least_access, approve_for_me (default) or full_access.
         #[arg(long, default_value = "approve_for_me")]
         mode: String,
         /// Originating app prefix, for least-access mode.
@@ -78,7 +78,7 @@ pub enum Command {
     Mode {
         /// Turn job UUID.
         job_id: String,
-        /// least_access or approve_for_me; requires a fresh passkey session.
+        /// least_access, approve_for_me or full_access; requires a fresh passkey session.
         mode: String,
     },
     /// Approve a pending scope using a freshly verified person session.

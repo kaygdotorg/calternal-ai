@@ -1,6 +1,6 @@
 //! Streaming provider-event rendering through the shared CLI output surface.
-use super::{CliError,Output};
-use serde_json::{Value,json};
+use super::{CliError, Output};
+use serde_json::{Value, json};
 use std::io::Write;
 
 impl Output {
@@ -70,4 +70,3 @@ impl Output {
         self.agent_event(&json!({"type":"error","code":error.code,"message":error.message,"hint":error.hint,"request_id":error.request_id,"details":error.details}));
     }
 }
-

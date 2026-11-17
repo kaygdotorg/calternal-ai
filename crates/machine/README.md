@@ -21,7 +21,7 @@ calternal machine status
 
 Machine directory: `$CALTERNAL_MACHINE_DIR`, else `$XDG_DATA_HOME/calternal/machine`,
 else `~/.local/share/calternal/machine`. It holds `credentials` (`key: value` lines,
-mode 0600: server, machine id, owner, Ed25519 private key) and `sandboxes/accounts/<account>/threads/<thread>/work` and a persistent `accounts/<account>/home`.
+mode 0600: server, machine id, owner, Ed25519 private key) and `sandboxes/accounts/<account>/threads/<thread>/work` and a persistent `sandboxes/accounts/<account>/home`.
 Exit code 3 means the machine was revoked.
 
 ## Design
