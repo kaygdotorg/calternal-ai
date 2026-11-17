@@ -66,9 +66,19 @@ async function startServer(dataDir) {
   assert.match(ownerToken, /^[a-f0-9]{64}$/);
   assert.match(guestToken, /^[a-f0-9]{64}$/);
   assert.notEqual(ownerToken, guestToken);
+  const spaces = async (token) => {
+    const response = await fetch(`${startup.base_url}/api/v1/describe`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200);
+    return (await response.json()).principal.spaces.map((grant) => grant.id);
+  };
+  // Fixture spaces come from describe: the guest sees only the shared one.
+  const [shared] = await spaces(guestToken);
+  const personal = (await spaces(ownerToken)).find((id) => id !== shared);
   return {
     child,
     startup,
+    personal,
+    shared,
     baseUrl: startup.base_url,
     ownerToken,
     guestToken,
@@ -117,7 +127,7 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.equal(catalog.genui_version, 1);
     assert.ok(catalog.operations.some((entry) => entry.id === "notes-insights.summarize"));
 
-    const createInput = { space_id: "personal", title: "Integration note", markdown: "Hello world\n" };
+    const createInput = { space_id: server.personal, title: "Integration note", markdown: "Hello world\n" };
     const createRequestId = `create-${randomUUID()}`;
     const create = await operation(server, server.ownerToken, "notes.create", createInput, createRequestId);
     assert.equal(create.status, 200, JSON.stringify(create.body));
@@ -129,14 +139,14 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.equal(retry.status, 200, JSON.stringify(retry.body));
     assert.deepEqual(retry.body.data.note, note);
 
-    const list = await operation(server, server.ownerToken, "notes.list", { space_id: "personal" });
+    const list = await operation(server, server.ownerToken, "notes.list", { space_id: server.personal });
     assert.equal(list.status, 200, JSON.stringify(list.body));
     assert.equal(list.body.data.notes.length, 1);
     assert.equal(list.body.data.notes[0].id, note.id);
     assert.equal(Object.hasOwn(list.body.data.notes[0], "markdown"), false);
 
     const stale = await operation(server, server.ownerToken, "notes.update", {
-      space_id: "personal",
+      space_id: server.personal,
       id: note.id,
       base_revision: "stale-revision",
       title: "Must not apply",
@@ -144,11 +154,11 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     });
     assert.equal(stale.status, 409);
     assert.equal(stale.body.error.code, "conflict");
-    const unchanged = await operation(server, server.ownerToken, "notes.get", { space_id: "personal", id: note.id });
+    const unchanged = await operation(server, server.ownerToken, "notes.get", { space_id: server.personal, id: note.id });
     assert.equal(unchanged.body.data.note.markdown, "Hello world\n");
 
     const update = await operation(server, server.ownerToken, "notes.update", {
-      space_id: "personal",
+      space_id: server.personal,
       id: note.id,
       base_revision: note.revision,
       title: "Renamed integration note",
@@ -158,30 +168,30 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.notEqual(update.body.data.note.revision, note.revision);
     assert.equal(update.body.data.note.title, "Renamed integration note");
 
-    const history = await operation(server, server.ownerToken, "notes.history", { space_id: "personal", id: note.id });
+    const history = await operation(server, server.ownerToken, "notes.history", { space_id: server.personal, id: note.id });
     assert.equal(history.status, 200, JSON.stringify(history.body));
     assert.equal(history.body.data.versions.length, 2);
     assert.ok(history.body.data.versions.every((version) => version.markdown === "Hello world\n"));
     assert.deepEqual(new Set(history.body.data.versions.map((version) => version.title)), new Set(["Integration note", "Renamed integration note"]));
 
-    const personalDenied = await operation(server, server.guestToken, "notes.get", { space_id: "personal", id: note.id });
+    const personalDenied = await operation(server, server.guestToken, "notes.get", { space_id: server.personal, id: note.id });
     assert.equal(personalDenied.status, 404);
     assert.equal(personalDenied.body.error.code, "not_found");
 
     const sharedCreate = await operation(server, server.ownerToken, "notes.create", {
-      space_id: "shared",
+      space_id: server.shared,
       title: "Shared note",
       markdown: "Visible to the guest\n",
     });
     assert.equal(sharedCreate.status, 200, JSON.stringify(sharedCreate.body));
     const sharedRead = await operation(server, server.guestToken, "notes.get", {
-      space_id: "shared",
+      space_id: server.shared,
       id: sharedCreate.body.data.note.id,
     });
     assert.equal(sharedRead.status, 200, JSON.stringify(sharedRead.body));
     assert.equal(sharedRead.body.data.note.markdown, "Visible to the guest\n");
 
-    const pluginsBefore = await operation(server, server.ownerToken, "plugins.list", { space_id: "personal" });
+    const pluginsBefore = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
     assert.equal(pluginsBefore.status, 200, JSON.stringify(pluginsBefore.body));
     const notesPlugin = pluginsBefore.body.data.plugins.find((plugin) => plugin.manifest.id === "notes");
     const insightsPlugin = pluginsBefore.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights");
@@ -190,7 +200,7 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
 
     // Preview uses fixed fixture text and remains available before activation.
     const preview = await operation(server, server.ownerToken, "plugins.preview", {
-      space_id: "personal",
+      space_id: server.personal,
       plugin_id: "notes-insights",
     });
     assert.equal(preview.status, 200, JSON.stringify(preview.body));
@@ -199,20 +209,20 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.equal(preview.body.data.view.root.type, "stack");
     assert.deepEqual(preview.body.data.view.root.children.map((node) => node.type), ["stat", "stat", "stat"]);
 
-    const stillDisabled = await operation(server, server.ownerToken, "plugins.list", { space_id: "personal" });
+    const stillDisabled = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
     assert.equal(stillDisabled.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights").enabled, false);
-    const summarizeDenied = await operation(server, server.ownerToken, "notes-insights.summarize", { space_id: "personal", id: note.id });
+    const summarizeDenied = await operation(server, server.ownerToken, "notes-insights.summarize", { space_id: server.personal, id: note.id });
     assert.equal(summarizeDenied.status, 403);
     assert.equal(summarizeDenied.body.error.code, "forbidden");
 
     const enable = await operation(server, server.ownerToken, "plugins.enable", {
-      space_id: "personal",
+      space_id: server.personal,
       plugin_id: "notes-insights",
     });
     assert.equal(enable.status, 200, JSON.stringify(enable.body));
     assert.equal(enable.body.data.plugin.enabled, true);
 
-    const summarize = await operation(server, server.ownerToken, "notes-insights.summarize", { space_id: "personal", id: note.id });
+    const summarize = await operation(server, server.ownerToken, "notes-insights.summarize", { space_id: server.personal, id: note.id });
     assert.equal(summarize.status, 200, JSON.stringify(summarize.body));
     assert.deepEqual(summarize.body.data.stats, { words: 2, characters: 12, lines: 1 });
     assert.deepEqual(summarize.body.data.view.root.children.map((node) => node.value), ["2", "12", "1"]);
@@ -222,13 +232,13 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     server = await startServer(dataDir);
     assert.equal(server.ownerToken, tokenBeforeRestart);
 
-    const afterRestart = await operation(server, server.ownerToken, "notes.get", { space_id: "personal", id: note.id });
+    const afterRestart = await operation(server, server.ownerToken, "notes.get", { space_id: server.personal, id: note.id });
     assert.equal(afterRestart.status, 200, JSON.stringify(afterRestart.body));
     assert.equal(afterRestart.body.data.note.title, "Renamed integration note");
     assert.equal(afterRestart.body.data.note.markdown, "Hello world\n");
-    const enabledAfterRestart = await operation(server, server.ownerToken, "plugins.list", { space_id: "personal" });
+    const enabledAfterRestart = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
     assert.equal(enabledAfterRestart.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights").enabled, true);
-    const historyAfterRestart = await operation(server, server.ownerToken, "notes.history", { space_id: "personal", id: note.id });
+    const historyAfterRestart = await operation(server, server.ownerToken, "notes.history", { space_id: server.personal, id: note.id });
     assert.equal(historyAfterRestart.body.data.versions.length, 2);
   } finally {
     await stopServer(server);

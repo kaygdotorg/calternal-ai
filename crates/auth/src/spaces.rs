@@ -449,14 +449,16 @@ pub struct DevelopmentIds {
     pub owner: AccountId,
     /// Account associated with the development guest token.
     pub guest: AccountId,
-    /// Space displayed as personal, with an explicit temporary preview root binding.
+    /// The owner's space named `personal`; the guest is not a member.
     pub personal: SpaceId,
-    /// Space displayed as shared, with an explicit temporary preview root binding.
+    /// The space named `shared`, where the guest is a reader.
     pub shared: SpaceId,
 }
 impl Spaces {
     /// Creates development fixtures exactly once, preserving later revocations,
     /// transfers and deletions across restart. Never call for real installations.
+    /// `development_directory` records what it created so a restart returns the same
+    /// IDs; nothing on the request path reads it, and requests never use the names.
     /// Accounts and spaces each receive a separate freshly allocated UUIDv7.
     /// A configured recovery barrier also covers this explicit fixture mutation.
     pub fn seed_development(&self) -> Result<DevelopmentIds> {

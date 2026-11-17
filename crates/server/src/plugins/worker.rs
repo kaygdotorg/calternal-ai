@@ -221,7 +221,7 @@ impl Worker {
 /// Bounded pool of long-lived workers keyed by (plugin ID, space key).
 pub struct WorkerPool {
     node: Option<NodeRuntime>,
-    workers: Mutex<HashMap<(String, String), Worker>>,
+    workers: Mutex<HashMap<(String, SpaceId), Worker>>,
     in_flight: Arc<AtomicUsize>,
     max_workers: usize,
 }
@@ -261,13 +261,12 @@ impl WorkerPool {
     }
 
     /// Run one operation on the (plugin, space) worker, starting it if needed.
-    /// `space_key` selects the process; `space` is the UUID the session is pinned to.
+    /// `space` selects the process and is the space its session is pinned to.
     /// Cost: pool lock; on a cold start one bundle hash and one process spawn; then
     /// one channel round trip plus the worker's own frames and broker effects.
     pub async fn invoke(
         &self,
         plugin: &Arc<Plugin>,
-        space_key: &str,
         space: SpaceId,
         call: Call,
     ) -> Outcome {
@@ -290,7 +289,7 @@ impl WorkerPool {
                     Ok(w) => w,
                     Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
                 };
-                let key = (plugin.manifest.id.clone(), space_key.to_owned());
+                let key = (plugin.manifest.id.clone(), space);
                 if !workers.get(&key).is_some_and(Worker::usable) {
                     workers.remove(&key);
                     if let Err(e) = self.make_room(&mut workers) {
@@ -335,7 +334,7 @@ impl WorkerPool {
     }
 
     /// Evict one idle worker if the pool is full; refuse when every worker is busy.
-    fn make_room(&self, workers: &mut HashMap<(String, String), Worker>) -> Result<(), Error> {
+    fn make_room(&self, workers: &mut HashMap<(String, SpaceId), Worker>) -> Result<(), Error> {
         workers.retain(|_, w| w.usable());
         if workers.len() < self.max_workers {
             return Ok(());

@@ -1000,7 +1000,7 @@ name: string, };
 
 export type SpaceInput = {
 /**
- * Stable space UUID; development inputs temporarily accept seeded aliases.
+ * Space UUID; names are never accepted in its place.
  */
 space_id: string, };
 /**
@@ -1009,7 +1009,7 @@ space_id: string, };
 
 export type SpaceMemberInput = {
 /**
- * Stable space UUID; development inputs temporarily accept seeded aliases.
+ * Space UUID; names are never accepted in its place.
  */
 space_id: string,
 /**
@@ -1022,7 +1022,7 @@ account_id: string, };
 
 export type SpaceSetRoleInput = {
 /**
- * Stable space UUID; development inputs temporarily accept seeded aliases.
+ * Space UUID; names are never accepted in its place.
  */
 space_id: string,
 /**
@@ -1273,7 +1273,7 @@ export type SpaceRole = "reader" | "editor" | "manager" | "owner";
 
 export type SpaceGrant = {
 /**
- * Stable space UUID in stored directories; fixture directories may expose aliases.
+ * Space UUID; the only way a space is named on the wire.
  */
 id: string,
 /**

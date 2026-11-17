@@ -29,7 +29,7 @@ use tower_http::services::ServeDir;
 
 use crate::auth::{Directory, Identity, TokenTable};
 use crate::authz::{self, Constraint};
-use calternal_types::Error;
+use calternal_types::{AccountId, Error, SpaceId};
 use crate::fault::{self, FaultPoint};
 use crate::plugins::worker::Outcome;
 use crate::plugins::{
@@ -268,15 +268,7 @@ async fn guard<D: Directory>(
             let session = if let Some(service) = state.tokens.http_auth() {
                 crate::account_http::identify(service, req.headers())
                     .await
-                    .map(|(id, installation)| {
-                        let session = Session::installation(id, installation);
-                        (
-                            Identity {
-                                id: Arc::from(id.to_string()),
-                            },
-                            session,
-                        )
-                    })
+                    .map(|(id, installation)| (Identity { id }, Session::installation(id, installation)))
             } else {
                 None
             };
@@ -301,9 +293,7 @@ async fn guard<D: Directory>(
             let session = if let Some(service) = state.tokens.http_auth() {
                 crate::account_http::identify(service, &credentials)
                     .await
-                    .map(|(id, _)| Identity {
-                        id: Arc::from(id.to_string()),
-                    })
+                    .map(|(id, _)| Identity { id })
             } else {
                 None
             };
@@ -467,6 +457,11 @@ async fn blocking<D: Directory, T: Send + 'static>(
     .map_err(|_| Error::internal("storage task failed"))?
 }
 
+/// A `space_id` that already passed authorization. Cost: one 36-byte parse.
+fn space_of(text: &str) -> Result<SpaceId, Error> {
+    SpaceId::parse(text).map_err(|_| Error::not_found("space not found"))
+}
+
 fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
     serde_json::to_value(v).map_err(|_| Error::internal("encode"))
 }
@@ -480,13 +475,12 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
 /// Stored directory lookups run on blocking tasks; identities contain no grants.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
-    p: impl Into<Identity>,
+    p: Identity,
     session: Session,
     request_id: &str,
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    let p = p.into();
     let mut input = input;
     let item_scoped = state
         .registry
@@ -539,7 +533,7 @@ pub async fn dispatch<D: Directory>(
             .get("space_id")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            && state.tokens.wire_space(hint) != resolved.space_id
+            && hint != resolved.space_id
         {
             return Err(Error::not_found("item not found"));
         }
@@ -596,7 +590,7 @@ pub async fn dispatch<D: Directory>(
                 .lock()
                 .map_err(|_| Error::internal("store poisoned"))?;
             if !matches!(operation.as_str(), "spaces.list" | "spaces.members")
-                && store.receipt(&p.id, &rid)?.is_some()
+                && store.receipt(p.id, &rid)?.is_some()
             {
                 return Err(Error::conflict(
                     "request_id was already used with different input",
@@ -607,49 +601,21 @@ pub async fn dispatch<D: Directory>(
         .await
         .map_err(|_| Error::internal("directory task failed"))?;
     }
-    let mut input = input;
-    if let Some(Value::String(space)) = input.get_mut("space_id") {
-        *space = state.tokens.content_space(space);
-    }
     if policy.constraint == Constraint::PluginInvocation {
         return invoke_plugin(state, p, session, request_id, op, policy, input).await;
     }
     let delivery_space = input
         .get("space_id")
         .and_then(Value::as_str)
-        .map(str::to_owned);
+        .and_then(|s| SpaceId::parse(s).ok());
     let value = dispatch_checked(state.clone(), p.clone(), request_id, op, input).await?;
     if let Some(space) = delivery_space {
         let st = state.clone();
-        tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &space))
+        tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, space))
             .await
             .map_err(|_| Error::internal("directory task failed"))??;
     }
-    Ok(wire_spaces(&state.tokens, value))
-}
-
-// Expose UUIDs while the development store retains its explicit root bindings.
-fn wire_spaces(directory: &impl Directory, mut value: Value) -> Value {
-    match &mut value {
-        Value::Object(object) => {
-            for (key, item) in object {
-                if key == "space_id" {
-                    if let Value::String(space) = item {
-                        *space = directory.wire_space(space);
-                    }
-                } else {
-                    *item = wire_spaces(directory, item.take());
-                }
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                *item = wire_spaces(directory, item.take());
-            }
-        }
-        _ => {}
-    }
-    value
+    Ok(value)
 }
 
 /// Private handler entry: called exclusively after the dispatch policy gate.
@@ -663,19 +629,22 @@ async fn dispatch_checked<D: Directory>(
     match op {
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
-            let notes = blocking(&state, move |s| s.list(&i.space_id, 100)).await?;
+            let space = space_of(&i.space_id)?;
+            let notes = blocking(&state, move |s| s.list(space, 100)).await?;
             to_value(NotesListResult { notes })
         }
         "notes.get" => {
             let i: NotesGetInput = decode(input)?;
-            let note = blocking(&state, move |s| s.get(&i.space_id, &i.id)).await?;
+            let space = space_of(&i.space_id)?;
+            let note = blocking(&state, move |s| s.get(space, &i.id)).await?;
             to_value(NoteResult { note })
         }
         "notes.history" => {
             let i: NotesHistoryInput = decode(input)?;
             let limit = i.limit.unwrap_or(20);
+            let space = space_of(&i.space_id)?;
             let (versions, next_cursor) = blocking(&state, move |s| {
-                s.history(&i.space_id, &i.id, limit, i.cursor.as_deref())
+                s.history(space, &i.id, limit, i.cursor.as_deref())
             })
             .await?;
             to_value(NotesHistoryResult {
@@ -686,12 +655,13 @@ async fn dispatch_checked<D: Directory>(
         "notes.create" | "notes.update" => mutate_note(state, p, request_id, op, input).await,
         "plugins.list" => {
             let i: PluginsListInput = decode(input)?;
+            let space = space_of(&i.space_id)?;
             let st = state.clone();
             let plugins = blocking(&state, move |s| {
                 st.registry
                     .plugins()
                     .iter()
-                    .map(|plugin| plugin_state(s, &i.space_id, plugin))
+                    .map(|plugin| plugin_state(s, space, plugin))
                     .collect::<Result<Vec<_>, _>>()
             })
             .await?;
@@ -700,6 +670,7 @@ async fn dispatch_checked<D: Directory>(
         "plugins.enable" | "plugins.disable" => {
             let fp = fingerprint(op, &input);
             let i: PluginInput = decode(input)?;
+            let space = space_of(&i.space_id)?;
             let enable = op == "plugins.enable";
             let st = state.clone();
             let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
@@ -707,24 +678,13 @@ async fn dispatch_checked<D: Directory>(
                 st.registry
                     .policy(&op)
                     .expect("bound policy")
-                    .authorize_space(
-                        &st.tokens,
-                        &Identity {
-                            id: principal.clone(),
-                        },
-                        &i.space_id,
-                    )?;
-                if st.tokens.has_space_receipt(
-                    &Identity {
-                        id: principal.clone(),
-                    },
-                    &rid,
-                )? {
+                    .authorize_space(&st.tokens, &Identity { id: principal }, space)?;
+                if st.tokens.has_space_receipt(&Identity { id: principal }, &rid)? {
                     return Err(Error::conflict(
                         "request_id was already used with different input",
                     ));
                 }
-                if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
+                if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
                     return Ok(v);
                 }
                 let plugin = st
@@ -745,19 +705,19 @@ async fn dispatch_checked<D: Directory>(
                         .map(|c| (c.kind.clone(), c.id.clone(), c.name.clone()))
                         .collect();
                     s.provision_plugin(
-                        &i.space_id,
-                        &principal,
+                        space,
+                        principal,
                         &plugin.kind_registrations(),
                         &collections,
                     )?;
                 }
                 let manifest = plugin.wire.clone();
                 let (_, value) = s.set_plugin_enabled(
-                    &principal,
+                    principal,
                     &rid,
                     &op,
                     &fp,
-                    &i.space_id,
+                    space,
                     &plugin.manifest.id,
                     default_row(plugin),
                     enable,
@@ -783,7 +743,7 @@ async fn dispatch_checked<D: Directory>(
                 .get(&i.plugin_id)
                 .ok_or_else(|| Error::not_found("plugin is not registered"))?
                 .clone();
-            preview(state, p, plugin, &i.space_id).await
+            preview(state, p, plugin, space_of(&i.space_id)?).await
         }
         _ => Err(Error::unavailable(
             "operation has no host binding in this preview",
@@ -796,7 +756,7 @@ async fn dispatch_checked<D: Directory>(
 /// pending materialization); a different fingerprint is a conflict.
 fn replay_receipt(
     s: &mut Store,
-    principal: &str,
+    principal: AccountId,
     rid: &str,
     op: &str,
     fp: &str,
@@ -826,7 +786,7 @@ fn default_row(plugin: &Plugin) -> PluginRow {
     crate::plugins::default_row(plugin)
 }
 
-fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, Error> {
+fn plugin_state(s: &Store, space: SpaceId, plugin: &Plugin) -> Result<PluginState, Error> {
     let row = activation(s, space, plugin)?;
     Ok(PluginState {
         manifest: plugin.wire.clone(),
@@ -911,7 +871,7 @@ async fn invoke_plugin<D: Directory>(
     let fp = fingerprint(op, &input);
     let mutates = plugin.operation(op).is_some_and(|o| o.mutates);
     let space = match input.remove("space_id") {
-        Some(Value::String(space)) => space,
+        Some(Value::String(space)) => space_of(&space)?,
         _ => {
             return Err(Error::invalid_input(
                 "input does not match operation schema",
@@ -920,7 +880,7 @@ async fn invoke_plugin<D: Directory>(
     };
     // The resolved space travels separately; the plugin sees only its declared input.
     let plugin_input = Value::Object(input.into_iter().collect());
-    let (space_key, plugin2, account) = (space.clone(), plugin.clone(), p.id.clone());
+    let (plugin2, account) = (plugin.clone(), p.id);
     let (st, rid, operation, fp2) = (
         state.clone(),
         request_id.to_owned(),
@@ -930,37 +890,31 @@ async fn invoke_plugin<D: Directory>(
     let admitted = blocking(&state, move |s| {
         // A mutating operation's retry replays its receipt and runs nothing again.
         if mutates {
-            if st.tokens.has_space_receipt(
-                &Identity {
-                    id: account.clone(),
-                },
-                &rid,
-            )? {
+            if st.tokens.has_space_receipt(&Identity { id: account }, &rid)? {
                 return Err(Error::conflict(
                     "request_id was already used with different input",
                 ));
             }
-            if let Some(v) = replay_receipt(s, &account, &rid, &operation, &fp2)? {
+            if let Some(v) = replay_receipt(s, account, &rid, &operation, &fp2)? {
                 return Ok(Err(v));
             }
         }
-        let row = activation(s, &space_key, &plugin2)?;
+        let row = activation(s, space, &plugin2)?;
         if !row.enabled {
             return Err(Error::forbidden("plugin is disabled in this space"));
         }
-        Ok(Ok((row.generation, s.worker_ids(&account, &space_key)?)))
+        Ok(Ok(row.generation))
     })
     .await?;
-    let (generation, (account_id, space_id)) = match admitted {
-        Ok(admitted) => admitted,
-        Err(replayed) => return Ok(wire_spaces(&state.tokens, replayed)),
+    let generation = match admitted {
+        Ok(generation) => generation,
+        Err(replayed) => return Ok(replayed),
     };
     let host = SpaceHost::new(
         state.clone(),
         p.clone(),
         session.clone(),
-        space.clone(),
-        space_id.to_string(),
+        space,
         plugin.clone(),
         generation,
         request_id.to_owned(),
@@ -969,12 +923,11 @@ async fn invoke_plugin<D: Directory>(
         .workers
         .invoke(
             &plugin,
-            &space,
-            space_id,
+            space,
             Call {
                 operation: op.to_owned(),
                 input: plugin_input,
-                account: account_id,
+                account: p.id,
                 host: Arc::new(host),
                 timeout: crate::plugins::WORKER_TIMEOUT,
                 cancel: None,
@@ -987,8 +940,8 @@ async fn invoke_plugin<D: Directory>(
     if !session.is_live(&state.tokens).await {
         return Err(Error::unauthorized("missing or invalid session"));
     }
-    let (space_key, plugin2) = (space.clone(), plugin.clone());
-    let still = blocking(&state, move |s| activation(s, &space_key, &plugin2)).await?;
+    let plugin2 = plugin.clone();
+    let still = blocking(&state, move |s| activation(s, space, &plugin2)).await?;
     if !still.enabled || still.generation != generation {
         return Err(Error::conflict(
             "plugin state changed during invocation; result discarded",
@@ -996,9 +949,8 @@ async fn invoke_plugin<D: Directory>(
         .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })));
     }
     let st = state.clone();
-    let delivery = space.clone();
-    let caller = p.id.clone();
-    tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &delivery))
+    let caller = p.id;
+    tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, space))
         .await
         .map_err(|_| Error::internal("directory task failed"))??;
     let value = outcome_value(outcome)?;
@@ -1009,11 +961,11 @@ async fn invoke_plugin<D: Directory>(
         let (principal, rid, op, result) =
             (caller, request_id.to_owned(), op.to_owned(), value.clone());
         blocking(&state, move |s| {
-            s.record_plugin_receipt(&principal, &rid, &op, &fp, &space, result)
+            s.record_plugin_receipt(principal, &rid, &op, &fp, space, result)
         })
         .await?;
     }
-    Ok(wire_spaces(&state.tokens, value))
+    Ok(value)
 }
 
 /// Preview a plugin without activating it or touching user data: its first
@@ -1024,7 +976,7 @@ async fn preview<D: Directory>(
     state: Shared<D>,
     p: Identity,
     plugin: Arc<Plugin>,
-    space: &str,
+    space: SpaceId,
 ) -> Result<Value, Error> {
     let (operation, target) = plugin
         .manifest
@@ -1033,19 +985,15 @@ async fn preview<D: Directory>(
         .find_map(|op| Some((op.id.clone(), op.target.clone()?)))
         .filter(|_| plugin.entry.worker.is_some())
         .ok_or_else(|| Error::not_found("plugin has no views"))?;
-    let (space_key, account) = (space.to_owned(), p.id.clone());
-    let (account_id, space_id) =
-        blocking(&state, move |s| s.worker_ids(&account, &space_key)).await?;
     let outcome = state
         .workers
         .invoke(
             &plugin,
             space,
-            space_id,
             Call {
                 operation,
                 input: serde_json::json!({ target.field: PREVIEW_ITEM_ID }),
-                account: account_id,
+                account: p.id,
                 host: Arc::new(PreviewHost { kind: target.kind }),
                 timeout: crate::plugins::WORKER_TIMEOUT,
                 cancel: None,
@@ -1086,50 +1034,43 @@ async fn mutate_note<D: Directory>(
     let op = op.to_string();
     let principal = p.id;
     let st = state.clone();
-    let space = create
-        .as_ref()
-        .map(|i| i.space_id.clone())
-        .or_else(|| update.as_ref().map(|i| i.space_id.clone()))
-        .expect("note scope");
+    let space = space_of(
+        create
+            .as_ref()
+            .map(|i| i.space_id.as_str())
+            .or_else(|| update.as_ref().map(|i| i.space_id.as_str()))
+            .expect("note scope"),
+    )?;
     blocking(&state, move |s| {
-        authz::policy(&op).expect("bound policy").authorize_space(
-            &st.tokens,
-            &Identity {
-                id: principal.clone(),
-            },
-            &space,
-        )?;
-        if st.tokens.has_space_receipt(
-            &Identity {
-                id: principal.clone(),
-            },
-            &rid,
-        )? {
+        authz::policy(&op)
+            .expect("bound policy")
+            .authorize_space(&st.tokens, &Identity { id: principal }, space)?;
+        if st.tokens.has_space_receipt(&Identity { id: principal }, &rid)? {
             return Err(Error::conflict(
                 "request_id was already used with different input",
             ));
         }
-        if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
+        if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
             return Ok(v);
         }
         let note = if let Some(i) = create {
             s.create(
-                &principal,
+                principal,
                 &rid,
                 &op,
                 &fp,
-                &i.space_id,
+                space,
                 &i.title,
                 &i.markdown,
             )?
         } else {
             let i = update.expect("update input");
             s.update(
-                &principal,
+                principal,
                 &rid,
                 &op,
                 &fp,
-                &i.space_id,
+                space,
                 &i.id,
                 &i.base_revision,
                 i.title.as_deref(),

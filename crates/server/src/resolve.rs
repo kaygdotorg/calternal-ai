@@ -41,20 +41,15 @@ pub(crate) fn resolve_for(
             || (required == Capability::ContentWrite && caps.contains(Capability::ContentWrite))
     };
     let missing = || Error::not_found("item not found");
-    let root = store.locate(kind, id)?.ok_or_else(missing)?;
-    let public_space = directory.wire_space(&root);
-    directory
-        .capabilities(&account.id, &public_space)
-        .filter(|c| visible(*c))
-        .ok_or_else(missing)?;
+    let space = store.locate(kind, id)?.ok_or_else(missing)?;
     let caps = directory
-        .capabilities(&account.id, &public_space)
+        .capabilities(account.id, space)
         .filter(|c| visible(*c))
         .ok_or_else(missing)?;
     Ok(ResolveResult {
         kind: kind.into(),
         id: id.into(),
-        space_id: public_space,
+        space_id: space.to_string(),
         access: Capability::ALL
             .into_iter()
             .filter(|c| caps.contains(*c))

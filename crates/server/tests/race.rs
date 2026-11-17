@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use calternal_server::api::{AppState, allowed_hosts, dispatch};
-use calternal_server::auth::{TokenTable, dev_principals};
+use calternal_server::auth::TokenTable;
 use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
 use serde_json::{Value, json};
@@ -44,10 +44,8 @@ async fn disable_during_invocation_discards_result() {
         jobs: calternal_server::plugins::Jobs::disabled(),
         allowed_hosts: allowed_hosts(0),
     });
-    let owner = dev_principals()
-        .into_iter()
-        .find(|p| p.id == "owner")
-        .unwrap();
+    let dev = support::dev(&state.tokens);
+    let owner = dev.owner;
 
     let note = dispatch(
         state.clone(),
@@ -55,7 +53,7 @@ async fn disable_during_invocation_discards_result() {
         calternal_server::plugins::Session::Static,
         "c",
         "notes.create",
-        obj(json!({"space_id": "personal", "title": "T", "markdown": "x"})),
+        obj(json!({"space_id": dev.personal, "title": "T", "markdown": "x"})),
     )
     .await
     .unwrap();
@@ -67,7 +65,7 @@ async fn disable_during_invocation_discards_result() {
             calternal_server::plugins::Session::Static,
             rid,
             op,
-            obj(json!({"space_id": "personal", "plugin_id": "notes-insights"})),
+            obj(json!({"space_id": dev.personal, "plugin_id": "notes-insights"})),
         )
     };
     toggle("e1", "plugins.enable").await.unwrap();
@@ -80,7 +78,7 @@ async fn disable_during_invocation_discards_result() {
             calternal_server::plugins::Session::Static,
             "s",
             "notes-insights.summarize",
-            obj(json!({"space_id": "personal", "id": id2})),
+            obj(json!({"space_id": dev.personal, "id": id2})),
         )
         .await
     });
@@ -107,7 +105,7 @@ async fn disable_during_invocation_discards_result() {
         calternal_server::plugins::Session::Static,
         "s2",
         "notes-insights.summarize",
-        obj(json!({"space_id": "personal", "id": id})),
+        obj(json!({"space_id": dev.personal, "id": id})),
     )
     .await
     .expect_err("disabled");

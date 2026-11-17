@@ -65,7 +65,9 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         id: r.get(0)?,
         space: space.to_owned(),
         plugin: r.get(1)?,
-        account: r.get(2)?,
+        account: r.get::<_, String>(2)?.parse().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
+        })?,
         // An unreadable session fails closed: fresh IDs match no live installation.
         session: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or(Session::Installation {
             account: calternal_types::AccountId::new(),

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use calternal_core::{ErrorCode, JsonObject};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch};
-use calternal_server::auth::{DevPrincipal, TokenTable, dev_principals};
+use calternal_server::auth::TokenTable;
 use calternal_server::authz::{self, Constraint, Scope};
 use calternal_types::Capability;
 use calternal_types::Error;
@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 struct Fixture {
     state: Shared<TokenTable>,
     root: PathBuf,
+    dev: support::Dev,
 }
 
 impl Drop for Fixture {
@@ -30,10 +31,6 @@ impl Drop for Fixture {
 
 fn obj(v: Value) -> JsonObject {
     serde_json::from_value(v).unwrap()
-}
-
-fn principal(id: &str) -> DevPrincipal {
-    dev_principals().into_iter().find(|p| p.id == id).unwrap()
 }
 
 fn tmp(tag: &str) -> PathBuf {
@@ -91,14 +88,15 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
         jobs: calternal_server::plugins::Jobs::open(&data).unwrap(),
         allowed_hosts: allowed_hosts(0),
     });
-    Fixture { state, root }
+    let dev = support::dev(&state.tokens);
+    Fixture { state, root, dev }
 }
 
 impl Fixture {
     async fn op(&self, who: &str, rid: &str, op: &str, input: Value) -> Result<Value, Error> {
         dispatch(
             self.state.clone(),
-            principal(who),
+            self.dev.who(who),
             calternal_server::plugins::Session::Static,
             rid,
             op,
@@ -106,7 +104,7 @@ impl Fixture {
         )
         .await
     }
-    async fn note(&self, space: &str, text: &str) -> String {
+    async fn note(&self, space: calternal_types::SpaceId, text: &str) -> String {
         let rid = uuid::Uuid::new_v4().to_string();
         let r = self
             .op(
@@ -190,7 +188,7 @@ fn policy_rows_are_derived_from_manifests() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collections() {
     let f = fixture("tagger", vec![tagger(&tmp("tagger-worker"))], None).await;
-    let input = json!({"space_id": "shared", "label": "urgent"});
+    let input = json!({"space_id": f.dev.shared, "label": "urgent"});
     // Disabled by default: admitted by policy, then refused as disabled.
     let e = f
         .op("owner", "t0", "tagger.tag", input.clone())
@@ -201,7 +199,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "tagger"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "tagger"}),
     )
     .await
     .unwrap();
@@ -232,7 +230,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
         .store
         .lock()
         .unwrap()
-        .read_item("shared", "tags", &id)
+        .read_item(f.dev.shared, "tags", &id)
         .unwrap();
     assert_eq!(item.bytes, b"urgent");
     assert!(find(&ssd, "tags"), "hidden kind folder missing");
@@ -259,14 +257,14 @@ async fn undeclared_host_call_is_refused_before_any_effect() {
         "done(f,stats('should not be delivered'))",
     );
     let f = fixture("undeclared", vec![plugin], None).await;
-    let id = f.note("personal", "hello world\n").await;
+    let id = f.note(f.dev.personal, "hello world\n").await;
     let e = f.summarize(&id).await.unwrap_err();
     assert_eq!(
         (e.code, e.message.as_str()),
         (ErrorCode::Unavailable, "extension request was refused")
     );
     let list = f
-        .op("owner", "l", "notes.list", json!({"space_id": "personal"}))
+        .op("owner", "l", "notes.list", json!({"space_id": f.dev.personal}))
         .await
         .unwrap();
     assert_eq!(
@@ -289,8 +287,8 @@ async fn one_long_lived_worker_per_plugin_and_space() {
         "const r=stats(m.data.text);r.stats.words=globalThis.n;done(f,r)",
     );
     let f = fixture("reuse", vec![plugin], None).await;
-    let personal = f.note("personal", "a b c\n").await;
-    let shared = f.note("shared", "a b c\n").await;
+    let personal = f.note(f.dev.personal, "a b c\n").await;
+    let shared = f.note(f.dev.shared, "a b c\n").await;
     assert_eq!(f.summarize(&personal).await.unwrap()["stats"]["words"], 1);
     assert_eq!(f.summarize(&personal).await.unwrap()["stats"]["words"], 2);
     assert_eq!(f.state.workers.live(), 1);
@@ -311,8 +309,8 @@ async fn worker_reads_only_its_own_space_and_has_no_ambient_access() {
         "const env=Object.keys(process.env).sort().join(',');let fsr;try{fs.readFileSync('/etc/hostname');fsr='read'}catch(e){fsr=e.code}const r=stats(m.ok?m.data.text:'');r.view.root.children[0].value=env+'|'+fsr+'|'+m.ok;done(f,r)",
     );
     let f = fixture("probe", vec![plugin], None).await;
-    let foreign = f.note("shared", "secret words here\n").await;
-    let own = f.note("personal", "mine\n").await;
+    let foreign = f.note(f.dev.shared, "secret words here\n").await;
+    let own = f.note(f.dev.personal, "mine\n").await;
     std::fs::write(dir.join("foreign"), &foreign).unwrap();
     let r = f.summarize(&own).await.unwrap();
     assert_eq!(r["stats"]["words"], 0, "foreign text reached the worker");
@@ -354,7 +352,7 @@ async fn deadline_overflow_and_malformed_output_stop_the_worker() {
     for (tag, on_invoke, message, bound) in cases {
         let dir = tmp(tag);
         let f = fixture(tag, vec![insights(&dir, on_invoke, "")], None).await;
-        let id = f.note("personal", "x\n").await;
+        let id = f.note(f.dev.personal, "x\n").await;
         let t0 = Instant::now();
         let e = f.summarize(&id).await.unwrap_err();
         assert_eq!(
@@ -380,14 +378,14 @@ async fn pool_capacity_is_bounded_and_released() {
         Some(1),
     )
     .await;
-    let personal = f.note("personal", "a\n").await;
-    let shared = f.note("shared", "b\n").await;
+    let personal = f.note(f.dev.personal, "a\n").await;
+    let shared = f.note(f.dev.shared, "b\n").await;
     let state = f.state.clone();
     let p2 = personal.clone();
     let first = tokio::spawn(async move {
         dispatch(
             state,
-            principal("owner"),
+            f.dev.owner,
             calternal_server::plugins::Session::Static,
             "c1",
             "notes-insights.summarize",
@@ -416,7 +414,7 @@ async fn tampered_bundle_is_refused_before_start() {
     let plugin = insights(&dir, support::READ_NOTE, support::COMPLETE);
     std::fs::write(dir.join("worker.js"), "process.exit(0)").unwrap();
     let f = fixture("digest", vec![plugin], None).await;
-    let id = f.note("personal", "x\n").await;
+    let id = f.note(f.dev.personal, "x\n").await;
     let e = f.summarize(&id).await.unwrap_err();
     assert_eq!(
         (e.code, e.message.as_str()),
@@ -452,7 +450,7 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
         f.state.registry.policy("targeted.count").unwrap().scope,
         Scope::Note
     );
-    let own = f.note("personal", "one two three\n").await;
+    let own = f.note(f.dev.personal, "one two three\n").await;
     let r = f
         .op(
             "owner",
@@ -549,7 +547,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "shapes"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "shapes"}),
     )
     .await
     .unwrap();
@@ -559,7 +557,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
             "owner",
             "s1",
             "shapes.save",
-            json!({"space_id": "shared", "body": body}),
+            json!({"space_id": f.dev.shared, "body": body}),
         )
         .await
         .unwrap();
@@ -569,7 +567,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         .store
         .lock()
         .unwrap()
-        .read_item("shared", "shapes", &id)
+        .read_item(f.dev.shared, "shapes", &id)
         .unwrap();
     assert_eq!(
         item.bytes,
@@ -593,7 +591,7 @@ async fn host_calls_recheck_the_callers_sign_in() {
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "tagger"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "tagger"}),
     )
     .await
     .unwrap();
@@ -603,11 +601,11 @@ async fn host_calls_recheck_the_callers_sign_in() {
     };
     let e = calternal_server::api::dispatch(
         f.state.clone(),
-        principal("owner"),
+        f.dev.owner,
         gone,
         "s1",
         "tagger.tag",
-        obj(json!({"space_id": "shared", "label": "late"})),
+        obj(json!({"space_id": f.dev.shared, "label": "late"})),
     )
     .await
     .unwrap_err();
@@ -621,7 +619,7 @@ async fn host_calls_recheck_the_callers_sign_in() {
         "owner",
         "s2",
         "tagger.tag",
-        json!({"space_id": "shared", "label": "now"}),
+        json!({"space_id": f.dev.shared, "label": "now"}),
     )
     .await
     .unwrap();
@@ -634,11 +632,11 @@ async fn mutating_operation_retry_replays_its_receipt() {
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "tagger"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "tagger"}),
     )
     .await
     .unwrap();
-    let input = json!({"space_id": "shared", "label": "once"});
+    let input = json!({"space_id": f.dev.shared, "label": "once"});
     let first = f
         .op("owner", "r1", "tagger.tag", input.clone())
         .await
@@ -653,7 +651,7 @@ async fn mutating_operation_retry_replays_its_receipt() {
             "owner",
             "r1",
             "tagger.tag",
-            json!({"space_id": "shared", "label": "other"}),
+            json!({"space_id": f.dev.shared, "label": "other"}),
         )
         .await
         .unwrap_err();
@@ -672,7 +670,7 @@ fn jobs_demo() -> Plugin {
 
 async fn jobs_fixture(tag: &str) -> Fixture {
     let f = fixture(tag, vec![jobs_demo()], None).await;
-    for space in ["shared", "personal"] {
+    for space in [f.dev.shared, f.dev.personal] {
         f.op(
             "owner",
             &format!("enable-{space}"),
@@ -686,7 +684,7 @@ async fn jobs_fixture(tag: &str) -> Fixture {
 }
 
 impl Fixture {
-    async fn start_job(&self, space: &str, input: Value) -> String {
+    async fn start_job(&self, space: calternal_types::SpaceId, input: Value) -> String {
         let mut input = input;
         input["space_id"] = json!(space);
         let rid = uuid::Uuid::new_v4().to_string();
@@ -723,7 +721,7 @@ impl Fixture {
 async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
     let f = jobs_fixture("job-run").await;
     let id = f
-        .start_job("shared", json!({"steps": 6, "delay_ms": 30, "every": 2}))
+        .start_job(f.dev.shared, json!({"steps": 6, "delay_ms": 30, "every": 2}))
         .await;
     // Durable before the ID was returned: the record exists in the space's job file.
     let space = f.state.jobs.route(&id).expect("job routed to its space");
@@ -758,7 +756,7 @@ async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
 async fn cancel_discards_late_output_and_needs_the_starter_or_a_manager() {
     let f = jobs_fixture("job-cancel").await;
     let id = f
-        .start_job("shared", json!({"steps": 500, "delay_ms": 20, "every": 5}))
+        .start_job(f.dev.shared, json!({"steps": 500, "delay_ms": 20, "every": 5}))
         .await;
     f.until(&id, "running").await;
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -790,7 +788,7 @@ async fn child_jobs_report_exactly_once_to_their_parent() {
     let f = jobs_fixture("job-children").await;
     let id = f
         .start_job(
-            "shared",
+            f.dev.shared,
             json!({"steps": 0, "delay_ms": 0, "every": 1, "children": 3}),
         )
         .await;
@@ -803,7 +801,7 @@ async fn a_job_outside_the_callers_spaces_is_not_found() {
     let f = jobs_fixture("job-hidden").await;
     // `personal` belongs to the owner alone; the guest is a member of `shared` only.
     let id = f
-        .start_job("personal", json!({"steps": 1, "delay_ms": 0, "every": 1}))
+        .start_job(f.dev.personal, json!({"steps": 1, "delay_ms": 0, "every": 1}))
         .await;
     let hidden = f.job("guest", &id).await.unwrap_err();
     let missing = f
@@ -825,7 +823,7 @@ async fn a_job_outside_the_callers_spaces_is_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn job_start_retry_returns_the_same_job() {
     let f = jobs_fixture("job-retry").await;
-    let input = json!({"space_id": "shared", "steps": 1, "delay_ms": 0, "every": 1});
+    let input = json!({"space_id": f.dev.shared, "steps": 1, "delay_ms": 0, "every": 1});
     let a = f
         .op("owner", "same", "jobs-demo.start", input.clone())
         .await
@@ -860,11 +858,10 @@ async fn secret_handle_requests_are_owned_by_the_space_uuid() {
     let f = fixture("secret", vec![support::plugin(manifest, Some(&worker), true)], None).await;
     // The secret does not exist yet: the call is refused and one request is recorded
     // for the space (by UUID), not for the content-space key or the account.
-    let r = f.op("owner", "k1", "keyed.use", json!({"space_id": "shared"})).await.unwrap();
+    let r = f.op("owner", "k1", "keyed.use", json!({"space_id": f.dev.shared})).await.unwrap();
     assert_eq!(r, json!({"ok": false}));
-    f.op("owner", "k2", "keyed.use", json!({"space_id": "shared"})).await.unwrap();
-    let (_, space) = f.state.store.lock().unwrap().worker_ids("owner", "shared").unwrap();
-    let owner = Owner::Space(space);
+    f.op("owner", "k2", "keyed.use", json!({"space_id": f.dev.shared})).await.unwrap();
+    let owner = Owner::Space(f.dev.shared);
     let secrets = f.state.store.lock().unwrap().secrets();
     let pending = secrets.pending(&owner).unwrap();
     assert_eq!(pending.len(), 1, "a repeated request must not queue a second prompt");

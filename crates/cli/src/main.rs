@@ -58,7 +58,7 @@ enum Command {
 }
 #[derive(Args)]
 struct Space {
-    #[arg(long, alias = "space-id", default_value = "personal")]
+    #[arg(long, alias = "space-id")]
     space: String,
 }
 #[derive(Args)]

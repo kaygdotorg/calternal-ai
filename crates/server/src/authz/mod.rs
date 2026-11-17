@@ -17,7 +17,7 @@ pub mod capabilities;
 pub use capabilities::{BUILTIN_ROLES, RoleSet};
 
 use crate::auth::{Directory, Identity};
-use calternal_types::{Capability, Error};
+use calternal_types::{Capability, Error, SpaceId};
 
 /// Input scope whose space must be authorized before any resource lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,7 +235,18 @@ impl Policy {
             .get("space_id")
             .and_then(|v| v.as_str())
             .ok_or_else(|| Error::invalid_input("input does not match operation schema"))?;
+        // A malformed ID names no space: the same answer as one the caller cannot see.
+        let space = SpaceId::parse(space).map_err(|_| self.hidden())?;
         self.authorize_space(directory, principal, space)
+    }
+
+    /// The not-found answer for this scope, identical for absent and inaccessible targets.
+    fn hidden(&self) -> Error {
+        match self.scope {
+            Scope::Note => Error::not_found("item not found"),
+            Scope::Job => Error::not_found("job not found"),
+            _ => Error::not_found("space not found"),
+        }
     }
 
     /// Recheck the already extracted scope, including before asynchronous delivery.
@@ -247,12 +258,10 @@ impl Policy {
         &self,
         directory: &impl Directory,
         principal: &Identity,
-        space: &str,
+        space: SpaceId,
     ) -> Result<(), Error> {
-        match directory.capabilities(&principal.id, space) {
-            None if self.scope == Scope::Note => Err(Error::not_found("item not found")),
-            None if self.scope == Scope::Job => Err(Error::not_found("job not found")),
-            None => Err(Error::not_found("space not found")),
+        match directory.capabilities(principal.id, space) {
+            None => Err(self.hidden()),
             Some(set)
                 if self.scope == Scope::Note
                     && !set.contains(Capability::SpaceRead)

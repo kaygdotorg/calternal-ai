@@ -223,7 +223,7 @@ async fn stored_operations_have_complete_role_space_and_authentication_matrix() 
 #[tokio::test]
 async fn sqlite_revocation_takes_effect_on_next_request_and_note_receipt_replay() {
     let f = Fixture::new(Some("editor")).await;
-    let input = json!({"space_id":"shared","title":"private","markdown":"body"});
+    let input = json!({"space_id":f.shared,"title":"private","markdown":"body"});
     let first = f
         .call(Some(&f.token), "receipt", "notes.create", input.clone())
         .await;
@@ -294,7 +294,8 @@ async fn discovery_and_alias_inputs_keep_stable_independent_uuid_identities() {
                 .get_version_num()
                 == 7)
     );
-    let alias = f
+    // A space's display name is not an address.
+    let name = f
         .call(
             Some(&f.token),
             "same",
@@ -310,12 +311,13 @@ async fn discovery_and_alias_inputs_keep_stable_independent_uuid_identities() {
             json!({"space_id":f.shared}),
         )
         .await;
-    assert_eq!(alias, uuid);
+    assert_eq!(name.0, StatusCode::NOT_FOUND);
+    assert_eq!(uuid.0, StatusCode::OK);
     let state = f.state.clone();
     let owner = f.owner.clone();
     let described = tokio::task::spawn_blocking(move || {
         state.tokens.describe(&calternal_server::auth::Identity {
-            id: Arc::from(owner),
+            id: calternal_types::AccountId::parse(&owner).unwrap(),
         })
     })
     .await

@@ -40,7 +40,7 @@ use calternal_plugin_host as host;
 use serde::Deserialize;
 
 use crate::authz::{self, Constraint, Policy, Scope};
-use calternal_types::Capability;
+use calternal_types::{Capability, SpaceId};
 use calternal_types::Error;
 use crate::store::{PluginRow, Store, sha256_hex};
 
@@ -384,7 +384,7 @@ pub fn wire_manifest(manifest: &ManifestV1) -> PluginManifest {
 /// Effective activation of `plugin` in one content space: the stored row, or the
 /// trusted default, and never enabled while the plugin is unavailable.
 /// Cost: one indexed plugin-state read; no content I/O.
-pub fn activation(store: &Store, space: &str, plugin: &Plugin) -> Result<PluginRow, Error> {
+pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<PluginRow, Error> {
     let mut row = store
         .plugin_row(space, &plugin.manifest.id)?
         .unwrap_or_else(|| default_row(plugin));

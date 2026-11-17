@@ -33,7 +33,7 @@ use super::live::Live;
 use super::{Plugin, Session, activation, host_capability, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use calternal_types::Capability;
+use calternal_types::{Capability, SpaceId};
 use crate::store::sha256_hex;
 
 /// Fixed fixture text served to previews. Never user data.
@@ -60,8 +60,7 @@ pub struct SpaceHost<D: Directory> {
     identity: Identity,
     session: Session,
     runtime: Handle,
-    space: String,
-    space_uuid: String,
+    space: SpaceId,
     plugin: Arc<Plugin>,
     generation: u32,
     request_id: String,
@@ -86,8 +85,7 @@ pub struct Run {
 
 impl<D: Directory> SpaceHost<D> {
     /// Capture an invocation's authority. `session` is the caller's sign-in, rechecked
-    /// at every boundary; `space` is the content-space key used by the store and
-    /// directory; `generation` is the activation generation read when the invocation
+    /// at every boundary; `space` is the space the invocation runs in; `generation` is the activation generation read when the invocation
     /// was admitted; `request_id` scopes write receipts. Must be called inside the
     /// async runtime, whose handle the blocking session checks use.
     #[allow(clippy::too_many_arguments)]
@@ -95,8 +93,7 @@ impl<D: Directory> SpaceHost<D> {
         state: Shared<D>,
         identity: Identity,
         session: Session,
-        space: String,
-        space_uuid: String,
+        space: SpaceId,
         plugin: Arc<Plugin>,
         generation: u32,
         request_id: String,
@@ -107,7 +104,6 @@ impl<D: Directory> SpaceHost<D> {
             session,
             runtime: Handle::current(),
             space,
-            space_uuid,
             plugin,
             generation,
             request_id,
@@ -157,9 +153,9 @@ impl<D: Directory> SpaceHost<D> {
             .state
             .jobs
             .admit(Admission {
-                space: self.space_uuid.clone(),
+                space: self.space.to_string(),
                 plugin: self.plugin.manifest.id.clone(),
-                account: self.identity.id.to_string(),
+                account: self.identity.id,
                 session: self.session.clone(),
                 operation: operation.to_owned(),
                 input: run_input,
@@ -169,7 +165,7 @@ impl<D: Directory> SpaceHost<D> {
             })
             .map_err(|_| Error::Refused)?;
         let _guard = self.runtime.enter();
-        runner::schedule(&self.state, self.space_uuid.clone(), id.clone());
+        runner::schedule(&self.state, self.space.to_string(), id.clone());
         Ok(json!({ "job_id": id }))
     }
 
@@ -181,14 +177,13 @@ impl<D: Directory> SpaceHost<D> {
     fn secret_handle(&self, input: &Value) -> Result<Value, Error> {
         let object = exact(input, &["name"])?;
         let name = str_field(object, "name")?.ok_or(Error::Invalid)?;
-        let space = calternal_types::SpaceId::parse(&self.space_uuid).map_err(|_| Error::Refused)?;
-        let (secrets, account) = {
-            let store = self.state.store.lock().map_err(|_| Error::Refused)?;
-            let (account, _) = store
-                .worker_ids(&self.identity.id, &self.space)
-                .map_err(|_| Error::Refused)?;
-            (store.secrets(), account)
-        };
+        let (space, account) = (self.space, self.identity.id);
+        let secrets = self
+            .state
+            .store
+            .lock()
+            .map_err(|_| Error::Refused)?
+            .secrets();
         let actor = Actor {
             account,
             via: Via::Plugin(self.plugin.manifest.id.clone()),
@@ -214,7 +209,7 @@ impl<D: Directory> SpaceHost<D> {
         let n = self
             .state
             .jobs
-            .checkpoint(&self.space_uuid, &run.job, run.run, &run.live, checkpoint)
+            .checkpoint(&self.space.to_string(), &run.job, run.run, &run.live, checkpoint)
             .map_err(|_| Error::Refused)?;
         run.checkpoints.store(n, Ordering::Release);
         self.writes.store(0, Ordering::Release);
@@ -225,7 +220,7 @@ impl<D: Directory> SpaceHost<D> {
     fn has(&self, capability: Capability) -> bool {
         self.state
             .tokens
-            .capabilities(&self.identity.id, &self.space)
+            .capabilities(self.identity.id, self.space)
             .is_some_and(|set| set.contains(capability))
     }
 
@@ -233,7 +228,7 @@ impl<D: Directory> SpaceHost<D> {
         let (kind, id) = item_target(input, &["kind", "item_id"])?;
         let store = self.state.store.lock().map_err(|_| Error::Refused)?;
         let item = store
-            .read_item(&self.space, kind, id)
+            .read_item(self.space, kind, id)
             .map_err(|_| Error::Refused)?;
         Ok(item_json(&item))
     }
@@ -269,10 +264,10 @@ impl<D: Directory> SpaceHost<D> {
         let store = self.state.store.lock().map_err(|_| Error::Refused)?;
         let item = store
             .write_item(
-                &self.identity.id,
+                self.identity.id,
                 &receipt,
                 &fingerprint,
-                &self.space,
+                self.space,
                 kind,
                 id,
                 base,
@@ -303,7 +298,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         let Ok(store) = self.state.store.lock() else {
             return false;
         };
-        activation(&store, &self.space, &self.plugin)
+        activation(&store, self.space, &self.plugin)
             .is_ok_and(|row| row.enabled && row.generation == self.generation)
     }
 

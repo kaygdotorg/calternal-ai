@@ -19,14 +19,14 @@ pub struct SpacesCreateInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceInput {
-    /// Stable space UUID; development inputs temporarily accept seeded aliases.
+    /// Space UUID; names are never accepted in its place.
     pub space_id: String,
 }
 /// Target account for removal or explicit ownership transfer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceMemberInput {
-    /// Stable space UUID; development inputs temporarily accept seeded aliases.
+    /// Space UUID; names are never accepted in its place.
     pub space_id: String,
     /// Stable target account UUID, independently allocated from the space.
     pub account_id: String,
@@ -35,7 +35,7 @@ pub struct SpaceMemberInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceSetRoleInput {
-    /// Stable space UUID; development inputs temporarily accept seeded aliases.
+    /// Space UUID; names are never accepted in its place.
     pub space_id: String,
     /// Stable target account UUID.
     pub account_id: String,

@@ -229,7 +229,7 @@
       "description": "Input for members, leave and directory-record deletion.",
       "properties": {
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -374,7 +374,7 @@
           "description": "Requested membership role; Owner is refused here."
         },
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -408,7 +408,7 @@
           "type": "string"
         },
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -437,7 +437,7 @@
       "description": "Input for members, leave and directory-record deletion.",
       "properties": {
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -469,7 +469,7 @@
           "type": "string"
         },
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -498,7 +498,7 @@
       "description": "Input for members, leave and directory-record deletion.",
       "properties": {
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },

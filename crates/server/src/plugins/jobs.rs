@@ -47,7 +47,7 @@ use super::job_sql::{
 };
 use super::live::{Live, LiveMap, Subscription};
 use super::worker::CancelFlag;
-use calternal_types::Error;
+use calternal_types::{AccountId, Error};
 
 /// Active (admitted, running or waiting) jobs allowed per space.
 pub const MAX_ACTIVE_JOBS_PER_SPACE: usize = 64;
@@ -92,8 +92,8 @@ pub struct Job {
     pub space: String,
     /// Plugin whose run operation executes the job.
     pub plugin: String,
-    /// Identity of the starting account, as the directory knows it.
-    pub account: String,
+    /// The starting account.
+    pub account: AccountId,
     /// The starting account's sign-in, rechecked at every boundary.
     pub session: Session,
     /// Declared operation invoked for each run.
@@ -150,8 +150,8 @@ pub struct Admission {
     pub space: String,
     /// Plugin ID.
     pub plugin: String,
-    /// Starting account identity.
-    pub account: String,
+    /// The starting account.
+    pub account: AccountId,
     /// Starting sign-in.
     pub session: Session,
     /// Declared run operation of the same plugin.
@@ -379,7 +379,7 @@ impl Jobs {
             let id = Uuid::now_v7().to_string();
             tx.execute(
                 "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,'admitted','null',0,0,'null',0,?8,?9,NULL)",
-                params![id, a.plugin, a.account, session, a.operation, input, a.parent, a.generation, a.request_key],
+                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, a.generation, a.request_key],
             )
             .map_err(db_err)?;
             Ok(id)

@@ -15,7 +15,7 @@
 //! fixed. Each call takes the host's store lock only to clone the secret store's
 //! `Arc` (no I/O under it), then runs the owner's I/O on a blocking task; the
 //! secret store itself has no installation-wide lock or connection.
-//! Spaces are named by UUID only; development aliases are not accepted here.
+//! Spaces are named by UUID only.
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -27,7 +27,7 @@ use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use calternal_types::{AccountId, SpaceId};
+use calternal_types::SpaceId;
 use calternal_core::{
     JsonObject, SecretMetadata, SecretPendingRequest, SecretsListInput, SecretsListResult,
     SecretsProvideInput, SecretsProvideResult, SecretsRequestInput, SecretsRequestResult,
@@ -64,8 +64,15 @@ fn host_error(e: calternal_secrets::Error) -> Error {
     }
 }
 
-fn account(p: &Identity) -> Result<AccountId, Error> {
-    AccountId::parse(&p.id).map_err(|_| Error::forbidden("secrets need a stored account"))
+/// The optional `space_id` field: empty means the caller's own secrets; a malformed
+/// ID names no space the caller can see.
+fn space_arg(text: &str) -> Result<Option<SpaceId>, Error> {
+    if text.is_empty() {
+        return Ok(None);
+    }
+    SpaceId::parse(text)
+        .map(Some)
+        .map_err(|_| Error::not_found("space not found"))
 }
 
 /// Resolve the owner: the caller's account, or a space the caller holds
@@ -73,13 +80,13 @@ fn account(p: &Identity) -> Result<AccountId, Error> {
 fn owner<D: Directory>(
     state: &Shared<D>,
     p: &Identity,
-    space: &str,
+    space: Option<SpaceId>,
     operation: &str,
     required: Capability,
 ) -> Result<Owner, Error> {
-    if space.is_empty() {
-        return Ok(Owner::Account(account(p)?));
-    }
+    let Some(space) = space else {
+        return Ok(Owner::Account(p.id));
+    };
     Policy {
         operation: Cow::Owned(operation.to_owned()),
         required,
@@ -87,9 +94,7 @@ fn owner<D: Directory>(
         constraint: Constraint::None,
     }
     .authorize_space(&state.tokens, p, space)?;
-    SpaceId::parse(space)
-        .map(Owner::Space)
-        .map_err(|_| Error::not_found("space not found"))
+    Ok(Owner::Space(space))
 }
 
 fn store<D: Directory>(state: &Shared<D>) -> Result<std::sync::Arc<LocalStore>, Error> {
@@ -123,13 +128,13 @@ pub async fn dispatch<D: Directory>(
         let op = policy.operation.as_ref();
         let secrets = store(&state)?;
         let actor = Actor {
-            account: account(&p)?,
+            account: p.id,
             via: Via::Session,
         };
         match op {
             "secrets.request" => {
                 let i: SecretsRequestInput = decode(input)?;
-                let owner = owner(&state, &p, &i.space_id, op, policy.required)?;
+                let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
                 let name = SecretName::new(&i.name).map_err(host_error)?;
                 let id = secrets
                     .request(&owner, &name, &i.label, &i.reason, &actor)
@@ -140,12 +145,12 @@ pub async fn dispatch<D: Directory>(
             }
             "secrets.list" => {
                 let i: SecretsListInput = decode(input)?;
-                let owner = owner(&state, &p, &i.space_id, op, policy.required)?;
+                let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
                 to_value(list(&*secrets, &owner)?)
             }
             "secrets.revoke" => {
                 let i: SecretsRevokeInput = decode(input)?;
-                let owner = owner(&state, &p, &i.space_id, op, policy.required)?;
+                let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
                 if i.name.is_empty() {
                     let id = uuid::Uuid::parse_str(&i.request_id)
                         .map_err(|_| Error::not_found("secret not found"))?;
@@ -257,13 +262,11 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
         return reply(Error::invalid_input("input does not match schema"));
     };
     let result = tokio::task::spawn_blocking(move || {
-        let p = Identity {
-            id: account.to_string().into(),
-        };
+        let p = Identity { id: account };
         let owner = owner(
             &state,
             &p,
-            &input.space_id,
+            space_arg(&input.space_id)?,
             "secrets.provide",
             PROVIDE_CAPABILITY,
         )?;

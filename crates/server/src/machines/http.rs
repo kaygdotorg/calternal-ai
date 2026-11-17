@@ -104,9 +104,6 @@ fn bearer(headers: &HeaderMap) -> Result<String, Error> {
         .ok_or_else(|| Error::unauthorized("machine session required"))
 }
 
-fn account(identity: &Identity) -> Result<AccountId, Error> {
-    AccountId::parse(&identity.id).map_err(|_| Error::forbidden("not an account"))
-}
 
 // ------------------------------------------------------------ machine side
 
@@ -182,7 +179,7 @@ async fn code(svc: Svc, Extension(who): Extension<Identity>) -> Response {
         async {
             let svc = service(svc)?;
             let owner = Owner::Account {
-                id: account(&who)?,
+                id: who.id,
             };
             let (code, expires_ms) = blocking(move || svc.issue_code(owner)).await?;
             Ok(json!({ "code": code, "expires_ms": expires_ms }))
@@ -195,7 +192,7 @@ async fn list(svc: Svc, Extension(who): Extension<Identity>) -> Response {
     reply(
         async {
             let svc = service(svc)?;
-            let me = account(&who)?;
+            let me = who.id;
             let machines = blocking(move || svc.machines_of(me)).await?;
             Ok(json!({ "machines": machines }))
         }
@@ -207,7 +204,7 @@ async fn revoke(svc: Svc, Extension(who): Extension<Identity>, Path(id): Path<Uu
     reply(
         async {
             let svc = service(svc)?;
-            let me = account(&who)?;
+            let me = who.id;
             blocking(move || svc.revoke(me, id)).await?;
             Ok(json!({}))
         }
@@ -230,7 +227,7 @@ async fn drain(
     reply(
         async {
             let svc = service(svc)?;
-            let me = account(&who)?;
+            let me = who.id;
             let input: DrainInput = body(&bytes)?;
             blocking(move || svc.set_draining(me, id, input.draining)).await?;
             Ok(json!({}))
@@ -246,9 +243,9 @@ async fn authorize<D: Directory>(
     who: &Identity,
     space: SpaceId,
 ) -> Result<(), Error> {
-    let (state, id) = (state.clone(), who.id.clone());
+    let (state, id) = (state.clone(), who.id);
     blocking(
-        move || match state.tokens.capabilities(&id, &space.to_string()) {
+        move || match state.tokens.capabilities(id, space) {
             Some(caps) if caps.contains(Capability::PluginsUse) => Ok(()),
             _ => Err(Error::not_found("space not found")),
         },
@@ -274,7 +271,7 @@ async fn create_run<D: Directory>(
     reply(
         async {
             let svc = service(svc)?;
-            let me = account(&who)?;
+            let me = who.id;
             let input: RunInput = body(&bytes)?;
             if input
                 .image
@@ -300,7 +297,7 @@ async fn authorize_run<D: Directory>(
     who: &Identity,
     lease: Uuid,
 ) -> Result<AccountId, Error> {
-    let me = account(who)?;
+    let me = who.id;
     let s = svc.clone();
     let space = blocking(move || s.run_space(lease))
         .await?
@@ -406,7 +403,7 @@ async fn read_output<D: Directory>(
         async {
             let svc = service(svc)?;
             let (after, wait_ms) = output_query(&uri)?;
-            let me = account(&who)?;
+            let me = who.id;
             let s = svc.clone();
             let space = blocking(move || s.exec_space(exec))
                 .await?

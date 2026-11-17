@@ -15,7 +15,7 @@ use calternal_core::{Principal, SpaceGrant, SpaceRole, operation_catalog};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch, router};
 use calternal_server::auth::{Directory, Identity};
 use calternal_server::authz::{BUILTIN_ROLES, POLICIES};
-use calternal_types::{Capability, CapabilitySet};
+use calternal_types::{AccountId, Capability, CapabilitySet, SpaceId};
 use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
 use serde_json::{Value, json};
@@ -74,6 +74,7 @@ const TOKEN: &str = "matrix-token";
 
 struct MutableDirectory {
     identity: Identity,
+    space: SpaceId,
     grants: Mutex<Option<CapabilitySet>>,
     session_valid: AtomicBool,
 }
@@ -82,8 +83,9 @@ impl MutableDirectory {
     fn new(role: u8) -> Self {
         Self {
             identity: Identity {
-                id: Arc::from("test-account"),
+                id: AccountId::new(),
             },
+            space: SpaceId::new(),
             grants: Mutex::new(Self::role_set(role)),
             session_valid: AtomicBool::new(true),
         }
@@ -106,11 +108,11 @@ impl MutableDirectory {
 impl Directory for MutableDirectory {
     fn authenticate(&self, token: &[u8]) -> Option<Identity> {
         (token == TOKEN.as_bytes() && self.session_valid.load(Ordering::SeqCst))
-            .then(|| self.identity.clone())
+            .then_some(self.identity)
     }
 
-    fn capabilities(&self, principal: &str, space: &str) -> Option<CapabilitySet> {
-        if principal != self.identity.id.as_ref() || space != "personal" {
+    fn capabilities(&self, account: AccountId, space: SpaceId) -> Option<CapabilitySet> {
+        if account != self.identity.id || space != self.space {
             return None;
         }
         *self.grants.lock().unwrap()
@@ -120,10 +122,10 @@ impl Directory for MutableDirectory {
         Principal {
             id: principal.id.to_string(),
             spaces: self
-                .capabilities(&principal.id, "personal")
+                .capabilities(principal.id, self.space)
                 .into_iter()
                 .map(|_| SpaceGrant {
-                    id: "personal".into(),
+                    id: self.space.to_string(),
                     role: SpaceRole::Reader,
                 })
                 .collect(),
@@ -159,14 +161,15 @@ impl Fixture {
         );
         let plugin = support::plugin(support::insights_manifest(), Some(&worker), true);
         let mut store = Store::open(&root.join("data")).unwrap();
+        let tokens = MutableDirectory::new(role);
         let note = serde_json::to_value(
             store
                 .create(
-                    "seed",
+                    tokens.identity.id,
                     "seed",
                     "notes.create",
                     "seed",
-                    "personal",
+                    tokens.space,
                     "Fixture",
                     "fixture\n",
                 )
@@ -175,7 +178,7 @@ impl Fixture {
         .unwrap();
         let state = Arc::new(AppState {
             store: Mutex::new(store),
-            tokens: MutableDirectory::new(role),
+            tokens,
             registry: Registry::from_plugins(vec![plugin]),
             workers: WorkerPool::new(Some(
                 resolve_node(None)
@@ -186,6 +189,11 @@ impl Fixture {
             allowed_hosts: allowed_hosts(0),
         });
         Self { state, note, root }
+    }
+
+    /// The one space the mutable directory grants, as wire text.
+    fn space(&self) -> String {
+        self.state.tokens.space.to_string()
     }
 
     fn input(&self, op: &str, space: &str) -> Value {
@@ -336,7 +344,7 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
         operations.sort_by_key(|(op, _, _)| *op == "plugins.disable");
         for (op, _, allowed) in operations {
             let response = fixture
-                .call(Some(TOKEN), op, op, fixture.input(op, "personal"))
+                .call(Some(TOKEN), op, op, fixture.input(op, &fixture.space()))
                 .await;
             if role != 0 && allowed[(role - 1) as usize] {
                 assert_eq!(
@@ -377,7 +385,7 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
             for token in [None, Some("invalid-token")] {
                 denial(
                     fixture
-                        .call(token, "token", op, fixture.input(op, "personal"))
+                        .call(token, "token", op, fixture.input(op, &fixture.space()))
                         .await,
                     StatusCode::UNAUTHORIZED,
                     "missing or invalid session",
@@ -392,9 +400,9 @@ async fn no_grant_hides_existing_and_absent_resources() {
     let fixture = Fixture::new(0, false).await;
     for (op, _, _) in MATRIX {
         let existing = fixture
-            .call(Some(TOKEN), "same", op, fixture.input(op, "personal"))
+            .call(Some(TOKEN), "same", op, fixture.input(op, &fixture.space()))
             .await;
-        let mut absent = fixture.input(op, "personal");
+        let mut absent = fixture.input(op, &fixture.space());
         if absent.get("id").is_some() {
             absent["id"] = json!("00000000-0000-4000-8000-000000000000");
         }
@@ -422,7 +430,7 @@ async fn no_grant_hides_existing_and_absent_resources() {
 #[tokio::test]
 async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() {
     let fixture = Fixture::new(3, false).await;
-    let input = fixture.input("notes.create", "personal");
+    let input = fixture.input("notes.create", &fixture.space());
     let first = fixture
         .call(Some(TOKEN), "retry", "notes.create", input.clone())
         .await;
@@ -449,7 +457,7 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
                 Some(TOKEN),
                 "read",
                 "notes.get",
-                fixture.input("notes.get", "personal"),
+                fixture.input("notes.get", &fixture.space()),
             )
             .await,
         StatusCode::NOT_FOUND,
@@ -467,7 +475,7 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
                 Some(TOKEN),
                 "read",
                 "notes.get",
-                fixture.input("notes.get", "personal"),
+                fixture.input("notes.get", &fixture.space()),
             )
             .await,
         StatusCode::UNAUTHORIZED,
@@ -484,11 +492,11 @@ async fn cross_space_note_ids_are_bound_to_the_authorized_space() {
         .lock()
         .unwrap()
         .create(
-            "seed",
+            AccountId::new(),
             "other",
             "notes.create",
             "other",
-            "shared",
+            SpaceId::new(),
             "Other",
             "secret\n",
         )
@@ -499,7 +507,7 @@ async fn cross_space_note_ids_are_bound_to_the_authorized_space() {
         "notes.update",
         "notes-insights.summarize",
     ] {
-        let mut input = fixture.input(op, "personal");
+        let mut input = fixture.input(op, &fixture.space());
         input["id"] = json!(other.id);
         let cross = fixture.call(Some(TOKEN), "cross", op, input.clone()).await;
         input["id"] = json!("00000000-0000-4000-8000-000000000000");
@@ -515,7 +523,7 @@ async fn membership_revocation_during_worker_discards_delivery() {
     let state = fixture.state.clone();
     let identity = state.tokens.authenticate(TOKEN.as_bytes()).unwrap();
     let input =
-        serde_json::from_value(fixture.input("notes-insights.summarize", "personal")).unwrap();
+        serde_json::from_value(fixture.input("notes-insights.summarize", &fixture.space())).unwrap();
     let call = tokio::spawn(dispatch(
         state,
         identity,
@@ -546,28 +554,24 @@ async fn membership_revocation_during_worker_discards_delivery() {
 }
 
 #[tokio::test]
-async fn fixture_grants_cannot_override_directory_and_plugin_retries_recheck_role() {
+async fn directory_role_decides_and_plugin_retries_recheck_role() {
     let fixture = Fixture::new(1, false).await;
-    let claimed = calternal_server::auth::DevPrincipal {
-        id: "test-account",
-        grants: vec![("personal", SpaceRole::Manager)],
-    };
-    let input = serde_json::from_value(fixture.input("plugins.disable", "personal")).unwrap();
+    let input = serde_json::from_value(fixture.input("plugins.disable", &fixture.space())).unwrap();
     let error = dispatch(
         fixture.state.clone(),
-        claimed,
+        fixture.state.tokens.identity,
         calternal_server::plugins::Session::Static,
         "forged",
         "plugins.disable",
         input,
     )
     .await
-    .expect_err("fixture grants must not become dispatch authority");
+    .expect_err("a reader cannot disable plugins");
     assert_eq!(error.code, calternal_core::ErrorCode::Forbidden);
     assert_eq!(error.message, "insufficient role for this space");
 
     fixture.state.tokens.set_role(3);
-    let input = fixture.input("plugins.disable", "personal");
+    let input = fixture.input("plugins.disable", &fixture.space());
     let first = fixture
         .call(
             Some(TOKEN),
@@ -602,7 +606,7 @@ async fn fixture_grants_cannot_override_directory_and_plugin_retries_recheck_rol
 #[tokio::test]
 async fn no_grant_hides_summarize_binding_registration() {
     let mut fixture = Fixture::new(0, false).await;
-    let input = fixture.input("notes-insights.summarize", "personal");
+    let input = fixture.input("notes-insights.summarize", &fixture.space());
     let registered = fixture
         .call(
             Some(TOKEN),
@@ -645,7 +649,7 @@ async fn every_operation_checks_only_its_required_capability() {
             };
             fixture.state.tokens.set_capabilities(grants);
             let response = fixture
-                .call(Some(TOKEN), "capability", op, fixture.input(op, "personal"))
+                .call(Some(TOKEN), "capability", op, fixture.input(op, &fixture.space()))
                 .await;
             if allowed {
                 assert_eq!(response.0, StatusCode::OK, "{op}: {}", response.1);

@@ -24,7 +24,6 @@ use uuid::Uuid;
 /// Locked host adapter; Notes content is owned by the generic per-space service.
 pub struct Store {
     conn: Connection,
-    root: PathBuf,
     content: Content,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     _lock: File,
@@ -73,13 +72,18 @@ fn content_fault(point: calternal_content::FaultPoint) {
         calternal_content::FaultPoint::AfterPlacement => FaultPoint::AfterPlacement,
     });
 }
+/// A typed ID read back from the plugin outbox, written by this adapter.
+fn stored_id<T: std::str::FromStr>(text: &str) -> Result<T, Error> {
+    text.parse()
+        .map_err(|_| Error::internal("corrupt plugin publication"))
+}
 fn item_id(id: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(id).map_err(|_| Error::not_found("item not found"))
 }
-fn note(item: &Item, space: &str) -> Note {
+fn note(item: &Item) -> Note {
     Note {
         id: item.id.to_string(),
-        space_id: space.into(),
+        space_id: item.space.to_string(),
         title: item.metadata["title"].as_str().unwrap_or("").into(),
         markdown: String::from_utf8_lossy(&item.bytes).into_owned(),
         revision: item.revision.clone(),
@@ -145,7 +149,6 @@ impl Store {
             CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
             CREATE TABLE IF NOT EXISTS plugin_outbox(principal TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(principal,request_id));
             CREATE INDEX IF NOT EXISTS plugin_outbox_space ON plugin_outbox(space_id);
-            CREATE TABLE IF NOT EXISTS fixture_bindings(domain TEXT NOT NULL,name TEXT NOT NULL,id TEXT NOT NULL UNIQUE,PRIMARY KEY(domain,name));
             PRAGMA user_version=2;COMMIT;").map_err(db_err)?;
         let content = Content::open(roots, secrets, Duration::from_secs(600), content_fault)
             ?;
@@ -155,7 +158,6 @@ impl Store {
             .map_err(|e| Error::unavailable(e.to_string()))?;
         let store = Self {
             conn,
-            root,
             content,
             secrets: std::sync::Arc::new(secrets),
             _lock: lock,
@@ -171,65 +173,9 @@ impl Store {
             .map_err(db_err)?;
         drop(statement);
         for (principal, request) in pending {
-            store.publish_plugin_pending(&principal, &request)?;
+            store.publish_plugin_pending(stored_id(&principal)?, &request)?;
         }
         Ok(store)
-    }
-    // Explicit preview/synthetic-fixture bindings preserve existing test directories'
-    // authority vocabulary. All real databases and trees use independently allocated
-    // UUIDv7 identifiers. These mappings never grant authority.
-    fn binding(&self, domain: &str, name: &str) -> Result<String, Error> {
-        if let Ok(id) = Uuid::parse_str(name) {
-            return Ok(id.to_string());
-        }
-        if domain == "space" || domain == "account" {
-            let path = self.root.join("system/auth.db");
-            if path.exists() {
-                let auth =
-                    Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-                        .map_err(db_err)?;
-                if let Ok(Some(id)) = auth
-                    .query_row(
-                        "SELECT id FROM development_directory WHERE name=?1",
-                        [name],
-                        |r| r.get::<_, String>(0),
-                    )
-                    .optional()
-                {
-                    return Ok(id);
-                }
-            }
-        }
-        if let Some(id) = self
-            .conn
-            .query_row(
-                "SELECT id FROM fixture_bindings WHERE domain=?1 AND name=?2",
-                params![domain, name],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(db_err)?
-        {
-            return Ok(id);
-        }
-        let id = Uuid::now_v7().to_string();
-        self.conn
-            .execute(
-                "INSERT INTO fixture_bindings VALUES(?1,?2,?3)",
-                params![domain, name, id],
-            )
-            .map_err(db_err)?;
-        Ok(id)
-    }
-    fn space(&self, name: &str) -> Result<SpaceId, Error> {
-        self.binding("space", name)?
-            .parse()
-            .map_err(|_| Error::invalid_input("invalid space identifier"))
-    }
-    fn account(&self, name: &str) -> Result<AccountId, Error> {
-        self.binding("account", name)?
-            .parse()
-            .map_err(|_| Error::invalid_input("invalid account identifier"))
     }
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
@@ -239,37 +185,25 @@ impl Store {
         &self.content
     }
     /// Resolves identifier-only catalog routing for any stored kind. No content is read
-    /// and no authority is granted. Cost: catalog mutex/indexed read plus at most one
-    /// indexed fixture binding lookup; no membership scan or materialization/fsync.
-    pub fn locate(&self, kind: &str, id: &str) -> Result<Option<String>, Error> {
+    /// and no authority is granted. A malformed ID is simply absent.
+    /// Cost: catalog mutex and one indexed read; no membership scan or fsync.
+    pub fn locate(&self, kind: &str, id: &str) -> Result<Option<SpaceId>, Error> {
         let Ok(id) = Uuid::parse_str(id) else {
             return Ok(None);
         };
-        let Some(space) = self.content.locate(kind, id)? else {
-            return Ok(None);
-        };
-        let alias = self
-            .conn
-            .query_row(
-                "SELECT name FROM fixture_bindings WHERE domain='space' AND id=?1",
-                [space.to_string()],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(db_err)?;
-        Ok(Some(alias.unwrap_or_else(|| space.to_string())))
+        self.content.locate(kind, id)
     }
     /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
     /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
-    pub fn list(&self, space_id: &str, limit: u32) -> Result<Vec<NoteSummary>, Error> {
+    pub fn list(&self, space_id: SpaceId, limit: u32) -> Result<Vec<NoteSummary>, Error> {
         self.content
-            .list(self.space(space_id)?, "notes", limit)
+            .list(space_id, "notes", limit)
             
             .map(|rows| {
                 rows.into_iter()
                     .map(|i| NoteSummary {
                         id: i.id.to_string(),
-                        space_id: space_id.into(),
+                        space_id: space_id.to_string(),
                         title: i.metadata["title"].as_str().unwrap_or("").into(),
                         revision: i.revision,
                         updated_at: i.updated_at,
@@ -279,15 +213,15 @@ impl Store {
     }
     /// Gets one Notes item from its selected physical database. A foreign ID is absent.
     /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.
-    pub fn get(&self, space_id: &str, id: &str) -> Result<Note, Error> {
+    pub fn get(&self, space_id: SpaceId, id: &str) -> Result<Note, Error> {
         let item = self
             .content
-            .get(self.space(space_id)?, item_id(id)?)
+            .get(space_id, item_id(id)?)
             ?;
         if item.kind != "notes" {
             return Err(Error::not_found("item not found"));
         }
-        Ok(note(&item, space_id))
+        Ok(note(&item))
     }
     /// Reads materialization state by trusted internal ID. Cost: one global indexed
     /// route and one space metadata lookup; no membership scan, content file read or fsync.
@@ -296,7 +230,7 @@ impl Store {
             return Ok(None);
         };
         self.content
-            .materialization(self.space(&space)?, item_id(id)?)
+            .materialization(space, item_id(id)?)
             
     }
     /// Reads newest immutable versions using an item-bound opaque cursor. Cost:
@@ -304,7 +238,7 @@ impl Store {
     /// no other-space data, filesystem scans or fsyncs.
     pub fn history(
         &self,
-        space_id: &str,
+        space_id: SpaceId,
         id: &str,
         limit: u32,
         cursor: Option<&str>,
@@ -312,7 +246,7 @@ impl Store {
         self.get(space_id, id)?;
         let (versions, next) = self
             .content
-            .history(self.space(space_id)?, item_id(id)?, limit, cursor)
+            .history(space_id, item_id(id)?, limit, cursor)
             ?;
         Ok((
             versions
@@ -332,9 +266,9 @@ impl Store {
     /// routing for the existing account-wide request namespace. Pending control
     /// intents finish publication first. Cost: indexed control/catalog reads and one
     /// bounded journal bridge/read, with journal fsyncs only during pending replay.
-    pub fn receipt(&self, principal: &str, request_id: &str) -> Result<Option<Receipt>, Error> {
+    pub fn receipt(&self, principal: AccountId, request_id: &str) -> Result<Option<Receipt>, Error> {
         self.publish_plugin_pending(principal, request_id)?;
-        let account = self.account(principal)?;
+        let account = principal;
         let Some(space) = self
             .content
             .receipt_space(account, request_id)
@@ -354,25 +288,25 @@ impl Store {
                 })
             })
     }
-    fn publish_plugins_for_space(&self, space_id: &str) -> Result<(), Error> {
+    fn publish_plugins_for_space(&self, space_id: SpaceId) -> Result<(), Error> {
         loop {
-            let first=self.conn.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(db_err)?;
+            let first=self.conn.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(db_err)?;
             let Some((principal, request)) = first else {
                 return Ok(());
             };
-            self.publish_plugin_pending(&principal, &request)?;
+            self.publish_plugin_pending(stored_id(&principal)?, &request)?;
         }
     }
-    fn publish_plugin_pending(&self, principal: &str, request_id: &str) -> Result<(), Error> {
-        let pending=self.conn.query_row("SELECT operation,fingerprint,result_json,space_id FROM plugin_outbox WHERE principal=?1 AND request_id=?2",params![principal,request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(db_err)?;
+    fn publish_plugin_pending(&self, principal: AccountId, request_id: &str) -> Result<(), Error> {
+        let pending=self.conn.query_row("SELECT operation,fingerprint,result_json,space_id FROM plugin_outbox WHERE principal=?1 AND request_id=?2",params![principal.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(db_err)?;
         if let Some((operation, fingerprint, json, space)) = pending {
             let result = serde_json::from_str(&json)
                 .map_err(|_| Error::internal("corrupt plugin publication"))?;
             self.content
                 .record_receipt(
-                    self.space(&space)?,
+                    stored_id(&space)?,
                     Request {
-                        account: self.account(principal)?,
+                        account: principal,
                         id: request_id,
                         operation: &operation,
                         fingerprint: &fingerprint,
@@ -383,7 +317,7 @@ impl Store {
             self.conn
                 .execute(
                     "DELETE FROM plugin_outbox WHERE principal=?1 AND request_id=?2",
-                    params![principal, request_id],
+                    params![principal.to_string(), request_id],
                 )
                 .map_err(db_err)?;
         }
@@ -395,17 +329,17 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &mut self,
-        principal: &str,
+        principal: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
-        space_id: &str,
+        space_id: SpaceId,
         title: &str,
         markdown: &str,
     ) -> Result<Note, Error> {
         self.content
             .register_kind(
-                self.space(space_id)?,
+                space_id,
                 "notes",
                 calternal_content::Placement::Visible {
                     folder: "Notes".into(),
@@ -414,7 +348,7 @@ impl Store {
             )
             ?;
         let request = Request {
-            account: self.account(principal)?,
+            account: principal,
             id: request_id,
             operation,
             fingerprint,
@@ -422,17 +356,17 @@ impl Store {
         let item = self
             .content
             .write(
-                self.space(space_id)?,
+                space_id,
                 None,
                 "notes",
                 None,
                 serde_json::json!({"title":title}),
                 markdown.as_bytes(),
                 request,
-                |i| serde_json::json!({"note":note(i,space_id)}),
+                |i| serde_json::json!({"note":note(i)}),
             )
             ?;
-        Ok(note(&item, space_id))
+        Ok(note(&item))
     }
     /// Updates only the current base revision, preserving external edits/deletes.
     /// Title changes journal a fixed exclusive rename with the same mutation.
@@ -441,11 +375,11 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
-        principal: &str,
+        principal: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
-        space_id: &str,
+        space_id: SpaceId,
         id: &str,
         base_revision: &str,
         title: Option<&str>,
@@ -453,7 +387,7 @@ impl Store {
     ) -> Result<Note, Error> {
         let current = self.get(space_id, id)?;
         let request = Request {
-            account: self.account(principal)?,
+            account: principal,
             id: request_id,
             operation,
             fingerprint,
@@ -461,17 +395,17 @@ impl Store {
         let item = self
             .content
             .write(
-                self.space(space_id)?,
+                space_id,
                 Some(item_id(id)?),
                 "notes",
                 Some(base_revision),
                 serde_json::json!({"title":title.unwrap_or(&current.title)}),
                 markdown.as_bytes(),
                 request,
-                |i| serde_json::json!({"note":note(i,space_id)}),
+                |i| serde_json::json!({"note":note(i)}),
             )
             ?;
-        Ok(note(&item, space_id))
+        Ok(note(&item))
     }
     /// Finishes checked placement before retry replay. Cost: catalog lookup and
     /// generic materialization locks/reads, with file+directory fsync only if pending.
@@ -480,7 +414,7 @@ impl Store {
             .locate("notes", id)?
             .ok_or_else(|| Error::not_found("item not found"))?;
         self.content
-            .materialize(self.space(&space)?, item_id(id)?)
+            .materialize(space, item_id(id)?)
             
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
@@ -491,35 +425,29 @@ impl Store {
     /// request-route insert.
     pub fn record_plugin_receipt(
         &self,
-        principal: &str,
+        principal: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
-        space_id: &str,
+        space_id: SpaceId,
         result: serde_json::Value,
     ) -> Result<(), Error> {
         let request = Request {
-            account: self.account(principal)?,
+            account: principal,
             id: request_id,
             operation,
             fingerprint,
         };
         self.content
-            .record_receipt(self.space(space_id)?, request, result)
+            .record_receipt(space_id, request, result)
             
-    }
-    /// Typed IDs of an acting account and a content space, for worker authority
-    /// correlation only (they grant nothing). Cost: at most two indexed binding
-    /// lookups; a first-seen fixture name inserts one binding row.
-    pub fn worker_ids(&self, principal: &str, space_id: &str) -> Result<(AccountId, SpaceId), Error> {
-        Ok((self.account(principal)?, self.space(space_id)?))
     }
     /// Reads one item of `kind` for a plugin broker. The global route must place it in
     /// `space_id`; a foreign, absent or wrong-kind ID is the same not-found.
     /// Cost: catalog route lookup plus one indexed item read and body allocation.
-    pub fn read_item(&self, space_id: &str, kind: &str, id: &str) -> Result<Item, Error> {
+    pub fn read_item(&self, space_id: SpaceId, kind: &str, id: &str) -> Result<Item, Error> {
         let missing = || Error::not_found("item not found");
-        let (space, id) = (self.space(space_id)?, item_id(id)?);
+        let (space, id) = (space_id, item_id(id)?);
         if self.content.locate(kind, id)? != Some(space) {
             return Err(missing());
         }
@@ -537,10 +465,10 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn write_item(
         &self,
-        principal: &str,
+        principal: AccountId,
         request_id: &str,
         fingerprint: &str,
-        space_id: &str,
+        space_id: SpaceId,
         kind: &str,
         id: Option<Uuid>,
         base: Option<&str>,
@@ -551,14 +479,14 @@ impl Store {
             self.read_item(space_id, kind, &id.to_string())?;
         }
         let request = Request {
-            account: self.account(principal)?,
+            account: principal,
             id: request_id,
             operation: "plugin.write_item",
             fingerprint,
         };
         self.content
             .write(
-                self.space(space_id)?,
+                space_id,
                 id,
                 kind,
                 base,
@@ -576,12 +504,12 @@ impl Store {
     /// absent collection, one durable content write.
     pub fn provision_plugin(
         &self,
-        space_id: &str,
-        principal: &str,
+        space_id: SpaceId,
+        principal: AccountId,
         kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
-        let space = self.space(space_id)?;
+        let space = space_id;
         for (kind, placement, format) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())
@@ -603,10 +531,9 @@ impl Store {
                 },
             )
             ?;
-        let account = self.account(principal)?;
         for (kind, key, title) in collections {
             self.content
-                .ensure_standard_collection(space, account, kind, key, title)
+                .ensure_standard_collection(space, principal, kind, key, title)
                 ?;
         }
         Ok(())
@@ -615,13 +542,13 @@ impl Store {
     /// Cost: one indexed read on the plugin connection; no content I/O or fsync.
     pub fn plugin_row(
         &self,
-        space_id: &str,
+        space_id: SpaceId,
         plugin_id: &str,
     ) -> Result<Option<PluginRow>, Error> {
         self.conn
             .query_row(
                 "SELECT enabled, generation FROM plugin_state WHERE space_id = ?1 AND plugin_id = ?2",
-                params![space_id, plugin_id],
+                params![space_id.to_string(), plugin_id],
                 |r| Ok(PluginRow { enabled: r.get::<_, i64>(0)? != 0, generation: r.get(1)? }),
             )
             .optional()
@@ -638,11 +565,11 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn set_plugin_enabled(
         &mut self,
-        principal: &str,
+        principal: AccountId,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
-        space_id: &str,
+        space_id: SpaceId,
         plugin_id: &str,
         default: PluginRow,
         enabled: bool,
@@ -666,18 +593,18 @@ impl Store {
         tx.execute(
             "INSERT INTO plugin_state (space_id, plugin_id, enabled, generation) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(space_id, plugin_id) DO UPDATE SET enabled = excluded.enabled, generation = excluded.generation",
-            params![space_id, plugin_id, next.enabled as i64, next.generation],
+            params![space_id.to_string(), plugin_id, next.enabled as i64, next.generation],
         )
         .map_err(db_err)?;
         tx.execute(
             "INSERT INTO plugin_outbox VALUES(?1,?2,?3,?4,?5,?6)",
             params![
-                principal,
+                principal.to_string(),
                 request_id,
                 operation,
                 fingerprint,
                 value.to_string(),
-                space_id
+                space_id.to_string()
             ],
         )
         .map_err(db_err)?;

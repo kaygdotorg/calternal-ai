@@ -1770,7 +1770,7 @@
       ],
       "properties": {
         "id": {
-          "description": "Stable space UUID in stored directories; fixture directories may expose aliases.",
+          "description": "Space UUID; the only way a space is named on the wire.",
           "type": "string"
         },
         "role": {
@@ -1792,7 +1792,7 @@
       ],
       "properties": {
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -1834,7 +1834,7 @@
           "type": "string"
         },
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },
@@ -1930,7 +1930,7 @@
           ]
         },
         "space_id": {
-          "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+          "description": "Space UUID; names are never accepted in its place.",
           "type": "string"
         }
       },

@@ -79,3 +79,59 @@ pub const READ_NOTE: &str = "call(f,'read_item',{kind:'notes',item_id:m.input.id
 pub const COMPLETE: &str = "done(f,stats(m.ok?m.data.text:''))";
 /// Reply handler that waits for a `go` file next to the worker before completing.
 pub const COMPLETE_AFTER_GO: &str = "const t=setInterval(()=>{if(fs.existsSync(__dirname+'/go')){clearInterval(t);done(f,stats(m.ok?m.data.text:''))}},10)";
+
+/// The development fixture accounts and spaces, found the way a client finds them:
+/// each dev token authenticates, then `describe` lists the account's spaces. The
+/// guest belongs only to the shared space; the owner's other space is personal.
+#[derive(Debug, Clone, Copy)]
+pub struct Dev {
+    pub owner: calternal_server::auth::Identity,
+    pub guest: calternal_server::auth::Identity,
+    pub personal: calternal_types::SpaceId,
+    pub shared: calternal_types::SpaceId,
+}
+
+impl Dev {
+    /// The fixture identity for a test-side account name, `owner` or `guest`.
+    pub fn who(&self, name: &str) -> calternal_server::auth::Identity {
+        match name {
+            "owner" => self.owner,
+            "guest" => self.guest,
+            other => panic!("unknown fixture account {other}"),
+        }
+    }
+}
+
+/// Read [`Dev`] from a development directory. Runs on its own thread because the
+/// directory blocks on its database worker.
+pub fn dev(table: &calternal_server::auth::TokenTable) -> Dev {
+    use calternal_server::auth::Directory;
+    std::thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                let identity = |name: &str| {
+                    let (_, path) = table.files.iter().find(|(n, _)| *n == name).unwrap();
+                    table.authenticate(&std::fs::read(path).unwrap()).unwrap()
+                };
+                let (owner, guest) = (identity("owner"), identity("guest"));
+                let spaces = |who| {
+                    table
+                        .describe(&who)
+                        .spaces
+                        .into_iter()
+                        .map(|g| calternal_types::SpaceId::parse(&g.id).unwrap())
+                        .collect::<Vec<_>>()
+                };
+                let shared = spaces(guest)[0];
+                let personal = spaces(owner).into_iter().find(|s| *s != shared).unwrap();
+                Dev {
+                    owner,
+                    guest,
+                    personal,
+                    shared,
+                }
+            })
+            .join()
+            .unwrap()
+    })
+}

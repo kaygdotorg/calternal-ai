@@ -37,7 +37,7 @@ use super::live::Subscription;
 use super::{Session, activation, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use calternal_types::Capability;
+use calternal_types::{Capability, SpaceId};
 use calternal_types::Error;
 
 /// Longest wait between deliveries; an idle stream sends a comment and rechecks access.
@@ -77,15 +77,17 @@ async fn visible<D: Directory>(
     if !session.is_live(&state.tokens).await {
         return false;
     }
-    let (st, account, space, plugin, generation) = (
+    let Ok(space) = SpaceId::parse(&job.space) else {
+        return false;
+    };
+    let (st, account, plugin, generation) = (
         state.clone(),
-        identity.id.clone(),
-        state.tokens.content_space(&job.space),
+        identity.id,
         job.plugin.clone(),
         job.generation,
     );
     blocking(move || {
-        let caps = st.tokens.capabilities(&account, &space);
+        let caps = st.tokens.capabilities(account, space);
         let Some(plugin) = st.registry.get(&plugin) else {
             return Ok(false);
         };
@@ -93,7 +95,7 @@ async fn visible<D: Directory>(
             .store
             .lock()
             .map_err(|_| Error::internal("store poisoned"))?;
-        let row = activation(&store, &space, plugin)?;
+        let row = activation(&store, space, plugin)?;
         Ok(caps.is_some_and(|c| c.contains(required))
             && row.enabled
             && row.generation == generation)
@@ -124,10 +126,13 @@ pub async fn dispatch<D: Directory>(
         .map_err(|_| Error::invalid_input("input does not match operation schema"))?;
     let job = load(&state, &space, &i.job_id).await?;
     if op == "jobs.cancel" {
-        let owner = *job.account == *identity.id
+        let owner = job.account == identity.id
             || state
                 .tokens
-                .capabilities(&identity.id, &state.tokens.content_space(&space))
+                .capabilities(
+                    identity.id,
+                    SpaceId::parse(&space).map_err(|_| Error::not_found("job not found"))?,
+                )
                 .is_some_and(|c| c.contains(Capability::PluginsManage));
         if !owner {
             return Err(Error::forbidden(

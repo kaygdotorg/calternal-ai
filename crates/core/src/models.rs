@@ -603,7 +603,7 @@ pub enum SpaceRole {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceGrant {
-    /// Stable space UUID in stored directories; fixture directories may expose aliases.
+    /// Space UUID; the only way a space is named on the wire.
     pub id: String,
     /// Current preview membership role for this space.
     pub role: SpaceRole,

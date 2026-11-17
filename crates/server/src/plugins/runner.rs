@@ -30,7 +30,7 @@ use super::worker::Outcome;
 use super::{Call, activation, host_capability};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use calternal_types::Error;
+use calternal_types::{Error, SpaceId};
 
 /// Concurrent job runs across the server. Kept below the worker pool size so
 /// interactive plugin calls always find a worker.
@@ -132,25 +132,22 @@ async fn execute<D: Directory>(
         .operation(&job.operation)
         .and_then(|op| host_capability(op.required_capability))
         .ok_or_else(refused)?;
-    let key = state.tokens.content_space(&job.space);
-    let identity = Identity {
-        id: Arc::from(job.account.as_str()),
-    };
+    let space = SpaceId::parse(&job.space).map_err(|_| refused())?;
+    let identity = Identity { id: job.account };
     if !job.session.is_live(&state.tokens).await {
         return Err(refused());
     }
-    let (st, k, account, p2, jid, sp) = (
+    let (st, account, p2, jid, sp) = (
         state.clone(),
-        key.clone(),
-        job.account.clone(),
+        job.account,
         plugin.clone(),
         job.id.clone(),
         job.space.clone(),
     );
-    let (generation, (account_id, space_id), children) = blocking(move || {
+    let (generation, children) = blocking(move || {
         if !st
             .tokens
-            .capabilities(&account, &k)
+            .capabilities(account, space)
             .is_some_and(|c| c.contains(required))
         {
             return Err(refused());
@@ -159,14 +156,9 @@ async fn execute<D: Directory>(
             .store
             .lock()
             .map_err(|_| Error::internal("store poisoned"))?;
-        let row = activation(&store, &k, &p2)?;
-        let ids = store.worker_ids(&account, &k)?;
+        let row = activation(&store, space, &p2)?;
         drop(store);
-        Ok((
-            (row.enabled, row.generation),
-            ids,
-            st.jobs.children(&sp, &jid)?,
-        ))
+        Ok(((row.enabled, row.generation), st.jobs.children(&sp, &jid)?))
     })
     .await?;
     if generation != (true, job.generation) {
@@ -176,8 +168,7 @@ async fn execute<D: Directory>(
         state.clone(),
         identity,
         job.session.clone(),
-        key.clone(),
-        job.space.clone(),
+        space,
         plugin.clone(),
         job.generation,
         format!("job/{}", job.id),
@@ -198,12 +189,11 @@ async fn execute<D: Directory>(
         .workers
         .invoke(
             &plugin,
-            &key,
-            space_id,
+            space,
             Call {
                 operation: job.operation.clone(),
                 input,
-                account: account_id,
+                account: job.account,
                 host: Arc::new(host),
                 timeout: JOB_RUN_TIMEOUT,
                 cancel: Some(cancel.clone()),
