@@ -82,7 +82,7 @@ rules-only implementation asks the person. No model reviewer is selected.
 
 Core instructions live in `plugins/calternal-orchestrator/skills/core.md`. The
 provider appends core, the generated one-line operation index, then the space's
-`<userdata-ssd>/spaces/<space-id>/.calternal/instructions.md` using the documented
+`<userdata-ssd>/spaces/<space-id>/AI/Instructions.md` using the documented
 system-prompt append channel. The file is read through descriptor-relative fsio,
 with a 16 KiB cap and a visible truncation notice. Missing means no extra text.
 Instructions are context and never grant access. Personal instructions remain a
