@@ -20,7 +20,7 @@ impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let roots = support::roots(dir.path());
-        let store = Store::open(&roots, true).unwrap();
+        let store = Store::open(&roots, uuid::Uuid::from_u128(1), true).unwrap();
         let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
         let dev = support::dev(&tokens);
         let (owner, guest) = (dev.owner, dev.guest);

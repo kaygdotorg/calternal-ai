@@ -9,7 +9,7 @@ import { performance } from 'node:perf_hooks';
 const root = resolve(import.meta.dirname, '..');
 const data = await mkdtemp(join(tmpdir(), 'calternal-smoke-'));
 const started = performance.now();
-const child = spawn(join(root, 'target/debug/calternal'), ['serve', '--development', '--create', '--appdata', join(data, 'appdata'), '--userdata-ssd', join(data, 'userdata-ssd'), '--userdata-hdd', join(data, 'userdata-hdd'), '--port', '0', '--plugin-root', join(root, 'plugins')], { stdio: 'ignore' });
+const child = spawn(join(root, 'target/debug/calternal'), ['serve', '--development', '--create', '--installation-id', '00000000-0000-0000-0000-000000000001', '--appdata', join(data, 'appdata'), '--userdata-ssd', join(data, 'userdata-ssd'), '--userdata-hdd', join(data, 'userdata-hdd'), '--port', '0', '--plugin-root', join(root, 'plugins')], { stdio: 'ignore' });
 let exited = false;
 child.on('exit', () => { exited = true; });
 let spawnError;

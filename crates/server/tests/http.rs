@@ -151,8 +151,13 @@ fn roots(data: &Path) -> Vec<std::ffi::OsString> {
         args.push(data.join(dir).into_os_string());
     }
     args.push("--create".into());
+    args.push("--installation-id".into());
+    args.push(INSTALLATION.into());
     args
 }
+
+/// The installation ID every fixture's server configuration pins.
+const INSTALLATION: &str = "00000000-0000-0000-0000-000000000001";
 
 struct Resp {
     status: u16,
@@ -1013,8 +1018,15 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
 
 /// Starts `serve` on explicit roots and returns its exit status, or `None` if it
 /// was still serving after five seconds (then it is killed).
-fn serve_status(appdata: &Path, ssd: &Path, hdd: &Path, create: bool) -> Option<i32> {
+fn serve_status(
+    installation: Option<&str>,
+    appdata: &Path,
+    ssd: &Path,
+    hdd: &Path,
+    create: bool,
+) -> Option<i32> {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
+    cmd.env_remove("CALTERNAL_INSTALLATION_ID");
     cmd.args(["serve", "--development", "--port", "0", "--appdata"])
         .arg(appdata)
         .arg("--userdata-ssd")
@@ -1027,6 +1039,9 @@ fn serve_status(appdata: &Path, ssd: &Path, hdd: &Path, create: bool) -> Option<
         .stderr(Stdio::null());
     if create {
         cmd.arg("--create");
+    }
+    if let Some(id) = installation {
+        cmd.args(["--installation-id", id]);
     }
     let mut child = cmd.spawn().unwrap();
     let t0 = Instant::now();
@@ -1041,9 +1056,10 @@ fn serve_status(appdata: &Path, ssd: &Path, hdd: &Path, create: bool) -> Option<
     None
 }
 
-/// The roots guard runs before anything is created: empty roots without
-/// `--create`, swapped roots and a root of another installation are all refused,
-/// and a refused start leaves no database behind.
+/// The roots guard runs before anything is created, against the installation ID
+/// pinned in configuration: a missing pin, empty roots without `--create`, swapped
+/// roots, a different pin and a root of another installation are all refused, and a
+/// refused start leaves no database behind.
 #[test]
 fn server_refuses_empty_swapped_or_foreign_roots() {
     let d = TempDir::new("roots");
@@ -1055,46 +1071,28 @@ fn server_refuses_empty_swapped_or_foreign_roots() {
     for dir in [&appdata, &ssd, &hdd] {
         std::fs::create_dir_all(dir).unwrap();
     }
-    assert_eq!(
-        serve_status(&appdata, &ssd, &hdd, false),
-        Some(1),
-        "empty roots"
-    );
-    assert!(
-        !appdata.join("system").exists(),
-        "a refused start created state"
-    );
+    let pin = Some(INSTALLATION);
+    assert_eq!(serve_status(None, &appdata, &ssd, &hdd, true), Some(1), "no pin");
+    assert_eq!(serve_status(pin, &appdata, &ssd, &hdd, false), Some(1), "empty roots");
+    assert!(!appdata.join("system").exists(), "a refused start created state");
     // First setup, then a normal restart, both serve.
     drop(start(&d.0, None));
-    assert_eq!(
-        serve_status(&appdata, &ssd, &hdd, false),
-        None,
-        "paired restart"
-    );
+    assert_eq!(serve_status(pin, &appdata, &ssd, &hdd, false), None, "paired restart");
+    let other_pin = Some("00000000-0000-0000-0000-000000000002");
+    assert_eq!(serve_status(other_pin, &appdata, &ssd, &hdd, false), Some(1), "different pin");
     // Swapped userdata roots carry the wrong role markers.
-    assert_eq!(
-        serve_status(&appdata, &hdd, &ssd, false),
-        Some(1),
-        "swapped roots"
-    );
-    assert_eq!(
-        serve_status(&appdata, &hdd, &ssd, true),
-        Some(1),
-        "--create cannot repair"
-    );
+    assert_eq!(serve_status(pin, &appdata, &hdd, &ssd, false), Some(1), "swapped roots");
+    assert_eq!(serve_status(pin, &appdata, &hdd, &ssd, true), Some(1), "--create cannot repair");
     // A userdata root of another installation carries another installation ID.
     let other = TempDir::new("roots-other");
-    drop(start(&other.0, None));
-    let foreign = other.0.join("userdata-ssd");
-    assert_eq!(
-        serve_status(&appdata, &foreign, &hdd, false),
-        Some(1),
-        "foreign root"
+    let (oa, os, oh) = (
+        other.0.join("appdata"),
+        other.0.join("userdata-ssd"),
+        other.0.join("userdata-hdd"),
     );
+    assert_eq!(serve_status(other_pin, &oa, &os, &oh, true), None, "other first setup");
+    assert_eq!(serve_status(pin, &appdata, &os, &hdd, false), Some(1), "foreign root");
     // The recovery log lives in userdata-ssd, owner-only.
     let log = ssd.join(".calternal/recovery");
-    assert!(
-        log.join("snapshot.json").is_file(),
-        "recovery log provisioned"
-    );
+    assert!(log.join("snapshot.json").is_file(), "recovery log provisioned");
 }

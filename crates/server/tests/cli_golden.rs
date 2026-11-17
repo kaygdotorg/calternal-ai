@@ -331,6 +331,8 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
         "--userdata-hdd",
         &hdd,
         "--create",
+        "--installation-id",
+        "00000000-0000-0000-0000-000000000001",
     ];
     args.extend_from_slice(extra);
     if json {

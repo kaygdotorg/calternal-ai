@@ -32,7 +32,7 @@ pub struct Store {
     /// The appdata root (account-input databases live under it).
     appdata: std::path::PathBuf,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
-    installation: uuid::Uuid,
+    installation: Uuid,
     // Dropped last: every database and file handle above closes first.
     _roots: calternal_roots::RootLocks,
 }
@@ -120,8 +120,8 @@ impl Store {
     fn writer(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.writer.lock().unwrap_or_else(|e| e.into_inner())
     }
-    /// The installation UUID recorded in the root markers. Cost: a copy.
-    pub fn installation(&self) -> uuid::Uuid {
+    /// The pinned installation UUID the root markers carry. Cost: a copy.
+    pub fn installation(&self) -> Uuid {
         self.installation
     }
     /// Shared secret store under this appdata root. Cost: one reference-count
@@ -131,10 +131,11 @@ impl Store {
     }
     /// Validates and locks the installation's three roots, then opens its stores.
     ///
-    /// `create` allows first setup of empty or missing roots; without it every root
-    /// must already carry this installation's marker for its role. Missing, swapped,
-    /// mismatched or occupied roots are refused before anything is created (see
-    /// [`calternal_roots::open`]). The journal witness and secret key live in
+    /// `installation` is the ID pinned in server configuration, outside every root
+    /// (ADR 0062): each root's marker must carry it with that root's role. `create`
+    /// allows first setup of empty or missing roots, writing the markers; without
+    /// it, missing, swapped, mismatched, foreign or occupied roots are refused
+    /// before anything is created (see [`calternal_roots::prepare`]). The journal witness and secret key live in
     /// `<appdata>/secrets`.
     ///
     /// # Errors
@@ -143,8 +144,12 @@ impl Store {
     /// Cost: the roots guard (marker reads, three locks), plugin/catalog database
     /// opens and schema fsyncs, then startup-only pending publication and
     /// materialization recovery per space.
-    pub fn open(roots: &calternal_roots::Roots, create: bool) -> Result<Self, Error> {
-        let (installation, locks) = calternal_roots::open(roots, create)
+    pub fn open(
+        roots: &calternal_roots::Roots,
+        installation: Uuid,
+        create: bool,
+    ) -> Result<Self, Error> {
+        let locks = calternal_roots::prepare(roots, installation, create)
             .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?;
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;

@@ -30,7 +30,7 @@ impl Fixture {
                     userdata_ssd: dir.path().join("userdata-ssd"),
                     userdata_hdd: dir.path().join("userdata-hdd"),
                 };
-                let store = Store::open(&roots, true).unwrap();
+                let store = Store::open(&roots, uuid::Uuid::from_u128(1), true).unwrap();
                 let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
                 let token =
                     std::fs::read_to_string(dir.path().join("appdata/dev-tokens/owner.token")).unwrap();

@@ -80,6 +80,10 @@ enum Cmd {
         /// already belong to this installation; harmless on a paired installation.
         #[arg(long)]
         create: bool,
+        /// This installation's UUID, kept in the server's configuration outside every
+        /// root (ADR 0062). Each root's marker must carry it; required.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: Option<String>,
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
@@ -194,6 +198,7 @@ fn main() {
             userdata_ssd,
             userdata_hdd,
             create,
+            installation_id,
             port,
             web_dir,
             plugin_root,
@@ -229,6 +234,7 @@ fn main() {
                         userdata_ssd,
                         userdata_hdd,
                     },
+                    installation_id,
                     create,
                     port,
                     web_dir,
@@ -258,6 +264,7 @@ fn boot(exit: i32, code: &str, message: impl Into<String>, hint: &str) -> CliErr
 
 async fn serve(
     roots: calternal_roots::Roots,
+    installation_id: Option<String>,
     create: bool,
     port: u16,
     web_dir: Option<PathBuf>,
@@ -274,7 +281,17 @@ async fn serve(
         "Check that --appdata exists (or can be created) and that you can write to it.";
     // The roots guard runs first: a missing, swapped or foreign root is refused
     // before any directory, lock or database is created.
-    let store = Store::open(&roots, create).map_err(|e| {
+    const PIN_HINT: &str = "Put this installation's UUID in the server configuration as \
+         CALTERNAL_INSTALLATION_ID (or pass --installation-id). For first setup, generate a \
+         new UUID, keep it there, and start once with --create.";
+    let installation = installation_id
+        .ok_or_else(|| boot(1, "invalid_input", "no installation ID is configured", PIN_HINT))
+        .and_then(|id| {
+            uuid::Uuid::parse_str(&id).map_err(|_| {
+                boot(1, "invalid_input", "the installation ID is not a UUID", PIN_HINT)
+            })
+        })?;
+    let store = Store::open(&roots, installation, create).map_err(|e| {
         boot(
             1,
             "failed",

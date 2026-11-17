@@ -165,6 +165,7 @@ impl Fixture {
         self.child = Some(
             command
                 .args(["--port", "0", "--origin", ORIGIN, "--create"])
+                .args(["--installation-id", "00000000-0000-0000-0000-000000000001"])
                 .arg("--appdata")
                 .arg(self.appdata())
                 .arg("--userdata-ssd")

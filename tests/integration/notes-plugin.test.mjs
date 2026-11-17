@@ -25,6 +25,7 @@ async function startServer(dataDir) {
     "--userdata-ssd", join(dataDir, "userdata-ssd"),
     "--userdata-hdd", join(dataDir, "userdata-hdd"),
     "--create",
+    "--installation-id", "00000000-0000-0000-0000-000000000001",
     "--port", "0",
     "--plugin-root", pluginRoot,
     "--node", process.execPath,

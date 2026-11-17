@@ -14,6 +14,7 @@ From the repository root:
 npm ci
 npm run build
 ./scripts/with-toolchain.sh cargo build --locked -p calternal-server -p calternal-cli
+export CALTERNAL_INSTALLATION_ID=$(cat /proc/sys/kernel/random/uuid)  # keep it; see below
 ./scripts/with-toolchain.sh cargo run --locked -p calternal-server -- serve \
   --development --create --port 3210 --plugin-root plugins \
   --appdata .dev-data/appdata \
@@ -22,8 +23,11 @@ npm run build
 ```
 
 The server keeps its databases in appdata and space files in the two userdata
-roots. `--create` pairs three empty roots on first start; afterwards the server
-refuses roots that are missing, swapped or from another installation. Security
+roots. The installation ID is pinned in the server's configuration
+(`CALTERNAL_INSTALLATION_ID`, or `--installation-id`), outside every root: keep the
+value you generated with the rest of the server's configuration. `--create` pairs
+three empty roots with it on first start; afterwards the server refuses to start
+without the pin, or with roots that are missing, swapped, or carry another ID. Security
 changes are also written to a protected log in `userdata-ssd/.calternal/recovery`.
 
 `--development` creates two fixture accounts and writes their bearer tokens to

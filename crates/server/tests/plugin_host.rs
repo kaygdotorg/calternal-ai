@@ -74,7 +74,7 @@ fn tagger(dir: &Path) -> Plugin {
 async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixture {
     let root = tmp(tag);
     let roots = support::roots(&root);
-    let store = Store::open(&roots, true).unwrap();
+    let store = Store::open(&roots, uuid::Uuid::from_u128(1), true).unwrap();
     let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13 on PATH");
     let workers = match pool {

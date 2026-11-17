@@ -146,42 +146,6 @@ pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<Ro
     })
 }
 
-/// Opens an installation's three roots for a server's lifetime, as the existing
-/// app does: the installation ID is the one recorded in appdata's marker, and
-/// [`prepare`] then requires the other two roots to carry the same ID with their
-/// own roles. With `create` and no marker anywhere, a fresh UUIDv7 is allocated and
-/// first setup runs; with `create` on a paired installation it validates as usual.
-///
-/// # Errors
-/// Every [`prepare`] refusal (missing, swapped, mismatched or occupied roots,
-/// missing `system/auth.db`), all before anything is created; also an appdata root
-/// without a marker when `create` is false.
-///
-/// Cost: one small marker read, then [`prepare`].
-pub fn open(roots: &Roots, create: bool) -> io::Result<(Uuid, RootLocks)> {
-    let recorded = match std::fs::read_to_string(roots.appdata.join(MARKER)) {
-        Ok(text) => Some(
-            text.lines()
-                .next()
-                .and_then(|id| Uuid::parse_str(id).ok())
-                .ok_or_else(|| invalid("appdata's installation marker is malformed"))?,
-        ),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e),
-    };
-    let installation = match recorded {
-        Some(id) => id,
-        None if create => Uuid::now_v7(),
-        None => {
-            return Err(invalid(format!(
-                "{} is not a Calternal appdata root; pass --create for first setup",
-                roots.appdata.display()
-            )));
-        }
-    };
-    Ok((installation, prepare(roots, installation, create)?))
-}
-
 /// Deliberately re-pairs three existing roots during an offline migration.
 /// The caller must explicitly confirm the operation. It never creates root
 /// directories or databases, and requires nonempty auth and legacy history

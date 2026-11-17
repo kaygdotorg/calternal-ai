@@ -9,14 +9,20 @@ a rebuild from the recovery log, or a production plugin sandbox.
 ```sh
 scripts/with-toolchain.sh cargo build -p calternal-server -j4
 preview_data=$(mktemp -d /tmp/calternal-preview.XXXXXX)
+export CALTERNAL_INSTALLATION_ID=$(cat /proc/sys/kernel/random/uuid)
 target/debug/calternal serve --create --port 0 --plugin-root plugins \
   --appdata "$preview_data/appdata" \
   --userdata-ssd "$preview_data/userdata-ssd" \
   --userdata-hdd "$preview_data/userdata-hdd"
 ```
 
-Startup first validates and locks the three roots (`calternal-roots`): each
-carries the installation ID (taken from appdata's marker) and its role. Missing,
+Startup first validates and locks the three roots (`calternal-roots`). The
+installation ID is pinned in server configuration outside every root (ADR 0062):
+`CALTERNAL_INSTALLATION_ID` (or `--installation-id`); a missing or malformed pin
+refuses to start. Each root's `.calternal-install-id` marker must carry that ID and
+the root's role. First setup: generate a UUID, store it in the configuration, and
+start once with `--create`, which pairs three empty or missing roots by writing the
+markers. Missing,
 swapped, nested, occupied-but-unpaired or foreign roots are refused before any
 directory, lock or database is created; `--create` only pairs empty or missing
 roots. The protected security log (`calternal-recovery`) lives in

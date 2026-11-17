@@ -45,7 +45,7 @@ impl Fixture {
                 userdata_ssd: base.join("userdata-ssd"),
                 userdata_hdd: base.join("userdata-hdd"),
             };
-            let store = Store::open(&roots, true).unwrap();
+            let store = Store::open(&roots, uuid::Uuid::from_u128(1), true).unwrap();
             // Every later path is in appdata; `base` holds all three roots.
             let root = roots.appdata.clone();
             let tokens = StoredDirectory::load_or_create(&root).unwrap();
