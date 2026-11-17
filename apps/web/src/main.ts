@@ -24,7 +24,7 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
     if (b.screen === "app") mount(App, { target });
     else {
       const { default: Gate } = await import("./shell/SignIn.svelte");
-      mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup } : { version: b } });
+      mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup } : b.screen === "offline" ? { offline: true } : { version: b } });
     }
     document.documentElement.dataset.ready = "";
   });

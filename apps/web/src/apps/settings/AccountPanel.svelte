@@ -2,18 +2,19 @@
   // The Account page on the real server: who you are (read only: no operation changes a name yet), your passkeys (add, rename, remove; the last one cannot be removed) and the places you are signed in
   // (revoke one, or sign out everywhere). Changing how someone signs in asks for a fresh passkey first (the server says so; account.* repeats the change after it).
   import { Button } from "@calternal/ui";
-  import { account, AuthError, signOut, type InstallationRow, type Me, type Passkey } from "../../server/auth";
+  import { account, signOut, type InstallationRow, type Me, type Passkey } from "../../server/auth";
+  import { say } from "../../server/say";
   import "./panel.css";
   let me = $state<Me | null>(null), keys = $state<Passkey[]>([]), places = $state<InstallationRow[]>([]);
   let error = $state(""), busy = $state(false), renaming = $state<string | null>(null), draft = $state("");
   const when = (ms: number | null) => (ms ? new Date(ms).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "never");
   async function load() {
     try { [me, keys, places] = await Promise.all([account.me(), account.passkeys(), account.installations()]); error = ""; }
-    catch (e) { error = e instanceof AuthError ? e.message : "Could not load your account."; }
+    catch (e) { error = say(e, "load your account"); }
   }
   async function act(f: () => Promise<unknown>) {
     busy = true; error = "";
-    try { await f(); await load(); } catch (e) { error = e instanceof AuthError && e.code !== "cancelled" ? e.message : e instanceof AuthError ? "" : "That did not work. Try again."; }
+    try { await f(); await load(); } catch (e) { error = say(e); }
     busy = false;
   }
   const everywhere = () => act(async () => { for (const p of places.filter((x) => !x.current)) await account.revokeInstallation(p.id); await signOut(); location.replace(import.meta.env.BASE_URL); });

@@ -35,6 +35,11 @@ try {
   await page.goto(`${url}/?server=1`);
   await page.waitForSelector("html[data-ready]");
   check(await page.getByRole("heading", { name: "Set up Calternal" }).isVisible(), "empty installation shows first-owner setup");
+  // A wrong setup code is refused in plain words and the form stays.
+  await page.fill('input[name="token"]', "not-the-code"); await page.fill('input[name="name"]', "Test Owner");
+  await page.getByRole("button", { name: "Create passkey" }).click();
+  await page.getByText(/wrong or already used/).waitFor({ timeout: 8000 });
+  check(true, "wrong setup code: plain words and the form stays");
   await page.fill('input[name="token"]', setupToken);
   await page.fill('input[name="name"]', "Test Owner");
   await page.getByRole("button", { name: "Create passkey" }).click();
@@ -91,12 +96,28 @@ try {
     check(await p2.getByRole("heading", { name: title }).isVisible(), `protocol ${v}: "${title}"`);
     await p2.close();
   }
+  // Server unreachable at load: a screen with Try again.
+  const p3 = await ctx.newPage();
+  await p3.route("**/api/v1/auth/status", (r) => r.abort());
+  await ctx.clearCookies();
+  await p3.goto(`${url}/?server=1`); await p3.waitForSelector("html[data-ready]");
+  check(await p3.getByRole("heading", { name: "Can't reach the server" }).isVisible(), "unreachable at load: plain screen with Try again");
+  await p3.close();
+  // A passkey the server does not know (a device with none): said in words, nothing breaks.
+  const ctx2 = await browser.newContext(); const p4 = await ctx2.newPage(); const c4 = await ctx2.newCDPSession(p4);
+  await c4.send("WebAuthn.enable"); await c4.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+  await p4.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
+  await p4.goto(`${url}/?server=1`); await p4.waitForSelector("html[data-ready]");
+  await p4.getByRole("button", { name: "Sign in with a passkey" }).click();
+  await p4.getByRole("alert").waitFor({ timeout: 8000 });
+  check(/passkey/.test(await p4.getByRole("alert").innerText()), "no passkey on this device: said in words");
+  await ctx2.close();
   // An ended session returns to the sign-in screen at the same address.
   await go("/settings/account");
   await ctx.clearCookies();
   await go("/settings/secrets"); // the page asks the server, which refuses the missing session
   // The standalone server has no deep-link fallback (Caddy has one on the preview), so the reload itself lands on its 404 here; the banner and the unchanged address are what this host can show.
-  await page.getByText(/session ended/).waitFor({ timeout: 5000 });
+  await page.getByText(/session ended/).first().waitFor({ timeout: 5000 });
   await page.waitForTimeout(2000);
   check(new URL(page.url()).pathname === "/settings/secrets", "session expired: banner, then a reload at the same address");
   await browser.close();

@@ -13,13 +13,14 @@ import { devToken, server } from "./client";
 export const EXPECTED_PROTOCOL = 1;
 
 /** Where start-up goes next. */
-export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean } | { screen: "version"; server: number; expected: number };
+export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
 
 /** Decides the first screen; the shared state (capabilities, spaces) is filled in on the way. */
 export async function boot(): Promise<Boot> {
   if (!devToken()) {
     const st = await status().catch(() => null);
-    if (st && !st.signed_in) return { screen: "signin", needsSetup: st.setup };
+    if (!st) return { screen: "offline" };
+    if (!st.signed_in) return { screen: "signin", needsSetup: st.setup };
   }
   const d = await server.describe().catch(() => null);
   if (d && d.protocol_version !== EXPECTED_PROTOCOL) return { screen: "version", server: d.protocol_version, expected: EXPECTED_PROTOCOL };

@@ -3,7 +3,8 @@
   // "You" or the start of the id; a name column waits for an operation that returns people's names (docs/ui-shell-status.md, server mode).
   import { Capsule } from "@calternal/ui";
   import { Button } from "@calternal/ui";
-  import { ServerError, server } from "../../server/client";
+  import { server } from "../../server/client";
+  import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
   import "./panel.css";
   type Role = "reader" | "editor" | "manager" | "owner";
@@ -14,11 +15,11 @@
     try {
       const [m, who] = await Promise.all([server.operate<{ members: { account_id: string; role: Role }[] }>("spaces.members", { space_id: space }), import("../../server/auth").then((a) => a.account.me())]);
       members = m.members; me = who.user.id; error = "";
-    } catch (e) { error = e instanceof ServerError ? e.message : "Could not load the members."; }
+    } catch (e) { error = say(e); }
   }
   async function act(op: string, input: Record<string, unknown>) {
     busy = true; error = "";
-    try { await server.operate(op, { space_id: space, ...input }); await load(); } catch (e) { error = e instanceof ServerError ? e.message : "That did not work."; await load(); }
+    try { await server.operate(op, { space_id: space, ...input }); await load(); } catch (e) { error = say(e); await load(); }
     busy = false;
   }
   const mine = $derived(members.find((m) => m.account_id === me)?.role);
@@ -36,5 +37,6 @@
       {/if}
     </div>
   {/each}
+  {#if members.length === 1 && !error}<p class="e" style="color: var(--ink-3)">Only you are in this space. People you add appear here with their role.</p>{/if}
   {#if error}<p class="e" role="alert">{error}</p>{/if}
 </div>

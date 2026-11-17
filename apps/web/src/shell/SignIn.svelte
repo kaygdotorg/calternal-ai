@@ -2,8 +2,9 @@
   // The signed-out screen, shown instead of the app when the real server is selected and this browser has no session. One card on the app's backdrop:
   // "Sign in with a passkey", or, on a fresh installation, the setup form (the setup link's token and a name). Success reloads into the app.
   import { Button, Card, Spinner } from "@calternal/ui";
-  import { AuthError, setup, signIn } from "../server/auth";
-  let { needsSetup = false, version }: { needsSetup?: boolean; version?: { server: number; expected: number } } = $props();
+  import { setup, signIn } from "../server/auth";
+  import { say } from "../server/say";
+  let { needsSetup = false, version, offline = false }: { needsSetup?: boolean; version?: { server: number; expected: number }; offline?: boolean } = $props();
   const fromLink = new URLSearchParams(location.hash.slice(1)).get("setup") ?? new URLSearchParams(location.search).get("setup") ?? "";
   let token = $state(fromLink);
   let name = $state("");
@@ -13,13 +14,21 @@
   async function run(f: () => Promise<void>) {
     busy = true; error = "";
     try { await f(); done(); }
-    catch (e) { error = e instanceof AuthError ? (e.code === "setup_token_invalid" || e.code === "invite_invalid" ? "That setup link is invalid or expired. Ask for a new one." : e.message) : "Something went wrong. Try again."; }
+    catch (e) { error = say(e, needsSetup ? "set up" : "sign in"); }
     finally { busy = false; }
   }
 </script>
 
 <main class="wrap">
-{#if version}
+{#if offline}
+  <Card label="Server unreachable" variant="solid" class="card">
+    <div class="in">
+      <h1>Can't reach the server</h1>
+      <p class="note">Calternal could not get an answer. Check your connection, and that the server is running, then try again.</p>
+      <div class="go"><Button variant="primary" text="Try again" onclick={() => location.reload()} /></div>
+    </div>
+  </Card>
+{:else if version}
   <Card label="Version mismatch" variant="solid" class="card">
     <div class="in">
       <h1>{version.server > version.expected ? "This page is out of date" : "The server is out of date"}</h1>
