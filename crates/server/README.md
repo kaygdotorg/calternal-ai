@@ -10,7 +10,7 @@ FO1 recovery integration, or a production plugin sandbox.
 scripts/with-toolchain.sh cargo build -p calternal-server -j4
 preview_data=$(mktemp -d /tmp/calternal-preview.XXXXXX)
 target/debug/calternal serve --data-dir "$preview_data" --port 0 \
-  --web-dir apps/web/dist --plugin-root plugins
+  --plugin-root plugins
 ```
 
 The listener binds `127.0.0.1`. `startup.json` (0600) reports `base_url`,
@@ -86,8 +86,8 @@ match the resolved owner. Collections and creation still require a space.
 The CLI's get/update/history commands omit the hint by default.
 
 Every response retains CSP, nosniff, no-referrer, DENY framing and API no-store.
-There are no CORS headers. Static routes such as `/notes/<id>` and
-`/collections/<id>` fall back to index.html; missing assets and API routes do not.
+There are no CORS headers. `--web-dir` serves a plain static directory with no
+SPA fallback; unknown paths and API routes return 404.
 Core operation bodies remain capped at 2 MiB, Markdown at 1 MiB. The server
 supports the settled addresses; the current web router still needs Claude-owned
 changes listed in HTTP-VALIDATION.md.
