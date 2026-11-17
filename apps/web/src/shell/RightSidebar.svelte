@@ -28,4 +28,6 @@
   .content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: calc(var(--bar-h) + var(--s-4)) var(--s-4) var(--foot-h); --fade-t: var(--bar-h); --fade-b: var(--foot-h); }
   .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) max(var(--s-4), var(--safe-bottom)); }
   .tabs :global(.cap) { width: 100%; }
+  /* Four tabs, each with its icon and its label: a tab keeps the width of its content and the capsule shares what is left. */
+  .tabs :global(.cap .seg) { flex: 1 0 auto; padding-inline: var(--s-4); }
 </style>

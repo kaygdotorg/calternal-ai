@@ -56,7 +56,9 @@ export const DEFAULTS: Prefs = {
 };
 
 /** What each switch turns on. The sidebar tint and the card tint are floors: the wash is raised above them where the wallpaper needs it for contrast. */
-const SIDE_BLUR = 12, CARD_BLUR = 75, SIDE_TINT = 0.35, CARD_TINT = 0.85, CARD_DIM = 0.3;
+const SIDE_BLUR = 12, CARD_BLUR = 75, SIDE_TINT = 0.35, CARD_DIM = 0.3;
+/** The card tint floor per scheme: light keeps more of the picture (depth) because the contrast floor, not this number, guarantees legibility there. */
+const CARD_TINT = { light: 0.55, dark: 0.85 } as const;
 const KEY = "cal.appearance";
 
 function read(): Prefs {
@@ -103,7 +105,7 @@ class Appearance {
     const p = this.prefs;
     const st = document.documentElement.style;
     const m = p.materials;
-    const base = { side: m.tint ? SIDE_TINT : 0, card: m.tint ? CARD_TINT : 0 };
+    const base = { side: m.tint ? SIDE_TINT : 0, card: m.tint ? CARD_TINT[currentScheme()] : 0 };
     st.setProperty("--side-tint-a", String(base.side));
     st.setProperty("--card-tint-a", String(base.card));
     st.setProperty("--card-dim-a", String(m.dim ? CARD_DIM : 0));

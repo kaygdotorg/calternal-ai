@@ -42,7 +42,7 @@
   .list { display: grid; gap: var(--s-3); }
   .empty { color: var(--ink-3); padding: var(--s-6); }
   /* Trailing columns keep their widths so the figures and badges of different rows line up. */
-  .n { min-width: 3.6ch; text-align: end; font-variant-numeric: tabular-nums; }
+  .n { min-width: 4.4ch; text-align: end; font-variant-numeric: tabular-nums; }
   .add { color: var(--good); } .rem { color: var(--danger); }
   .st { min-width: 6.2em; display: inline-flex; justify-content: flex-end; }
 </style>
