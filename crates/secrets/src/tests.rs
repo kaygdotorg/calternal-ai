@@ -1,5 +1,5 @@
 use crate::*;
-use calternal_types::{AccountId, SpaceId};
+use calternal_types::{AccountId, Actor, SpaceId, Via};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -12,10 +12,7 @@ fn name(n: &str) -> SecretName {
     SecretName::new(n).unwrap()
 }
 fn actor(account: AccountId) -> Actor {
-    Actor {
-        account,
-        via: Via::Session,
-    }
+    Actor::account(account)
 }
 fn env() -> Consumer {
     Consumer::SandboxEnv {
@@ -281,7 +278,9 @@ fn request_provide_and_cancel() {
     let owner = account();
     let agent = Actor {
         account: AccountId::new(),
-        via: Via::Agent(uuid::Uuid::now_v7()),
+        via: Some(Via::Agent {
+            thread: uuid::Uuid::now_v7(),
+        }),
     };
     let id = store
         .request(

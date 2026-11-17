@@ -20,10 +20,11 @@ mod key;
 mod local;
 mod types;
 
+use calternal_types::Actor;
 pub use local::LocalStore;
 pub use types::{
-    Action, Actor, AuditEntry, Consumer, Handle, HandleToken, Metadata, Owner, PendingRequest,
-    RequestId, SecretName, SecretValue, Via,
+    Action, AuditEntry, Consumer, Handle, HandleToken, Metadata, Owner, PendingRequest, RequestId,
+    SecretName, SecretValue,
 };
 
 /// Stable refusal categories. Messages are fixed text and never carry a value,

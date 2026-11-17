@@ -23,7 +23,8 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Handle;
 use uuid::Uuid;
 
-use calternal_secrets::{Actor, Owner, Via};
+use calternal_secrets::Owner;
+use calternal_types::{Actor, Via};
 
 use super::jobs::Admission;
 use super::live::Live;
@@ -178,7 +179,9 @@ impl<D: Directory> SpaceHost<D> {
         let secrets = self.state.store.secrets();
         let actor = Actor {
             account,
-            via: Via::Plugin(self.plugin.manifest.id.clone()),
+            via: Some(Via::Plugin {
+                plugin: self.plugin.manifest.id.clone(),
+            }),
         };
         crate::secrets::plugin_handle(
             secrets.as_ref(),

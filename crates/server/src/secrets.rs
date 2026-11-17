@@ -28,9 +28,8 @@ use calternal_core::{
     SecretsProvideInput, SecretsProvideResult, SecretsRequestInput, SecretsRequestResult,
     SecretsRevokeInput, SecretsRevokeResult,
 };
-use calternal_secrets::{
-    Actor, LocalStore, Owner, RequestId, SecretName, SecretStore, SecretValue, Via,
-};
+use calternal_secrets::{LocalStore, Owner, RequestId, SecretName, SecretStore, SecretValue};
+use calternal_types::Actor;
 use calternal_types::SpaceId;
 use serde_json::{Value, json};
 
@@ -121,7 +120,7 @@ pub async fn dispatch<D: Directory>(
         let secrets = store(&state)?;
         let actor = Actor {
             account: p.id,
-            via: Via::Session,
+            via: None,
         };
         match op {
             "secrets.request" => {
@@ -265,10 +264,7 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
         let request = uuid::Uuid::parse_str(&input.request_id)
             .map_err(|_| Error::not_found("secret not found"))?;
         let value = SecretValue::new(input.value.into_bytes()).map_err(host_error)?;
-        let actor = Actor {
-            account,
-            via: Via::Session,
-        };
+        let actor = Actor { account, via: None };
         let handle = store(&state)?
             .provide(&owner, &RequestId(request), value, &actor)
             .map_err(host_error)?;

@@ -27,9 +27,10 @@ use crate::LIMITS;
 use crate::key::MasterKey;
 use crate::types::text;
 use crate::{
-    Action, Actor, AuditEntry, Consumer, Error, Handle, HandleToken, Metadata, Owner,
-    PendingRequest, RequestId, Result, SecretName, SecretStore, SecretValue,
+    Action, AuditEntry, Consumer, Error, Handle, HandleToken, Metadata, Owner, PendingRequest,
+    RequestId, Result, SecretName, SecretStore, SecretValue,
 };
+use calternal_types::Actor;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -186,7 +187,7 @@ fn audit(
         "INSERT INTO audit(at,actor,action,name,version,consumer) VALUES(?1,?2,?3,?4,?5,?6)",
         params![
             now_ms(),
-            actor.describe(),
+            actor.to_string(),
             action.as_str(),
             name,
             version.map(|v| v as i64),
@@ -411,7 +412,7 @@ impl SecretStore for LocalStore {
         }
         tx.execute(
             "INSERT INTO requests(id,name,label,reason,requested_by,created_at) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![id.0.to_string(), name.as_str(), label, reason, actor.describe(), now_ms()],
+            params![id.0.to_string(), name.as_str(), label, reason, actor.to_string(), now_ms()],
         )
         .map_err(|_| Error::Internal)?;
         audit(&tx, actor, Action::Request, name.as_str(), None, None)?;
