@@ -60,5 +60,8 @@ export function start(): { paintNow: boolean; result: Promise<Boot> } {
     spaces.setList(cached.spaces);
     applyCapabilities(cached.capabilities);
   }
-  return { paintNow: !!cached, result: check() };
+  const result = check();
+  // Painted from the record: nothing may be changed until the server has confirmed the session (link.svelte.ts).
+  if (cached) link.holdWrites(result.then((b) => b.screen === "app" || b.screen === "offline"));
+  return { paintNow: !!cached, result };
 }
