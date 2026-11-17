@@ -1,0 +1,165 @@
+---
+title: "CLI conventions"
+---
+
+<!-- Generated from: docs/cli.md. Rebuild: npm run docs:site -->
+
+> **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
+
+Two programs, one rule: **every command prints structured, human-readable output by
+default and accepts `--json`** for a stable machine-readable form carrying the same
+information. All printing goes through one module, `calternal_cli::output`
+(`crates/cli/src/output/`); a command builds a
+reply or an error and never prints results itself.
+
+- **`calternal`**: the single product binary (server, operator and machine roles).
+- **`cl`**: the client for a running server (the development-preview CLI).
+
+## Output conventions
+
+| Topic | Rule |
+|---|---|
+| Lists | At a wide terminal, aligned columns with an upper-case header and two spaces between columns. At narrow widths, IDs shorten in the middle and text shortens at the end; the lowest-priority columns are then hidden with a count and a `--json` or wider-terminal suggestion. Below 48 columns, each row becomes labelled lines. Empty results say so and suggest a next step. |
+| Single things | Labelled `label:  value` lines, values aligned by terminal-cell width. Values are never cut. |
+| Width | On a terminal, `COLUMNS` takes priority over the terminal width. Below 48 columns, rows use labelled blocks. Piped and redirected output is never truncated, even if `COLUMNS` is set. Wide Unicode characters count as two terminal cells; control characters in cells become spaces. |
+| Colour | Bold table headers and a dim next-step hint only on a terminal when `NO_COLOR` is unset and `TERM` is not `dumb`. Never with `--json`; no-colour terminals show hints as plain text. |
+| Hints | A successful command may show one short `Next:` line on a terminal in human mode. `--no-hints` or `CALTERNAL_NO_HINTS=1` hides it. Piped output and `--json` never include success hints. |
+| Help | Every command's `--help` includes a one-line purpose, examples, and `See also` commands. |
+| Time | Human mode shows the local zone: `2026-11-17 07:12:03 +01:00`. JSON carries ISO 8601 (RFC 3339, UTC) exactly as the server or database gives it. |
+| Errors, human | stderr: `error: <what happened and why, when known>` then `hint: <next step>`. Nothing on stdout. Wording may be friendlier than the unchanged JSON message. |
+| `--json` | stdout holds exactly one pretty-printed JSON document, for failures too; stderr stays empty. Success: `{"ok": true, "data": {…}}` (plus `"request_id"` for `cl` operations). Failure: `{"ok": false, "error": {"code", "message", "hint", "details"?}}` (plus `"request_id"` when known). `hint` is a string or `null`. Object keys are always printed in alphabetical order (not the order of `cli-shapes.json`), whatever the build; fields are only ever added, never renamed. |
+| Usage errors | A command line that does not parse is an error with code `usage` and exit status 2, as JSON too when `--json` appears in the arguments. `--help` and `--version` print text and exit 0. |
+| Secrets | Never printed, in either mode, except where the command exists to issue one: `calternal machines code` prints the new enrollment code, once. Tokens are accepted from environment variables or owner-only files, never from arguments (`cl`), and the machine key is never printed. |
+
+### Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | Success. |
+| 1 | The command ran and failed (the `error.code` says why). |
+| 2 | Usage error: the command line does not parse. Nothing else uses 2. |
+| 3 | `calternal machine run` only: the server revoked this machine. The systemd unit from `scripts/install-machine.sh` does not restart on 3. |
+
+### Error codes (`error.code`)
+
+Branch on these, never on `message`. `usage`, `invalid_input`, `unauthorized`,
+`forbidden`, `not_found`, `conflict`, `too_large`, `unavailable`, `internal` (the
+`cl` set, equal to the server's `ErrorCode`), plus `io` (a local file failed),
+`failed` (the operation failed; the message says why) and `revoked` (machine role).
+
+### JSON shapes
+
+The exact shape of every command's `data` is machine-readable in
+`cli-shapes.json`: leaves are `string`, `string?` (string or null),
+`integer`, `bool`, `any`; an object has exactly the listed keys (a key ending in `?`
+is optional); an array lists the element shape. The golden tests check every
+`--json` document against it, so the file and the code cannot drift.
+
+## `calternal`
+
+Global options on every command: `--json`, `--no-hints`.
+
+| Command | Purpose | Human output | `data` (JSON) |
+|---|---|---|---|
+| `serve --data-dir DIR [--port N] [--web-dir DIR] [--development] [--origin URL] [--trusted-proxies CIDRS] [--plugin-root DIR] [--node PATH] [--machine-lease-ttl-ms N] [--machine-poll-hold-ms N]` | Run the server on 127.0.0.1 until stopped. Prints one startup block, then logs to stderr. | Title line, then `url`, one `<name> token file` per development token (paths only, never tokens), `startup info`. | `profile`, `url`, `token_files` (name → path), `startup_file` |
+| `machines code (--pool \| --account UUID) --data-dir DIR [--minutes N]` | Issue a one-time machine enrollment code (default 60 minutes). | `code`, `owner`, `expires` (local), then two sentences on using it. | `code`, `owner` (`pool` or `account:<uuid>`), `expires_at` |
+| `machines list --data-dir DIR` | List enrolled machines, revoked ones included. | Table `ID OWNER NAME PLATFORM STATE` (state `enrolled`, `draining` or `revoked`), or a friendly empty result with the command to add one. | `machines[]`: `id`, `owner`, `name`, `os`, `arch`, `state` |
+| `machines revoke MACHINE --data-dir DIR` | Revoke a machine; a running server applies it within a second. | One sentence. Unknown machine: `not_found`. | `machine`, `revoked` |
+| `machines pool-grant ACCOUNT [--remove] --data-dir DIR` | Allow (or stop allowing) an account to use pool machines. | One sentence. | `account`, `pool_access` |
+| `plugin-digest [--plugin-root DIR]` | Hash each trusted worker bundle and say whether `trusted-plugins.json` pins it. | Table `PLUGIN WORKER SHA-256 STATE` (`pinned`, `NOT PINNED`, `unreadable: …`), or a friendly empty result. | `workers[]`: `id`, `worker`, `sha256` (or null), `pinned`, `state` |
+| `machine enroll --server URL --code CODE [--dir DIR] [--name LABEL]` | Exchange a one-time code for a machine identity; saves credentials (0600). `--code` also reads `CALTERNAL_ENROLL_CODE`. | `machine`, `owner`, `server`, `credentials` (path). | `machine_id`, `owner`, `server`, `credentials_file` |
+| `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
+| `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
+
+`machine enrol` no longer exists (renamed `machine enroll`, no alias); the HTTP path is
+`/api/v1/machine/enroll`. Prefer `CALTERNAL_ENROLL_CODE` or `--code -` over `--code CODE`:
+an argument is visible in the process list for the few seconds it runs.
+
+Examples:
+
+```console
+$ calternal machines list --data-dir /srv/calternal
+ID                                    OWNER                                         NAME       PLATFORM       STATE
+aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa  pool                                          build-box  linux/x86_64   enrolled
+bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb  account:cccccccc-cccc-4ccc-8ccc-cccccccccccc  laptop     macos/aarch64  enrolled
+
+$ calternal machines code --pool --data-dir /srv/calternal
+code:     ABCD-EFGH-JKMN-PQRS
+owner:    pool
+expires:  2026-11-17 08:12:03 +01:00
+
+This code works once. Share it with the machine's owner now.
+Next: run `calternal machine enroll` on that computer.
+
+$ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --data-dir /srv/calternal
+error: No machine with ID dddddddd-dddd-4ddd-8ddd-dddddddddddd was found.
+hint: `calternal machines list --data-dir DIR` shows the machines and their ids.
+
+$ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --data-dir /srv/calternal --json
+{
+  "error": {
+    "code": "not_found",
+    "hint": "`calternal machines list --data-dir DIR` shows the machines and their ids.",
+    "message": "no machine dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+  },
+  "ok": false
+}
+```
+
+## `cl`
+
+Global options: `--base-url`, `--token-file` (also `CALTERNAL_URL`,
+`CALTERNAL_TOKEN_FILE`, `CALTERNAL_TOKEN`), `--request-id`, `--json`,
+`--no-hints` (also `CALTERNAL_NO_HINTS=1`). Every
+operation result carries the request identity; reuse `--request-id` only with the
+identical command to retry safely.
+
+| Command | Purpose | Human output | `data` (JSON) |
+|---|---|---|---|
+| `describe` | The server's protocol versions, your principal and spaces, and the operations it offers. | `protocol`, `genui`, `principal`; table `SPACE ROLE`; table `OPERATION ACCESS DESCRIPTION`. | the describe result: `protocol_version`, `genui_version`, `principal`, `operations[]` (with schemas) |
+| `notes list [--space ID]` | List notes. | Table `ID TITLE UPDATED REVISION`, or a friendly empty result with a command to create one. | `notes[]` |
+| `notes get ID` | Show one note. | `id`, `space`, `title`, `revision`, `updated`, blank line, the Markdown. | `note` |
+| `notes create --title T (--markdown M \| --markdown-file F)` | Create a note. | As `notes get`. | `note` |
+| `notes update ID --base-revision R [--title T] (--markdown M \| --markdown-file F)` | Replace a note's content against a known revision. | As `notes get`. A stale revision is `conflict`. | `note` |
+| `notes history ID [--limit N] [--cursor C]` | Earlier versions of a note. | Table `REVISION TITLE UPDATED`, then "More versions: repeat with --cursor C" when there are more; an empty result suggests opening the current version. | `versions[]`, `next_cursor`? |
+| `plugins list` | Installed plugins for a space. | Table `ID NAME VERSION ENABLED GENERATION`. | `plugins[]` |
+| `plugins enable PLUGIN` / `plugins disable PLUGIN` | Turn a plugin on or off in a space. | `id`, `name`, `version`, `enabled`, `generation`. | `plugin` |
+| `plugins preview PLUGIN` | Show the plugin's GenUI view without changing anything. | One sentence, then the view as indented JSON. | `view`, `preview` |
+| `invoke OPERATION --input JSON` | Call any operation by id. | The operation's data as indented JSON (the same text as `data` in `--json`). | the operation's own result (`any`) |
+
+`note` and `plugin` are accepted spellings of `notes` and `plugins`. A transport
+failure after the request was sent has `error.details` `{"outcome": "unknown", "retry": …}`
+and a hint with the exact `--request-id` to reuse.
+
+```console
+$ cl notes list
+ID                                    TITLE      UPDATED                     REVISION
+11111111-1111-4111-8111-111111111111  Groceries  2026-11-17 07:12:03 +01:00  r-7
+
+$ cl notes update 1111… --base-revision r-1 --markdown "x"
+error: The saved version has changed: revision is stale
+hint: Run `cl notes get ID` for the latest revision, then try again.
+```
+
+## Tests
+
+Snapshots (`tests/golden/` in each crate) cover human and JSON output of every
+command and an error case each: `crates/cli/src/render.rs` (all of `cl`),
+`crates/machine/src/cli.rs` (the machine role) and
+`crates/server/tests/cli_golden.rs` (the real `calternal` binary, with the time zone
+forced to UTC+1 and codes, ids, paths and ports replaced by placeholders).
+`UPDATE_GOLDEN=1` rewrites them; review the diff.
+
+`calternal watch <space-uuid> --token-file <owner-only-file>` follows the server's
+space journal over one SSE connection. `cl watch` accepts the same arguments.
+With `--json`, each event is one compact `{ "ok": true, "data": ... }` line.
+Human output uses labelled fields. Reconnect uses accepted signed bookmarks;
+`--bookmarks <directory>` retains them in atomic `bookmark: value` Markdown files.
+That directory must be exclusive to this server and signed-in account; discard it
+on sign-out or account changes. Without the option, bookmarks stay in memory.
+A reset stops watch: reload the authorized space before discarding its old bookmark.
+
+`calternal drafts` and `calternal pending` manage private account input through
+the same shared operation route and output renderer as `cl drafts` / `cl pending`.
+See account input for queue files, stable nested request IDs,
+seven-day confirmation, examples and operator safety ceilings.
