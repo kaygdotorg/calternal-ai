@@ -14,7 +14,9 @@
   $effect(() => { if (c.type === "text" || c.type === "number") draft = String(value ?? ""); });
 </script>
 
-{#if c.type === "switch"}
+{#if c.type === "custom"}
+  <div class="row col" class:hl={highlighted} data-setting={s.id}><c.component /></div>
+{:else if c.type === "switch"}
   <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
 {:else if c.type === "presets"}
   <div class="row col" class:hl={highlighted} data-setting={s.id}>
@@ -61,6 +63,7 @@
   .row > :global(.sw) { width: 100%; }
   .row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: calc(var(--row-h-settings)); padding: var(--s-3) var(--s-6); position: relative; transition: background-color var(--dur-slow) var(--ease-out); }
   .row.col { display: grid; gap: var(--s-3); justify-content: stretch; padding-block: var(--s-5); }
+  .row.col:has(> :global(ul)) { padding: 0; }
   .row.hl { background: var(--accent-soft); }
   .chk { cursor: pointer; }
   .chk input { width: 1.15em; height: 1.15em; accent-color: var(--accent); flex: none; }

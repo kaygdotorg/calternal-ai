@@ -326,3 +326,14 @@ Lenses: Emil Kowalski's design-engineering rules, Jakub Krehel's interface skill
 | Square focus rings on rounded controls | The two resize grips, the side-chat field | The ring is drawn by the round bar and by the rounded box (`e2e/ring-shell.mjs`) |
 
 Listed, not changed (not the shell's, or not decided): the composer's chip labels still join with a middle dot ("Codex · GPT-6.1 Sol", "calternal-dev-02-std · Sandboxed") (Threads lane); popovers do not yet grow from their trigger (Emil: origin-aware; the attempt is the saved patch); `left` and `right` are physical, not logical, properties (nothing decided about right-to-left); the Compare heading's colon is temporary.
+
+## Settings against docs/settings.md (2026-11-18)
+
+| Decided | State |
+| --- | --- |
+| Keyboard: shortcuts follow the account, remap in place | A page listing every shortcut with Change and Reset (the same list as the quick sheet) and the account's shortcuts file as it would be stored (`id: chord` lines); `e2e/settings-pages.mjs` |
+| Machines are added through a guided flow, with the SSH option; sandboxed or direct | The list with a Sandboxed or Direct choice per machine, and a three-step flow (how, where, check) that adds one; fixtures |
+| Plugins on one page: installed, available, what each may access; a plugin's own settings open from its row | Installed (switch, what it may reach, its options opening from the row) and Available (Install); a fixture catalogue |
+| Appearance as decided; agents; account; the space and admin pages | Built earlier (see the audit above) |
+| Waiting on a design round, left out | Skills, automations and onboarding beyond the look (their pages are not in Settings until decided) |
+| Needs the real server or passkeys | Destructive confirmations, the passkey list, provider sign-in, members and roles (fixture buttons) |

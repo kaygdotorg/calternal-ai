@@ -4,7 +4,11 @@
  * Follows docs/ui-craft-and-settings-study.md section 11: one decision per row, one control per row, no Save button, a Danger area last on admin pages.
  * On fixtures: settings of things that exist (appearance, streaming) are wired to them; the rest keep their value in `values`.
  */
+import type { Component } from "svelte";
 import type { IconName } from "@calternal/ui";
+import MachinesPanel from "./MachinesPanel.svelte";
+import PluginsPanel from "./PluginsPanel.svelte";
+import ShortcutsPanel from "./ShortcutsPanel.svelte";
 import { appearance } from "../../appearance/prefs.svelte";
 import { registerManifest } from "../../palette/manifest";
 import { values } from "./store.svelte";
@@ -25,7 +29,9 @@ export type Control =
   | { type: "presets" }
   | { type: "button"; text: string; danger?: boolean; run: () => void }
   | { type: "drill"; summary: () => string; run: () => void }
-  | { type: "info"; text: () => string };
+  | { type: "info"; text: () => string }
+  /** A whole control of its own, full width (a list, a flow): the page component draws it. */
+  | { type: "custom"; component: Component<any> };
 
 /** One setting. `id` is `<plugin>.<setting>` and never changes. */
 export interface Setting {
@@ -101,26 +107,25 @@ const agentsPage: Page = {
 
 const keyboardPage: Page = {
   id: "keyboard", name: "Keyboard", icon: "terminal", blurb: "Shortcuts follow your account. Remap them in place.",
-  groups: [{ settings: [
-    { id: "keyboard.shortcuts", label: "Keyboard shortcuts", help: "Cmd-/ or ? opens the same sheet anywhere.", control: { type: "drill", summary: () => "View and remap", run: () => { shell.helpOpen = true; } } },
-    { id: "keyboard.hardware-help", label: "Show the shortcut sheet with a hardware keyboard", control: { type: "switch" }, ...fx("keyboard.hardware-help", true) },
-  ] }],
+  groups: [
+    { settings: [{ id: "keyboard.shortcuts", label: "Keyboard shortcuts", help: "Cmd-/ or ? opens a quick list anywhere.", control: { type: "custom", component: ShortcutsPanel } }] },
+    { settings: [{ id: "keyboard.hardware-help", label: "Show the shortcut sheet with a hardware keyboard", control: { type: "switch" }, ...fx("keyboard.hardware-help", true) }] },
+  ],
 };
 
 const machinesPage: Page = {
-  id: "machines", name: "Machines", icon: "terminal", blurb: "The machines your threads can run on.",
-  groups: [
-    { title: "Yours", settings: ["calternal-dev-02-std", "calternal-dev-01-compute02", "kayg-laptop"].map((m): Setting => ({ id: `machines.${m}`, label: m, help: "Sandboxed or direct", control: { type: "info", text: () => "Online" } })) },
-    { settings: [{ id: "machines.add", label: "Add a machine", help: "By SSH. The server never keeps your key.", control: { type: "button", text: "Add by SSH…", run: confirmLater("Add a machine") } }] },
-  ],
+  id: "machines", name: "Machines", icon: "terminal", blurb: "The machines your threads can run on, and whether each runs them sandboxed or direct.",
+  groups: [{ settings: [{ id: "machines.list", label: "Machines", control: { type: "custom", component: MachinesPanel } }] }],
 };
 const listPage = (id: string, name: string, icon: IconName, blurb: string, plugin: string, items: [string, string][], empty: string): Page => ({
   id, name, icon, blurb,
   groups: [{ title: `Your ${name.toLowerCase()}`, settings: items.length ? items.map(([k, t]): Setting => ({ id: `${plugin}.${k}.enabled`, label: t, control: { type: "switch" }, ...fx(`${plugin}.${k}.enabled`, true) })) : [{ id: `${plugin}.none`, label: empty, control: { type: "info", text: () => "" } }] }],
 });
-const pluginsPage = listPage("plugins", "Plugins", "apps", "Your plugins and their per-person options.", "plugins", [["calternal-threads", "Threads"], ["calternal-notes", "Notes"], ["calternal-settings", "Settings"]], "No plugins");
-const skillsPage = listPage("skills", "Skills", "spark", "Skills agents can use for you.", "skills", [["review", "Code review"], ["release", "Release notes"]], "No skills yet");
-const automationsPage = listPage("automations", "Automations", "clock", "Schedules and triggers. Schedules use systemd timer expressions with a time zone.", "automations", [["morning-digest", "Morning digest (Mon-Fri 08:00, Europe/Berlin)"]], "No automations yet");
+const pluginsPage: Page = {
+  id: "plugins", name: "Plugins", icon: "apps", blurb: "Installed and available plugins, what each may reach, and each one's own options.",
+  groups: [{ settings: [{ id: "plugins.list", label: "Plugins", control: { type: "custom", component: PluginsPanel } }] }],
+};
+// Skills and automations wait for a design round (docs/open-questions.md) and are not in Settings yet.
 
 const accountPage: Page = {
   id: "account", name: "Account", icon: "user", blurb: "You, and what you have connected.",
@@ -200,7 +205,7 @@ const storagePage: Page = {
 
 /** The sidebar's groups, in order (docs/ui-craft-and-settings-study.md 11.1). */
 export const SECTIONS: Section[] = [
-  { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, machinesPage, pluginsPage, skillsPage, automationsPage, accountPage] },
+  { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, machinesPage, pluginsPage, accountPage] },
   // Admin is the server (for its operator); the third section is the current space, whose name it shows (decided 2026-11-18).
   { id: "server", name: "Admin", pages: [plansPage, poolPage, storagePage] },
   { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
