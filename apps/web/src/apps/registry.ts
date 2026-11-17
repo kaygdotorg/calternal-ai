@@ -66,7 +66,7 @@ export const APPS: AppDef[] = [
         id: thread.id,
         icon: kinds.includes("approval") ? "shield" : kinds.includes("secret") ? "key" : "question",
         title: thread.title,
-        sub: kinds.map((k) => ({ question: "Question", approval: "Approval", secret: "Secret" })[k]).filter((v, i, a) => a.indexOf(v) === i).join(" and "),
+        sub: kinds.map((k) => ({ question: "Question", approval: "Approval", secret: "Secret" })[k]).filter((v, i, a) => a.indexOf(v) === i).join(" and ").toLowerCase().replace(/^./, (c) => c.toUpperCase()),
         href: `/threads/${thread.id}`,
       })),
     start: () => threads.start(),

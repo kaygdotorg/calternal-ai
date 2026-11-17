@@ -2,9 +2,7 @@
   // A modal sheet: slides up from the bottom (a phone) or in from the side. A real dialog: `label` is required, focus moves in and is
   // trapped, Escape and the scrim close it, and focus returns to where it came from. The scrim dims the page; the sheet is glass.
   import type { Snippet } from "svelte";
-  import Glass from "./Glass.svelte";
-  import { adaptive } from "../lib/material";
-  import { ready } from "../lib/ready";
+  import Panel from "./Panel.svelte";
   let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right"; children: Snippet } = $props();
   let box = $state<HTMLElement>();
   // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
@@ -38,19 +36,18 @@
 {#if open}
   <div class="layer" use:portal>
     <div class="scrim" role="presentation" onclick={onclose}></div>
-    <div bind:this={box} class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" onkeydown={onkey} use:adaptive use:ready>
-      <Glass dense />
+    <Panel bind:el={box} floating dense radius="pane" class="sheet {side}" role="dialog" aria-modal="true" aria-label={label} tabindex={-1} onkeydown={onkey}>
       {@render children()}
-    </div>
+    </Panel>
   </div>
 {/if}
 
 <style>
   .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); }
-  .sheet:focus { outline: none; }
-  .sheet { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
-  .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
-  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
-  .sheet:global([data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
-  .sheet.right:global([data-surface]:not([data-ready])) { translate: var(--s-8) 0; }
+  :global(.sheet:focus) { outline: none; }
+  :global(.sheet) { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
+  :global(.sheet.bottom) { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); --origin: bottom center; translate: 0 0; }
+  :global(.sheet.right) { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
+  :global(.sheet[data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
+  :global(.sheet.right[data-surface]:not([data-ready])) { translate: var(--s-8) 0; }
 </style>

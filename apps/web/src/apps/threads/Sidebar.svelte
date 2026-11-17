@@ -40,6 +40,6 @@
 
 <style>
   nav { display: grid; gap: var(--s-1); padding-bottom: var(--s-6); }
-  h2 { padding: var(--s-5) var(--s-4) var(--s-2); font-size: var(--text-section); font-weight: var(--strong-weight); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+  h2 { padding: var(--s-5) var(--s-4) var(--s-2); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   ul { display: grid; gap: var(--s-1); }
 </style>

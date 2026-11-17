@@ -6,6 +6,7 @@
   --font-chat: var(--font-ui);
   --font-mono: "Maple Mono";
   --font-rounded: "Google Sans Flex Rounded", "Google Sans Flex";
+  --font-brand: "Dancing Script";
 }
 /* Dark text uses the GRAD family; the light family behind it has identical advance widths, so even a late file changes ink, never layout. */
 :root[data-scheme="dark"] { --font-ui: "Google Sans Flex Dark", "Google Sans Flex"; }

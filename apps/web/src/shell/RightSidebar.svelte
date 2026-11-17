@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The right region: a flat sidebar directly on the wallpaper, like the left one (only the middle is a card). The current app's panels, with
-  // the tabs at the bottom of the sidebar on a desktop (on a phone they are the bottom bar). The app's plugin decides which panels exist.
+  // The right region: a flat sidebar directly on the wallpaper, like the left one (only the middle is a card). The current app's panels scroll under a
+  // floating title and floating bottom tabs, fading out at both edges (no opaque band). The app's plugin decides which panels exist.
   import { Capsule, IconButton } from "@calternal/ui";
   import type { AppDef } from "../apps/registry";
   import { shell } from "./shell.svelte";
@@ -13,7 +13,7 @@
     <h2>{panel.label}</h2>
     {#if shell.narrow}<IconButton icon="close" label="Close the side panel" onclick={() => shell.closeOver()} />{/if}
   </header>
-  <div class="content" role="tabpanel" id="panel" aria-label={panel.label}>
+  <div class="content edge-fade" role="tabpanel" id="panel" aria-label={panel.label}>
     {#key panel.id}<panel.component {id} {...panel.props} />{/key}
   </div>
   {#if !shell.narrow}
@@ -22,10 +22,10 @@
 </div>
 
 <style>
-  .rs { height: 100%; display: flex; flex-direction: column; min-height: 0; padding: 0 var(--s-4); }
-  header { flex: none; display: flex; align-items: center; justify-content: space-between; min-height: var(--bar-h); padding: 0 var(--s-3); }
+  .rs { --foot-h: calc(var(--pill-h) + 2 * var(--s-2) + var(--s-4) + max(var(--s-4), var(--safe-bottom))); position: relative; height: 100%; min-height: 0; }
+  header { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s-6); }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
-  .content { flex: 1; min-height: 0; overflow-y: auto; }
-  .tabs { flex: none; display: flex; justify-content: center; padding: var(--s-4) 0 max(var(--s-4), var(--safe-bottom)); }
+  .content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: var(--bar-h) var(--s-4) var(--foot-h); --fade-t: var(--bar-h); --fade-b: var(--foot-h); }
+  .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) max(var(--s-4), var(--safe-bottom)); }
   .tabs :global(.cap) { width: 100%; }
 </style>

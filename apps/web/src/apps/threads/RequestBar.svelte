@@ -5,7 +5,7 @@
   //   secret    drawn by the shell only; masked entry, the agent only ever gets a handle; expires after 15 minutes and can be asked again.
   // Answering is an operation (`onanswer`), so the same answer works from any device or the CLI. The bar is absent when nothing waits.
   import { untrack } from "svelte";
-  import { Badge, Button, Glass, Icon, IconButton, adaptive } from "@calternal/ui";
+  import { Badge, Button, Icon, IconButton, Panel } from "@calternal/ui";
   import GenUi from "../../genui/GenUi.svelte";
   import type { Value } from "@calternal/genui";
   import type { Answer, Request } from "./model";
@@ -37,9 +37,8 @@
 </script>
 
 {#if cur}
-  <section class="bar" aria-label="Waiting on you" data-kind={cur.kind} use:adaptive>
-    <Glass dense />
-    <header>
+  <Panel class="bar" radius="pane" dense role="region" aria-label="Waiting on you" data-kind={cur.kind}>
+    <div class="head">
       <span class="kind"><Icon name={ICON[cur.kind]} inline />{NAME[cur.kind]}</span>
       {#if requests.length > 1}
         <span class="pager">
@@ -49,23 +48,23 @@
         </span>
       {/if}
       <IconButton icon={folded ? "up" : "down"} label={folded ? "Show the request" : "Fold the request"} pressed={folded} onclick={() => (folded = !folded)} />
-    </header>
+    </div>
 
     {#if !folded}
       <div class="body">
         {#if cur.kind === "question"}
           <GenUi source={cur.form} bind:values={formState} />
-          <footer><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></footer>
+          <div class="foot"><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></div>
         {:else if cur.kind === "approval"}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. An agent can’t answer this for you.</div>
           <h2>{cur.title}</h2>
           <p>{cur.action}</p>
           <pre aria-label="The command"><code>{cur.command}</code></pre>
-          <footer>
+          <div class="foot">
             <Button variant="quiet" text="Deny" onclick={() => answer({ kind: "approval", decision: "deny" })} />
             <Button text="Allow for this thread" onclick={() => answer({ kind: "approval", decision: "thread" })} />
             <Button variant="primary" text="Allow once" onclick={() => answer({ kind: "approval", decision: "once" })} />
-          </footer>
+          </div>
         {:else}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. The agent gets a handle, never the value.</div>
           <h2>{cur.label}</h2>
@@ -73,7 +72,7 @@
           <div class="meta"><Badge text={cur.scope === "personal" ? "Personal" : "Shared with the space"} tone="info" /><Badge text={cur.required ? "Required" : "Optional"} /><code>{cur.name}</code></div>
           {#if expired}
             <p class="exp">This request expired after 15 minutes.</p>
-            <footer><Button variant="primary" text="Ask again" onclick={() => answer({ kind: "secret-skip" })} /></footer>
+            <div class="foot"><Button variant="primary" text="Ask again" onclick={() => answer({ kind: "secret-skip" })} /></div>
           {:else}
             <form onsubmit={(e) => { e.preventDefault(); if (secret) answer({ kind: "secret", value: secret }); }}>
               <label class="visually-hidden" for="secret">{cur.label}</label>
@@ -86,21 +85,21 @@
         {/if}
       </div>
     {/if}
-  </section>
+  </Panel>
 {/if}
 
 <style>
-  .bar { position: relative; isolation: isolate; border-radius: var(--r-pane); color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
-  .bar[data-kind="approval"], .bar[data-kind="secret"] { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
-  header { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
-  .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
+  :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
+  :global(.bar[data-kind="approval"]), :global(.bar[data-kind="secret"]) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
+  .head { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
+  .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   .pager { display: inline-flex; align-items: center; font-size: var(--text-label); color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .body { display: grid; gap: var(--s-4); padding: 0 var(--s-6) var(--s-6); }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   p { color: var(--ink-2); font-size: var(--text-ui); }
   .trusted { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); color: var(--ink-2); }
   pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.08); overflow-x: auto; font-size: var(--text-label); }
-  footer, form { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s-3); }
+  .foot, form { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s-3); }
   form input { flex: 1 1 12rem; min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-size: var(--text-ui); }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
   .meta code { font-size: var(--text-label); color: var(--ink-3); }

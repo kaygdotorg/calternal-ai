@@ -19,5 +19,8 @@ export { roving } from "./lib/roving";
 export { ready } from "./lib/ready";
 export { loadFonts, fontsReady, familyFor, registerFonts } from "./lib/fonts";
 export { default as Menu } from "./components/Menu.svelte";
+export { default as Panel } from "./components/Panel.svelte";
+export { default as Popover } from "./components/Popover.svelte";
+export { place, type Anchor } from "./lib/place";
 export type { MenuItem } from "./components/Menu.svelte";
 export { initInputModality, modality, type Modality } from "./lib/input";

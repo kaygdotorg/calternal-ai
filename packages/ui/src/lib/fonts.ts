@@ -27,6 +27,7 @@ const FACES: Face[] = [
   { family: "Google Sans Flex Dark", file: "google-sans-flex-latin-ext-opsz-grad-normal.woff2", weight: "300 800", range: EXT, display: "block" },
   { family: "Google Sans Flex Dark", file: "google-sans-flex-symbols-opsz-normal.woff2", weight: "1 1000", range: SYMBOLS, display: "block" },
   { family: "Google Sans Flex Rounded", file: "google-sans-flex-latin-rond-normal.woff2", weight: "1 1000", display: "block" },
+  { family: "Dancing Script", file: "dancing-script-latin-wght-normal.woff2", weight: "400 700", display: "block" },
   { family: "Maple Mono", file: "maple-mono-latin-400-normal.woff2", weight: "400", display: "block", mono: true },
   { family: "Maple Mono", file: "maple-mono-latin-500-normal.woff2", weight: "500", display: "block", mono: true },
 ];

@@ -5,10 +5,11 @@
 import { applyScheme, currentScheme, onScheme, schemePreference, type SchemePreference } from "@calternal/ui";
 import { applyFonts, DEFAULT_FONTS, FixtureFonts, type FontLibrary, type FontPrefs } from "./fonts";
 import { FixtureLibrary, type Wallpaper, type WallpaperLibrary } from "./library";
+import { accentFor } from "./accent";
 import { onWallpaperColours, setWallpaper, updateWash, type WallpaperColours } from "./wallpaper";
 
 /** How the accent colour is chosen. */
-export type AccentMode = "default" | "wallpaper" | "custom";
+export type AccentMode = "wallpaper" | "custom";
 
 /** Everything the settings sheet edits. */
 export interface Prefs {
@@ -20,6 +21,10 @@ export interface Prefs {
   card: { blur: number; tint: number; dim: number };
   accent: AccentMode;
   accentColor: string;
+  /** The wordmark at the top of the sidebar: its text (the font is `fonts.brand`). */
+  brand: string;
+  /** Whether an agent's message streams in as it is written. Off by default: a working state and the steps show, then the finished message appears at once. */
+  streamText: boolean;
   fonts: FontPrefs;
 }
 
@@ -28,8 +33,10 @@ export const DEFAULTS: Prefs = {
   wallpaperId: "auto",
   side: { blur: 12, tint: 35 },
   card: { blur: 75, tint: 85, dim: 30 },
-  accent: "default",
-  accentColor: "#c26a12",
+  accent: "wallpaper",
+  accentColor: "#3b6ea8",
+  brand: "Calternal",
+  streamText: false,
   fonts: DEFAULT_FONTS,
 };
 
@@ -93,9 +100,9 @@ class Appearance {
   private applyAccent(): void {
     const st = document.documentElement.style;
     const { accent, accentColor } = this.prefs;
+    // From the wallpaper by default (guarded for contrast in both schemes, accent.ts); a custom colour is used as chosen.
     if (accent === "custom") st.setProperty("--accent-base", accentColor);
-    else if (accent === "wallpaper" && this.colours?.hue) st.setProperty("--accent-base", `oklch(0.62 ${Math.min(0.17, Math.max(0.09, this.colours.hue.c * 1.4)).toFixed(3)} ${this.colours.hue.h.toFixed(1)})`);
-    else st.removeProperty("--accent-base");
+    else st.setProperty("--accent-base", accentFor(this.colours?.hue?.h ?? null, this.colours?.hue?.c ?? null).hex);
   }
 
   /** Changes preferences with `f` and applies them. */

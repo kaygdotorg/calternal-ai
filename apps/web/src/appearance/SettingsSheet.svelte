@@ -57,7 +57,7 @@
   let fq = $state("");
   let fonts = $state<FontInfo[]>([]);
   let ownName = $state("");
-  const ROLE: Record<FontRole, string> = { ui: "Interface", chat: "Chat", code: "Code" };
+  const ROLE: Record<FontRole, string> = { ui: "Interface", chat: "Chat", code: "Code", brand: "Wordmark" };
   $effect(() => {
     if (view === "main") return;
     const s = source, q = fq, mono = view === "code";
@@ -141,8 +141,16 @@
       <section aria-labelledby="s-col">
         <h2 id="s-col">Colour</h2>
         <Capsule label="Colour scheme" kind="radio" glass={false} items={[{ id: "system", label: "System", icon: "apps" }, { id: "light", label: "Light", icon: "sun" }, { id: "dark", label: "Dark", icon: "moon" }]} value={A.scheme} onchange={(v) => A.setScheme(v as never)} />
-        <Capsule label="Accent colour" kind="radio" glass={false} items={[{ id: "default", label: "Amber" }, { id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }]} value={p.accent} onchange={(v) => A.change((x) => (x.accent = v as never))} />
+        <Capsule label="Accent colour" kind="radio" glass={false} items={[{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }]} value={p.accent} onchange={(v) => A.change((x) => (x.accent = v as never))} />
         {#if p.accent === "custom"}<label class="color"><span>Accent colour</span><input type="color" value={p.accentColor} oninput={(e) => A.change((x) => (x.accentColor = e.currentTarget.value))} /></label>{/if}
+      </section>
+
+      <section aria-labelledby="s-mark">
+        <h2 id="s-mark">Wordmark</h2>
+        <label class="field-l"><span>Name at the top of the sidebar</span><input class="field" type="text" value={p.brand} maxlength="24" autocomplete="off" oninput={(e) => A.change((x) => (x.brand = e.currentTarget.value))} /></label>
+        <Row tall title="Wordmark font" sub={label("brand")} icon="notes" onclick={() => { view = "brand"; source = A.prefs.fonts.brand.source; fq = ""; error = ""; }}>
+          {#snippet trailing()}<Icon name="chevron" inline />{/snippet}
+        </Row>
       </section>
 
       <section aria-labelledby="s-font">
@@ -192,7 +200,7 @@
   .in { display: grid; gap: var(--s-5); padding: var(--s-6); }
   header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); min-height: var(--bar-h); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
-  h2 { font-size: var(--text-section); font-weight: var(--strong-weight); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+  h2 { font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   section { display: grid; gap: var(--s-4); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: var(--s-3); }
   .grid li .tile { width: 100%; }

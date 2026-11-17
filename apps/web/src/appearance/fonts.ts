@@ -11,7 +11,7 @@ import { all, tx } from "./idb";
 export type FontSource = "google" | "fontsource" | "fontshare" | "upload" | "system";
 
 /** The three places a font applies. */
-export type FontRole = "ui" | "chat" | "code";
+export type FontRole = "ui" | "chat" | "code" | "brand";
 
 /** A choice for one role. */
 export interface FontChoice {
@@ -27,6 +27,8 @@ export const DEFAULT_FONTS: FontPrefs = {
   ui: { family: "Google Sans Flex", source: "google" },
   chat: { family: "Google Sans Flex", source: "google" },
   code: { family: "Maple Mono", source: "fontsource" },
+  /** The wordmark at the top of the sidebar: a cursive face, as in the owner's calternal-ui plugin. */
+  brand: { family: "Dancing Script", source: "google" },
 };
 
 /** One family in a catalogue. `ready` is false when only the server could fetch it (fixture: not downloaded). */
@@ -56,9 +58,9 @@ export const systemStack = (mono: boolean): string =>
 /** How each source is named in the picker. */
 export const SOURCE_LABEL: Record<FontSource, string> = { google: "Google", fontsource: "Fontsource", fontshare: "Fontshare", upload: "Upload", system: "System" };
 
-const BUNDLED = new Set(["Google Sans Flex", "Maple Mono"]);
+const BUNDLED = new Set(["Google Sans Flex", "Maple Mono", "Dancing Script"]);
 const CATALOGUE: Omit<FontInfo, "ready">[] = [
-  ...["Google Sans Flex", "Inter", "Roboto", "Source Serif 4", "Lora", "Dancing Script", "Nunito", "DM Sans"].map((family) => ({ family, source: "google" as const, mono: false })),
+  ...["Google Sans Flex", "Inter", "Roboto", "Source Serif 4", "Lora", "Dancing Script", "Pacifico", "Caveat", "Nunito", "DM Sans"].map((family) => ({ family, source: "google" as const, mono: false })),
   ...["JetBrains Mono", "Fira Code", "Source Code Pro", "IBM Plex Mono"].map((family) => ({ family, source: "google" as const, mono: true })),
   ...["Geist Sans", "iA Writer Quattro", "Open Runde"].map((family) => ({ family, source: "fontsource" as const, mono: false })),
   ...["Maple Mono", "Monaspace Neon", "Iosevka", "Geist Mono"].map((family) => ({ family, source: "fontsource" as const, mono: true })),
@@ -136,5 +138,5 @@ export async function applyFonts(p: FontPrefs): Promise<void> {
     if (c.source === "upload") await loadOwn(c.family);
     st.setProperty(name, c.source === "system" ? systemStack(role === "code") : `"${c.family}"`);
   };
-  await Promise.all([set("ui", "--font-ui"), set("chat", "--font-chat"), set("code", "--font-mono")]);
+  await Promise.all([set("ui", "--font-ui"), set("chat", "--font-chat"), set("code", "--font-mono"), set("brand", "--font-brand")]);
 }

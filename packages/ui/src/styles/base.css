@@ -18,9 +18,10 @@ code, kbd, pre { font-family: var(--font-mono); }
 ::selection { background: color-mix(in oklab, var(--accent-base) 26%, transparent); }
 
 /* One focus ring for every interactive thing, drawn only for keyboard focus. `:focus-visible` alone is not enough: it always matches in a text field,
-   so a mouse click in the composer would draw the ring. lib/input.ts keeps `data-input` on <html>; with a pointer in use no ring is ever drawn. */
+   so a mouse click in the composer would draw the ring. lib/input.ts keeps `data-input` on <html>; with a pointer in use no ring is ever drawn.
+   The ring is drawn inside the element (`outline-offset: -2px`), so it can never be clipped by a scroll container or the window edge. */
 :focus { outline: none; }
-:root[data-input="key"] :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: inherit; }
+:root[data-input="key"] :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
 
 /* Controls animate when used by pointer or touch, never from the keyboard: with the keyboard in use every transition and animation ends at once, so
    Tab, Enter and typing apply the end state without the press or hover motion. */
@@ -34,3 +35,7 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 
 /* Thin scrollbars that stay out of the way. */
 * { scrollbar-width: thin; scrollbar-color: rgb(var(--ink-rgb) / 0.22) transparent; }
+
+/* Content fades out under a floating bar, progressively along an eased curve (extra stops, no visible edge, no opaque strip): set --fade-t and --fade-b
+   (the heights of the bars over the top and bottom edges) on a scroller and give it this class. Used by the message list and both sidebars. */
+.edge-fade { mask-image: linear-gradient(to bottom, transparent 0, rgb(0 0 0 / 0.06) calc(var(--fade-t, 0px) * 0.45), rgb(0 0 0 / 0.28) calc(var(--fade-t, 0px) * 0.68), rgb(0 0 0 / 0.68) calc(var(--fade-t, 0px) * 0.86), #000 var(--fade-t, 0px), #000 calc(100% - var(--fade-b, 0px)), rgb(0 0 0 / 0.68) calc(100% - var(--fade-b, 0px) * 0.86), rgb(0 0 0 / 0.28) calc(100% - var(--fade-b, 0px) * 0.68), rgb(0 0 0 / 0.06) calc(100% - var(--fade-b, 0px) * 0.45), transparent 100%); }

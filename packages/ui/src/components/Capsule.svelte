@@ -56,8 +56,8 @@
 <style>
   .cap { position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s-1); padding: var(--s-2); border-radius: var(--r-pill); color: var(--ink-2); }
   .seg {
-    position: relative; flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-2);
-    height: var(--pill-h); padding: 0 var(--seg-pad, var(--s-4)); border-radius: var(--r-pill);
+    position: relative; flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3);
+    height: var(--pill-h); padding: 0 var(--seg-pad, var(--s-5)); border-radius: var(--r-pill);
     font-size: var(--text-ui); font-weight: var(--strong-weight); white-space: nowrap; overflow: hidden; color: var(--ink-2);
     transition: flex-grow var(--dur-slow) var(--spring), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out);
   }

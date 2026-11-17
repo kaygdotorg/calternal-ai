@@ -2,7 +2,7 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
-  import { Glass, Pill, adaptive } from "@calternal/ui";
+  import { Panel, Pill } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";
   import VirtualList from "../../lib/VirtualList.svelte";
   import { href } from "../../lib/route.svelte";
@@ -60,14 +60,13 @@
 <div class="thread">
   <header>
     {#if shell.narrow || !shell.sidebarOpen}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
-    <div class="title" use:adaptive>
-      <Glass />
+    <Panel class="title" radius="pill">
       <div class="tt">
         {#if parent}<a class="crumb" href={href(`/threads/${parent.id}`)}>{parent.title}</a>{/if}
         <h1>{summary?.title ?? "Thread"}</h1>
       </div>
       {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} />{/if}
-    </div>
+    </Panel>
     <span class="grow"></span>
     {#if !shell.narrow}<Pill icon="sidebar-right" label={shell.rightOpen ? "Hide the side panel" : "Show the side panel"} aria-pressed={shell.rightOpen} onclick={() => shell.toggleRight()} />{/if}
   </header>
@@ -106,7 +105,7 @@
   header { position: absolute; z-index: 3; top: 0; left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region); pointer-events: none; }
   header > :global(*) { pointer-events: auto; }
   .grow { flex: 1; pointer-events: none; }
-  .title { position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); }
+  :global(.title) { display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }
   .tt { min-width: 0; display: grid; }
   h1 { font-size: var(--text-ui); font-weight: var(--strong-weight); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb { font-size: var(--text-section); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }

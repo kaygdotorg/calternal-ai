@@ -22,7 +22,7 @@
 
 <style>
   .picker { display: grid; gap: var(--s-4); padding: var(--s-5); }
-  h2 { font-size: var(--text-section); font-weight: var(--strong-weight); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+  h2 { font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .machines { display: grid; gap: var(--s-1); }
   .mrow { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-h-settings); padding: 0 var(--s-5); border-radius: var(--r-select); text-align: start; color: var(--ink); }
   .mrow span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

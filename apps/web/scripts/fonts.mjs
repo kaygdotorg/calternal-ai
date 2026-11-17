@@ -12,6 +12,7 @@ const req = createRequire(import.meta.url);
 const pkgDir = (name) => dirname(req.resolve(`${name}/package.json`));
 const gsf = join(pkgDir("@fontsource-variable/google-sans-flex"), "files");
 const maple = join(pkgDir("@fontsource/maple-mono"), "files");
+const script = join(pkgDir("@fontsource-variable/dancing-script"), "files");
 const own = join(here, "../../../packages/ui/fonts");
 const files = [
   [gsf, "google-sans-flex-latin-opsz-normal.woff2"],
@@ -20,6 +21,7 @@ const files = [
   [gsf, "google-sans-flex-latin-rond-normal.woff2"], // the rounded variant (app name, avatar initials)
   [own, "google-sans-flex-latin-opsz-grad-normal.woff2"],
   [own, "google-sans-flex-latin-ext-opsz-grad-normal.woff2"],
+  [script, "dancing-script-latin-wght-normal.woff2"], // the wordmark (the owner's calternal-ui plugin default)
   [maple, "maple-mono-latin-400-normal.woff2"],
   [maple, "maple-mono-latin-500-normal.woff2"],
 ];

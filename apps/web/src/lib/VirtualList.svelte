@@ -122,7 +122,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div bind:this={scroller} class="scroller" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
+<div bind:this={scroller} class="scroller edge-fade" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
   <div class="sizer" style:height="{total + topInset + bottomInset}px">
     <div class="window" style:transform="translateY({offset + topInset}px)">
       {#each indices as i (i)}
@@ -133,10 +133,7 @@
 </div>
 
 <style>
-  /* Rows fade out under the floating header and composer, progressively and along an eased curve (extra stops, so there is no visible edge and no
-     opaque strip): content is already faint where it meets the bar's text, as in the owner's calternal-ui edge fade. */
-  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict;
-    mask-image: linear-gradient(to bottom, transparent 0, rgb(0 0 0 / 0.06) calc(var(--fade-t) * 0.45), rgb(0 0 0 / 0.28) calc(var(--fade-t) * 0.68), rgb(0 0 0 / 0.68) calc(var(--fade-t) * 0.86), #000 var(--fade-t), #000 calc(100% - var(--fade-b)), rgb(0 0 0 / 0.68) calc(100% - var(--fade-b) * 0.86), rgb(0 0 0 / 0.28) calc(100% - var(--fade-b) * 0.68), rgb(0 0 0 / 0.06) calc(100% - var(--fade-b) * 0.45), transparent 100%); }
+  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; }
   .sizer { position: relative; width: 100%; }
   .window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .row { contain: layout style; }

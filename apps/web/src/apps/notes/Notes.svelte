@@ -1,7 +1,7 @@
 <script lang="ts">
   // Notes placeholder: proves the middle card's second layout. A narrow centred column with no inner card, and a thin rail at the card's
   // left edge that expands into a small table-of-contents card (hover, focus or press; Escape folds it). Fixture text only.
-  import { Glass, Icon, adaptive, ready } from "@calternal/ui";
+  import { Panel } from "@calternal/ui";
   import { shell } from "../../shell/shell.svelte";
   import { IconButton } from "@calternal/ui";
   let { id }: { id?: string } = $props();
@@ -16,10 +16,9 @@
       {#each sections as _}<i></i>{/each}
     </button>
     {#if toc}
-      <nav id="{uid}-toc" class="tocard" aria-label="Contents" use:adaptive={"card"} use:ready>
-        <Glass dense />
+      <Panel class="tocard" radius="card" dense floating id="{uid}-toc" role="navigation" aria-label="Contents">
         {#each sections as s, i}<a href="#s{i}" onclick={(e) => e.preventDefault()}>{s}</a>{/each}
-      </nav>
+      </Panel>
     {/if}
   </div>
 
@@ -56,7 +55,7 @@
   .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-5); min-width: var(--pill-h); justify-items: start; }
   .ticks i { display: block; width: var(--s-6); height: 2px; border-radius: var(--r-pill); background: var(--ink-4); }
   .ticks i:first-child { width: var(--s-8); background: var(--ink-2); }
-  .tocard { position: absolute; left: var(--s-5); top: 50%; translate: 0 -50%; isolation: isolate; display: grid; min-width: 15rem; padding: var(--s-3); border-radius: var(--r-card); --origin: left center; }
-  .tocard a { padding: var(--s-3) var(--s-5); border-radius: calc(var(--r-card) - var(--s-3)); font-size: var(--text-ui); color: var(--ink); }
-  @media (hover: hover) { .tocard a:hover { background: var(--hover); } }
+  :global(.tocard) { position: absolute; left: var(--s-5); top: 50%; translate: 0 -50%; display: grid; min-width: 15rem; padding: var(--s-3); --origin: left center; }
+  :global(.tocard) a { padding: var(--s-3) var(--s-5); border-radius: calc(var(--r-card) - var(--s-3)); font-size: var(--text-ui); color: var(--ink); }
+  @media (hover: hover) { :global(.tocard) a:hover { background: var(--hover); } }
 </style>

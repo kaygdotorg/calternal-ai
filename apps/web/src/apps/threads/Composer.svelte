@@ -8,7 +8,7 @@
   //   phone     provider icon only          "Approve for me"  machine icon only
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
-  import { Button, Glass, Icon, IconButton, Menu, Pill, Sheet, adaptive, currentForm, ready, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, Menu, Panel, Pill, Popover, Sheet, currentForm, type MenuItem } from "@calternal/ui";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import { bridge } from "./compose.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -71,17 +71,6 @@
   const sheet = $derived(shell.narrow || currentForm() === "touch");
   const PERM_ICON = $derived(PERMISSIONS.find((p) => p.id === thread.permission)!.icon);
 
-  $effect(() => {
-    if (!whereOpen || sheet) return;
-    const away = (e: PointerEvent) => {
-      if (!(e.target as Element).closest?.(".where")) whereOpen = false;
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && ((whereOpen = false), whereTrigger?.focus());
-    addEventListener("pointerdown", away, true);
-    addEventListener("keydown", esc);
-    return () => (removeEventListener("pointerdown", away, true), removeEventListener("keydown", esc));
-  });
-
   function grow() {
     if (!field) return;
     field.style.height = "auto";
@@ -103,8 +92,7 @@
   }
 </script>
 
-<div class="composer" use:adaptive>
-  <Glass />
+<Panel class="composer" radius="pane">
   <div class="field">
     <label class="visually-hidden" for="composer-field">Message</label>
     <textarea id="composer-field" bind:this={field} bind:value={text} rows="1" oninput={grow} onkeydown={key} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`}></textarea>
@@ -131,19 +119,19 @@
       <Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel glass={false} aria-haspopup="dialog" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => (whereOpen = !whereOpen)}>
         <span class="rl">{thread.runsOn.machine} · {thread.runsOn.mode === "sandboxed" ? "Sandboxed" : "Direct"}</span><span class="rm">{thread.runsOn.machine}</span><span class="mode"><Icon inline name={thread.runsOn.mode === "sandboxed" ? "shield" : "folder"} /></span>
       </Pill>
-      {#if whereOpen && !sheet}
-        <div class="pop" role="dialog" aria-label="Where it runs" use:adaptive use:ready><Glass dense /><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></div>
+      {#if !sheet}
+        <Popover open={whereOpen} anchor={whereTrigger} label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
       {/if}
     </span>
   </div>
-</div>
+</Panel>
 
 {#if sheet}
   <Sheet open={whereOpen} label="Where it runs" onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /><div class="done"><Button variant="primary" text="Done" onclick={() => (whereOpen = false)} /></div></Sheet>
 {/if}
 
 <style>
-  .composer { container: cmp / inline-size; position: relative; isolation: isolate; border-radius: var(--r-pane); padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
+  :global(.composer) { container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
   .field { display: flex; align-items: flex-end; gap: var(--s-3); }
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
@@ -154,17 +142,16 @@
   }
   textarea::placeholder { color: var(--ink-3); opacity: 1; }
   textarea:focus, textarea:focus-visible { outline: none; }
-  :global(:root[data-input="key"]) .composer:has(textarea:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :global(:root[data-input="key"] .composer:has(textarea:focus-visible)) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
   .chip { position: relative; flex: 0 1 auto; min-width: var(--pill-h); }
   .chip :global(.pill) { max-width: 100%; overflow: hidden; }
   .pl, .pm, .perm, .rl, .rm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pm, .rm, .mode { display: none; }
   .where { flex-shrink: 1; }
-  @container cmp (max-width: 640px) { .pl, .rl { display: none; } .pm, .rm { display: inline; } .mode { display: inline-grid; } }
-  @container cmp (max-width: 490px) { .pm { display: none; } .prov :global(.pill) { padding: 0; } }
+  @container cmp (max-width: 700px) { .pl, .rl { display: none; } .pm, .rm { display: inline; } .mode { display: inline-grid; } }
+  @container cmp (max-width: 500px) { .pm { display: none; } .prov :global(.pill) { padding: 0; } }
   @container cmp (max-width: 420px) { .rm, .mode { display: none; } .where :global(.pill) { padding: 0; } }
   @container cmp (max-width: 290px) { .perm { display: none; } .permc :global(.pill) { padding: 0; } }
   .done { display: flex; justify-content: flex-end; padding: 0 var(--s-5) var(--s-5); }
-  .pop { position: absolute; z-index: 30; bottom: calc(100% + var(--s-3)); left: 0; min-width: 18rem; isolation: isolate; border-radius: var(--r-card); --origin: bottom left; }
 </style>
