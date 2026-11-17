@@ -6,16 +6,38 @@ import { ServerClient, ServerError } from "../../server/client";
 import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 
 export interface Space { id: string; name: string }
-export interface NoteSummary { id: string; spaceId: string; title: string; updatedAt: string }
+/** A note in a list. `revision` is what a rename is checked against; in the Trash `updatedAt` is when it was deleted. */
+export interface NoteSummary { id: string; spaceId: string; title: string; updatedAt: string; revision?: string }
+/** A tag and how many live notes carry it (a parent tag counts its children). */
+export interface TagInfo { name: string; count: number }
+/** A note a `[[` picker can link to: `target` is the relative link to insert (`Plan.md`); fixtures have none and link by title. */
+export interface NoteTarget { id: string; title: string; target?: string }
 export interface Note extends NoteSummary { markdown: string; revision: string }
 
 export interface NotesClient {
   spaces(): Promise<Space[]>;
-  list(spaceId: string): Promise<NoteSummary[]>;
+  /** The space's live notes, newest first, optionally only those under a tag. */
+  list(spaceId: string, tag?: string): Promise<NoteSummary[]>;
   get(spaceId: string, id: string): Promise<Note>;
   create(spaceId: string, title: string, markdown: string): Promise<Note>;
   /** Replaces the note against the revision the caller read; a stale revision is a conflict (`ServerError` "conflict"). */
   update(spaceId: string, id: string, baseRevision: string, title: string, markdown: string): Promise<Note>;
+  /** Sets a new title at the revision the caller read (the list's); the first heading follows. */
+  rename(id: string, revision: string, title: string): Promise<Note>;
+  /** Moves a note to the space's Trash (history kept). */
+  remove(id: string): Promise<void>;
+  /** Brings a note back from the Trash (same id). */
+  restore(id: string): Promise<Note>;
+  /** The space's Trash, newest deletion first. */
+  trash(spaceId: string): Promise<NoteSummary[]>;
+  /** Deletes a trashed note for good. */
+  purge(id: string): Promise<void>;
+  /** The tags in use in the space. */
+  tags(spaceId: string): Promise<TagInfo[]>;
+  /** Notes whose title starts with `prefix`, for the `[[` picker. */
+  lookupNotes(spaceId: string, prefix: string): Promise<NoteTarget[]>;
+  /** Tags whose name starts with `prefix`, for the `#` picker. */
+  lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]>;
   /** Calls `onChange` when a note in the space changed elsewhere (the live stream). Returns the stop function. */
   watch(spaceId: string, onChange: () => void): () => void;
 }
@@ -52,7 +74,7 @@ export class FixtureNotes implements NotesClient {
   private notes = new Map<string, Note>([...SEED, ["n-long", "The long note", longNote()] as [string, string, string]].map(([id, title, markdown], i) => [id, { id, spaceId: id.startsWith("n-i") ? FIXTURE_SPACES[1]!.id : FIXTURE_SPACES[0]!.id, title, markdown, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 17, 9, 50 - i)).toISOString() }]));
   private listeners = new Set<() => void>();
   async spaces(): Promise<Space[]> { return FIXTURE_SPACES; }
-  async list(spaceId: string): Promise<NoteSummary[]> { return [...this.notes.values()].filter((n) => n.spaceId === spaceId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s); }
+  async list(spaceId: string, tag?: string): Promise<NoteSummary[]> { return [...this.notes.values()].filter((n) => n.spaceId === spaceId && (!tag || this.tagsOf(n).some((t) => t === tag || t.startsWith(`${tag}/`)))).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s); }
   async get(_s: string, id: string): Promise<Note> {
     const n = this.notes.get(id);
     if (!n) throw new ServerError("not_found", "note not found");
@@ -72,6 +94,16 @@ export class FixtureNotes implements NotesClient {
     this.ping();
     return next;
   }
+  private trashed = new Map<string, Note>();
+  private tagsOf = (n: Note): string[] => [...new Set([...n.markdown.matchAll(/(?:^|\s)#([\p{L}\d_/-]+)/gu)].map((m) => m[1]!))];
+  async rename(id: string, revision: string, title: string): Promise<Note> { const n = await this.get("", id); return this.update("", id, revision || n.revision, title, n.markdown.replace(/^# .*/m, `# ${title}`)); }
+  async remove(id: string): Promise<void> { const n = await this.get("", id); this.notes.delete(id); this.trashed.set(id, { ...n, updatedAt: new Date().toISOString() }); this.ping(); }
+  async restore(id: string): Promise<Note> { const n = this.trashed.get(id); if (!n) throw new ServerError("not_found", "not in the trash"); this.trashed.delete(id); this.notes.set(id, n); this.ping(); return n; }
+  async trash(spaceId: string): Promise<NoteSummary[]> { return [...this.trashed.values()].filter((n) => n.spaceId === spaceId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, ...x }) => x); }
+  async purge(id: string): Promise<void> { this.trashed.delete(id); this.ping(); }
+  async tags(spaceId: string): Promise<TagInfo[]> { const c = new Map<string, number>(); for (const n of this.notes.values()) if (n.spaceId === spaceId) for (const t of this.tagsOf(n)) c.set(t, (c.get(t) ?? 0) + 1); return [...c].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name)); }
+  async lookupNotes(spaceId: string, prefix: string): Promise<NoteTarget[]> { return [...this.notes.values()].filter((n) => n.spaceId === spaceId && n.title.toLowerCase().startsWith(prefix.toLowerCase())).map((n) => ({ id: n.id, title: n.title })); }
+  async lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]> { return (await this.tags(spaceId)).filter((t) => t.name.toLowerCase().startsWith(prefix.toLowerCase())); }
   watch(_s: string, onChange: () => void): () => void { this.listeners.add(onChange); return () => this.listeners.delete(onChange); }
   private ping() { for (const l of this.listeners) l(); }
 }
@@ -80,11 +112,20 @@ export class FixtureNotes implements NotesClient {
 export class ServerNotes implements NotesClient {
   constructor(private server: ServerClient) {}
   async spaces(): Promise<Space[]> { return (await this.server.spaces.list()).spaces.map((s) => ({ id: s.id, name: s.name })); }
-  async list(spaceId: string): Promise<NoteSummary[]> { return (await this.server.notes.list(spaceId)).notes.map((n) => ({ id: n.id, spaceId: n.space_id, title: n.title, updatedAt: n.updated_at })); }
-  private conv(n: { id: string; space_id: string; title: string; markdown: string; revision: string; updated_at: string }): Note { return { id: n.id, spaceId: n.space_id, title: n.title, markdown: n.markdown, revision: n.revision, updatedAt: n.updated_at }; }
+  sum = (n: { id: string; space_id: string; title: string; updated_at: string; revision: string }): NoteSummary => ({ id: n.id, spaceId: n.space_id, title: n.title, updatedAt: n.updated_at, revision: n.revision });
+  async list(spaceId: string, tag?: string): Promise<NoteSummary[]> { return (await this.server.notes.list(spaceId, tag)).notes.map(this.sum); }
+  conv(n: { id: string; space_id: string; title: string; markdown: string; revision: string; updated_at: string }): Note { return { id: n.id, spaceId: n.space_id, title: n.title, markdown: n.markdown, revision: n.revision, updatedAt: n.updated_at }; }
   async get(spaceId: string, id: string): Promise<Note> { return this.conv((await this.server.notes.get(spaceId, id)).note); }
   async create(spaceId: string, title: string, markdown: string): Promise<Note> { return this.conv((await this.server.notes.create({ space_id: spaceId, title, markdown })).note); }
   async update(spaceId: string, id: string, baseRevision: string, title: string, markdown: string): Promise<Note> { return this.conv((await this.server.notes.update({ space_id: spaceId, id, base_revision: baseRevision, title, markdown })).note); }
+  async rename(id: string, revision: string, title: string): Promise<Note> { return this.conv((await this.server.operate<{ note: Parameters<ServerNotes["conv"]>[0] }>("notes.rename", { id, base_revision: revision, title })).note); }
+  async remove(id: string): Promise<void> { await this.server.operate("notes.delete", { id }); }
+  async restore(id: string): Promise<Note> { return this.conv((await this.server.operate<{ note: Parameters<ServerNotes["conv"]>[0] }>("notes.restore", { id })).note); }
+  async trash(spaceId: string): Promise<NoteSummary[]> { return (await this.server.operate<{ notes: Parameters<ServerNotes["sum"]>[0][] }>("trash.list", { space_id: spaceId })).notes.map(this.sum); }
+  async purge(id: string): Promise<void> { await this.server.operate("trash.purge", { id }); }
+  async tags(spaceId: string): Promise<TagInfo[]> { return (await this.server.operate<{ tags: TagInfo[] }>("tags.list", { space_id: spaceId })).tags; }
+  async lookupNotes(spaceId: string, prefix: string): Promise<NoteTarget[]> { return (await this.server.operate<{ notes: { id: string; title: string; link_target: string }[] }>("notes.lookup", { space_id: spaceId, prefix })).notes.map((n) => ({ id: n.id, title: n.title, target: n.link_target })); }
+  async lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]> { return (await this.server.operate<{ tags: TagInfo[] }>("tags.lookup", { space_id: spaceId, prefix })).tags; }
   watch(spaceId: string, onChange: () => void): () => void {
     const ac = new AbortController();
     const run = async () => {
