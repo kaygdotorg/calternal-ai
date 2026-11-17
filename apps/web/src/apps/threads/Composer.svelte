@@ -121,7 +121,7 @@
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
   </div>
   <div class="field" bind:this={fieldBox}>
-    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:value={text} {marks} onselect={here} oninput={here} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}… (@ to mention, / for skills)`} />
+    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:value={text} {marks} onselect={here} oninput={here} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if running && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}

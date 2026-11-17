@@ -11,9 +11,13 @@
   import { shell } from "../shell/shell.svelte";
   import PresetGallery from "./PresetGallery.svelte";
   const KEY = "cal.firstrun";
-  // Shown on a fresh browser, or on demand with ?firstrun=1 (so it can be looked at and tested).
+  // Shown on a fresh browser, or on demand with ?firstrun=1 (so it can be looked at and tested); ?firstrun=0 skips it for good (a device that cannot tap, a test).
   let open = $state(fresh);
-  $effect(() => { if (route.query.get("firstrun") === "1") open = true; });
+  $effect(() => {
+    const q = route.query.get("firstrun");
+    if (q === "1") open = true;
+    else if (q === "0") { open = false; try { localStorage.setItem(KEY, "1"); } catch { /* none */ } }
+  });
   function done() {
     open = false;
     if (route.query.has("firstrun")) setQuery("firstrun", null);
