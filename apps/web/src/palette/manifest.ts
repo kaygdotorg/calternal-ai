@@ -41,13 +41,4 @@ registerManifest({
   ],
 });
 registerManifest({ plugin: "calternal-notes", commands: [{ id: "notes.open", label: "Open Notes", group: "Notes", go: "/notes" }, { id: "notes.new", label: "New note", group: "Notes", op: "note.new", words: ["create note"] }] });
-registerManifest({
-  plugin: "calternal-settings",
-  commands: [
-    { id: "settings.appearance", label: "Appearance", group: "Settings", go: "/settings/appearance", words: ["wallpaper", "theme", "fonts", "ui size", "blur", "dark mode"] },
-    { id: "settings.agents", label: "Agents", group: "Settings", go: "/settings/agents", words: ["permission", "streaming", "retry"] },
-    { id: "settings.space", label: "Space", group: "Settings", go: "/settings/space", words: ["members", "invites", "roles"] },
-    { id: "settings.server", label: "Server", group: "Settings", go: "/settings/server" },
-    { id: "settings.shortcuts", label: "Keyboard shortcuts", group: "Settings", op: "help.shortcuts", words: ["keys", "hotkeys"] },
-  ],
-});
+// The Settings plugin registers a command for every section and every setting itself (apps/settings/registry.ts).

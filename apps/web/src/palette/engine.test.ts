@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from "vitest";
+import "../apps/settings/registry";
 import { plan, setItems } from "./engine";
 import { buildIndex, search, type Item } from "./search";
 
@@ -45,7 +46,8 @@ describe("plan", () => {
     expect(p.parsed.spans.some((s) => s.type === "date")).toBe(true);
   });
   test("commands from plugin data are found by their extra words", () => {
-    expect(plan("wallpaper").rows[0]?.label).toBe("Appearance");
+    const hit = plan("wallpaper").rows.find((r) => r.label === "Wallpaper and fonts");
+    expect(hit?.action.go).toBe("/settings/appearance/appearance.wallpaper");
   });
   test("results from another space say which", () => {
     expect(plan("mesh").rows[0]?.space).toBe("Infra");

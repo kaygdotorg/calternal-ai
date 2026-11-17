@@ -18,7 +18,7 @@ ok("a date phrase is a task and its words are highlighted", (await page.locator(
 await field.fill("mesh");
 ok("results from another space say which", (await page.locator(".r .sp").first().innerText()) === "Infra");
 await field.fill("wallpaper");
-ok("commands are found by their plugin's words", (await page.locator(".r.command .l").first().innerText()) === "Appearance");
+ok("every setting is found by its words, and opens its address", (await page.locator(".r.command .l", { hasText: "Wallpaper and fonts" }).count()) === 1);
 await field.fill("expired invite");
 await page.keyboard.press("ArrowDown");
 await page.keyboard.press("Enter");

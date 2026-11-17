@@ -65,7 +65,8 @@ export function search(index: Index, query: string, limit = 12): Item[] {
       if (!s) { score = 0; break; }
       score += s;
     }
-    if (score) hits.push({ item: e.item, score: score - e.text.length / 400 });
+    // Commands rank a little above threads and notes on equal matches; a typo never outranks an exact word.
+    if (score) hits.push({ item: e.item, score: score + (e.item.kind === "command" ? 0.3 : 0) - e.text.length / 400 });
   }
   hits.sort((a, b) => b.score - a.score);
   return hits.slice(0, limit).map((h) => h.item);

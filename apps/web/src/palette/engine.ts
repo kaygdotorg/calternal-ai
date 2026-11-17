@@ -31,14 +31,12 @@ export function setItems(items: Item[], currentSpace: string): void {
   current = currentSpace;
 }
 
-const KIND_ORDER = { command: 0, thread: 1, note: 2 } as const;
-
 /** Plans one line. `provider` names the agent an "Ask" row would send to. */
 export function plan(text: string, provider = "the agent"): Plan {
   const parsed = recognise(text);
   const q = text.trim();
   if (!q) return { parsed, intent: "", rows: [] };
-  const found = search(index, q, 40).sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]).slice(0, 12);
+  const found = search(index, q, 12);
   const rows: Row[] = found.map((i) => ({
     id: i.id,
     kind: i.kind === "command" ? "command" : "open",
