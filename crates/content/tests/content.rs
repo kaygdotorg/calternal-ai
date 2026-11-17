@@ -9,9 +9,9 @@ use std::{path::Path, time::Duration};
 fn open(path: &Path, fault: fn(FaultPoint)) -> Content {
     Content::open(
         Roots {
-            state: path.join("state"),
-            ssd_space: path.join("ssd"),
-            hdd_space: path.join("hdd"),
+            appdata: path.join("appdata"),
+            userdata_ssd: path.join("userdata-ssd"),
+            userdata_hdd: path.join("userdata-hdd"),
         },
         path.join("secrets"),
         Duration::ZERO,
@@ -80,8 +80,8 @@ fn spaces_have_separate_databases_and_foreign_ids_are_absent() {
             |i| json!({"id":i.id}),
         )
         .unwrap();
-    let pa = dir.path().join(format!("state/spaces/{a}/content.db"));
-    let pb = dir.path().join(format!("state/spaces/{b}/content.db"));
+    let pa = dir.path().join(format!("appdata/spaces/{a}/content.db"));
+    let pb = dir.path().join(format!("appdata/spaces/{b}/content.db"));
     assert!(pa.is_file() && pb.is_file());
     assert_ne!(pa, pb);
     use std::os::unix::fs::MetadataExt;

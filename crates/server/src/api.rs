@@ -213,15 +213,13 @@ async fn guard<D: Directory>(
             && !account_route
             && bearer(req.headers()).is_none()
             && let Some(service) = state.tokens.http_auth()
-        {
-            if req
+            && req
                 .headers()
                 .get(header::ORIGIN)
                 .is_some_and(|v| v.as_bytes() != service.config.origin_header().as_bytes())
             {
                 break 'resp deny(HostError::unauthorized("missing or invalid session"));
             }
-        }
 
         if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
             let expected = if bearer(req.headers())
@@ -488,11 +486,9 @@ pub async fn dispatch<D: Directory>(
             .get("space_id")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-        {
-            if state.tokens.wire_space(hint) != resolved.space_id {
+            && state.tokens.wire_space(hint) != resolved.space_id {
                 return Err(HostError::not_found("item not found"));
             }
-        }
         input.insert("space_id".into(), Value::String(resolved.space_id));
     }
     let Some(policy) = authz::policy(op) else {
@@ -515,7 +511,7 @@ pub async fn dispatch<D: Directory>(
         return tokio::task::spawn_blocking(move || {
             // Serialize receipt namespace checks across directory/content DBs.
             // Each mutation still commits its own change and receipt atomically.
-            let mut store = st
+            let store = st
                 .store
                 .lock()
                 .map_err(|_| HostError::internal("store poisoned"))?;

@@ -232,7 +232,7 @@ impl Content {
         let conn = db::database(
             &self
                 .roots
-                .state
+                .appdata
                 .join("accounts")
                 .join(account.to_string())
                 .join("content.db"),

@@ -101,9 +101,9 @@ impl Store {
     pub fn open(root: &Path) -> Result<Self, HostError> {
         Self::open_roots(
             calternal_roots::Roots {
-                state: root.into(),
-                ssd_space: root.join("userdata-ssd"),
-                hdd_space: root.join("userdata-hdd"),
+                appdata: root.into(),
+                userdata_ssd: root.join("userdata-ssd"),
+                userdata_hdd: root.join("userdata-hdd"),
             },
             root.join("secrets"),
         )
@@ -113,7 +113,7 @@ impl Store {
     /// Cost: one installation lock, plugin/catalog database opens and schema fsyncs,
     /// then startup-only pending publication/materialization recovery per space.
     pub fn open_roots(roots: calternal_roots::Roots, secrets: PathBuf) -> Result<Self, HostError> {
-        let root = roots.state.clone();
+        let root = roots.appdata.clone();
         calternal_auth::private_fs::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let lock = calternal_auth::private_fs::file(&root.join(".calternal.lock"))
             .map_err(|e| io_err("open lock", e))?;

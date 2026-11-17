@@ -94,16 +94,16 @@ impl Content {
         idle_after: Duration,
         fault: fn(FaultPoint),
     ) -> Result<Self> {
-        for path in [&roots.state, &roots.ssd_space, &roots.hdd_space, &secrets] {
+        for path in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd, &secrets] {
             calternal_auth::private_fs::directory(path).map_err(Error::internal)?;
         }
-        let index = db::database(&roots.state.join("system/content-index.db"))?;
+        let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE TABLE IF NOT EXISTS requests(account TEXT NOT NULL,request TEXT NOT NULL,space TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;").map_err(Error::internal)?;
         let spaces = Arc::new(Mutex::new(HashMap::new()));
         let cache = spaces.clone();
-        let journals = Journals::open(roots.state.clone(), secrets, move || {
+        let journals = Journals::open(roots.appdata.clone(), secrets, move || {
             sweep(&cache, idle_after);
         })?;
         let content = Self {
@@ -116,7 +116,7 @@ impl Content {
             writes: (0..64).map(|_| Mutex::new(())).collect(),
             admission: Mutex::new(()),
         };
-        let dir = content.roots.state.join("spaces");
+        let dir = content.roots.appdata.join("spaces");
         if dir.exists() {
             for entry in fs::read_dir(dir).map_err(Error::internal)? {
                 let entry = entry.map_err(Error::internal)?;
@@ -147,11 +147,9 @@ impl Content {
                         for id in ids {
                             if let Err(e) =
                                 space.place(Uuid::parse_str(&id).map_err(Error::internal)?, fault)
-                            {
-                                if e.code != ErrorCode::Conflict {
+                                && e.code != ErrorCode::Conflict {
                                     return Err(e);
                                 }
-                            }
                         }
                         Ok(())
                     })?;
@@ -184,7 +182,7 @@ impl Content {
                         else {return Err(Error::new(ErrorCode::Unavailable,"content cache is busy"));}
                     }
                 }
-                let opened=Arc::new(Mutex::new(Space::open(&self.roots.state,&self.roots.ssd_space,id,self.journals.handle(id)?)?));
+                let opened=Arc::new(Mutex::new(Space::open(&self.roots.appdata,&self.roots.userdata_ssd,id,self.journals.handle(id)?)?));
                 lock(&self.spaces).insert(id,Entry {space:opened.clone(),last_used:Instant::now()});
                 opened
             }

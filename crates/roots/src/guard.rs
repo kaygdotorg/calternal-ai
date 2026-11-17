@@ -10,7 +10,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 const MARKER: &str = ".calternal-install-id";
-const ROLES: [&str; 3] = ["ssd-space", "hdd-space", "app-state"];
+const ROLES: [&str; 3] = ["userdata-ssd", "userdata-hdd", "appdata"];
 const RETRY: Duration = Duration::from_millis(100);
 
 /// Lifetime ownership of all three roots. Dropping releases every acquired lock.
@@ -30,7 +30,7 @@ pub struct RootLocks {
 /// create neither directories nor lock files; I/O failures during explicit setup
 /// may leave partial setup which requires deliberate offline recovery.
 pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<RootLocks> {
-    let paths = [&roots.ssd_space, &roots.hdd_space, &roots.state].map(|p| absolute_plain(p));
+    let paths = [&roots.userdata_ssd, &roots.userdata_hdd, &roots.appdata].map(|p| absolute_plain(p));
     let [a, b, c] = paths;
     let paths = [a?, b?, c?];
     for (i, a) in paths.iter().enumerate() {
@@ -133,14 +133,13 @@ pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<Ro
         check_legacy(&probes[1].fd, &probes[2].fd)?;
     }
     Ok(RootLocks {
-        _locks: locks.try_into().ok().expect("three locks"),
+        _locks: locks.try_into().unwrap_or_else(|_| unreachable!("three locks")),
         _directories: probes
             .into_iter()
             .map(|p| p.fd)
             .collect::<Vec<_>>()
             .try_into()
-            .ok()
-            .expect("three roots"),
+            .unwrap_or_else(|_| unreachable!("three roots")),
     })
 }
 
@@ -155,7 +154,7 @@ pub fn re_pair(roots: &Roots, installation: Uuid, confirmed: bool) -> io::Result
     if !confirmed {
         return Err(invalid("offline re-pair requires explicit confirmation"));
     }
-    let paths = [&roots.ssd_space, &roots.hdd_space, &roots.state]
+    let paths = [&roots.userdata_ssd, &roots.userdata_hdd, &roots.appdata]
         .into_iter()
         .map(|p| absolute_plain(p))
         .collect::<io::Result<Vec<_>>>()?;
@@ -362,10 +361,10 @@ fn regular_optional(dir: &OwnedFd, name: impl AsRef<Path>) -> io::Result<Option<
     Ok(Some(file))
 }
 
-fn require_auth(state: &OwnedFd) -> io::Result<()> {
-    let system = fs::openat(state, "system", dir_flags(), Mode::empty()).map_err(|e| {
+fn require_auth(appdata: &OwnedFd) -> io::Result<()> {
+    let system = fs::openat(appdata, "system", dir_flags(), Mode::empty()).map_err(|e| {
         invalid(format!(
-            "app state missing system/auth.db: {e}; restore original state"
+            "appdata missing system/auth.db: {e}; restore original appdata"
         ))
     })?;
     if regular_optional(&system, "auth.db")?
@@ -374,7 +373,7 @@ fn require_auth(state: &OwnedFd) -> io::Result<()> {
         Ok(())
     } else {
         Err(invalid(
-            "app state missing nonempty system/auth.db; refusing fresh databases until validated FO1 recovery",
+            "appdata missing nonempty system/auth.db; refusing fresh databases until validated FO1 recovery",
         ))
     }
 }
@@ -413,7 +412,7 @@ fn has_data(dir: &OwnedFd) -> io::Result<bool> {
 
 // Preserve the source's legacy auth/history presence fence. This is not a
 // provenance or content-equivalence check, nor a registry of future space stores.
-fn check_legacy(space: &OwnedFd, state: &OwnedFd) -> io::Result<()> {
+fn check_legacy(space: &OwnedFd, appdata: &OwnedFd) -> io::Result<()> {
     let mut relative = vec![PathBuf::from("system/auth.db")];
     match fs::openat(space, "spaces", dir_flags(), Mode::empty()) {
         Ok(spaces) => {
@@ -425,9 +424,9 @@ fn check_legacy(space: &OwnedFd, state: &OwnedFd) -> io::Result<()> {
         Err(e) => return Err(e.into()),
     }
     for rel in relative {
-        if exists_plain(space, &rel)? && !exists_plain(state, &rel)? {
+        if exists_plain(space, &rel)? && !exists_plain(appdata, &rel)? {
             return Err(invalid(format!(
-                "copy {} to app state while stopped before splitting storage",
+                "copy {} to appdata while stopped before splitting storage",
                 rel.display()
             )));
         }

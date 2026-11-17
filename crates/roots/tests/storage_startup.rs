@@ -16,9 +16,9 @@ impl Fixture {
     fn new() -> Self {
         let temp = TempDir::new().unwrap();
         let roots = Roots {
-            ssd_space: temp.path().join("ssd-space"),
-            hdd_space: temp.path().join("hdd-space"),
-            state: temp.path().join("state"),
+            userdata_ssd: temp.path().join("userdata-ssd"),
+            userdata_hdd: temp.path().join("userdata-hdd"),
+            appdata: temp.path().join("appdata"),
         };
         Self {
             temp,
@@ -31,7 +31,7 @@ impl Fixture {
         // A disposable nonempty sentinel tests only the inherited presence fence.
         // Opening/migrating SQLite belongs to the separate auth worker port.
         put(
-            &self.roots.state.join("system/auth.db"),
+            &self.roots.appdata.join("system/auth.db"),
             b"disposable auth fixture",
         );
     }
@@ -40,9 +40,9 @@ impl Fixture {
     }
     fn paths(&self) -> [&Path; 3] {
         [
-            &self.roots.ssd_space,
-            &self.roots.hdd_space,
-            &self.roots.state,
+            &self.roots.userdata_ssd,
+            &self.roots.userdata_hdd,
+            &self.roots.appdata,
         ]
     }
     fn clear_locks(&self) {
@@ -65,16 +65,16 @@ fn put(path: &Path, bytes: &[u8]) {
 #[test]
 fn missing_space_refuses_without_creating_directory_or_lock() {
     let mut f = Fixture::new();
-    f.roots.ssd_space = f.temp.path().join("unmounted/space");
+    f.roots.userdata_ssd = f.temp.path().join("unmounted/space");
     assert!(!f.starts(false));
-    assert!(!f.roots.ssd_space.parent().unwrap().exists());
-    assert!(!f.roots.state.exists());
+    assert!(!f.roots.userdata_ssd.parent().unwrap().exists());
+    assert!(!f.roots.appdata.exists());
     f.setup();
     f.clear_locks();
-    std::fs::rename(&f.roots.ssd_space, f.temp.path().join("offline-space")).unwrap();
+    std::fs::rename(&f.roots.userdata_ssd, f.temp.path().join("offline-space")).unwrap();
     assert!(!f.starts(true));
-    assert!(!f.roots.ssd_space.exists());
-    std::fs::create_dir_all(&f.roots.ssd_space).unwrap();
+    assert!(!f.roots.userdata_ssd.exists());
+    std::fs::create_dir_all(&f.roots.userdata_ssd).unwrap();
     assert!(!f.starts(false));
     f.no_locks();
 }
@@ -85,29 +85,29 @@ fn missing_state_never_recreates_databases_even_with_create() {
     let f = Fixture::new();
     f.setup();
     f.clear_locks();
-    let note = f.roots.hdd_space.join("spaces/person/Notes/Existing.md");
+    let note = f.roots.userdata_hdd.join("spaces/person/Notes/Existing.md");
     put(&note, b"# Existing\noriginal bytes\n");
-    std::fs::rename(&f.roots.state, f.temp.path().join("offline-ssd")).unwrap();
+    std::fs::rename(&f.roots.appdata, f.temp.path().join("offline-ssd")).unwrap();
     for create in [false, true] {
         assert!(!f.starts(create));
-        assert!(!f.roots.state.exists());
+        assert!(!f.roots.appdata.exists());
     }
-    std::fs::create_dir(&f.roots.state).unwrap();
+    std::fs::create_dir(&f.roots.appdata).unwrap();
     assert!(!f.starts(false));
-    assert!(!f.roots.state.join("system").exists());
+    assert!(!f.roots.appdata.join("system").exists());
     f.no_locks();
     assert_eq!(
         std::fs::read(note).unwrap(),
         b"# Existing\noriginal bytes\n"
     );
     put(
-        &f.roots.state.join(MARKER),
-        format!("{}\napp-state\n", f.id).as_bytes(),
+        &f.roots.appdata.join(MARKER),
+        format!("{}\nappdata\n", f.id).as_bytes(),
     );
     assert!(!f.starts(false));
-    assert!(!f.roots.state.join("system").exists());
+    assert!(!f.roots.appdata.join("system").exists());
     f.no_locks();
-    put(&f.roots.state.join("system/auth.db"), b"");
+    put(&f.roots.appdata.join("system/auth.db"), b"");
     assert!(!f.starts(true));
     f.no_locks();
 }
@@ -121,18 +121,18 @@ fn roots_must_keep_their_persistent_partner() {
     let b = Fixture::new();
     b.setup();
     b.clear_locks();
-    let original = std::fs::read(a.roots.state.join(MARKER)).unwrap();
+    let original = std::fs::read(a.roots.appdata.join(MARKER)).unwrap();
     let mut roots = a.roots.clone();
-    roots.state = b.roots.state.clone();
+    roots.appdata = b.roots.appdata.clone();
     for create in [false, true] {
         assert!(prepare(&roots, a.id, create).is_err());
     }
     roots = a.roots.clone();
-    roots.hdd_space = b.roots.hdd_space.clone();
+    roots.userdata_hdd = b.roots.userdata_hdd.clone();
     for create in [false, true] {
         assert!(prepare(&roots, a.id, create).is_err());
     }
-    assert_eq!(original, std::fs::read(a.roots.state.join(MARKER)).unwrap());
+    assert_eq!(original, std::fs::read(a.roots.appdata.join(MARKER)).unwrap());
     a.no_locks();
     b.no_locks();
     for root in a.paths() {
@@ -145,15 +145,15 @@ fn roots_must_keep_their_persistent_partner() {
         a.no_locks();
         put(&root.join(MARKER), &saved);
     }
-    let marker = a.roots.state.join(MARKER);
+    let marker = a.roots.appdata.join(MARKER);
     std::fs::remove_file(&marker).unwrap();
     assert!(re_pair(&a.roots, a.id, false).is_err());
-    let held = DataLock::acquire_existing(&a.roots.ssd_space).unwrap();
+    let held = DataLock::acquire_existing(&a.roots.userdata_ssd).unwrap();
     assert!(re_pair(&a.roots, a.id, true).is_err());
     drop(held);
     re_pair(&a.roots, a.id, true).unwrap();
     assert!(a.starts(false));
-    std::fs::remove_file(a.roots.ssd_space.join(MARKER)).unwrap();
+    std::fs::remove_file(a.roots.userdata_ssd.join(MARKER)).unwrap();
     assert!(!a.starts(false));
     re_pair(&a.roots, a.id, true).unwrap();
     put(&marker, b"broken");
@@ -168,9 +168,9 @@ fn all_missing_markers_with_existing_data_refuse_setup() {
     let f = Fixture::new();
     f.setup();
     f.clear_locks();
-    let note = f.roots.hdd_space.join("spaces/person/Notes/Existing.md");
+    let note = f.roots.userdata_hdd.join("spaces/person/Notes/Existing.md");
     put(&note, b"# Existing\nkeep these bytes\n");
-    let auth = std::fs::read(f.roots.state.join("system/auth.db")).unwrap();
+    let auth = std::fs::read(f.roots.appdata.join("system/auth.db")).unwrap();
     for root in f.paths() {
         std::fs::remove_file(root.join(MARKER)).unwrap();
     }
@@ -181,7 +181,7 @@ fn all_missing_markers_with_existing_data_refuse_setup() {
             assert!(!root.join(MARKER).exists());
         }
         assert_eq!(
-            std::fs::read(f.roots.state.join("system/auth.db")).unwrap(),
+            std::fs::read(f.roots.appdata.join("system/auth.db")).unwrap(),
             auth
         );
         assert_eq!(
@@ -193,7 +193,7 @@ fn all_missing_markers_with_existing_data_refuse_setup() {
     assert!(f.starts(false));
 }
 
-// Source :321, including each new space role and app state.
+// Source :321, including each new role and appdata.
 #[test]
 fn create_refuses_unpaired_notes_or_databases_before_creating_other_root() {
     for role in 0..3 {
@@ -228,7 +228,7 @@ fn legacy_history_and_invalid_state_are_refused() {
         put(&f.paths()[space].join(relative), b"history");
         assert!(!f.starts(false));
         f.no_locks();
-        put(&f.roots.state.join(relative), b"history");
+        put(&f.roots.appdata.join(relative), b"history");
         assert!(f.starts(false));
     }
     let f = Fixture::new();
@@ -237,9 +237,9 @@ fn legacy_history_and_invalid_state_are_refused() {
     // Source uses read-only /sys. Use only a disposable directory here, as
     // required by the lane; run as the ordinary unprivileged development user.
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&f.roots.state, std::fs::Permissions::from_mode(0o555)).unwrap();
+    std::fs::set_permissions(&f.roots.appdata, std::fs::Permissions::from_mode(0o555)).unwrap();
     let refused = !f.starts(false);
-    std::fs::set_permissions(&f.roots.state, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&f.roots.appdata, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(
         refused,
         "a read-only state root must not start without a lock"
@@ -247,7 +247,7 @@ fn legacy_history_and_invalid_state_are_refused() {
     let file = f.temp.path().join("file");
     put(&file, b"x");
     let mut roots = f.roots.clone();
-    roots.state = file;
+    roots.appdata = file;
     assert!(prepare(&roots, f.id, true).is_err());
 }
 
@@ -326,7 +326,7 @@ fn swapped_roles_and_wrong_pinned_identity_refuse_before_lock_creation() {
     f.setup();
     f.clear_locks();
     let mut roots = f.roots.clone();
-    std::mem::swap(&mut roots.ssd_space, &mut roots.hdd_space);
+    std::mem::swap(&mut roots.userdata_ssd, &mut roots.userdata_hdd);
     for create in [false, true] {
         assert!(prepare(&roots, f.id, create).is_err());
         f.no_locks();
@@ -380,7 +380,7 @@ fn symlink_substitutions_never_receive_markers_locks_or_directories() {
         let f = Fixture::new();
         f.setup();
         f.clear_locks();
-        let target = f.roots.state.join(relative);
+        let target = f.roots.appdata.join(relative);
         let outside = f.temp.path().join("outside");
         if target.is_dir() {
             std::fs::rename(&target, &outside).unwrap();
@@ -395,11 +395,11 @@ fn symlink_substitutions_never_receive_markers_locks_or_directories() {
         for create in [false, true] {
             assert!(!f.starts(create));
         }
-        for root in [&f.roots.ssd_space, &f.roots.hdd_space] {
+        for root in [&f.roots.userdata_ssd, &f.roots.userdata_hdd] {
             assert!(!root.join(".lock").exists());
         }
         if relative != ".lock" {
-            assert!(!f.roots.state.join(".lock").exists());
+            assert!(!f.roots.appdata.join(".lock").exists());
         }
     }
     let f = Fixture::new();
@@ -408,26 +408,26 @@ fn symlink_substitutions_never_receive_markers_locks_or_directories() {
     std::fs::create_dir(&parent).unwrap();
     symlink(&parent, &alias).unwrap();
     let mut roots = f.roots.clone();
-    roots.hdd_space = alias.join("missing");
+    roots.userdata_hdd = alias.join("missing");
     assert!(prepare(&roots, f.id, true).is_err());
     assert!(!parent.join("missing").exists());
-    assert!(!f.roots.ssd_space.exists());
+    assert!(!f.roots.userdata_ssd.exists());
 }
 
 #[test]
 fn roles_cannot_overlap_and_first_setup_never_creates_a_database() {
     let f = Fixture::new();
     let mut roots = f.roots.clone();
-    roots.state = roots.ssd_space.clone();
+    roots.appdata = roots.userdata_ssd.clone();
     assert!(prepare(&roots, f.id, true).is_err());
-    roots.state = roots.ssd_space.join("state");
+    roots.appdata = roots.userdata_ssd.join("appdata");
     assert!(prepare(&roots, f.id, true).is_err());
-    assert!(!f.roots.ssd_space.exists());
+    assert!(!f.roots.userdata_ssd.exists());
     drop(prepare(&f.roots, f.id, true).unwrap());
-    assert!(!f.roots.state.join("system").exists());
+    assert!(!f.roots.appdata.join("system").exists());
     assert!(!f.starts(false));
     assert!(!f.starts(true));
-    for (role, root) in ["ssd-space", "hdd-space", "app-state"]
+    for (role, root) in ["userdata-ssd", "userdata-hdd", "appdata"]
         .into_iter()
         .zip(f.paths())
     {
@@ -444,7 +444,7 @@ fn explicit_repair_cannot_bless_swapped_roles_missing_state_or_busy_roots() {
     f.setup();
     f.clear_locks();
     let mut swapped = f.roots.clone();
-    std::mem::swap(&mut swapped.ssd_space, &mut swapped.hdd_space);
+    std::mem::swap(&mut swapped.userdata_ssd, &mut swapped.userdata_hdd);
     assert!(re_pair(&swapped, f.id, true).is_err());
     f.no_locks();
     for root in f.paths() {
@@ -453,7 +453,7 @@ fn explicit_repair_cannot_bless_swapped_roles_missing_state_or_busy_roots() {
         drop(held);
     }
     f.clear_locks();
-    std::fs::remove_file(f.roots.state.join("system/auth.db")).unwrap();
+    std::fs::remove_file(f.roots.appdata.join("system/auth.db")).unwrap();
     let before = f.paths().map(|p| std::fs::read(p.join(MARKER)).unwrap());
     assert!(re_pair(&f.roots, Uuid::new_v4(), true).is_err());
     f.no_locks();
