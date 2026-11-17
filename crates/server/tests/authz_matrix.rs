@@ -191,7 +191,7 @@ impl Fixture {
             },
         );
         let plugin = support::plugin(support::insights_manifest(), Some(&worker), true);
-        let store = Store::open(&support::roots(&root.join("data")), uuid::Uuid::from_u128(1), true).unwrap();
+        let store = Store::open(&support::roots(&root.join("data")), uuid::Uuid::from_u128(1), true, calternal_content::DEFAULT_RECEIPT_RETENTION).unwrap();
         let tokens = MutableDirectory::new(role);
         let note = serde_json::to_value(
             store

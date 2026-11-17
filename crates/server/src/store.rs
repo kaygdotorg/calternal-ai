@@ -135,7 +135,9 @@ impl Store {
     /// (ADR 0062): each root's marker must carry it with that root's role. `create`
     /// allows first setup of empty or missing roots, writing the markers; without
     /// it, missing, swapped, mismatched, foreign or occupied roots are refused
-    /// before anything is created (see [`calternal_roots::prepare`]). The journal witness and secret key live in
+    /// before anything is created (see [`calternal_roots::prepare`]).
+    /// `receipt_retention` bounds request receipts in every space (see
+    /// [`calternal_content::DEFAULT_RECEIPT_RETENTION`]). The journal witness and secret key live in
     /// `<appdata>/secrets`.
     ///
     /// # Errors
@@ -148,6 +150,7 @@ impl Store {
         roots: &calternal_roots::Roots,
         installation: Uuid,
         create: bool,
+        receipt_retention: Duration,
     ) -> Result<Self, Error> {
         let locks = calternal_roots::prepare(roots, installation, create)
             .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?;
@@ -178,6 +181,7 @@ impl Store {
             roots.clone(),
             secrets,
             Duration::from_secs(600),
+            receipt_retention,
             content_fault,
         )?;
         // Fails closed: a missing or wrong secret key stops startup instead of

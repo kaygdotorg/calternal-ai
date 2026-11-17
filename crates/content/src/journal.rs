@@ -31,7 +31,11 @@ pub(crate) struct Journals {
 
 impl Journals {
     /// Starts the two-worker driver runtime. Cost: two threads; no I/O.
-    pub(crate) fn open(appdata: PathBuf, secrets: PathBuf) -> Result<Self> {
+    pub(crate) fn open(
+        appdata: PathBuf,
+        secrets: PathBuf,
+        receipt_retention: std::time::Duration,
+    ) -> Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("content-journal")
@@ -41,10 +45,10 @@ impl Journals {
         Ok(Self {
             appdata,
             secrets,
-            // Request replay stays permanent, as before; bounding it is an open owner
-            // question (review finding 11, checklist item 7).
+            // Bounded receipts (owner decision, 2026-11-17): the store prunes them
+            // after this; a later retry runs as a new request.
             options: Options {
-                idempotency_retention: std::time::Duration::from_millis(i64::MAX as u64),
+                idempotency_retention: receipt_retention,
                 ..Options::default()
             },
             runtime: Some(runtime),

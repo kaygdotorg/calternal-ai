@@ -119,6 +119,9 @@ fn spawn_sweeper(spaces: &Cache, idle: Duration) -> Result<()> {
 pub(crate) fn file_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
+/// How long request receipts are kept by default: seven days, the store's default.
+/// A retry after that is treated as a new request.
+pub const DEFAULT_RECEIPT_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// Current UTC timestamp used by item versions and server adapters.
 /// Cost: one clock read and a short string allocation; no locks, SQLite or fsync.
 pub fn now_rfc3339() -> String {
@@ -130,6 +133,9 @@ pub fn now_rfc3339() -> String {
 }
 impl Content {
     /// Opens the identifier-only catalog and replays unfinished space intents.
+    /// `receipt_retention` bounds how long each space keeps request receipts
+    /// ([`DEFAULT_RECEIPT_RETENTION`] unless the operator sets another); a retry
+    /// after that runs as a new request.
     /// Roots must have been validated/locked by the host. `secrets` is the journal
     /// witness root, outside production state backups. Fault callbacks are trusted
     /// test hooks; production callers pass a no-op.
@@ -141,6 +147,7 @@ impl Content {
         roots: Roots,
         secrets: PathBuf,
         idle_after: Duration,
+        receipt_retention: Duration,
         fault: fn(FaultPoint),
     ) -> Result<Self> {
         for path in [
@@ -156,7 +163,7 @@ impl Content {
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(HashMap::new()));
         spawn_sweeper(&spaces, idle_after)?;
-        let journals = Journals::open(roots.appdata.clone(), secrets)?;
+        let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
             roots,

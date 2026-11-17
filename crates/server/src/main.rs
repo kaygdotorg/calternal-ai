@@ -84,6 +84,10 @@ enum Cmd {
         /// root (ADR 0062). Each root's marker must carry it; required.
         #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
         installation_id: Option<String>,
+        /// Days each space keeps request receipts; a retry after that runs as a new
+        /// request.
+        #[arg(long, env = "CALTERNAL_RECEIPT_RETENTION_DAYS", default_value_t = 7)]
+        receipt_retention_days: u32,
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
@@ -199,6 +203,7 @@ fn main() {
             userdata_hdd,
             create,
             installation_id,
+            receipt_retention_days,
             port,
             web_dir,
             plugin_root,
@@ -236,6 +241,7 @@ fn main() {
                     },
                     installation_id,
                     create,
+                    std::time::Duration::from_secs(u64::from(receipt_retention_days.max(1)) * 86_400),
                     port,
                     web_dir,
                     plugin_root,
@@ -266,6 +272,7 @@ async fn serve(
     roots: calternal_roots::Roots,
     installation_id: Option<String>,
     create: bool,
+    receipt_retention: std::time::Duration,
     port: u16,
     web_dir: Option<PathBuf>,
     plugin_root: PathBuf,
@@ -291,7 +298,7 @@ async fn serve(
                 boot(1, "invalid_input", "the installation ID is not a UUID", PIN_HINT)
             })
         })?;
-    let store = Store::open(&roots, installation, create).map_err(|e| {
+    let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
         boot(
             1,
             "failed",

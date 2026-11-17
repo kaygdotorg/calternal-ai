@@ -30,6 +30,10 @@ roots. The protected security log (`calternal-recovery`) lives in
 or fixture seeding, so every security change is durable there before it is
 acknowledged. The operator `machines` commands take the same appdata root as `--appdata`.
 
+Request receipts (what a retry with the same request ID replays) are kept 7 days by
+default; `--receipt-retention-days` / `CALTERNAL_RECEIPT_RETENTION_DAYS` changes it.
+A retry after that is treated as a new request.
+
 The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
 paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn

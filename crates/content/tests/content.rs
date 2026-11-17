@@ -6,6 +6,9 @@ use serde_json::json;
 use std::{path::Path, time::Duration};
 
 fn open(path: &Path, fault: fn(FaultPoint)) -> Content {
+    open_retaining(path, fault, calternal_content::DEFAULT_RECEIPT_RETENTION)
+}
+fn open_retaining(path: &Path, fault: fn(FaultPoint), retention: Duration) -> Content {
     Content::open(
         Roots {
             appdata: path.join("appdata"),
@@ -14,6 +17,7 @@ fn open(path: &Path, fault: fn(FaultPoint)) -> Content {
         },
         path.join("secrets"),
         Duration::ZERO,
+        retention,
         fault,
     )
     .unwrap()
@@ -419,4 +423,41 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
         );
         slow.join().unwrap();
     });
+}
+
+/// Receipts are bounded: within the retention a reused request ID is refused; once
+/// its receipt has been pruned (at the latest when the space next opens), the same
+/// ID runs as a new request.
+#[test]
+fn a_request_id_is_new_again_after_receipt_retention() {
+    let dir = tempfile::tempdir().unwrap();
+    let (space, actor) = (SpaceId::new(), AccountId::new());
+    let retention = Duration::from_millis(50);
+    let write = |content: &Content, text: &[u8]| {
+        content.write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title": "T"}),
+            text,
+            Request {
+                account: actor,
+                id: "same",
+                operation: "example.create",
+                fingerprint: std::str::from_utf8(text).unwrap(),
+            },
+            |_| json!({}),
+        )
+    };
+    let content = open_retaining(dir.path(), |_| {}, retention);
+    content
+        .register_kind(space, "notes", Placement::Visible { folder: "Notes".into() }, FileFormat::Markdown)
+        .unwrap();
+    write(&content, b"first\n").unwrap();
+    assert_eq!(write(&content, b"second\n").unwrap_err().code, ErrorCode::Conflict);
+    drop(content);
+    std::thread::sleep(retention * 4);
+    let content = open_retaining(dir.path(), |_| {}, retention);
+    write(&content, b"second\n").expect("a pruned receipt makes the ID new again");
 }
