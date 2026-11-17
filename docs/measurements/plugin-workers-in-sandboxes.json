@@ -1,0 +1,5213 @@
+{
+ "systems": {},
+ "variants": {
+  "A": {
+   "cold": {
+    "cold_first_response": {
+     "max_us": 98907.23,
+     "mean_us": 37582.4794,
+     "min_us": 32715.622,
+     "n": 30,
+     "p50_us": 35451.845,
+     "p95_us": 37759.437,
+     "p99_us": 98907.23
+    },
+    "pre_step": {
+     "max_us": 0.09,
+     "mean_us": 0.0654,
+     "min_us": 0.04,
+     "n": 30,
+     "p50_us": 0.06,
+     "p95_us": 0.08,
+     "p99_us": 0.09
+    },
+    "second_call": {
+     "max_us": 3857.704,
+     "mean_us": 909.0767,
+     "min_us": 521.096,
+     "n": 30,
+     "p50_us": 580.827,
+     "p95_us": 3825.934,
+     "p99_us": 3857.704
+    }
+   },
+   "warm_small": {
+    "latency": {
+     "max_us": 5040.068,
+     "mean_us": 153.85362,
+     "min_us": 100.178,
+     "n": 1000,
+     "p50_us": 121.809,
+     "p95_us": 245.099,
+     "p99_us": 372.077
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "warm_200k": {
+    "latency": {
+     "max_us": 11046.786,
+     "mean_us": 4386.771900999999,
+     "min_us": 3744.692,
+     "n": 1000,
+     "p50_us": 4023.284,
+     "p95_us": 6856.88,
+     "p99_us": 10184.37
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echo200k": {
+    "latency": {
+     "max_us": 2624.074,
+     "mean_us": 1696.992957,
+     "min_us": 1442.722,
+     "n": 1000,
+     "p50_us": 1692.77,
+     "p95_us": 1928.571,
+     "p99_us": 2077.47
+    },
+    "load": "echo",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echoback200k": {
+    "latency": {
+     "max_us": 9210.707,
+     "mean_us": 3412.5137990000003,
+     "min_us": 2877.658,
+     "n": 1000,
+     "p50_us": 3172.069,
+     "p95_us": 5237.287,
+     "p99_us": 5989.316
+    },
+    "load": "echo_back",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "hostcalls_0": {
+    "latency": {
+     "max_us": 3680.873,
+     "mean_us": 74.645301,
+     "min_us": 34.354,
+     "n": 1000,
+     "p50_us": 66.986,
+     "p95_us": 109.965,
+     "p99_us": 283.3
+    },
+    "load": "hostcalls",
+    "n_host_calls": 0,
+    "size": 1024
+   },
+   "hostcalls_1": {
+    "latency": {
+     "max_us": 756.606,
+     "mean_us": 116.435538,
+     "min_us": 79.589,
+     "n": 1000,
+     "p50_us": 97.532,
+     "p95_us": 210.053,
+     "p99_us": 302.146
+    },
+    "load": "hostcalls",
+    "n_host_calls": 1,
+    "size": 1024
+   },
+   "hostcalls_3": {
+    "latency": {
+     "max_us": 684.011,
+     "mean_us": 240.65094200000001,
+     "min_us": 166.03,
+     "n": 1000,
+     "p50_us": 215.655,
+     "p95_us": 355.366,
+     "p99_us": 414.948
+    },
+    "load": "hostcalls",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "hostcalls_10": {
+    "latency": {
+     "max_us": 4552.736,
+     "mean_us": 613.8762539999999,
+     "min_us": 473.427,
+     "n": 1000,
+     "p50_us": 566.451,
+     "p95_us": 852.205,
+     "p99_us": 971.629
+    },
+    "load": "hostcalls",
+    "n_host_calls": 10,
+    "size": 1024
+   },
+   "stop_graceful": {
+    "mode": "graceful",
+    "stop": {
+     "max_us": 4293.53,
+     "mean_us": 3506.9581000000003,
+     "min_us": 3291.574,
+     "n": 30,
+     "p50_us": 3446.444,
+     "p95_us": 3878.753,
+     "p99_us": 4293.53
+    }
+   },
+   "stop_force": {
+    "mode": "force",
+    "stop": {
+     "max_us": 2396.438,
+     "mean_us": 1916.8934666666667,
+     "min_us": 1701.716,
+     "n": 30,
+     "p50_us": 1900.518,
+     "p95_us": 2157.25,
+     "p99_us": 2396.438
+    }
+   },
+   "tput_1w_k1": {
+    "calls_per_s": 7992.570192003596,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 896.829,
+     "mean_us": 125.06055566666667,
+     "min_us": 95.509,
+     "n": 3000,
+     "p50_us": 111.95,
+     "p95_us": 198.612,
+     "p99_us": 240.631
+    },
+    "slowest_worker_s": 0.375348596,
+    "wall_s": 0.377656237,
+    "workers": 1
+   },
+   "tput_1w_k16": {
+    "calls_per_s": 10799.415734329708,
+    "calls_per_worker": 3000,
+    "inflight": 16,
+    "latency": {
+     "max_us": 3084.646,
+     "mean_us": 1479.155612,
+     "min_us": 909.222,
+     "n": 3000,
+     "p50_us": 1466.506,
+     "p95_us": 1898.696,
+     "p99_us": 2206.171
+    },
+    "slowest_worker_s": 0.277792806,
+    "wall_s": 0.278543782,
+    "workers": 1
+   },
+   "tput_8w_k1": {
+    "calls_per_s": 21093.892787526605,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 7684.58,
+     "mean_us": 353.13557295833334,
+     "min_us": 93.384,
+     "n": 24000,
+     "p50_us": 293.038,
+     "p95_us": 770.904,
+     "p99_us": 1593.223
+    },
+    "slowest_worker_s": 1.137770076,
+    "wall_s": 1.139942523,
+    "workers": 8
+   },
+   "probe": {
+    "node": "v24.21.0",
+    "uid": 1001,
+    "gid": 1001,
+    "pid": 476652,
+    "ppid": 476648,
+    "cwd": "/home/kayg/calternal-ai-plugin-sandbox",
+    "env_keys": [
+     "LANG"
+    ],
+    "os": {
+     "cpus": 4,
+     "totalmem_mib": 7880,
+     "hostname": "calternal-perf-02-backup01",
+     "interfaces": [
+      "lo",
+      "eth0",
+      "wt0",
+      "tailscale0"
+     ]
+    },
+    "permission_model": {
+     "fs_read_etc_passwd": false,
+     "fs_read_bundle": true,
+     "fs_write_tmp": false,
+     "child": false,
+     "worker": false,
+     "net": false,
+     "addon": false
+    },
+    "read": {
+     "/etc/passwd": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/etc/hostname": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/proc/self/status": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/proc/1/cmdline": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/proc/self/environ": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/proc/cpuinfo": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/home/kayg/.ssh/id_ed25519": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/root/.bashrc": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/proc/sys/kernel/hostname": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/sys/fs/cgroup/memory.max": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/sys/fs/cgroup/cpu.max": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/sys/fs/cgroup/pids.max": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/home/kayg/calternal-ai-plugin-sandbox/plugins/probe/dist/worker.js": "readable, 3521 bytes"
+    },
+    "cgroup": {
+     "memory.max": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "cpu.max": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "pids.max": {
+      "error": "ERR_ACCESS_DENIED"
+     }
+    },
+    "list": {
+     "/": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/proc": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/home": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/nix/store": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/data": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/sys/class/net": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/dev": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/tmp": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/home/kayg/calternal-ai-plugin-sandbox/plugins/probe": {
+      "error": "ERR_ACCESS_DENIED"
+     }
+    },
+    "processes_visible": {
+     "error": "ERR_ACCESS_DENIED"
+    },
+    "write": {
+     "/tmp/pwb-probe": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/dev/shm/pwb-probe": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/pwb-probe": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/home/kayg/calternal-ai-plugin-sandbox/plugins/probe/dist/pwb-probe": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "/home/kayg/pwb-probe": {
+      "error": "ERR_ACCESS_DENIED"
+     }
+    },
+    "spawn": {
+     "node_child": {
+      "error": "ERR_ACCESS_DENIED"
+     },
+     "shell": {
+      "error": "ERR_ACCESS_DENIED"
+     }
+    },
+    "codegen": {
+     "eval": {
+      "error": "Code generation from strings disallowed for this context"
+     },
+     "new_function": {
+      "error": "Code generation from strings disallowed for this context"
+     }
+    },
+    "network": {
+     "loopback_listener": "connected",
+     "host_nonloopback_listener": "connected",
+     "internet_1_1_1_1_443": "connected",
+     "dns_example_com": "172.66.147.243"
+    }
+   },
+   "memory": {
+    "1": {
+     "variant": "A",
+     "workers": 1,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3494664,
+      "MemFree": 800068,
+      "Slab": 3187436,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 574276,
+      "PageTables": 4532,
+      "Cached": 3778712,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 55030,
+        "rss_kib": 56136,
+        "pss_anon_kib": 13596
+       },
+       "by_kind": {
+        "node": {
+         "procs": 1,
+         "pss_kib": 55030,
+         "rss_kib": 56136
+        }
+       },
+       "MemAvailable_kib": 3491924,
+       "Slab_kib": 3187344,
+       "PageTables_kib": 5396,
+       "processes": 3
+      },
+      {
+       "host": {
+        "pss_kib": 55030,
+        "rss_kib": 56136,
+        "pss_anon_kib": 13596
+       },
+       "by_kind": {
+        "node": {
+         "procs": 1,
+         "pss_kib": 55030,
+         "rss_kib": 56136
+        }
+       },
+       "MemAvailable_kib": 3491924,
+       "Slab_kib": 3187344,
+       "PageTables_kib": 5396,
+       "processes": 3
+      },
+      {
+       "host": {
+        "pss_kib": 55030,
+        "rss_kib": 56136,
+        "pss_anon_kib": 13596
+       },
+       "by_kind": {
+        "node": {
+         "procs": 1,
+         "pss_kib": 55030,
+         "rss_kib": 56136
+        }
+       },
+       "MemAvailable_kib": 3491924,
+       "Slab_kib": 3187344,
+       "PageTables_kib": 5396,
+       "processes": 3
+      },
+      {
+       "host": {
+        "pss_kib": 55030,
+        "rss_kib": 56136,
+        "pss_anon_kib": 13596
+       },
+       "by_kind": {
+        "node": {
+         "procs": 1,
+         "pss_kib": 55030,
+         "rss_kib": 56136
+        }
+       },
+       "MemAvailable_kib": 3491752,
+       "Slab_kib": 3187344,
+       "PageTables_kib": 5396,
+       "processes": 3
+      },
+      {
+       "host": {
+        "pss_kib": 55030,
+        "rss_kib": 56136,
+        "pss_anon_kib": 13596
+       },
+       "by_kind": {
+        "node": {
+         "procs": 1,
+         "pss_kib": 55030,
+         "rss_kib": 56136
+        }
+       },
+       "MemAvailable_kib": 3491456,
+       "Slab_kib": 3187340,
+       "PageTables_kib": 5396,
+       "processes": 3
+      }
+     ],
+     "cpu": {
+      "window_s": 20.00028870604001,
+      "cpu_seconds": 0.0,
+      "percent_of_one_core": 0.0,
+      "per_worker_percent_of_one_core": 0.0,
+      "processes_tracked": 3,
+      "host_busy_ticks": 21,
+      "host_total_ticks": 7995
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3491272,
+      "MemFree": 762240,
+      "Slab": 3187308,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 574148,
+      "PageTables": 5404,
+      "Cached": 3812800,
+      "Shmem": 3401560
+     },
+     "stop_all_wall_s": 0.020665575983002782,
+     "driver_report": "{\"graceful_stop_all_s\":0.019870238,\"workers\":1}"
+    },
+    "10": {
+     "variant": "A",
+     "workers": 10,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3511568,
+      "MemFree": 781848,
+      "Slab": 3187308,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 574148,
+      "PageTables": 4716,
+      "Cached": 3813488,
+      "Shmem": 3401560
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 163960,
+        "rss_kib": 546996,
+        "pss_anon_kib": 120324
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 163960,
+         "rss_kib": 546996
+        }
+       },
+       "MemAvailable_kib": 3376984,
+       "Slab_kib": 3187896,
+       "PageTables_kib": 10396,
+       "processes": 10
+      },
+      {
+       "host": {
+        "pss_kib": 163960,
+        "rss_kib": 546996,
+        "pss_anon_kib": 120324
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 163960,
+         "rss_kib": 546996
+        }
+       },
+       "MemAvailable_kib": 3376792,
+       "Slab_kib": 3187896,
+       "PageTables_kib": 10396,
+       "processes": 10
+      },
+      {
+       "host": {
+        "pss_kib": 163960,
+        "rss_kib": 546996,
+        "pss_anon_kib": 120324
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 163960,
+         "rss_kib": 546996
+        }
+       },
+       "MemAvailable_kib": 3376772,
+       "Slab_kib": 3187928,
+       "PageTables_kib": 10348,
+       "processes": 10
+      },
+      {
+       "host": {
+        "pss_kib": 163960,
+        "rss_kib": 546996,
+        "pss_anon_kib": 120324
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 163960,
+         "rss_kib": 546996
+        }
+       },
+       "MemAvailable_kib": 3376772,
+       "Slab_kib": 3187964,
+       "PageTables_kib": 10396,
+       "processes": 10
+      },
+      {
+       "host": {
+        "pss_kib": 163980,
+        "rss_kib": 547016,
+        "pss_anon_kib": 120344
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 163980,
+         "rss_kib": 547016
+        }
+       },
+       "MemAvailable_kib": 3391204,
+       "Slab_kib": 3187964,
+       "PageTables_kib": 10396,
+       "processes": 10
+      }
+     ],
+     "cpu": {
+      "window_s": 20.00047010194976,
+      "cpu_seconds": 0.0,
+      "percent_of_one_core": 0.0,
+      "per_worker_percent_of_one_core": 0.0,
+      "processes_tracked": 10,
+      "host_busy_ticks": 25,
+      "host_total_ticks": 7997
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3395692,
+      "MemFree": 666252,
+      "Slab": 3188040,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 574880,
+      "PageTables": 10388,
+      "Cached": 3813168,
+      "Shmem": 3401560
+     },
+     "stop_all_wall_s": 0.011683764052577317,
+     "driver_report": "{\"graceful_stop_all_s\":0.010946733,\"workers\":10}"
+    },
+    "50": {
+     "variant": "A",
+     "workers": 50,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3527396,
+      "MemFree": 797956,
+      "Slab": 3188040,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 574880,
+      "PageTables": 4712,
+      "Cached": 3813168,
+      "Shmem": 3401560
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 631627,
+        "rss_kib": 2719728,
+        "pss_anon_kib": 584348
+       },
+       "by_kind": {
+        "node": {
+         "procs": 50,
+         "pss_kib": 631627,
+         "rss_kib": 2719728
+        }
+       },
+       "MemAvailable_kib": 2874456,
+       "Slab_kib": 3193664,
+       "PageTables_kib": 32660,
+       "processes": 50
+      },
+      {
+       "host": {
+        "pss_kib": 631627,
+        "rss_kib": 2719728,
+        "pss_anon_kib": 584348
+       },
+       "by_kind": {
+        "node": {
+         "procs": 50,
+         "pss_kib": 631627,
+         "rss_kib": 2719728
+        }
+       },
+       "MemAvailable_kib": 2873852,
+       "Slab_kib": 3193664,
+       "PageTables_kib": 32660,
+       "processes": 50
+      },
+      {
+       "host": {
+        "pss_kib": 631627,
+        "rss_kib": 2719728,
+        "pss_anon_kib": 584348
+       },
+       "by_kind": {
+        "node": {
+         "procs": 50,
+         "pss_kib": 631627,
+         "rss_kib": 2719728
+        }
+       },
+       "MemAvailable_kib": 2872776,
+       "Slab_kib": 3193652,
+       "PageTables_kib": 32660,
+       "processes": 51
+      },
+      {
+       "host": {
+        "pss_kib": 631627,
+        "rss_kib": 2719728,
+        "pss_anon_kib": 584348
+       },
+       "by_kind": {
+        "node": {
+         "procs": 50,
+         "pss_kib": 631627,
+         "rss_kib": 2719728
+        }
+       },
+       "MemAvailable_kib": 2904292,
+       "Slab_kib": 3193660,
+       "PageTables_kib": 32660,
+       "processes": 51
+      },
+      {
+       "host": {
+        "pss_kib": 631627,
+        "rss_kib": 2719728,
+        "pss_anon_kib": 584348
+       },
+       "by_kind": {
+        "node": {
+         "procs": 50,
+         "pss_kib": 631627,
+         "rss_kib": 2719728
+        }
+       },
+       "MemAvailable_kib": 2901812,
+       "Slab_kib": 3193676,
+       "PageTables_kib": 32660,
+       "processes": 53
+      }
+     ],
+     "cpu": {
+      "window_s": 20.001136359991506,
+      "cpu_seconds": 0.0,
+      "percent_of_one_core": 0.0,
+      "per_worker_percent_of_one_core": 0.0,
+      "processes_tracked": 53,
+      "host_busy_ticks": 17,
+      "host_total_ticks": 7997
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 2900112,
+      "MemFree": 176008,
+      "Slab": 3193672,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 580512,
+      "PageTables": 32652,
+      "Cached": 3807816,
+      "Shmem": 3401560
+     },
+     "stop_all_wall_s": 0.06084869394544512,
+     "driver_report": "{\"graceful_stop_all_s\":0.059713979,\"workers\":50}"
+    }
+   }
+  },
+  "A0": {
+   "cold": {
+    "cold_first_response": {
+     "max_us": 48158.64,
+     "mean_us": 35641.1405,
+     "min_us": 33483.79,
+     "n": 30,
+     "p50_us": 34850.961,
+     "p95_us": 39347.881,
+     "p99_us": 48158.64
+    },
+    "pre_step": {
+     "max_us": 0.101,
+     "mean_us": 0.0611,
+     "min_us": 0.04,
+     "n": 30,
+     "p50_us": 0.06,
+     "p95_us": 0.081,
+     "p99_us": 0.101
+    },
+    "second_call": {
+     "max_us": 3845.221,
+     "mean_us": 1353.2198333333333,
+     "min_us": 539.52,
+     "n": 30,
+     "p50_us": 627.675,
+     "p95_us": 3828.941,
+     "p99_us": 3845.221
+    }
+   },
+   "warm_small": {
+    "latency": {
+     "max_us": 549.269,
+     "mean_us": 151.437956,
+     "min_us": 100.608,
+     "n": 1000,
+     "p50_us": 136.385,
+     "p95_us": 240.28,
+     "p99_us": 328.625
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "warm_200k": {
+    "latency": {
+     "max_us": 14411.206,
+     "mean_us": 4462.2678430000005,
+     "min_us": 3813.57,
+     "n": 1000,
+     "p50_us": 4116.989,
+     "p95_us": 7283.369,
+     "p99_us": 10013.281
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echo200k": {
+    "latency": {
+     "max_us": 2947.84,
+     "mean_us": 1724.216774,
+     "min_us": 1436.3,
+     "n": 1000,
+     "p50_us": 1717.896,
+     "p95_us": 2023.71,
+     "p99_us": 2212.152
+    },
+    "load": "echo",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echoback200k": {
+    "latency": {
+     "max_us": 7063.406,
+     "mean_us": 3275.346822,
+     "min_us": 2826.583,
+     "n": 1000,
+     "p50_us": 3072.454,
+     "p95_us": 4967.562,
+     "p99_us": 5732.495
+    },
+    "load": "echo_back",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "hostcalls_0": {
+    "latency": {
+     "max_us": 647.523,
+     "mean_us": 60.386801,
+     "min_us": 33.803,
+     "n": 1000,
+     "p50_us": 49.603,
+     "p95_us": 99.737,
+     "p99_us": 206.657
+    },
+    "load": "hostcalls",
+    "n_host_calls": 0,
+    "size": 1024
+   },
+   "hostcalls_1": {
+    "latency": {
+     "max_us": 1162.056,
+     "mean_us": 133.12038,
+     "min_us": 81.192,
+     "n": 1000,
+     "p50_us": 126.808,
+     "p95_us": 225.922,
+     "p99_us": 294.942
+    },
+    "load": "hostcalls",
+    "n_host_calls": 1,
+    "size": 1024
+   },
+   "hostcalls_3": {
+    "latency": {
+     "max_us": 1351.921,
+     "mean_us": 256.474393,
+     "min_us": 166.693,
+     "n": 1000,
+     "p50_us": 234.279,
+     "p95_us": 385.703,
+     "p99_us": 487.183
+    },
+    "load": "hostcalls",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "hostcalls_10": {
+    "latency": {
+     "max_us": 3820.113,
+     "mean_us": 723.817288,
+     "min_us": 480.94,
+     "n": 1000,
+     "p50_us": 699.71,
+     "p95_us": 973.002,
+     "p99_us": 1285.066
+    },
+    "load": "hostcalls",
+    "n_host_calls": 10,
+    "size": 1024
+   },
+   "stop_graceful": {
+    "mode": "graceful",
+    "stop": {
+     "max_us": 12204.624,
+     "mean_us": 3783.8674333333333,
+     "min_us": 3313.905,
+     "n": 30,
+     "p50_us": 3473.295,
+     "p95_us": 4047.469,
+     "p99_us": 12204.624
+    }
+   },
+   "stop_force": {
+    "mode": "force",
+    "stop": {
+     "max_us": 2451.3,
+     "mean_us": 1904.3742,
+     "min_us": 1753.974,
+     "n": 30,
+     "p50_us": 1874.651,
+     "p95_us": 2116.133,
+     "p99_us": 2451.3
+    }
+   },
+   "tput_1w_k1": {
+    "calls_per_s": 7140.464492213544,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 860.211,
+     "mean_us": 139.96239366666666,
+     "min_us": 95.638,
+     "n": 3000,
+     "p50_us": 121.717,
+     "p95_us": 228.748,
+     "p99_us": 306.594
+    },
+    "slowest_worker_s": 0.420140735,
+    "wall_s": 0.42313862,
+    "workers": 1
+   },
+   "tput_1w_k16": {
+    "calls_per_s": 11303.01316629228,
+    "calls_per_worker": 3000,
+    "inflight": 16,
+    "latency": {
+     "max_us": 5774.032,
+     "mean_us": 1413.2611023333334,
+     "min_us": 834.903,
+     "n": 3000,
+     "p50_us": 1273.334,
+     "p95_us": 2193.708,
+     "p99_us": 2767.152
+    },
+    "slowest_worker_s": 0.265415952,
+    "wall_s": 0.268124243,
+    "workers": 1
+   },
+   "tput_8w_k1": {
+    "calls_per_s": 20307.53179539888,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 11228.877,
+     "mean_us": 360.16942608333335,
+     "min_us": 93.956,
+     "n": 24000,
+     "p50_us": 303.869,
+     "p95_us": 743.973,
+     "p99_us": 1581.943
+    },
+    "slowest_worker_s": 1.181827523,
+    "wall_s": 1.183789667,
+    "workers": 8
+   },
+   "probe": {
+    "node": "v24.21.0",
+    "uid": 1001,
+    "gid": 1001,
+    "pid": 476670,
+    "ppid": 476666,
+    "cwd": "/home/kayg/calternal-ai-plugin-sandbox",
+    "env_keys": [
+     "LANG"
+    ],
+    "os": {
+     "cpus": 4,
+     "totalmem_mib": 7880,
+     "hostname": "calternal-perf-02-backup01",
+     "interfaces": [
+      "lo",
+      "eth0",
+      "wt0",
+      "tailscale0"
+     ]
+    },
+    "permission_model": "not enabled",
+    "read": {
+     "/etc/passwd": "readable, 3660 bytes",
+     "/etc/hostname": "readable, 27 bytes",
+     "/proc/self/status": "readable, 1523 bytes",
+     "/proc/1/cmdline": "readable, 11 bytes",
+     "/proc/self/environ": "readable, 13 bytes",
+     "/proc/cpuinfo": "readable, 5176 bytes",
+     "/home/kayg/.ssh/id_ed25519": {
+      "error": "ENOENT"
+     },
+     "/root/.bashrc": {
+      "error": "EACCES"
+     },
+     "/proc/sys/kernel/hostname": "readable, 27 bytes",
+     "/sys/fs/cgroup/memory.max": {
+      "error": "ENOENT"
+     },
+     "/sys/fs/cgroup/cpu.max": {
+      "error": "ENOENT"
+     },
+     "/sys/fs/cgroup/pids.max": {
+      "error": "ENOENT"
+     },
+     "/home/kayg/calternal-ai-plugin-sandbox/plugins/probe/dist/worker.js": "readable, 3521 bytes"
+    },
+    "cgroup": {
+     "memory.max": {
+      "error": "ENOENT"
+     },
+     "cpu.max": {
+      "error": "ENOENT"
+     },
+     "pids.max": {
+      "error": "ENOENT"
+     }
+    },
+    "list": {
+     "/": {
+      "entries": 21,
+      "sample": [
+       "bin",
+       "boot",
+       "dev",
+       "etc",
+       "home",
+       "lib",
+       "lib64",
+       "lost+found"
+      ]
+     },
+     "/proc": {
+      "entries": 234,
+      "sample": [
+       "1",
+       "10",
+       "1169",
+       "123716",
+       "123852",
+       "124069",
+       "13",
+       "14"
+      ]
+     },
+     "/home": {
+      "entries": 4,
+      "sample": [
+       "agent",
+       "claude",
+       "debian",
+       "kayg"
+      ]
+     },
+     "/nix/store": {
+      "entries": 6844,
+      "sample": [
+       ".links",
+       "001gp43bjqzx60cg345n2slzg7131za8-nix-nss-open-files.patch",
+       "004v2x2knfhy45rs8my61pxa0nw3hkwc-bison-3.8.2.tar.gz.drv",
+       "00crrhlx2nkmcfb0v1d8al6w6lcvyhp1-source.drv",
+       "00g73ys1mz481ipgwnxaag9r28ccfa0w-valgrind-3.24.0.tar.bz2.drv",
+       "00gkmnzi4lqf07ygd7b6wymqbf8i92lr-crate-windows_x86_64_msvc-0.48.5.tar.gz.drv",
+       "00h5ms41ywwa7cr21nrkkiyr51433j2l-ragel-6.10.drv",
+       "00j00i02i13cb8skr8w99nbsi0i7qqv5-source.drv"
+      ]
+     },
+     "/data": {
+      "error": "ENOENT"
+     },
+     "/sys/class/net": {
+      "entries": 5,
+      "sample": [
+       "docker0",
+       "eth0",
+       "lo",
+       "tailscale0",
+       "wt0"
+      ]
+     },
+     "/dev": {
+      "entries": 166,
+      "sample": [
+       "autofs",
+       "block",
+       "bsg",
+       "btrfs-control",
+       "bus",
+       "cdrom",
+       "char",
+       "console"
+      ]
+     },
+     "/tmp": {
+      "entries": 145,
+      "sample": [
+       ".821348068f391cef-0.hm",
+       ".ICE-unix",
+       ".X11-unix",
+       ".XIM-unix",
+       ".fb066b15fff963d6-0.hm",
+       ".font-unix",
+       "bunx-30033-playwright@latest",
+       "calternal-admin-39bcb5343861b3b1"
+      ]
+     },
+     "/home/kayg/calternal-ai-plugin-sandbox/plugins/probe": {
+      "entries": 1,
+      "sample": [
+       "dist"
+      ]
+     }
+    },
+    "processes_visible": 176,
+    "write": {
+     "/tmp/pwb-probe": "written",
+     "/dev/shm/pwb-probe": "written",
+     "/pwb-probe": {
+      "error": "EACCES"
+     },
+     "/home/kayg/calternal-ai-plugin-sandbox/plugins/probe/dist/pwb-probe": "written",
+     "/home/kayg/pwb-probe": "written"
+    },
+    "spawn": {
+     "node_child": "child ran",
+     "shell": "shell ran"
+    },
+    "codegen": {
+     "eval": {
+      "error": "Code generation from strings disallowed for this context"
+     },
+     "new_function": {
+      "error": "Code generation from strings disallowed for this context"
+     }
+    },
+    "network": {
+     "loopback_listener": "connected",
+     "host_nonloopback_listener": "connected",
+     "internet_1_1_1_1_443": "connected",
+     "dns_example_com": "104.20.23.154"
+    }
+   },
+   "memory": {
+    "10": {
+     "variant": "A0",
+     "workers": 10,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3567580,
+      "MemFree": 1909020,
+      "Slab": 2050648,
+      "SReclaimable": 1548028,
+      "SUnreclaim": 502620,
+      "PageTables": 4664,
+      "Cached": 3777684,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 180033,
+        "rss_kib": 567348,
+        "pss_anon_kib": 135892
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 180033,
+         "rss_kib": 567348
+        }
+       },
+       "MemAvailable_kib": 3428896,
+       "Slab_kib": 2050832,
+       "PageTables_kib": 10524,
+       "processes": 13
+      },
+      {
+       "host": {
+        "pss_kib": 180033,
+        "rss_kib": 567348,
+        "pss_anon_kib": 135892
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 180033,
+         "rss_kib": 567348
+        }
+       },
+       "MemAvailable_kib": 3428552,
+       "Slab_kib": 2050832,
+       "PageTables_kib": 10524,
+       "processes": 13
+      },
+      {
+       "host": {
+        "pss_kib": 180033,
+        "rss_kib": 567348,
+        "pss_anon_kib": 135892
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 180033,
+         "rss_kib": 567348
+        }
+       },
+       "MemAvailable_kib": 3428392,
+       "Slab_kib": 2050876,
+       "PageTables_kib": 10524,
+       "processes": 13
+      },
+      {
+       "host": {
+        "pss_kib": 180033,
+        "rss_kib": 567348,
+        "pss_anon_kib": 135892
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 180033,
+         "rss_kib": 567348
+        }
+       },
+       "MemAvailable_kib": 3427832,
+       "Slab_kib": 2050904,
+       "PageTables_kib": 10624,
+       "processes": 13
+      },
+      {
+       "host": {
+        "pss_kib": 180033,
+        "rss_kib": 567348,
+        "pss_anon_kib": 135892
+       },
+       "by_kind": {
+        "node": {
+         "procs": 10,
+         "pss_kib": 180033,
+         "rss_kib": 567348
+        }
+       },
+       "MemAvailable_kib": 3427680,
+       "Slab_kib": 2050916,
+       "PageTables_kib": 10524,
+       "processes": 13
+      }
+     ],
+     "cpu": {
+      "window_s": 20.00058983103372,
+      "cpu_seconds": 0.0,
+      "percent_of_one_core": 0.0,
+      "per_worker_percent_of_one_core": 0.0,
+      "processes_tracked": 13,
+      "host_busy_ticks": 15,
+      "host_total_ticks": 7996
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3417964,
+      "MemFree": 1706136,
+      "Slab": 2050892,
+      "SReclaimable": 1547948,
+      "SUnreclaim": 502944,
+      "PageTables": 10520,
+      "Cached": 3830952,
+      "Shmem": 3401560
+     },
+     "stop_all_wall_s": 0.02859644708223641,
+     "driver_report": "{\"graceful_stop_all_s\":0.02771697,\"workers\":10}"
+    }
+   }
+  },
+  "Brun": {
+   "cold": {
+    "cold_first_response": {
+     "max_us": 266449.499,
+     "mean_us": 245531.4035,
+     "min_us": 224384.998,
+     "n": 30,
+     "p50_us": 242428.967,
+     "p95_us": 265811.433,
+     "p99_us": 266449.499
+    },
+    "pre_step": {
+     "max_us": 0.13,
+     "mean_us": 0.06956666666666667,
+     "min_us": 0.05,
+     "n": 30,
+     "p50_us": 0.061,
+     "p95_us": 0.121,
+     "p99_us": 0.13
+    },
+    "second_call": {
+     "max_us": 1264.949,
+     "mean_us": 868.0479333333334,
+     "min_us": 665.717,
+     "n": 30,
+     "p50_us": 808.894,
+     "p95_us": 1245.513,
+     "p99_us": 1264.949
+    }
+   },
+   "warm_small": {
+    "latency": {
+     "max_us": 2069.238,
+     "mean_us": 330.806446,
+     "min_us": 210.954,
+     "n": 1000,
+     "p50_us": 309.588,
+     "p95_us": 460.211,
+     "p99_us": 687.775
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "warm_200k": {
+    "latency": {
+     "max_us": 26688.815,
+     "mean_us": 6940.586596,
+     "min_us": 5007.611,
+     "n": 1000,
+     "p50_us": 6060.588,
+     "p95_us": 13054.472,
+     "p99_us": 19483.208
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echo200k": {
+    "latency": {
+     "max_us": 18282.433,
+     "mean_us": 2030.563435,
+     "min_us": 1707.031,
+     "n": 1000,
+     "p50_us": 1906.843,
+     "p95_us": 2482.52,
+     "p99_us": 2876.798
+    },
+    "load": "echo",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echoback200k": {
+    "latency": {
+     "max_us": 14679.69,
+     "mean_us": 3782.878968,
+     "min_us": 3016.308,
+     "n": 1000,
+     "p50_us": 3577.096,
+     "p95_us": 5040.231,
+     "p99_us": 6574.389
+    },
+    "load": "echo_back",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "hostcalls_0": {
+    "latency": {
+     "max_us": 1372.174,
+     "mean_us": 128.860427,
+     "min_us": 89.527,
+     "n": 1000,
+     "p50_us": 119.794,
+     "p95_us": 180.466,
+     "p99_us": 235.61
+    },
+    "load": "hostcalls",
+    "n_host_calls": 0,
+    "size": 1024
+   },
+   "hostcalls_1": {
+    "latency": {
+     "max_us": 2544.006,
+     "mean_us": 271.78324599999996,
+     "min_us": 184.305,
+     "n": 1000,
+     "p50_us": 254.345,
+     "p95_us": 394.418,
+     "p99_us": 516.636
+    },
+    "load": "hostcalls",
+    "n_host_calls": 1,
+    "size": 1024
+   },
+   "hostcalls_3": {
+    "latency": {
+     "max_us": 2491.808,
+     "mean_us": 499.641522,
+     "min_us": 356.136,
+     "n": 1000,
+     "p50_us": 489.023,
+     "p95_us": 656.618,
+     "p99_us": 767.955
+    },
+    "load": "hostcalls",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "hostcalls_10": {
+    "latency": {
+     "max_us": 3106.839,
+     "mean_us": 1330.1294110000001,
+     "min_us": 992.164,
+     "n": 1000,
+     "p50_us": 1326.86,
+     "p95_us": 1638.823,
+     "p99_us": 1943.222
+    },
+    "load": "hostcalls",
+    "n_host_calls": 10,
+    "size": 1024
+   },
+   "stop_graceful": {
+    "mode": "graceful",
+    "stop": {
+     "max_us": 185012.041,
+     "mean_us": 164313.20983333336,
+     "min_us": 156267.074,
+     "n": 30,
+     "p50_us": 162301.723,
+     "p95_us": 184162.489,
+     "p99_us": 185012.041
+    }
+   },
+   "stop_force": {
+    "mode": "force",
+    "stop": {
+     "max_us": 293849.311,
+     "mean_us": 257389.83893333335,
+     "min_us": 230767.863,
+     "n": 30,
+     "p50_us": 254011.96,
+     "p95_us": 292916.282,
+     "p99_us": 293849.311
+    }
+   },
+   "tput_1w_k1": {
+    "calls_per_s": 3828.866689766475,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 1980.132,
+     "mean_us": 261.07637366666665,
+     "min_us": 188.112,
+     "n": 3000,
+     "p50_us": 248.795,
+     "p95_us": 359.372,
+     "p99_us": 451.033
+    },
+    "slowest_worker_s": 0.783521664,
+    "wall_s": 0.96311962,
+    "workers": 1
+   },
+   "tput_1w_k16": {
+    "calls_per_s": 8027.591839276438,
+    "calls_per_worker": 3000,
+    "inflight": 16,
+    "latency": {
+     "max_us": 17808.549,
+     "mean_us": 1991.296475,
+     "min_us": 743.88,
+     "n": 3000,
+     "p50_us": 1832.937,
+     "p95_us": 2605.169,
+     "p99_us": 14470.008
+    },
+    "slowest_worker_s": 0.373711078,
+    "wall_s": 0.561205928,
+    "workers": 1
+   },
+   "tput_8w_k1": {
+    "calls_per_s": 9666.698876644361,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 17246.047,
+     "mean_us": 741.4265663750001,
+     "min_us": 186.238,
+     "n": 24000,
+     "p50_us": 630.528,
+     "p95_us": 1471.61,
+     "p99_us": 3201.816
+    },
+    "slowest_worker_s": 2.482750348,
+    "wall_s": 3.86203445,
+    "workers": 8
+   },
+   "probe": {
+    "node": "v24.21.0",
+    "uid": 0,
+    "gid": 0,
+    "pid": 1,
+    "ppid": 0,
+    "cwd": "/",
+    "env_keys": [
+     "PATH",
+     "container",
+     "LANG",
+     "HOME",
+     "HOSTNAME"
+    ],
+    "os": {
+     "cpus": 4,
+     "totalmem_mib": 7880,
+     "hostname": "56faf2fb0661",
+     "interfaces": [
+      "lo"
+     ]
+    },
+    "permission_model": "not enabled",
+    "read": {
+     "/etc/passwd": {
+      "error": "ENOENT"
+     },
+     "/etc/hostname": "readable, 13 bytes",
+     "/proc/self/status": "readable, 1452 bytes",
+     "/proc/1/cmdline": "readable, 151 bytes",
+     "/proc/self/environ": "readable, 124 bytes",
+     "/proc/cpuinfo": "readable, 5176 bytes",
+     "/.ssh/id_ed25519": {
+      "error": "ENOENT"
+     },
+     "/root/.bashrc": {
+      "error": "ENOENT"
+     },
+     "/proc/sys/kernel/hostname": "readable, 13 bytes",
+     "/sys/fs/cgroup/memory.max": "readable, 10 bytes",
+     "/sys/fs/cgroup/cpu.max": "readable, 14 bytes",
+     "/sys/fs/cgroup/pids.max": "readable, 3 bytes",
+     "/plugin/worker.js": "readable, 3521 bytes"
+    },
+    "cgroup": {
+     "memory.max": "268435456",
+     "cpu.max": "100000 100000",
+     "pids.max": "64"
+    },
+    "list": {
+     "/": {
+      "entries": 7,
+      "sample": [
+       "dev",
+       "etc",
+       "nix",
+       "plugin",
+       "proc",
+       "run",
+       "sys"
+      ]
+     },
+     "/proc": {
+      "entries": 59,
+      "sample": [
+       "1",
+       "acpi",
+       "asound",
+       "buddyinfo",
+       "bus",
+       "cgroups",
+       "cmdline",
+       "consoles"
+      ]
+     },
+     "/home": {
+      "error": "ENOENT"
+     },
+     "/nix/store": {
+      "entries": 67,
+      "sample": [
+       "10dxp0qxqxxsyiljrh2kp0xqhz6arhcx-bash-5.3p15",
+       "1mv3qz005gkbalxfghk4y3s8ayv4d2dl-bash-interactive-5.3p15",
+       "2gfxiwls9hbgwdwcy43mprchwsq36mg6-coreutils-9.11",
+       "2rvzkxh0abbz6040wgdd4scp0rshvng7-merve-1.2.2",
+       "331mpny59y1yc603dl64j9sfpbrrrqrf-nghttp3-1.17.0-dev",
+       "3668q0d9zhc5n9l2pnyvpd44kz9bjsjm-gnugrep-3.12",
+       "4xkrh8kds5cakycv5f182dx2h8bd7prl-ada-4.0.0",
+       "5i9x1yxqa9nk7jl7yflaavnlxvb09wrq-libuv-1.52.1"
+      ]
+     },
+     "/data": {
+      "error": "ENOENT"
+     },
+     "/sys/class/net": {
+      "entries": 1,
+      "sample": [
+       "lo"
+      ]
+     },
+     "/dev": {
+      "entries": 15,
+      "sample": [
+       "core",
+       "fd",
+       "full",
+       "mqueue",
+       "null",
+       "ptmx",
+       "pts",
+       "random"
+      ]
+     },
+     "/tmp": {
+      "error": "ENOENT"
+     }
+    },
+    "processes_visible": 1,
+    "write": {
+     "/tmp/pwb-probe": {
+      "error": "ENOENT"
+     },
+     "/dev/shm/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/plugin/pwb-probe": {
+      "error": "EROFS"
+     }
+    },
+    "spawn": {
+     "node_child": "child ran",
+     "shell": {
+      "error": "ENOENT"
+     }
+    },
+    "codegen": {
+     "eval": {
+      "error": "Code generation from strings disallowed for this context"
+     },
+     "new_function": {
+      "error": "Code generation from strings disallowed for this context"
+     }
+    },
+    "network": {
+     "loopback_listener": "error:ECONNREFUSED",
+     "host_nonloopback_listener": "error:ENETUNREACH",
+     "internet_1_1_1_1_443": "error:ENETUNREACH",
+     "dns_example_com": "error:EAI_AGAIN"
+    }
+   },
+   "memory": {
+    "1": {
+     "variant": "Brun",
+     "workers": 1,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3514296,
+      "MemFree": 790192,
+      "Slab": 3188988,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 575828,
+      "PageTables": 4788,
+      "Cached": 3807816,
+      "Shmem": 3401560
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 105118,
+        "rss_kib": 107224,
+        "pss_anon_kib": 25996
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48898,
+         "rss_kib": 50292
+        },
+        "conmon": {
+         "procs": 1,
+         "pss_kib": 1720,
+         "rss_kib": 2424
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 54500,
+         "rss_kib": 54508
+        }
+       },
+       "MemAvailable_kib": 3471380,
+       "Slab_kib": 3188512,
+       "PageTables_kib": 5696,
+       "processes": 6
+      },
+      {
+       "host": {
+        "pss_kib": 105118,
+        "rss_kib": 107224,
+        "pss_anon_kib": 25996
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48898,
+         "rss_kib": 50292
+        },
+        "conmon": {
+         "procs": 1,
+         "pss_kib": 1720,
+         "rss_kib": 2424
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 54500,
+         "rss_kib": 54508
+        }
+       },
+       "MemAvailable_kib": 3471380,
+       "Slab_kib": 3188512,
+       "PageTables_kib": 5696,
+       "processes": 6
+      },
+      {
+       "host": {
+        "pss_kib": 105118,
+        "rss_kib": 107224,
+        "pss_anon_kib": 25996
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48898,
+         "rss_kib": 50292
+        },
+        "conmon": {
+         "procs": 1,
+         "pss_kib": 1720,
+         "rss_kib": 2424
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 54500,
+         "rss_kib": 54508
+        }
+       },
+       "MemAvailable_kib": 3471380,
+       "Slab_kib": 3188512,
+       "PageTables_kib": 5696,
+       "processes": 6
+      },
+      {
+       "host": {
+        "pss_kib": 105118,
+        "rss_kib": 107224,
+        "pss_anon_kib": 25996
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48898,
+         "rss_kib": 50292
+        },
+        "conmon": {
+         "procs": 1,
+         "pss_kib": 1720,
+         "rss_kib": 2424
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 54500,
+         "rss_kib": 54508
+        }
+       },
+       "MemAvailable_kib": 3471380,
+       "Slab_kib": 3188512,
+       "PageTables_kib": 5696,
+       "processes": 6
+      },
+      {
+       "host": {
+        "pss_kib": 105118,
+        "rss_kib": 107224,
+        "pss_anon_kib": 25996
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48898,
+         "rss_kib": 50292
+        },
+        "conmon": {
+         "procs": 1,
+         "pss_kib": 1720,
+         "rss_kib": 2424
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 54500,
+         "rss_kib": 54508
+        }
+       },
+       "MemAvailable_kib": 3471380,
+       "Slab_kib": 3188512,
+       "PageTables_kib": 5696,
+       "processes": 6
+      }
+     ],
+     "cpu": {
+      "window_s": 20.000351422932,
+      "cpu_seconds": 0.02,
+      "percent_of_one_core": 0.09999824291621398,
+      "per_worker_percent_of_one_core": 0.09999824291621398,
+      "processes_tracked": 6,
+      "host_busy_ticks": 27,
+      "host_total_ticks": 7996
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3495488,
+      "MemFree": 683628,
+      "Slab": 3188504,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 575344,
+      "PageTables": 5676,
+      "Cached": 3895356,
+      "Shmem": 3401588
+     },
+     "stop_all_wall_s": 0.2823134759673849,
+     "driver_report": "{\"graceful_stop_all_s\":0.211510276,\"workers\":1}"
+    },
+    "10": {
+     "variant": "Brun",
+     "workers": 10,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3501508,
+      "MemFree": 688164,
+      "Slab": 3188436,
+      "SReclaimable": 2613160,
+      "SUnreclaim": 575276,
+      "PageTables": 4728,
+      "Cached": 3896764,
+      "Shmem": 3401572
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 326889,
+        "rss_kib": 1057132,
+        "pss_anon_kib": 242456
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 10,
+         "pss_kib": 159598,
+         "rss_kib": 483824
+        },
+        "conmon": {
+         "procs": 10,
+         "pss_kib": 5764,
+         "rss_kib": 23908
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 161527,
+         "rss_kib": 549400
+        }
+       },
+       "MemAvailable_kib": 3245968,
+       "Slab_kib": 3192844,
+       "PageTables_kib": 13720,
+       "processes": 30
+      },
+      {
+       "host": {
+        "pss_kib": 326889,
+        "rss_kib": 1057132,
+        "pss_anon_kib": 242456
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 10,
+         "pss_kib": 159598,
+         "rss_kib": 483824
+        },
+        "conmon": {
+         "procs": 10,
+         "pss_kib": 5764,
+         "rss_kib": 23908
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 161527,
+         "rss_kib": 549400
+        }
+       },
+       "MemAvailable_kib": 3245988,
+       "Slab_kib": 3192860,
+       "PageTables_kib": 13720,
+       "processes": 30
+      },
+      {
+       "host": {
+        "pss_kib": 326889,
+        "rss_kib": 1057132,
+        "pss_anon_kib": 242456
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 10,
+         "pss_kib": 159598,
+         "rss_kib": 483824
+        },
+        "conmon": {
+         "procs": 10,
+         "pss_kib": 5764,
+         "rss_kib": 23908
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 161527,
+         "rss_kib": 549400
+        }
+       },
+       "MemAvailable_kib": 3245988,
+       "Slab_kib": 3192860,
+       "PageTables_kib": 13720,
+       "processes": 30
+      },
+      {
+       "host": {
+        "pss_kib": 326889,
+        "rss_kib": 1057132,
+        "pss_anon_kib": 242456
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 10,
+         "pss_kib": 159598,
+         "rss_kib": 483824
+        },
+        "conmon": {
+         "procs": 10,
+         "pss_kib": 5764,
+         "rss_kib": 23908
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 161527,
+         "rss_kib": 549400
+        }
+       },
+       "MemAvailable_kib": 3245988,
+       "Slab_kib": 3192860,
+       "PageTables_kib": 13720,
+       "processes": 30
+      },
+      {
+       "host": {
+        "pss_kib": 326889,
+        "rss_kib": 1057132,
+        "pss_anon_kib": 242456
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 10,
+         "pss_kib": 159598,
+         "rss_kib": 483824
+        },
+        "conmon": {
+         "procs": 10,
+         "pss_kib": 5764,
+         "rss_kib": 23908
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 161527,
+         "rss_kib": 549400
+        }
+       },
+       "MemAvailable_kib": 3245988,
+       "Slab_kib": 3192860,
+       "PageTables_kib": 13720,
+       "processes": 30
+      }
+     ],
+     "cpu": {
+      "window_s": 20.00081536709331,
+      "cpu_seconds": 0.16,
+      "percent_of_one_core": 0.7999673866458604,
+      "per_worker_percent_of_one_core": 0.07999673866458604,
+      "processes_tracked": 30,
+      "host_busy_ticks": 38,
+      "host_total_ticks": 7988
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3248832,
+      "MemFree": 431576,
+      "Slab": 3193080,
+      "SReclaimable": 2614944,
+      "SUnreclaim": 578136,
+      "PageTables": 13732,
+      "Cached": 3897072,
+      "Shmem": 3401840
+     },
+     "stop_all_wall_s": 2.550567133934237,
+     "driver_report": "{\"graceful_stop_all_s\":1.9014795260000001,\"workers\":10}"
+    },
+    "50": {
+     "variant": "Brun",
+     "workers": 50,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3487876,
+      "MemFree": 671620,
+      "Slab": 3189280,
+      "SReclaimable": 2613436,
+      "SUnreclaim": 575844,
+      "PageTables": 4504,
+      "Cached": 3895596,
+      "Shmem": 3401560
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 1325293,
+        "rss_kib": 5317172,
+        "pss_anon_kib": 1239860
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 50,
+         "pss_kib": 663165,
+         "rss_kib": 2444172
+        },
+        "conmon": {
+         "procs": 50,
+         "pss_kib": 22664,
+         "rss_kib": 117496
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 639464,
+         "rss_kib": 2755504
+        }
+       },
+       "MemAvailable_kib": 2112912,
+       "Slab_kib": 2079596,
+       "PageTables_kib": 49548,
+       "processes": 153
+      },
+      {
+       "host": {
+        "pss_kib": 1325297,
+        "rss_kib": 5317176,
+        "pss_anon_kib": 1239864
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 50,
+         "pss_kib": 663169,
+         "rss_kib": 2444176
+        },
+        "conmon": {
+         "procs": 50,
+         "pss_kib": 22664,
+         "rss_kib": 117496
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 639464,
+         "rss_kib": 2755504
+        }
+       },
+       "MemAvailable_kib": 2107344,
+       "Slab_kib": 2079596,
+       "PageTables_kib": 49548,
+       "processes": 153
+      },
+      {
+       "host": {
+        "pss_kib": 1325297,
+        "rss_kib": 5317176,
+        "pss_anon_kib": 1239864
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 50,
+         "pss_kib": 663169,
+         "rss_kib": 2444176
+        },
+        "conmon": {
+         "procs": 50,
+         "pss_kib": 22664,
+         "rss_kib": 117496
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 639464,
+         "rss_kib": 2755504
+        }
+       },
+       "MemAvailable_kib": 2107960,
+       "Slab_kib": 2079596,
+       "PageTables_kib": 49548,
+       "processes": 153
+      },
+      {
+       "host": {
+        "pss_kib": 1325305,
+        "rss_kib": 5317184,
+        "pss_anon_kib": 1239872
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 50,
+         "pss_kib": 663177,
+         "rss_kib": 2444184
+        },
+        "conmon": {
+         "procs": 50,
+         "pss_kib": 22664,
+         "rss_kib": 117496
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 639464,
+         "rss_kib": 2755504
+        }
+       },
+       "MemAvailable_kib": 2107980,
+       "Slab_kib": 2079596,
+       "PageTables_kib": 49548,
+       "processes": 153
+      },
+      {
+       "host": {
+        "pss_kib": 1325313,
+        "rss_kib": 5317192,
+        "pss_anon_kib": 1239880
+       },
+       "by_kind": {
+        "podman": {
+         "procs": 50,
+         "pss_kib": 663185,
+         "rss_kib": 2444192
+        },
+        "conmon": {
+         "procs": 50,
+         "pss_kib": 22664,
+         "rss_kib": 117496
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 639464,
+         "rss_kib": 2755504
+        }
+       },
+       "MemAvailable_kib": 2110712,
+       "Slab_kib": 2079596,
+       "PageTables_kib": 49548,
+       "processes": 153
+      }
+     ],
+     "cpu": {
+      "window_s": 20.011893435032107,
+      "cpu_seconds": 0.72,
+      "percent_of_one_core": 3.597860454021775,
+      "per_worker_percent_of_one_core": 0.0719572090804355,
+      "processes_tracked": 153,
+      "host_busy_ticks": 82,
+      "host_total_ticks": 7954
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 2264552,
+      "MemFree": 818656,
+      "Slab": 2079572,
+      "SReclaimable": 1558124,
+      "SUnreclaim": 521448,
+      "PageTables": 49568,
+      "Cached": 3592556,
+      "Shmem": 3402960
+     },
+     "stop_all_wall_s": 14.538846995914355,
+     "driver_report": "{\"graceful_stop_all_s\":11.32636505,\"workers\":50}"
+    }
+   }
+  },
+  "Bexec": {
+   "cold": {
+    "cold_first_response": {
+     "max_us": 196211.003,
+     "mean_us": 176480.93833333335,
+     "min_us": 145298.238,
+     "n": 30,
+     "p50_us": 178166.529,
+     "p95_us": 195404.902,
+     "p99_us": 196211.003
+    },
+    "pre_step": {
+     "max_us": 275754.855,
+     "mean_us": 258302.85286666668,
+     "min_us": 237457.02,
+     "n": 30,
+     "p50_us": 257078.562,
+     "p95_us": 275170.741,
+     "p99_us": 275754.855
+    },
+    "second_call": {
+     "max_us": 1262.07,
+     "mean_us": 857.8665333333333,
+     "min_us": 637.391,
+     "n": 30,
+     "p50_us": 796.649,
+     "p95_us": 1137.557,
+     "p99_us": 1262.07
+    }
+   },
+   "warm_small": {
+    "latency": {
+     "max_us": 1658.722,
+     "mean_us": 315.25034000000005,
+     "min_us": 209.762,
+     "n": 1000,
+     "p50_us": 301.313,
+     "p95_us": 415.928,
+     "p99_us": 588.941
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "warm_200k": {
+    "latency": {
+     "max_us": 35257.062,
+     "mean_us": 9006.756336999999,
+     "min_us": 6318.013,
+     "n": 1000,
+     "p50_us": 7168.232,
+     "p95_us": 26775.684,
+     "p99_us": 29093.787
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echo200k": {
+    "latency": {
+     "max_us": 3111.247,
+     "mean_us": 1946.29879,
+     "min_us": 1711.11,
+     "n": 1000,
+     "p50_us": 1903.208,
+     "p95_us": 2284.15,
+     "p99_us": 2737.048
+    },
+    "load": "echo",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echoback200k": {
+    "latency": {
+     "max_us": 20368.505,
+     "mean_us": 3787.479952,
+     "min_us": 3049.252,
+     "n": 1000,
+     "p50_us": 3593.7,
+     "p95_us": 4855.819,
+     "p99_us": 6377.265
+    },
+    "load": "echo_back",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "hostcalls_0": {
+    "latency": {
+     "max_us": 3313.025,
+     "mean_us": 137.02619,
+     "min_us": 87.765,
+     "n": 1000,
+     "p50_us": 123.079,
+     "p95_us": 191.378,
+     "p99_us": 269.433
+    },
+    "load": "hostcalls",
+    "n_host_calls": 0,
+    "size": 1024
+   },
+   "hostcalls_1": {
+    "latency": {
+     "max_us": 897.747,
+     "mean_us": 294.76907900000003,
+     "min_us": 187.23,
+     "n": 1000,
+     "p50_us": 282.528,
+     "p95_us": 419.163,
+     "p99_us": 540.521
+    },
+    "load": "hostcalls",
+    "n_host_calls": 1,
+    "size": 1024
+   },
+   "hostcalls_3": {
+    "latency": {
+     "max_us": 1999.548,
+     "mean_us": 533.321937,
+     "min_us": 373.438,
+     "n": 1000,
+     "p50_us": 521.315,
+     "p95_us": 705.068,
+     "p99_us": 885.426
+    },
+    "load": "hostcalls",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "hostcalls_10": {
+    "latency": {
+     "max_us": 6122.999,
+     "mean_us": 1687.185406,
+     "min_us": 1108.803,
+     "n": 1000,
+     "p50_us": 1624.538,
+     "p95_us": 2188.582,
+     "p99_us": 2776.823
+    },
+    "load": "hostcalls",
+    "n_host_calls": 10,
+    "size": 1024
+   },
+   "stop_graceful": {
+    "mode": "graceful",
+    "stop": {
+     "max_us": 108506.268,
+     "mean_us": 85223.94529999999,
+     "min_us": 67099.198,
+     "n": 30,
+     "p50_us": 86275.502,
+     "p95_us": 94322.548,
+     "p99_us": 108506.268
+    }
+   },
+   "stop_force": {
+    "mode": "force",
+    "stop": {
+     "max_us": 397141.915,
+     "mean_us": 330491.40510000003,
+     "min_us": 312007.071,
+     "n": 30,
+     "p50_us": 328481.446,
+     "p95_us": 352469.954,
+     "p99_us": 397141.915
+    }
+   },
+   "tput_1w_k1": {
+    "calls_per_s": 2711.7100384726123,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 3468.155,
+     "mean_us": 368.65627133333334,
+     "min_us": 205.254,
+     "n": 3000,
+     "p50_us": 345.797,
+     "p95_us": 522.107,
+     "p99_us": 863.555
+    },
+    "slowest_worker_s": 1.106312975,
+    "wall_s": 1.476033758,
+    "workers": 1
+   },
+   "tput_1w_k16": {
+    "calls_per_s": 6982.658579056677,
+    "calls_per_worker": 3000,
+    "inflight": 16,
+    "latency": {
+     "max_us": 11257.93,
+     "mean_us": 2288.469051,
+     "min_us": 871.099,
+     "n": 3000,
+     "p50_us": 2002.504,
+     "p95_us": 4136.875,
+     "p99_us": 10030.705
+    },
+    "slowest_worker_s": 0.429635785,
+    "wall_s": 0.784769244,
+    "workers": 1
+   },
+   "tput_8w_k1": {
+    "calls_per_s": 9597.49441284562,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 21781.228,
+     "mean_us": 688.8491744583333,
+     "min_us": 178.214,
+     "n": 24000,
+     "p50_us": 553.905,
+     "p95_us": 1552.072,
+     "p99_us": 3220.522
+    },
+    "slowest_worker_s": 2.5006526669999998,
+    "wall_s": 4.072283153,
+    "workers": 8
+   },
+   "probe": {
+    "node": "v24.21.0",
+    "uid": 0,
+    "gid": 0,
+    "pid": 2,
+    "ppid": 0,
+    "cwd": "/",
+    "env_keys": [
+     "PATH",
+     "container",
+     "LANG",
+     "HOME"
+    ],
+    "os": {
+     "cpus": 4,
+     "totalmem_mib": 7880,
+     "hostname": "c11f116c0661",
+     "interfaces": [
+      "lo"
+     ]
+    },
+    "permission_model": "not enabled",
+    "read": {
+     "/etc/passwd": {
+      "error": "ENOENT"
+     },
+     "/etc/hostname": "readable, 13 bytes",
+     "/proc/self/status": "readable, 1452 bytes",
+     "/proc/1/cmdline": "readable, 76 bytes",
+     "/proc/self/environ": "readable, 102 bytes",
+     "/proc/cpuinfo": "readable, 5176 bytes",
+     "/.ssh/id_ed25519": {
+      "error": "ENOENT"
+     },
+     "/root/.bashrc": {
+      "error": "ENOENT"
+     },
+     "/proc/sys/kernel/hostname": "readable, 13 bytes",
+     "/sys/fs/cgroup/memory.max": "readable, 10 bytes",
+     "/sys/fs/cgroup/cpu.max": "readable, 14 bytes",
+     "/sys/fs/cgroup/pids.max": "readable, 3 bytes",
+     "/plugin/worker.js": "readable, 3521 bytes"
+    },
+    "cgroup": {
+     "memory.max": "268435456",
+     "cpu.max": "100000 100000",
+     "pids.max": "64"
+    },
+    "list": {
+     "/": {
+      "entries": 7,
+      "sample": [
+       "dev",
+       "etc",
+       "nix",
+       "plugin",
+       "proc",
+       "run",
+       "sys"
+      ]
+     },
+     "/proc": {
+      "entries": 60,
+      "sample": [
+       "1",
+       "2",
+       "acpi",
+       "asound",
+       "buddyinfo",
+       "bus",
+       "cgroups",
+       "cmdline"
+      ]
+     },
+     "/home": {
+      "error": "ENOENT"
+     },
+     "/nix/store": {
+      "entries": 67,
+      "sample": [
+       "10dxp0qxqxxsyiljrh2kp0xqhz6arhcx-bash-5.3p15",
+       "1mv3qz005gkbalxfghk4y3s8ayv4d2dl-bash-interactive-5.3p15",
+       "2gfxiwls9hbgwdwcy43mprchwsq36mg6-coreutils-9.11",
+       "2rvzkxh0abbz6040wgdd4scp0rshvng7-merve-1.2.2",
+       "331mpny59y1yc603dl64j9sfpbrrrqrf-nghttp3-1.17.0-dev",
+       "3668q0d9zhc5n9l2pnyvpd44kz9bjsjm-gnugrep-3.12",
+       "4xkrh8kds5cakycv5f182dx2h8bd7prl-ada-4.0.0",
+       "5i9x1yxqa9nk7jl7yflaavnlxvb09wrq-libuv-1.52.1"
+      ]
+     },
+     "/data": {
+      "error": "ENOENT"
+     },
+     "/sys/class/net": {
+      "entries": 1,
+      "sample": [
+       "lo"
+      ]
+     },
+     "/dev": {
+      "entries": 15,
+      "sample": [
+       "core",
+       "fd",
+       "full",
+       "mqueue",
+       "null",
+       "ptmx",
+       "pts",
+       "random"
+      ]
+     },
+     "/tmp": {
+      "error": "ENOENT"
+     }
+    },
+    "processes_visible": 2,
+    "write": {
+     "/tmp/pwb-probe": {
+      "error": "ENOENT"
+     },
+     "/dev/shm/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/plugin/pwb-probe": {
+      "error": "EROFS"
+     }
+    },
+    "spawn": {
+     "node_child": "child ran",
+     "shell": {
+      "error": "ENOENT"
+     }
+    },
+    "codegen": {
+     "eval": {
+      "error": "Code generation from strings disallowed for this context"
+     },
+     "new_function": {
+      "error": "Code generation from strings disallowed for this context"
+     }
+    },
+    "network": {
+     "loopback_listener": "error:ECONNREFUSED",
+     "host_nonloopback_listener": "error:ENETUNREACH",
+     "internet_1_1_1_1_443": "error:ENETUNREACH",
+     "dns_example_com": "error:EAI_AGAIN"
+    }
+   },
+   "memory": {
+    "1": {
+     "variant": "Bexec",
+     "workers": 1,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3446936,
+      "MemFree": 2106840,
+      "Slab": 2047828,
+      "SReclaimable": 1547984,
+      "SUnreclaim": 499844,
+      "PageTables": 4604,
+      "Cached": 3602048,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 108228,
+        "rss_kib": 112140,
+        "pss_anon_kib": 29496
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 2,
+         "pss_kib": 2368,
+         "rss_kib": 4756
+        },
+        "sh": {
+         "procs": 1,
+         "pss_kib": 232,
+         "rss_kib": 236
+        },
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48812,
+         "rss_kib": 50324
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 56816,
+         "rss_kib": 56824
+        }
+       },
+       "MemAvailable_kib": 3423264,
+       "Slab_kib": 2047596,
+       "PageTables_kib": 5796,
+       "processes": 7
+      },
+      {
+       "host": {
+        "pss_kib": 108236,
+        "rss_kib": 112148,
+        "pss_anon_kib": 29504
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 2,
+         "pss_kib": 2368,
+         "rss_kib": 4756
+        },
+        "sh": {
+         "procs": 1,
+         "pss_kib": 232,
+         "rss_kib": 236
+        },
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48820,
+         "rss_kib": 50332
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 56816,
+         "rss_kib": 56824
+        }
+       },
+       "MemAvailable_kib": 3422844,
+       "Slab_kib": 2047576,
+       "PageTables_kib": 5792,
+       "processes": 8
+      },
+      {
+       "host": {
+        "pss_kib": 108236,
+        "rss_kib": 112148,
+        "pss_anon_kib": 29504
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 2,
+         "pss_kib": 2368,
+         "rss_kib": 4756
+        },
+        "sh": {
+         "procs": 1,
+         "pss_kib": 232,
+         "rss_kib": 236
+        },
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48820,
+         "rss_kib": 50332
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 56816,
+         "rss_kib": 56824
+        }
+       },
+       "MemAvailable_kib": 3422844,
+       "Slab_kib": 2047576,
+       "PageTables_kib": 5792,
+       "processes": 8
+      },
+      {
+       "host": {
+        "pss_kib": 108236,
+        "rss_kib": 112148,
+        "pss_anon_kib": 29504
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 2,
+         "pss_kib": 2368,
+         "rss_kib": 4756
+        },
+        "sh": {
+         "procs": 1,
+         "pss_kib": 232,
+         "rss_kib": 236
+        },
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48820,
+         "rss_kib": 50332
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 56816,
+         "rss_kib": 56824
+        }
+       },
+       "MemAvailable_kib": 3422768,
+       "Slab_kib": 2047576,
+       "PageTables_kib": 5792,
+       "processes": 8
+      },
+      {
+       "host": {
+        "pss_kib": 108236,
+        "rss_kib": 112148,
+        "pss_anon_kib": 29504
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 2,
+         "pss_kib": 2368,
+         "rss_kib": 4756
+        },
+        "sh": {
+         "procs": 1,
+         "pss_kib": 232,
+         "rss_kib": 236
+        },
+        "podman": {
+         "procs": 1,
+         "pss_kib": 48820,
+         "rss_kib": 50332
+        },
+        "node": {
+         "procs": 1,
+         "pss_kib": 56816,
+         "rss_kib": 56824
+        }
+       },
+       "MemAvailable_kib": 3422768,
+       "Slab_kib": 2047576,
+       "PageTables_kib": 5792,
+       "processes": 8
+      }
+     ],
+     "cpu": {
+      "window_s": 20.000388034968637,
+      "cpu_seconds": 0.02,
+      "percent_of_one_core": 0.09999805986279887,
+      "per_worker_percent_of_one_core": 0.09999805986279887,
+      "processes_tracked": 8,
+      "host_busy_ticks": 34,
+      "host_total_ticks": 7995
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3440876,
+      "MemFree": 2098780,
+      "Slab": 2047560,
+      "SReclaimable": 1547968,
+      "SUnreclaim": 499592,
+      "PageTables": 5796,
+      "Cached": 3605644,
+      "Shmem": 3401588
+     },
+     "stop_all_wall_s": 0.4215119150467217,
+     "driver_report": "{\"graceful_stop_all_s\":0.114329649,\"workers\":1}"
+    },
+    "10": {
+     "variant": "Bexec",
+     "workers": 10,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3444700,
+      "MemFree": 2102500,
+      "Slab": 2047336,
+      "SReclaimable": 1547952,
+      "SUnreclaim": 499384,
+      "PageTables": 4556,
+      "Cached": 3605620,
+      "Shmem": 3401568
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 376591,
+        "rss_kib": 1116660,
+        "pss_anon_kib": 293500
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 20,
+         "pss_kib": 10219,
+         "rss_kib": 47228
+        },
+        "sh": {
+         "procs": 10,
+         "pss_kib": 510,
+         "rss_kib": 2320
+        },
+        "podman": {
+         "procs": 10,
+         "pss_kib": 186869,
+         "rss_kib": 500760
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 178993,
+         "rss_kib": 566352
+        }
+       },
+       "MemAvailable_kib": 3174640,
+       "Slab_kib": 2049960,
+       "PageTables_kib": 14688,
+       "processes": 51
+      },
+      {
+       "host": {
+        "pss_kib": 376591,
+        "rss_kib": 1116660,
+        "pss_anon_kib": 293500
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 20,
+         "pss_kib": 10219,
+         "rss_kib": 47228
+        },
+        "sh": {
+         "procs": 10,
+         "pss_kib": 510,
+         "rss_kib": 2320
+        },
+        "podman": {
+         "procs": 10,
+         "pss_kib": 186869,
+         "rss_kib": 500760
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 178993,
+         "rss_kib": 566352
+        }
+       },
+       "MemAvailable_kib": 3155296,
+       "Slab_kib": 2049960,
+       "PageTables_kib": 14860,
+       "processes": 53
+      },
+      {
+       "host": {
+        "pss_kib": 376591,
+        "rss_kib": 1116660,
+        "pss_anon_kib": 293500
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 20,
+         "pss_kib": 10219,
+         "rss_kib": 47228
+        },
+        "sh": {
+         "procs": 10,
+         "pss_kib": 510,
+         "rss_kib": 2320
+        },
+        "podman": {
+         "procs": 10,
+         "pss_kib": 186869,
+         "rss_kib": 500760
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 178993,
+         "rss_kib": 566352
+        }
+       },
+       "MemAvailable_kib": 3151180,
+       "Slab_kib": 2050120,
+       "PageTables_kib": 14688,
+       "processes": 53
+      },
+      {
+       "host": {
+        "pss_kib": 376591,
+        "rss_kib": 1116660,
+        "pss_anon_kib": 293500
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 20,
+         "pss_kib": 10219,
+         "rss_kib": 47228
+        },
+        "sh": {
+         "procs": 10,
+         "pss_kib": 510,
+         "rss_kib": 2320
+        },
+        "podman": {
+         "procs": 10,
+         "pss_kib": 186869,
+         "rss_kib": 500760
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 178993,
+         "rss_kib": 566352
+        }
+       },
+       "MemAvailable_kib": 3151180,
+       "Slab_kib": 2050120,
+       "PageTables_kib": 14688,
+       "processes": 53
+      },
+      {
+       "host": {
+        "pss_kib": 376591,
+        "rss_kib": 1116660,
+        "pss_anon_kib": 293500
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 20,
+         "pss_kib": 10219,
+         "rss_kib": 47228
+        },
+        "sh": {
+         "procs": 10,
+         "pss_kib": 510,
+         "rss_kib": 2320
+        },
+        "podman": {
+         "procs": 10,
+         "pss_kib": 186869,
+         "rss_kib": 500760
+        },
+        "node": {
+         "procs": 10,
+         "pss_kib": 178993,
+         "rss_kib": 566352
+        }
+       },
+       "MemAvailable_kib": 3151240,
+       "Slab_kib": 2050120,
+       "PageTables_kib": 14688,
+       "processes": 53
+      }
+     ],
+     "cpu": {
+      "window_s": 20.00164755503647,
+      "cpu_seconds": 0.18,
+      "percent_of_one_core": 0.8999258661303403,
+      "per_worker_percent_of_one_core": 0.08999258661303403,
+      "processes_tracked": 53,
+      "host_busy_ticks": 49,
+      "host_total_ticks": 8010
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3150824,
+      "MemFree": 1807912,
+      "Slab": 2050116,
+      "SReclaimable": 1548512,
+      "SUnreclaim": 501604,
+      "PageTables": 14692,
+      "Cached": 3606252,
+      "Shmem": 3401840
+     },
+     "stop_all_wall_s": 4.016899841022678,
+     "driver_report": "{\"graceful_stop_all_s\":1.011140449,\"workers\":10}"
+    },
+    "50": {
+     "variant": "Bexec",
+     "workers": 50,
+     "bundle": "notes-insights",
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3446740,
+      "MemFree": 2103344,
+      "Slab": 2046700,
+      "SReclaimable": 1547724,
+      "SUnreclaim": 498976,
+      "PageTables": 4932,
+      "Cached": 3605932,
+      "Shmem": 3401568
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 1353343,
+        "rss_kib": 5384156,
+        "pss_anon_kib": 1268552
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 100,
+         "pss_kib": 44254,
+         "rss_kib": 236404
+        },
+        "sh": {
+         "procs": 50,
+         "pss_kib": 1738,
+         "rss_kib": 11588
+        },
+        "podman": {
+         "procs": 50,
+         "pss_kib": 662334,
+         "rss_kib": 2374212
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 645017,
+         "rss_kib": 2761952
+        }
+       },
+       "MemAvailable_kib": 2024152,
+       "Slab_kib": 2084136,
+       "PageTables_kib": 54120,
+       "processes": 253
+      },
+      {
+       "host": {
+        "pss_kib": 1353347,
+        "rss_kib": 5384160,
+        "pss_anon_kib": 1268556
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 100,
+         "pss_kib": 44254,
+         "rss_kib": 236404
+        },
+        "sh": {
+         "procs": 50,
+         "pss_kib": 1738,
+         "rss_kib": 11588
+        },
+        "podman": {
+         "procs": 50,
+         "pss_kib": 662338,
+         "rss_kib": 2374216
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 645017,
+         "rss_kib": 2761952
+        }
+       },
+       "MemAvailable_kib": 2024188,
+       "Slab_kib": 2084232,
+       "PageTables_kib": 54120,
+       "processes": 253
+      },
+      {
+       "host": {
+        "pss_kib": 1353543,
+        "rss_kib": 5384484,
+        "pss_anon_kib": 1268688
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 100,
+         "pss_kib": 44254,
+         "rss_kib": 236404
+        },
+        "sh": {
+         "procs": 50,
+         "pss_kib": 1738,
+         "rss_kib": 11588
+        },
+        "podman": {
+         "procs": 50,
+         "pss_kib": 662534,
+         "rss_kib": 2374540
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 645017,
+         "rss_kib": 2761952
+        }
+       },
+       "MemAvailable_kib": 2024188,
+       "Slab_kib": 2084232,
+       "PageTables_kib": 54120,
+       "processes": 253
+      },
+      {
+       "host": {
+        "pss_kib": 1353543,
+        "rss_kib": 5384484,
+        "pss_anon_kib": 1268688
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 100,
+         "pss_kib": 44254,
+         "rss_kib": 236404
+        },
+        "sh": {
+         "procs": 50,
+         "pss_kib": 1738,
+         "rss_kib": 11588
+        },
+        "podman": {
+         "procs": 50,
+         "pss_kib": 662534,
+         "rss_kib": 2374540
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 645017,
+         "rss_kib": 2761952
+        }
+       },
+       "MemAvailable_kib": 2024188,
+       "Slab_kib": 2084232,
+       "PageTables_kib": 54120,
+       "processes": 253
+      },
+      {
+       "host": {
+        "pss_kib": 1353543,
+        "rss_kib": 5384484,
+        "pss_anon_kib": 1268688
+       },
+       "by_kind": {
+        "conmon": {
+         "procs": 100,
+         "pss_kib": 44254,
+         "rss_kib": 236404
+        },
+        "sh": {
+         "procs": 50,
+         "pss_kib": 1738,
+         "rss_kib": 11588
+        },
+        "podman": {
+         "procs": 50,
+         "pss_kib": 662534,
+         "rss_kib": 2374540
+        },
+        "node": {
+         "procs": 50,
+         "pss_kib": 645017,
+         "rss_kib": 2761952
+        }
+       },
+       "MemAvailable_kib": 2024188,
+       "Slab_kib": 2084232,
+       "PageTables_kib": 54120,
+       "processes": 253
+      }
+     ],
+     "cpu": {
+      "window_s": 20.005048056016676,
+      "cpu_seconds": 0.69,
+      "percent_of_one_core": 3.4491294300714115,
+      "per_worker_percent_of_one_core": 0.06898258860142822,
+      "processes_tracked": 253,
+      "host_busy_ticks": 82,
+      "host_total_ticks": 7954
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 2025236,
+      "MemFree": 690096,
+      "Slab": 2084360,
+      "SReclaimable": 1555888,
+      "SUnreclaim": 528472,
+      "PageTables": 54112,
+      "Cached": 3609620,
+      "Shmem": 3402960
+     },
+     "stop_all_wall_s": 20.969939425005578,
+     "driver_report": "{\"graceful_stop_all_s\":5.471166814,\"workers\":50}"
+    }
+   }
+  },
+  "Crun": {
+   "cold": {
+    "cold_first_response": {
+     "max_us": 1779506.914,
+     "mean_us": 176014.2272333333,
+     "min_us": 110844.347,
+     "n": 30,
+     "p50_us": 118315.276,
+     "p95_us": 140478.435,
+     "p99_us": 1779506.914
+    },
+    "pre_step": {
+     "max_us": 0.201,
+     "mean_us": 0.08516666666666667,
+     "min_us": 0.05,
+     "n": 30,
+     "p50_us": 0.07,
+     "p95_us": 0.18,
+     "p99_us": 0.201
+    },
+    "second_call": {
+     "max_us": 9710.767,
+     "mean_us": 2335.7666666666664,
+     "min_us": 1270.184,
+     "n": 30,
+     "p50_us": 2087.649,
+     "p95_us": 3074.831,
+     "p99_us": 9710.767
+    }
+   },
+   "warm_small": {
+    "latency": {
+     "max_us": 3881.96,
+     "mean_us": 910.51148,
+     "min_us": 601.856,
+     "n": 1000,
+     "p50_us": 879.054,
+     "p95_us": 1169.406,
+     "p99_us": 1927.644
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "warm_200k": {
+    "latency": {
+     "max_us": 314341.953,
+     "mean_us": 10952.861863,
+     "min_us": 5504.856,
+     "n": 1000,
+     "p50_us": 8013.777,
+     "p95_us": 20489.196,
+     "p99_us": 21612.818
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echo200k": {
+    "latency": {
+     "max_us": 53839.349,
+     "mean_us": 6107.144542,
+     "min_us": 2147.435,
+     "n": 1000,
+     "p50_us": 2979.823,
+     "p95_us": 15833.882,
+     "p99_us": 19214.766
+    },
+    "load": "echo",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echoback200k": {
+    "latency": {
+     "max_us": 48070.271,
+     "mean_us": 7298.681391,
+     "min_us": 4242.585,
+     "n": 1000,
+     "p50_us": 5311.103,
+     "p95_us": 15421.502,
+     "p99_us": 18843.601
+    },
+    "load": "echo_back",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "hostcalls_0": {
+    "latency": {
+     "max_us": 3582.539,
+     "mean_us": 426.715994,
+     "min_us": 275.656,
+     "n": 1000,
+     "p50_us": 400.95,
+     "p95_us": 577.17,
+     "p99_us": 859.177
+    },
+    "load": "hostcalls",
+    "n_host_calls": 0,
+    "size": 1024
+   },
+   "hostcalls_1": {
+    "latency": {
+     "max_us": 6213.75,
+     "mean_us": 921.207997,
+     "min_us": 547.866,
+     "n": 1000,
+     "p50_us": 880.556,
+     "p95_us": 1199.022,
+     "p99_us": 1768.387
+    },
+    "load": "hostcalls",
+    "n_host_calls": 1,
+    "size": 1024
+   },
+   "hostcalls_3": {
+    "latency": {
+     "max_us": 6548.396,
+     "mean_us": 1766.612076,
+     "min_us": 1201.698,
+     "n": 1000,
+     "p50_us": 1694.439,
+     "p95_us": 2262.28,
+     "p99_us": 2887.791
+    },
+    "load": "hostcalls",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "hostcalls_10": {
+    "latency": {
+     "max_us": 13073.601,
+     "mean_us": 4823.441344,
+     "min_us": 3411.23,
+     "n": 1000,
+     "p50_us": 4657.551,
+     "p95_us": 6055.065,
+     "p99_us": 7869.798
+    },
+    "load": "hostcalls",
+    "n_host_calls": 10,
+    "size": 1024
+   },
+   "stop_graceful": {
+    "guest_rpc_floor": {
+     "max_us": 199430.017,
+     "mean_us": 11158.3693,
+     "min_us": 2743.57,
+     "n": 30,
+     "p50_us": 3608.853,
+     "p95_us": 16657.274,
+     "p99_us": 199430.017
+    },
+    "mode": "graceful",
+    "stop": {
+     "max_us": 129585.916,
+     "mean_us": 43580.339766666664,
+     "min_us": 26836.578,
+     "n": 30,
+     "p50_us": 32069.681,
+     "p95_us": 94482.712,
+     "p99_us": 129585.916
+    }
+   },
+   "stop_force": {
+    "guest_rpc_floor": {
+     "max_us": 14057.684,
+     "mean_us": 3380.2128333333335,
+     "min_us": 2539.296,
+     "n": 30,
+     "p50_us": 2788.354,
+     "p95_us": 5596.543,
+     "p99_us": 14057.684
+    },
+    "mode": "force",
+    "stop": {
+     "max_us": 249059.577,
+     "mean_us": 101706.05126666666,
+     "min_us": 84445.15,
+     "n": 30,
+     "p50_us": 94338.907,
+     "p95_us": 117792.867,
+     "p99_us": 249059.577
+    }
+   },
+   "tput_1w_k1": {
+    "calls_per_s": 1114.9535031033513,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 4847.015,
+     "mean_us": 896.7849586666666,
+     "min_us": 540.241,
+     "n": 3000,
+     "p50_us": 865.198,
+     "p95_us": 1146.183,
+     "p99_us": 1348.803
+    },
+    "slowest_worker_s": 2.690695165,
+    "wall_s": 3.270495452,
+    "workers": 1
+   },
+   "tput_1w_k16": {
+    "calls_per_s": 3437.5960808104587,
+    "calls_per_worker": 3000,
+    "inflight": 16,
+    "latency": {
+     "max_us": 16201.552,
+     "mean_us": 4650.273731333333,
+     "min_us": 1394.809,
+     "n": 3000,
+     "p50_us": 4068.63,
+     "p95_us": 10396.384,
+     "p99_us": 13551.946
+    },
+    "slowest_worker_s": 0.87270288,
+    "wall_s": 1.45206806,
+    "workers": 1
+   },
+   "tput_8w_k1": {
+    "calls_per_s": 1318.0323200014661,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 791249.235,
+     "mean_us": 5689.45978825,
+     "min_us": 591.687,
+     "n": 24000,
+     "p50_us": 3614.511,
+     "p95_us": 12338.568,
+     "p99_us": 38772.9
+    },
+    "slowest_worker_s": 18.208961674,
+    "wall_s": 19.063506804,
+    "workers": 8
+   },
+   "tput_1w_k1_4vcpu": {
+    "calls_per_s": 958.1559643053087,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 52738.152,
+     "mean_us": 1043.5514193333333,
+     "min_us": 570.162,
+     "n": 3000,
+     "p50_us": 914.878,
+     "p95_us": 1319.227,
+     "p99_us": 3777.343
+    },
+    "slowest_worker_s": 3.131014273,
+    "wall_s": 3.739277843,
+    "workers": 1
+   },
+   "tput_8w_k1_4vcpu": {
+    "calls_per_s": 3460.2681591673686,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 58251.932,
+     "mean_us": 2215.476459,
+     "min_us": 521.349,
+     "n": 24000,
+     "p50_us": 1843.211,
+     "p95_us": 4527.683,
+     "p99_us": 7936.063
+    },
+    "slowest_worker_s": 6.935878636,
+    "wall_s": 7.512780062,
+    "workers": 8
+   },
+   "probe": {
+    "node": "v24.21.0",
+    "uid": 0,
+    "gid": 0,
+    "pid": 1,
+    "ppid": 0,
+    "cwd": "/",
+    "env_keys": [
+     "PATH",
+     "LANG",
+     "HOME",
+     "HOSTNAME"
+    ],
+    "os": {
+     "cpus": 2,
+     "totalmem_mib": 1991,
+     "hostname": "5be8cfed9a7a",
+     "interfaces": [
+      "lo"
+     ]
+    },
+    "permission_model": "not enabled",
+    "read": {
+     "/etc/passwd": {
+      "error": "ENOENT"
+     },
+     "/etc/hostname": "readable, 13 bytes",
+     "/proc/self/status": "readable, 1360 bytes",
+     "/proc/1/cmdline": "readable, 151 bytes",
+     "/proc/self/environ": "readable, 107 bytes",
+     "/proc/cpuinfo": "readable, 2478 bytes",
+     "/.ssh/id_ed25519": {
+      "error": "ENOENT"
+     },
+     "/root/.bashrc": {
+      "error": "ENOENT"
+     },
+     "/proc/sys/kernel/hostname": "readable, 13 bytes",
+     "/sys/fs/cgroup/memory.max": "readable, 10 bytes",
+     "/sys/fs/cgroup/cpu.max": "readable, 14 bytes",
+     "/sys/fs/cgroup/pids.max": "readable, 3 bytes",
+     "/plugin/worker.js": "readable, 3521 bytes"
+    },
+    "cgroup": {
+     "memory.max": "268435456",
+     "cpu.max": "100000 100000",
+     "pids.max": "64"
+    },
+    "list": {
+     "/": {
+      "entries": 9,
+      "sample": [
+       "dev",
+       "etc",
+       "lost+found",
+       "nix",
+       "plugin",
+       "proc",
+       "run",
+       "sys"
+      ]
+     },
+     "/proc": {
+      "entries": 55,
+      "sample": [
+       "1",
+       "acpi",
+       "buddyinfo",
+       "bus",
+       "cgroups",
+       "cmdline",
+       "config.gz",
+       "consoles"
+      ]
+     },
+     "/home": {
+      "error": "ENOENT"
+     },
+     "/nix/store": {
+      "entries": 67,
+      "sample": [
+       "10dxp0qxqxxsyiljrh2kp0xqhz6arhcx-bash-5.3p15",
+       "1mv3qz005gkbalxfghk4y3s8ayv4d2dl-bash-interactive-5.3p15",
+       "2gfxiwls9hbgwdwcy43mprchwsq36mg6-coreutils-9.11",
+       "2rvzkxh0abbz6040wgdd4scp0rshvng7-merve-1.2.2",
+       "331mpny59y1yc603dl64j9sfpbrrrqrf-nghttp3-1.17.0-dev",
+       "3668q0d9zhc5n9l2pnyvpd44kz9bjsjm-gnugrep-3.12",
+       "4xkrh8kds5cakycv5f182dx2h8bd7prl-ada-4.0.0",
+       "5i9x1yxqa9nk7jl7yflaavnlxvb09wrq-libuv-1.52.1"
+      ]
+     },
+     "/data": {
+      "error": "ENOENT"
+     },
+     "/sys/class/net": {
+      "entries": 1,
+      "sample": [
+       "lo"
+      ]
+     },
+     "/dev": {
+      "entries": 15,
+      "sample": [
+       "core",
+       "fd",
+       "full",
+       "mqueue",
+       "null",
+       "ptmx",
+       "pts",
+       "random"
+      ]
+     },
+     "/tmp": {
+      "entries": 0,
+      "sample": []
+     }
+    },
+    "processes_visible": 1,
+    "write": {
+     "/tmp/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/dev/shm/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/plugin/pwb-probe": {
+      "error": "EROFS"
+     }
+    },
+    "spawn": {
+     "node_child": "child ran",
+     "shell": {
+      "error": "ENOENT"
+     }
+    },
+    "codegen": {
+     "eval": {
+      "error": "Code generation from strings disallowed for this context"
+     },
+     "new_function": {
+      "error": "Code generation from strings disallowed for this context"
+     }
+    },
+    "network": {
+     "loopback_listener": "error:ECONNREFUSED",
+     "host_nonloopback_listener": "error:ENETUNREACH",
+     "internet_1_1_1_1_443": "error:ENETUNREACH",
+     "dns_example_com": "error:EAI_AGAIN"
+    }
+   },
+   "memory": {
+    "10": {
+     "variant": "Crun",
+     "workers": 10,
+     "bundle": "notes-insights",
+     "vm": {
+      "name": "mem-476151",
+      "pid": 476157,
+      "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/mem-476151/v.sock",
+      "mem_mib": 4096,
+      "vcpus": 2,
+      "disk_prepare_s": 0.0553789729019627,
+      "configure_s": 0.003518833080306649,
+      "boot_to_agent_s": 4.265359489945695,
+      "total_s": 4.324257295927964
+     },
+     "vm_empty": {
+      "host": {
+       "pss_kib": 205788,
+       "rss_kib": 206524,
+       "pss_anon_kib": 201544
+      },
+      "guest": {
+       "MemTotal": 4034060,
+       "MemFree": 3994472,
+       "MemAvailable": 3880576,
+       "Cached": 9464,
+       "Slab": 8944,
+       "ctr_cgroup_memory_current_kib": 0
+      },
+      "cpu_window_s": 15.000220292015001,
+      "percent_of_one_core": 0.13333137521084612
+     },
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3389644,
+      "MemFree": 1671540,
+      "Slab": 2050512,
+      "SReclaimable": 1547932,
+      "SUnreclaim": 502580,
+      "PageTables": 5020,
+      "Cached": 3837320,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 578788,
+        "rss_kib": 579524,
+        "pss_anon_kib": 574544
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578788,
+         "rss_kib": 579524
+        }
+       },
+       "MemAvailable_kib": 2992016,
+       "Slab_kib": 2050500,
+       "PageTables_kib": 6040,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578788,
+        "rss_kib": 579524,
+        "pss_anon_kib": 574544
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578788,
+         "rss_kib": 579524
+        }
+       },
+       "MemAvailable_kib": 2991804,
+       "Slab_kib": 2050500,
+       "PageTables_kib": 6112,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578788,
+        "rss_kib": 579524,
+        "pss_anon_kib": 574544
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578788,
+         "rss_kib": 579524
+        }
+       },
+       "MemAvailable_kib": 2991852,
+       "Slab_kib": 2050492,
+       "PageTables_kib": 6040,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578788,
+        "rss_kib": 579524,
+        "pss_anon_kib": 574544
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578788,
+         "rss_kib": 579524
+        }
+       },
+       "MemAvailable_kib": 2991864,
+       "Slab_kib": 2050492,
+       "PageTables_kib": 6040,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578796,
+        "rss_kib": 579532,
+        "pss_anon_kib": 574552
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578796,
+         "rss_kib": 579532
+        }
+       },
+       "MemAvailable_kib": 2991136,
+       "Slab_kib": 2050492,
+       "PageTables_kib": 6040,
+       "processes": 1
+      }
+     ],
+     "cpu": {
+      "window_s": 20.085299451020546,
+      "cpu_seconds": 1.01,
+      "percent_of_one_core": 5.0285533579569375,
+      "per_worker_percent_of_one_core": 0.5028553357956937,
+      "processes_tracked": 1,
+      "host_busy_ticks": 125,
+      "host_total_ticks": 8062
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 2995628,
+      "MemFree": 1220824,
+      "Slab": 2050488,
+      "SReclaimable": 1547932,
+      "SUnreclaim": 502556,
+      "PageTables": 6024,
+      "Cached": 3893884,
+      "Shmem": 3401564
+     },
+     "guest_meminfo_with_workers": {
+      "MemTotal": 4034060,
+      "MemFree": 3620544,
+      "MemAvailable": 3561808,
+      "Cached": 112020,
+      "Slab": 20712,
+      "ctr_cgroup_memory_current_kib": 184964
+     },
+     "stop_all_wall_s": 10.028595665935427,
+     "driver_report": "{\"graceful_stop_all_s\":0.035052003,\"workers\":10}",
+     "vm_down_s": 0.24151077400892973
+    }
+   }
+  },
+  "Cexec": {
+   "cold": {
+    "cold_first_response": {
+     "max_us": 162701.156,
+     "mean_us": 117336.46579999999,
+     "min_us": 106505.898,
+     "n": 30,
+     "p50_us": 113897.432,
+     "p95_us": 129927.246,
+     "p99_us": 162701.156
+    },
+    "pre_step": {
+     "max_us": 94409.887,
+     "mean_us": 83419.5277,
+     "min_us": 77588.899,
+     "n": 30,
+     "p50_us": 82099.414,
+     "p95_us": 92647.891,
+     "p99_us": 94409.887
+    },
+    "second_call": {
+     "max_us": 4239.296,
+     "mean_us": 2228.2046333333333,
+     "min_us": 1187.84,
+     "n": 30,
+     "p50_us": 2146.347,
+     "p95_us": 3125.325,
+     "p99_us": 4239.296
+    }
+   },
+   "warm_small": {
+    "latency": {
+     "max_us": 52765.759,
+     "mean_us": 1478.180406,
+     "min_us": 589.413,
+     "n": 1000,
+     "p50_us": 1045.486,
+     "p95_us": 2364.134,
+     "p99_us": 8505.544
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "warm_200k": {
+    "latency": {
+     "max_us": 22588.445,
+     "mean_us": 10571.429714,
+     "min_us": 5554.133,
+     "n": 1000,
+     "p50_us": 8450.031,
+     "p95_us": 20330.49,
+     "p99_us": 21167.556
+    },
+    "load": "summarize",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echo200k": {
+    "latency": {
+     "max_us": 21363.995,
+     "mean_us": 5922.888814,
+     "min_us": 2237.296,
+     "n": 1000,
+     "p50_us": 3200.879,
+     "p95_us": 12398.46,
+     "p99_us": 19038.222
+    },
+    "load": "echo",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "warm_echoback200k": {
+    "latency": {
+     "max_us": 46761.948,
+     "mean_us": 7422.265336,
+     "min_us": 4086.477,
+     "n": 1000,
+     "p50_us": 5548.863,
+     "p95_us": 13854.934,
+     "p99_us": 19984.984
+    },
+    "load": "echo_back",
+    "n_host_calls": 3,
+    "size": 204800
+   },
+   "hostcalls_0": {
+    "latency": {
+     "max_us": 3972.172,
+     "mean_us": 574.8304300000001,
+     "min_us": 315.411,
+     "n": 1000,
+     "p50_us": 504.074,
+     "p95_us": 1016.892,
+     "p99_us": 1953.585
+    },
+    "load": "hostcalls",
+    "n_host_calls": 0,
+    "size": 1024
+   },
+   "hostcalls_1": {
+    "latency": {
+     "max_us": 18659.473,
+     "mean_us": 1068.7643659999999,
+     "min_us": 571.699,
+     "n": 1000,
+     "p50_us": 897.199,
+     "p95_us": 1612.126,
+     "p99_us": 5577.928
+    },
+    "load": "hostcalls",
+    "n_host_calls": 1,
+    "size": 1024
+   },
+   "hostcalls_3": {
+    "latency": {
+     "max_us": 5650.503,
+     "mean_us": 1881.389823,
+     "min_us": 1341.95,
+     "n": 1000,
+     "p50_us": 1798.364,
+     "p95_us": 2460.674,
+     "p99_us": 3482.717
+    },
+    "load": "hostcalls",
+    "n_host_calls": 3,
+    "size": 1024
+   },
+   "hostcalls_10": {
+    "latency": {
+     "max_us": 22859.444,
+     "mean_us": 5256.408363,
+     "min_us": 3460.194,
+     "n": 1000,
+     "p50_us": 5014.523,
+     "p95_us": 7126.485,
+     "p99_us": 9766.174
+    },
+    "load": "hostcalls",
+    "n_host_calls": 10,
+    "size": 1024
+   },
+   "stop_graceful": {
+    "guest_rpc_floor": {
+     "max_us": 15874.252,
+     "mean_us": 3176.9230666666667,
+     "min_us": 2512.145,
+     "n": 30,
+     "p50_us": 2717.159,
+     "p95_us": 3056.706,
+     "p99_us": 15874.252
+    },
+    "mode": "graceful",
+    "stop": {
+     "max_us": 255851.014,
+     "mean_us": 35277.51456666667,
+     "min_us": 17789.116,
+     "n": 30,
+     "p50_us": 26125.842,
+     "p95_us": 46404.088,
+     "p99_us": 255851.014
+    }
+   },
+   "stop_force": {
+    "guest_rpc_floor": {
+     "max_us": 14167.189,
+     "mean_us": 3171.978433333333,
+     "min_us": 2594.58,
+     "n": 30,
+     "p50_us": 2733.68,
+     "p95_us": 3756.219,
+     "p99_us": 14167.189
+    },
+    "mode": "force",
+    "stop": {
+     "max_us": 776141.018,
+     "mean_us": 181132.85386666667,
+     "min_us": 91933.358,
+     "n": 30,
+     "p50_us": 109136.003,
+     "p95_us": 560904.285,
+     "p99_us": 776141.018
+    }
+   },
+   "tput_1w_k1": {
+    "calls_per_s": 1073.8417696321608,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 4380.776,
+     "mean_us": 931.1101133333333,
+     "min_us": 586.227,
+     "n": 3000,
+     "p50_us": 896.517,
+     "p95_us": 1181.511,
+     "p99_us": 1598.121
+    },
+    "slowest_worker_s": 2.793707681,
+    "wall_s": 3.41718719,
+    "workers": 1
+   },
+   "tput_1w_k16": {
+    "calls_per_s": 2893.446227014791,
+    "calls_per_worker": 3000,
+    "inflight": 16,
+    "latency": {
+     "max_us": 13810.893,
+     "mean_us": 5522.364625,
+     "min_us": 1759.602,
+     "n": 3000,
+     "p50_us": 5169.863,
+     "p95_us": 9637.453,
+     "p99_us": 11752.923
+    },
+    "slowest_worker_s": 1.036825904,
+    "wall_s": 1.643368183,
+    "workers": 1
+   },
+   "tput_8w_k1": {
+    "calls_per_s": 1646.9919732232133,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 474086.463,
+     "mean_us": 4660.070257791666,
+     "min_us": 586.928,
+     "n": 24000,
+     "p50_us": 3423.386,
+     "p95_us": 10887.852,
+     "p99_us": 23079.206
+    },
+    "slowest_worker_s": 14.572020016,
+    "wall_s": 15.617976974,
+    "workers": 8
+   },
+   "tput_1w_k1_4vcpu": {
+    "calls_per_s": 990.6260553294153,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 7679.361,
+     "mean_us": 1009.3206796666667,
+     "min_us": 586.03,
+     "n": 3000,
+     "p50_us": 959.382,
+     "p95_us": 1366.326,
+     "p99_us": 1946.444
+    },
+    "slowest_worker_s": 3.028387941,
+    "wall_s": 3.63068997,
+    "workers": 1
+   },
+   "tput_8w_k1_4vcpu": {
+    "calls_per_s": 2696.376395475997,
+    "calls_per_worker": 3000,
+    "inflight": 1,
+    "latency": {
+     "max_us": 515707.011,
+     "mean_us": 2874.1235401666668,
+     "min_us": 489.008,
+     "n": 24000,
+     "p50_us": 1762.21,
+     "p95_us": 4586.163,
+     "p99_us": 11708.376
+    },
+    "slowest_worker_s": 8.900834483,
+    "wall_s": 9.781551621,
+    "workers": 8
+   },
+   "probe": {
+    "node": "v24.21.0",
+    "uid": 0,
+    "gid": 0,
+    "pid": 2,
+    "ppid": 0,
+    "cwd": "/",
+    "env_keys": [
+     "PATH",
+     "LANG",
+     "HOME"
+    ],
+    "os": {
+     "cpus": 2,
+     "totalmem_mib": 1991,
+     "hostname": "43fa0410e4b1",
+     "interfaces": [
+      "lo"
+     ]
+    },
+    "permission_model": "not enabled",
+    "read": {
+     "/etc/passwd": {
+      "error": "ENOENT"
+     },
+     "/etc/hostname": "readable, 13 bytes",
+     "/proc/self/status": "readable, 1359 bytes",
+     "/proc/1/cmdline": "readable, 76 bytes",
+     "/proc/self/environ": "readable, 85 bytes",
+     "/proc/cpuinfo": "readable, 2478 bytes",
+     "/.ssh/id_ed25519": {
+      "error": "ENOENT"
+     },
+     "/root/.bashrc": {
+      "error": "ENOENT"
+     },
+     "/proc/sys/kernel/hostname": "readable, 13 bytes",
+     "/sys/fs/cgroup/memory.max": "readable, 10 bytes",
+     "/sys/fs/cgroup/cpu.max": "readable, 14 bytes",
+     "/sys/fs/cgroup/pids.max": "readable, 3 bytes",
+     "/plugin/worker.js": "readable, 3521 bytes"
+    },
+    "cgroup": {
+     "memory.max": "268435456",
+     "cpu.max": "100000 100000",
+     "pids.max": "64"
+    },
+    "list": {
+     "/": {
+      "entries": 9,
+      "sample": [
+       "dev",
+       "etc",
+       "lost+found",
+       "nix",
+       "plugin",
+       "proc",
+       "run",
+       "sys"
+      ]
+     },
+     "/proc": {
+      "entries": 56,
+      "sample": [
+       "1",
+       "2",
+       "acpi",
+       "buddyinfo",
+       "bus",
+       "cgroups",
+       "cmdline",
+       "config.gz"
+      ]
+     },
+     "/home": {
+      "error": "ENOENT"
+     },
+     "/nix/store": {
+      "entries": 67,
+      "sample": [
+       "10dxp0qxqxxsyiljrh2kp0xqhz6arhcx-bash-5.3p15",
+       "1mv3qz005gkbalxfghk4y3s8ayv4d2dl-bash-interactive-5.3p15",
+       "2gfxiwls9hbgwdwcy43mprchwsq36mg6-coreutils-9.11",
+       "2rvzkxh0abbz6040wgdd4scp0rshvng7-merve-1.2.2",
+       "331mpny59y1yc603dl64j9sfpbrrrqrf-nghttp3-1.17.0-dev",
+       "3668q0d9zhc5n9l2pnyvpd44kz9bjsjm-gnugrep-3.12",
+       "4xkrh8kds5cakycv5f182dx2h8bd7prl-ada-4.0.0",
+       "5i9x1yxqa9nk7jl7yflaavnlxvb09wrq-libuv-1.52.1"
+      ]
+     },
+     "/data": {
+      "error": "ENOENT"
+     },
+     "/sys/class/net": {
+      "entries": 1,
+      "sample": [
+       "lo"
+      ]
+     },
+     "/dev": {
+      "entries": 15,
+      "sample": [
+       "core",
+       "fd",
+       "full",
+       "mqueue",
+       "null",
+       "ptmx",
+       "pts",
+       "random"
+      ]
+     },
+     "/tmp": {
+      "entries": 0,
+      "sample": []
+     }
+    },
+    "processes_visible": 2,
+    "write": {
+     "/tmp/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/dev/shm/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/pwb-probe": {
+      "error": "EROFS"
+     },
+     "/plugin/pwb-probe": {
+      "error": "EROFS"
+     }
+    },
+    "spawn": {
+     "node_child": "child ran",
+     "shell": {
+      "error": "ENOENT"
+     }
+    },
+    "codegen": {
+     "eval": {
+      "error": "Code generation from strings disallowed for this context"
+     },
+     "new_function": {
+      "error": "Code generation from strings disallowed for this context"
+     }
+    },
+    "network": {
+     "loopback_listener": "error:ECONNREFUSED",
+     "host_nonloopback_listener": "error:ENETUNREACH",
+     "internet_1_1_1_1_443": "error:ENETUNREACH",
+     "dns_example_com": "error:EAI_AGAIN"
+    }
+   },
+   "memory": {
+    "1": {
+     "variant": "Cexec",
+     "workers": 1,
+     "bundle": "notes-insights",
+     "vm": {
+      "name": "mem-475621",
+      "pid": 475627,
+      "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/mem-475621/v.sock",
+      "mem_mib": 4096,
+      "vcpus": 2,
+      "disk_prepare_s": 0.05142571497708559,
+      "configure_s": 0.020360728027299047,
+      "boot_to_agent_s": 4.232018918963149,
+      "total_s": 4.303805361967534
+     },
+     "vm_empty": {
+      "host": {
+       "pss_kib": 206088,
+       "rss_kib": 206824,
+       "pss_anon_kib": 201848
+      },
+      "guest": {
+       "MemTotal": 4034060,
+       "MemFree": 3993740,
+       "MemAvailable": 3879852,
+       "Cached": 9464,
+       "Slab": 8960,
+       "ctr_cgroup_memory_current_kib": 0
+      },
+      "cpu_window_s": 15.000239284010604,
+      "percent_of_one_core": 0.0666656031991398
+     },
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3209304,
+      "MemFree": 1852112,
+      "Slab": 2052848,
+      "SReclaimable": 1548232,
+      "SUnreclaim": 504616,
+      "PageTables": 5184,
+      "Cached": 3658168,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 337232,
+        "rss_kib": 337968,
+        "pss_anon_kib": 332992
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 337232,
+         "rss_kib": 337968
+        }
+       },
+       "MemAvailable_kib": 3014472,
+       "Slab_kib": 2052820,
+       "PageTables_kib": 5548,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 337232,
+        "rss_kib": 337968,
+        "pss_anon_kib": 332992
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 337232,
+         "rss_kib": 337968
+        }
+       },
+       "MemAvailable_kib": 3014300,
+       "Slab_kib": 2052820,
+       "PageTables_kib": 5548,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 337232,
+        "rss_kib": 337968,
+        "pss_anon_kib": 332992
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 337232,
+         "rss_kib": 337968
+        }
+       },
+       "MemAvailable_kib": 3014300,
+       "Slab_kib": 2052824,
+       "PageTables_kib": 5548,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 337232,
+        "rss_kib": 337968,
+        "pss_anon_kib": 332992
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 337232,
+         "rss_kib": 337968
+        }
+       },
+       "MemAvailable_kib": 3002832,
+       "Slab_kib": 2052824,
+       "PageTables_kib": 5548,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 337232,
+        "rss_kib": 337968,
+        "pss_anon_kib": 332992
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 337232,
+         "rss_kib": 337968
+        }
+       },
+       "MemAvailable_kib": 3002832,
+       "Slab_kib": 2052824,
+       "PageTables_kib": 5548,
+       "processes": 1
+      }
+     ],
+     "cpu": {
+      "window_s": 20.076488101971336,
+      "cpu_seconds": 0.15,
+      "percent_of_one_core": 0.7471426239396486,
+      "per_worker_percent_of_one_core": 0.7471426239396486,
+      "processes_tracked": 1,
+      "host_busy_ticks": 35,
+      "host_total_ticks": 8027
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 3011928,
+      "MemFree": 1589656,
+      "Slab": 2052800,
+      "SReclaimable": 1548228,
+      "SUnreclaim": 504572,
+      "PageTables": 5492,
+      "Cached": 3773912,
+      "Shmem": 3401564
+     },
+     "guest_meminfo_with_workers": {
+      "MemTotal": 4034060,
+      "MemFree": 3861732,
+      "MemAvailable": 3800696,
+      "Cached": 111320,
+      "Slab": 11560,
+      "ctr_cgroup_memory_current_kib": 70720
+     },
+     "stop_all_wall_s": 2.098513955017552,
+     "driver_report": "{\"graceful_stop_all_s\":0.018332602,\"workers\":1}",
+     "vm_down_s": 0.2408766649896279
+    },
+    "10": {
+     "variant": "Cexec",
+     "workers": 10,
+     "bundle": "notes-insights",
+     "vm": {
+      "name": "mem-475713",
+      "pid": 475719,
+      "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/mem-475713/v.sock",
+      "mem_mib": 4096,
+      "vcpus": 2,
+      "disk_prepare_s": 0.03435918502509594,
+      "configure_s": 0.004073314950801432,
+      "boot_to_agent_s": 4.262280215043575,
+      "total_s": 4.300712715019472
+     },
+     "vm_empty": {
+      "host": {
+       "pss_kib": 206194,
+       "rss_kib": 206928,
+       "pss_anon_kib": 201956
+      },
+      "guest": {
+       "MemTotal": 4034060,
+       "MemFree": 3993732,
+       "MemAvailable": 3879844,
+       "Cached": 9464,
+       "Slab": 9040,
+       "ctr_cgroup_memory_current_kib": 0
+      },
+      "cpu_window_s": 15.000236427993514,
+      "percent_of_one_core": 0.06666561589214655
+     },
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3157300,
+      "MemFree": 1735624,
+      "Slab": 2052536,
+      "SReclaimable": 1548112,
+      "SUnreclaim": 504424,
+      "PageTables": 5188,
+      "Cached": 3773432,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 578062,
+        "rss_kib": 578796,
+        "pss_anon_kib": 573824
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578062,
+         "rss_kib": 578796
+        }
+       },
+       "MemAvailable_kib": 2763020,
+       "Slab_kib": 2052544,
+       "PageTables_kib": 6056,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578062,
+        "rss_kib": 578796,
+        "pss_anon_kib": 573824
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578062,
+         "rss_kib": 578796
+        }
+       },
+       "MemAvailable_kib": 2765092,
+       "Slab_kib": 2052616,
+       "PageTables_kib": 6060,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578062,
+        "rss_kib": 578796,
+        "pss_anon_kib": 573824
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578062,
+         "rss_kib": 578796
+        }
+       },
+       "MemAvailable_kib": 2765204,
+       "Slab_kib": 2052616,
+       "PageTables_kib": 6060,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578062,
+        "rss_kib": 578796,
+        "pss_anon_kib": 573824
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578062,
+         "rss_kib": 578796
+        }
+       },
+       "MemAvailable_kib": 2765204,
+       "Slab_kib": 2052576,
+       "PageTables_kib": 6060,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 578066,
+        "rss_kib": 578800,
+        "pss_anon_kib": 573828
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 578066,
+         "rss_kib": 578800
+        }
+       },
+       "MemAvailable_kib": 2765204,
+       "Slab_kib": 2052576,
+       "PageTables_kib": 6060,
+       "processes": 1
+      }
+     ],
+     "cpu": {
+      "window_s": 20.08110453397967,
+      "cpu_seconds": 0.78,
+      "percent_of_one_core": 3.884248491810524,
+      "per_worker_percent_of_one_core": 0.38842484918105236,
+      "processes_tracked": 1,
+      "host_busy_ticks": 91,
+      "host_total_ticks": 8053
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 2794956,
+      "MemFree": 1298436,
+      "Slab": 2052552,
+      "SReclaimable": 1548188,
+      "SUnreclaim": 504364,
+      "PageTables": 6052,
+      "Cached": 3845936,
+      "Shmem": 3401564
+     },
+     "guest_meminfo_with_workers": {
+      "MemTotal": 4034060,
+      "MemFree": 3620544,
+      "MemAvailable": 3562968,
+      "Cached": 112872,
+      "Slab": 22188,
+      "ctr_cgroup_memory_current_kib": 186440
+     },
+     "stop_all_wall_s": 7.370742950006388,
+     "driver_report": "{\"graceful_stop_all_s\":0.000486209,\"workers\":10}",
+     "vm_down_s": 0.24360720394179225
+    },
+    "50": {
+     "variant": "Cexec",
+     "workers": 50,
+     "bundle": "notes-insights",
+     "vm": {
+      "name": "mem-475844",
+      "pid": 475854,
+      "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/mem-475844/v.sock",
+      "mem_mib": 4096,
+      "vcpus": 2,
+      "disk_prepare_s": 0.03832247597165406,
+      "configure_s": 0.002971226000227034,
+      "boot_to_agent_s": 4.044804633944295,
+      "total_s": 4.086098335916176
+     },
+     "vm_empty": {
+      "host": {
+       "pss_kib": 206288,
+       "rss_kib": 207024,
+       "pss_anon_kib": 202028
+      },
+      "guest": {
+       "MemTotal": 4034060,
+       "MemFree": 3993456,
+       "MemAvailable": 3879576,
+       "Cached": 9464,
+       "Slab": 9048,
+       "ctr_cgroup_memory_current_kib": 0
+      },
+      "cpu_window_s": 15.000255869934335,
+      "percent_of_one_core": 0.13333105897271305
+     },
+     "host_meminfo_before_kib": {
+      "MemAvailable": 3155768,
+      "MemFree": 1670484,
+      "Slab": 2052268,
+      "SReclaimable": 1548076,
+      "SUnreclaim": 504192,
+      "PageTables": 5200,
+      "Cached": 3834780,
+      "Shmem": 3401564
+     },
+     "samples": [
+      {
+       "host": {
+        "pss_kib": 1642664,
+        "rss_kib": 1643400,
+        "pss_anon_kib": 1638404
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 1642664,
+         "rss_kib": 1643400
+        }
+       },
+       "MemAvailable_kib": 1913652,
+       "Slab_kib": 2052028,
+       "PageTables_kib": 8172,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 1642664,
+        "rss_kib": 1643400,
+        "pss_anon_kib": 1638404
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 1642664,
+         "rss_kib": 1643400
+        }
+       },
+       "MemAvailable_kib": 1913652,
+       "Slab_kib": 2052028,
+       "PageTables_kib": 8172,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 1642924,
+        "rss_kib": 1643660,
+        "pss_anon_kib": 1638664
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 1642924,
+         "rss_kib": 1643660
+        }
+       },
+       "MemAvailable_kib": 1913772,
+       "Slab_kib": 2052028,
+       "PageTables_kib": 8172,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 1642956,
+        "rss_kib": 1643692,
+        "pss_anon_kib": 1638696
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 1642956,
+         "rss_kib": 1643692
+        }
+       },
+       "MemAvailable_kib": 1913528,
+       "Slab_kib": 2052032,
+       "PageTables_kib": 8128,
+       "processes": 1
+      },
+      {
+       "host": {
+        "pss_kib": 1642964,
+        "rss_kib": 1643700,
+        "pss_anon_kib": 1638704
+       },
+       "by_kind": {
+        "firecracker": {
+         "procs": 1,
+         "pss_kib": 1642964,
+         "rss_kib": 1643700
+        }
+       },
+       "MemAvailable_kib": 1912516,
+       "Slab_kib": 2052036,
+       "PageTables_kib": 8176,
+       "processes": 1
+      }
+     ],
+     "cpu": {
+      "window_s": 20.119688534992747,
+      "cpu_seconds": 2.24,
+      "percent_of_one_core": 11.13337314394369,
+      "per_worker_percent_of_one_core": 0.2226674628788738,
+      "processes_tracked": 1,
+      "host_busy_ticks": 256,
+      "host_total_ticks": 8162
+     },
+     "host_meminfo_after_kib": {
+      "MemAvailable": 1920680,
+      "MemFree": 152860,
+      "Slab": 2050700,
+      "SReclaimable": 1548052,
+      "SUnreclaim": 502648,
+      "PageTables": 8192,
+      "Cached": 3886964,
+      "Shmem": 3401564
+     },
+     "guest_meminfo_with_workers": {
+      "MemTotal": 4034060,
+      "MemFree": 2552596,
+      "MemAvailable": 2508948,
+      "Cached": 117236,
+      "Slab": 69532,
+      "ctr_cgroup_memory_current_kib": 700536
+     },
+     "stop_all_wall_s": 34.09543299791403,
+     "driver_report": "{\"graceful_stop_all_s\":0.000764303,\"workers\":50}",
+     "vm_down_s": 0.27137732901610434
+    }
+   }
+  }
+ },
+ "vm_boot": [
+  {
+   "name": "lc1",
+   "pid": 467640,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc1/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.04649081197567284,
+   "configure_s": 0.002904506982304156,
+   "boot_to_agent_s": 4.868165132007562,
+   "total_s": 4.917560450965539
+  },
+  {
+   "name": "lc2",
+   "pid": 467682,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc2/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.03433942410629243,
+   "configure_s": 0.0029318479355424643,
+   "boot_to_agent_s": 4.478726080968045,
+   "total_s": 4.51599735300988
+  },
+  {
+   "name": "lc3",
+   "pid": 467705,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc3/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.03339179907925427,
+   "configure_s": 0.0022174909245222807,
+   "boot_to_agent_s": 4.067200918099843,
+   "total_s": 4.1028102081036195
+  },
+  {
+   "name": "lc4",
+   "pid": 467734,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc4/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.04259326297324151,
+   "configure_s": 0.002787639037705958,
+   "boot_to_agent_s": 3.491587174939923,
+   "total_s": 3.5369680769508705
+  },
+  {
+   "name": "lc5",
+   "pid": 467762,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc5/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.04246370308101177,
+   "configure_s": 0.013516703969798982,
+   "boot_to_agent_s": 5.893306173034944,
+   "total_s": 5.949286580085754
+  },
+  {
+   "name": "lc6",
+   "pid": 467782,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc6/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.04069029295351356,
+   "configure_s": 0.0028212020406499505,
+   "boot_to_agent_s": 4.6954193220008165,
+   "total_s": 4.73893081699498
+  },
+  {
+   "name": "lc7",
+   "pid": 467813,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc7/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.035088476026430726,
+   "configure_s": 0.0025513559812679887,
+   "boot_to_agent_s": 4.523863417096436,
+   "total_s": 4.561503249104135
+  },
+  {
+   "name": "lc8",
+   "pid": 467847,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc8/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.03448369400575757,
+   "configure_s": 0.003180884988978505,
+   "boot_to_agent_s": 3.9038125519873574,
+   "total_s": 3.9414771309820935
+  },
+  {
+   "name": "lc9",
+   "pid": 467867,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc9/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.04263840091880411,
+   "configure_s": 0.0028796400874853134,
+   "boot_to_agent_s": 3.405501564964652,
+   "total_s": 3.4510196059709415
+  },
+  {
+   "name": "lc10",
+   "pid": 467901,
+   "vsock": "/home/kayg/calternal-ai-plugin-sandbox/work/vm/lc10/v.sock",
+   "mem_mib": 2048,
+   "vcpus": 2,
+   "disk_prepare_s": 0.045346450060606,
+   "configure_s": 0.0032532899640500546,
+   "boot_to_agent_s": 4.038674331037328,
+   "total_s": 4.087274071061984
+  }
+ ],
+ "vm_first_container": [
+  {
+   "cold_first_response": {
+    "max_us": 556153.439,
+    "mean_us": 556153.439,
+    "min_us": 556153.439,
+    "n": 1,
+    "p50_us": 556153.439,
+    "p95_us": 556153.439,
+    "p99_us": 556153.439
+   },
+   "pre_step": {
+    "max_us": 1493301.422,
+    "mean_us": 1493301.422,
+    "min_us": 1493301.422,
+    "n": 1,
+    "p50_us": 1493301.422,
+    "p95_us": 1493301.422,
+    "p99_us": 1493301.422
+   },
+   "second_call": {
+    "max_us": 14258.963,
+    "mean_us": 14258.963,
+    "min_us": 14258.963,
+    "n": 1,
+    "p50_us": 14258.963,
+    "p95_us": 14258.963,
+    "p99_us": 14258.963
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 584044.963,
+    "mean_us": 584044.963,
+    "min_us": 584044.963,
+    "n": 1,
+    "p50_us": 584044.963,
+    "p95_us": 584044.963,
+    "p99_us": 584044.963
+   },
+   "pre_step": {
+    "max_us": 1677171.094,
+    "mean_us": 1677171.094,
+    "min_us": 1677171.094,
+    "n": 1,
+    "p50_us": 1677171.094,
+    "p95_us": 1677171.094,
+    "p99_us": 1677171.094
+   },
+   "second_call": {
+    "max_us": 6446.718,
+    "mean_us": 6446.718,
+    "min_us": 6446.718,
+    "n": 1,
+    "p50_us": 6446.718,
+    "p95_us": 6446.718,
+    "p99_us": 6446.718
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 554959.946,
+    "mean_us": 554959.946,
+    "min_us": 554959.946,
+    "n": 1,
+    "p50_us": 554959.946,
+    "p95_us": 554959.946,
+    "p99_us": 554959.946
+   },
+   "pre_step": {
+    "max_us": 1509550.86,
+    "mean_us": 1509550.86,
+    "min_us": 1509550.86,
+    "n": 1,
+    "p50_us": 1509550.86,
+    "p95_us": 1509550.86,
+    "p99_us": 1509550.86
+   },
+   "second_call": {
+    "max_us": 35614.501,
+    "mean_us": 35614.501,
+    "min_us": 35614.501,
+    "n": 1,
+    "p50_us": 35614.501,
+    "p95_us": 35614.501,
+    "p99_us": 35614.501
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 543312.112,
+    "mean_us": 543312.112,
+    "min_us": 543312.112,
+    "n": 1,
+    "p50_us": 543312.112,
+    "p95_us": 543312.112,
+    "p99_us": 543312.112
+   },
+   "pre_step": {
+    "max_us": 1355638.206,
+    "mean_us": 1355638.206,
+    "min_us": 1355638.206,
+    "n": 1,
+    "p50_us": 1355638.206,
+    "p95_us": 1355638.206,
+    "p99_us": 1355638.206
+   },
+   "second_call": {
+    "max_us": 7731.794,
+    "mean_us": 7731.794,
+    "min_us": 7731.794,
+    "n": 1,
+    "p50_us": 7731.794,
+    "p95_us": 7731.794,
+    "p99_us": 7731.794
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 608019.128,
+    "mean_us": 608019.128,
+    "min_us": 608019.128,
+    "n": 1,
+    "p50_us": 608019.128,
+    "p95_us": 608019.128,
+    "p99_us": 608019.128
+   },
+   "pre_step": {
+    "max_us": 1565797.312,
+    "mean_us": 1565797.312,
+    "min_us": 1565797.312,
+    "n": 1,
+    "p50_us": 1565797.312,
+    "p95_us": 1565797.312,
+    "p99_us": 1565797.312
+   },
+   "second_call": {
+    "max_us": 6812.293,
+    "mean_us": 6812.293,
+    "min_us": 6812.293,
+    "n": 1,
+    "p50_us": 6812.293,
+    "p95_us": 6812.293,
+    "p99_us": 6812.293
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 540458.403,
+    "mean_us": 540458.403,
+    "min_us": 540458.403,
+    "n": 1,
+    "p50_us": 540458.403,
+    "p95_us": 540458.403,
+    "p99_us": 540458.403
+   },
+   "pre_step": {
+    "max_us": 1556854.265,
+    "mean_us": 1556854.265,
+    "min_us": 1556854.265,
+    "n": 1,
+    "p50_us": 1556854.265,
+    "p95_us": 1556854.265,
+    "p99_us": 1556854.265
+   },
+   "second_call": {
+    "max_us": 36789.932,
+    "mean_us": 36789.932,
+    "min_us": 36789.932,
+    "n": 1,
+    "p50_us": 36789.932,
+    "p95_us": 36789.932,
+    "p99_us": 36789.932
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 638748.837,
+    "mean_us": 638748.837,
+    "min_us": 638748.837,
+    "n": 1,
+    "p50_us": 638748.837,
+    "p95_us": 638748.837,
+    "p99_us": 638748.837
+   },
+   "pre_step": {
+    "max_us": 1443043.793,
+    "mean_us": 1443043.793,
+    "min_us": 1443043.793,
+    "n": 1,
+    "p50_us": 1443043.793,
+    "p95_us": 1443043.793,
+    "p99_us": 1443043.793
+   },
+   "second_call": {
+    "max_us": 17850.336,
+    "mean_us": 17850.336,
+    "min_us": 17850.336,
+    "n": 1,
+    "p50_us": 17850.336,
+    "p95_us": 17850.336,
+    "p99_us": 17850.336
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 641961.875,
+    "mean_us": 641961.875,
+    "min_us": 641961.875,
+    "n": 1,
+    "p50_us": 641961.875,
+    "p95_us": 641961.875,
+    "p99_us": 641961.875
+   },
+   "pre_step": {
+    "max_us": 1368110.788,
+    "mean_us": 1368110.788,
+    "min_us": 1368110.788,
+    "n": 1,
+    "p50_us": 1368110.788,
+    "p95_us": 1368110.788,
+    "p99_us": 1368110.788
+   },
+   "second_call": {
+    "max_us": 64923.82,
+    "mean_us": 64923.82,
+    "min_us": 64923.82,
+    "n": 1,
+    "p50_us": 64923.82,
+    "p95_us": 64923.82,
+    "p99_us": 64923.82
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 1890437.205,
+    "mean_us": 1890437.205,
+    "min_us": 1890437.205,
+    "n": 1,
+    "p50_us": 1890437.205,
+    "p95_us": 1890437.205,
+    "p99_us": 1890437.205
+   },
+   "pre_step": {
+    "max_us": 1456656.362,
+    "mean_us": 1456656.362,
+    "min_us": 1456656.362,
+    "n": 1,
+    "p50_us": 1456656.362,
+    "p95_us": 1456656.362,
+    "p99_us": 1456656.362
+   },
+   "second_call": {
+    "max_us": 51386.278,
+    "mean_us": 51386.278,
+    "min_us": 51386.278,
+    "n": 1,
+    "p50_us": 51386.278,
+    "p95_us": 51386.278,
+    "p99_us": 51386.278
+   }
+  },
+  {
+   "cold_first_response": {
+    "max_us": 648307.626,
+    "mean_us": 648307.626,
+    "min_us": 648307.626,
+    "n": 1,
+    "p50_us": 648307.626,
+    "p95_us": 648307.626,
+    "p99_us": 648307.626
+   },
+   "pre_step": {
+    "max_us": 1503178.438,
+    "mean_us": 1503178.438,
+    "min_us": 1503178.438,
+    "n": 1,
+    "p50_us": 1503178.438,
+    "p95_us": 1503178.438,
+    "p99_us": 1503178.438
+   },
+   "second_call": {
+    "max_us": 19548.466,
+    "mean_us": 19548.466,
+    "min_us": 19548.466,
+    "n": 1,
+    "p50_us": 19548.466,
+    "p95_us": 19548.466,
+    "p99_us": 19548.466
+   }
+  }
+ ],
+ "vm_down": [
+  {
+   "vm_down_incl_python_startup_s": 0.23730498005170375
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.23576493002474308
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.2360305889742449
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.23662185901775956
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.2362816659733653
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.23902334901504219
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.23864157509524375
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.2354333089897409
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.24121559504419565
+  },
+  {
+   "vm_down_incl_python_startup_s": 0.2391865151003003
+  }
+ ],
+ "cexec_force_investigation": {
+  "rpc_floor_s": [
+   0.0202,
+   0.003,
+   0.0026,
+   0.0028,
+   0.0027
+  ],
+  "rm_alone_s": [
+   0.0978,
+   0.0936,
+   0.0843,
+   0.098,
+   0.0893
+  ],
+  "rm_with_detached_node_exec_s": [
+   0.0883,
+   0.1123,
+   0.096,
+   0.0922,
+   0.1198
+  ],
+  "rm_after_kill_s": [
+   0.073,
+   0.0885,
+   0.0787,
+   0.0922,
+   0.0707
+  ]
+ },
+ "meta": {
+  "date": "2026-11-17",
+  "machine": "calternal-perf-02-backup01 (Debian 13, kernel 6.12.115+deb13.1-amd64, 4 vCPU AMD Ryzen 7 3700X model, 7.7 GiB RAM, no swap, KVM guest of Proxmox)",
+  "tools": {
+   "node": "v24.21.0 (nixpkgs nodejs-24.21.0, the flake.nix pin)",
+   "podman": "6.1.4 (nix)",
+   "crun": "1.30.1 (nix)",
+   "firecracker": "v1.16.1 (nix, default seccomp, no jailer)",
+   "guest_kernel": "6.1.188+ (hybrid lane vmlinux)",
+   "guest_os_image": "hybrid lane os.ext4, copied from perf-01 (sha256 prefix 5005a4872025fac8; vmlinux f5735774e2570d9d)"
+  },
+  "notes_insights_worker_sha256": "8ef037941c7c23a0acfd3caf1bde41636cdcdece7646365e40b89555b0df3698",
+  "vm_lifecycle": {
+   "boot_to_agent_s_sorted": [
+    3.405501564964652,
+    3.491587174939923,
+    3.9038125519873574,
+    4.038674331037328,
+    4.067200918099843,
+    4.478726080968045,
+    4.523863417096436,
+    4.6954193220008165,
+    4.868165132007562,
+    5.893306173034944
+   ],
+   "first_container_first_response_ms_sorted": [
+    540.4584030000001,
+    543.312112,
+    554.959946,
+    556.153439,
+    584.0449629999999,
+    608.019128,
+    638.7488370000001,
+    641.961875,
+    648.307626,
+    1890.4372050000002
+   ],
+   "vm_down_incl_python_startup_s_sorted": [
+    0.2354333089897409,
+    0.23576493002474308,
+    0.2360305889742449,
+    0.2362816659733653,
+    0.23662185901775956,
+    0.23730498005170375,
+    0.23864157509524375,
+    0.23902334901504219,
+    0.2391865151003003,
+    0.24121559504419565
+   ]
+  },
+  "extra_latency_vs_A_us_typical_op_p50": {
+   "Brun": 273,
+   "Bexec": 306,
+   "Crun": 1479,
+   "Cexec": 1583
+  }
+ }
+}
