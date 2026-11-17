@@ -111,7 +111,7 @@ INSERT INTO space_role_capabilities VALUES
  ('reader','space.read'),
  ('editor','space.read'),('editor','content.write'),('editor','plugins.use'),
  ('manager','space.read'),('manager','content.write'),('manager','plugins.use'),
- ('manager','plugins.manage'),('manager','members.invite'),('manager','members.manage'),('manager','space.settings');
+ ('manager','plugins.manage'),('manager','members.invite'),('manager','members.manage'),('manager','space.settings'),('manager','secrets.manage');
 INSERT INTO space_role_capabilities SELECT 'owner',capability FROM space_role_capabilities WHERE role='manager';
 INSERT INTO space_role_capabilities VALUES('owner','managers.manage'),('owner','space.transfer'),('owner','space.delete');
 CREATE TABLE spaces(
@@ -160,7 +160,9 @@ CREATE TABLE machines(
  os TEXT NOT NULL,
  arch TEXT NOT NULL,
  enrolled_ms INTEGER NOT NULL,
- revoked_ms INTEGER
+ revoked_ms INTEGER,
+ direct INTEGER NOT NULL DEFAULT 0 CHECK(direct IN (0,1)),
+ CHECK(direct=0 OR owner_account IS NOT NULL)
 ) STRICT;
 CREATE INDEX machines_owner ON machines(owner_account);
 CREATE TABLE machine_pool_grants(
@@ -176,3 +178,42 @@ BEGIN SELECT RAISE(ABORT,'space and account identities must differ'); END;
 CREATE TRIGGER account_identity_separate BEFORE INSERT ON users
 WHEN EXISTS(SELECT 1 FROM spaces WHERE id=NEW.id)
 BEGIN SELECT RAISE(ABORT,'account and space identities must differ'); END;
+
+-- Fingerprints only. No key bytes may enter auth.db or recovery. Tombstones
+-- survive deletion so restoring an old ciphertext database cannot revive it.
+CREATE TABLE owner_secret_keys(
+ kind TEXT NOT NULL CHECK(kind IN ('account','space')),
+ owner_id TEXT NOT NULL,
+ fingerprint BLOB NOT NULL CHECK(length(fingerprint)=32),
+ erasing INTEGER NOT NULL CHECK(erasing IN (0,1)),
+ PRIMARY KEY(kind,owner_id)
+) STRICT;
+CREATE TRIGGER erase_space_secret_key AFTER DELETE ON spaces
+BEGIN UPDATE owner_secret_keys SET erasing=1 WHERE kind='space' AND owner_id=OLD.id; END;
+CREATE TRIGGER erase_account_secret_key AFTER DELETE ON users
+BEGIN UPDATE owner_secret_keys SET erasing=1 WHERE kind='account' AND owner_id=OLD.id; END;
+-- Bounded per-turn authority; no raw credential or provider login is stored.
+CREATE TABLE agent_access(
+ thread TEXT NOT NULL, job TEXT NOT NULL UNIQUE,
+ account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ space TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+ hash BLOB UNIQUE, scope TEXT NOT NULL CHECK(length(scope)<=65536),
+ expires_ms INTEGER NOT NULL, run INTEGER NOT NULL,
+ updated_ms INTEGER NOT NULL,
+ PRIMARY KEY(account,space,thread)
+) STRICT;
+CREATE INDEX agent_access_account ON agent_access(account);
+CREATE TABLE agent_approvals(
+ id TEXT PRIMARY KEY, job TEXT NOT NULL REFERENCES agent_access(job) ON DELETE CASCADE,
+ account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ app TEXT NOT NULL, write_access INTEGER NOT NULL, approved INTEGER NOT NULL,
+ action TEXT NOT NULL CHECK(length(action)<=16384),
+ action_hash TEXT CHECK(action_hash IS NULL OR length(action_hash)=64)
+) STRICT;
+CREATE INDEX agent_approvals_job ON agent_approvals(job);
+CREATE INDEX agent_approvals_account ON agent_approvals(account);
+CREATE TABLE agent_discards(
+ account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ thread TEXT NOT NULL, lease TEXT NOT NULL, authorized_ms INTEGER NOT NULL,
+ PRIMARY KEY(account,thread)
+) STRICT;

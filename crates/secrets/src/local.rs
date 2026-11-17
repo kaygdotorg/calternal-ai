@@ -1,27 +1,11 @@
-//! On-disk backend: one SQLite database per owner, values sealed under the
-//! master key.
-//!
-//! Layout (all files 0600, directories 0700):
-//! - `appdata/system/secret.key`: 32-byte master key.
-//! - `appdata/system/secrets.db`: key fingerprint and the owners that have secrets.
-//! - `appdata/accounts/<account-uuid>/secrets.db` and
-//!   `appdata/spaces/<space-uuid>/secrets.db`: that owner's sealed values, pending
-//!   requests and audit trail. Deleting an owner's directory deletes all three.
-//!
-//! Every call opens only its owner's database (one `open` and a `user_version`
-//! read; the schema is created once per file) and closes it again; secret calls
-//! are rare next to content calls, so no connection cache is kept, and no lock or
-//! connection is shared between owners. Writes run in one IMMEDIATE transaction
-//! with `synchronous=FULL`, so a crash leaves either the old or the new state.
-//!
-//! Hot path counts: `use_value` = 1 open, 1 indexed read, 1 AEAD open, 1 commit
-//! (1 WAL fsync). `put`/`rotate`/`provide`/`request` = 1 open, 1–2 indexed reads,
-//! 1 commit (1 WAL fsync); an owner's first write adds the registry insert and
-//! directory creation (3 more fsyncs). Reads (`list`, `pending`, `audit`,
-//! `handle`, `resolve`) = 1 open, 1 query, no fsync.
-//! `secure_delete` overwrites freed pages, so a rotated or deleted ciphertext does
-//! not linger in the main file; WAL frames holding it are overwritten at the next
-//! checkpoint.
+//! On-disk backend: one SQLite database and private key per account or space.
+//! Paths are `appdata/{accounts,spaces}/<uuid>/{secrets.db,secret.key}`.
+//! Each synchronous call opens only its owner's database and key. No decrypted
+//! value or derived key survives a call. The README records read/flush counts.
+//! Writes serialize through the owner's IMMEDIATE SQLite transaction with FULL
+//! sync. Key lifecycle metadata also crosses the host's protected recovery barrier.
+//! `secure_delete` overwrites freed database pages; old WAL frames can retain
+//! ciphertext until checkpoint. Removing the owner key makes those frames unreadable.
 
 use crate::LIMITS;
 use crate::key::MasterKey;
@@ -35,7 +19,10 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const SCHEMA: &str = "
+const REQUEST_TTL_MS: i64 = 15 * 60 * 1000;
+
+pub(crate) const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS key_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1), fingerprint BLOB NOT NULL, erasing INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS secrets(
   name TEXT PRIMARY KEY, label TEXT NOT NULL, version INTEGER NOT NULL,
   handle TEXT NOT NULL UNIQUE, sealed BLOB NOT NULL,
@@ -51,23 +38,22 @@ CREATE TABLE IF NOT EXISTS audit(
 /// One instance per appdata root; it is `Sync` and cheap to share in an `Arc`.
 pub struct LocalStore {
     appdata: PathBuf,
-    key: MasterKey,
+    pub(crate) lifecycle: std::sync::OnceLock<std::sync::Arc<dyn crate::KeyLifecycle>>,
 }
 
 impl LocalStore {
-    /// Open the store, creating the master key on first use.
+    /// Open an owner-local store without creating keys.
     /// The host must have validated and locked `appdata` first.
-    /// Fails with [`Error::KeyMissing`] or [`Error::KeyUnusable`] instead of
-    /// starting with a key that cannot read existing values.
+    /// Attach the host lifecycle before admitting requests. Owner access refuses
+    /// missing or wrong keys; the server also checks protected metadata at startup.
     pub fn open(appdata: &Path) -> Result<Self> {
-        let key = MasterKey::open(appdata, &crate::key::registry(appdata)?)?;
         Ok(Self {
             appdata: appdata.to_owned(),
-            key,
+            lifecycle: std::sync::OnceLock::new(),
         })
     }
 
-    fn path(&self, owner: &Owner) -> PathBuf {
+    pub(crate) fn path(&self, owner: &Owner) -> PathBuf {
         let dir = match owner {
             Owner::Account(_) => "accounts",
             Owner::Space(_) => "spaces",
@@ -84,26 +70,27 @@ impl LocalStore {
         if !path.try_exists().map_err(|_| Error::Internal)? {
             return Ok(None);
         }
-        open_db(&path, SCHEMA).map(Some)
+        let c = open_db(&path, SCHEMA)?;
+        Ok(Some(c))
     }
 
-    /// Open for writing. An owner without a database is first recorded in the
-    /// registry (so a lost key is detected even if a crash follows), then its
-    /// database is created; later writes skip the registry entirely.
+    /// Open the owner-local database, creating its private directory if needed.
+    /// Key initialization happens inside the subsequent owner write transaction.
     fn writer(&self, owner: &Owner) -> Result<Connection> {
-        if let Some(c) = self.reader(owner)? {
-            return Ok(c);
-        }
-        crate::key::registry(&self.appdata)?
-            .execute(
-                "INSERT OR IGNORE INTO owners(kind,id) VALUES(?1,?2)",
-                params![owner.kind(), owner.uuid().to_string()],
-            )
-            .map_err(|_| Error::Internal)?;
         let path = self.path(owner);
         calternal_fsio::private::directory(path.parent().ok_or(Error::Internal)?)
             .map_err(|_| Error::Internal)?;
         open_db(&path, SCHEMA)
+    }
+
+    fn key(&self, owner: &Owner, c: &Connection, create: bool) -> Result<MasterKey> {
+        MasterKey::open(
+            self.path(owner).parent().ok_or(Error::Internal)?,
+            c,
+            create,
+            owner,
+            self.lifecycle.get().map(|s| s.as_ref()),
+        )
     }
 
     fn store(
@@ -120,9 +107,8 @@ impl LocalStore {
             name: name.clone(),
             version,
         };
-        let sealed = self
-            .key
-            .seal(owner, name.as_str(), version, value.expose())?;
+        let key = self.key(owner, tx, true)?;
+        let sealed = key.seal(owner, name.as_str(), version, value.expose())?;
         let now = now_ms();
         tx.execute(
             "INSERT INTO secrets(name,label,version,handle,sealed,created_at,updated_at)
@@ -133,7 +119,7 @@ impl LocalStore {
                 name.as_str(),
                 label,
                 version as i64,
-                self.key.token(&handle).0,
+                key.token(&handle).0,
                 sealed,
                 now
             ],
@@ -165,7 +151,7 @@ pub(crate) fn open_db(path: &Path, schema: &str) -> Result<Connection> {
     Ok(c)
 }
 
-fn begin(c: &mut Connection) -> Result<Transaction<'_>> {
+pub(crate) fn begin(c: &mut Connection) -> Result<Transaction<'_>> {
     c.transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|_| Error::Internal)
 }
@@ -223,13 +209,13 @@ use calternal_types::now_ms;
 
 /// Test-only process abort just before a commit, to prove crash atomicity.
 #[cfg(test)]
-fn crash_point(point: &str) {
+pub(crate) fn crash_point(point: &str) {
     if std::env::var("CALTERNAL_SECRETS_CRASH").is_ok_and(|p| p == point) {
         std::process::abort();
     }
 }
 #[cfg(not(test))]
-fn crash_point(_: &str) {}
+pub(crate) fn crash_point(_: &str) {}
 
 impl SecretStore for LocalStore {
     /// Cost: one AEAD seal and one fsync'd transaction (see the module's counts).
@@ -283,6 +269,7 @@ impl SecretStore for LocalStore {
     /// Cost: one indexed read.
     fn handle(&self, owner: &Owner, name: &SecretName) -> Result<Handle> {
         let c = self.reader(owner)?.ok_or(Error::NotFound)?;
+        self.key(owner, &c, false)?;
         let (version, _) = current(&c, name.as_str())?.ok_or(Error::NotFound)?;
         Ok(Handle {
             owner: *owner,
@@ -291,14 +278,16 @@ impl SecretStore for LocalStore {
         })
     }
 
-    /// Cost: one keyed BLAKE3 hash.
-    fn token(&self, handle: &Handle) -> HandleToken {
-        self.key.token(handle)
+    /// Cost: one owner database/key open, one fingerprint read and one keyed hash.
+    fn token(&self, handle: &Handle) -> Result<HandleToken> {
+        let c = self.reader(&handle.owner)?.ok_or(Error::NotFound)?;
+        Ok(self.key(&handle.owner, &c, false)?.token(handle))
     }
 
     /// Cost: one unique-index read plus a MAC recheck.
     fn resolve(&self, owner: &Owner, token: &HandleToken) -> Result<Handle> {
         let c = self.reader(owner)?.ok_or(Error::NotFound)?;
+        let key = self.key(owner, &c, false)?;
         let (name, version): (String, i64) = c
             .query_row(
                 "SELECT name,version FROM secrets WHERE handle=?1",
@@ -314,7 +303,7 @@ impl SecretStore for LocalStore {
             version: version as u64,
         };
         // A row copied in from another owner carries that owner's MAC.
-        if self.key.token(&handle) != *token {
+        if key.token(&handle) != *token {
             return Err(Error::NotFound);
         }
         Ok(handle)
@@ -340,9 +329,12 @@ impl SecretStore for LocalStore {
             .optional()
             .map_err(|_| Error::Internal)?
             .ok_or(Error::NotFound)?;
-        let plain =
-            self.key
-                .open_value(&handle.owner, handle.name.as_str(), handle.version, &sealed)?;
+        let plain = self.key(&handle.owner, &tx, false)?.open_value(
+            &handle.owner,
+            handle.name.as_str(),
+            handle.version,
+            &sealed,
+        )?;
         audit(
             &tx,
             actor,
@@ -360,6 +352,7 @@ impl SecretStore for LocalStore {
         let Some(c) = self.reader(owner)? else {
             return Ok(Vec::new());
         };
+        self.key(owner, &c, false)?;
         let mut s = c
             .prepare("SELECT name,label,version,created_at,updated_at FROM secrets ORDER BY name")
             .map_err(|_| Error::Internal)?;
@@ -380,6 +373,7 @@ impl SecretStore for LocalStore {
     fn delete(&self, owner: &Owner, name: &SecretName, actor: &Actor) -> Result<()> {
         let mut c = self.reader(owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
+        self.key(owner, &tx, false)?;
         let (version, _) = current(&tx, name.as_str())?.ok_or(Error::NotFound)?;
         tx.execute("DELETE FROM secrets WHERE name=?1", [name.as_str()])
             .map_err(|_| Error::Internal)?;
@@ -407,6 +401,12 @@ impl SecretStore for LocalStore {
         let id = RequestId(uuid::Uuid::now_v7());
         let mut c = self.writer(owner)?;
         let tx = begin(&mut c)?;
+        self.key(owner, &tx, true)?;
+        tx.execute(
+            "DELETE FROM requests WHERE created_at<=?1",
+            [now_ms() - REQUEST_TTL_MS],
+        )
+        .map_err(|_| Error::Internal)?;
         if count(&tx, "requests")? >= LIMITS.pending {
             return Err(Error::Limit);
         }
@@ -425,12 +425,13 @@ impl SecretStore for LocalStore {
         let Some(c) = self.reader(owner)? else {
             return Ok(Vec::new());
         };
+        self.key(owner, &c, false)?;
         let mut s = c
             .prepare(
-                "SELECT id,name,label,reason,requested_by,created_at FROM requests ORDER BY id",
+                "SELECT id,name,label,reason,requested_by,created_at FROM requests WHERE created_at>?1 ORDER BY id",
             )
             .map_err(|_| Error::Internal)?;
-        s.query_map([], |r| {
+        s.query_map([now_ms() - REQUEST_TTL_MS], |r| {
             Ok(PendingRequest {
                 id: uuid::Uuid::parse_str(&r.get::<_, String>(0)?)
                     .map_err(|_| rusqlite::Error::InvalidQuery)?,
@@ -457,8 +458,8 @@ impl SecretStore for LocalStore {
         let tx = begin(&mut c)?;
         let (name, label): (String, String) = tx
             .query_row(
-                "SELECT name,label FROM requests WHERE id=?1",
-                [request.0.to_string()],
+                "SELECT name,label FROM requests WHERE id=?1 AND created_at>?2",
+                params![request.0.to_string(), now_ms() - REQUEST_TTL_MS],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
@@ -489,6 +490,7 @@ impl SecretStore for LocalStore {
     fn cancel(&self, owner: &Owner, request: &RequestId, actor: &Actor) -> Result<()> {
         let mut c = self.reader(owner)?.ok_or(Error::NotFound)?;
         let tx = begin(&mut c)?;
+        self.key(owner, &tx, false)?;
         let name: String = tx
             .query_row(
                 "DELETE FROM requests WHERE id=?1 RETURNING name",
@@ -507,6 +509,7 @@ impl SecretStore for LocalStore {
         let Some(c) = self.reader(owner)? else {
             return Ok(Vec::new());
         };
+        self.key(owner, &c, false)?;
         let mut s = c
             .prepare(
                 "SELECT at,actor,action,name,version,consumer FROM audit ORDER BY id DESC LIMIT ?1",

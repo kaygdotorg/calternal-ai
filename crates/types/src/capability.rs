@@ -34,11 +34,13 @@ pub enum Capability {
     SpacesList = 1 << 10,
     /// Create a space as the authenticated account, without existing membership.
     SpacesCreate = 1 << 11,
+    /// Manage space secret metadata, values and pending requests.
+    SecretsManage = 1 << 12,
 }
 
 impl Capability {
     /// Every defined capability, for coverage tests and closed-set decoding.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::SpaceRead,
         Self::ContentWrite,
         Self::PluginsUse,
@@ -51,6 +53,7 @@ impl Capability {
         Self::SpaceDelete,
         Self::SpacesList,
         Self::SpacesCreate,
+        Self::SecretsManage,
     ];
 
     /// The stored and wire name, as written in `auth.db` role rows and manifests.
@@ -68,11 +71,12 @@ impl Capability {
             Self::SpaceDelete => "space.delete",
             Self::SpacesList => "spaces.list",
             Self::SpacesCreate => "spaces.create",
+            Self::SecretsManage => "secrets.manage",
         }
     }
 
     /// Resolves a stored name; an unknown name is `None` and grants nothing.
-    /// Cost: linear scan of 12 static names, no allocation.
+    /// Cost: linear scan of 13 static names, no allocation.
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|c| c.name() == name)
     }

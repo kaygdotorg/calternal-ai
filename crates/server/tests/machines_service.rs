@@ -54,6 +54,7 @@ fn enrol_blocking(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) 
         name: "m".into(),
         os: "linux".into(),
         arch: "x86_64".into(),
+        direct: false,
     };
     let resp = svc.enrol(&req).unwrap();
     assert_eq!(
@@ -65,25 +66,29 @@ fn enrol_blocking(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) 
 }
 
 fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
-    let challenge = svc.session_start(id).unwrap();
-    let finish = SessionFinish {
-        machine_id: id,
-        signature: key.sign_session(id, &challenge),
-        challenge,
-        boot_id: boot,
-        protocol: 1,
-    };
-    let token = svc.session_finish(&finish).unwrap().token;
-    assert_eq!(
-        svc.session_finish(&finish).unwrap_err().code,
-        ErrorCode::Unauthorized,
-        "challenge replay"
-    );
-    M { id, key, token }
+    tokio::task::block_in_place(|| {
+        let challenge = svc.session_start(id).unwrap();
+        let finish = SessionFinish {
+            machine_id: id,
+            signature: key.sign_session(id, &challenge),
+            challenge,
+            boot_id: boot,
+            protocol: 2,
+            backend: "podman".into(),
+        };
+        let token = svc.session_finish(&finish).unwrap().token;
+        assert_eq!(
+            svc.session_finish(&finish).unwrap_err().code,
+            ErrorCode::Unauthorized,
+            "challenge replay"
+        );
+        M { id, key, token }
+    })
 }
 
 async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec<Down> {
     let req = SyncRequest {
+        discards: vec![],
         ack: 0,
         capacity: Capacity {
             cpus: 1,
@@ -125,7 +130,8 @@ async fn sessions_need_the_machine_key() {
         signature: wrong.sign_session(id, &challenge),
         challenge,
         boot_id: Uuid::new_v4(),
-        protocol: 1,
+        protocol: 2,
+        backend: "podman".into(),
     };
     assert_eq!(
         svc.session_finish(&forged).unwrap_err().code,
@@ -195,14 +201,15 @@ async fn stale_fence_and_wrong_machine_are_refused() {
         ErrorCode::Conflict
     );
 
-    // A goes silent past the TTL: the lease is fenced and moves to B.
+    // A goes silent past the TTL: the lease is fenced and stays interrupted.
     tokio::time::sleep(Duration::from_millis(400)).await;
     svc.sweep().unwrap();
     assert_eq!(
         svc.run(owner, lease_id).unwrap().state,
-        calternal_server::machines::LeaseState::Waiting
+        calternal_server::machines::LeaseState::Interrupted
     );
     let b = connect(&svc, b_id, b_key, Uuid::new_v4());
+    svc.resume_run(owner, lease_id).unwrap();
     let to_b = sync(&svc, &b, vec![]).await;
     let Some(Down::Assign {
         fence: new_fence, ..
@@ -264,4 +271,189 @@ async fn stale_fence_and_wrong_machine_are_refused() {
         )
         .unwrap();
     assert_eq!(ack.acked, 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_direct() {
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, owner) = service(dir.path());
+    let (id, key) = enrol(&svc, owner);
+    let handshake = |backend: &str| {
+        let challenge = svc.session_start(id).unwrap();
+        svc.session_finish(&SessionFinish {
+            machine_id: id,
+            signature: key.sign_session(id, &challenge),
+            challenge,
+            boot_id: Uuid::new_v4(),
+            protocol: 2,
+            backend: backend.into(),
+        })
+    };
+    assert_eq!(handshake("auto").unwrap().backend, "podman");
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.set_direct(AccountId::new(), id, true))
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    tokio::task::block_in_place(|| svc.set_direct(owner, id, true)).unwrap();
+    assert_eq!(handshake("auto").unwrap().backend, "direct");
+    tokio::task::block_in_place(|| svc.set_direct(owner, id, false)).unwrap();
+    assert_eq!(handshake("auto").unwrap().backend, "podman");
+    assert_eq!(handshake("direct").unwrap_err().code, ErrorCode::Forbidden);
+    let (code, _) = tokio::task::block_in_place(|| svc.issue_code(Owner::Pool)).unwrap();
+    let pool_key = MachineKey::generate().unwrap();
+    let pool = tokio::task::block_in_place(|| {
+        svc.enrol(&EnrolRequest {
+            code,
+            public_key: pool_key.public_key_b64(),
+            name: "pool".into(),
+            os: "linux".into(),
+            arch: "x86_64".into(),
+            direct: false,
+        })
+    })
+    .unwrap()
+    .machine_id;
+    let challenge = svc.session_start(pool).unwrap();
+    let grant = svc
+        .session_finish(&SessionFinish {
+            machine_id: pool,
+            signature: pool_key.sign_session(pool, &challenge),
+            challenge,
+            boot_id: Uuid::new_v4(),
+            protocol: 2,
+            backend: "auto".into(),
+        })
+        .unwrap();
+    assert_eq!(grant.backend, "podman");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
+    use calternal_machine::protocol::DiscardReport;
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, account) = service(dir.path());
+    let (id, key) = enrol(&svc, account);
+    let machine = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &machine, vec![]).await;
+    let run = svc
+        .request_run(SpaceId::new(), account, Uuid::new_v4(), None)
+        .unwrap();
+    svc.release_run(account, run.lease_id).unwrap();
+    drop(svc);
+    let (svc, _) = service(dir.path()); // Offline requests must survive restart.
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
+        "pending"
+    );
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(AccountId::new(), run.lease_id, false))
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    drop(svc);
+    let (svc, _) = service(dir.path());
+    let machine = connect(&svc, machine.id, machine.key, Uuid::new_v4());
+    let messages = sync(&svc, &machine, vec![]).await;
+    let request = messages
+        .iter()
+        .find_map(|m| {
+            if let Down::Discard { request_id, .. } = m {
+                Some(*request_id)
+            } else {
+                None
+            }
+        })
+        .expect("discard was not recovered");
+    let (other_id, key) = enrol(&svc, account);
+    let other = connect(&svc, other_id, key, Uuid::new_v4());
+    let report = |id, success| SyncRequest {
+        ack: 1000,
+        capacity: Capacity::default(),
+        draining: false,
+        leases: vec![],
+        discards: vec![DiscardReport {
+            request_id: id,
+            success,
+        }],
+    };
+    svc.sync(other.id, &other.token, report(request, true))
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
+        "pending"
+    );
+    svc.sync(machine.id, &machine.token, report(request, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
+        "failed"
+    );
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, true)).unwrap(),
+        "pending"
+    );
+    let messages = sync(&svc, &machine, vec![]).await;
+    let next = messages
+        .iter()
+        .find_map(|m| {
+            if let Down::Discard { request_id, .. } = m {
+                Some(*request_id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_ne!(request, next);
+    svc.sync(machine.id, &machine.token, report(request, false))
+        .await
+        .unwrap();
+    svc.sync(machine.id, &machine.token, report(next, true))
+        .await
+        .unwrap();
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, run.lease_id, false)).unwrap(),
+        "done"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pending_discard_never_replays_over_a_replacement_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, account) = service(dir.path());
+    let (id, key) = enrol(&svc, account);
+    let machine = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &machine, vec![]).await;
+    let space = SpaceId::new();
+    let thread = Uuid::new_v4();
+    let old = svc.request_run(space, account, thread, None).unwrap();
+    svc.release_run(account, old.lease_id).unwrap();
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false)).unwrap(),
+        "pending"
+    );
+    let replacement = svc.request_run(space, account, thread, None).unwrap();
+    let machine = connect(&svc, machine.id, machine.key, Uuid::new_v4());
+    let messages = sync(&svc, &machine, vec![]).await;
+    assert!(
+        !messages.iter().any(|m| matches!(m, Down::Discard { .. })),
+        "stale deletion could remove replacement work"
+    );
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false))
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict
+    );
+    svc.release_run(account, replacement.lease_id).unwrap();
+    assert_eq!(
+        tokio::task::block_in_place(|| svc.discard_run(account, old.lease_id, false))
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict
+    );
 }

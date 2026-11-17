@@ -131,7 +131,7 @@ async fn execute<D: Directory>(
         .ok_or_else(refused)?;
     let space = SpaceId::parse(&job.space).map_err(|_| refused())?;
     let identity = Identity { id: job.account };
-    if !job.session.is_live(&state.directory).await {
+    if !job.session.is_live_in(state).await {
         return Err(refused());
     }
     let (st, account, p2, jid, sp) = (

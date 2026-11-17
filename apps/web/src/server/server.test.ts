@@ -9,9 +9,9 @@ const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { sta
 describe("operations", () => {
   test("posts the envelope with the bearer and returns the data", async () => {
     let seen: { url: string; init: RequestInit } | null = null;
-    const c = new ServerClient({ token: () => "T", fetch: (async (url: string, init: RequestInit) => { seen = { url, init }; return json({ request_id: "r", ok: true, data: { spaces: [{ id: "s1", name: "Home" }] } }); }) as never });
+    const c = new ServerClient({ token: () => "T", fetch: (async (url: string, init: RequestInit) => { seen = { url, init }; return json({ request_id: "r", ok: true, data: { spaces: [{ id: "s1", name: "Personal" }] } }); }) as never });
     const r = await c.spaces.list();
-    expect(r.spaces[0]?.name).toBe("Home");
+    expect(r.spaces[0]?.name).toBe("Personal");
     expect(seen!.url).toBe("/api/v1/operations");
     expect((seen!.init.headers as Record<string, string>).authorization).toBe("Bearer T");
     const sent = JSON.parse(seen!.init.body as string);

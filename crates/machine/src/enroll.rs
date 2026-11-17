@@ -16,7 +16,13 @@ use crate::{Error, Result};
 ///
 /// Refuses when `dir` already holds credentials, so a second enrollment never
 /// silently replaces a working identity; delete the file to enroll again.
-pub async fn enroll(server: &str, code: &str, dir: &Path, name: &str) -> Result<Credentials> {
+pub async fn enroll(
+    server: &str,
+    code: &str,
+    dir: &Path,
+    name: &str,
+    direct: bool,
+) -> Result<Credentials> {
     if Credentials::path(dir).exists() {
         return Err(Error::Protocol(format!(
             "already enrolled: {} exists",
@@ -31,6 +37,7 @@ pub async fn enroll(server: &str, code: &str, dir: &Path, name: &str) -> Result<
         name: name.chars().take(64).collect(),
         os: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),
+        direct,
     };
     let resp: EnrolResponse = link
         .post(

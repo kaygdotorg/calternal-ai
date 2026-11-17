@@ -111,7 +111,10 @@ pub fn validate_request(request: &OperationRequest) -> Result<(), Error> {
 }
 /// Test membership in the fixed preview operation catalog without allocation or authority checks.
 pub fn is_known_operation(operation: &str) -> bool {
-    is_account_input_operation(operation)
+    crate::AGENT_OPERATIONS
+        .iter()
+        .any(|(id, _, _)| *id == operation)
+        || is_account_input_operation(operation)
         || matches!(
             operation,
             "spaces.list"
@@ -173,6 +176,13 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, Error> {
 /// # Errors
 /// Returns invalid input for schema/value violations, too large for oversized Markdown, or not found for unknown operations.
 pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(), Error> {
+    if crate::AGENT_OPERATIONS
+        .iter()
+        .any(|(id, _, _)| *id == operation)
+    {
+        let _: crate::AgentInput = decode(input)?;
+        return Ok(());
+    }
     if is_account_input_operation(operation) {
         return validate_account_input(operation, input);
     }
@@ -390,6 +400,7 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
     ) -> OperationDescription {
         let object = |value: Value| serde_json::from_value(value).expect("schema is object");
         OperationDescription {
+            risk: crate::builtin_operation_risk(id, mutates),
             id: id.into(),
             description: description.into(),
             mutates,
@@ -478,15 +489,33 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         ),
         entry::<SecretsListInput, SecretsListResult>(
             "secrets.list",
-            "List secret metadata and pending requests, never values",
+            "List personal secret metadata and requests; space metadata requires secrets.manage",
             false,
         ),
         entry::<SecretsRevokeInput, SecretsRevokeResult>(
             "secrets.revoke",
-            "Destroy a secret or withdraw a pending request",
+            "Destroy a personal secret or request; space management requires secrets.manage",
             true,
         ),
     ];
     catalog.extend(account_input_catalog());
+    catalog.extend(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {
+        entry::<crate::AgentInput, crate::JsonObject>(id, text, *mutates)
+    }));
     catalog
+}
+
+/// Borrow a built-in operation's compiled schema and risk metadata. Catalog
+/// construction happens once; calls scan the bounded operation list without I/O.
+pub fn cached_operation(operation: &str) -> Option<&'static OperationDescription> {
+    cached_operation_catalog()
+        .iter()
+        .find(|d| d.id == operation)
+}
+
+/// Borrow the generated operation metadata and schemas, initialized once.
+/// Cost after initialization: one immutable reference; no I/O or schema rebuilding.
+pub fn cached_operation_catalog() -> &'static [OperationDescription] {
+    static CATALOG: std::sync::OnceLock<Vec<OperationDescription>> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(operation_catalog)
 }

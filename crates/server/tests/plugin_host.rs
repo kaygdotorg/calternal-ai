@@ -64,7 +64,7 @@ fn tagger(dir: &Path) -> Plugin {
             "output_schema": {"type": "object"},
             "required_capability": "content.write",
             "mutates": true,
-            "idempotency": "request_id"
+            "idempotency": "request_id", "risk": "reversible"
         }],
         "host_calls": ["write_item"]
     }));
@@ -172,7 +172,7 @@ fn policy_rows_are_derived_from_manifests() {
     // A plugin may not shadow a host operation or demand an account-level capability.
     let op = |id: &str, cap: &str| {
         json!([{"id": id, "input_schema": {}, "output_schema": {}, "required_capability": cap,
-                "mutates": false, "idempotency": "read_only"}])
+                "mutates": false, "idempotency": "read_only", "risk": "read"}])
     };
     let shadow = support::plugin(
         support::manifest(json!({"id": "shadow", "operations": op("notes.list", "space.read")})),
@@ -546,7 +546,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
             "id": "shapes.save",
             "input_schema": {"type": "object", "properties": {"body": {"type": "string"}}, "required": ["body"]},
             "output_schema": {"type": "object"},
-            "required_capability": "content.write", "mutates": true, "idempotency": "request_id"
+            "required_capability": "content.write", "mutates": true, "idempotency": "request_id", "risk": "reversible"
         }],
         "host_calls": ["write_item"]
     }));
@@ -871,7 +871,7 @@ async fn secret_handle_requests_are_owned_by_the_space_uuid() {
             "id": "keyed.use",
             "input_schema": {"type": "object"},
             "output_schema": {"type": "object"},
-            "required_capability": "plugins.use", "mutates": false, "idempotency": "read_only"
+            "required_capability": "plugins.use", "mutates": false, "idempotency": "read_only", "risk": "read"
         }],
         "host_calls": ["request_secret_handle"]
     }));

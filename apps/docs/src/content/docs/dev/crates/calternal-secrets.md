@@ -8,8 +8,7 @@ title: "calternal-secrets"
 
 Secret storage: values encrypted at rest, released only through audited use.
 
-A secret belongs to exactly one [`Owner`]: an account (provider logins, personal
-plugin secrets) or a space. Plugins and agents never receive a value; they get
+A secret belongs to exactly one [`Owner`]: an account (personal credentials) or a space. Plugins and agents never receive a value; they get
 an opaque [`HandleToken`] that names (owner, name, version). The value leaves the
 store only through [`SecretStore::use_value`], which names the [`Consumer`] (one
 sandbox environment variable for one thread, or one outbound request header) and

@@ -6,7 +6,7 @@ import { Application, TSConfigReader } from "typedoc";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const check = process.argv.includes("--check");
-const packages = ["packages/plugin-sdk", "plugins/notes", "plugins/notes-insights"];
+const packages = ["packages/plugin-sdk", "plugins/notes", "plugins/notes-insights", "plugins/calternal-claude-code"];
 
 /** Discover source modules recursively so new files cannot bypass the export gate. */
 async function sources(directory) {

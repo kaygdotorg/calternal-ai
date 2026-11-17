@@ -25,6 +25,7 @@ const SEED: [string, string, string][] = [
   ["n-3", "Invite flow", "# Invite flow\n\nA single-use, expiring link that creates an account and assigns its groups."],
   ["n-4", "Release checklist", "# Release checklist\n\n- tests green\n- docs gate\n- changelog"],
   ["n-5", "Reading list", "# Reading list\n\nNative UI study, the Craft study."],
+  ["n-rich", "Rich note", "---\ntitle: Rich note\ntags: [design]\n---\n# Rich note\n\nA table:\n\n| Root | Where | Speed |\n| :-- | --- | --: |\n| appdata | SSD | fast |\n| userdata-hdd | HDD | slow |\n\n- [ ] write the grid ^k2m8q1w4zre7k3f9\n- [x] hide the markers\n\n```ts\nconst answer: number = 42; // the answer\nfunction greet(name: string) { return `hi ${name}`; }\n```\n\nDone."],
 ];
 
 /** A long fixture note of about `words` words (headings, paragraphs, lists, code), for measuring the editor on a document the size of a book chapter. */
@@ -45,9 +46,9 @@ export function longNote(words = 50_000): string {
 
 /** The in-memory fixture backend. */
 export class FixtureNotes implements NotesClient {
-  private notes = new Map<string, Note>([...SEED, ["n-long", "The long note", longNote()] as [string, string, string]].map(([id, title, markdown], i) => [id, { id, spaceId: "home", title, markdown, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 17, 9, 50 - i)).toISOString() }]));
+  private notes = new Map<string, Note>([...SEED, ["n-long", "The long note", longNote()] as [string, string, string]].map(([id, title, markdown], i) => [id, { id, spaceId: "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11", title, markdown, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 17, 9, 50 - i)).toISOString() }]));
   private listeners = new Set<() => void>();
-  async spaces(): Promise<Space[]> { return [{ id: "home", name: "Home" }]; }
+  async spaces(): Promise<Space[]> { return [{ id: "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11", name: "Personal" }]; }
   async list(): Promise<NoteSummary[]> { return [...this.notes.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s); }
   async get(_s: string, id: string): Promise<Note> {
     const n = this.notes.get(id);

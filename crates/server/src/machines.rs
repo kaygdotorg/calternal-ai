@@ -12,8 +12,8 @@
 //! Lease states: `waiting` (no machine with capacity: a visible state with a
 //! queue position, not an error), `assigned` (sent), `running` (the machine
 //! reported its sandbox up), `ended` (with a reason). A machine that has not
-//! synced for `lease_ttl` loses its leases: they are fenced and placed again,
-//! preferring the same machine when it returns (its frozen sandbox is resumed).
+//! synced for `lease_ttl` loses its leases: they are fenced and marked interrupted.
+//! Only an explicit resume allows placement again.
 //!
 //! Machine states: `online` (a sync is held or ended within `poll_hold + 5 s`),
 //! `draining` (online, takes no new work), `offline`, `revoked` (sessions dropped
@@ -46,7 +46,11 @@
 
 pub mod admin;
 pub mod db;
+mod discards;
+mod execs;
 pub mod http;
+mod owners;
+pub mod provider;
 mod sessions;
 mod state;
 
@@ -111,6 +115,8 @@ pub enum LeaseState {
     Assigned,
     /// The machine reported the sandbox up.
     Running,
+    /// Fenced after machine silence; only explicit resume returns it to placement.
+    Interrupted,
     /// Over; see the reason.
     Ended,
 }
@@ -123,6 +129,7 @@ impl LeaseState {
             Self::Assigned => "assigned",
             Self::Running => "running",
             Self::Ended => "ended",
+            Self::Interrupted => "interrupted",
         }
     }
     /// Parse the stored form; anything unknown reads as ended (fail closed).
@@ -131,6 +138,7 @@ impl LeaseState {
             "waiting" => Self::Waiting,
             "assigned" => Self::Assigned,
             "running" => Self::Running,
+            "interrupted" => Self::Interrupted,
             _ => Self::Ended,
         }
     }
@@ -166,6 +174,8 @@ pub struct MachineView {
     pub os: String,
     /// CPU architecture.
     pub arch: String,
+    /// Owner-selected default execution policy; pool machines always report false.
+    pub direct: bool,
     /// Owner.
     pub owner: Owner,
     /// `online`, `draining`, `offline` or `revoked`.
@@ -312,7 +322,7 @@ impl MachineService {
             thread,
             image,
             machine: None,
-            last_machine: None,
+            last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
             fence: 0,
             state: LeaseState::Waiting.as_str().into(),
             reason: None,
@@ -368,44 +378,6 @@ impl MachineService {
         }
         st.end_lease(lease, "stopped by the caller", &self.settings);
         Ok(st.view(lease))
-    }
-
-    /// Queue a command for a run; it is sent as soon as the run is assigned.
-    /// Blocks briefly (no file I/O).
-    ///
-    /// `env` is plain configuration, never a credential. Secrets seam (not wired
-    /// yet): the exec input gains `secrets: [{variable, handle}]`; the handle is
-    /// resolved for the run's owner when the exec is queued, and the value is
-    /// released by `calternal_secrets::SecretStore::use_value` with
-    /// `Consumer::SandboxEnv { thread, variable }` on a blocking task right
-    /// before the `Exec` message is pushed, so no plaintext waits in the queue
-    /// or the database and every release is audited per thread.
-    pub fn exec(
-        &self,
-        account: AccountId,
-        lease: Uuid,
-        argv: Vec<String>,
-        env: Vec<(String, String)>,
-    ) -> Result<Uuid, Error> {
-        if argv.is_empty() || argv.len() > 4096 || argv.iter().any(|a| a.len() > 65_536) {
-            return Err(Error::invalid_input(
-                "argv must have 1 to 4096 arguments of at most 64 KiB",
-            ));
-        }
-        let mut st = self.lock()?;
-        let st = &mut *st;
-        match st.leases.get(&lease) {
-            Some(l) if l.row.account == account && l.state != LeaseState::Ended => {}
-            Some(l) if l.row.account == account => {
-                return Err(Error::conflict("run has ended"));
-            }
-            _ => return Err(Error::not_found("run not found")),
-        }
-        let id = Uuid::new_v4();
-        st.execs
-            .insert(id, Exec::new(lease, account, argv, env, ExecState::Queued));
-        st.send_execs(lease);
-        Ok(id)
     }
 
     /// Output of an exec after `after`, waiting up to `wait` (at most 30 s) for
@@ -493,76 +465,6 @@ impl MachineService {
             .map(|l| l.row.space))
     }
 
-    // --------------------------------------------------------------- owners
-
-    /// Issue a one-time enrolment code for `owner`; blocks (one protected
-    /// authority commit). Returns the code and its expiry in Unix milliseconds.
-    pub fn issue_code(&self, owner: Owner) -> Result<(String, i64), Error> {
-        let st = self.lock()?;
-        st.authority
-            .issue_code(db::owner_account(owner), self.settings.code_ttl)
-            .map_err(authority_error)
-    }
-
-    /// Issue a code valid for `ttl` instead of the configured default (operator
-    /// commands choose the lifetime); blocks (one protected authority commit).
-    pub fn issue_code_for(&self, owner: Owner, ttl: Duration) -> Result<(String, i64), Error> {
-        let st = self.lock()?;
-        st.authority
-            .issue_code(db::owner_account(owner), ttl)
-            .map_err(authority_error)
-    }
-
-    /// Every enrolled machine, revoked ones included, for the operator. Blocks
-    /// briefly (no file I/O).
-    pub fn all_machines(&self) -> Result<Vec<db::MachineRow>, Error> {
-        let st = self.lock()?;
-        let mut rows: Vec<_> = st.machines.values().map(|m| m.row.clone()).collect();
-        rows.sort_by(|a, b| a.id.cmp(&b.id));
-        Ok(rows)
-    }
-
-    /// Revoke any machine as the operator; false when it does not exist. Blocks
-    /// (one protected authority commit); takes effect at once as in [`Self::revoke`].
-    pub fn revoke_any(&self, machine: Uuid) -> Result<bool, Error> {
-        let mut st = self.lock()?;
-        let st = &mut *st;
-        if !st.authority.revoke(machine).map_err(authority_error)? {
-            return Ok(false);
-        }
-        st.apply_revocation(machine, &self.settings);
-        Ok(true)
-    }
-
-    /// Grant or withdraw an account's use of pool machines; blocks (one protected
-    /// authority commit) and places waiting runs the grant now allows.
-    pub fn set_pool_grant(&self, account: AccountId, granted: bool) -> Result<(), Error> {
-        let mut st = self.lock()?;
-        let st = &mut *st;
-        st.authority
-            .set_pool_grant(account, granted)
-            .map_err(authority_error)?;
-        if granted {
-            st.pool_grants.insert(account);
-        } else {
-            st.pool_grants.remove(&account);
-        }
-        st.place_waiting(&self.settings);
-        Ok(())
-    }
-
-    /// Machines owned by `account`. Blocks briefly (no file I/O).
-    pub fn machines_of(&self, account: AccountId) -> Result<Vec<MachineView>, Error> {
-        let st = self.lock()?;
-        let owner = Owner::Account { id: account };
-        Ok(st
-            .machines
-            .values()
-            .filter(|m| m.row.owner == owner)
-            .map(|m| st.machine_view(m, &self.settings))
-            .collect())
-    }
-
     fn check_owner(st: &State, account: AccountId, machine: Uuid) -> Result<(), Error> {
         match st.machines.get(&machine) {
             Some(m) if m.row.owner == (Owner::Account { id: account }) => Ok(()),
@@ -618,7 +520,7 @@ impl MachineService {
         })
     }
 
-    /// Mark silent machines offline, fence and re-place their leases after
+    /// Mark silent machines offline, fence and interrupt their leases after
     /// `lease_ttl`, drop finished exec buffers after ten minutes and ended lease
     /// rows after `ended_lease_retention`. Operator changes arrive through the
     /// service itself (the admin socket), never behind it. Blocks: one indexed
@@ -654,8 +556,8 @@ impl MachineService {
                 .map(|l| l.row.id)
                 .collect();
             for lease in leases {
-                tracing::info!(%lease, %machine, "lease expired; placing it again");
-                st.requeue(lease, "the machine stopped responding");
+                tracing::info!(%lease, %machine, "lease expired; explicit resume required");
+                st.interrupt(lease, "the machine stopped responding");
             }
         }
         st.execs.retain(|_, e| {

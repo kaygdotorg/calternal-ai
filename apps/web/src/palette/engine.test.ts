@@ -3,7 +3,7 @@ import "../apps/settings/registry";
 import { plan, setItems } from "./engine";
 import { buildIndex, search, type Item } from "./search";
 
-const item = (i: number, title: string, space = "Home"): Item => ({ id: `t${i}`, kind: "thread", title, space });
+const item = (i: number, title: string, space = "Personal"): Item => ({ id: `t${i}`, kind: "thread", title, space });
 const ITEMS: Item[] = [item(1, "Split store.rs by concern"), item(2, "Journal replay is slow after restart"), item(3, "Expired invite test"), item(4, "Mesh idle-peer RSS guard", "Infra"), item(5, "Conformance run on dev VMs")];
 
 describe("search", () => {
@@ -34,7 +34,7 @@ describe("search", () => {
 });
 
 describe("plan", () => {
-  beforeAll(() => setItems(ITEMS, "Home"));
+  beforeAll(() => setItems(ITEMS, "Personal"));
   test("says what Enter does and always offers Ask last", () => {
     const p = plan("journal");
     expect(p.intent).toBe("Open: Journal replay is slow after restart");

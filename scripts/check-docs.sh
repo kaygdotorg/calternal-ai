@@ -7,11 +7,11 @@ cd "$ROOT"
 if [ ! -d scripts/docs-tools/node_modules/typedoc ]; then
   npm ci --prefix scripts/docs-tools --ignore-scripts --no-audit --no-fund
 fi
-./scripts/with-toolchain.sh cargo check --locked -j4 --workspace --all-targets --all-features
+./scripts/with-toolchain.sh cargo check --locked -j6 --workspace --all-targets --all-features
 # The conformance suite has its own manifest outside the workspace.
-./scripts/with-toolchain.sh cargo check --locked -j4 --manifest-path tests/conformance/Cargo.toml --all-targets
+./scripts/with-toolchain.sh cargo check --locked -j6 --manifest-path tests/conformance/Cargo.toml --all-targets
 # rustdoc link checks run only during documentation generation, not cargo check.
-./scripts/with-toolchain.sh cargo doc --locked -j4 --no-deps --workspace \
+./scripts/with-toolchain.sh cargo doc --locked -j6 --no-deps --workspace \
   --all-features --target-dir reference-docs/rust
 # TypeScript reference checks resolve workspace packages through their built type output.
 npm run build:plugins --silent

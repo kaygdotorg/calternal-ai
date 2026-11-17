@@ -9,7 +9,7 @@
   const value = $derived(shell.rightOpen ? (app.panels.find((p) => p.id === shell.panel) ?? app.panels[0]!).id : "main");
 </script>
 
-<nav class="phone-tabs" aria-label="{app.name} sections"><Capsule label="{app.name} sections" morph tall {items} {value} onchange={(v) => (v === "main" ? shell.closeOver() : shell.showPanel(v))} /></nav>
+<nav class="phone-tabs" aria-label="{app.name} sections"><Capsule label="{app.name} sections" morph tall {items} {value} onchange={(v) => (v === "main" ? shell.dismiss() : shell.showPanel(v))} /></nav>
 
 <style>
   .phone-tabs { position: fixed; z-index: 5; left: var(--s-6); right: var(--s-6); bottom: var(--cap-offset); /* native: the bottom pill sits 28 above the screen edge, inside the home-indicator area */ display: flex; justify-content: center; }

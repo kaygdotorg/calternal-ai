@@ -87,6 +87,7 @@ fn roles() -> [CapabilitySet; 4] {
             MembersInvite,
             MembersManage,
             SpaceSettings,
+            SecretsManage,
         ],
         &[
             SpaceRead,
@@ -96,6 +97,7 @@ fn roles() -> [CapabilitySet; 4] {
             MembersInvite,
             MembersManage,
             SpaceSettings,
+            SecretsManage,
             ManagersManage,
             SpaceTransfer,
             SpaceDelete,
@@ -308,7 +310,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     assert_eq!(rows.len(), MATRIX.len(), "duplicate matrix row");
     // The real stored-directory matrix lives in spaces_matrix.rs, where every
     // directory handler and its target invariants are exercised against SQLite.
-    let stored_rows: BTreeSet<_> = [
+    let mut stored_rows: BTreeSet<_> = [
         // Private account authority and target isolation: account_input.rs.
         "drafts.save",
         "drafts.list",
@@ -339,6 +341,12 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     ]
     .into_iter()
     .collect();
+    // Manual-turn controls are covered by provider_turns.rs and agent_cases conformance.
+    stored_rows.extend(
+        calternal_core::AGENT_OPERATIONS
+            .iter()
+            .map(|(id, _, _)| *id),
+    );
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
@@ -364,6 +372,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         .iter()
         .map(|p| p.operation.to_string())
         .chain(calternal_core::account_input_operations().map(str::to_owned))
+        .chain(
+            calternal_server::authz::agent_policies()
+                .iter()
+                .map(|p| p.operation.to_string()),
+        )
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -373,7 +386,10 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         all
     );
     assert_eq!(
-        POLICIES.len() + calternal_core::account_input_operations().count() + plugin_rows.len(),
+        POLICIES.len()
+            + calternal_core::account_input_operations().count()
+            + calternal_server::authz::agent_policies().len()
+            + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );

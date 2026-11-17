@@ -35,7 +35,7 @@ pub struct Member {
 /// Independent opens are serialized by SQLite's IMMEDIATE transactions.
 #[derive(Clone)]
 pub struct Spaces {
-    db: crate::db::Db,
+    pub(crate) db: crate::db::Db,
     receipt_retention: std::time::Duration,
 }
 /// How long a directory receipt is kept by default: seven days, the same as space
@@ -323,6 +323,10 @@ impl Spaces {
             db,
             receipt_retention,
         }
+    }
+    /// Agent authority sharing this handle and recovery barrier. Cost: an Arc clone.
+    pub fn agents(&self) -> crate::agents::Agents {
+        crate::agents::Agents::new(self.db.clone())
     }
     /// Machine authority over this same `auth.db` handle, sharing its worker and
     /// recovery barrier. Cost: one Arc clone.

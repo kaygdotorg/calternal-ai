@@ -5,3 +5,5 @@ export { continueList, indentItem } from "./lists";
 export { buildDrawn } from "./hidden";
 export { triggerAt, type Trigger } from "./triggers";
 export { origin } from "./origin";
+export { prepare, detect, type Feature } from "./features";
+export { markersIn, visibleText, idsIn, newId, ensureId, endMarker, markerFor, isTaskLine, type Marker } from "./ids";

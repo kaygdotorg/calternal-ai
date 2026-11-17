@@ -45,7 +45,24 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
+    dispatch_scoped(state, p, session, request_id, op, input, None).await
+}
+
+pub(super) async fn dispatch_scoped<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    session: Session,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+    agent: Option<crate::turns::access::Authority>,
+) -> Result<Value, Error> {
     if calternal_core::is_account_input_operation(op) {
+        if agent.is_some() {
+            return Err(Error::forbidden(
+                "thread credentials cannot manage private account input",
+            ));
+        }
         return crate::account_input::dispatch(state, p, session, op, input).await;
     }
     let mut input = input;
@@ -141,6 +158,47 @@ pub async fn dispatch<D: Directory>(
                 .map_err(|_| Error::internal("directory task failed"))??;
         }
     }
+    if let Some(a) = &agent {
+        let declared = state
+            .registry
+            .owner_of_operation(op)
+            .and_then(|p| p.operation(op))
+            .map(|d| (d.mutates, d.risk))
+            .or_else(|| calternal_core::cached_operation(op).map(|d| (d.mutates, d.risk)));
+        let Some((mutates, risk)) = declared else {
+            return Err(Error::forbidden("operation has no declared risk"));
+        };
+        let (scope, checked, operation, retry_id) = (
+            a.clone(),
+            input.clone(),
+            op.to_owned(),
+            request_id.to_owned(),
+        );
+        let verdict = tokio::task::spawn_blocking(move || {
+            scope.check_operation(&operation, &checked, &retry_id, mutates, risk)
+        })
+        .await
+        .map_err(|_| Error::internal("scope check task failed"))?;
+        if let Err(e) = verdict {
+            if e.code != ErrorCode::Forbidden {
+                return Err(e);
+            }
+            let (st, a, op, input, rid) = (
+                state.clone(),
+                a.clone(),
+                op.to_owned(),
+                input.clone(),
+                request_id.to_owned(),
+            );
+            let approval = tokio::task::spawn_blocking(move || {
+                st.jobs
+                    .agent_action_request(&a, &op, &input, &rid, risk, mutates)
+            })
+            .await
+            .map_err(|_| Error::internal("approval task failed"))??;
+            return Err(e.with_details(serde_json::json!({"status":"approval_required","approval_id":approval,"job_id":agent.as_ref().map(|a|a.job.as_str()),"request_id":request_id})));
+        }
+    }
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,
@@ -149,7 +207,8 @@ pub async fn dispatch<D: Directory>(
         return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
     }
     if op.starts_with("secrets.") {
-        return crate::secrets::dispatch(state, p, policy, input).await;
+        let via = agent.as_ref().and_then(|a| a.actor.via.clone());
+        return crate::secrets::dispatch(state, p, policy, input, via).await;
     }
     if op.starts_with("spaces.") {
         let st = state.clone();
@@ -190,6 +249,12 @@ pub async fn dispatch<D: Directory>(
             if result.is_ok()
                 && let Some(space) = space
             {
+                if operation == "spaces.delete" {
+                    st.store
+                        .secrets()
+                        .erase_owner(&calternal_secrets::Owner::Space(space))
+                        .map_err(|e| Error::unavailable(e.to_string()))?;
+                }
                 for account in removed {
                     st.inputs.erase_space(account, space)?;
                 }

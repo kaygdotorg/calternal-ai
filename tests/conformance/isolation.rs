@@ -17,13 +17,14 @@ use std::{
 use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 
+mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
 
+mod drafts_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
-mod drafts_cases;
 mod simplify_review_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
@@ -594,8 +595,20 @@ async fn all_operations_hide_foreign_ids() {
     catalog.ok();
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
+    covered.extend(agent_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
-    covered.extend(["drafts.save","drafts.list","drafts.get","drafts.delete","pending.queue","pending.edit","pending.list","pending.cancel","pending.confirm","pending.submit"]);
+    covered.extend([
+        "drafts.save",
+        "drafts.list",
+        "drafts.get",
+        "drafts.delete",
+        "pending.queue",
+        "pending.edit",
+        "pending.list",
+        "pending.cancel",
+        "pending.confirm",
+        "pending.submit",
+    ]);
     covered.sort_unstable();
     let mut registered: Vec<_> = catalog.body["operations"]
         .as_array()
@@ -1327,7 +1340,11 @@ async fn filesystem_modes_and_complete_sql_inventory() {
     // state database exists.
     assert!(!f.appdata().join("state.sqlite3").exists());
     let space_db = format!("spaces/{}/content.db", f.spaces[0]);
-    for db in [space_db.as_str(), "system/content-index.db", "system/auth.db"] {
+    for db in [
+        space_db.as_str(),
+        "system/content-index.db",
+        "system/auth.db",
+    ] {
         let c = Connection::open_with_flags(
             f.appdata().join(db),
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -2012,6 +2029,7 @@ async fn each_space_capability_is_independent_over_http() {
         "members.manage",
         "managers.manage",
         "space.settings",
+        "secrets.manage",
         "space.transfer",
         "space.delete",
     ] {
@@ -2045,6 +2063,11 @@ async fn each_space_capability_is_independent_over_http() {
                 "spaces.transfer",
                 json!({"space_id":s,"account_id":f.ids[1]}),
                 false,
+            ),
+            (
+                "secrets.list",
+                json!({"space_id":s}),
+                cap == "secrets.manage",
             ),
             ("spaces.delete", json!({"space_id":s}), false),
             (
@@ -2631,7 +2654,7 @@ async fn machines_and_runs_are_owner_private() {
         .await;
     code.ok();
     let key = MachineKey::generate().unwrap();
-    let enrol = json!({"code":code.body["code"],"public_key":key.public_key_b64(),"name":"a","os":"linux","arch":"x86_64"});
+    let enrol = json!({"code":code.body["code"],"public_key":key.public_key_b64(),"name":"a","os":"linux","arch":"x86_64","direct":false});
     let first = f
         .machine("/api/v1/machine/enroll", None, enrol.clone())
         .await;
@@ -2652,7 +2675,7 @@ async fn machines_and_runs_are_owner_private() {
     let forged = MachineKey::generate()
         .unwrap()
         .sign_session(machine, &challenge);
-    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":1});
+    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":2,"backend":"podman"});
     assert_eq!(
         f.machine(
             "/api/v1/machine/session/finish",
@@ -2856,4 +2879,110 @@ async fn machines_and_runs_are_owner_private() {
         )
         .await;
     assert_eq!(run.body["state"], "ended");
+}
+
+#[tokio::test]
+async fn secret_management_is_separate_from_use_and_space_settings() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[3].clone();
+    for cap in [
+        "space.read",
+        "space.settings",
+        "plugins.use",
+        "secrets.manage",
+    ] {
+        let request = f
+            .op(
+                1,
+                "secrets.request",
+                json!({"space_id":space,"name":"cap-test","label":"Key","reason":"test"}),
+            )
+            .await;
+        request.ok();
+        let request = request.body["data"]["request_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        f.stop();
+        let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
+        c.execute(
+            "DELETE FROM space_role_capabilities WHERE role='editor'",
+            [],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO space_role_capabilities VALUES('editor',?1)",
+            [cap],
+        )
+        .unwrap();
+        drop(c);
+        f.start().await;
+        let list = f.op(2, "secrets.list", json!({"space_id":space})).await;
+        assert_eq!(
+            list.status,
+            if cap == "secrets.manage" { 200 } else { 403 },
+            "{cap}: {}",
+            list.body
+        );
+        let provide = f
+            .auth(
+                "secrets/provide",
+                Some(&f.cookies[2]),
+                json!({"space_id":space,"request_id":request,"value":SECRET_CANARY}),
+            )
+            .await;
+        assert_eq!(
+            provide.status,
+            if cap == "secrets.manage" { 200 } else { 403 },
+            "{cap}: {}",
+            provide.body
+        );
+        let revoke = f
+            .op(
+                2,
+                "secrets.revoke",
+                if cap == "secrets.manage" {
+                    json!({"space_id":space,"name":"cap-test"})
+                } else {
+                    json!({"space_id":space,"request_id":request})
+                },
+            )
+            .await;
+        assert_eq!(
+            revoke.status,
+            if cap == "secrets.manage" { 200 } else { 403 },
+            "{cap}: {}",
+            revoke.body
+        );
+        let ask = f
+            .op(
+                2,
+                "secrets.request",
+                json!({"space_id":space,"name":"use-test","label":"Key","reason":"test"}),
+            )
+            .await;
+        assert_eq!(
+            ask.status,
+            if cap == "plugins.use" { 200 } else { 403 },
+            "{cap}: {}",
+            ask.body
+        );
+    }
+    let key = f.appdata().join("spaces").join(&space).join("secret.key");
+    assert!(key.exists());
+    let deleted = f.op(1, "spaces.delete", json!({"space_id":space})).await;
+    deleted.ok();
+    assert!(
+        !key.exists(),
+        "successful owner deletion must erase its key"
+    );
+    let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
+    assert!(
+        c.query_row(
+            "SELECT erasing FROM owner_secret_keys WHERE kind='space' AND owner_id=?1",
+            [&space],
+            |r| r.get::<_, bool>(0)
+        )
+        .unwrap()
+    );
 }

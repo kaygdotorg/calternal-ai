@@ -178,6 +178,8 @@ pub struct ManifestTarget {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestOperation {
+    /// Required risk declaration; capability checks still apply in every mode.
+    pub risk: crate::OperationRisk,
     /// Globally unique operation identifier.
     pub id: String,
     /// JSON Schema of operation input.
@@ -285,6 +287,10 @@ pub struct ManifestTheme {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestV1 {
+    /// Machine-side provider adapter; omitted by plugins that offer no provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub provider: Option<ManifestProvider>,
     /// Stable plugin identifier.
     pub id: String,
     /// Human-readable plugin name.
@@ -319,4 +325,17 @@ pub struct ManifestV1 {
     pub themes: Vec<ManifestTheme>,
     /// Broker calls the worker may request; each still needs live authorization.
     pub host_calls: Vec<HostCallKind>,
+}
+
+/// Machine-side provider declaration; executable is installed in the sandbox
+/// image or account home, never downloaded or run by the server.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestProvider {
+    /// Version of the bounded stdio contract, currently one.
+    pub protocol_version: u32,
+    /// Basename resolved inside the sandbox's PATH; no shell, path or arguments.
+    pub executable: String,
+    /// Default installed-CLI model identifier, at most 128 UTF-8 bytes.
+    pub default_model: String,
 }

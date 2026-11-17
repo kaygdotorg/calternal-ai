@@ -198,6 +198,10 @@ see [`docs/cli.md`](../../docs/cli.md).
 
 Timings from these tests are development-host smoke numbers, not performance gates.
 
+Manual provider jobs and their CLI, scoped credentials, risk review, machine homes
+and durable retry waits are documented in [manual turns](../../docs/agent-turns.md).
+The provider test suite uses an account-free fake official CLI.
+
 `GET /api/v1/live?subscriptions=<JSON array>` follows 1–16 distinct space UUIDs.
 Each array element is `{ "space_id": "<uuid>", "bookmark": null | "<opaque>" }`.
 The authenticated feed emits SSE `data` containing core `LiveFrame` values:

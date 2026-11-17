@@ -55,3 +55,8 @@ test('kind storage placement enforces hidden and visible NFC components',()=>{
  m.kinds[0].extension='png';assert.doesNotThrow(()=>validateManifestV1(m));
  const text=structuredClone(m);text.kinds[0].claimed_text=true;text.kinds[0].extension='txt';assert.throws(()=>validateManifestV1(text));text.kinds[0].extension='md';assert.doesNotThrow(()=>validateManifestV1(text));
 });
+test('operation risk is required, closed, and consistent with mutations',()=>{
+  for(const change of [m=>delete m.operations[0].risk,m=>m.operations[0].risk='unknown',m=>m.operations[0].risk='external']){
+    const value=structuredClone(manifest);change(value);assert.throws(()=>validateManifestV1(value));
+  }
+});

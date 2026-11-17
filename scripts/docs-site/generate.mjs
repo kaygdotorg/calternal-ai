@@ -123,7 +123,7 @@ page('user/permissions-modes', 'Permission modes', ['docs/agent-instructions.md'
 page('user/threads', 'Threads', ['docs/orchestrator-proposal.md'], 'Accepted orchestrator decisions; this is not a claim that the complete thread experience is implemented. Later decisions below take precedence over earlier proposal text.\n\n' + section(await read('docs/orchestrator-proposal.md'), 'Decided in the grill (2026-11-17)'));
 for (const [id, title, source, note] of [
   ['machines', 'Machines', 'crates/machine/README.md', 'Implementation reference. The later orchestrator decision requires Resume after interruption; automatic re-placement described in this README is not the accepted product behavior.'],
-  ['secrets', 'Secrets', 'crates/secrets/README.md', 'Implementation reference with a known source mismatch: this README describes an older master key layout. The accepted plugin API decision specifies one key file per owner and no unlock step. Do not use this page as a production setup procedure.'],
+  ['secrets', 'Secrets', 'crates/secrets/README.md', 'Per-owner key storage and recovery reference. Operator backup retention and key backup handling require a production runbook.'],
   ['recovery', 'Recovery and backups', 'crates/recovery/PROTOCOL.md', 'Recovery protocol reference, not a complete backup or restore runbook. A verified operator backup procedure is not yet present in the source material.'],
 ]) page(`admin/${id}`, title, [source], `${note}\n\n${links((await read(source)).replace(/^# .*\n/, ''), source)}`);
 

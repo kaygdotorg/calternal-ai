@@ -118,6 +118,15 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
     {
         return Err(Error::Invalid);
     }
+    if m.provider.as_ref().is_some_and(|p| {
+        p.protocol_version != 1
+            || !identifier(&p.executable)
+            || p.executable.contains('.')
+            || p.default_model.is_empty()
+            || p.default_model.len() > 128
+    }) {
+        return Err(Error::Invalid);
+    }
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     if m.kinds.iter().any(|x| {
         !extension(x.claimed_text, x.extension.as_deref())
@@ -130,6 +139,7 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
         !x.target.as_ref().is_none_or(|t| target(t, &x.input_schema))
             || !schema(&x.input_schema)
             || !schema(&x.output_schema)
+            || x.mutates == (x.risk == calternal_core::OperationRisk::Read)
             || x.mutates == (x.idempotency == ManifestIdempotency::ReadOnly)
             || (x.mutates && x.required_capability == ManifestCapability::SpaceRead)
     }) {

@@ -100,6 +100,13 @@ fn note(item: &Item) -> Note {
     }
 }
 impl Store {
+    /// Clone the validated userdata root for bounded instruction reads without holding
+    /// a content lock. The caller must authorize the UUID-selected space.
+    /// Cost: one path clone; no file I/O or SQLite.
+    pub fn instruction_root(&self) -> std::path::PathBuf {
+        self.content.userdata_root()
+    }
+
     /// The pinned installation UUID the root markers carry. Cost: a copy.
     pub fn installation(&self) -> Uuid {
         self.installation
@@ -145,8 +152,8 @@ impl Store {
     /// it, missing, swapped, mismatched, foreign or occupied roots are refused
     /// before anything is created (see [`calternal_roots::prepare`]).
     /// `receipt_retention` bounds request receipts in every space (see
-    /// [`calternal_content::DEFAULT_RECEIPT_RETENTION`]). The journal witness and secret key live in
-    /// `<appdata>/secrets`.
+    /// [`calternal_content::DEFAULT_RECEIPT_RETENTION`]). The content journal witness lives in
+    /// `<appdata>/secrets`; secret encryption keys live beside each owner’s secrets.db.
     ///
     /// # Errors
     /// Unavailable for a refused or locked root, or a store that cannot open.
@@ -172,8 +179,8 @@ impl Store {
             receipt_retention,
             content_fault,
         )?;
-        // Fails closed: a missing or wrong secret key stops startup instead of
-        // minting a key that cannot read the stored secrets.
+        // Owner keys are opened on access. The host attaches recovery and validates
+        // protected fingerprints before admission through secrets::configure_keys.
         let secrets = calternal_secrets::LocalStore::open(&root)
             .map_err(|e| Error::unavailable(e.to_string()))?;
         Ok(Self {

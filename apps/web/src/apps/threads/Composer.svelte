@@ -15,6 +15,7 @@
   import { mentionPool, pick as pickMentions, skillPool, triggerAt, type Mention } from "../../palette/mentions";
   import { store } from "./store.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
+  import MentionPicker from "../../palette/MentionPicker.svelte";
   import { bridge } from "./compose.svelte";
   import { shell } from "../../shell/shell.svelte";
   import type { Permission, ProviderOption, RunsOn, ThreadSummary } from "./model";
@@ -69,6 +70,8 @@
     });
   });
   // ---- the same engine as the palette: highlighted words, @ for people, agents, threads and items, / for skills ----
+  // Warm the recogniser once when the composer appears (its regular expressions compile on first use): the first key typed should cost what the others do.
+  $effect(() => { marksOf("warm @a friday 5pm !high #t"); });
   const marks = $derived(marksOf(text));
   const pool = $derived(mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
   let caret = $state(0);
@@ -98,7 +101,6 @@
     else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(flat[sel]!); }
     else if (e.key === "Escape") { e.preventDefault(); dismissed = trig?.start ?? null; }
   }
-  const KIND_ICON: Record<string, IconName> = { person: "user", agent: "spark", thread: "threads", item: "notes", skill: "wrench" };
   // What is open, as chips above the field: the workspace the thread works in, and each @mention in the text (removable).
   const mentions = $derived(marks.filter((m) => m.kind === "mention" || m.kind === "person").map((m) => ({ ...m, label: text.slice(m.start + 1, m.end).replace(/^\[|\]$/g, "") })));
   const dropMention = (m: { start: number; end: number }) => { text = (text.slice(0, m.start) + text.slice(m.end)).replace(/ {2,}/g, " ").replace(/^ /, ""); queueMicrotask(() => field?.focus()); };
@@ -157,19 +159,7 @@
   </div>
 </Panel>
 
-<Popover open={groups.length > 0} anchor={fieldBox} prefer="top" role="listbox" label={trig?.kind === "skill" ? "Skills" : "Mention"} onclose={() => (dismissed = trig?.start ?? null)}>
-  <div class="mp">
-    {#each groups as g (g.kind)}
-      <div class="mg" role="group" aria-label={g.title}>
-        <h3>{g.title}</h3>
-        {#each g.entries as m (m.id)}
-          {@const i = flat.indexOf(m)}
-          <div class="mo" class:on={i === sel} role="option" tabindex="-1" aria-selected={i === sel} onpointermove={() => (sel = i)} onpointerdown={(e) => { e.preventDefault(); choose(m); }}><Icon inline name={KIND_ICON[m.kind]!} /><span class="l">{m.label}</span><span class="g">{m.sub}</span></div>
-        {/each}
-      </div>
-    {/each}
-  </div>
-</Popover>
+<MentionPicker {groups} bind:sel anchor={fieldBox} label={trig?.kind === "skill" ? "Skills" : "Mention"} onchoose={choose} onclose={() => (dismissed = trig?.start ?? null)} />
 
 {#if sheet}
   <Sheet open={whereOpen} label="Where it runs" onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /><div class="done"><Button variant="primary" text="Done" onclick={() => (whereOpen = false)} /></div></Sheet>
@@ -182,12 +172,6 @@
   .cx > span:not(:first-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cx.on { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--ink); }
   .x { display: inline-grid; place-items: center; color: var(--ink-3); border-radius: 50%; }
-  .mp { display: grid; gap: var(--s-2); min-width: 16rem; max-width: min(26rem, 90vw); padding: var(--s-2); }
-  .mg h3 { padding: var(--s-2) var(--s-4); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
-  .mo { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-select); cursor: pointer; font-size: var(--text-ui); }
-  .mo.on { background: var(--accent-soft); }
-  .mo .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .mo .g { font-size: var(--text-label); color: var(--ink-3); }
   .field { display: flex; align-items: flex-end; gap: var(--s-3); }
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */

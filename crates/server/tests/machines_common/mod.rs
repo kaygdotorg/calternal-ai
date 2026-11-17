@@ -99,6 +99,10 @@ pub struct Server {
 
 impl Server {
     pub fn start(data: &Path, port: u16) -> Self {
+        Self::start_with_plugins(data, port, Path::new("/nonexistent-test-plugins"))
+    }
+
+    pub fn start_with_plugins(data: &Path, port: u16, plugins: &Path) -> Self {
         let startup = data.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(BIN)
@@ -117,7 +121,8 @@ impl Server {
             .arg(data.join("userdata-ssd"))
             .arg("--userdata-hdd")
             .arg(data.join("userdata-hdd"))
-            .args(["--plugin-root", "/nonexistent-test-plugins"])
+            .arg("--plugin-root")
+            .arg(plugins)
             .args(["--machine-lease-ttl-ms", &LEASE_TTL_MS.to_string()])
             .args(["--machine-poll-hold-ms", &POLL_HOLD_MS.to_string()])
             .env("RUST_LOG", "warn")
@@ -316,9 +321,10 @@ impl Server {
 pub fn enrol(server: &str, code: &str, dir: &Path) -> i32 {
     Command::new(BIN)
         .args([
-            "machine", "enroll", "--server", server, "--code", code, "--name", "test", "--dir",
+            "machine", "enroll", "--server", server, "--name", "test", "--direct", "--dir",
         ])
         .arg(dir)
+        .env("CALTERNAL_ENROLL_CODE", code)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -335,7 +341,7 @@ pub fn machine(dir: &Path, max: u32) -> Proc {
                 "machine",
                 "run",
                 "--backend",
-                "process",
+                "direct",
                 "--max-sandboxes",
                 &max.to_string(),
                 "--dir",

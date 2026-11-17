@@ -5,14 +5,14 @@
  */
 import { buildIndex, search, type Item } from "./search";
 
-export type MentionKind = "person" | "agent" | "thread" | "item" | "skill";
-/** One pickable thing. `insert` is the text that replaces what was typed. */
-export interface Mention { id: string; kind: MentionKind; label: string; sub?: string; insert: string }
+export type MentionKind = "person" | "agent" | "thread" | "item" | "skill" | "tag" | "block";
+/** One pickable thing. `insert` is the text that replaces what was typed; `caret` is where the caret goes inside it (default: after it). */
+export interface Mention { id: string; kind: MentionKind; label: string; sub?: string; insert: string; caret?: number }
 /** A heading with its entries. */
 export interface MentionGroup { kind: MentionKind; title: string; entries: Mention[] }
 
-const TITLE: Record<MentionKind, string> = { person: "People", agent: "Agents", thread: "Threads", item: "Items", skill: "Skills" };
-const ORDER: MentionKind[] = ["person", "agent", "thread", "item", "skill"];
+const TITLE: Record<MentionKind, string> = { person: "People", agent: "Agents", thread: "Threads", item: "Items", skill: "Skills", tag: "Tags", block: "Insert" };
+const ORDER: MentionKind[] = ["person", "agent", "thread", "item", "skill", "tag", "block"];
 const PEOPLE: [string, string][] = [["Kay", "Owner"], ["Priya", "Manager"], ["Sam", "Member"]];
 const SKILLS: [string, string][] = [["review", "Code review"], ["release", "Release notes"], ["docs", "Write the docs"]];
 
@@ -57,3 +57,24 @@ export function triggerAt(text: string, caret: number): { kind: "mention" | "ski
   if (sl) return { kind: "skill", query: sl[1]!, start: caret - sl[1]!.length - 1 };
   return null;
 }
+
+/** What `[[` can pick in a note: the notes of the space, inserted as `[[Title]]`. */
+export const notePool = (items: { id: string; title: string }[]): Mention[] => items.map((t): Mention => ({ id: `i:${t.id}`, kind: "item", label: t.title, sub: "Note", insert: `[[${t.title}]]` }));
+/** What `#` can pick in a note: the tags in use, and, when no tag in use starts with the typed word, the word itself as a new tag. */
+export function tagPool(tags: string[], typed = ""): Mention[] {
+  const pool = tags.map((t): Mention => ({ id: `g:${t}`, kind: "tag", label: `#${t}`, sub: "Tag", insert: `#${t}` }));
+  const w = typed.trim();
+  return w && !tags.some((t) => t.toLowerCase().startsWith(w.toLowerCase())) ? [{ id: `g:${w}`, kind: "tag", label: `#${w}`, sub: "New tag", insert: `#${w}` }, ...pool] : pool;
+}
+/** What `/` offers in a note: the blocks that can be inserted. Each replaces the typed `/word` with Markdown, which is all a block is. */
+export const blockPool = (): Mention[] => [
+  { id: "b:h1", kind: "block", label: "Heading 1", sub: "#", insert: "# " },
+  { id: "b:h2", kind: "block", label: "Heading 2", sub: "##", insert: "## " },
+  { id: "b:h3", kind: "block", label: "Heading 3", sub: "###", insert: "### " },
+  { id: "b:bullet", kind: "block", label: "Bulleted list", sub: "-", insert: "- " },
+  { id: "b:task", kind: "block", label: "Task", sub: "- [ ]", insert: "- [ ] " },
+  { id: "b:quote", kind: "block", label: "Quote", sub: ">", insert: "> " },
+  { id: "b:code", kind: "block", label: "Code block", sub: "```", insert: "```\n\n```", caret: 4 },
+  { id: "b:table", kind: "block", label: "Table", sub: "|", insert: "| Column | Column |\n| --- | --- |\n|  |  |", caret: 2 },
+  { id: "b:rule", kind: "block", label: "Divider", sub: "---", insert: "---\n" },
+];

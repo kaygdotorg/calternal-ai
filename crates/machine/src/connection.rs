@@ -40,7 +40,11 @@ pub struct Config {
 /// Run the machine role until `shutdown` completes (orderly exit, `Ok`) or the
 /// machine is revoked ([`Error::Revoked`], after stopping every sandbox).
 pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>) -> Result<()> {
-    let creds = Credentials::load(&config.dir)?;
+    let _ownership = crate::ownership::lock(&config.dir).await?;
+    let path = config.dir.clone();
+    let creds = tokio::task::spawn_blocking(move || Credentials::load(&path))
+        .await
+        .map_err(|_| Error::Protocol("cannot load machine identity".into()))??;
     let link = Arc::new(Link::new(&creds.server)?);
     let runner = Arc::new(Runner::new(
         config.backend,
@@ -70,7 +74,7 @@ async fn session_loop(
     let mut last_ok = Instant::now();
     let mut lease_ttl = Duration::from_secs(90);
     loop {
-        let granted = match open_session(creds, link, boot_id).await {
+        let granted = match open_session(creds, link, boot_id, runner.backend_name()).await {
             Ok(g) => g,
             Err(Error::Revoked) => return Err(Error::Revoked),
             Err(e) if matches!(e.status(), Some(403 | 404)) => return Err(Error::Revoked),
@@ -81,6 +85,7 @@ async fn session_loop(
                 continue;
             }
         };
+        runner.configure_backend(&granted.backend)?;
         lease_ttl = Duration::from_millis(granted.lease_ttl_ms);
         let hold = Duration::from_millis(granted.poll_hold_ms);
         link.set_token(Some(granted.token.into()));
@@ -92,6 +97,7 @@ async fn session_loop(
                 capacity: runner.capacity(),
                 draining: false,
                 leases: runner.reports(),
+                discards: runner.discard_reports(),
             };
             match link
                 .post::<_, SyncResponse>(
@@ -103,12 +109,13 @@ async fn session_loop(
                 .await
             {
                 Ok(resp) => {
+                    runner.ack_discards(&req.discards);
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {
                         if env.seq > ack {
                             ack = env.seq;
-                            runner.handle(env.message);
+                            runner.handle(env.message).await;
                         }
                     }
                     if runner.any_frozen() {
@@ -138,7 +145,12 @@ async fn expire_locally(runner: &Runner, last_ok: Instant, ttl: Duration) {
     }
 }
 
-async fn open_session(creds: &Credentials, link: &Link, boot_id: Uuid) -> Result<SessionGranted> {
+async fn open_session(
+    creds: &Credentials,
+    link: &Link,
+    boot_id: Uuid,
+    backend: &str,
+) -> Result<SessionGranted> {
     let t = Duration::from_secs(20);
     let SessionChallenge { challenge } = link
         .post(
@@ -156,6 +168,7 @@ async fn open_session(creds: &Credentials, link: &Link, boot_id: Uuid) -> Result
         challenge,
         boot_id,
         protocol: PROTOCOL_VERSION,
+        backend: backend.into(),
     };
     link.post("/api/v1/machine/session/finish", &finish, false, t)
         .await
