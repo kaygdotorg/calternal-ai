@@ -52,8 +52,9 @@ ssh claude@calternal-dev-01-compute02 'mkdir -p ~/Developer/lanes/provider-claud
 
 The commands below were each executed through
 `ssh claude@calternal-dev-01-compute02 'cd ~/Developer/lanes/provider-claude && <command>'`.
-The latest full chain completed successfully before the coordinator's stop request;
-no further tests were started after that request.
+The existing chain's completed logs are reported below. Its final workspace log
+finished at 20:57:47 IST and final format log at 20:59:35 IST on 2026-11-17. No
+further qualification was scheduled after the coordinator's stop request.
 
 | Command | Result |
 | --- | --- |
