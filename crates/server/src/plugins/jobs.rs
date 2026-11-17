@@ -42,7 +42,7 @@ use super::Session;
 use super::job_sql::{
     ACTIVE, COLUMNS, SCHEMA, all_reported, db_err, parse_state, report, retain, row, set_state,
 };
-use super::live::{Live, LiveMap, Subscription};
+use super::live::{Live, LiveMap};
 use super::worker::CancelFlag;
 use calternal_types::{AccountId, Error};
 
@@ -200,8 +200,8 @@ pub struct Jobs {
     spaces: Mutex<HashMap<String, OpenSpace>>,
     tick: AtomicUsize,
     pub(super) routes: RwLock<HashMap<String, String>>,
-    live: LiveMap,
-    subscribers: Arc<AtomicUsize>,
+    pub(super) live: LiveMap,
+    pub(super) subscribers: Arc<AtomicUsize>,
     permits: Arc<Semaphore>,
 }
 
@@ -447,31 +447,6 @@ impl Jobs {
         Ok(Some(Claimed { job, live, cancel }))
     }
 
-    /// The live stream of a job, created on demand. Cost: one map lock.
-    pub fn live(&self, id: &str) -> Arc<Live> {
-        let mut map = self.live.lock().unwrap_or_else(|p| p.into_inner());
-        let now = std::time::Instant::now();
-        map.retain(|_, l| {
-            let b = l.lock();
-            b.running || b.subscribers > 0 || b.retain_until.is_none_or(|t| t > now)
-        });
-        let mut stopped: Vec<_> = map
-            .iter()
-            .filter_map(|(id, l)| {
-                let b = l.lock();
-                (!b.running && b.subscribers == 0).then_some((id.clone(), b.retain_until))
-            })
-            .collect();
-        stopped.sort_by_key(|(_, t)| *t);
-        let excess = stopped.len().saturating_sub(63);
-        for (old, _) in stopped.into_iter().take(excess) {
-            map.remove(&old);
-        }
-        map.entry(id.to_owned())
-            .or_insert_with(|| Arc::new(Live::new()))
-            .clone()
-    }
-
     /// Durably record a checkpoint from the current run; the next run resumes from it
     /// and its sequence numbers continue after it. Cost: one FULL update.
     pub fn checkpoint(
@@ -613,85 +588,5 @@ impl Jobs {
             self.settle(&job);
         }
         Ok(wake)
-    }
-
-    /// Stop a job's stream after its run ended: wake subscribers and drop the buffer
-    /// once nobody is subscribed. Cost: two map/stream locks.
-    pub(super) fn settle(&self, id: &str) {
-        self.settle_inner(id, None)
-    }
-
-    /// Settle only a matching live run; late completion cannot stop its successor.
-    pub(super) fn settle_run(&self, id: &str, run: u32) {
-        self.settle_inner(id, Some(run))
-    }
-
-    fn settle_inner(&self, id: &str, expected: Option<u32>) {
-        let mut live = self.live.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(l) = live.get(id).cloned() {
-            let idle = {
-                let mut b = l.lock();
-                if expected.is_some_and(|run| b.run != run) {
-                    return;
-                }
-                b.running = false;
-                b.cancel = None;
-                if b.retain_until.is_some() {
-                    b.retain_until = Some(std::time::Instant::now() + Duration::from_secs(30));
-                }
-                b.subscribers == 0 && b.retain_until.is_none()
-            };
-            l.bump();
-            if idle {
-                live.remove(id);
-            }
-        }
-    }
-
-    /// Child results recorded for `parent`, in report order. Cost: one indexed scan.
-    pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, Error> {
-        let conn = self.conn(space)?;
-        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
-        let mut st = c
-            .prepare("SELECT child,state,result FROM child_results WHERE parent=?1 ORDER BY rowid")
-            .map_err(db_err)?;
-        st.query_map([parent], |r| {
-            Ok(ChildResult {
-                job_id: r.get(0)?,
-                state: parse_state(&r.get::<_, String>(1)?),
-                result: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or(Value::Null),
-            })
-        })
-        .map_err(db_err)?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(db_err)
-    }
-
-    /// Take a subscriber slot on a job's stream; refused beyond the per-job and
-    /// server-wide bounds. Cost: one map lock and one stream lock.
-    pub fn subscribe(&self, id: &str) -> Result<Subscription, Error> {
-        let busy = || {
-            Error::unavailable("too many job subscribers; retry shortly")
-                .with_details(serde_json::json!({"reason": "subscriber_capacity"}))
-        };
-        if self.subscribers.fetch_add(1, Ordering::AcqRel) >= MAX_SUBSCRIBERS {
-            self.subscribers.fetch_sub(1, Ordering::AcqRel);
-            return Err(busy());
-        }
-        let live = self.live(id);
-        let mut b = live.lock();
-        if b.subscribers >= MAX_SUBSCRIBERS_PER_JOB {
-            drop(b);
-            self.subscribers.fetch_sub(1, Ordering::AcqRel);
-            return Err(busy());
-        }
-        b.subscribers += 1;
-        drop(b);
-        Ok(Subscription {
-            live,
-            id: id.to_owned(),
-            map: self.live.clone(),
-            total: self.subscribers.clone(),
-        })
     }
 }

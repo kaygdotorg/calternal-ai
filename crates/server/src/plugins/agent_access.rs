@@ -19,12 +19,11 @@ impl Jobs {
         let a = a.clone();
         let digest = hash(&token);
         self.with_current(&a.clone(),run,move |tx|{
-            tx.execute("DELETE FROM agent_access WHERE account=?1 AND (closed=1 AND updated_ms<?2 AND expires_ms<?3 OR space=?4 AND thread=?5 AND job!=?6)",params![a.actor.account.to_string(),now_ms()-7*86_400_000i64,now_ms(),a.space,a.thread()?.to_string(),a.job]).map_err(db_err)?;
-            let count:i64=tx.query_row("SELECT count(*) FROM agent_access WHERE account=?1 AND job!=?2",params![a.actor.account.to_string(),a.job],|r|r.get(0)).map_err(db_err)?;
+            let count:i64=tx.query_row("SELECT count(*) FROM agent_access WHERE account=?1 AND NOT(space=?2 AND thread=?3)",params![a.actor.account.to_string(),a.space,a.thread()?.to_string()],|r|r.get(0)).map_err(db_err)?;
             if count>=1024{return Err(Error::unavailable("this account has 1024 retained turn authority records"))}
             let current:Option<String>=tx.query_row("SELECT scope FROM agent_access WHERE thread=?1 AND job=?2 AND account=?3",params![a.thread()?.to_string(),a.job,a.actor.account.to_string()],|r|r.get(0)).optional().map_err(db_err)?;
             let scope=match current{Some(scope)=>scope,None=>serde_json::to_string(&a).map_err(|_|Error::internal("access encoding"))?};
-            let changed=tx.execute("UPDATE agent_access SET hash=?1,scope=?2,expires_ms=?3,run=?4,updated_ms=?5,closed=0 WHERE account=?6 AND space=?7 AND thread=?8 AND job=?9",params![digest,scope,now_ms()+600_000,run,now_ms(),a.actor.account.to_string(),a.space,a.thread()?.to_string(),a.job]).map_err(db_err)?;
+            let changed=tx.execute("UPDATE agent_access SET hash=?1,scope=?2,expires_ms=?3,run=?4,updated_ms=?5 WHERE account=?6 AND space=?7 AND thread=?8 AND job=?9",params![digest,scope,now_ms()+600_000,run,now_ms(),a.actor.account.to_string(),a.space,a.thread()?.to_string(),a.job]).map_err(db_err)?;
             if changed==0 {
                 tx.execute("INSERT INTO agent_access(thread,job,account,hash,scope,expires_ms,run,space,updated_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![a.thread()?.to_string(),a.job,a.actor.account.to_string(),digest,scope,now_ms()+600_000,run,a.space,now_ms()]).map_err(db_err)?;
             }
@@ -65,7 +64,7 @@ impl Jobs {
         self.security_change(move |tx| {tx.execute("UPDATE agent_access SET hash=NULL,expires_ms=0,updated_ms=?3 WHERE job=?1 AND space=?2",params![job,space,now_ms()]).map_err(db_err)?;Ok(())})
     }
 
-    /// Current server-owned thread state, retained with the job for seven days.
+    /// Current server-owned thread state, bounded to 1024 threads per account.
     /// Cost: one indexed read; never returns the token or its hash.
     pub fn agent_scope(&self, space: &str, job: &str) -> Result<Authority, Error> {
         let (space, job) = (space.to_owned(), job.to_owned());
@@ -96,7 +95,7 @@ impl Jobs {
     }
 
     /// Create or reuse a pending scope request. Questions have no expiry; at most
-    /// 32 requests per turn, removed with that turn's retained job record.
+    /// 32 requests per turn, removed when the thread starts its next turn.
     pub fn agent_request(&self, a: &Authority, app: &str, write: bool) -> Result<String, Error> {
         if app.is_empty()
             || app.len() > 80
@@ -196,7 +195,7 @@ impl Jobs {
 impl Jobs {
     /// Durably request approval for an exact action after person-capability checks.
     /// Pending requests do not expire and are capped at 32 per turn; their bounded
-    /// details and hashes are deleted with the job after seven days.
+    /// details and hashes are removed when this thread starts its next turn.
     pub fn agent_action_request(
         &self,
         a: &Authority,
@@ -260,15 +259,21 @@ impl Jobs {
 
 impl Jobs {
     /// Store the turn scope while queued without a live credential. One FULL
-    /// upsert. The token lifetime starts only when the machine is ready to execute.
+    /// transaction. The token lifetime starts only when the machine is ready to execute.
     pub fn agent_prepare_scope(&self, a: &Authority, run: u32) -> Result<Authority, Error> {
-        let a = a.clone();
+        let mut a = a.clone();
         self.with_current(&a.clone(),run,move |tx|{
-            tx.execute("DELETE FROM agent_access WHERE account=?1 AND (closed=1 AND updated_ms<?2 AND expires_ms<?3 OR space=?4 AND thread=?5 AND job!=?6)",params![a.actor.account.to_string(),now_ms()-7*86_400_000i64,now_ms(),a.space,a.thread()?.to_string(),a.job]).map_err(db_err)?;
-            let count:i64=tx.query_row("SELECT count(*) FROM agent_access WHERE account=?1 AND job!=?2",params![a.actor.account.to_string(),a.job],|r|r.get(0)).map_err(db_err)?;
+            let count:i64=tx.query_row("SELECT count(*) FROM agent_access WHERE account=?1 AND NOT(space=?2 AND thread=?3)",params![a.actor.account.to_string(),a.space,a.thread()?.to_string()],|r|r.get(0)).map_err(db_err)?;
             if count>=1024{return Err(Error::unavailable("this account has 1024 retained turn authority records"))}
-            let current:Option<String>=tx.query_row("SELECT scope FROM agent_access WHERE thread=?1 AND job=?2 AND account=?3",params![a.thread()?.to_string(),a.job,a.actor.account.to_string()],|r|r.get(0)).optional().map_err(db_err)?;
-            if let Some(current)=current{return serde_json::from_str(&current).map_err(|_|Error::internal("access encoding"));}
+            let current:Option<String>=tx.query_row("SELECT scope FROM agent_access WHERE thread=?1 AND space=?2 AND account=?3",params![a.thread()?.to_string(),a.space,a.actor.account.to_string()],|r|r.get(0)).optional().map_err(db_err)?;
+            if let Some(current)=current {
+                let previous:Authority=serde_json::from_str(&current).map_err(|_|Error::internal("access encoding"))?;
+                if previous.job==a.job {return Ok(previous)}
+                // Mode belongs to the thread; action/app grants belong to its turn.
+                // Replacing the access row cascades deletion of the old approvals.
+                a.mode=previous.mode;
+                tx.execute("DELETE FROM agent_access WHERE job=?1",[previous.job]).map_err(db_err)?;
+            }
             let scope=serde_json::to_string(&a).map_err(|_|Error::internal("access encoding"))?;
             tx.execute("INSERT INTO agent_access(thread,job,account,hash,scope,expires_ms,run,space,updated_ms) VALUES(?1,?2,?3,NULL,?4,0,?5,?6,?7)",params![a.thread()?.to_string(),a.job,a.actor.account.to_string(),scope,run,a.space,now_ms()]).map_err(db_err)?;
             Ok(a.clone())

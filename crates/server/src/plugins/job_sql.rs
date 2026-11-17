@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 
 use super::Session;
-use super::jobs::{Job, Jobs, MAX_FINAL_PER_SPACE, MAX_RUNS, RETAIN_FINAL};
+use super::jobs::{ChildResult, Job, Jobs, MAX_FINAL_PER_SPACE, MAX_RUNS, RETAIN_FINAL};
 use calternal_types::Error;
 
 pub(super) const SCHEMA: &str = "BEGIN IMMEDIATE;
@@ -237,5 +237,26 @@ impl Jobs {
         out.sort();
         out.dedup();
         Ok(out)
+    }
+}
+
+impl Jobs {
+    /// Child results recorded for `parent`, in report order. Cost: one indexed scan.
+    pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, Error> {
+        let conn = self.conn(space)?;
+        let c = conn.lock().unwrap_or_else(|p| p.into_inner());
+        let mut st = c
+            .prepare("SELECT child,state,result FROM child_results WHERE parent=?1 ORDER BY rowid")
+            .map_err(db_err)?;
+        st.query_map([parent], |r| {
+            Ok(ChildResult {
+                job_id: r.get(0)?,
+                state: parse_state(&r.get::<_, String>(1)?),
+                result: serde_json::from_str(&r.get::<_, String>(2)?).unwrap_or(Value::Null),
+            })
+        })
+        .map_err(db_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(db_err)
     }
 }

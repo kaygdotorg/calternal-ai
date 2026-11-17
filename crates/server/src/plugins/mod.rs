@@ -22,6 +22,7 @@ pub mod agent_settings;
 pub mod broker;
 pub mod job_api;
 pub mod job_sql;
+mod job_streams;
 pub mod jobs;
 pub mod live;
 pub mod runner;

@@ -13,6 +13,7 @@
 //! - `reset` — `{ epoch, from }`: the chunks the client asked for are gone (another
 //!   run started, or they were evicted from the bounded buffer). The client keeps
 //!   the snapshot's checkpoint and continues from `from`.
+//! - `state` — manual turns only: retry state and pending approval requests.
 //! - `end` — the final record; the stream then closes.
 //!
 //! A client resumes with `?after=<epoch>:<seq>` (or `Last-Event-ID`). Every delivery
@@ -283,7 +284,11 @@ impl<D: Directory> Stream<D> {
                         Some(seq + 1)
                     }
                     Some(_) => None,
-                    None => Some(job.checkpoint_seq),
+                    None => Some(if job.operation == "agent.turn" {
+                        batch.oldest
+                    } else {
+                        job.checkpoint_seq
+                    }),
                 };
                 self.epoch = batch.epoch.clone();
             }
@@ -325,7 +330,7 @@ impl<D: Directory> Stream<D> {
                 vec![]
             };
             let current = json!({"job":job.view(),"requests":requests});
-            if current != self.last_state {
+            if job.operation=="agent.turn" && current != self.last_state {
                 self.last_state = current.clone();
                 out.push_str(&event("state", None, &current));
             }

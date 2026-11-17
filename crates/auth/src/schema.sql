@@ -187,7 +187,6 @@ CREATE TABLE agent_access(
  hash BLOB UNIQUE, scope TEXT NOT NULL CHECK(length(scope)<=65536),
  expires_ms INTEGER NOT NULL, run INTEGER NOT NULL,
  updated_ms INTEGER NOT NULL,
- closed INTEGER NOT NULL DEFAULT 0 CHECK(closed IN (0,1)),
  PRIMARY KEY(account,space,thread)
 ) STRICT;
 CREATE INDEX agent_access_account ON agent_access(account);

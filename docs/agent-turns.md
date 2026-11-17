@@ -40,9 +40,10 @@ FULL transaction. Live buffers hold at most 256 chunks / 1 MiB per job. Complete
 completed buffers last 30 seconds, with at most 64 retained completed streams.
 Durable final jobs last seven days (at most 1024 final jobs per space); at most
 64 active jobs fit in a space. Agent authority is capped at 1024 records per
-account, with 32 approvals per turn. Closed authority older than seven days is
-pruned on admission; interrupted scopes remain until superseded or their account
-or space is deleted, so a resumed turn cannot recover a broader initial mode.
+account, with 32 approvals per turn. The current mode remains until superseded or
+the account or space is deleted, so later turns cannot recover a broader initial
+mode. Starting another turn replaces the token/grants row and removes old approvals;
+thread deletion will be wired through the thread-storage lane.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
@@ -147,10 +148,10 @@ updates account defaults in that account's private appdata SQLite file. A run's
 thread's recovery settings. Account defaults affect later turns. No credential is
 part of these settings.
 
-Simplification opportunities: use the same job stream subscription abstraction for
-CLI polling and SSE, and replace the manual-turn host seam with `threads.send`
-when the file-storage lane lands. Keep provider normalization separate from those
-changes so a Codex adapter reuses the machine, job, access and retry paths.
+Simplification opportunities: replace the small manual-turn admission port with
+`threads.send` when the file-storage lane lands. The CLI already follows the job
+stream; its SSE decoder is shared with space live subscriptions. A Codex adapter
+reuses the machine, job, access, instruction and retry paths.
 
 Protected discard intent is separate from placement delivery metadata. The owner
 and exact lease authorization is committed in auth.db before queuing a command;

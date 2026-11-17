@@ -105,6 +105,30 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
     jobs.finish(&space, &id, next.job.runs, RunEnd::Done(json!({})))
         .unwrap();
     assert!(jobs.agent_authenticate(&current).unwrap().is_none());
+    // A later manual turn inherits the thread's current mode, with fresh grants.
+    let next_id = jobs
+        .admit(Admission {
+            space: space.clone(),
+            plugin: "calternal-orchestrator".into(),
+            account: authority.actor.account,
+            session: Session::Static,
+            operation: "agent.turn".into(),
+            input: json!({"request":{"thread_id":authority.thread().unwrap()}}),
+            parent: None,
+            generation: 0,
+            request_key: "next turn".into(),
+        })
+        .unwrap();
+    let next = jobs.claim(&space, &next_id).unwrap().unwrap();
+    authority.job = next_id;
+    authority.mode = AgentMode::FullAccess;
+    let inherited = jobs.agent_prepare_scope(&authority, next.job.runs).unwrap();
+    assert_eq!(
+        inherited.mode,
+        AgentMode::ApproveForMe,
+        "a new turn widened the saved thread mode"
+    );
+    assert!(inherited.grants.is_empty());
     let raw = std::fs::read(dir.path().join("spaces").join(space).join("jobs.db")).unwrap();
     assert!(
         !raw.windows(new.len()).any(|b| b == new.as_bytes()),

@@ -1,4 +1,4 @@
-//! Per-thread access policy. Authentication storage is implemented by the per-space jobs service.
+//! Per-thread access policy. Authority is stored in auth.db through its protected recovery barrier.
 use calternal_core::{AgentMode, JsonObject};
 use calternal_types::Error;
 use serde::{Deserialize, Serialize};

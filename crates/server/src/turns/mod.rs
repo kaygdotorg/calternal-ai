@@ -71,9 +71,25 @@ pub async fn dispatch<D: Directory>(
         let value = i
             .retry_settings
             .ok_or_else(|| Error::invalid_input("thread settings require retry_settings"))?;
+        let canonical: JsonObject =
+            serde_json::from_value(json!(&i)).map_err(|_| Error::internal("settings encoding"))?;
+        let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
+        let admission = admission::ManualAdmission::new(
+            state.store.shared_content(),
+            who.id,
+            space,
+            rid,
+            op,
+            &canonical,
+        );
         let (st, sp, id) = (state.clone(), job.space, job.id);
-        blocking(move || st.jobs.agent_thread_settings(&sp, &id, value)).await?;
-        return Ok(json!({"retry_settings":value}));
+        return blocking(move || {
+            admission.apply(|| {
+                st.jobs.agent_thread_settings(&sp, &id, value)?;
+                Ok(json!({"retry_settings":value}))
+            })
+        })
+        .await;
     }
     if op == "machines.resume" {
         if agent.is_some() {

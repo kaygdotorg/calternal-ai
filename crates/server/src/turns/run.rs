@@ -36,7 +36,7 @@ pub(super) fn schedule<D: Directory>(
         let Ok(Some(claimed)) = blocking(move || s.jobs.claim(&sp, &jid)).await else {
             return;
         };
-        claimed.live.retain_for_polling();
+        claimed.live.retain_for_subscriber();
         let end = execute(&st, &svc, &claimed.job, &claimed.live)
             .await
             .unwrap_or(RunEnd::OutcomeUnknown);

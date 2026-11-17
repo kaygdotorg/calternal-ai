@@ -78,9 +78,9 @@ impl Live {
         self.changed.send_modify(|v| *v = v.wrapping_add(1));
     }
 
-    /// Keep a completed manual-turn stream for polling for thirty seconds (the
+    /// Keep a completed manual-turn stream for late subscribers for thirty seconds (the
     /// job service also caps completed retained streams at 64). No I/O.
-    pub fn retain_for_polling(&self) {
+    pub fn retain_for_subscriber(&self) {
         self.lock().retain_until =
             Some(std::time::Instant::now() + std::time::Duration::from_secs(630));
     }
