@@ -222,6 +222,8 @@ impl Worker {
 pub struct WorkerPool {
     node: Option<NodeRuntime>,
     workers: Mutex<HashMap<(String, SpaceId), Worker>>,
+    /// Cold starts in progress; they count against `max_workers`.
+    starting: AtomicUsize,
     in_flight: Arc<AtomicUsize>,
     max_workers: usize,
 }
@@ -237,6 +239,7 @@ impl WorkerPool {
         Self {
             node,
             workers: Mutex::new(HashMap::new()),
+            starting: AtomicUsize::new(0),
             in_flight: Arc::new(AtomicUsize::new(0)),
             max_workers: max_workers.max(1),
         }
@@ -262,8 +265,9 @@ impl WorkerPool {
 
     /// Run one operation on the (plugin, space) worker, starting it if needed.
     /// `space` selects the process and is the space its session is pinned to.
-    /// Cost: pool lock; on a cold start one bundle hash and one process spawn; then
-    /// one channel round trip plus the worker's own frames and broker effects.
+    /// Cost: the pool lock for a lookup (never held across I/O); a cold start hashes
+    /// the bundle and spawns the process on a blocking thread with a reserved pool
+    /// slot; then one channel round trip plus the worker's own frames and effects.
     pub async fn invoke(
         &self,
         plugin: &Arc<Plugin>,
@@ -283,26 +287,58 @@ impl WorkerPool {
         let mut pending = Box::new(Pending { call, reply });
         // A worker that exited idle between lookup and send drops its receiver;
         // the send then fails and one fresh worker is started.
+        let key = (plugin.manifest.id.clone(), space);
         for _ in 0..2 {
-            let sent = {
+            let started = {
                 let mut workers = match self.workers.lock() {
                     Ok(w) => w,
                     Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
                 };
-                let key = (plugin.manifest.id.clone(), space);
-                if !workers.get(&key).is_some_and(Worker::usable) {
+                if workers.get(&key).is_some_and(Worker::usable) {
+                    None
+                } else {
                     workers.remove(&key);
                     if let Err(e) = self.make_room(&mut workers) {
                         return Outcome::Failed(e);
                     }
-                    match spawn(node, plugin, bundle, space, self.in_flight.clone()) {
-                        Ok(w) => {
-                            workers.insert(key.clone(), w);
-                        }
-                        Err(e) => return Outcome::Failed(e),
-                    }
+                    // Reserve the slot, then start outside the lock and off the
+                    // async thread: hashing and spawning never block other workers.
+                    self.starting.fetch_add(1, Ordering::AcqRel);
+                    Some(())
                 }
-                let worker = &workers[&key];
+            };
+            if started.is_some() {
+                let (node, plugin2, bundle2, in_flight) =
+                    (node.clone(), plugin.clone(), bundle.clone(), self.in_flight.clone());
+                let spawned = tokio::task::spawn_blocking(move || {
+                    spawn(&node, &plugin2, &bundle2, space, in_flight)
+                })
+                .await;
+                self.starting.fetch_sub(1, Ordering::AcqRel);
+                let worker = match spawned {
+                    Ok(Ok(w)) => w,
+                    Ok(Err(e)) => return Outcome::Failed(e),
+                    Err(_) => return Outcome::Failed(Error::internal("worker start failed")),
+                };
+                let mut workers = match self.workers.lock() {
+                    Ok(w) => w,
+                    Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
+                };
+                // A concurrent cold start may have won; keep one worker per key.
+                if workers.get(&key).is_some_and(Worker::usable) {
+                    let _ = worker.events.send(Event::Shutdown);
+                } else {
+                    workers.insert(key.clone(), worker);
+                }
+            }
+            let sent = {
+                let workers = match self.workers.lock() {
+                    Ok(w) => w,
+                    Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
+                };
+                let Some(worker) = workers.get(&key) else {
+                    continue;
+                };
                 worker.busy.fetch_add(1, Ordering::AcqRel);
                 self.in_flight.fetch_add(1, Ordering::AcqRel);
                 if let Some(cancel) = &pending.call.cancel {
@@ -313,7 +349,10 @@ impl WorkerPool {
                     Err(mpsc::SendError(event)) => {
                         worker.busy.fetch_sub(1, Ordering::AcqRel);
                         self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                        workers.remove(&key);
+                        drop(workers);
+                        if let Ok(mut workers) = self.workers.lock() {
+                            workers.remove(&key);
+                        }
                         match event {
                             Event::Invoke(p) => Some(p),
                             _ => unreachable!("only invocations are sent here"),
@@ -336,7 +375,7 @@ impl WorkerPool {
     /// Evict one idle worker if the pool is full; refuse when every worker is busy.
     fn make_room(&self, workers: &mut HashMap<(String, SpaceId), Worker>) -> Result<(), Error> {
         workers.retain(|_, w| w.usable());
-        if workers.len() < self.max_workers {
+        if workers.len() + self.starting.load(Ordering::Acquire) < self.max_workers {
             return Ok(());
         }
         let idle = workers
@@ -370,7 +409,7 @@ fn spawn(
         tracing::warn!(plugin = %plugin.manifest.id, reason = %why, "refusing to start worker");
         Error::unavailable("plugin bundle failed verification")
     })?;
-    let session = WorkerSession::new(plugin.manifest.clone(), space)
+    let session = WorkerSession::new(plugin.manifest.clone(), plugin.schemas.clone(), space)
         .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
     let dir = bundle.parent().unwrap_or(Path::new("/"));
     let mut child = Command::new(&node.path)

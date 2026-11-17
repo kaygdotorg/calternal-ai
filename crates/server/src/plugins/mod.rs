@@ -91,6 +91,8 @@ pub struct Plugin {
     pub worker: Option<PathBuf>,
     /// Why the plugin cannot execute or be enabled, if it cannot (digest mismatch etc).
     pub unavailable: Option<String>,
+    /// Operation schemas compiled once, shared by every (plugin, space) worker.
+    pub schemas: Arc<host::CompiledSchemas>,
 }
 
 impl Plugin {
@@ -103,7 +105,9 @@ impl Plugin {
         manifest: ManifestV1,
         worker: Option<PathBuf>,
     ) -> Result<Self, String> {
-        host::validate_manifest(&manifest).map_err(|e| format!("manifest invalid: {e}"))?;
+        let schemas = Arc::new(
+            host::CompiledSchemas::compile(&manifest).map_err(|e| format!("manifest invalid: {e}"))?,
+        );
         if manifest.id != entry.id || manifest.version != entry.version {
             return Err(format!(
                 "manifest id/version {}@{} does not match registry {}@{}",
@@ -117,6 +121,7 @@ impl Plugin {
             wire,
             worker,
             unavailable: None,
+            schemas,
         })
     }
 
