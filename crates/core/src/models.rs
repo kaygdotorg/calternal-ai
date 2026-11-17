@@ -786,6 +786,10 @@ pub enum WorkerResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
+    /// Multiplexed live journal subscription query element.
+    pub live_subscription: crate::LiveSubscription,
+    /// SSE data payload including explicit bookmark resets.
+    pub live_frame: crate::LiveFrame,
     /// Common address resolution input.
     pub resolve_input: ResolveInput,
     /// Current visible address resolution.
