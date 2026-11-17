@@ -112,10 +112,12 @@ impl Journals {
             .transpose()
     }
 
-    /// Records the receipt and journal event of one mutation, idempotently, then
-    /// makes it durable. A different operation or input under the same request ID is
-    /// a conflict. Cost: one indexed read, one NORMAL writer transaction and one FULL
-    /// writer transaction (the durability barrier) on the space's writer thread.
+    /// Records the receipt and journal event of one mutation, idempotently and
+    /// durably, in one transaction. A different operation or input under the same
+    /// request ID is a conflict; a matching one is already recorded and durable.
+    /// Nothing outlives the receipt: when it expires, the request ID is new again.
+    /// Cost: one indexed read and, when new, one FULL writer transaction (one WAL
+    /// fsync) on the space's writer thread.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn publish(
         &self,
@@ -129,44 +131,40 @@ impl Journals {
         result: Value,
     ) -> Result<()> {
         self.run(async {
-            let prior = store.idempotency(account, id).await.map_err(internal)?;
-            if let Some(prior) = prior {
+            if let Some(prior) = store.idempotency(account, id).await.map_err(internal)? {
                 if prior.action != operation || prior.payload_hash != fingerprint {
                     return Err(Error::request_reused());
                 }
-            } else {
-                store
-                    .commit(Commit {
-                        events: vec![StampedEvent {
-                            author: account,
-                            kind: operation.to_owned(),
-                            item: item.map(|id| id.to_string()).unwrap_or_default(),
-                            data: serde_json::json!({ "revision": revision }),
-                            installation: None,
-                            request_id: Some(id.to_owned()),
-                        }],
-                        idempotency: Some(IdemWrite {
-                            account,
-                            key: id.to_owned(),
-                            action: operation.to_owned(),
-                            payload_hash: fingerprint.to_owned(),
-                            result: serde_json::json!({ "payload": result, "content_item": item }),
-                        }),
-                    })
-                    .await
-                    .map_err(internal)?;
+                return Ok(());
             }
-            // A FULL-synchronous publication makes the preceding NORMAL receipt and
-            // event durable before the caller retires its outbox row.
             store
-                .commit_once(
-                    account,
-                    format!("content/{id}/{revision}"),
-                    fingerprint.to_owned(),
-                    vec![],
-                )
+                .commit(Commit {
+                    events: vec![StampedEvent {
+                        author: account,
+                        kind: operation.to_owned(),
+                        item: item.map(|id| id.to_string()).unwrap_or_default(),
+                        data: serde_json::json!({ "revision": revision }),
+                        installation: None,
+                        request_id: Some(id.to_owned()),
+                    }],
+                    idempotency: Some(IdemWrite {
+                        account,
+                        key: id.to_owned(),
+                        action: operation.to_owned(),
+                        payload_hash: fingerprint.to_owned(),
+                        result: serde_json::json!({ "payload": result, "content_item": item }),
+                    }),
+                    durable: true,
+                })
                 .await
-                .map_err(internal)?;
+                .map_err(|e| {
+                    // A concurrent writer stored this key first: the same reuse rule.
+                    if e.code == calternal_store::ErrorCode::IdempotencyConflict {
+                        Error::request_reused()
+                    } else {
+                        internal(e)
+                    }
+                })?;
             Ok(())
         })
     }

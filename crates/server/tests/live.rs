@@ -319,6 +319,7 @@ async fn lagged_broadcast_recovers_from_database_without_skipping() {
         .commit(calternal_store::Commit {
             events,
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();
@@ -435,6 +436,7 @@ async fn foreign_item_entries_are_filtered_without_advancing_over_unread_visible
                 request_id: None,
             }],
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();

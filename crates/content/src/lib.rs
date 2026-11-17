@@ -367,8 +367,8 @@ impl Content {
     /// enablement. The host must commit its own mutation plus a replayable outbox
     /// before calling, and retire that outbox only after success. No item bytes or
     /// metadata are stored in the global catalog. Repeated publication is idempotent.
-    /// Cost: the space's lock and one receipt/event transaction followed by a FULL
-    /// durability barrier on the space's journal writer.
+    /// Cost: the space's lock, one receipt read and, when new, one FULL receipt/event
+    /// transaction on the space's journal writer.
     pub fn record_receipt(
         &self,
         space: SpaceId,
@@ -511,7 +511,7 @@ impl Content {
     /// Request IDs are unique per (account, space); a reused one is a conflict.
     /// Cost: cache/space locks, bounded metadata/byte
     /// allocations, indexed head/name checks, one FULL content transaction, a catalog
-    /// route insert for a new item, two journal commits (receipt/event then FULL barrier),
+    /// route insert for a new item, one FULL journal receipt/event commit,
     /// checked file I/O with file+directory fsync, and FULL placement/outbox updates.
     /// First name allocation loads the directory-name cache; warm Linux allocations
     /// drain inherited name-watch events. Other platforms rescan that one directory.

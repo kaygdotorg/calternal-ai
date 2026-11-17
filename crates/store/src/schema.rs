@@ -5,8 +5,8 @@ use crate::{Error, Result};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::Path;
 
-/// The whole `index.db` schema at [`VERSION`]: the change journal, expiring
-/// action receipts and permanent publication receipts. No migration chain:
+/// The whole `index.db` schema at [`VERSION`]: the change journal and its
+/// expiring request receipts (nothing outlives a receipt). No migration chain:
 /// preview data is disposable, and a database at another version is refused.
 const SCHEMA: &str = "CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
@@ -30,10 +30,9 @@ const SCHEMA: &str = "CREATE TABLE meta (
         seq          INTEGER NOT NULL,
         at_ms        INTEGER NOT NULL
     ) STRICT;
-    CREATE INDEX idempotency_at ON idempotency (at_ms);
-    CREATE TABLE publication_receipts (key TEXT PRIMARY KEY, digest TEXT NOT NULL, seq INTEGER NOT NULL) STRICT;";
+    CREATE INDEX idempotency_at ON idempotency (at_ms);";
 /// The schema version [`SCHEMA`] creates.
-const VERSION: i64 = 1;
+const VERSION: i64 = 2;
 
 /// Validates the explicit space binding before exposing an opened journal.
 pub(crate) fn open_bound_writer(
@@ -106,8 +105,8 @@ pub(crate) struct OpenState {
     pub highwater_initialized: bool,
 }
 
-/// Ordinary journal writes retain NORMAL sync. The publication writer uses
-/// FULL for its permanent receipt transaction before acknowledging the space.
+/// Ordinary journal writes retain NORMAL sync; a [`crate::Commit::durable`]
+/// commit switches to FULL for its one transaction.
 fn tune(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;

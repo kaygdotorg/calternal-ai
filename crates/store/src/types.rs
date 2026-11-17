@@ -6,7 +6,7 @@ use std::fmt;
 pub enum ErrorCode {
     /// Invalid typed binding or input.
     InvalidInput,
-    /// A request or permanent publication key has already been used.
+    /// A request key has already been used within its retention.
     IdempotencyConflict,
     /// The cursor is invalid or requires a complete resynchronization.
     SyncTokenExpired,
