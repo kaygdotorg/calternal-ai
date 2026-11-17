@@ -2449,7 +2449,7 @@ async fn interrupted_authority_and_login_are_atomic_with_receipts() {
                 f.login(1).await.ok();
                 rows.push(json!({"scenario":scenario,"delay_us":delay_us,"ack_status":response.as_ref().map(|r|r.0),"new_sessions":count}));
             } else {
-                let receipt:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND request_id=?2)",params![f.ids[1],request_id],|r|r.get(0)).unwrap();
+                let receipt:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND scope=?2 AND request_id=?3)",params![f.ids[1],space,request_id],|r|r.get(0)).unwrap();
                 let owner: String = c
                     .query_row(
                         "SELECT owner_account FROM spaces WHERE id=?1",

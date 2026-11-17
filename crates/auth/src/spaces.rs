@@ -36,7 +36,12 @@ pub struct Member {
 #[derive(Clone)]
 pub struct Spaces {
     db: crate::db::Db,
+    receipt_retention: std::time::Duration,
 }
+/// How long a directory receipt is kept by default: seven days, the same as space
+/// receipts. A retry after that runs as a new request.
+pub const DEFAULT_RECEIPT_RETENTION: std::time::Duration =
+    std::time::Duration::from_secs(7 * 24 * 60 * 60);
 fn sql(e: impl std::fmt::Display) -> Error {
     Error::internal(e)
 }
@@ -305,12 +310,19 @@ impl Spaces {
         self.db.changes()
     }
 
-    /// Opens a configured migrated database. The host must validate roots first.
+    /// Opens a configured migrated database with the default receipt retention.
+    /// The host must validate roots first.
     pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self::from_db(crate::db::Db::open(path)?))
+        Ok(Self::from_db(
+            crate::db::Db::open(path)?,
+            DEFAULT_RECEIPT_RETENTION,
+        ))
     }
-    pub(crate) fn from_db(db: crate::db::Db) -> Self {
-        Self { db }
+    pub(crate) fn from_db(db: crate::db::Db, receipt_retention: std::time::Duration) -> Self {
+        Self {
+            db,
+            receipt_retention,
+        }
     }
     /// Attaches recovery before any requests are admitted; reconciles pending
     /// proposals. Covers every handle sharing this database (see [`crate::Auth::spaces`]).
@@ -423,10 +435,16 @@ impl Spaces {
         self.change_with_receipt(actor, space, change, None)
     }
     /// Executes or replays atomically. Authority is rechecked before reading receipts.
-    /// Receipts are private to the actor and bind the exact operation and fingerprint.
+    /// A receipt is private to the actor and keyed by (actor, scope, request ID):
+    /// the scope is `space`, or the actor's own account when there is none, so one
+    /// request ID is independent between spaces. It binds the exact operation and
+    /// fingerprint, and is kept for the receipt retention: the actor's expired
+    /// receipts are pruned in the same transaction, so an expired ID is new again.
     /// Target checks execute on first application; retries cannot repeat a transfer.
     /// When configured, the recovery barrier completes before results or receipts
     /// are acknowledged; a barrier error can follow an unacknowledged DB commit.
+    /// Cost: one IMMEDIATE transaction on the auth worker: authority checks, one
+    /// bounded indexed prune, one receipt read and, when new, the change and insert.
     pub fn change_with_receipt(
         &self,
         actor: AccountId,
@@ -435,22 +453,48 @@ impl Spaces {
         receipt: Option<(&str, &str, &str)>,
     ) -> Result<serde_json::Value> {
         let receipt = receipt.map(|(rid, op, fp)| (rid.to_owned(), op.to_owned(), fp.to_owned()));
+        let scope = space.map_or_else(|| actor.to_string(), |s| s.to_string());
+        let retention = self.receipt_retention.as_millis() as i64;
         self.run(move |c| {
-        let tx=c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
-        check(&tx,actor,space,&change)?;
-        if let Some((rid,op,fp))=&receipt {
-            let saved:Option<(String,String,String)>=tx.query_row("SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND request_id=?2",params![actor.to_string(),rid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(sql)?;
-            if let Some((saved_op,saved_fp,result))=saved {
-                if saved_op!=*op || saved_fp!=*fp {return Err(Error::new(ErrorCode::Conflict,"request_id reused"));}
-                let value = serde_json::from_str(&result).map_err(sql)?;
-                commit(tx)?;
-                return Ok(value);
+            let tx = c
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            check(&tx, actor, space, &change)?;
+            let now = crate::db::now_ms();
+            if let Some((rid, op, fp)) = &receipt {
+                tx.execute(
+                    "DELETE FROM space_receipts WHERE actor=?1 AND at_ms<?2",
+                    params![actor.to_string(), now.saturating_sub(retention)],
+                )
+                .map_err(sql)?;
+                let saved: Option<(String, String, String)> = tx
+                    .query_row(
+                        "SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND scope=?2 AND request_id=?3",
+                        params![actor.to_string(), scope, rid],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()
+                    .map_err(sql)?;
+                if let Some((saved_op, saved_fp, result)) = saved {
+                    if saved_op != *op || saved_fp != *fp {
+                        return Err(Error::new(ErrorCode::Conflict, "request_id reused"));
+                    }
+                    let value = serde_json::from_str(&result).map_err(sql)?;
+                    commit(tx)?;
+                    return Ok(value);
+                }
             }
-        }
-        let value=apply(&tx,actor,space,&change)?;
-        if let Some((rid,op,fp))=&receipt { tx.execute("INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5)",params![actor.to_string(),rid,op,fp,value.to_string()]).map_err(sql)?; }
-        commit(tx)?;Ok(value)
-    })
+            let value = apply(&tx, actor, space, &change)?;
+            if let Some((rid, op, fp)) = &receipt {
+                tx.execute(
+                    "INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                    params![actor.to_string(), scope, rid, op, fp, value.to_string(), now],
+                )
+                .map_err(sql)?;
+            }
+            commit(tx)?;
+            Ok(value)
+        })
     }
 }
 

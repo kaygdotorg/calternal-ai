@@ -404,6 +404,8 @@ async fn serve(
             ));
         }
     };
+    // Directory receipts follow the same retention as space receipts.
+    config.receipt_retention = receipt_retention;
     if config.set_trusted_proxies(&trusted_proxies).is_err() {
         return Err(boot(
             1,

@@ -128,15 +128,20 @@ CREATE TABLE space_memberships(
  PRIMARY KEY(space_id,account_id)
 ) STRICT;
 CREATE INDEX spaces_account ON space_memberships(account_id,space_id);
--- Receipts of directory changes (spaces.*), per acting account.
+-- Receipts of directory changes (spaces.*): one per (acting account, scope,
+-- request ID), where scope is the space, or the actor's own account for an
+-- operation with no space. Kept for the receipt retention, then pruned.
 CREATE TABLE space_receipts(
  actor TEXT NOT NULL REFERENCES users(id),
+ scope TEXT NOT NULL,
  request_id TEXT NOT NULL,
  operation TEXT NOT NULL,
  fingerprint TEXT NOT NULL,
  result TEXT NOT NULL,
- PRIMARY KEY(actor,request_id)
+ at_ms INTEGER NOT NULL,
+ PRIMARY KEY(actor,scope,request_id)
 ) STRICT;
+CREATE INDEX space_receipts_age ON space_receipts(actor,at_ms);
 -- What the development seed created, so a restart returns the same fixture IDs and
 -- never resurrects removed memberships or deleted spaces. Never read by requests.
 CREATE TABLE development_directory(name TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE) STRICT;

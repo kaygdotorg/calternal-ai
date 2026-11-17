@@ -53,7 +53,7 @@ impl Auth {
     /// worker thread and one recovery sink for accounts and spaces. Cost: two Arc
     /// clones.
     pub fn spaces(&self) -> crate::spaces::Spaces {
-        crate::spaces::Spaces::from_db(self.inner.db.clone())
+        crate::spaces::Spaces::from_db(self.inner.db.clone(), self.inner.config.receipt_retention)
     }
 
     /// Attaches the protected recovery barrier before serving requests. It covers
