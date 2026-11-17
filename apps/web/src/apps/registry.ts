@@ -13,6 +13,7 @@ import { store as threads } from "./threads/store.svelte";
 import Notes from "./notes/Notes.svelte";
 import NotesPanels from "./notes/Panels.svelte";
 import NotesSidebar from "./notes/Sidebar.svelte";
+import { notes } from "./notes/store.svelte";
 import SettingsMain from "./settings/Main.svelte";
 import SettingsSidebar from "./settings/Sidebar.svelte";
 
@@ -85,6 +86,7 @@ export const APPS: AppDef[] = [
       { id: "inspector", label: "Inspector", icon: "info", component: NotesPanels, props: { kind: "inspector" } },
       { id: "style", label: "Style", icon: "settings", component: NotesPanels, props: { kind: "style" } },
     ],
+    start: () => notes.start(),
   },
 ];
 
