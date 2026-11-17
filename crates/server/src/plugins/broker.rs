@@ -9,8 +9,9 @@
 //! disabled/re-enabled plugin stops the invocation at its next boundary.
 //!
 //! Implemented host calls: `read_item` and `write_item`, both through
-//! [`calternal_content`] via [`crate::store::Store`]. Every other declared host call
-//! is refused until its host service exists.
+//! [`calternal_content`] via [`crate::store::Store`]; `start_job` and
+//! `checkpoint_job` through [`super::jobs::Jobs`]. Every other declared host call is
+//! refused until its host service exists.
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -24,7 +25,9 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Handle;
 use uuid::Uuid;
 
-use super::{Plugin, Session, activation, host_capability};
+use super::jobs::Admission;
+use super::live::Live;
+use super::{Plugin, Session, activation, host_capability, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
 use crate::authz::Capability;
@@ -43,6 +46,9 @@ pub trait InvocationHost: Send + Sync {
     /// Validate one host call's input and apply it under current authority.
     /// Errors reach the worker as `ok: false` with no detail.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error>;
+    /// Receive one ordered chunk the worker emitted for `job_id`, after the session
+    /// checked its sequence and current authority. The default drops it.
+    fn chunk(&self, _job_id: &str, _data: &Value) {}
 }
 
 /// Broker for a real invocation by `identity` in one content space.
@@ -52,10 +58,27 @@ pub struct SpaceHost<D: Directory> {
     session: Session,
     runtime: Handle,
     space: String,
+    space_uuid: String,
     plugin: Arc<Plugin>,
     generation: u32,
     request_id: String,
     writes: AtomicU32,
+    starts: AtomicU32,
+    run: Option<Run>,
+}
+
+/// The job a run invocation executes: it may checkpoint and stream for this job only,
+/// and every boundary also requires the run to still be current (not cancelled).
+pub struct Run {
+    /// Job UUID.
+    pub job: String,
+    /// Run number from [`super::jobs::Jobs::claim`].
+    pub run: u32,
+    /// The job's live stream.
+    pub live: Arc<Live>,
+    /// Checkpoints written so far; scopes this run's write receipts so a run resumed
+    /// from the same checkpoint replays its writes instead of repeating them.
+    pub checkpoints: AtomicU32,
 }
 
 impl<D: Directory> SpaceHost<D> {
@@ -64,11 +87,13 @@ impl<D: Directory> SpaceHost<D> {
     /// directory; `generation` is the activation generation read when the invocation
     /// was admitted; `request_id` scopes write receipts. Must be called inside the
     /// async runtime, whose handle the blocking session checks use.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         state: Shared<D>,
         identity: Identity,
         session: Session,
         space: String,
+        space_uuid: String,
         plugin: Arc<Plugin>,
         generation: u32,
         request_id: String,
@@ -79,11 +104,90 @@ impl<D: Directory> SpaceHost<D> {
             session,
             runtime: Handle::current(),
             space,
+            space_uuid,
             plugin,
             generation,
             request_id,
             writes: AtomicU32::new(0),
+            starts: AtomicU32::new(0),
+            run: None,
         }
+    }
+
+    /// Bind this broker to a job's run invocation. Cost: none.
+    pub fn for_run(mut self, run: Run) -> Self {
+        self.run = Some(run);
+        self
+    }
+
+    /// Receipt scope of this invocation's effects: its request, or for a job run the
+    /// job and its checkpoint count. Cost: one small allocation.
+    fn scope(&self) -> String {
+        match &self.run {
+            Some(run) => format!(
+                "job/{}/{}",
+                run.job,
+                run.checkpoints.load(Ordering::Acquire)
+            ),
+            None => self.request_id.clone(),
+        }
+    }
+
+    /// Admit a job whose run operation is declared by this plugin and has no item
+    /// target. Input: `{ operation, input, parent_id? }`. The admission key is the
+    /// receipt scope plus the call's position, so a retried request returns the job
+    /// it admitted before. The job is scheduled once its record is durable.
+    fn start_job(&self, input: &Value) -> Result<Value, Error> {
+        let object = exact(input, &["operation", "input", "parent_id"])?;
+        let operation = str_field(object, "operation")?.ok_or(Error::Invalid)?;
+        let run_input = object.get("input").cloned().ok_or(Error::Invalid)?;
+        let parent = str_field(object, "parent_id")?.map(str::to_owned);
+        if self
+            .plugin
+            .operation(operation)
+            .is_none_or(|op| op.target.is_some())
+        {
+            return Err(Error::Refused);
+        }
+        let n = self.starts.fetch_add(1, Ordering::Relaxed);
+        let id = self
+            .state
+            .jobs
+            .admit(Admission {
+                space: self.space_uuid.clone(),
+                plugin: self.plugin.manifest.id.clone(),
+                account: self.identity.id.to_string(),
+                session: self.session.clone(),
+                operation: operation.to_owned(),
+                input: run_input,
+                parent,
+                generation: self.generation,
+                request_key: format!("{}/{}/{n}", self.identity.id, self.scope()),
+            })
+            .map_err(|_| Error::Refused)?;
+        let _guard = self.runtime.enter();
+        runner::schedule(&self.state, self.space_uuid.clone(), id.clone());
+        Ok(json!({ "job_id": id }))
+    }
+
+    /// Durably checkpoint the bound job: `{ job_id, checkpoint }`. Answers the stream
+    /// sequence the checkpoint covers.
+    fn checkpoint_job(&self, input: &Value) -> Result<Value, Error> {
+        let run = self.run.as_ref().ok_or(Error::Refused)?;
+        let object = exact(input, &["job_id", "checkpoint"])?;
+        if str_field(object, "job_id")? != Some(run.job.as_str()) {
+            return Err(Error::Refused);
+        }
+        let checkpoint = object.get("checkpoint").ok_or(Error::Invalid)?;
+        let n = self
+            .state
+            .jobs
+            .checkpoint(&self.space_uuid, &run.job, run.run, &run.live, checkpoint)
+            .map_err(|_| Error::Refused)?;
+        run.checkpoints.store(n, Ordering::Release);
+        self.writes.store(0, Ordering::Release);
+        self.starts.store(0, Ordering::Release);
+        Ok(json!({ "checkpoint_seq": run.live.next_seq() }))
     }
 
     fn has(&self, capability: Capability) -> bool {
@@ -128,7 +232,7 @@ impl<D: Directory> SpaceHost<D> {
         // Deterministic per-invocation receipt IDs make a retried request replay
         // its earlier writes instead of duplicating them.
         let n = self.writes.fetch_add(1, Ordering::Relaxed);
-        let receipt = format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.request_id);
+        let receipt = format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.scope());
         let fingerprint = sha256_hex(input.to_string().as_bytes());
         let store = self.state.store.lock().map_err(|_| Error::Refused)?;
         let item = store
@@ -156,9 +260,10 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         let Some(required) = host_capability(required) else {
             return false;
         };
-        if !self
-            .session
-            .is_live_blocking(&self.state.tokens, &self.runtime)
+        if self.run.as_ref().is_some_and(|r| !r.live.is_current(r.run))
+            || !self
+                .session
+                .is_live_blocking(&self.state.tokens, &self.runtime)
             || !self.has(required)
         {
             return false;
@@ -172,12 +277,23 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
 
     /// Cost: `read_item` takes the store lock for one catalog route lookup and one
     /// item read; `write_item` adds a durable content write (journal, file and
-    /// directory fsync). Other methods allocate nothing and are refused.
+    /// directory fsync); `start_job` and `checkpoint_job` are one FULL transaction on
+    /// the space's job file. Other methods allocate nothing and are refused.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error> {
         match method {
             HostCallKind::ReadItem => self.read_item(input),
             HostCallKind::WriteItem => self.write_item(input),
+            HostCallKind::StartJob => self.start_job(input),
+            HostCallKind::CheckpointJob => self.checkpoint_job(input),
             _ => Err(Error::Refused),
+        }
+    }
+
+    /// Only a run invocation streams, and only for its own job; anything else is
+    /// dropped. Cost: one stream lock and the chunk's serialization.
+    fn chunk(&self, job_id: &str, data: &Value) {
+        if let Some(run) = self.run.as_ref().filter(|r| r.job == job_id) {
+            run.live.publish(run.run, data);
         }
     }
 }

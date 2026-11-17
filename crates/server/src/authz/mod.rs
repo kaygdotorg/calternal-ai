@@ -29,6 +29,9 @@ pub enum Scope {
     /// The global item resolver derives the owning space before policy admission.
     /// Missing membership and cross-space IDs return the same not-found error.
     Note,
+    /// The job store derives the job's owning space before policy admission; a job
+    /// the caller cannot see answers exactly like a missing one.
+    Job,
 }
 
 /// Additional state-dependent constraints enforced inside an authorized handler.
@@ -40,6 +43,8 @@ pub enum Constraint {
     /// brokered host call rechecks it, and delivery requires unchanged
     /// enablement/generation plus a fresh directory capability check.
     PluginInvocation,
+    /// The caller must be the job's starting account or hold `plugins.manage`.
+    JobOwner,
 }
 
 /// Immutable policy associated with one operation binding: a host row from
@@ -171,6 +176,19 @@ pub const POLICIES: &[Policy] = &[
         scope: Scope::Space,
         constraint: Constraint::None,
     },
+    Policy {
+        operation: Cow::Borrowed("jobs.get"),
+        required: Capability::SpaceRead,
+        scope: Scope::Job,
+        constraint: Constraint::None,
+    },
+    // Cancelling also requires being the job's starting account or plugins.manage.
+    Policy {
+        operation: Cow::Borrowed("jobs.cancel"),
+        required: Capability::PluginsUse,
+        scope: Scope::Job,
+        constraint: Constraint::JobOwner,
+    },
 ];
 
 /// Find an explicit host policy using a bounded, allocation-free scan.
@@ -213,6 +231,7 @@ impl Policy {
     ) -> Result<(), HostError> {
         match directory.capabilities(&principal.id, space) {
             None if self.scope == Scope::Note => Err(HostError::not_found("item not found")),
+            None if self.scope == Scope::Job => Err(HostError::not_found("job not found")),
             None => Err(HostError::not_found("space not found")),
             Some(set)
                 if self.scope == Scope::Note

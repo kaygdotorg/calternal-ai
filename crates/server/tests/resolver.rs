@@ -30,6 +30,7 @@ impl Fixture {
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),
+            jobs: calternal_server::plugins::Jobs::disabled(),
             allowed_hosts: Vec::new(),
         });
         Self {

@@ -145,6 +145,8 @@ pub fn is_known_operation(operation: &str) -> bool {
             | "plugins.disable"
             | "plugins.preview"
             | "notes-insights.summarize"
+            | "jobs.get"
+            | "jobs.cancel"
     )
 }
 /// Validate the envelope and known operation inputs; leave unknown operation schemas to server discovery for forward compatibility. Cost is proportional to serialized input.
@@ -227,6 +229,10 @@ pub fn validate_operation_input(
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
             space(&i.space_id)
+        }
+        "jobs.get" | "jobs.cancel" => {
+            let i: JobInput = decode(input)?;
+            resource("", &i.job_id)
         }
         "notes.get" | "notes-insights.summarize" => {
             let i: NotesGetInput = decode(input)?;
@@ -625,6 +631,12 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             "notes-insights.summarize",
             "Compute word, character and line statistics",
             false,
+        ),
+        entry::<JobInput, JobResult>("jobs.get", "Read a plugin job's durable record", false),
+        entry::<JobInput, JobResult>(
+            "jobs.cancel",
+            "Cancel a plugin job and its active child jobs",
+            true,
         ),
     ]
 }

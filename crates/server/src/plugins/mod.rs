@@ -18,6 +18,11 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod broker;
+pub mod job_api;
+pub mod job_sql;
+pub mod jobs;
+pub mod live;
+pub mod runner;
 pub mod session;
 pub mod worker;
 
@@ -39,9 +44,11 @@ use crate::error::HostError;
 use crate::store::{PluginRow, Store, sha256_hex};
 
 pub use broker::{InvocationHost, PREVIEW_FIXTURE, PREVIEW_ITEM_ID, PreviewHost};
+pub use jobs::Jobs;
 pub use session::Session;
 pub use worker::{
-    Call, MAX_WORKERS, NodeRuntime, WORKER_IDLE, WORKER_TIMEOUT, WorkerPool, resolve_node,
+    Call, CancelFlag, MAX_WORKERS, NodeRuntime, WORKER_IDLE, WORKER_TIMEOUT, WorkerPool,
+    resolve_node,
 };
 
 const TRUSTED_JSON: &str = include_str!("../../trusted-plugins.json");
@@ -175,6 +182,19 @@ pub fn registry_entries() -> Vec<TrustedEntry> {
     file.plugins
 }
 
+/// Test-only trusted plugins (`tests/plugins/trusted-test-plugins.json`), compiled in
+/// only with the `test-plugins` feature; empty otherwise. Cost: one small JSON parse.
+pub fn test_entries() -> Vec<TrustedEntry> {
+    #[cfg(feature = "test-plugins")]
+    {
+        let json = include_str!("../../../../tests/plugins/trusted-test-plugins.json");
+        let file: TrustedFile = serde_json::from_str(json).expect("test plugin list is valid");
+        file.plugins
+    }
+    #[cfg(not(feature = "test-plugins"))]
+    Vec::new()
+}
+
 /// Stable dotted name of a manifest capability (the same vocabulary as [`Capability`]).
 /// Cost: O(1); serializes one unit enum variant.
 pub fn capability_name(capability: ManifestCapability) -> String {
@@ -201,9 +221,20 @@ impl Registry {
     /// is missing or whose digest differs load but are marked unavailable.
     /// Cost: one bounded manifest read and one bundle hash per entry, at startup only.
     pub fn load(plugin_root: &Path) -> Self {
+        Self::load_with_tests(plugin_root, None)
+    }
+
+    /// [`Self::load`], plus the test-only plugins from `test_root` when the server was
+    /// built with the `test-plugins` feature (otherwise there are none to load).
+    /// Cost: as [`Self::load`], per test entry as well.
+    pub fn load_with_tests(plugin_root: &Path, test_root: Option<&Path>) -> Self {
         let mut plugins = Vec::new();
-        for entry in registry_entries() {
-            match load_one(plugin_root, &entry) {
+        let tests = test_root.map(|root| (root, test_entries()));
+        let all = std::iter::once((plugin_root, registry_entries())).chain(tests);
+        for (root, entry) in
+            all.flat_map(|(root, entries)| entries.into_iter().map(move |e| (root, e)))
+        {
+            match load_one(root, &entry) {
                 Ok(p) => plugins.push(p),
                 Err(why) => {
                     tracing::warn!(plugin = %entry.id, reason = %why, "trusted plugin not loaded")

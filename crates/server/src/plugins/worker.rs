@@ -119,6 +119,49 @@ pub struct Call {
     pub account: AccountId,
     /// Trusted broker carrying this invocation's authority.
     pub host: Arc<dyn InvocationHost>,
+    /// Deadline from admission to delivery: [`WORKER_TIMEOUT`] for operations, longer
+    /// for job runs. A missed deadline stops the whole worker.
+    pub timeout: Duration,
+    /// Cancels this invocation from outside, as `jobs.cancel` does for a job's run.
+    pub cancel: Option<Arc<CancelFlag>>,
+    /// Job the host admitted for this run invocation; it may stream chunks for it.
+    pub job: Option<String>,
+}
+
+/// Cancellation handle for one invocation. Cancelling invalidates the invocation in
+/// the worker session (late output and effects are refused), tells the worker, and
+/// answers the caller with [`Outcome::Cancelled`].
+pub struct CancelFlag {
+    cancelled: AtomicBool,
+    wake: Mutex<Option<Sender<Event>>>,
+}
+
+impl CancelFlag {
+    /// A fresh, uncancelled handle. Cost: one allocation.
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            cancelled: AtomicBool::new(false),
+            wake: Mutex::new(None),
+        })
+    }
+
+    /// Whether [`Self::cancel`] was called. Cost: one atomic load.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Cancel; idempotent. Cost: one atomic store and at most one channel send.
+    pub fn cancel(self: &Arc<Self>) {
+        self.cancelled.store(true, Ordering::Release);
+        let wake = self.wake.lock().unwrap_or_else(|p| p.into_inner()).take();
+        if let Some(events) = wake {
+            let _ = events.send(Event::Cancel(self.clone()));
+        }
+    }
+
+    fn bind(&self, events: &Sender<Event>) {
+        *self.wake.lock().unwrap_or_else(|p| p.into_inner()) = Some(events.clone());
+    }
 }
 
 /// Outcome of a worker call before the dispatcher's own delivery checks.
@@ -133,10 +176,16 @@ pub enum Outcome {
     InvalidInput,
     /// The worker failed, broke protocol, timed out or could not run.
     Failed(HostError),
+    /// The invocation was cancelled through its [`CancelFlag`].
+    Cancelled,
 }
 
+/// Input to a worker's session thread.
 enum Event {
+    /// Admit one invocation.
     Invoke(Box<Pending>),
+    /// Cancel the invocation holding this flag.
+    Cancel(Arc<CancelFlag>),
     Line(Vec<u8>),
     Overflow,
     Closed,
@@ -150,6 +199,7 @@ struct Pending {
 
 struct Active {
     host: Arc<dyn InvocationHost>,
+    cancel: Option<Arc<CancelFlag>>,
     reply: oneshot::Sender<Outcome>,
     deadline: Instant,
 }
@@ -255,6 +305,9 @@ impl WorkerPool {
                 let worker = &workers[&key];
                 worker.busy.fetch_add(1, Ordering::AcqRel);
                 self.in_flight.fetch_add(1, Ordering::AcqRel);
+                if let Some(cancel) = &pending.call.cancel {
+                    cancel.bind(&worker.events);
+                }
                 match worker.events.send(Event::Invoke(pending)) {
                     Ok(()) => None,
                     Err(mpsc::SendError(event)) => {
@@ -473,6 +526,7 @@ impl Thread {
                         break Stop::Fault(why);
                     }
                 }
+                Ok(Event::Cancel(flag)) => self.cancel(&flag),
                 Ok(Event::Overflow) => break Stop::Fault("extension output exceeded limit"),
                 Ok(Event::Closed) => break Stop::Fault("extension worker stopped"),
                 Ok(Event::Shutdown) if self.active.is_empty() => break Stop::Idle,
@@ -542,8 +596,9 @@ impl Thread {
             id.clone(),
             Active {
                 host: p.call.host,
+                cancel: p.call.cancel.clone(),
                 reply: p.reply,
-                deadline: Instant::now() + WORKER_TIMEOUT,
+                deadline: Instant::now() + p.call.timeout,
             },
         );
         let admitted = self.session.invoke(
@@ -553,7 +608,21 @@ impl Thread {
             authority,
             &mut Broker(&self.active),
         );
+        if admitted.is_ok()
+            && let Some(job) = &p.call.job
+            && self.session.attach_job(&id, job).is_err()
+        {
+            let _ = self.session.cancel(&id);
+            self.finish(&id, Outcome::Refused);
+            self.flush(&id);
+            return;
+        }
         match admitted {
+            Ok(()) if p.call.cancel.as_ref().is_some_and(|c| c.is_cancelled()) => {
+                if let Some(flag) = p.call.cancel {
+                    self.cancel(&flag);
+                }
+            }
             Ok(()) => self.flush(&id),
             Err(Error::Invalid) => self.finish(&id, Outcome::InvalidInput),
             Err(Error::Refused) => self.finish(&id, Outcome::Refused),
@@ -575,7 +644,10 @@ impl Thread {
             // Late output for an invocation already answered: discard it.
             return Ok(());
         }
-        let ends = matches!(frame.message, Message::Complete { .. } | Message::Failed {});
+        let delivers = matches!(
+            frame.message,
+            Message::Complete { .. } | Message::Failed {} | Message::Chunk { .. }
+        );
         match self.session.receive(frame, &mut Broker(&self.active)) {
             Ok(()) => {}
             Err(Error::Refused) => {
@@ -592,19 +664,45 @@ impl Thread {
                 );
             }
         }
-        if ends {
+        if delivers {
             self.deliver(&id);
         }
         self.flush(&id);
         Ok(())
     }
 
-    /// Drain the delivery for `id` that a successful completion just queued.
+    /// Cancel the invocation holding `flag`: invalidate it in the session, queue the
+    /// worker's `cancel` frame and answer [`Outcome::Cancelled`].
+    fn cancel(&mut self, flag: &Arc<CancelFlag>) {
+        let Some(id) = self
+            .active
+            .iter()
+            .find(|(_, a)| a.cancel.as_ref().is_some_and(|c| Arc::ptr_eq(c, flag)))
+            .map(|(id, _)| id.clone())
+        else {
+            return;
+        };
+        let _ = self.session.cancel(&id);
+        self.finish(&id, Outcome::Cancelled);
+        self.flush(&id);
+    }
+
+    /// Drain the delivery for `id` that a chunk or completion just queued. A chunk
+    /// goes to the invocation's host; a completion answers the caller.
     fn deliver(&mut self, id: &str) {
         if !self.active.contains_key(id) {
             return;
         }
         let outcome = match self.session.next_delivery(&mut Broker(&self.active)) {
+            Ok(Some(Frame {
+                message: Message::Chunk { job_id, data, .. },
+                ..
+            })) => {
+                if let Some(active) = self.active.get(id) {
+                    active.host.chunk(&job_id, &data);
+                }
+                return;
+            }
             Ok(Some(Frame {
                 message: Message::Complete { data },
                 ..

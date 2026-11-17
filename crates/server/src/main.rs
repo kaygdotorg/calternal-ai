@@ -45,6 +45,10 @@ enum Cmd {
         /// Absolute Node executable for plugin workers (default: node on PATH).
         #[arg(long)]
         node: Option<PathBuf>,
+        /// Root of the test-only plugins (`tests/plugins`); refused unless the server
+        /// was built with the `test-plugins` feature.
+        #[arg(long)]
+        test_plugin_root: Option<PathBuf>,
     },
     /// Print SHA-256 of trusted worker bundles for pinning in trusted-plugins.json.
     PluginDigest {
@@ -73,7 +77,14 @@ fn main() {
             development,
             origin,
             trusted_proxies,
+            test_plugin_root,
         } => {
+            if test_plugin_root.is_some() && plugins::test_entries().is_empty() {
+                eprintln!(
+                    "calternal: --test-plugin-root needs a build with the test-plugins feature"
+                );
+                std::process::exit(1);
+            }
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .max_blocking_threads(8)
@@ -89,6 +100,7 @@ fn main() {
                 development,
                 origin,
                 trusted_proxies,
+                test_plugin_root,
             ))
         }
     };
@@ -125,6 +137,7 @@ async fn serve(
     development: bool,
     origin: Option<String>,
     trusted_proxies: String,
+    test_plugin_root: Option<PathBuf>,
 ) -> i32 {
     if let Err(e) = calternal_auth::private_fs::directory(&data_dir) {
         eprintln!("calternal: cannot prepare data dir: {e}");
@@ -145,7 +158,8 @@ async fn serve(
         }
     };
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
-    let registry = Registry::load(&plugin_root);
+    let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
+    let registry = Registry::load_with_tests(&plugin_root, test_root.as_deref());
     let node = match plugins::resolve_node(node.as_deref()).await {
         Ok(n) => {
             tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");
@@ -217,14 +231,30 @@ async fn serve(
             hosts.push(authority);
         }
     }
+    let jobs = match plugins::Jobs::open(&data_dir) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("calternal: {}", e.message);
+            return 2;
+        }
+    };
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
         store: Mutex::new(store),
         tokens,
         registry,
         workers: plugins::WorkerPool::new(node),
+        jobs,
         allowed_hosts: hosts,
     });
+    match plugins::runner::recover(&state).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),
+        Err(e) => {
+            eprintln!("calternal: job recovery: {}", e.message);
+            return 2;
+        }
+    }
     let app = api::router(state, web_dir.clone());
 
     let base_url = if development {

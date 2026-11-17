@@ -1,0 +1,62 @@
+{
+  "id": "jobs-demo",
+  "name": "Jobs demo (test only)",
+  "icon": "flask",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [
+    { "id": "demo-notes", "storage": { "hidden": true }, "claimed_text": true, "schema": { "type": "object" } }
+  ],
+  "operations": [
+    {
+      "id": "jobs-demo.write",
+      "input_schema": { "type": "object", "properties": { "text": { "type": "string", "maxLength": 1024 } }, "required": ["text"], "additionalProperties": false },
+      "output_schema": { "type": "object" },
+      "required_capability": "content.write",
+      "mutates": true,
+      "idempotency": "request_id"
+    },
+    {
+      "id": "jobs-demo.start",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "steps": { "type": "integer", "minimum": 0, "maximum": 1000 },
+          "delay_ms": { "type": "integer", "minimum": 0, "maximum": 1000 },
+          "every": { "type": "integer", "minimum": 1, "maximum": 1000 },
+          "children": { "type": "integer", "minimum": 0, "maximum": 8 },
+          "value": { "type": "integer" }
+        },
+        "required": ["steps", "delay_ms", "every"],
+        "additionalProperties": false
+      },
+      "output_schema": { "type": "object", "properties": { "job_id": { "type": "string" } }, "required": ["job_id"] },
+      "required_capability": "plugins.use",
+      "mutates": true,
+      "idempotency": "request_id"
+    },
+    {
+      "id": "jobs-demo.run",
+      "input_schema": {
+        "type": "object",
+        "properties": { "job_id": { "type": "string" }, "input": { "type": "object" }, "checkpoint": {}, "children": { "type": "array" } },
+        "required": ["job_id", "input", "checkpoint", "children"],
+        "additionalProperties": false
+      },
+      "output_schema": { "type": "object", "properties": { "status": { "enum": ["done", "waiting"] } }, "required": ["status"] },
+      "required_capability": "plugins.use",
+      "mutates": false,
+      "idempotency": "read_only"
+    }
+  ],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": ["write_item", "start_job", "checkpoint_job"]
+}

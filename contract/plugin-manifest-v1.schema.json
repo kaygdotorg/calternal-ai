@@ -171,6 +171,13 @@
           ]
         },
         {
+          "description": "Durably record a running job's checkpoint, from its run invocation.",
+          "type": "string",
+          "enum": [
+            "checkpoint_job"
+          ]
+        },
+        {
           "description": "Request a scoped opaque handle, never secret bytes.",
           "type": "string",
           "enum": [

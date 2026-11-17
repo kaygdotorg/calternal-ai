@@ -1,0 +1,12 @@
+{
+  "plugins": [
+    {
+      "id": "jobs-demo",
+      "version": "0.1.0",
+      "manifest": "jobs-demo/manifest.json",
+      "worker": "jobs-demo/worker.js",
+      "worker_sha256": "6856503cf880d91e1c314a62a37a5d2034e120088bc6f3563d4dc2753ef81197",
+      "default_enabled": false
+    }
+  ]
+}

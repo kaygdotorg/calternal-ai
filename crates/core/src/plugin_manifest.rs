@@ -64,6 +64,9 @@ pub enum HostCallKind {
     /// Request durable job admission.
     #[serde(rename = "start_job")]
     StartJob,
+    /// Durably record a running job's checkpoint, from its run invocation.
+    #[serde(rename = "checkpoint_job")]
+    CheckpointJob,
     /// Request a scoped opaque handle, never secret bytes.
     #[serde(rename = "request_secret_handle")]
     RequestSecretHandle,

@@ -10,7 +10,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Retry behavior declared by an operation.
  */
@@ -323,6 +323,68 @@ themes: Array<ManifestTheme>,
  * Broker calls the worker may request; each still needs live authorization.
  */
 host_calls: Array<HostCallKind>, };
+/**
+ * Lifecycle of a job. `admitted`, `running` and `waiting` are active; the rest are
+ * final and never change again.
+ */
+
+export type JobState = "admitted" | "running" | "waiting" | "done" | "failed" | "cancelled" | "outcome_unknown";
+/**
+ * Input for `jobs.get` and `jobs.cancel`. Possessing a job ID grants nothing: a job
+ * in a space the caller cannot read answers exactly like a missing one.
+ */
+
+export type JobInput = {
+/**
+ * Host-issued job UUID.
+ */
+job_id: string, };
+/**
+ * What a client may see of a job: its durable record, never its stream.
+ */
+
+export type JobView = {
+/**
+ * Host-issued job UUID.
+ */
+id: string,
+/**
+ * Plugin that runs the job.
+ */
+plugin_id: string,
+/**
+ * Space UUID that owns the job.
+ */
+space_id: string,
+/**
+ * Current lifecycle state.
+ */
+state: JobState,
+/**
+ * Parent job UUID for a child job.
+ */
+parent_id?: string,
+/**
+ * Last durable checkpoint written by the plugin, or null.
+ */
+checkpoint: unknown,
+/**
+ * Stream sequence number of the first chunk after that checkpoint.
+ */
+checkpoint_seq: bigint,
+/**
+ * Final result of a `done` job, or null.
+ */
+result: unknown, };
+/**
+ * Result for `jobs.get` and `jobs.cancel`.
+ */
+
+export type JobResult = {
+/**
+ * The job after the operation.
+ */
+job: JobView, };
 /**
  * Envelope for every `POST /api/v1/operations` call. Retain request identity and input unchanged after uncertain mutation outcomes.
  */

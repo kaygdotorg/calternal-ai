@@ -181,6 +181,7 @@ impl Fixture {
                     .await
                     .expect("Node >= 22.13 for worker tests"),
             )),
+            jobs: calternal_server::plugins::Jobs::disabled(),
             allowed_hosts: allowed_hosts(0),
         });
         Self { state, note, root }
@@ -270,6 +271,9 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "spaces.leave",
         "spaces.transfer",
         "spaces.delete",
+        // Job rows need a durable job; their role matrix is in plugin_host.rs.
+        "jobs.get",
+        "jobs.cancel",
     ]
     .into_iter()
     .collect();

@@ -87,6 +87,7 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(plugins),
         workers,
+        jobs: calternal_server::plugins::Jobs::open(&data).unwrap(),
         allowed_hosts: allowed_hosts(0),
     });
     Fixture { state, root }
@@ -656,4 +657,180 @@ async fn mutating_operation_retry_replays_its_receipt() {
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::Conflict);
     assert!(!find(&f.root.join("data/userdata-ssd"), "other.md"));
+}
+
+/// The test-only jobs plugin from `tests/plugins/jobs-demo`, digest pinned.
+fn jobs_demo() -> Plugin {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/plugins/jobs-demo");
+    let manifest =
+        calternal_plugin_host::parse_manifest(&std::fs::read(dir.join("manifest.json")).unwrap())
+            .unwrap();
+    support::plugin(manifest, Some(&dir.join("worker.js")), false)
+}
+
+async fn jobs_fixture(tag: &str) -> Fixture {
+    let f = fixture(tag, vec![jobs_demo()], None).await;
+    for space in ["shared", "personal"] {
+        f.op(
+            "owner",
+            &format!("enable-{space}"),
+            "plugins.enable",
+            json!({"space_id": space, "plugin_id": "jobs-demo"}),
+        )
+        .await
+        .unwrap();
+    }
+    f
+}
+
+impl Fixture {
+    async fn start_job(&self, space: &str, input: Value) -> String {
+        let mut input = input;
+        input["space_id"] = json!(space);
+        let rid = uuid::Uuid::new_v4().to_string();
+        let r = self
+            .op("owner", &rid, "jobs-demo.start", input)
+            .await
+            .unwrap();
+        r["job_id"].as_str().unwrap().to_owned()
+    }
+    async fn job(&self, who: &str, id: &str) -> Result<Value, HostError> {
+        self.op(
+            who,
+            &uuid::Uuid::new_v4().to_string(),
+            "jobs.get",
+            json!({"job_id": id}),
+        )
+        .await
+        .map(|r| r["job"].clone())
+    }
+    async fn until(&self, id: &str, state: &str) -> Value {
+        let end = Instant::now() + Duration::from_secs(20);
+        loop {
+            let job = self.job("owner", id).await.unwrap();
+            if job["state"] == state {
+                return job;
+            }
+            assert!(Instant::now() < end, "job never reached {state}: {job}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
+    let f = jobs_fixture("job-run").await;
+    let id = f
+        .start_job("shared", json!({"steps": 6, "delay_ms": 30, "every": 2}))
+        .await;
+    // Durable before the ID was returned: the record exists in the space's job file.
+    let space = f.state.jobs.route(&id).expect("job routed to its space");
+    assert!(
+        f.root
+            .join("data/spaces")
+            .join(&space)
+            .join("jobs.db")
+            .is_file()
+    );
+    let sub = f.state.jobs.subscribe(&id).unwrap();
+    let done = f.until(&id, "done").await;
+    assert_eq!(
+        done["result"],
+        json!({"steps": 6, "resumed_from": 0, "value": 6})
+    );
+    assert_eq!(done["checkpoint"], json!({"step": 6}));
+    assert_eq!(done["checkpoint_seq"], 6);
+    // Chunks carry consecutive host sequence numbers in emission order.
+    let batch = sub.live.read(0);
+    let seqs: Vec<u64> = batch.chunks.iter().map(|c| c.seq).collect();
+    assert_eq!(seqs, (0..6).collect::<Vec<_>>());
+    for c in &batch.chunks {
+        assert_eq!(
+            serde_json::from_str::<Value>(&c.data).unwrap(),
+            json!({"step": c.seq})
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_discards_late_output_and_needs_the_starter_or_a_manager() {
+    let f = jobs_fixture("job-cancel").await;
+    let id = f
+        .start_job("shared", json!({"steps": 500, "delay_ms": 20, "every": 5}))
+        .await;
+    f.until(&id, "running").await;
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    // The guest reads `shared` but lacks plugins.use: it may watch, not cancel.
+    assert_eq!(f.job("guest", &id).await.unwrap()["state"], "running");
+    let e = f
+        .op("guest", "gc", "jobs.cancel", json!({"job_id": id}))
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    let r = f
+        .op("owner", "oc", "jobs.cancel", json!({"job_id": id}))
+        .await
+        .unwrap();
+    assert_eq!(r["job"]["state"], "cancelled");
+    let at_cancel = f.job("owner", &id).await.unwrap();
+    let seq = f.state.jobs.live(&id).read(0).chunks.last().map(|c| c.seq);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let later = f.job("owner", &id).await.unwrap();
+    assert_eq!(later, at_cancel, "a cancelled job's record changed");
+    assert!(
+        f.state.jobs.live(&id).read(0).chunks.last().map(|c| c.seq) <= seq,
+        "late chunks were accepted after cancel"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn child_jobs_report_exactly_once_to_their_parent() {
+    let f = jobs_fixture("job-children").await;
+    let id = f
+        .start_job(
+            "shared",
+            json!({"steps": 0, "delay_ms": 0, "every": 1, "children": 3}),
+        )
+        .await;
+    let done = f.until(&id, "done").await;
+    assert_eq!(done["result"], json!({"sum": 6, "reports": 3}));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_job_outside_the_callers_spaces_is_not_found() {
+    let f = jobs_fixture("job-hidden").await;
+    // `personal` belongs to the owner alone; the guest is a member of `shared` only.
+    let id = f
+        .start_job("personal", json!({"steps": 1, "delay_ms": 0, "every": 1}))
+        .await;
+    let hidden = f.job("guest", &id).await.unwrap_err();
+    let missing = f
+        .job("guest", &uuid::Uuid::now_v7().to_string())
+        .await
+        .unwrap_err();
+    assert_eq!(hidden.code, ErrorCode::NotFound);
+    assert_eq!(
+        (hidden.code, hidden.message),
+        (missing.code, missing.message)
+    );
+    let cancel = f
+        .op("guest", "hc", "jobs.cancel", json!({"job_id": id}))
+        .await
+        .unwrap_err();
+    assert_eq!(cancel.code, ErrorCode::NotFound);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn job_start_retry_returns_the_same_job() {
+    let f = jobs_fixture("job-retry").await;
+    let input = json!({"space_id": "shared", "steps": 1, "delay_ms": 0, "every": 1});
+    let a = f
+        .op("owner", "same", "jobs-demo.start", input.clone())
+        .await
+        .unwrap();
+    let b = f
+        .op("owner", "same", "jobs-demo.start", input)
+        .await
+        .unwrap();
+    assert_eq!(a, b);
 }

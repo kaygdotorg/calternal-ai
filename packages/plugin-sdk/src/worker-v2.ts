@@ -110,7 +110,7 @@ export function parseWorkerFrameV2(input: Uint8Array | string): WorkerFrameV2 {
   const m = exact(raw, ["type", ...fields[type]!]);
   for (const k of ["operation", "call_id", "job_id"]) if (Object.hasOwn(m, k) && (typeof m[k] !== "string" || !id.test(m[k] as string))) invalid();
   if (Object.hasOwn(m, "authority")) { const a = exact(m.authority, ["account_id", "space_id", "grant"]); if (typeof a.account_id !== "string" || !uuid7.test(a.account_id) || typeof a.space_id !== "string" || !uuid7.test(a.space_id) || a.account_id === a.space_id || typeof a.grant !== "string" || !a.grant || new TextEncoder().encode(a.grant).length > 256) invalid(); }
-  if (type === "host_call" && !["read_item", "write_item", "list_collection", "emit_event", "start_job", "request_secret_handle"].includes(String(m.method))) invalid();
+  if (type === "host_call" && !["read_item", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"].includes(String(m.method))) invalid();
   if (type === "host_reply" && typeof m.ok !== "boolean") invalid();
   if (type === "chunk" && (typeof m.sequence !== "number" || !Number.isInteger(m.sequence) || m.sequence < 0 || m.sequence > 0xffff_ffff)) invalid();
   return frame as unknown as WorkerFrameV2;
@@ -128,7 +128,8 @@ export interface WorkerContextV2 {
    * Call a declared broker method; the host rechecks live authority and targets. */
   call(method: HostCallKind, input: unknown): Promise<unknown>;
   /** Cost: one bounded transport write, O(chunk bytes); waits for transport back pressure.
-   * Emit one ordered chunk for a job admitted through start_job; await before emitting another. */
+   * Emit one ordered chunk for a job admitted through start_job, or for the job a run
+   * invocation names in `input.job_id`; await before emitting another. */
   chunk(jobId: string, data: unknown): Promise<void>;
 }
 /** Handler implementing one declared operation. Cost is plugin-defined and sandbox-limited; each host effect uses a bounded broker RPC. */
@@ -162,6 +163,9 @@ export class WorkerRuntimeV2 {
     const state = { controller: new AbortController(), pending: new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>() }; this.active.set(id, state);
     let calls = 0, sequence = 0, chunkPending = false;
     const jobs = new Set<string>();
+    // A job's run invocation names its job in `input.job_id`; the host attached it.
+    const input = m.input as { job_id?: unknown } | null;
+    if (input && typeof input === "object" && typeof input.job_id === "string" && /^[a-z0-9][a-z0-9._-]{0,79}$/.test(input.job_id)) jobs.add(input.job_id);
     const ensure = (): void => { if (state.controller.signal.aborted) throw new Error("cancelled"); };
     const context: WorkerContextV2 = {
       signal: state.controller.signal,

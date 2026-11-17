@@ -33,7 +33,7 @@ use crate::error::HostError;
 use crate::fault::{self, FaultPoint};
 use crate::plugins::worker::Outcome;
 use crate::plugins::{
-    Call, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, Session, WorkerPool, activation,
+    Call, Jobs, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, Session, WorkerPool, activation,
     broker::SpaceHost,
 };
 use crate::store::{PluginRow, Store, sha256_hex};
@@ -53,6 +53,8 @@ pub struct AppState<D: Directory = TokenTable> {
     pub registry: Registry,
     /// Bounded pool of long-lived (plugin, space) workers; refuses calls without Node.
     pub workers: WorkerPool,
+    /// Durable plugin jobs and their live streams; [`Jobs::disabled`] refuses jobs.
+    pub jobs: Jobs,
     /// Exact loopback Host allowlist for this listener.
     pub allowed_hosts: Vec<String>,
 }
@@ -74,6 +76,10 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
         .route("/api/v1/operations", post(operations::<D>))
+        .route(
+            "/api/v1/jobs/{id}/events",
+            get(crate::plugins::job_api::events::<D>),
+        )
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found));
@@ -127,6 +133,12 @@ fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response 
         HeaderValue::from_static("application/json"),
     );
     r
+}
+
+/// A failure envelope without a request ID, for routes outside `/api/v1/operations`.
+/// Cost: one small serialization.
+pub(crate) fn error_response(e: HostError) -> Response {
+    failure(None, e)
 }
 
 async fn api_not_found() -> Response {
@@ -527,6 +539,16 @@ pub async fn dispatch<D: Directory>(
         }
         input.insert("space_id".into(), Value::String(resolved.space_id));
     }
+    // A job's space comes from the job store, never from the caller.
+    let job_scoped = state
+        .registry
+        .policy(op)
+        .is_some_and(|p| p.scope == authz::Scope::Job);
+    if job_scoped {
+        calternal_core::validate_operation_input(op, &input)?;
+        let space = crate::plugins::job_api::route(&state, &input)?;
+        input.insert("space_id".into(), Value::String(space));
+    }
     // One authorization path: a host row or a row derived from a plugin manifest.
     // Without either, answer as a hidden target would, so a caller cannot tell an
     // unregistered plugin operation from an item or space it may not see.
@@ -546,6 +568,13 @@ pub async fn dispatch<D: Directory>(
     tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &identity, &checked))
         .await
         .map_err(|_| HostError::internal("directory task failed"))??;
+    if job_scoped {
+        let space = match input.remove("space_id") {
+            Some(Value::String(space)) => space,
+            _ => return Err(HostError::not_found("job not found")),
+        };
+        return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
+    }
     if op.starts_with("spaces.") {
         let st = state.clone();
         let rid = request_id.to_owned();
@@ -823,6 +852,7 @@ fn outcome_value(outcome: Outcome) -> Result<Value, HostError> {
         )),
         Outcome::Refused => Err(HostError::unavailable("extension request was refused")),
         Outcome::Failed(e) => Err(e),
+        Outcome::Cancelled => Err(HostError::unavailable("extension request was cancelled")),
     }
 }
 
@@ -928,6 +958,7 @@ async fn invoke_plugin<D: Directory>(
         p.clone(),
         session,
         space.clone(),
+        space_id.as_uuid().to_string(),
         plugin.clone(),
         generation,
         request_id.to_owned(),
@@ -943,6 +974,9 @@ async fn invoke_plugin<D: Directory>(
                 input: plugin_input,
                 account: account_id,
                 host: Arc::new(host),
+                timeout: crate::plugins::WORKER_TIMEOUT,
+                cancel: None,
+                job: None,
             },
         )
         .await;
@@ -1015,6 +1049,9 @@ async fn preview<D: Directory>(
                 input: serde_json::json!({ target.field: PREVIEW_ITEM_ID }),
                 account: account_id,
                 host: Arc::new(PreviewHost { kind: target.kind }),
+                timeout: crate::plugins::WORKER_TIMEOUT,
+                cancel: None,
+                job: None,
             },
         )
         .await;

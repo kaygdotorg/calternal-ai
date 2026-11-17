@@ -6,8 +6,8 @@ import type { ManifestV1 } from "@calternal/contracts";
 const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
 /** Closed broker method vocabulary; declaration never grants permission. */
-export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "request_secret_handle";
-const hostCalls = new Set(["read_item", "write_item", "list_collection", "emit_event", "start_job", "request_secret_handle"]);
+export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+const hostCalls = new Set(["read_item", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
 function fail(): never { throw new Error("invalid manifest v1"); }
 function record(v: unknown, keys: string[], optional: string[] = []): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return fail();

@@ -41,6 +41,7 @@ async fn disable_during_invocation_discards_result() {
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),
         workers: WorkerPool::new(Some(node)),
+        jobs: calternal_server::plugins::Jobs::disabled(),
         allowed_hosts: allowed_hosts(0),
     });
     let owner = dev_principals()
