@@ -133,6 +133,26 @@ Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-pl
 - **Preview.** Runs the plugin's first item operation against a fixed fixture item served by a broker that refuses everything else; works while the plugin is disabled and never activates it.
 - **This is not a security sandbox.** A worker can still open network connections (Node 22's permission model does not restrict sockets), use CPU until its deadline, allocate up to its heap cap plus native memory, read its own bundle directory, and keep in-memory state across invocations in the same (plugin, space).
 
+## Machines
+
+Agent threads run on enrolled machines that connect out to this server; the server
+never starts containers or VMs (`src/machines.rs`; machine side in `crates/machine`).
+State lives in `system/machines.db` (0600, WAL, `synchronous=FULL`): enrolment code
+hashes, machines with their public keys, pool grants and leases. Exec output is kept
+in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
+`--machine-poll-hold-ms` (default 20000).
+
+| Path | Who | Purpose |
+|---|---|---|
+| `/api/v1/machine/{enrol,session/start,session/finish,sync,output}` | the machine (code, key, then bearer) | protocol v1, see `calternal_machine::protocol` |
+| `POST /api/v1/machines/codes`, `GET /api/v1/machines`, `POST /api/v1/machines/{id}/revoke`, `POST /api/v1/machines/{id}/drain` | signed-in owner | enrol and manage your machines |
+| `POST /api/v1/machines/runs`, `GET …/runs/{lease}`, `POST …/runs/{lease}/stop`, `POST …/runs/{lease}/execs`, `GET /api/v1/machines/execs/{exec}/output?after&wait_ms` | account with `plugins.use` in the space | place work, run commands, read output |
+
+Operator commands work on the data directory, with or without the server running
+(a running server applies them within a second):
+`calternal machines code --pool|--account <uuid>`, `machines list`,
+`machines revoke <machine>`, `machines pool-grant <account> [--remove]`.
+
 ## Tests
 
 `scripts/with-toolchain.sh cargo test -p calternal-server -j4` runs these suites. They need Node 22.13 or later on PATH.

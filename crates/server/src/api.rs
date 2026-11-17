@@ -74,6 +74,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
         .route("/api/v1/operations", post(operations::<D>))
+        .merge(crate::machines::http::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found));
@@ -110,7 +111,8 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
 
 // ------------------------------------------------------------- envelope
 
-fn failure(request_id: Option<String>, e: HostError) -> Response {
+/// Operation error envelope with the error's HTTP status.
+pub(crate) fn failure(request_id: Option<String>, e: HostError) -> Response {
     let status =
         StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut resp = OperationResponse::<Value>::failure(request_id, e.code, e.message);
@@ -120,7 +122,8 @@ fn failure(request_id: Option<String>, e: HostError) -> Response {
     json_response(status, &resp)
 }
 
-fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response {
+/// Serialize `body` as a JSON response with `status`.
+pub(crate) fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -> Response {
     let bytes = serde_json::to_vec(body).expect("serializable");
     let mut r = (status, bytes).into_response();
     r.headers_mut().insert(
@@ -208,7 +211,9 @@ async fn guard<D: Directory>(
         if !state.allowed_hosts.iter().any(|h| h == host) {
             break 'resp deny(HostError::forbidden("host not allowed"));
         }
-        let account_route = path.starts_with("/api/v1/auth/");
+        // Machine protocol routes authenticate the machine themselves.
+        let account_route = path.starts_with("/api/v1/auth/")
+            || path.starts_with(calternal_machine::protocol::PATH_PREFIX);
         if api
             && !account_route
             && bearer(req.headers()).is_none()
