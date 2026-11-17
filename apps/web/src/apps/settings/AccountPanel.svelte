@@ -22,9 +22,9 @@
 </script>
 
 <div class="sp">
-  <h3>You</h3>
+  <h2>You</h2>
   <div class="r"><span class="n"><span class="t">{me?.user.name ?? "…"}</span><span class="h">{me ? `${me.user.username} · ${me.user.role}` : ""}</span></span></div>
-  <h3>Passkeys</h3>
+  <h2>Passkeys</h2>
   {#each keys as k (k.id)}
     <div class="r" data-setting="account.passkey.{k.id}">
       {#if renaming === k.id}
@@ -37,7 +37,7 @@
     </div>
   {/each}
   <div class="r"><span class="n"><span class="t">Add a passkey</span><span class="h">On this device, or one nearby.</span></span><Button text="Add a passkey…" disabled={busy} onclick={() => act(() => account.addPasskey(`Passkey ${keys.length + 1}`))} /></div>
-  <h3>Signed in on</h3>
+  <h2>Signed in on</h2>
   {#each places as p (p.id)}
     <div class="r" data-setting="account.installation.{p.id}">
       <span class="n"><span class="t">{p.name}{p.current ? " (this browser)" : ""}</span><span class="h">Since {when(p.created_at)} · last used {when(p.last_seen_at)}</span></span>

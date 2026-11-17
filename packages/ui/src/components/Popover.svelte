@@ -19,11 +19,13 @@
     prefer = "top",
     dense = true,
     morph = false,
+    blind,
+    refit,
     trigger,
     onclose,
     children,
     ...rest
-  }: { open: boolean; anchor: Anchor | null | undefined; label: string; role?: "dialog" | "menu" | "listbox"; prefer?: PlaceOptions["prefer"]; dense?: boolean; morph?: boolean; trigger?: HTMLElement | null; onclose: () => void; children: Snippet } & Record<string, unknown> = $props();
+  }: { open: boolean; anchor: Anchor | null | undefined; label: string; role?: "dialog" | "menu" | "listbox"; prefer?: PlaceOptions["prefer"]; dense?: boolean; morph?: boolean; blind?: number; refit?: unknown; trigger?: HTMLElement | null; onclose: () => void; children: Snippet } & Record<string, unknown> = $props();
   let box = $state<HTMLElement>();
   // Closing keeps the panel for one short fade (`data-leaving`, glass.css) so it does not vanish in a frame; opening is instant once the material is ready.
   let leaving = $state(false);
@@ -35,6 +37,11 @@
   const glassOf = () => box?.querySelector<HTMLElement>(":scope > .panel > .glass") ?? null;
   const parts = () => { const glass = glassOf(); return box && glass && words && trigger ? { box, glass, words, from: trigger } : null; };
   $effect(() => () => trigger?.removeAttribute("data-morph-open"));
+  // `refit` changes: the content changed size or width after the first placement (a picker that has added its rows), so it is placed once more. The vertical edge is anchored, so this only re-clamps sideways.
+  let before: { left: number; top: number; right: number; bottom: number } | null = null;
+  $effect.pre(() => { if (open && blind && anchor) { const r = anchor instanceof Element ? anchor.getBoundingClientRect() : anchor; before = { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; } });
+  let again: () => void = () => {};
+  $effect(() => { void refit; untrack(() => again()); });
   const handBack = () => { trigger?.removeAttribute("data-morph-open"); if (trigger) buttonSwell(trigger); };
   $effect(() => {
     if (open) { present = true; leaving = false; morphing = false; return; }
@@ -62,8 +69,10 @@
     const wasMorphed = untrack(() => morphed);
     morphed = morph && !!trigger && morphAllowed();
     const cover = morphed;
-    const go = () => place(box!, anchor, { prefer, cover });
+    // A blind placement uses the anchor's rectangle as it was read before this surface was inserted (layout still clean), so nothing is measured after the insertion.
+    const go = () => place(box!, blind && before ? before : anchor, { prefer, cover, blind });
     go();
+    again = go;
     let f = 0;
     if (morphed) {
       // Reveal once the material is ready (the two frames `ready` waits for); the first morph frame is painted before the browser paints. Reopening mid-close continues from the glass's progress.
@@ -90,6 +99,7 @@
     addEventListener("keydown", esc, true);
     addEventListener("resize", go);
     return () => {
+      again = () => {};
       cancelAnimationFrame(f);
       removeEventListener("pointerdown", away, true);
       removeEventListener("keydown", esc, true);

@@ -21,6 +21,18 @@ export interface RunsOn {
 /** Which official agent program runs the thread. */
 export type ProviderId = "claude" | "codex";
 
+/**
+ * Something about a thread that needs the person's attention and has a next step: why a message cannot run yet, or what happened to the last turn. Drawn by `ThreadNotices` in plain words.
+ * `retrying` carries the automatic retry (5 tries, after 30 s, 1, 2, 4 and 8 minutes, `docs/orchestrator-proposal.md`); `interrupted` is a machine that went silent (nothing moves by itself, Resume does).
+ */
+export type ThreadNotice =
+  | { kind: "no-machine" }
+  | { kind: "machine-offline"; machine: string }
+  | { kind: "provider-signin"; machine: string; provider: string }
+  | { kind: "failed"; reason: string }
+  | { kind: "retrying"; reason: string; attempt: number; of: number; nextAt: number }
+  | { kind: "interrupted"; machine: string };
+
 /** What the sidebar and the header need to know about a thread. A child thread has a `parentId`. */
 export interface ThreadSummary {
   id: string;
@@ -39,6 +51,8 @@ export interface ThreadSummary {
   runsOn: RunsOn;
   /** Total messages in the thread's file. The list never loads them all. */
   messageCount: number;
+  /** What needs the person's attention before or after a turn (see `ThreadNotice`); absent when nothing does. */
+  notice?: ThreadNotice;
 }
 
 /** A provider and the models it offers. Switching is a composer control and never creates a thread or a visible message. */
