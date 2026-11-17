@@ -276,12 +276,12 @@
             ],
             "dependencies": [
               {
-                "id": "notes",
+                "id": "calternal-notes",
                 "version": "0.1.0"
               }
             ],
             "description": "Read-only word, character, and line statistics for a note.",
-            "id": "notes-insights",
+            "id": "calternal-notes-insights",
             "name": "Notes Insights",
             "operations": [
               {

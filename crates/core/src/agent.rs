@@ -32,6 +32,8 @@ pub struct AgentInput {
     pub lease_id: String,
     /// Whether an account-owned machine runs directly; pool machines refuse this.
     pub direct: bool,
+    /// Check an entitled pool machine without exposing its identity.
+    pub pool: bool,
     /// Thread UUID for check/run; no thread file is created in step one.
     pub thread_id: String,
     /// Job UUID for events/stop/resume/mode/access operations.
@@ -56,8 +58,6 @@ pub struct AgentInput {
     pub app: String,
     /// Whether the requested grant allows mutations as well as reads.
     pub write: bool,
-    /// Approval UUID for a freshly verified person to approve.
-    pub approval_id: String,
     /// Stream epoch last seen, empty on first read.
     pub epoch: String,
     /// Next job sequence requested; zero on first read.
@@ -67,6 +67,11 @@ pub struct AgentInput {
 
 /// Manual provider operations. This table feeds discovery, policy and instruction indexes.
 pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
+    (
+        crate::AGENT_READINESS,
+        "Read your machine and provider readiness in a space",
+        false,
+    ),
     (
         "agent.settings",
         "Read or set your account defaults or thread retry settings",
@@ -122,11 +127,6 @@ pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
         "Ask for a named app scope in this thread",
         true,
     ),
-    (
-        "access.approve",
-        "Approve a scope with a freshly verified person session",
-        true,
-    ),
 ];
 
 /// Declared risk class, evaluated in addition to capabilities and token scope.
@@ -145,18 +145,30 @@ pub enum OperationRisk {
     WidensAccess,
 }
 
+impl OperationRisk {
+    /// Whether a person can retain approval for this class across a thread.
+    pub fn allows_thread_approval(self) -> bool {
+        matches!(self, Self::Read | Self::Reversible | Self::External)
+    }
+}
+
 /// Risk for a built-in operation; plugin risks come directly from their manifests.
 /// This classification feeds discovery and the agent reviewer, never substitutes
 /// for current capabilities. O(operation-name bytes), no I/O.
 pub fn builtin_operation_risk(id: &str, mutates: bool) -> OperationRisk {
+    if let Some(operation) = crate::PeopleOperation::from_id(id) {
+        return operation.risk();
+    }
+    if let Some(op) = crate::note_operation(id) {
+        return op.risk;
+    }
     match id {
-        "spaces.set_role" | "spaces.transfer" | "plugins.enable" | "agent.mode"
-        | "access.approve" | "access.request" | "machines.set" => OperationRisk::WidensAccess,
-        "agent.discard"
-        | "spaces.delete"
-        | "spaces.remove_member"
-        | "spaces.leave"
-        | "secrets.revoke" => OperationRisk::Irreversible,
+        "plugins.enable" | "agent.mode" | "access.request" | "machines.set" => {
+            OperationRisk::WidensAccess
+        }
+        "agent.discard" | "spaces.delete" | "spaces.leave" | "secrets.revoke" => {
+            OperationRisk::Irreversible
+        }
         _ if !mutates => OperationRisk::Read,
         _ => OperationRisk::Reversible,
     }

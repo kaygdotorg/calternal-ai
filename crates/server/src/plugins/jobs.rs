@@ -28,6 +28,7 @@
 
 mod checkpoint;
 mod claim;
+mod complete;
 mod database;
 pub(crate) use database::JobDatabase;
 
@@ -44,9 +45,7 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use super::Session;
-use super::job_sql::{
-    ACTIVE, COLUMNS, SCHEMA, all_reported, db_err, parse_state, report, retain, row, set_state,
-};
+use super::job_sql::{ACTIVE, COLUMNS, SCHEMA, db_err, parse_state, retain, row};
 use super::live::{Live, LiveMap};
 use super::worker::CancelFlag;
 use calternal_types::{AccountId, Error};
@@ -121,6 +120,34 @@ pub struct Job {
 }
 
 impl Job {
+    /// Remove provider login, placement and person-request references from
+    /// someone else's turn. Cost: existing view clone plus constant removals.
+    pub(crate) fn view_for(&self, account: AccountId) -> JobView {
+        let mut view = self.view();
+        if self.operation == "agent.turn"
+            && (self.account != account || self.input["check"] == true)
+        {
+            for value in [&mut view.checkpoint, &mut view.result] {
+                if let Some(fields) = value.as_object_mut() {
+                    for key in [
+                        "machine_id",
+                        "lease_id",
+                        "request_machine",
+                        "person_request",
+                        "error",
+                        "placement",
+                        "interruption",
+                        "session_id",
+                        "session_notice",
+                    ] {
+                        fields.remove(key);
+                    }
+                }
+            }
+        }
+        view
+    }
+
     /// Client view. Cost: clones the checkpoint and result.
     pub fn view(&self) -> JobView {
         JobView {
@@ -136,7 +163,7 @@ impl Job {
     }
 }
 
-/// A job just moved to running, with its fresh stream and cancellation handle.
+/// A claimed job with its fresh stream and cancellation handle.
 pub struct Claimed {
     /// The record after the claim (its `runs` is this run's number).
     pub job: Job,
@@ -202,6 +229,7 @@ type OpenSpace = (Arc<JobDatabase>, u64);
 pub struct Jobs {
     pub(super) root: Option<PathBuf>,
     pub(super) security: Option<calternal_auth::agents::Agents>,
+    pub(super) receipt_retention: std::time::Duration,
     spaces: Mutex<HashMap<String, OpenSpace>>,
     tick: AtomicUsize,
     pub(super) routes: RwLock<HashMap<String, String>>,
@@ -217,7 +245,7 @@ impl Jobs {
     pub(crate) fn thread_latest(&self, space: &str, thread: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn(space)?;
         let c = conn.lock().unwrap_or_else(|p| p.into_inner());
-        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
+        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
     }
 
     /// Permits for concurrent runs ([`super::runner::MAX_RUNNING`]). Cost: one clone.
@@ -263,6 +291,13 @@ impl Jobs {
         self
     }
 
+    /// Reuse the installation's receipt retention for completed person requests.
+    /// Cost: one copy at startup, no I/O.
+    pub fn with_receipt_retention(mut self, retention: std::time::Duration) -> Self {
+        self.receipt_retention = retention;
+        self
+    }
+
     /// Publish durable saved-turn changes on the existing per-space journal.
     /// Install at server startup before recovery. Cost: one shared handle, no I/O.
     pub fn with_thread_events(mut self, content: Arc<calternal_content::Content>) -> Self {
@@ -277,6 +312,7 @@ impl Jobs {
         Self {
             root: None,
             security: None,
+            receipt_retention: calternal_content::DEFAULT_RECEIPT_RETENTION,
             spaces: Mutex::new(HashMap::new()),
             tick: AtomicUsize::new(0),
             routes: RwLock::new(HashMap::new()),
@@ -320,8 +356,19 @@ impl Jobs {
         c.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
         c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
+        const SCHEMA_VERSION: i64 = 2;
+        let version = c
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .map_err(db_err)?;
+        if version != 0 && version != SCHEMA_VERSION {
+            return Err(Error::unavailable(
+                "jobs database schema requires fresh preview data",
+            ));
+        }
         c.execute_batch(SCHEMA).map_err(db_err)?;
-        c.execute_batch(crate::threads::turn_events::SCHEMA)
+        c.execute_batch(crate::threads::turn_events::schema())
+            .map_err(db_err)?;
+        c.pragma_update(None, "user_version", SCHEMA_VERSION)
             .map_err(db_err)?;
         retain(&c)?;
         let c = Arc::new(JobDatabase::new(c));
@@ -406,7 +453,7 @@ impl Jobs {
             }
             if a.operation=="agent.turn" {
                 let thread=a.input["request"]["thread_id"].as_str().ok_or_else(||Error::invalid_input("turn needs a thread UUID"))?;
-                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
+                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
                 if active{return Err(Error::conflict("this thread already has active or interrupted work"));}
             }
             let active: i64 = tx
@@ -471,122 +518,5 @@ impl Jobs {
             }
             tx.query_row("SELECT checkpoints FROM jobs WHERE id=?1", [id], |r| r.get(0)).map_err(db_err)
         })
-    }
-
-    /// Finish run `run`. Late reports (cancelled job, superseded run) change nothing.
-    /// A final job reports exactly once to its parent; a parent whose children have all
-    /// reported is re-admitted. Returns the jobs to schedule.
-    /// Cost: one FULL transaction with a few indexed reads and writes.
-    pub fn finish(
-        &self,
-        space: &str,
-        id: &str,
-        run: u32,
-        end: RunEnd,
-    ) -> Result<Vec<String>, Error> {
-        let (state, result) = match end {
-            RunEnd::Done(v) => match bounded_json(&v, MAX_CHECKPOINT_BYTES) {
-                Ok(text) => (JobState::Done, text),
-                Err(_) => (JobState::Failed, "null".into()),
-            },
-            RunEnd::Waiting => (JobState::Waiting, "null".into()),
-            RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
-            RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
-            RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
-            RunEnd::Failed => (JobState::Failed, "null".into()),
-        };
-        let wake = self.tx(space, |tx| {
-            let current: Option<(String, u32, Option<String>)> = tx
-                .query_row(
-                    "SELECT state,runs,parent FROM jobs WHERE id=?1",
-                    [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )
-                .optional()
-                .map_err(db_err)?;
-            let Some((s, runs, parent)) = current else {
-                return Ok(vec![]);
-            };
-            if s != "running" || runs != run {
-                return Ok(vec![]);
-            }
-            let mut state = state;
-            if state == JobState::Waiting {
-                let children: i64 = tx
-                    .query_row("SELECT count(*) FROM jobs WHERE parent=?1", [id], |r| {
-                        r.get(0)
-                    })
-                    .map_err(db_err)?;
-                if children == 0 || runs >= MAX_RUNS {
-                    state = JobState::Failed;
-                }
-            }
-            set_state(tx, id, state, &result)?;
-            let mut wake = vec![];
-            if state == JobState::Waiting && all_reported(tx, id)? {
-                tx.execute("UPDATE jobs SET state='admitted' WHERE id=?1", [id])
-                    .map_err(db_err)?;
-                wake.push(id.to_owned());
-            }
-            if state.is_final()
-                && let Some(parent) = parent
-            {
-                wake.extend(report(tx, &parent, id, state, &result)?);
-            }
-            Ok(wake)
-        })?;
-        self.settle_run(id, run);
-        Ok(wake)
-    }
-
-    /// Cancel a job and every active descendant. Their runs are told to stop, their
-    /// later output is discarded, and the job reports `cancelled` to its parent unless
-    /// that parent was cancelled too. Returns the jobs to schedule (a woken parent).
-    /// Cost: one FULL transaction walking the descendant tree (at most
-    /// [`MAX_CHILDREN`] per level within the space's active-job bound).
-    pub fn cancel(&self, space: &str, id: &str) -> Result<Vec<String>, Error> {
-        let (cancelled, wake) = self.tx(space, |tx| {
-            let mut st = tx
-                .prepare(&format!(
-                    "WITH RECURSIVE tree(id) AS (SELECT ?1 UNION SELECT j.id FROM jobs j JOIN tree t ON j.parent=t.id) \
-                     SELECT j.id FROM jobs j JOIN tree t ON j.id=t.id WHERE j.state IN {ACTIVE}"
-                ))
-                .map_err(db_err)?;
-            let ids = st
-                .query_map([id], |r| r.get::<_, String>(0))
-                .map_err(db_err)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(db_err)?;
-            drop(st);
-            for job in &ids {
-                set_state(tx, job, JobState::Cancelled, "null")?;
-            }
-            let mut wake = vec![];
-            if ids.iter().any(|j| j == id) {
-                let parent: Option<String> = tx
-                    .query_row("SELECT parent FROM jobs WHERE id=?1", [id], |r| r.get(0))
-                    .map_err(db_err)?;
-                if let Some(parent) = parent {
-                    wake = report(tx, &parent, id, JobState::Cancelled, "null")?;
-                }
-            }
-            Ok((ids, wake))
-        })?;
-        for job in cancelled {
-            let live = self
-                .live
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .get(&job)
-                .cloned();
-            if let Some(live) = live {
-                let cancel = live.lock().cancel.clone();
-                if let Some(c) = cancel {
-                    c.cancel();
-                }
-            }
-            self.settle(&job);
-        }
-        Ok(wake)
     }
 }

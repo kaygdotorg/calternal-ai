@@ -1,9 +1,10 @@
 // The server adapter against a recorded-response double: the response shapes are the ones `crates/server/src/threads` returns (docs/threads.md), the job events are
-// the SSE frames `job_api.rs` writes. No network.
+// the SSE frames `job_api.rs` writes (provider events nested as chunk.data.event, docs/dev-e2e.md), the journal entries are the kinds docs/threads.md lists. No network.
 import { describe, expect, test } from "vitest";
 import { ServerClient } from "./client";
-import { ServerThreads, Unsupported } from "./threads-client";
-import { parseMessages, stateOfJob, summaryOf } from "./thread-file";
+import { ServerThreads } from "./threads-client";
+import { lifetimesOf } from "./requests";
+import { parseMessages, stateOfTurn, summaryOf } from "./thread-file";
 import type { ThreadEvents } from "../apps/threads/client";
 
 const SPACE = "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11";
@@ -12,28 +13,37 @@ const T2 = "019a8c00-0000-7000-8000-000000000002";
 const JOB = "job-0000000000000001";
 const M1 = "019a8c00-0000-7000-8000-0000000000a1";
 const M2 = "019a8c00-0000-7000-8000-0000000000a2";
-const md = (extra = "") => `---\ntitle: "Plan"\nprovider: "calternal-claude-code"\nmode: "approve_for_me"\ncreated-at: "2026-11-17T12:00:00.000Z"\nupdated-at: 2026-11-17T12:05:00.000Z\n---\n\n<!-- message:${M1} role:person actor:x -->\nInspect this workspace.\n<!-- /message -->\n${extra}`;
-const agent = `\n<!-- message:${M2} role:agent turn:${JOB} actor:y -->\nI looked. Nothing wrong.\n<!-- /message -->\n`;
-const meta = (o: object = {}) => ({ title: "Plan", provider: "calternal-claude-code", mode: "approve_for_me", mode_for: "acc", created_at: "2026-11-17T12:00:00.000Z", archived: false, deleted: false, ...o });
-const thread = (markdown: string, revision = "r1", o: object = {}) => ({ thread: { id: T1, space_id: SPACE, address: `/threads/${T1}`, revision, metadata: meta(o), markdown } });
+const md = (extra = "") => `---\ntitle: "Plan"\nprovider: "calternal-claude-code"\nmode: "approve_for_me"\ncreated-at: "2026-11-17T12:00:00.000Z"\nupdated-at: "2026-11-17T12:05:00.000Z"\n---\n\n<!-- message:${M1} role:person time:2026-11-17T12:01:00.000Z actor:x -->\nInspect this workspace.\n<!-- /message -->\n${extra}`;
+const agent = `\n<!-- message:${M2} role:agent time:2026-11-17T12:04:00.000Z turn:${JOB} actor:y -->\nI looked. Nothing wrong.\n<!-- /message -->\n`;
+const meta = (o: object = {}) => ({ title: "Plan", provider: "calternal-claude-code", model: null, mode: "approve_for_me", mode_for: "acc", message_count: 1, last_activity_at: "2026-11-17T12:04:00.000Z", created_at: "2026-11-17T12:00:00.000Z", archived: false, deleted: false, ...o });
+const thread = (markdown: string, revision = "r1", o: object = {}, turn_state = "idle") => ({ thread: { id: T1, space_id: SPACE, address: `/threads/${T1}`, revision, turn_state, metadata: meta(o), markdown } });
+const row = (id: string, turn_state = "idle", o: object = {}) => ({ id, address: `/threads/${id}`, revision: "r", turn_state, metadata: meta(o) });
 const enc = new TextEncoder();
-const sse = (...frames: [string, unknown][]) => new Response(new ReadableStream<Uint8Array>({ start(c) { for (const [n, d] of frames) c.enqueue(enc.encode(`event: ${n}\ndata: ${JSON.stringify(d)}\n\n`)); setTimeout(() => c.close(), 40); } }), { headers: { "content-type": "text/event-stream" } });
+const frame = (n: string, d: unknown) => enc.encode(`event: ${n}\ndata: ${JSON.stringify(d)}\n\n`);
+const sse = (frames: [string, unknown][], closeAfter = 40) => new Response(new ReadableStream<Uint8Array>({ start(c) { for (const [n, d] of frames) c.enqueue(frame(n, d)); setTimeout(() => c.close(), closeAfter); } }), { headers: { "content-type": "text/event-stream" } });
 const ok = (data: unknown) => new Response(JSON.stringify({ request_id: "r", ok: true, data }), { headers: { "content-type": "application/json" } });
 const fail = (code: string, message: string) => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code, message } }), { status: 404 });
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Waits for the condition itself (polling every 5 ms, up to 5 s), never for a guessed time: a loaded machine makes it slower, not wrong. Absence is the only thing a fixed wait is used for. */
+const until = async (cond: () => boolean, what = "the condition") => { for (let i = 0; i < 1000; i++) { if (cond()) return; await wait(5); } throw new Error(`timed out waiting for ${what}`); };
 
-/** A double of the server: records every operation, answers from `handlers`. */
+/** A double of the server: records every operation, answers from `handlers`; the space's journal is a stream the test pushes entries into. */
 function double(handlers: Record<string, (input: any, requestId: string) => unknown>) {
   const calls: { operation: string; input: any; requestId: string }[] = [];
   let events: Response | null = null;
+  const eventUrls: string[] = [];
+  let live: ReadableStreamDefaultController<Uint8Array> | null = null;
   const fetch = (async (url: string, init?: RequestInit) => {
-    if (url.includes("/jobs/")) return events ?? fail("not_found", "no job");
+    if (url.includes("/jobs/")) { eventUrls.push(url); return events ?? fail("not_found", "no job"); }
+    if (url.includes("/api/v1/live")) return new Response(new ReadableStream<Uint8Array>({ start(c) { live = c; c.enqueue(frame("message", { type: "ready", space_id: SPACE, bookmark: "b0" })); } }), { headers: { "content-type": "text/event-stream" } });
     const b = JSON.parse(init!.body as string);
     calls.push({ operation: b.operation, input: b.input, requestId: b.request_id });
     const h = handlers[b.operation];
     return h ? (() => { const r = h(b.input, b.request_id); return r instanceof Response ? r : ok(r); })() : fail("not_found", "unknown operation");
   }) as never;
   const client = new ServerThreads(new ServerClient({ token: () => "T", fetch }), () => SPACE);
-  return { client, calls, setEvents: (r: Response) => (events = r) };
+  const push = (kind: string, item: string, data?: object) => live!.enqueue(frame("message", { type: "entry", space_id: SPACE, entry: { kind, item, data } }));
+  return { client, calls, eventUrls, hasFeed: () => live !== null, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
 }
 
 describe("the saved thread's Markdown", () => {
@@ -41,7 +51,7 @@ describe("the saved thread's Markdown", () => {
     const ms = parseMessages(md(agent), 1000, 2000);
     expect(ms.map((m) => [m.id, m.role])).toEqual([[M1, "user"], [M2, "agent"]]);
     expect(ms[0]!.blocks).toEqual([{ type: "text", text: "Inspect this workspace." }]);
-    expect(ms[1]!.at).toBe(2000);
+    expect(ms[1]!.at).toBe(Date.parse("2026-11-17T12:04:00.000Z"));
     const open = parseMessages(`---\ntitle: "x"\n---\n<!-- message:${M1} role:agent -->\nhalf wri`);
     expect(open).toHaveLength(1);
     expect((open[0]!.blocks[0] as { text: string }).text).toBe("half wri");
@@ -50,24 +60,29 @@ describe("the saved thread's Markdown", () => {
     const ms = parseMessages(`---\ntitle: "x"\n---\n<!-- message:${M1} role:person -->\nsay <!-- hello --> ok\n<!-- /message -->\n`);
     expect(ms).toHaveLength(1);
   });
-  test("job states map to the three that mean something", () => {
-    expect(["queued", "running", "retry_waiting"].map(stateOfJob)).toEqual(["running", "running", "running"]);
-    expect(stateOfJob("interrupted")).toBe("waiting");
-    expect(stateOfJob("failed")).toBe("failed");
-    expect(stateOfJob("succeeded")).toBe("idle");
+  test("each message has the time its marker records", () => {
+    const ms = parseMessages(md(agent), 1000, 2000);
+    expect(ms.map((m) => m.at)).toEqual([Date.parse("2026-11-17T12:01:00.000Z"), Date.parse("2026-11-17T12:04:00.000Z")]);
   });
-  test("a summary maps the provider plugin and the mode", () => {
-    const s = summaryOf(T1, SPACE, meta({ mode: "full_access", provider: "calternal-codex", parent_thread: T2 }));
-    expect([s.provider, s.permission, s.parentId]).toEqual(["codex", "full", T2]);
+  test("turn labels map to the three states that mean something", () => {
+    expect(["queued", "running"].map(stateOfTurn)).toEqual(["running", "running"]);
+    expect(["waiting", "interrupted"].map(stateOfTurn)).toEqual(["waiting", "waiting"]);
+    expect(stateOfTurn("failed")).toBe("failed");
+    expect(["idle", undefined].map(stateOfTurn)).toEqual(["idle", "idle"]);
+  });
+  test("a summary carries everything the sidebar shows, from the list row alone", () => {
+    const s = summaryOf(T1, SPACE, meta({ mode: "full_access", provider: "calternal-codex", parent_thread: T2, model: "sonnet", message_count: 7 }), "running");
+    expect([s.provider, s.permission, s.parentId, s.model, s.messageCount, s.state, s.updatedAt]).toEqual(["codex", "full", T2, "sonnet", 7, "running", Date.parse("2026-11-17T12:04:00.000Z")]);
   });
 });
 
 describe("ServerThreads", () => {
-  test("lists a space's threads, children included", async () => {
-    const d = double({ "threads.list": () => ({ threads: [{ id: T1, address: "", revision: "r", metadata: meta() }, { id: T2, address: "", revision: "r", metadata: meta({ title: "Child", parent_thread: T1 }) }] }) });
+  test("the list is one operation and carries the turn state, provider, model, count and parent", async () => {
+    const d = double({ "threads.list": () => ({ threads: [row(T1, "running", { model: "sonnet", message_count: 3 }), row(T2, "idle", { title: "Child", parent_thread: T1 })] }) });
     const l = await d.client.listThreads();
-    expect(l.map((t) => [t.id, t.parentId])).toEqual([[T1, null], [T2, T1]]);
-    expect(d.calls[0]).toMatchObject({ operation: "threads.list", input: { space_id: SPACE } });
+    expect(l.map((t) => [t.id, t.parentId, t.state, t.model, t.messageCount])).toEqual([[T1, null, "running", "sonnet", 3], [T2, T1, "idle", "default", 1]]);
+    expect(d.ops("threads.list")).toHaveLength(1);
+    expect(d.ops("threads.get")).toHaveLength(0);
   });
   test("opening reads the file once per revision and ranges come from the parse", async () => {
     let gets = 0;
@@ -81,94 +96,175 @@ describe("ServerThreads", () => {
     const d = double({ "threads.get": () => fail("not_found", "item not found") });
     expect(await d.client.getThread(T1)).toBeUndefined();
   });
+  test("nothing is polled: with the feed quiet there are no more reads", async () => {
+    const d = double({ "threads.list": () => ({ threads: [row(T1)] }), "threads.get": () => thread(md()) });
+    const off = d.client.watchThreads(() => {});
+    const offWatch = d.client.watch(T1, { onMessage() {}, onStreamStart() {}, onDelta() {}, onStep() {}, onSummary() {} });
+    await until(() => d.hasFeed() && d.ops("threads.get").length >= 1, "the first reads");
+    for (let still = 0, last = -1; still < 4; await wait(40)) { still = d.calls.length === last ? still + 1 : 0; last = d.calls.length; } // the opening reads have finished
+    const n = d.calls.length;
+    await wait(400);
+    off(); offWatch();
+    expect(d.calls.length).toBe(n);
+  });
+  test("a turn-state entry changes the state in place, with no read", async () => {
+    const d = double({ "threads.list": () => ({ threads: [row(T1)] }) });
+    const seen: string[] = [];
+    await d.client.listThreads();
+    const off = d.client.watchThreads((l) => seen.push(l[0]!.state));
+    await until(() => d.hasFeed(), "the journal subscription");
+    const lists = d.ops("threads.list").length;
+    d.push("threads.turn_state_changed", T1, { job_id: JOB, state: "running", job_state: "running" });
+    await until(() => seen.includes("running"), "the state change");
+    off();
+    expect(seen).toContain("running");
+    expect(d.ops("threads.list")).toHaveLength(lists);
+  });
+  test("a created, renamed or archived thread re-reads the list once, however many entries arrive", async () => {
+    const d = double({ "threads.list": () => ({ threads: [row(T1)] }) });
+    const off = d.client.watchThreads(() => {});
+    await until(() => d.hasFeed(), "the journal subscription");
+    const lists = d.ops("threads.list").length;
+    d.push("threads.rename", T1); d.push("threads.archive", T2); d.push("threads.create", T2);
+    await until(() => d.ops("threads.list").length > lists, "the list re-read");
+    await wait(300); // absence: no second read follows the burst
+    off();
+    expect(d.ops("threads.list")).toHaveLength(lists + 1);
+  });
+  test("a checkpoint of the open thread re-reads that thread and tells the view the changed message", async () => {
+    let rev = 1;
+    const d = double({ "threads.get": () => (rev === 1 ? thread(md(), "r1") : thread(md(agent), "r2")), "threads.list": () => ({ threads: [row(T1)] }) });
+    const got: string[] = [];
+    const off = d.client.watch(T1, { onMessage: (m, i) => got.push(`${i} ${m.role}`), onStreamStart() {}, onDelta() {}, onStep() {}, onSummary() {} });
+    await until(() => got.includes("0 user") && d.hasFeed(), "the thread's first read and the journal subscription");
+    rev = 2;
+    d.push("threads.checkpoint", T1);
+    await until(() => got.includes("1 agent"), "the changed message");
+    off();
+    expect(got).toContain("1 agent");
+  });
+  test("a reloaded page follows the running turn the thread names, and resumes from the last event it saw", async () => {
+    const running = { ...thread(md(), "r1", {}, "running"), job: { id: JOB, state: "running" } };
+    const d = double({ "threads.get": () => running, "threads.list": () => ({ threads: [row(T1, "running")] }) });
+    d.setEvents(sse([["chunk", { seq: 1, data: { version: 1, seq: 1, event: { type: "tool_started", summary: "Read a" } } }]], 5000));
+    const started: string[] = [];
+    const off = d.client.watch(T1, { onMessage() {}, onStreamStart: (id) => started.push(id), onDelta() {}, onStep() {}, onSummary() {} });
+    await until(() => started.length > 0, "the turn being followed");
+    off();
+    expect(started).toEqual([JOB]);
+    expect(d.eventUrls[0]).toContain(JOB);
+  });
   test("send carries the composer's mode, provider and model, with the caller's request id, and follows the job: steps, then the saved answer", async () => {
     let revision = 0;
     const d = double({
       "threads.get": () => (revision ? thread(md(agent), "r2") : thread(md(), "r1")),
       "threads.send": () => ({ ...thread(md(), "r1b"), job: { id: JOB, state: "queued" } }),
     });
-    d.setEvents(sse(
+    d.setEvents(sse([
       ["snapshot", { job: { id: JOB, state: "running" }, epoch: "e" }],
-      ["chunk", { seq: 1, data: { type: "tool_started", summary: "Read src/lib.rs" } }],
-      ["chunk", { seq: 2, data: { type: "tool_finished", failed: false } }],
-      ["chunk", { seq: 3, data: { type: "text_delta", text: "I looked." } }],
-    ));
+      ["chunk", { seq: 0, data: { type: "placement", note: "not a provider event" } }],
+      ["chunk", { seq: 1, data: { version: 1, seq: 1, event: { type: "tool_started", summary: "Read src/lib.rs" } } }],
+      ["chunk", { seq: 2, data: { version: 1, seq: 2, event: { type: "tool_finished", failed: false } } }],
+      ["chunk", { seq: 3, data: { version: 1, seq: 3, event: { type: "text_delta", text: "I looked." } } }],
+    ], 150)); // the stream ends after the file has the answer (the flip below)
     const got: string[] = [];
     const ev: ThreadEvents = { onMessage: (m, i) => got.push(`message ${i} ${m.role}`), onStreamStart: () => got.push("start"), onDelta: (t) => got.push(`delta ${t}`), onStep: (s) => got.push(`step ${s.title} ${s.status}`), onSummary: () => {}, onStreamEnd: () => got.push("end") };
     await d.client.getThread(T1);
     const off = d.client.watch(T1, ev);
+    await until(() => d.ops("threads.get").length >= 2, "the thread's first read");
     await d.client.setPermission(T1, "full");
     await d.client.setProvider(T1, "claude", "sonnet-5-5");
-    setTimeout(() => (revision = 1), 20); // the server's file has the answer once the turn ends
     await d.client.send(T1, "Inspect this workspace.", "req-1");
-    await new Promise((r) => setTimeout(r, 120));
+    revision = 1; // the server's file has the answer from here on; the stream ends 150 ms after it was built, and the client reads the file then
+    await until(() => got.includes("message 1 agent"), "the saved answer");
     off();
-    const send = d.calls.find((c) => c.operation === "threads.send")!;
+    const send = d.ops("threads.send")[0]!;
     expect(send.requestId).toBe("req-1");
     expect(send.input).toEqual({ id: T1, space_id: SPACE, message: "Inspect this workspace.", mode: "full_access", provider: "calternal-claude-code", model: "sonnet-5-5" });
-    expect(got).toEqual(["start", "step Read src/lib.rs ok", "delta I looked.", "end", "message 1 agent"]);
+    expect(got.filter((x) => !x.startsWith("message 0"))).toEqual(["start", "step Read src/lib.rs ok", "delta I looked.", "end", "message 1 agent"]);
   });
-  test("stop, archive and delete are one operation each, on the thread's own id", async () => {
-    const d = double({ "threads.stop": () => thread(md()), "threads.archive": () => thread(md()), "threads.delete": () => thread(md()), "threads.list": () => ({ threads: [] }) });
-    await d.client.stop(T1); await d.client.archive(T1); await d.client.deleteThread(T1);
-    expect(d.calls.filter((c) => c.operation !== "threads.list").map((c) => [c.operation, c.input.id])).toEqual([["threads.stop", T1], ["threads.archive", T1], ["threads.delete", T1]]);
+  test("stop, archive, rename, unarchive and delete are one operation each, on the thread's own id", async () => {
+    const d = double({ "threads.stop": () => thread(md()), "threads.archive": () => thread(md()), "threads.rename": () => thread(md()), "threads.unarchive": () => thread(md()), "threads.delete": () => thread(md()), "threads.get": () => thread(md()) });
+    await d.client.stop(T1); await d.client.archive(T1); await d.client.rename(T1, " Better title "); expect(await d.client.unarchive(T1)).toBe(true); await d.client.deleteThread(T1);
+    expect(d.calls.filter((c) => /^threads\.(stop|archive|rename|unarchive|delete)$/.test(c.operation)).map((c) => [c.operation, c.input.id, c.input.title])).toEqual([["threads.stop", T1, undefined], ["threads.archive", T1, undefined], ["threads.rename", T1, "Better title"], ["threads.unarchive", T1, undefined], ["threads.delete", T1, undefined]]);
+  });
+  test("un-archiving something the server refuses resolves false", async () => {
+    const d = double({ "threads.unarchive": () => fail("not_found", "item not found") });
+    expect(await d.client.unarchive(T1)).toBe(false);
   });
   test("create sends the title, provider and parent", async () => {
-    const d = double({ "threads.create": () => thread(""), "threads.list": () => ({ threads: [] }) });
+    const d = double({ "threads.create": () => thread("") });
     const t = await d.client.createThread("Plan", { provider: "claude", parentId: T2 });
-    expect(d.calls[0]!.input).toEqual({ space_id: SPACE, title: "Plan", provider: "calternal-claude-code", parent_thread: T2 });
+    expect(d.calls.find((c) => c.operation === "threads.create")!.input).toEqual({ space_id: SPACE, title: "Plan", provider: "calternal-claude-code", parent_thread: T2 });
     expect(t.id).toBe(T1);
   });
   test("what the server cannot do says so", async () => {
     const d = double({});
-    await expect(d.client.rename()).rejects.toBeInstanceOf(Unsupported);
-    expect(await d.client.unarchive()).toBe(false);
     expect(await d.client.machines()).toEqual([]);
+    expect(await d.client.changes()).toEqual([]);
   });
 });
 
-describe("requests (issue #32's operations; the wire shape is the lane's stated goal)", () => {
+describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
   const list = { requests: [
-    { id: "q1", kind: "question", thread_id: T1, title: "Before I open the pull request", form: "Form([],\"x\")" },
-    { id: "a1", kind: "approval", thread_id: T1, title: "Run a command", action: "Push the branch", command: "git push origin lane/x" },
-    { id: "s1", kind: "secret", thread_id: T2, name: "FORGEJO_TOKEN", label: "Forgejo token", why: "To publish", scope: "personal", required: true, expires_ms: 1_800_000 },
-    { id: "z", kind: "something-new", thread_id: T1 },
+    { id: "q1", space_id: SPACE, thread_id: T1, detail: { kind: "question", label: "Before I open the pull request", form: { genui_version: 2, source: "Form([],\"x\")" } } },
+    { id: "a1", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: true, action: { operation: "threads.delete", input: { id: T2 }, request_id: "r", risk: "irreversible" } } },
+    { id: "a2", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: false, action: { operation: "notes.get", input: { id: "n" }, request_id: "r", risk: "read" } } },
+    { id: "s1", space_id: null, thread_id: T2, detail: { kind: "secret", name: "FORGEJO_TOKEN", label: "Forgejo token", reason: "To publish", expires_at_ms: 1_800_000 } },
+    { id: "z", space_id: SPACE, thread_id: T1, detail: { kind: "something-new" } },
   ] };
-  test("a list maps to the three kinds the bar draws and drops what it cannot", async () => {
+  test("the list is account-wide (no space), mapped to the three kinds the bar draws; unknown kinds are dropped", async () => {
     const d = double({ "requests.list": () => list });
     const r = await d.client.requests();
-    expect(r.map((x) => [x.id, x.kind, x.threadId])).toEqual([["q1", "question", T1], ["a1", "approval", T1], ["s1", "secret", T2]]);
-    expect(r[2]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
-    expect(d.calls[0]).toMatchObject({ operation: "requests.list", input: { space_id: SPACE } });
+    expect(r.map((x) => [x.id, x.kind, x.threadId])).toEqual([["q1", "question", T1], ["a1", "approval", T1], ["a2", "approval", T1], ["s1", "secret", T2]]);
+    expect(r[0]).toMatchObject({ title: "Before I open the pull request", form: "Form([],\"x\")" });
+    expect(r[3]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
+    expect(d.ops("requests.list")[0]!.input).toEqual({});
   });
-  test("answers become the operations: answer, approve once or for the thread, deny; a secret's value goes in the answer", async () => {
+  test("an irreversible or access-widening approval is single-use; the rest may last for the thread; a server list wins", async () => {
+    const d = double({ "requests.list": () => list });
+    const r = (await d.client.requests()).filter((x) => x.kind === "approval") as { lifetimes: string[] }[];
+    expect(r.map((x) => x.lifetimes)).toEqual([["once"], ["once", "thread"]]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "widens_access" } })).toEqual(["once"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "read" }, lifetimes: ["once"] })).toEqual(["once"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: ["once", "this_thread"] })).toEqual(["once", "thread"]);
+  });
+  test("answers become the real operations: answer, approve once or this_thread, deny", async () => {
     const d = double({ "requests.list": () => ({ requests: [] }), "requests.answer": () => ({}), "requests.approve": () => ({}), "requests.deny": () => ({}) });
+    d.client.watchRequests(() => {});
     await d.client.answer("q1", { kind: "question", values: { branch: "x" } });
     await d.client.answer("a1", { kind: "approval", decision: "once" });
     await d.client.answer("a2", { kind: "approval", decision: "thread" });
     await d.client.answer("a3", { kind: "approval", decision: "deny" });
-    await d.client.answer("s1", { kind: "secret", value: "hunter2" });
-    await d.client.answer("s2", { kind: "secret-skip" });
     expect(d.calls.filter((c) => c.operation !== "requests.list").map((c) => [c.operation, c.input])).toEqual([
-      ["requests.answer", { id: "q1", values: { branch: "x" } }],
+      ["requests.answer", { id: "q1", answer: { branch: "x" } }],
       ["requests.approve", { id: "a1", lifetime: "once" }],
-      ["requests.approve", { id: "a2", lifetime: "thread" }],
+      ["requests.approve", { id: "a2", lifetime: "this_thread" }],
       ["requests.deny", { id: "a3" }],
-      ["requests.answer", { id: "s1", secret: "hunter2" }],
-      ["requests.deny", { id: "s2" }],
     ]);
   });
-  test("after an answer the watchers hear the new list", async () => {
-    let open = true;
-    const d = double({ "requests.list": () => ({ requests: open ? [list.requests[0]] : [] }), "requests.approve": () => { open = false; return {}; } });
-    const seen: number[] = [];
-    const off = d.client.watchRequests((r) => seen.push(r.length));
-    await d.client.answer("a1", { kind: "approval", decision: "once" });
-    off();
-    expect(seen).toEqual([0]);
+  test("a secret's value goes to the trusted endpoint, with its space; skipping hides the prompt and calls nothing", async () => {
+    const posts: { url: string; body: any }[] = [];
+    const fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/auth/secrets/provide")) { posts.push({ url, body: JSON.parse(init!.body as string) }); return new Response(JSON.stringify({ secret: { name: "X", version: 1 } }), { status: 200 }); }
+      const b = JSON.parse(init!.body as string);
+      return ok(b.operation === "requests.list" ? { requests: [{ id: "s2", space_id: SPACE, thread_id: T1, detail: { kind: "secret", name: "N", label: "L", reason: "R", expires_at_ms: 1 } }, { id: "s3", space_id: null, thread_id: T1, detail: { kind: "secret", name: "M", label: "L", reason: "R", expires_at_ms: 1 } }] } : {});
+    }) as never;
+    const c = new ServerThreads(new ServerClient({ token: () => "T", fetch }), () => SPACE);
+    await c.requests();
+    await c.answer("s2", { kind: "secret", value: "hunter2" });
+    await c.answer("s3", { kind: "secret-skip" });
+    expect(posts).toEqual([{ url: "/api/v1/auth/secrets/provide", body: { request_id: "s2", space_id: SPACE, value: "hunter2" } }]);
+    expect((await c.requests()).map((r) => r.id)).toEqual(["s2"]);
   });
-  test("a refused answer is thrown as the server said it", async () => {
-    const d = double({ "requests.approve": () => fail("forbidden", "an agent cannot approve") });
-    await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toBeDefined();
+  test("a server without request operations answers not_found once: an empty list, and no more asking", async () => {
+    const d = double({});
+    expect(await d.client.requests()).toEqual([]);
+    expect(await d.client.requests()).toEqual([]);
+    expect(d.calls.filter((c) => c.operation === "requests.list")).toHaveLength(1);
+  });
+  test("a refused approval (no fresh passkey proof) is thrown with the server's words", async () => {
+    const d = double({ "requests.approve": () => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "forbidden", message: "verify with your passkey again first" } }), { status: 403 }) });
+    await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toMatchObject({ message: "verify with your passkey again first" });
   });
 });

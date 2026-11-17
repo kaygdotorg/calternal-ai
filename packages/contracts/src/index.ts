@@ -142,7 +142,293 @@ bookmark: string, } } | { "Ready": {
 /**
  * Current accepted position.
  */
-bookmark: string, } } | "Reset";
+bookmark: string, } } | "ReadinessChanged" | "Reset";
+/**
+ * Select the space and optionally a saved thread's placement constraint.
+ */
+
+export type ReadinessInput = {
+/**
+ * Space UUID. The person needs the space's plugins.use capability.
+ */
+space_id: string,
+/**
+ * Saved thread UUID, if readiness should be restricted by a thread pin.
+ */
+thread_id: string | null, };
+/**
+ * One cached readiness snapshot. Pool options carry no host identity.
+ */
+
+export type ReadinessResult = {
+/**
+ * Nonrevoked machines enrolled to the requesting account.
+ */
+machines: Array<PersonalMachineReadiness>,
+/**
+ * Anonymous options from the entitled pool, if any.
+ */
+pool: Array<MachineReadiness>,
+/**
+ * Lifetime of one provider observation in milliseconds.
+ */
+check_ttl_ms: number, };
+/**
+ * An eligible personal machine or anonymous pool option.
+ */
+
+export type MachineReadiness = {
+/**
+ * The machine has an active enrollment record.
+ */
+enrolled: boolean,
+/**
+ * The server has a current connection from the machine.
+ */
+connected: boolean,
+/**
+ * The machine is accepting additional placements.
+ */
+available: boolean,
+/**
+ * How this machine runs turns.
+ */
+execution: MachineExecution,
+/**
+ * Installed provider plugins and their account-scoped check results.
+ */
+providers: { [key in string]?: ProviderReadiness }, };
+/**
+ * Readiness for a machine owned by the caller.
+ */
+
+export type PersonalMachineReadiness = {
+/**
+ * Stable enrolled machine UUID.
+ */
+machine_id: string,
+/**
+ * The owner's machine label.
+ */
+name: string,
+/**
+ * Last observed contact in Unix milliseconds, when known.
+ */
+last_seen_ms: number | null,
+/**
+ * The machine has an active enrollment record.
+ */
+enrolled: boolean,
+/**
+ * The server has a current connection from the machine.
+ */
+connected: boolean,
+/**
+ * The machine is accepting additional placements.
+ */
+available: boolean,
+/**
+ * How this machine runs turns.
+ */
+execution: MachineExecution,
+/**
+ * Installed provider plugins and their account-scoped check results.
+ */
+providers: { [key in string]?: ProviderReadiness }, };
+/**
+ * The effective execution environment available on a machine.
+ */
+
+export type MachineExecution = "sandboxed" | "direct";
+/**
+ * A bounded observation of the official provider program's own check.
+ */
+
+export type ProviderCheck = {
+/**
+ * The provider program was found inside the machine's execution environment.
+ */
+installed: boolean,
+/**
+ * The program reported an active login for this account.
+ */
+signed_in: boolean,
+/**
+ * The program's own sign-in command, for display only.
+ */
+sign_in_command: string, };
+/**
+ * A machine's readiness for one provider in this space.
+ */
+
+export type ProviderReadiness = {
+/**
+ * The provider and orchestrator are enabled for this space.
+ */
+enabled: boolean,
+/**
+ * Recent provider status, or null until a fresh check is available.
+ */
+check: ProviderCheck | null,
+/**
+ * The machine has capacity and the enabled provider reports a login.
+ */
+ready: boolean, };
+/**
+ * A request is presented only to the authenticated recipient.
+ */
+
+export type PersonRequest = {
+/**
+ * Stable request UUID.
+ */
+id: string,
+/**
+ * Addressed space UUID, absent for personal secret requests.
+ */
+space_id: string | null,
+/**
+ * Thread UUID when the request was raised during a turn.
+ */
+thread_id: string | null,
+/**
+ * Question, approval or trusted secret prompt.
+ */
+detail: RequestDetail, };
+/**
+ * The information needed to render each pending request.
+ */
+
+export type RequestDetail = { "kind": "question",
+/**
+ * Label shown in inbox summaries and non-interactive clients.
+ */
+label: string,
+/**
+ * Form drawn by the application.
+ */
+form: GenUiView, } | { "kind": "approval",
+/**
+ * App operation prefix.
+ */
+app: string,
+/**
+ * Whether the proposed grant includes writes.
+ */
+write: boolean,
+/**
+ * Exact operation details when raised by an automatic approval check.
+ */
+action: JsonObject, } | { "kind": "secret",
+/**
+ * Secret name, never the value.
+ */
+name: string,
+/**
+ * Short human-readable name.
+ */
+label: string,
+/**
+ * Why the caller requested the credential.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the original fifteen-minute request expires.
+ */
+expires_at_ms: number, };
+/**
+ * How long approved authority remains usable.
+ */
+
+export type ApprovalLifetime = "once" | "this_thread";
+/**
+ * Account-private pending request snapshot.
+ */
+
+export type RequestsListResult = {
+/**
+ * Currently authorized requests, ordered by ID.
+ */
+requests: Array<PersonRequest>, };
+/**
+ * Resolve a pending question with the submitted form values.
+ */
+
+export type RequestAnswerInput = {
+/**
+ * Question UUID.
+ */
+id: string,
+/**
+ * Submitted form values.
+ */
+answer: JsonObject, };
+/**
+ * Resolve a pending approval with the selected lifetime.
+ */
+
+export type RequestApproveInput = {
+/**
+ * Approval UUID.
+ */
+id: string,
+/**
+ * Maximum duration of the grant.
+ */
+lifetime: ApprovalLifetime, };
+/**
+ * Decline one pending approval.
+ */
+
+export type RequestDenyInput = {
+/**
+ * Approval UUID.
+ */
+id: string, };
+/**
+ * Result of resolving a private request.
+ */
+
+export type RequestResolution = {
+/**
+ * Resolved request UUID.
+ */
+id: string,
+/**
+ * Answered, approved or denied.
+ */
+status: string, };
+/**
+ * Raise a question from the caller's current thread.
+ */
+
+export type RequestAskInput = {
+/**
+ * Form capable of asking several questions at once.
+ */
+form: GenUiView, };
+/**
+ * Standing instructions for one space. Omitting Markdown reads the file.
+ */
+
+export type SpaceInstructionsInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Replacement Markdown, limited to 16 KiB.
+ */
+markdown: string | null, };
+/**
+ * The bounded standing instructions document.
+ */
+
+export type SpaceInstructionsResult = {
+/**
+ * Markdown text. An absent file is represented by empty text.
+ */
+markdown: string, };
 /**
  * One space followed on a live connection. At most 16 distinct spaces per connection.
  */
@@ -575,6 +861,10 @@ lease_id: string,
  */
 direct: boolean,
 /**
+ * Check an entitled pool machine without exposing its identity.
+ */
+pool: boolean,
+/**
  * Thread UUID for check/run; no thread file is created in step one.
  */
 thread_id: string,
@@ -622,10 +912,6 @@ app: string,
  * Whether the requested grant allows mutations as well as reads.
  */
 write: boolean,
-/**
- * Approval UUID for a freshly verified person to approve.
- */
-approval_id: string,
 /**
  * Stream epoch last seen, empty on first read.
  */
@@ -730,19 +1016,7 @@ command: ProviderCommand, };
  * Normalized provider output. Untrusted provider text conveys no authority.
  */
 
-export type ProviderEventKind = { "type": "check",
-/**
- * Official program was found.
- */
-installed: boolean,
-/**
- * Official program reports a current login.
- */
-signed_in: boolean,
-/**
- * Command the person runs in their sandbox, never run by the adapter.
- */
-sign_in_command: string, } | { "type": "session",
+export type ProviderEventKind = { "type": "check" } & ProviderCheck | { "type": "session",
 /**
  * Opaque provider session identifier; never a login or access token.
  */
@@ -1053,9 +1327,139 @@ updated_at: string, };
 
 export type NotesListInput = {
 /**
+ * Exact tag name (without a leading hash), including notes with descendant tags.
+ */
+tag?: string,
+/**
  * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
  */
 space_id: string, };
+/**
+ * Space-scoped lookup of notes or tags by literal prefix.
+ */
+
+export type NotePrefixInput = {
+/**
+ * UUID of the space whose index to query.
+ */
+space_id: string,
+/**
+ * Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.
+ */
+prefix: string, };
+/**
+ * Metadata for one picker match, including its relative Markdown destination.
+ */
+
+export type NoteMatch = {
+/**
+ * Encoded relative target for a Markdown link from another note.
+ */
+link_target: string,
+/**
+ * Stable UUID note identity; access is checked against the accompanying space.
+ */
+id: string,
+/**
+ * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ */
+space_id: string,
+/**
+ * Display title, nonblank, at most 256 Unicode scalars and without control characters.
+ */
+title: string,
+/**
+ * Opaque nonempty server revision; compare for equality, never infer order or parse it.
+ */
+revision: string,
+/**
+ * Server-authored UTC RFC 3339 timestamp for this snapshot.
+ */
+updated_at: string, };
+/**
+ * Bounded title-matching page in folded title and UUID order.
+ */
+
+export type NotesLookupResult = {
+/**
+ * At most 100 live matches with their exact on-disk destinations.
+ */
+notes: Array<NoteMatch>, };
+/**
+ * A named tag and its current note count in one space.
+ */
+
+export type TagCount = {
+/**
+ * Tag name without a leading hash.
+ */
+name: string,
+/**
+ * Number of live notes with this tag or one nested underneath it.
+ */
+count: number, };
+/**
+ * Rename one note at the revision shown in the list.
+ */
+
+export type NoteRenameInput = {
+/**
+ * Global note UUID; its current space is resolved by the host.
+ */
+id: string,
+/**
+ * Opaque revision selected by the caller.
+ */
+base_revision: string,
+/**
+ * New title, used for the first H1 and readable filename.
+ */
+title: string, };
+/**
+ * A single note UUID targeted by a lifecycle operation.
+ */
+
+export type NoteTarget = {
+/**
+ * Global note UUID, resolved to its owning space by the host.
+ */
+id: string, };
+/**
+ * Result of a recoverable Trash move.
+ */
+
+export type NoteChange = {
+/**
+ * Updated metadata including the revision and the time of the move.
+ */
+note: NoteSummary, };
+/**
+ * Stable state of an item address.
+ */
+
+export type ItemState = "active" | "in_trash" | "deleted";
+/**
+ * Permanent deletion acknowledgement. Contains no note contents.
+ */
+
+export type PurgeResult = {
+/**
+ * Stable UUID retained for address resolution.
+ */
+id: string,
+/**
+ * Deleted state of the address.
+ */
+state: ItemState, };
+/**
+ * Bounded tag lookup result.
+ */
+
+export type TagsResult = {
+/**
+ * Up to 100 tag names and counts, in literal name order.
+ */
+tags: Array<TagCount>, };
 /**
  * Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.
  */
@@ -1099,6 +1503,10 @@ id: string,
  * Owning space UUID, independent of account identity.
  */
 space_id: string,
+/**
+ * Lifecycle state of a Notes address, omitted for kinds without this projection.
+ */
+state?: ItemState,
 /**
  * Current effective capability names; informational, rechecked on use.
  */
@@ -1350,23 +1758,6 @@ space_id: string,
  */
 account_id: string, };
 /**
- * Change an existing member's role; assigning Owner requires transfer instead.
- */
-
-export type SpaceSetRoleInput = {
-/**
- * Space UUID; names are never accepted in its place.
- */
-space_id: string,
-/**
- * Stable target account UUID.
- */
-account_id: string,
-/**
- * Requested membership role; Owner is refused here.
- */
-role: SpaceRole, };
-/**
  * Space metadata and the caller's current effective role.
  */
 
@@ -1423,7 +1814,11 @@ export type SpaceMember = {
  */
 account_id: string,
 /**
- * Current effective role.
+ * Current account display name.
+ */
+name: string,
+/**
+ * Current directly granted role.
  */
 role: SpaceRole, };
 /**
@@ -1432,14 +1827,415 @@ role: SpaceRole, };
 
 export type SpaceMembersResult = {
 /**
- * Current account memberships, including exactly one Owner.
+ * Direct account grants on this page. Exactly one Owner has a direct grant.
  */
-members: Array<SpaceMember>, };
+members: Array<SpaceMember>,
+/**
+ * Direct group grants, including names and active member counts.
+ */
+groups: Array<SpaceGroupMember>,
+/**
+ * Continue after the last grant, omitted at the end.
+ */
+next_cursor: string | null, };
 /**
  * A completed membership mutation or directory-record deletion.
  */
 
 export type SpaceChangedResult = Record<string, never>;
+/**
+ * Admission boundary for the people operation.
+ */
+
+export type PeopleTarget = "server" | "account" | "space" | "invitation";
+/**
+ * A direct space grant identifies exactly one person or group.
+ */
+
+export type SpaceGrantInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Account UUID when the grant targets a person.
+ */
+account_id: string | null,
+/**
+ * Group UUID when the grant targets a group.
+ */
+group_id: string | null, };
+/**
+ * A role assignment to exactly one person or group.
+ */
+
+export type SpaceGrantRoleInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Account UUID when granting access directly to a person.
+ */
+account_id: string | null,
+/**
+ * Group UUID when granting access through current group membership.
+ */
+group_id: string | null,
+/**
+ * Requested role. Ownership uses explicit transfer.
+ */
+role: SpaceRole, };
+/**
+ * A group grant visible to current members of the space.
+ */
+
+export type SpaceGroupMember = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * Current group display name.
+ */
+name: string,
+/**
+ * The role assigned to the group.
+ */
+role: SpaceRole,
+/**
+ * Number of active people in the group.
+ */
+member_count: number, };
+/**
+ * An operation scoped to the authenticated account or server with no input fields.
+ */
+
+export type DirectoryInput = Record<string, never>;
+/**
+ * A continuation for a server directory.
+ */
+
+export type DirectoryPageInput = {
+/**
+ * The previous page's cursor. Omit it to start at the first row.
+ */
+cursor: string | null, };
+/**
+ * A continuation scoped to one space.
+ */
+
+export type SpaceDirectoryPageInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * The previous page's cursor for this space and operation.
+ */
+cursor: string | null, };
+/**
+ * List groups or continue an individual group's member page.
+ */
+
+export type GroupDirectoryPageInput = {
+/**
+ * Group UUID when reading one group's members.
+ */
+group_id: string | null,
+/**
+ * Use the group list cursor or, with `group_id`, its member cursor.
+ */
+cursor: string | null, };
+/**
+ * A space role and its currently declared capabilities.
+ */
+
+export type RoleDefinition = {
+/**
+ * The stored role name.
+ */
+name: string,
+/**
+ * Stable dotted capability names from the authority catalog.
+ */
+capabilities: Array<string>, };
+/**
+ * Space role catalog result.
+ */
+
+export type RolesResult = {
+/**
+ * Role definitions, ordered by name.
+ */
+roles: Array<RoleDefinition>, };
+/**
+ * The current account's new display name.
+ */
+
+export type ProfileInput = {
+/**
+ * Name shown to other people.
+ */
+name: string, };
+/**
+ * The updated profile's public display fields.
+ */
+
+export type ProfileResult = {
+/**
+ * The unchanged account UUID.
+ */
+account_id: string,
+/**
+ * The normalized name.
+ */
+name: string, };
+/**
+ * Target of a server people operation.
+ */
+
+export type PersonInput = {
+/**
+ * Account UUID.
+ */
+account_id: string, };
+/**
+ * A person in the authorized server directory.
+ */
+
+export type DirectoryPerson = {
+/**
+ * The account's stable UUID.
+ */
+account_id: string,
+/**
+ * Current display name.
+ */
+name: string,
+/**
+ * Server role, independent of space access.
+ */
+role: string,
+/**
+ * Whether the account may sign in and exercise its grants.
+ */
+disabled: boolean, };
+/**
+ * Server people visible to the operator.
+ */
+
+export type PeopleResult = {
+/**
+ * Current accounts, including disabled records.
+ */
+people: Array<DirectoryPerson>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
+/**
+ * A completed account disable.
+ */
+
+export type DisabledPerson = {
+/**
+ * Disabled account UUID.
+ */
+account_id: string,
+/**
+ * Always true on a successful disable.
+ */
+disabled: boolean, };
+/**
+ * A group's display name on creation.
+ */
+
+export type GroupCreateInput = {
+/**
+ * Printable name shown to authorized people.
+ */
+name: string, };
+/**
+ * Target group UUID.
+ */
+
+export type GroupInput = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string, };
+/**
+ * Rename a local group.
+ */
+
+export type GroupRenameInput = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * Its new name.
+ */
+name: string, };
+/**
+ * One membership in a local group.
+ */
+
+export type GroupPersonInput = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * The person's account UUID.
+ */
+account_id: string, };
+/**
+ * A server group and its active members.
+ */
+
+export type DirectoryGroup = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * Current display name.
+ */
+name: string,
+/**
+ * Local or identity-provider managed.
+ */
+source: string,
+/**
+ * Account UUIDs for each active member.
+ */
+members: Array<string>,
+/**
+ * Continue these members with this group's UUID, omitted at the end.
+ */
+members_next_cursor: string | null, };
+/**
+ * Server group directory result.
+ */
+
+export type GroupsResult = {
+/**
+ * Groups ordered by UUID.
+ */
+groups: Array<DirectoryGroup>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
+/**
+ * Create a single-use invitation to a space.
+ */
+
+export type InviteCreateInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Role granted on redemption. Owner is never assignable by invitation.
+ */
+role: SpaceRole,
+/**
+ * Absolute Unix milliseconds; omission defaults to seven days.
+ */
+expires_at: number, };
+/**
+ * Identify an invitation within its owning space.
+ */
+
+export type InviteInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Invitation record UUID.
+ */
+invite_id: string, };
+/**
+ * A created invitation. Use the authorized list to copy the link.
+ */
+
+export type InviteCreated = {
+/**
+ * Invitation record UUID.
+ */
+invite_id: string,
+/**
+ * Absolute expiry in Unix milliseconds.
+ */
+expires_at: number, };
+/**
+ * An invitation visible to an authorized space manager or owner.
+ */
+
+export type DirectoryInvite = {
+/**
+ * Invitation record UUID.
+ */
+invite_id: string,
+/**
+ * Role granted upon successful redemption.
+ */
+role: SpaceRole,
+/**
+ * Creation time in Unix milliseconds.
+ */
+created_at: number,
+/**
+ * Expiration time in Unix milliseconds.
+ */
+expires_at: number,
+/**
+ * Redemption time in Unix milliseconds, or null before redemption.
+ */
+used_at: number | null,
+/**
+ * Revocation time in Unix milliseconds, or null before revocation.
+ */
+revoked_at: number | null,
+/**
+ * Bearer link, present only for a usable invitation.
+ */
+link: string | null, };
+/**
+ * Current invitation directory, including unexpired used and revoked records.
+ */
+
+export type InvitesResult = {
+/**
+ * Authorized invitation records.
+ */
+invites: Array<DirectoryInvite>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
+/**
+ * A revoked invitation's public identity.
+ */
+
+export type InviteRevoked = {
+/**
+ * Invitation record UUID.
+ */
+invite_id: string, };
+/**
+ * Redeem a link as the signed-in account.
+ */
+
+export type InviteRedeemInput = {
+/**
+ * The secret from the invite URL, passed in the HTTP body.
+ */
+secret: string, };
 /**
  * Ask for a secret; the value is supplied later through the trusted surface.
  */
@@ -1639,6 +2435,14 @@ export type OperationDescription = {
  * Declared risk used by the permission-mode reviewer, independent of capabilities.
  */
 risk: OperationRisk,
+/**
+ * Current capability required by the operation, when declared in discovery.
+ */
+required_capability: string | null,
+/**
+ * Authority scope, when declared in discovery.
+ */
+target: PeopleTarget | null,
 /**
  * Versioned operation identifier used for dispatch; never a URL or executable path.
  */

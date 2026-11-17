@@ -10,7 +10,11 @@ fn queued(space: &str, id: &str, age: u64) -> Value {
         .as_millis() as u64;
     json!({"space_id":space,"item_id":uuid::Uuid::now_v7().to_string(),"created_at_ms":now-age,"request":{"request_id":id,"operation":"notes.create","input":{"space_id":space,"title":id,"markdown":"private pending"}}})
 }
-async fn account_live(f: &Fixture, who: usize, bookmark: Option<&str>) -> reqwest::Response {
+pub(super) async fn account_live(
+    f: &Fixture,
+    who: usize,
+    bookmark: Option<&str>,
+) -> reqwest::Response {
     let mut req = f
         .client
         .get(format!("{}/api/v1/account/live", f.base))

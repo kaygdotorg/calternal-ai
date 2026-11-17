@@ -7,5 +7,6 @@ title: "Using Calternal"
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
 - [Spaces and roles](./spaces-and-roles/)
+- [People and access](./people/)
 - [Threads](./threads/)
 - [Permission modes](./permissions-modes/)

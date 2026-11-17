@@ -6,20 +6,21 @@ Response shapes and the Markdown are in `server/thread-file.ts`; `server/threads
 
 | Screen | Server |
 | --- | --- |
-| Sidebar list | `threads.list` (space from the shell's current space), re-read every 5 s while watched and after each change here |
-| Open a thread | `threads.get`: the Markdown is parsed once per revision; messages are read in ranges from the parse |
-| Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model are sent with it (the server applies them directly) |
-| Working state and steps | the job's SSE stream (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer. The open file is re-read every 3 s, so a reload mid-turn still shows checkpointed text |
-| Stop, archive, delete | `threads.stop`, `.archive`, `.delete` |
-| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`): `requests.list`, `requests.answer`, `requests.approve` (`once` or `thread`), `requests.deny`, polled every 4 s while watched. **The wire shape is issue #32's stated goal, not yet in dev**: `requestOf` and `answerInput` are the one place to change when the contract lands. Tested against a double (`threads-client.test.ts`) |
+| Sidebar list | `threads.list` (the shell's current space): turn state, provider, model, mode, message count, last activity, parent. One operation, no file read. Kept current by the space's live journal (`server/space-feed.ts`), never polled |
+| Turn state | applied in place from `threads.turn_state_changed` journal entries (`data.state`, `data.job_id`) |
+| Open a thread | `threads.get`: the Markdown is parsed once per revision (message times from the markers); messages are read in ranges from the parse. A saved message or checkpoint of the open thread re-reads it (coalesced 120 ms) |
+| Reload mid-turn | `threads.get` names the running job; the page follows its job stream from the last event it saw |
+| Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model travel with it (the server applies them directly) |
+| Working state and steps | the job's SSE stream: provider events are nested, `chunk.data.event` (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer |
+| Stop, rename, archive, unarchive, delete | `threads.stop`, `.rename`, `.archive`, `.unarchive`, `.delete` |
+| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`) on the requests lane's operations (`docs/requests.md`): `requests.list` (account-wide, `{}`), `requests.answer` `{id, answer}`, `requests.approve` `{id, lifetime: once or this_thread}`, `requests.deny`; a secret's value goes to `POST /api/v1/auth/secrets/provide`. The bar offers "Allow for this thread" only when the approval may last (irreversible and access-widening actions are single-use: `lifetimesOf`). Approving needs a fresh passkey proof on an installation session: a development bearer is refused and the server's words are shown. Refreshed when the feed says a turn started or stopped waiting |
 
-## Gaps the UI cannot close alone (for the backend)
+Tested against a recorded-response double (`threads-client.test.ts`) and, end to end, against a seeded installation (`e2e/live-threads.mjs`).
 
-- `threads.list` has no per-thread job state, model or message count: a turn started elsewhere shows idle until its file changes; the model is only known after a send here.
-- The Markdown has no per-message time: every message shows the thread's creation time, the last one its update time.
-- No operation renames or un-archives a thread, lists machines or records where a thread runs, or lists requests (questions, approvals): those calls return empty or say so. Picking a machine is kept locally.
-- Finding a thread's running job after a reload needs an operation or a field on the thread; until then only turns started on this page are followed live.
-- Lists and the open file are polled; a per-kind journal subscription would replace both.
+## What the server still lacks
+
+- Where a thread runs: no operation names or records a machine; the choice is kept on the page and the server picks one.
+- Changes and Run tabs have no operation.
 
 ## The client interface
 
@@ -28,3 +29,30 @@ serves from separate operations: `ChoicesClient` (provider and model, permission
 `PanelsClient` (Changes and Run). The split is type-level, with no change in behaviour; the server adapter delegates requests to its own small class and the fixtures implement all four in one.
 A further step, not taken because it would only add code today: components taking the narrow interface they use (the request bar takes `RequestsClient`, the composer `ChoicesClient`), so a screen can run
 on a server that serves only part of it.
+
+## Empty, missing and failed states
+
+For a fresh real account, each in plain words with the next step and no placeholder art (`ThreadNotices.svelte`, `Notice.svelte`, the sidebar's empty block, the thread's blank view). Fixture scenarios show them: `?scenario=empty|no-machine|offline|signin|failed|retrying|interrupted` (`e2e/states.mjs`).
+
+| Situation | Says | Next step |
+| --- | --- | --- |
+| No thread yet (sidebar) | A thread is a conversation with an agent that works on your files and notes, with only the access you allow | **Start a thread** |
+| Empty thread | Nothing sent yet; the agent shows its steps and asks before anything not allowed | **Write a message** (focuses the box) |
+| No machine enrolled | Agents work on a computer you add, or one from the pool | **Open Machines** (Settings > Machines) |
+| Machine offline | Names the machine; the message is safe and waits; nothing moves to another machine by itself | **Open Machines** |
+| Provider not signed in on the machine | Names provider and machine; sign in once on that machine; Calternal never sees the login | **Copy the command** (`claude auth login`) |
+| Turn failed | What failed; Calternal already retried five times (30 s up to 8 min) | **Try again** |
+| Turn waiting to retry | Counts down; attempt n of 5; keeps checking afterwards or waits for the plan's limit to reset | **Try now** |
+| Turn interrupted | The machine stopped answering; stopped at its last saved step; nothing moved | **Resume** |
+| Request bar | Question: the agent waits and continues once answered. Approval: nothing runs until you decide; "for this thread" lasts until the thread is deleted. Secret: where the value goes | the buttons already on the bar |
+
+What the server can tell today: a failed or interrupted turn comes from the turn state (`failed`, `interrupted`) with generic words; "no machine", "machine offline" and "provider not signed in" need a machine-readiness read the server does not offer yet (the real adapter shows none of them rather than guess), and the retry countdown needs the retry fields of the job checkpoint. Resume is `agent.resume` on the thread's last job.
+
+## Backend follow-ups (for the requests and threads lanes)
+
+- **Which lifetimes a request allows.** The list does not say; the UI reads it from `action.risk` (`irreversible` and `widens_access` are single-use) in `lifetimesOf`. The server should send it, for example `detail.lifetimes: ["once"]` or `["once", "this_thread"]`, so the rule lives in one place. `lifetimesOf` already prefers such a list when it is there.
+- **Readiness** (machine enrolled, online, provider signed in) and **retry fields** (attempt, next attempt) for the states in "Empty, missing and failed states".
+- **A fixture provider that emits tool events.** The seeded installation's provider emits only `session` and `text_delta`, so a page reloaded mid-turn shows the Working row with no steps (a real provider's steps are replayed from the oldest retained event when a page connects without a bookmark; checked: the second connection returns the whole stream). A fixture with a few `tool_started` and `tool_finished` events would let `live-threads.mjs` check the steps.
+- **Resuming a job stream after a bookmark** re-sent the `session` chunk in a probe (`?after=<id>` with the last id seen): worth a look, harmless to the UI.
+
+The page's session code is the shell's: the adapter uses the shared `ServerClient` (bearer in development token mode, the browser's cookie otherwise, nothing of its own), and `/api/v1/auth/me` is called by the shell's `server/boot.ts`, not by the Threads adapter.

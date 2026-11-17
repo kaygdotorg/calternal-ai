@@ -2,7 +2,7 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
-  import { cssPx, InlineEditor, Panel, Pill } from "@calternal/ui";
+  import { Button, cssPx, InlineEditor, Panel, Pill, toast } from "@calternal/ui";
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
   import VirtualList from "../../lib/VirtualList.svelte";
@@ -16,6 +16,7 @@
   import ActiveChildren from "./ActiveChildren.svelte";
   import Composer from "./Composer.svelte";
   import MessageRow from "./MessageRow.svelte";
+  import ThreadNotices from "./ThreadNotices.svelte";
   import RequestBar from "./RequestBar.svelte";
   import { client, store } from "./store.svelte";
 
@@ -73,7 +74,7 @@
     if (!renaming || !summary) return;
     renaming = false;
     const t = draftTitle.trim();
-    if (t && t !== summary.title) void client.rename(summary.id, t);
+    if (t && t !== summary.title) void client.rename(summary.id, t).catch((e: Error) => toast(`Not renamed: ${e.message}`));
   }
 </script>
 
@@ -95,7 +96,13 @@
   </header>
 
   <div class="list" bind:this={listEl}>
-    {#if conv}
+    {#if conv && conv.count === 0 && !conv.stream}
+      <div class="blank">
+        <h2>Nothing sent yet</h2>
+        <p>Say what you want done in the box below. The agent shows its steps while it works, and asks you before it does anything you have not allowed.</p>
+        <Button variant="primary" text="Write a message" onclick={() => document.getElementById("composer-field")?.focus()} />
+      </div>
+    {:else if conv}
       {#key conv.id}
         <VirtualList bind:this={list} count={total} estimate={150} label="Messages" topInset={barH} bottomInset={bottomH} onrange={(a, b) => conv?.ensure(a, b)}>
           {#snippet row(i)}
@@ -114,9 +121,10 @@
   {#if summary}
     <div class="bottom" bind:this={bottomEl}>
       <div class="inner">
-        <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a)} />
+        <ThreadNotices thread={summary} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} />
+        <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
         <ActiveChildren {id} />
-        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID())} onstop={() => client.stop(id)} onprovider={(p, m) => client.setProvider(id, p, m)} />
+        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID()).catch((e: Error) => { toast(`Not sent: ${e.message}`); throw e; })} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>
   {/if}
@@ -129,6 +137,9 @@
   header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region) 0 calc(var(--pad-region) + var(--edge-l, 0px)); pointer-events: none; } /* --edge-l: room for the shell's button that shows the sidebar again (shell/Shell.svelte) */
   header > :global(*) { pointer-events: auto; }
   .grow { flex: 1; pointer-events: none; }
+  .blank { position: absolute; inset: 0; display: grid; align-content: center; justify-items: start; gap: var(--s-4); max-width: 30rem; margin: 0 auto; padding: 0 var(--pad-region); }
+  .blank h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
+  .blank p { color: var(--ink-2); font-size: var(--text-ui); }
   :global(.title) { display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }
   .tt { min-width: 0; display: grid; }
   :global(.title-edit) { font-size: var(--text-ui); font-weight: var(--strong-weight); width: 100%; min-width: 12ch; }

@@ -9,7 +9,7 @@ use std::path::PathBuf;
     about = "Run a Calternal server or manage its enrolled machines",
     after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
 )]
-/// Run a Calternal server or manage its enrolled machines
+/// Parsed server and operator commands; validation precedes side effects.
 pub(super) struct Cli {
     /// Print one JSON document instead of text (errors too, on stdout); see docs/cli.md.
     #[arg(long, global = true)]
@@ -21,18 +21,38 @@ pub(super) struct Cli {
         help = "Hide terminal hints (also CALTERNAL_NO_HINTS=1)"
     )]
     pub(super) no_hints: bool,
-    /// Selected command and its parsed arguments.
     #[command(subcommand)]
     pub(super) cmd: Cmd,
 }
 
 #[derive(Subcommand)]
-/// One validated command and its arguments; handlers perform authorization and I/O.
+/// Supported commands; handlers enforce current authority and durable storage.
 pub(super) enum Cmd {
     /// Create, read, send to, stop, archive and delete saved conversations.
     Threads {
         #[command(flatten)]
         args: calternal_cli::threads::Args,
+    },
+    /// Find, rename, delete and restore notes.
+    Notes {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::notes::Notes,
+    },
+    /// List and look up note tags in a space.
+    Tags {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::notes::Tags,
+    },
+    /// List or permanently delete notes in Trash.
+    Trash {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::notes::Trash,
     },
     /// Run, watch and control official provider sessions in machine sandboxes.
     Agent {
@@ -65,6 +85,34 @@ pub(super) enum Cmd {
         connection: calternal_cli::account_input::Connection,
         #[command(subcommand)]
         cmd: calternal_cli::account_input::Pending,
+    },
+    /// Manage space grants, role definitions, profiles, and server people.
+    People {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::People,
+    },
+    /// List and manage server groups and their members.
+    Groups {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::Groups,
+    },
+    /// Create, copy, revoke and redeem space invitations.
+    Invites {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::Invites,
+    },
+    /// List, answer, approve or deny the requests waiting on you.
+    Requests {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::requests::Command,
     },
     /// Follow a space journal; --json prints one compact JSON object per event.
     Watch {
@@ -106,6 +154,11 @@ pub(super) enum Cmd {
         /// request.
         #[arg(long, env = "CALTERNAL_RECEIPT_RETENTION_DAYS", default_value_t = 7)]
         receipt_retention_days: u32,
+        /// Days to retain an invitation after expiry, revocation or redemption.
+        #[arg(long, env = "CALTERNAL_INVITE_RETENTION_DAYS",
+            default_value_t = calternal_auth::invites::DEFAULT_INVITE_RETENTION_DAYS,
+            value_parser = clap::value_parser!(u32).range(1..))]
+        invite_retention_days: u32,
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,

@@ -10,7 +10,13 @@
         "title": "Plan"
       },
       "revision": "v1.fixture",
-      "turn_state": "running"
+      "turn_reason": {
+        "attempt": 2,
+        "code": "retrying",
+        "next_attempt_ms": 1794916800000,
+        "rule": "provider_backoff"
+      },
+      "turn_state": "queued"
     }
   },
   "ok": true

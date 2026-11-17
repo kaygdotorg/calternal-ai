@@ -29,14 +29,18 @@
 use crate::types::{internal, missing};
 mod collections;
 mod db;
+mod discovery;
 mod files;
+mod instructions;
 mod journal;
 mod lifecycle;
+mod linked_write;
 mod mutations;
 mod pool;
 mod publication;
 mod recovery;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+mod trash;
 mod types;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
@@ -75,13 +79,22 @@ pub struct Content {
 pub(crate) fn file_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
+/// Maximum serialized metadata bytes per content revision.
+pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 /// How long request receipts are kept by default: seven days, the store's default.
 /// A retry after that is treated as a new request.
 pub const DEFAULT_RECEIPT_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// Current UTC timestamp used by item versions and server adapters.
 /// Cost: one clock read and a short string allocation; no locks, SQLite or fsync.
 pub fn now_rfc3339() -> String {
-    time::OffsetDateTime::now_utc()
+    format_rfc3339(time::OffsetDateTime::now_utc())
+}
+
+/// Format an already captured UTC instant with the same millisecond sort key.
+/// Cost: one string allocation, no clock read or I/O.
+pub fn format_rfc3339(instant: time::OffsetDateTime) -> String {
+    instant
+        .to_offset(time::UtcOffset::UTC)
         .format(time::macros::format_description!(
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
         ))
@@ -280,7 +293,7 @@ impl Content {
     /// Cost: cache/space locks, O(log N + page) indexed read and page allocations;
     /// a cold space pays SQLite open cost. No fsync or per-row filesystem stats.
     pub fn list(&self, space: SpaceId, kind: &str, limit: u32) -> Result<Vec<Summary>> {
-        self.with_space(space, |s| s.list(kind, limit))
+        self.with_space(space, |s| s.list(kind, limit, false))
     }
     /// Reads a bounded immutable history page; cursors bind to this exact item.
     /// Cost: cache/space locks, two or three indexed reads and at most 1,001
@@ -292,7 +305,7 @@ impl Content {
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<(Vec<Item>, Option<String>)> {
-        self.with_space(space, |s| s.history(id, limit, cursor))
+        self.with_space(space, |s| s.history(id, limit, cursor, None))
     }
     /// Reads an account-qualified receipt from the selected space's inherited store.
     /// Current authority must be checked before replay. Cost: the space's lock,

@@ -18,6 +18,7 @@ path = "src/lib.rs"
 test-plugins = ["calternal-store/test-timings"]
 
 [dependencies]
+pulldown-cmark = { version = "0.13.4", default-features = false }
 calternal-types.workspace = true
 calternal-content.workspace = true
 calternal-store.workspace = true

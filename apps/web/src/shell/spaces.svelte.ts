@@ -4,10 +4,12 @@
  * the middle card stays open until the person goes elsewhere, and opening an item of another space (from the palette, a link) makes that space current.
  * Fixtures: two spaces. The real list comes from the server (`spaces.list`); `setList` takes it.
  */
+import { server, serverMode } from "../server/client";
+
 const KEY = "cal.space";
 
 /** A space: a UUID and a name the person sees. */
-export interface SpaceInfo { id: string; name: string }
+export interface SpaceInfo { id: string; name: string; /** The person's role in it (`owner`, `manager`, `editor`, `reader`), from the server. */ role?: string }
 
 /** The fixture spaces. The first is the personal space everyone has. Ids are UUIDs; a name never stands in for one. */
 export const FIXTURE_SPACES: SpaceInfo[] = [
@@ -30,6 +32,20 @@ class Spaces {
   }
   /** Replaces the list (the server's), keeping the current space when it is still there. */
   setList(l: SpaceInfo[]): void { if (l.length) this.list = l; }
+  private loading: Promise<void> | null = null;
+  /**
+   * Reads the signed-in person's spaces from the real server (`spaces.list`; fixtures stay when it is not selected). The personal space is the one the server marks (`personal: true`) and comes first in the list. A failure keeps what is shown and is tried again on the next call. One request; later callers share it.
+   */
+  load(): Promise<void> {
+    if (!serverMode()) return Promise.resolve();
+    this.loading ??= (async () => {
+      const { spaces: all } = await server.spaces.list();
+      const byAge = [...all].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : 0));
+      const personal = byAge.find((s) => s.personal);
+      this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name, role: s.role })));
+    })().catch((e) => { this.loading = null; throw e; });
+    return this.loading;
+  }
 }
 
 function read(): string {

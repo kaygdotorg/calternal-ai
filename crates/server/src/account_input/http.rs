@@ -19,6 +19,8 @@ use std::collections::VecDeque;
 #[serde(deny_unknown_fields)]
 pub(crate) struct FollowQuery {
     bookmark: Option<String>,
+    #[serde(default)]
+    readiness: bool,
 }
 struct Follow<D: Directory> {
     state: Shared<D>,
@@ -33,6 +35,8 @@ struct Follow<D: Directory> {
     reader: Option<super::reader::Reader<D>>,
     maintenance: bool,
     maintenance_at: tokio::time::Instant,
+    readiness: Option<crate::machines::readiness::Listener>,
+    readiness_pending: bool,
 }
 fn encode(frame: AccountFrame) -> String {
     format!(
@@ -57,6 +61,14 @@ pub(crate) async fn events<D: Directory>(
     // Subscribe before reading the head: a concurrent commit is either in replay
     // or leaves a wake hint. Every hint, including lag, triggers durable replay.
     let wake = state.inputs.wakes.listen(p.id);
+    let machines = q
+        .readiness
+        .then(|| {
+            req.extensions()
+                .get::<std::sync::Arc<crate::machines::MachineService>>()
+                .cloned()
+        })
+        .flatten();
     let st = state.clone();
     let identity = p.clone();
     let head = tokio::task::spawn_blocking(move || {
@@ -65,10 +77,13 @@ pub(crate) async fn events<D: Directory>(
         let head = Inputs::head(&c)?;
         let admission = st.inputs.admit(identity.id)?;
         let reader = super::reader::Reader::new(c, admission, st)?;
-        Ok::<_, Error>((head, reader))
+        let readiness = machines
+            .map(|m| m.subscribe_readiness(identity.id))
+            .transpose()?;
+        Ok::<_, Error>((head, reader, readiness))
     })
     .await;
-    let (head, reader) = match head {
+    let (head, reader, readiness) = match head {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => return error_response(e),
         Err(e) => return error_response(internal(e)),
@@ -87,6 +102,8 @@ pub(crate) async fn events<D: Directory>(
         reader: Some(reader),
         maintenance: false,
         maintenance_at: tokio::time::Instant::now() + std::time::Duration::from_secs(1),
+        readiness,
+        readiness_pending: false,
     };
     let body = Body::from_stream(futures_util::stream::unfold(follow, |mut f| async move {
         if f.done {
@@ -95,6 +112,17 @@ pub(crate) async fn events<D: Directory>(
         loop {
             if !f.session.is_live(&f.state.directory).await {
                 return None;
+            }
+            if f.readiness_pending
+                || f.readiness
+                    .as_ref()
+                    .is_some_and(|listener| listener.changes.has_changed().unwrap_or(false))
+            {
+                if let Some(listener) = &mut f.readiness {
+                    listener.changes.borrow_and_update();
+                }
+                f.readiness_pending = false;
+                return Some((Ok(encode(AccountFrame::ReadinessChanged)), f));
             }
             if let Some(bookmark) = f.page.pop_front() {
                 f.after = bookmark.clone();
@@ -155,7 +183,18 @@ pub(crate) async fn events<D: Directory>(
                 )
                 .await;
             };
+            let readiness = async {
+                match &mut f.readiness {
+                    Some(listener) => listener.changes.changed().await,
+                    None => std::future::pending().await,
+                }
+            };
             tokio::select! {
+                result = readiness => {
+                    if result.is_err() { return None; }
+                    // Loop through current-session validation before emitting.
+                    f.readiness_pending = true;
+                },
                 _ = f.wake.receiver.recv() => {},
                 _ = authority => { f.maintenance = true; },
                 _ = tokio::time::sleep_until(f.maintenance_at) => {

@@ -6,6 +6,24 @@
   "required": [
     "account_frame",
     "describe",
+    "directory_group",
+    "directory_input",
+    "directory_invite",
+    "directory_page_input",
+    "directory_person",
+    "disabled_person",
+    "group_create_input",
+    "group_directory_page_input",
+    "group_input",
+    "group_person_input",
+    "group_rename_input",
+    "groups_result",
+    "invite_create_input",
+    "invite_created",
+    "invite_input",
+    "invite_redeem_input",
+    "invite_revoked",
+    "invites_result",
     "live_frame",
     "live_subscription",
     "note",
@@ -17,15 +35,21 @@
     "notes_list_input",
     "notes_list_result",
     "notes_update_input",
+    "people_result",
+    "person_input",
     "plugin_input",
     "plugin_preview_result",
     "plugin_result",
     "plugins_list_input",
     "plugins_list_result",
+    "profile_input",
+    "profile_result",
     "request",
     "resolve_input",
     "resolve_result",
     "response",
+    "role_definition",
+    "roles_result",
     "secrets_list_input",
     "secrets_list_result",
     "secrets_provide_input",
@@ -35,11 +59,14 @@
     "secrets_revoke_input",
     "secrets_revoke_result",
     "space_changed_result",
+    "space_directory_page_input",
+    "space_grant_input",
+    "space_grant_role_input",
+    "space_group_member",
     "space_input",
     "space_member_input",
     "space_members_result",
     "space_result",
-    "space_set_role_input",
     "spaces_create_input",
     "spaces_list_input",
     "spaces_list_result",
@@ -59,6 +86,150 @@
       "allOf": [
         {
           "$ref": "#/definitions/DescribeResult"
+        }
+      ]
+    },
+    "directory_group": {
+      "description": "Schema representative for DirectoryGroup in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DirectoryGroup"
+        }
+      ]
+    },
+    "directory_input": {
+      "description": "Schema representative for DirectoryInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DirectoryInput"
+        }
+      ]
+    },
+    "directory_invite": {
+      "description": "Schema representative for DirectoryInvite in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DirectoryInvite"
+        }
+      ]
+    },
+    "directory_page_input": {
+      "description": "Server directory pagination.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DirectoryPageInput"
+        }
+      ]
+    },
+    "directory_person": {
+      "description": "Schema representative for DirectoryPerson in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DirectoryPerson"
+        }
+      ]
+    },
+    "disabled_person": {
+      "description": "Schema representative for DisabledPerson in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/DisabledPerson"
+        }
+      ]
+    },
+    "group_create_input": {
+      "description": "Schema representative for GroupCreateInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupCreateInput"
+        }
+      ]
+    },
+    "group_directory_page_input": {
+      "description": "Group and group member pagination.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupDirectoryPageInput"
+        }
+      ]
+    },
+    "group_input": {
+      "description": "Schema representative for GroupInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupInput"
+        }
+      ]
+    },
+    "group_person_input": {
+      "description": "Schema representative for GroupPersonInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupPersonInput"
+        }
+      ]
+    },
+    "group_rename_input": {
+      "description": "Schema representative for GroupRenameInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupRenameInput"
+        }
+      ]
+    },
+    "groups_result": {
+      "description": "Schema representative for GroupsResult in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/GroupsResult"
+        }
+      ]
+    },
+    "invite_create_input": {
+      "description": "Schema representative for InviteCreateInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/InviteCreateInput"
+        }
+      ]
+    },
+    "invite_created": {
+      "description": "Schema representative for InviteCreated in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/InviteCreated"
+        }
+      ]
+    },
+    "invite_input": {
+      "description": "Schema representative for InviteInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/InviteInput"
+        }
+      ]
+    },
+    "invite_redeem_input": {
+      "description": "Schema representative for InviteRedeemInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/InviteRedeemInput"
+        }
+      ]
+    },
+    "invite_revoked": {
+      "description": "Schema representative for InviteRevoked in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/InviteRevoked"
+        }
+      ]
+    },
+    "invites_result": {
+      "description": "Schema representative for InvitesResult in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/InvitesResult"
         }
       ]
     },
@@ -150,6 +321,22 @@
         }
       ]
     },
+    "people_result": {
+      "description": "Schema representative for PeopleResult in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/PeopleResult"
+        }
+      ]
+    },
+    "person_input": {
+      "description": "Schema representative for PersonInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/PersonInput"
+        }
+      ]
+    },
     "plugin_input": {
       "description": "Schema export representative for `plugin_input`; not a field accepted by operation dispatch.",
       "allOf": [
@@ -190,6 +377,22 @@
         }
       ]
     },
+    "profile_input": {
+      "description": "Schema representative for ProfileInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProfileInput"
+        }
+      ]
+    },
+    "profile_result": {
+      "description": "Schema representative for ProfileResult in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProfileResult"
+        }
+      ]
+    },
     "request": {
       "description": "Schema export representative for `request`; not a field accepted by operation dispatch.",
       "allOf": [
@@ -219,6 +422,22 @@
       "allOf": [
         {
           "$ref": "#/definitions/OperationResponse_for_AnyValue"
+        }
+      ]
+    },
+    "role_definition": {
+      "description": "Schema representative for RoleDefinition in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/RoleDefinition"
+        }
+      ]
+    },
+    "roles_result": {
+      "description": "Schema representative for RolesResult in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/RolesResult"
         }
       ]
     },
@@ -294,6 +513,38 @@
         }
       ]
     },
+    "space_directory_page_input": {
+      "description": "Scoped directory pagination.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceDirectoryPageInput"
+        }
+      ]
+    },
+    "space_grant_input": {
+      "description": "Schema representative for SpaceGrantInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceGrantInput"
+        }
+      ]
+    },
+    "space_grant_role_input": {
+      "description": "Schema representative for SpaceGrantRoleInput in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceGrantRoleInput"
+        }
+      ]
+    },
+    "space_group_member": {
+      "description": "Schema representative for SpaceGroupMember in the people contract.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SpaceGroupMember"
+        }
+      ]
+    },
     "space_input": {
       "description": "Schema representative for the stored space directory space input.",
       "allOf": [
@@ -323,14 +574,6 @@
       "allOf": [
         {
           "$ref": "#/definitions/SpaceResult"
-        }
-      ]
-    },
-    "space_set_role_input": {
-      "description": "Schema representative for the stored space directory space set role input.",
-      "allOf": [
-        {
-          "$ref": "#/definitions/SpaceSetRoleInput"
         }
       ]
     },
@@ -409,6 +652,22 @@
               "type": "string",
               "enum": [
                 "ready"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Re-read caller-scoped machine readiness. No bookmark advances.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "readiness_changed"
               ]
             }
           },
@@ -501,6 +760,166 @@
         }
       },
       "additionalProperties": false
+    },
+    "DirectoryGroup": {
+      "description": "A server group and its active members.",
+      "type": "object",
+      "required": [
+        "group_id",
+        "members",
+        "name",
+        "source"
+      ],
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        },
+        "members": {
+          "description": "Account UUIDs for each active member.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "members_next_cursor": {
+          "description": "Continue these members with this group's UUID, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Current display name.",
+          "type": "string"
+        },
+        "source": {
+          "description": "Local or identity-provider managed.",
+          "type": "string"
+        }
+      }
+    },
+    "DirectoryInput": {
+      "description": "An operation scoped to the authenticated account or server with no input fields.",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "DirectoryInvite": {
+      "description": "An invitation visible to an authorized space manager or owner.",
+      "type": "object",
+      "required": [
+        "created_at",
+        "expires_at",
+        "invite_id",
+        "role"
+      ],
+      "properties": {
+        "created_at": {
+          "description": "Creation time in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "expires_at": {
+          "description": "Expiration time in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        },
+        "link": {
+          "description": "Bearer link, present only for a usable invitation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revoked_at": {
+          "description": "Revocation time in Unix milliseconds, or null before revocation.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "role": {
+          "description": "Role granted upon successful redemption.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        },
+        "used_at": {
+          "description": "Redemption time in Unix milliseconds, or null before redemption.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        }
+      }
+    },
+    "DirectoryPageInput": {
+      "description": "A continuation for a server directory.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor. Omit it to start at the first row.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "DirectoryPerson": {
+      "description": "A person in the authorized server directory.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "disabled",
+        "name",
+        "role"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "The account's stable UUID.",
+          "type": "string"
+        },
+        "disabled": {
+          "description": "Whether the account may sign in and exercise its grants.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Current display name.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Server role, independent of space access.",
+          "type": "string"
+        }
+      }
+    },
+    "DisabledPerson": {
+      "description": "A completed account disable.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "disabled"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Disabled account UUID.",
+          "type": "string"
+        },
+        "disabled": {
+          "description": "Always true on a successful disable.",
+          "type": "boolean"
+        }
+      }
     },
     "ErrorCode": {
       "description": "Stable error categories used by every operation failure; each maps to one HTTP status.",
@@ -625,6 +1044,116 @@
       },
       "additionalProperties": false
     },
+    "GroupCreateInput": {
+      "description": "A group's display name on creation.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "Printable name shown to authorized people.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "GroupDirectoryPageInput": {
+      "description": "List groups or continue an individual group's member page.",
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "description": "Use the group list cursor or, with `group_id`, its member cursor.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when reading one group's members.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "GroupInput": {
+      "description": "Target group UUID.",
+      "type": "object",
+      "required": [
+        "group_id"
+      ],
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "GroupPersonInput": {
+      "description": "One membership in a local group.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "group_id"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "The person's account UUID.",
+          "type": "string"
+        },
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "GroupRenameInput": {
+      "description": "Rename a local group.",
+      "type": "object",
+      "required": [
+        "group_id",
+        "name"
+      ],
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its new name.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "GroupsResult": {
+      "description": "Server group directory result.",
+      "type": "object",
+      "required": [
+        "groups"
+      ],
+      "properties": {
+        "groups": {
+          "description": "Groups ordered by UUID.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DirectoryGroup"
+          }
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "HostCallKind": {
       "description": "The only broker methods a worker may request.",
       "oneOf": [
@@ -675,6 +1204,151 @@
           "type": "string",
           "enum": [
             "request_secret_handle"
+          ]
+        }
+      ]
+    },
+    "InviteCreateInput": {
+      "description": "Create a single-use invitation to a space.",
+      "type": "object",
+      "required": [
+        "role",
+        "space_id"
+      ],
+      "properties": {
+        "expires_at": {
+          "description": "Absolute Unix milliseconds; omission defaults to seven days.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "role": {
+          "description": "Role granted on redemption. Owner is never assignable by invitation.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InviteCreated": {
+      "description": "A created invitation. Use the authorized list to copy the link.",
+      "type": "object",
+      "required": [
+        "expires_at",
+        "invite_id"
+      ],
+      "properties": {
+        "expires_at": {
+          "description": "Absolute expiry in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        }
+      }
+    },
+    "InviteInput": {
+      "description": "Identify an invitation within its owning space.",
+      "type": "object",
+      "required": [
+        "invite_id",
+        "space_id"
+      ],
+      "properties": {
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InviteRedeemInput": {
+      "description": "Redeem a link as the signed-in account.",
+      "type": "object",
+      "required": [
+        "secret"
+      ],
+      "properties": {
+        "secret": {
+          "description": "The secret from the invite URL, passed in the HTTP body.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "InviteRevoked": {
+      "description": "A revoked invitation's public identity.",
+      "type": "object",
+      "required": [
+        "invite_id"
+      ],
+      "properties": {
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        }
+      }
+    },
+    "InvitesResult": {
+      "description": "Current invitation directory, including unexpired used and revoked records.",
+      "type": "object",
+      "required": [
+        "invites"
+      ],
+      "properties": {
+        "invites": {
+          "description": "Authorized invitation records.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DirectoryInvite"
+          }
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ItemState": {
+      "description": "Stable state of an item address.",
+      "oneOf": [
+        {
+          "description": "The item is in its ordinary collection.",
+          "type": "string",
+          "enum": [
+            "active"
+          ]
+        },
+        {
+          "description": "The item can be restored from the space's Trash.",
+          "type": "string",
+          "enum": [
+            "in_trash"
+          ]
+        },
+        {
+          "description": "The identity is retained after permanent deletion.",
+          "type": "string",
+          "enum": [
+            "deleted"
           ]
         }
       ]
@@ -1760,6 +2434,10 @@
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[a-zA-Z0-9_.:-]+$"
+        },
+        "tag": {
+          "description": "Exact tag name (without a leading hash), including notes with descendant tags.",
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -1852,11 +2530,29 @@
           "type": "object",
           "additionalProperties": true
         },
+        "required_capability": {
+          "description": "Current capability required by the operation, when declared in discovery.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "risk": {
           "description": "Declared risk used by the permission-mode reviewer, independent of capabilities.",
           "allOf": [
             {
               "$ref": "#/definitions/OperationRisk"
+            }
+          ]
+        },
+        "target": {
+          "description": "Authority scope, when declared in discovery.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PeopleTarget"
+            },
+            {
+              "type": "null"
             }
           ]
         }
@@ -1950,6 +2646,76 @@
           ]
         }
       ]
+    },
+    "PeopleResult": {
+      "description": "Server people visible to the operator.",
+      "type": "object",
+      "required": [
+        "people"
+      ],
+      "properties": {
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "people": {
+          "description": "Current accounts, including disabled records.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/DirectoryPerson"
+          }
+        }
+      }
+    },
+    "PeopleTarget": {
+      "description": "Admission boundary for the people operation.",
+      "oneOf": [
+        {
+          "description": "The server capability directory, independent of space access.",
+          "type": "string",
+          "enum": [
+            "server"
+          ]
+        },
+        {
+          "description": "The current signed-in account.",
+          "type": "string",
+          "enum": [
+            "account"
+          ]
+        },
+        {
+          "description": "The space named by the input.",
+          "type": "string",
+          "enum": [
+            "space"
+          ]
+        },
+        {
+          "description": "The live invitation named by a bearer secret.",
+          "type": "string",
+          "enum": [
+            "invitation"
+          ]
+        }
+      ]
+    },
+    "PersonInput": {
+      "description": "Target of a server people operation.",
+      "type": "object",
+      "required": [
+        "account_id"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Account UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "PluginInput": {
       "description": "Input for `plugins.enable`, `plugins.disable` and `plugins.preview`.",
@@ -2104,6 +2870,38 @@
       },
       "additionalProperties": false
     },
+    "ProfileInput": {
+      "description": "The current account's new display name.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "description": "Name shown to other people.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProfileResult": {
+      "description": "The updated profile's public display fields.",
+      "type": "object",
+      "required": [
+        "account_id",
+        "name"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "The unchanged account UUID.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The normalized name.",
+          "type": "string"
+        }
+      }
+    },
     "ResolveInput": {
       "description": "Input for the common `/<kind>/<id>` address resolver.",
       "type": "object",
@@ -2154,9 +2952,54 @@
         "space_id": {
           "description": "Owning space UUID, independent of account identity.",
           "type": "string"
+        },
+        "state": {
+          "description": "Lifecycle state of a Notes address, omitted for kinds without this projection.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ItemState"
+            }
+          ]
         }
       },
       "additionalProperties": false
+    },
+    "RoleDefinition": {
+      "description": "A space role and its currently declared capabilities.",
+      "type": "object",
+      "required": [
+        "capabilities",
+        "name"
+      ],
+      "properties": {
+        "capabilities": {
+          "description": "Stable dotted capability names from the authority catalog.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "The stored role name.",
+          "type": "string"
+        }
+      }
+    },
+    "RolesResult": {
+      "description": "Space role catalog result.",
+      "type": "object",
+      "required": [
+        "roles"
+      ],
+      "properties": {
+        "roles": {
+          "description": "Role definitions, ordered by name.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RoleDefinition"
+          }
+        }
+      }
     },
     "SecretMetadata": {
       "description": "Everything about a stored secret except its value.",
@@ -2387,6 +3230,27 @@
       "type": "object",
       "additionalProperties": false
     },
+    "SpaceDirectoryPageInput": {
+      "description": "A continuation scoped to one space.",
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor for this space and operation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "SpaceGrant": {
       "description": "Space membership exposed by `GET /api/v1/describe` for the authenticated principal.",
       "type": "object",
@@ -2410,6 +3274,105 @@
       },
       "additionalProperties": false
     },
+    "SpaceGrantInput": {
+      "description": "A direct space grant identifies exactly one person or group.",
+      "type": "object",
+      "required": [
+        "space_id"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Account UUID when the grant targets a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when the grant targets a group.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceGrantRoleInput": {
+      "description": "A role assignment to exactly one person or group.",
+      "type": "object",
+      "required": [
+        "role",
+        "space_id"
+      ],
+      "properties": {
+        "account_id": {
+          "description": "Account UUID when granting access directly to a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when granting access through current group membership.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "Requested role. Ownership uses explicit transfer.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpaceGroupMember": {
+      "description": "A group grant visible to current members of the space.",
+      "type": "object",
+      "required": [
+        "group_id",
+        "member_count",
+        "name",
+        "role"
+      ],
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        },
+        "member_count": {
+          "description": "Number of active people in the group.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "name": {
+          "description": "Current group display name.",
+          "type": "string"
+        },
+        "role": {
+          "description": "The role assigned to the group.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ]
+        }
+      }
+    },
     "SpaceInput": {
       "description": "Input for members, leave and directory-record deletion.",
       "type": "object",
@@ -2429,6 +3392,7 @@
       "type": "object",
       "required": [
         "account_id",
+        "name",
         "role"
       ],
       "properties": {
@@ -2436,8 +3400,12 @@
           "description": "Member's stable account UUID.",
           "type": "string"
         },
+        "name": {
+          "description": "Current account display name.",
+          "type": "string"
+        },
         "role": {
-          "description": "Current effective role.",
+          "description": "Current directly granted role.",
           "allOf": [
             {
               "$ref": "#/definitions/SpaceRole"
@@ -2470,15 +3438,30 @@
       "description": "Member directory visible to a current space reader.",
       "type": "object",
       "required": [
+        "groups",
         "members"
       ],
       "properties": {
+        "groups": {
+          "description": "Direct group grants, including names and active member counts.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SpaceGroupMember"
+          }
+        },
         "members": {
-          "description": "Current account memberships, including exactly one Owner.",
+          "description": "Direct account grants on this page. Exactly one Owner has a direct grant.",
           "type": "array",
           "items": {
             "$ref": "#/definitions/SpaceMember"
           }
+        },
+        "next_cursor": {
+          "description": "Continue after the last grant, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false
@@ -2533,34 +3516,6 @@
           ]
         }
       ]
-    },
-    "SpaceSetRoleInput": {
-      "description": "Change an existing member's role; assigning Owner requires transfer instead.",
-      "type": "object",
-      "required": [
-        "account_id",
-        "role",
-        "space_id"
-      ],
-      "properties": {
-        "account_id": {
-          "description": "Stable target account UUID.",
-          "type": "string"
-        },
-        "role": {
-          "description": "Requested membership role; Owner is refused here.",
-          "allOf": [
-            {
-              "$ref": "#/definitions/SpaceRole"
-            }
-          ]
-        },
-        "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
     },
     "SpacesCreateInput": {
       "description": "Input for creation; the authenticated account becomes owner.",

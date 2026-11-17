@@ -2,7 +2,7 @@
 title: "plugin-sdk: index/functions/validateGenUiView"
 ---
 
-<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -16,7 +16,7 @@ title: "plugin-sdk: index/functions/validateGenUiView"
 
 > **validateGenUiView**(`value`): `GenUiView`
 
-Validate version, unique IDs, node shapes and byte/depth budgets without rendering. Traversal and temporary JSON storage cost O(view bytes).
+Validate a generated-UI view's shape, version and 64 KiB source budget without compiling it; the host compiles the source (`@calternal/genui`) before delivery. Costs O(source bytes).
 
 ## Parameters
 
@@ -32,4 +32,4 @@ The validated value without an additional clone.
 
 ## Throws
 
-[ContractValidationError](/docs/dev/typescript/plugin-sdk/module-index/classes/contractvalidationerror/) if decoding, shape, value, correlation or budget checks fail.
+[ContractValidationError](/docs/dev/typescript/plugin-sdk/module-index/classes/contractvalidationerror/) if the shape, version or budget check fails.

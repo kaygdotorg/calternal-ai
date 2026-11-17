@@ -33,3 +33,35 @@ async fn acknowledged_save_survives_immediate_restart_with_isolation() {
         note = saved.body["data"]["note"].clone();
     }
 }
+
+#[tokio::test]
+async fn purge_blocks_old_body_receipt_replay_with_foreign_isolation() {
+    let f = Fixture::new().await;
+    let input =
+        json!({"space_id":f.spaces[0],"title":"Receipt purge","markdown":"private erased body"});
+    let saved = f
+        .op_id(1, "notes.create", input.clone(), "create-before-purge")
+        .await;
+    saved.ok();
+    let id = saved.body["data"]["note"]["id"].clone();
+    f.op(1, "notes.delete", json!({"id":id})).await.ok();
+    f.op_id(1, "trash.purge", json!({"id":id}), "permanent-purge")
+        .await
+        .ok();
+    f.op_id(1, "trash.purge", json!({"id":id}), "permanent-purge")
+        .await
+        .ok();
+    let replay = f
+        .op_id(1, "notes.create", input.clone(), "create-before-purge")
+        .await;
+    assert_eq!(
+        replay.status, 404,
+        "purged content must not return through an older receipt"
+    );
+    assert_eq!(
+        f.op_id(2, "notes.create", input, "create-before-purge")
+            .await
+            .status,
+        404
+    );
+}

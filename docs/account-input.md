@@ -107,12 +107,15 @@ after revocation remain platform responsibilities; see the lane report.
 `GET /api/v1/account/live?bookmark=<opaque>` follows the signed-in account.
 The optional bookmark is an unpredictable server-issued UUID, bound by membership
 in that account's retained database history; it is never a caller-selected position.
-SSE `data` contains `AccountFrame`: `changed`, `ready`, or `reset`. `changed`
+Clients also reload the private [request inbox](requests.md) on invalidation. SSE `data` contains `AccountFrame`: `changed`, `ready`, or `reset`. `changed`
 invalidates the private account snapshot; reload `drafts.list` and `pending.list`,
 then accept its bookmark. Events contain no draft text, message body or space ID.
 Bookmarks from another account, pruned history or a rolled-back/missing event
 produce `reset` and close the subscription. Reload authorized state before opening
 without a bookmark. There is no atomic snapshot/bookmark lease in this slice.
+Clients that follow machine status add `readiness=true`. The account-private
+`readiness_changed` frame asks the client to reload [readiness](agent-turns.md#machine-and-provider-readiness).
+It is coalesced and carries no bookmark.
 
 Account polling replays indexed pages every 250 ms, rechecking the current session.
 Expiry scans use a state/time expression index and decode only newly due

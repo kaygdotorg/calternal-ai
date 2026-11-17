@@ -74,7 +74,7 @@ async fn disable_during_invocation_discards_result() {
             calternal_server::plugins::Session::Static,
             rid,
             op,
-            obj(json!({"space_id": dev.personal, "plugin_id": "notes-insights"})),
+            obj(json!({"space_id": dev.personal, "plugin_id": "calternal-notes-insights"})),
         )
     };
     toggle("e1", "plugins.enable").await.unwrap();

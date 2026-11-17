@@ -102,6 +102,8 @@ pub enum AccountFrame {
         /// Current accepted position.
         bookmark: String,
     },
+    /// Re-read caller-scoped machine readiness. No bookmark advances.
+    ReadinessChanged,
     /// Foreign, expired or rolled-back bookmark: reload before reopening.
     Reset,
 }
@@ -145,6 +147,8 @@ pub fn account_input_catalog() -> Vec<crate::OperationDescription> {
                 .iter()
                 .map(|(id, mutates, shape)| crate::OperationDescription {
                     risk: crate::builtin_operation_risk(id, *mutates),
+                    required_capability: None,
+                    target: None,
                     id: (*id).into(),
                     description: id.replace('.', " "),
                     mutates: *mutates,
@@ -225,6 +229,7 @@ pub fn parse_account_input(
             crate::validate_resource_id(&i.space_id)?;
             crate::validate_resource_id(&i.item_id)?;
             if is_account_input_operation(&i.request.operation)
+                || crate::request_operation(&i.request.operation).is_some()
                 || i.request.operation.starts_with("spaces.")
                 || i.request.operation.starts_with("secrets.")
             {

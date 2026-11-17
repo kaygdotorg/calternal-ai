@@ -103,6 +103,26 @@ impl Server {
     }
 
     pub fn start_with_plugins(data: &Path, port: u16, plugins: &Path) -> Self {
+        Self::start_with_flags(
+            data,
+            port,
+            plugins,
+            &[
+                "--machine-lease-ttl-ms",
+                &LEASE_TTL_MS.to_string(),
+                "--machine-poll-hold-ms",
+                &POLL_HOLD_MS.to_string(),
+            ],
+        )
+    }
+
+    /// Start a real server using its normal machine timing for Podman cleanup.
+    /// The sandbox stop and discard run on the machine's sync loop.
+    pub(super) fn start_with_standard_timing(data: &Path, port: u16, plugins: &Path) -> Self {
+        Self::start_with_flags(data, port, plugins, &[])
+    }
+
+    fn start_with_flags(data: &Path, port: u16, plugins: &Path, flags: &[&str]) -> Self {
         let startup = data.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(BIN)
@@ -123,8 +143,7 @@ impl Server {
             .arg(data.join("userdata-hdd"))
             .arg("--plugin-root")
             .arg(plugins)
-            .args(["--machine-lease-ttl-ms", &LEASE_TTL_MS.to_string()])
-            .args(["--machine-poll-hold-ms", &POLL_HOLD_MS.to_string()])
+            .args(flags)
             .env("RUST_LOG", "warn")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
@@ -381,4 +400,25 @@ pub async fn wait_online(server: &Server, token: &str, n: usize) {
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// Wait for Podman to remove this exact test container, including stopped state.
+pub async fn wait_container_removed(account: uuid::Uuid, thread: uuid::Uuid, timeout: Duration) {
+    let name = calternal_machine::sandbox::podman::PodmanBackend::container_name(account, thread);
+    let waited = tokio::time::timeout(timeout, async {
+        loop {
+            let status = tokio::process::Command::new("podman")
+                .args(["container", "exists", &name])
+                .status()
+                .await
+                .unwrap();
+            match status.code() {
+                Some(1) => return,
+                Some(0) => tokio::time::sleep(Duration::from_millis(100)).await,
+                _ => panic!("could not check test container: {status}"),
+            }
+        }
+    })
+    .await;
+    assert!(waited.is_ok(), "container {name} was retained");
 }

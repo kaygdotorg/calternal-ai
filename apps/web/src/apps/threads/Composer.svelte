@@ -9,10 +9,11 @@
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
   import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
-  import type { FieldEditor } from "../../../../../packages/editor/src/index";
+  import type { FieldEditor, FieldTrigger } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
   import { fixtureItems } from "../../palette/fixtures";
-  import { mentionPool, pick as pickMentions, skillPool, triggerAt, warmPool, type Mention } from "../../palette/mentions";
+  import { mentionPool, pick as pickMentions, skillPool, warmPool, type Mention } from "../../palette/mentions";
+  import { pickerKey } from "../../../../../packages/editor/src/text/picker";
   import { store } from "./store.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import MentionPicker from "../../palette/MentionPicker.svelte";
@@ -34,7 +35,7 @@
     thread: ThreadSummary;
     providers: ProviderOption[];
     machines: string[];
-    onsend: (text: string) => void;
+    onsend: (text: string) => void | Promise<void>;
     onstop: () => void;
     onprovider: (p: ThreadSummary["provider"], model: string) => void;
     onpermission: (p: Permission) => void;
@@ -72,37 +73,44 @@
   // ---- the same engine as the palette: highlighted words, @ for people, agents, threads and items, / for skills ----
   // Warm the recogniser once when the composer appears (its regular expressions compile on first use): the first key typed should cost what the others do.
   $effect(() => { marksOf("warm @a friday 5pm !high #t"); });
+  // The first key must run warm code: at idle after mount the field is sent a key that does nothing (F24, then its key-up) and an input event with no change, so the shortcut lookup, the field editor's
+  // key and input handlers, the undo grouping and the trigger rules have all run once before the person types. (Marked `warm`: the page's input modality ignores it.)
+  $effect(() => {
+    const el = field;
+    if (!el) return;
+    const id = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 300)))(() => {
+      for (const type of ["keydown", "keyup"]) { const e = new KeyboardEvent(type, { key: "F24", bubbles: true, cancelable: true }); (e as KeyboardEvent & { warm?: boolean }).warm = true; el.dispatchEvent(e); }
+      el.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    });
+    return () => (window.cancelIdleCallback ?? clearTimeout)(id as number);
+  });
   const marks = $derived(marksOf(text));
   const pool = $derived(mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
   // The pickers' search indexes are built when the composer is idle, not on the first `@` or `/`.
   $effect(() => { const p = pool, k = skillPool(); const id = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200)))(() => { warmPool(p); warmPool(k); }); return () => (window.cancelIdleCallback ?? clearTimeout)(id as number); });
-  let caret = $state(0);
+  // The trigger at the caret (`@` or a line-start `/`) comes from the shared text layer: the field reports it when it changes (packages/editor/src/text/triggers.ts), so no caret is tracked here.
+  let trig = $state<FieldTrigger | null>(null);
   let dismissed = $state<number | null>(null); // the trigger position the person closed with Escape
-  const trig = $derived(triggerAt(text, caret));
-  const groups = $derived(trig && trig.start !== dismissed ? pickMentions(trig.kind === "skill" ? skillPool() : pool, trig.query) : []);
+  const groups = $derived(trig && trig.from !== dismissed ? pickMentions(trig.kind === "skill" ? skillPool() : pool, trig.query) : []);
   const flat = $derived(groups.flatMap((g) => g.entries));
   let sel = $state(0);
   $effect(() => { flat; sel = 0; });
   let fieldBox = $state<HTMLElement>();
-  const here = () => { caret = field?.selectionStart ?? text.length; };
   function choose(m: Mention) {
-    if (!trig || !field) return;
-    const end = caret;
-    const tail = text.slice(end);
+    const t = trig;
+    if (!t || !field) return;
+    const tail = text.slice(t.to);
     const gap = m.kind === "skill" || /^\s/.test(tail) ? "" : " ";
     const insert = m.insert + (m.kind === "skill" ? "" : gap);
     // One change through the field editor: a single undo step, the caret after it.
-    if (editor) editor.apply({ from: trig.start, to: end, insert });
-    else text = text.slice(0, trig.start) + insert + tail;
-    const at = trig.start + insert.length;
-    queueMicrotask(() => { field?.focus(); field?.setSelectionRange(at, at); caret = at; });
+    if (editor) editor.apply({ from: t.from, to: t.to, insert });
+    else text = text.slice(0, t.from) + insert + tail;
+    const at = t.from + insert.length;
+    trig = null;
+    queueMicrotask(() => { field?.focus(); field?.setSelectionRange(at, at); });
   }
-  function onkey(e: KeyboardEvent) {
-    if (!flat.length) return;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); sel = (sel + (e.key === "ArrowDown" ? 1 : flat.length - 1)) % flat.length; }
-    else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(flat[sel]!); }
-    else if (e.key === "Escape") { e.preventDefault(); dismissed = trig?.start ?? null; }
-  }
+  // The picker's keys are the shared ones (Up and Down wrap, Enter and Tab choose, Escape closes).
+  const onkey = (e: KeyboardEvent) => pickerKey(e, { count: flat.length, index: sel, set: (i) => (sel = i), choose: () => choose(flat[sel]!), dismiss: () => (dismissed = trig?.from ?? null) });
   // What is open, as chips above the field: the workspace the thread works in, and each @mention in the text (removable).
   const mentions = $derived(marks.filter((m) => m.kind === "mention" || m.kind === "person").map((m) => ({ ...m, label: text.slice(m.start + 1, m.end).replace(/^\[|\]$/g, "") })));
   const dropMention = (m: { start: number; end: number }) => { text = (text.slice(0, m.start) + text.slice(m.end)).replace(/ {2,}/g, " ").replace(/^ /, ""); queueMicrotask(() => field?.focus()); };
@@ -119,9 +127,11 @@
   function send() {
     const v = text.trim();
     if (!v) return;
-    onsend(v);
+    const sent = onsend(v);
     text = "";
     drafts.delete(thread.id);
+    // A send the server refused gives the words back (unless the person has already typed something else).
+    if (sent) void sent.catch(() => { if (!text.trim()) text = v; });
   }
 </script>
 
@@ -131,7 +141,7 @@
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
   </div>
   <div class="field" bind:this={fieldBox}>
-    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} onselect={here} oninput={here} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
+    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if running && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}
@@ -162,7 +172,7 @@
   </div>
 </Panel>
 
-<MentionPicker {groups} bind:sel anchor={fieldBox} label={trig?.kind === "skill" ? "Skills" : "Mention"} onchoose={choose} onclose={() => (dismissed = trig?.start ?? null)} />
+<MentionPicker {groups} bind:sel anchor={fieldBox} label={trig?.kind === "skill" ? "Skills" : "Mention"} onchoose={choose} onclose={() => (dismissed = trig?.from ?? null)} />
 
 {#if sheet}
   <Sheet open={whereOpen} label="Where it runs" onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /><div class="done"><Button variant="primary" text="Done" onclick={() => (whereOpen = false)} /></div></Sheet>

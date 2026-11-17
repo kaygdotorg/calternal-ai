@@ -51,6 +51,10 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
    duration token becomes 1 ms there) and still in keyboard mode. */
 @keyframes pulse { 50% { opacity: 0.5; } }
 .pulse { animation: pulse var(--dur-pulse) ease-in-out infinite; }
+/* While keys are being typed (lib/input.ts) the page's decorative animations hold still: the subject is the animated class, so only those elements are restyled. */
+:root[data-typing] :is(.pulse, .spin, .shimmer, .caret) { animation-play-state: paused; }
+/* The block editor's caret blinks by an animation that restarts at every key (the caret layer is redrawn), which cost about 7 ms a key in a 10,000-line note while keys are typed (found when keys stopped switching the page to keyboard mode, which had switched every animation off). It holds still while typing and blinks again 800 ms after. */
+:root[data-typing] .cm-cursorLayer { animation: none !important; }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
 
 @keyframes spin { to { rotate: 360deg; } }

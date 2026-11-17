@@ -72,6 +72,9 @@ async fn visible<D: Directory>(
     job: &Job,
     required: Capability,
 ) -> bool {
+    if job.operation == "agent.turn" && job.input["check"] == true && job.account != identity.id {
+        return false;
+    }
     if let Session::Agent { space, job: id, .. } = session {
         if space != &job.space || id != &job.id || identity.id != job.account {
             return false;
@@ -125,6 +128,9 @@ pub async fn dispatch<D: Directory>(
     let i: JobInput = serde_json::from_value(Value::Object(input.into_iter().collect()))
         .map_err(|_| Error::invalid_input("input does not match operation schema"))?;
     let job = load(&state, &space, &i.job_id).await?;
+    if job.operation == "agent.turn" && job.input["check"] == true && job.account != identity.id {
+        return Err(hidden());
+    }
     if op == "jobs.cancel" {
         let owner = job.account == identity.id || {
             // The directory is SQLite-backed: read it on a blocking worker.
@@ -149,7 +155,10 @@ pub async fn dispatch<D: Directory>(
         }
     }
     let job = load(&state, &space, &i.job_id).await?;
-    serde_json::to_value(JobResult { job: job.view() }).map_err(|_| Error::internal("encode"))
+    serde_json::to_value(JobResult {
+        job: job.view_for(identity.id),
+    })
+    .map_err(|_| Error::internal("encode"))
 }
 
 /// Parse `<epoch>:<seq>` from the query or `Last-Event-ID`.
@@ -277,7 +286,8 @@ impl<D: Directory> Stream<D> {
             let mut out = String::new();
             if !self.started {
                 self.started = true;
-                let snapshot = json!({ "job": job.view(), "epoch": batch.epoch });
+                let snapshot =
+                    json!({ "job": job.view_for(self.identity.id), "epoch": batch.epoch });
                 out.push_str(&event("snapshot", None, &snapshot));
                 self.next = match self.after.take() {
                     Some((epoch, seq)) if epoch == batch.epoch && seq + 1 >= batch.oldest => {
@@ -312,7 +322,10 @@ impl<D: Directory> Stream<D> {
             };
             let mut next = want;
             for chunk in batch.chunks.iter().filter(|c| c.seq >= want) {
-                let data: Value = serde_json::from_str(&chunk.data).unwrap_or(Value::Null);
+                let mut data: Value = serde_json::from_str(&chunk.data).unwrap_or(Value::Null);
+                if job.operation == "agent.turn" && job.account != self.identity.id {
+                    data = crate::turns::reason::public_event(data);
+                }
                 out.push_str(&event(
                     "chunk",
                     Some(format!("{}:{}", batch.epoch, chunk.seq)),
@@ -321,22 +334,18 @@ impl<D: Directory> Stream<D> {
                 next = chunk.seq + 1;
             }
             self.next = Some(next);
-            let requests = if job.operation == "agent.turn" {
-                let (st, space, id) = (self.state.clone(), self.space.clone(), self.id.clone());
-                blocking(move || st.jobs.agent_requests(&space, &id))
-                    .await
-                    .ok()?
-            } else {
-                vec![]
-            };
-            let current = json!({"job":job.view(),"requests":requests});
+            let current = json!({"job":job.view_for(self.identity.id)});
             if job.operation == "agent.turn" && current != self.last_state {
                 self.last_state = current.clone();
                 out.push_str(&event("state", None, &current));
             }
             if job.state.is_final() || job.state == calternal_core::JobState::Interrupted {
                 self.done = true;
-                out.push_str(&event("end", None, &json!({ "job": job.view() })));
+                out.push_str(&event(
+                    "end",
+                    None,
+                    &json!({ "job": job.view_for(self.identity.id) }),
+                ));
                 return Some(out);
             }
             if !out.is_empty() {

@@ -35,8 +35,8 @@ pub(super) fn apply<D: Directory>(
         if let Some(item) = saved.item {
             content.materialize(space, item)?;
         }
-        if operation == "threads.delete" {
-            return finish_delete(
+        if matches!(operation, "threads.delete" | "threads.archive") {
+            return finish_lifecycle(
                 st,
                 space,
                 id.ok_or_else(|| Error::not_found("item not found"))?,
@@ -47,7 +47,7 @@ pub(super) fn apply<D: Directory>(
         return Ok(saved.result);
     }
     if operation == "threads.list" {
-        let rows = super::index::page(st, space)?;
+        let rows = super::index::page(st, space, who.id)?;
         let parent = data.get("parent_thread").and_then(Value::as_str);
         let include_archived = parent.is_some()
             || data
@@ -63,7 +63,7 @@ pub(super) fn apply<D: Directory>(
                     && parent.is_none_or(|p| r.metadata["parent_thread"] == p)
             })
             .take(limit)
-            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata,"turn_state":r.turn_state}))
+            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata,"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
             .collect();
         return Ok(json!({"threads":threads}));
     }
@@ -136,14 +136,21 @@ pub(super) fn apply<D: Directory>(
     if operation == "threads.get" {
         let mut result = document::view(&item);
         result["thread"]["turn_state"] = json!("idle");
+        result["thread"]["turn_reason"] = crate::turns::reason::describe(None, &Value::Null, false);
         if item.metadata["deleted"] != true
             && let Some(job) = st
                 .jobs
                 .thread_latest(&space.to_string(), &item.id.to_string())?
         {
+            let reason = crate::turns::reason::describe(
+                Some(job.state),
+                &job.checkpoint,
+                who.id == job.account,
+            );
             result["thread"]["turn_state"] = json!(super::turn_status::label(job.state));
+            result["thread"]["turn_reason"] = reason;
             if !job.state.is_final() {
-                result["job"] = json!(job.view());
+                result["job"] = json!(job.view_for(who.id));
             }
         }
         return Ok(result);
@@ -151,7 +158,7 @@ pub(super) fn apply<D: Directory>(
     if item.metadata["deleted"] == true {
         if operation == "threads.delete" {
             content.materialize(space, item.id)?;
-            return finish_delete(st, space, item.id, request, document::view(&item));
+            return finish_lifecycle(st, space, item.id, request, document::view(&item));
         }
         return Err(Error::not_found("item not found"));
     }
@@ -287,7 +294,7 @@ pub(super) fn apply<D: Directory>(
                     st.jobs
                         .get(&job.space, &job.id)?
                         .ok_or_else(|| Error::not_found("turn not found"))?
-                        .view()
+                        .view_for(who.id)
                 );
             }
             Ok(result)
@@ -321,45 +328,57 @@ pub(super) fn apply<D: Directory>(
                 Ok(())
             },
         )?;
-        finish_delete(st, space, deleted.id, request, document::view(&deleted))
+        finish_lifecycle(st, space, deleted.id, request, document::view(&deleted))
     } else {
-        content
-            .write(
-                space,
-                Some(item.id),
-                "threads",
-                Some(&item.revision),
-                item.metadata.clone(),
-                bytes.as_bytes(),
-                request,
-                document::view,
-            )
-            .map(|i| document::view(&i))
+        let archived = content.write(
+            space,
+            Some(item.id),
+            "threads",
+            Some(&item.revision),
+            item.metadata.clone(),
+            bytes.as_bytes(),
+            request,
+            document::view,
+        )?;
+        finish_lifecycle(st, space, archived.id, request, document::view(&archived))
     }
 }
 
-/// Cleanup follows the durable tombstone. A failed content commit must never
+/// Cleanup follows the durable archive marker or tombstone. A failed content commit must never
 /// forget a saved mode. Receipt replay and a fresh delete of an existing
 /// tombstone both finish cleanup, even after the original receipt expires.
-fn finish_delete<D: Directory>(
+fn finish_lifecycle<D: Directory>(
     st: &Shared<D>,
     space: SpaceId,
     id: Uuid,
     request: Request<'_>,
     result: Value,
 ) -> Result<Value, Error> {
-    st.store
+    let mut recipients = Vec::new();
+    let result = st
+        .store
         .content()
         .admit_item(space, id, request, |current, saved| {
             if current.kind != "threads" {
                 return Err(Error::not_found("item not found"));
             }
-            if current.metadata["deleted"] != true {
+            if current.metadata["deleted"] != true && current.metadata["archived"] != true {
                 return saved
                     .ok_or_else(|| Error::conflict("thread changed before deletion cleanup"));
             }
-            st.jobs
+            if current.metadata["archived"] == true
+                && let Some(job) = st.jobs.thread_latest(&space.to_string(), &id.to_string())?
+                && !job.state.is_final()
+            {
+                st.jobs.cancel(&job.space, &job.id)?;
+            }
+            recipients = st
+                .jobs
                 .agent_delete_thread(&space.to_string(), &id.to_string())?;
             Ok(saved.unwrap_or(result))
-        })
+        })?;
+    for account in recipients {
+        st.inputs.invalidate(account)?;
+    }
+    Ok(result)
 }

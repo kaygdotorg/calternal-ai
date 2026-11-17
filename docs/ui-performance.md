@@ -228,3 +228,22 @@ The first open of Settings was one 200 ms frame: the Appearance page asks for th
 | Fonts, scripts | 192 or 214 KB, 30.3 KB | the same |
 
 A first version put the wallpaper in `background-attachment: fixed` and blurred the header: it measured 44 to 56 ms and repaints on scroll, so it is a fixed pseudo-element now and the header is not blurred.
+
+## What a key costs in the thread composer: three measures (2026-11-18)
+
+`e2e/ab-key-work.mjs` types a 74-character line in the composer (60 ms between keys) at 4x CPU throttling, 20 alternating rounds of two builds (A: before the composer work of 2026-11-17 and 18, B: after: no page-wide restyle on typing, material measured once per surface, blind picker placement, progressive picker rows, warm first key), and reports three things for every key (1,480 keys per build):
+
+| | dev-02 (headless Chromium, software compositing) | | Mac VM (headed Chrome, virtual GPU) | |
+| --- | ---: | ---: | ---: | ---: |
+| | A | B | A | B |
+| **(a) main-thread work per key**, median | 4.9 ms | 5.2 | 3.8 | 3.9 |
+| (a) p95 | 8.1 | 8.7 | 7.5 | **7.3** |
+| (a) worst | 19.1 | 13.4 | 62.9 | **15.6** |
+| (a) keys over 8 ms | 5.3% | 6.9% | 3.2% | 1.9% |
+| (a) first key, median | 11.2 | 9.8 | 8.0 | 7.8 |
+| **(b) keys not drawn in the very next frame** | 0 of 1,473 | **0 of 1,476** | 540 of 1,476 | 519 of 1,477 |
+| **(c) key to next frame**, median | 8.6 | 8.4 | 15.3 | 15.3 |
+| (c) p95 | 17.0 | 16.3 | 32.2 | 32.1 |
+| (c) keys over 8 ms | 52.8% | 51.7% | 71.4% | 68.7% |
+
+**(a) Main-thread work** is the key event's task plus the rendering task that draws it (style, layout, paint, commit), from a Chrome trace: the time the page's own thread is busy for that key, with no waiting for the display in it. It is the part of a key the page controls, and the one a code change moves. (Tracing itself adds some overhead, so the same numbers without it are a little lower.) **(b) Frames missed** counts keys whose frame was not the very next one: the first animation frame after the key came more than 20 ms after the frame before it, so a frame was dropped around it. On dev-02 none was; on the Mac VM about a third were, but that virtual display delivers frames about every 33 ms (it is not a 60 Hz panel), so a frame interval above 20 ms is the display's pace there, not work: read (b) on the Mac as a property of the VM. **(c) Key to next frame** is the app's own probe, from the key event to the next animation frame, and it includes the wait for the display's refresh (0 to one frame interval, 16.7 ms at 60 Hz, 33 ms on the Mac VM), so its median and p95 sit near a frame whatever the key costs: a median of 4 to 8 ms with half the keys "over 8 ms" is that distribution, not slow keys. The 8 ms budget has not been changed; which of the three it applies to is the owner's to say. As measured: **(a) p95 is 7.3 ms on the Mac VM (under 8) and 8.7 ms on dev-02 (just over, in a noisy, software-composited headless run), and (b) is zero on dev-02**; it cannot be judged on the Mac VM's display. The first key remains the largest single cost (about 10 ms on dev-02, 8 on the Mac): its script is first-time work (the composer now runs a warm-up key at idle, which took 1.2 ms off it), its style cost is the pause of decorative animations (3 ms), and the rest is paint and commit.

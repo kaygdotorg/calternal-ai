@@ -1,5 +1,6 @@
 //! Operation admission (one capability lookup), receipts and the host handlers.
 use super::*;
+use crate::authz::Policy;
 
 pub(super) fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.into_iter().collect()))
@@ -45,7 +46,7 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    dispatch_scoped(state, p, session, request_id, op, input, None).await
+    dispatch_scoped(state, p, session, request_id, op, input, None, None).await
 }
 
 pub(super) async fn dispatch_scoped<D: Directory>(
@@ -56,9 +57,14 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     op: &str,
     input: JsonObject,
     agent: Option<crate::turns::access::Authority>,
+    machines: Option<std::sync::Arc<crate::machines::MachineService>>,
 ) -> Result<Value, Error> {
     #[cfg(all(feature = "test-plugins", debug_assertions))]
     let admission_started = std::time::Instant::now();
+    if let Some(row) = calternal_core::request_operation(op) {
+        return crate::requests::dispatch(state, None, p, session, agent, request_id, row, input)
+            .await;
+    }
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(
@@ -106,8 +112,20 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             .unwrap_or(calternal_types::Capability::SpaceRead);
         let st = state.clone();
         let account = p.clone();
+        let resolve_address = op == "resolve";
         let (resolved, caps) = tokio::task::spawn_blocking(move || {
-            crate::resolve::resolve_for(&st.directory, &st.store, &account, &kind, &id, op_required)
+            let (mut resolved, caps) = crate::resolve::resolve_for(
+                &st.directory,
+                &st.store,
+                &account,
+                &kind,
+                &id,
+                op_required,
+            )?;
+            if resolve_address && kind == "notes" {
+                resolved.state = Some(crate::notes::state(&st.store, &resolved)?);
+            }
+            Ok::<_, Error>((resolved, caps))
         })
         .await
         .map_err(|_| Error::internal("resolver task failed"))??;
@@ -173,6 +191,11 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         .map_err(|_| Error::internal("admission diagnostic failed"))?;
     }
     if let Some(a) = &agent {
+        if calternal_core::PeopleOperation::from_id(op)
+            == Some(calternal_core::PeopleOperation::ListInvites)
+        {
+            return Err(Error::forbidden("invite links require a person session"));
+        }
         let declared = state
             .registry
             .owner_of_operation(op)
@@ -197,6 +220,15 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             if e.code != ErrorCode::Forbidden {
                 return Err(e);
             }
+            if let Session::Agent { token_hash, .. } = &session
+                && let Some(result) = super::request_action::once(
+                    &state, &p, &session, a, token_hash, request_id, op, &input, &policy, mutates,
+                    risk, job_scoped,
+                )
+                .await?
+            {
+                return Ok(result);
+            }
             let (st, a, op, input, rid) = (
                 state.clone(),
                 a.clone(),
@@ -205,14 +237,40 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                 request_id.to_owned(),
             );
             let approval = tokio::task::spawn_blocking(move || {
-                st.jobs
-                    .agent_action_request(&a, &op, &input, &rid, risk, mutates)
+                let create = || {
+                    st.jobs
+                        .agent_action_request(&a, &op, &input, &rid, risk, mutates)
+                };
+                let id = if let Some(machines) = machines {
+                    crate::requests::park(&st, &machines, &a, create)?
+                } else {
+                    create()?
+                };
+                st.inputs.invalidate(a.actor.account)?;
+                Ok::<_, Error>(id)
             })
             .await
             .map_err(|_| Error::internal("approval task failed"))??;
             return Err(e.with_details(serde_json::json!({"status":"approval_required","approval_id":approval,"job_id":agent.as_ref().map(|a|a.job.as_str()),"request_id":request_id})));
         }
     }
+    admitted_operation(
+        state, p, session, request_id, op, input, agent, policy, job_scoped,
+    )
+    .await
+}
+
+pub(super) async fn admitted_operation<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    session: Session,
+    request_id: &str,
+    op: &str,
+    mut input: JsonObject,
+    agent: Option<crate::turns::access::Authority>,
+    policy: Policy,
+    job_scoped: bool,
+) -> Result<Value, Error> {
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,
@@ -223,6 +281,11 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     if op.starts_with("secrets.") {
         let via = agent.as_ref().and_then(|a| a.actor.via.clone());
         return crate::secrets::dispatch(state, p, policy, input, via).await;
+    }
+    if let Some(operation) = calternal_core::PeopleOperation::from_id(op)
+        && !op.starts_with("spaces.")
+    {
+        return super::people::dispatch(state, p, operation, request_id.to_owned(), input).await;
     }
     if op.starts_with("spaces.") {
         let st = state.clone();
@@ -270,7 +333,17 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                         .map_err(|e| Error::unavailable(e.to_string()))?;
                 }
                 for account in removed {
+                    if st
+                        .directory
+                        .capabilities(account, space)
+                        .is_some_and(|caps| caps.contains(calternal_types::Capability::SpaceRead))
+                    {
+                        continue;
+                    }
+                    st.jobs
+                        .interrupt_revoked_account(&space.to_string(), account)?;
                     st.inputs.erase_space(account, space)?;
+                    st.inputs.invalidate(account)?;
                 }
             }
             result
@@ -328,11 +401,8 @@ pub(super) async fn dispatch_checked<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     match op {
-        "notes.list" => {
-            let i: NotesListInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let notes = blocking(&state, move |s| s.list(space, 100)).await?;
-            to_value(NotesListResult { notes })
+        "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list" => {
+            super::notes::discover(&state, op, input).await
         }
         "notes.get" => {
             let i: NotesGetInput = decode(input)?;
@@ -352,6 +422,9 @@ pub(super) async fn dispatch_checked<D: Directory>(
                 versions,
                 next_cursor,
             })
+        }
+        "notes.delete" | "notes.restore" | "trash.purge" | "notes.rename" => {
+            super::notes::mutate(&state, p, request_id, op, input).await
         }
         "notes.create" | "notes.update" => mutate_note(state, p, request_id, op, input).await,
         "plugins.list" => {
@@ -468,6 +541,15 @@ pub(super) fn replay_receipt(
     };
     if r.operation != op || r.fingerprint != fp {
         return Err(Error::request_reused());
+    }
+    // Permanent deletion suppresses older body-bearing receipts, while ordinary
+    // outside-file conflicts do not revoke an already durable acknowledgment.
+    // Purge's own idempotent result contains no body and remains replayable.
+    if op != "trash.purge"
+        && let Some(item) = r.item
+        && s.content().item_state(space, item)? == "deleted"
+    {
+        return Err(Error::not_found("item not found"));
     }
     Ok(Some(r.result))
 }

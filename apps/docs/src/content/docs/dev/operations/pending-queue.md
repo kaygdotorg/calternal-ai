@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "reversible",
   "id": "pending.queue",
   "description": "pending queue",
   "mutates": true

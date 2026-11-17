@@ -154,9 +154,8 @@ fn on_startup_thread<T: Send + 'static>(
 fn auth_error(e: calternal_auth::Error) -> Error {
     match e.code() {
         calternal_auth::ErrorCode::InvalidInput => Error::invalid_input("invalid space operation"),
-        calternal_auth::ErrorCode::Forbidden | calternal_auth::ErrorCode::NotFound => {
-            Error::forbidden("no access to this space")
-        }
+        calternal_auth::ErrorCode::NotFound => Error::not_found("directory entry not found"),
+        calternal_auth::ErrorCode::Forbidden => Error::forbidden("no access to this space"),
         calternal_auth::ErrorCode::Conflict => Error::request_reused(),
         _ => Error::internal("space database operation failed"),
     }
@@ -209,9 +208,18 @@ impl Directory for StoredDirectory {
             .and_then(Value::as_str)
             .and_then(|s| SpaceId::parse(s).ok());
         if op == "spaces.members" {
-            return Ok(
-                json!({"members":self.spaces.members(actor,space.ok_or_else(||Error::forbidden("no access to this space"))?).map_err(auth_error)?}),
-            );
+            let page = self
+                .spaces
+                .members(
+                    actor,
+                    space.ok_or_else(|| Error::forbidden("no access to this space"))?,
+                    input
+                        .get("cursor")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                )
+                .map_err(auth_error)?;
+            return serde_json::to_value(page).map_err(|_| Error::internal("encode members"));
         }
         let target = || {
             input
@@ -228,19 +236,14 @@ impl Directory for StoredDirectory {
                     .ok_or_else(|| Error::invalid_input("name required"))?
                     .into(),
             },
-            "spaces.set_role" => SpaceChange::SetRole {
-                target: target()?,
-                role: input
-                    .get("role")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| Error::invalid_input("role required"))?
-                    .into(),
-            },
-            "spaces.remove_member" => SpaceChange::Remove { target: target()? },
             "spaces.leave" => SpaceChange::Leave,
             "spaces.transfer" => SpaceChange::Transfer { target: target()? },
             "spaces.delete" => SpaceChange::Delete,
-            _ => return Err(Error::not_found("unknown operation")),
+            _ => {
+                let operation = calternal_core::PeopleOperation::from_id(op)
+                    .ok_or_else(|| Error::not_found("unknown operation"))?;
+                crate::api::people::grant_change(operation, input)?
+            }
         };
         let fp =
             crate::store::sha256_hex(calternal_core::canonical_request_input(input).as_bytes());

@@ -32,15 +32,9 @@ pub struct Store {
     // Dropped last: every database and file handle above closes first.
     _roots: std::sync::Arc<calternal_roots::RootLocks>,
 }
-/// Replayable account-qualified result; note responses live in their space journal.
-pub struct Receipt {
-    /// Operation that committed the response.
-    pub operation: String,
-    /// Canonical operation/input digest.
-    pub fingerprint: String,
-    /// Previously committed response, private to its acting account.
-    pub result: serde_json::Value,
-}
+/// Shared account-qualified durable result, including its associated item UUID.
+/// The HTTP replay boundary checks current authority and permanent-deletion state.
+pub use calternal_content::Receipt;
 /// Persisted plugin enablement and asynchronous-result invalidation generation.
 #[derive(Debug, Clone)]
 pub struct PluginRow {
@@ -69,11 +63,12 @@ fn content_fault(point: calternal_content::FaultPoint) {
     });
 }
 /// The control key holding a plugin's enablement in a space.
-fn plugin_key(plugin_id: &str) -> String {
+/// Encode a plugin identity as its existing space control key.
+pub(crate) fn plugin_key(plugin_id: &str) -> String {
     format!("plugin/{plugin_id}")
 }
 /// Decodes a stored enablement value; anything unreadable is a storage error.
-fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
+pub(crate) fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
     Ok(PluginRow {
         enabled: value["enabled"]
             .as_bool()
@@ -84,10 +79,12 @@ fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
             .ok_or_else(|| Error::internal("corrupt plugin state"))?,
     })
 }
-fn item_id(id: &str) -> Result<Uuid, Error> {
+/// Parse a note identifier, mapping malformed IDs to the ordinary absence error.
+pub(crate) fn item_id(id: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(id).map_err(|_| Error::not_found("item not found"))
 }
-fn note(item: &Item) -> Note {
+/// Build a wire snapshot from one current content revision, without file I/O.
+pub(crate) fn note(item: &Item) -> Note {
     Note {
         id: item.id.to_string(),
         space_id: item.space.to_string(),
@@ -97,14 +94,17 @@ fn note(item: &Item) -> Note {
         updated_at: item.updated_at.clone(),
     }
 }
-impl Store {
-    /// Clone the validated userdata root for bounded instruction reads without holding
-    /// a content lock. The caller must authorize the UUID-selected space.
-    /// Cost: one path clone; no file I/O or SQLite.
-    pub fn instruction_root(&self) -> std::path::PathBuf {
-        self.content.userdata_root()
+/// Map a selected content head into its wire summary without loading note bytes.
+pub(crate) fn note_summary(i: calternal_content::Summary) -> NoteSummary {
+    NoteSummary {
+        id: i.id.to_string(),
+        space_id: i.space.to_string(),
+        title: i.metadata["title"].as_str().unwrap_or("").into(),
+        revision: i.revision,
+        updated_at: i.updated_at,
     }
-
+}
+impl Store {
     /// The pinned installation UUID the root markers carry. Cost: a copy.
     pub fn installation(&self) -> Uuid {
         self.installation
@@ -213,22 +213,14 @@ impl Store {
     /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
     /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
     pub fn list(&self, space_id: SpaceId, limit: u32) -> Result<Vec<NoteSummary>, Error> {
-        self.content.list(space_id, "notes", limit).map(|rows| {
-            rows.into_iter()
-                .map(|i| NoteSummary {
-                    id: i.id.to_string(),
-                    space_id: space_id.to_string(),
-                    title: i.metadata["title"].as_str().unwrap_or("").into(),
-                    revision: i.revision,
-                    updated_at: i.updated_at,
-                })
-                .collect()
-        })
+        self.content
+            .list(space_id, "notes", limit)
+            .map(|rows| rows.into_iter().map(note_summary).collect())
     }
     /// Gets one Notes item from its selected physical database. A foreign ID is absent.
     /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.
     pub fn get(&self, space_id: SpaceId, id: &str) -> Result<Note, Error> {
-        let item = self.content.get(space_id, item_id(id)?)?;
+        let item = self.content.get_live(space_id, item_id(id)?)?;
         if item.kind != "notes" {
             return Err(Error::not_found("item not found"));
         }
@@ -244,10 +236,9 @@ impl Store {
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<(Vec<NoteVersion>, Option<String>), Error> {
-        self.get(space_id, id)?;
-        let (versions, next) = self
-            .content
-            .history(space_id, item_id(id)?, limit, cursor)?;
+        let (versions, next) =
+            self.content
+                .history_live(space_id, "notes", item_id(id)?, limit, cursor)?;
         Ok((
             versions
                 .into_iter()
@@ -272,13 +263,7 @@ impl Store {
         space: SpaceId,
         request_id: &str,
     ) -> Result<Option<Receipt>, Error> {
-        self.content.receipt(space, account, request_id).map(|r| {
-            r.map(|r| Receipt {
-                operation: r.operation,
-                fingerprint: r.fingerprint,
-                result: r.result,
-            })
-        })
+        self.content.receipt(space, account, request_id)
     }
     /// Creates a globally UUIDv7-identified Notes item with a human filename and
     /// frontmatter identity. Cost: generic write allocations/locks, FULL content and
@@ -309,12 +294,14 @@ impl Store {
             operation,
             fingerprint,
         };
+        let title = crate::notes::heading_title(markdown).unwrap_or(title);
+        calternal_core::validate_title(title)?;
         let item = self.content.write(
             space_id,
             None,
             "notes",
             None,
-            serde_json::json!({"title":title}),
+            crate::notes::metadata(title, markdown)?,
             markdown.as_bytes(),
             request,
             |i| serde_json::json!({"note":note(i)}),
@@ -322,9 +309,13 @@ impl Store {
         Ok(note(&item))
     }
     /// Updates only the current base revision, preserving external edits/deletes.
-    /// Title changes journal a fixed exclusive rename with the same mutation.
-    /// Cost: indexed head read plus generic write costs, one old-file hash, optional
-    /// exclusive rename and parent fsync; no directory scan on warm Linux name caches.
+    /// Title changes stage the path and link edits in the same content transaction.
+    /// Warm content-only saves project tags and links once and load head metadata
+    /// without its previous body. Cost: one metadata read plus one shared write
+    /// header, and two checked file reads (admission and deferred placement).
+    /// Three FULL SSD commits precede acknowledgment; file/directory syncs follow
+    /// within one second. A linked rename reads its bounded indexed source set
+    /// and completes guarded placement synchronously.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
@@ -338,24 +329,52 @@ impl Store {
         title: Option<&str>,
         markdown: &str,
     ) -> Result<Note, Error> {
-        let current = self.get(space_id, id)?;
+        let id = item_id(id)?;
+        let current = self.content.live_metadata(space_id, "notes", id)?;
+        let old_title = current["title"].as_str().unwrap_or("");
         let request = Request {
             account: account,
             id: request_id,
             operation,
             fingerprint,
         };
-        let item = self.content.write(
-            space_id,
-            Some(item_id(id)?),
-            "notes",
-            Some(base_revision),
-            serde_json::json!({"title":title.unwrap_or(&current.title)}),
-            markdown.as_bytes(),
-            request,
-            |i| serde_json::json!({"note":note(i)}),
-        )?;
-        Ok(note(&item))
+        let (title, markdown) = match (title, crate::notes::heading_title(markdown)) {
+            (Some(title), Some(heading)) if title != heading => (
+                title,
+                std::borrow::Cow::Owned(crate::notes::rename_heading(markdown, title)),
+            ),
+            (title, heading) => (
+                title.or(heading).unwrap_or(old_title),
+                std::borrow::Cow::Borrowed(markdown),
+            ),
+        };
+        calternal_core::validate_title(title)?;
+        calternal_core::validate_markdown(&markdown)?;
+        let updated = if title == old_title {
+            self.content.write(
+                space_id,
+                Some(id),
+                "notes",
+                Some(base_revision),
+                crate::notes::metadata(title, &markdown)?,
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+            )?
+        } else {
+            self.content.write_with_links(
+                space_id,
+                id,
+                "notes",
+                base_revision,
+                serde_json::json!({"title":title}),
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+                |item, old, new| crate::notes::retarget(item, old, new, old_title, title, id),
+            )?
+        };
+        Ok(note(&updated))
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
     /// so a retry replays it through [`Self::receipt`] instead of running the plugin
@@ -387,7 +406,11 @@ impl Store {
         if self.content.locate(kind, id)? != Some(space) {
             return Err(missing());
         }
-        let item = self.content.get(space, id)?;
+        let item = if kind == "notes" {
+            self.content.get_live(space, id)?
+        } else {
+            self.content.get(space, id)?
+        };
         if item.kind != kind {
             return Err(missing());
         }

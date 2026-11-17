@@ -1,0 +1,6 @@
+role:  editor
+CAPABILITY: content.write
+
+CAPABILITY: plugins.use
+
+CAPABILITY: space.read

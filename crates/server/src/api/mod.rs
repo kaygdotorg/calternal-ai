@@ -16,10 +16,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use calternal_core::{
     ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
-    NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput, NotesListResult,
-    NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput, PluginPreviewResult,
-    PluginResult, PluginState, PluginsListInput, PluginsListResult, True, canonical_request_input,
-    operation_catalog, parse_request,
+    NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesUpdateInput, OperationResponse,
+    PROTOCOL_VERSION, PluginInput, PluginPreviewResult, PluginResult, PluginState,
+    PluginsListInput, PluginsListResult, True, canonical_request_input, operation_catalog,
+    parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -37,8 +37,11 @@ use calternal_types::{AccountId, Error, SpaceId};
 
 mod dispatch;
 mod guard;
+mod notes;
+pub(crate) mod people;
 mod plugins;
 mod request;
+mod request_action;
 mod web;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
@@ -59,10 +62,11 @@ pub struct AppState<D: Directory = StoredDirectory> {
     /// and receipts take only their space's lock; a new item's first catalog route
     /// takes the one catalog writer (see [`Store`]).
     pub store: Store,
-    /// Identity and membership directory; read for every authorization. The stored
-    /// directory runs every read and write on one bounded auth worker (one
-    /// connection), so authorization queues behind other auth work, including
-    /// recovery fsyncs: it is installation-wide, not per space.
+    /// Identity and membership directory, read for each authorization. The
+    /// stored directory has one bounded auth.db worker for ordered authority
+    /// reads, security writes and their recovery publication. Each content
+    /// space keeps its own store and journal. See the auth database worker's
+    /// documentation for the exact serialized interval.
     pub directory: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,
@@ -298,7 +302,10 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let thread_account = p.id;
     let state_for_threads = state.clone();
     let thread_scheduler = machines.clone();
-    let mut result = if calternal_core::AGENT_OPERATIONS
+    let mut result = if let Some(row) = calternal_core::request_operation(&request.operation) {
+        crate::requests::dispatch(state, machines, p, session, agent, &rid, row, request.input)
+            .await
+    } else if calternal_core::AGENT_OPERATIONS
         .iter()
         .any(|(id, _, _)| *id == request.operation)
     {
@@ -327,6 +334,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
             &request.operation,
             request.input,
             agent,
+            machines,
         )
         .await
     };
@@ -370,7 +378,16 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     }
     fault::hit(FaultPoint::BeforeReply);
     match result {
-        Ok(data) => json_response(StatusCode::OK, &OperationResponse::success(rid, data)),
+        Ok(data) => {
+            let mut response =
+                json_response(StatusCode::OK, &OperationResponse::success(rid, data));
+            if request.operation == "requests.ask" || request.operation == "access.request" {
+                response
+                    .extensions_mut()
+                    .insert(guard::ParkedAcknowledgement);
+            }
+            response
+        }
         Err(e) => failure(Some(rid), e),
     }
 }

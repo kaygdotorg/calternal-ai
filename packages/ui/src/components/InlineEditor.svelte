@@ -60,11 +60,16 @@
     mirror.style.whiteSpace = multiline ? "pre-wrap" : "pre";
     mirror.style.overflowWrap = "break-word";
   }
+  // The mirror follows the field's scroll. Reading `scrollTop` forces a layout, and a key changes the text just before it, so doing it per key is a second layout in the key's frame:
+  // the field's own scroll event (which is what moves it) carries the position (`sy`, `sx`), and a key re-syncs only while the field is scrolled at all.
+  let sx = 0, sy = 0;
   function syncMirror() {
     if (!mirror || !el) return;
-    mirror.scrollTop = el.scrollTop;
-    mirror.scrollLeft = el.scrollLeft;
+    sx = el.scrollLeft; sy = el.scrollTop;
+    mirror.scrollTop = sy;
+    mirror.scrollLeft = sx;
   }
+  function resyncMirror() { if (sx || sy) syncMirror(); }
   $effect(() => {
     if (!mirror || !el) return;
     copyMetrics();
@@ -86,7 +91,7 @@
     if (at < value.length) out.push({ t: value.slice(at), on: false, kind: "" });
     return out;
   });
-  $effect(() => { value; marks; queueMicrotask(syncMirror); });
+  $effect(() => { value; marks; queueMicrotask(resyncMirror); });
   // The field editor (docs/editor-port-plan.md, stage 1): history of the person's own changes across typed and programmatic edits, the input-method gate and the keystroke probe.
   $effect(() => {
     if (!el) return;

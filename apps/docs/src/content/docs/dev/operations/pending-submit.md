@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "reversible",
   "id": "pending.submit",
   "description": "pending submit",
   "mutates": true
@@ -26,15 +27,20 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Stable pending identity; another account's identical ID selects its own state.",
+  "description": "Stable pending identity: the write's space and request ID, as request IDs are scoped to (account, space). Another account's identical ID selects its own state.",
   "properties": {
     "id": {
       "description": "Request ID of the underlying write, retained through every reconnect.",
       "type": "string"
+    },
+    "space_id": {
+      "description": "Space UUID the write targets.",
+      "type": "string"
     }
   },
   "required": [
-    "id"
+    "id",
+    "space_id"
   ],
   "title": "PendingInput",
   "type": "object"

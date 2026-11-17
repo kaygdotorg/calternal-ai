@@ -11,6 +11,7 @@ pub mod auth;
 pub mod authz;
 pub mod fault;
 pub mod machines;
+mod notes;
 pub mod plugins;
 pub mod resolve;
 pub mod secrets;
@@ -21,5 +22,6 @@ pub mod turns;
 pub mod live;
 
 pub mod account_input;
+mod requests;
 
 pub(crate) mod threads;

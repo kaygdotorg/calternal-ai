@@ -1,9 +1,10 @@
 //! Threads product engine: manifest policy, content files and the existing turn engine.
 //! All durable work runs on blocking workers; no independent store or global lock.
 mod document;
-mod index;
+pub(crate) mod index;
 mod operations;
 pub(crate) mod persistence;
+pub(crate) mod provider_session;
 pub(crate) mod turn_events;
 mod turn_status;
 use crate::turns::blocking;

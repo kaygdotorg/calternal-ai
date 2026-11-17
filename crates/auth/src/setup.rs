@@ -32,6 +32,7 @@ pub(crate) struct Redeemable {
     pub user: AccountId,
     pub name: String,
     pub first_owner: bool,
+    pub invite: bool,
 }
 
 /// Issues a fresh first-owner token while nobody owns the server.
@@ -89,6 +90,7 @@ pub(crate) fn find_in(c: &Connection, who: &str) -> Result<(String, String)> {
 pub(crate) fn recover_in(c: &mut Connection, who: &str, ttl: i64) -> Result<(String, String)> {
     let tx = c.transaction().map_err(sql)?;
     let (user, name) = find_in(&tx, who)?;
+    crate::people::require_active(&tx, AccountId::parse(&user).map_err(Error::internal)?)?;
     tx.execute(
         "DELETE FROM setup_tokens WHERE purpose = 'recover' AND user_id = ?1 AND used_at IS NULL",
         params![user],
@@ -200,21 +202,30 @@ pub(crate) async fn check(inner: &Arc<Inner>, raw: &str, name: &str) -> Result<R
     let canon = normalize_setup_token(raw);
     let token_hash = hash(canon.as_deref().unwrap_or_default());
     let h = token_hash.clone();
+    let invite_hash = inner.invite_key.lookup(raw);
     let now = now_ms();
-    let row: Option<(String, Option<String>)> = inner
-        .db
-        .run(move |c| {
-            c.query_row(
-                "SELECT purpose, user_id FROM setup_tokens
-                 WHERE hash = ?1 AND used_at IS NULL AND expires_at > ?2",
-                params![h, now],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(sql)
-        })
-        .await?;
-    let (purpose, user) = row
+    let (setup, invite) = inner.db.run(move |c| {
+        let setup = c.query_row(
+            "SELECT purpose,user_id FROM setup_tokens
+             WHERE hash=?1 AND used_at IS NULL AND expires_at>?2
+               AND (user_id IS NULL OR EXISTS(SELECT 1 FROM users WHERE id=user_id AND disabled_at IS NULL))",
+            params![h,now], |r| Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?)),
+        ).optional().map_err(sql)?;
+        let invite = crate::invites::find(c, invite_hash.as_bytes(), now)?;
+        Ok((setup, invite))
+    }).await?;
+    // Check both stores even for malformed input; one generic refusal covers both.
+    if invite.is_some() {
+        let name = clean_person_name(name).ok_or_else(|| Error::invalid("a name is needed"))?;
+        return Ok(Redeemable {
+            token_hash: invite_hash.as_bytes().to_vec(),
+            user: AccountId::new(),
+            name,
+            first_owner: false,
+            invite: true,
+        });
+    }
+    let (purpose, user) = setup
         .filter(|_| canon.is_some())
         .ok_or_else(|| invalid("token invalid or expired"))?;
     if purpose == "first-owner" {
@@ -224,6 +235,7 @@ pub(crate) async fn check(inner: &Arc<Inner>, raw: &str, name: &str) -> Result<R
             user: AccountId::new(),
             name,
             first_owner: true,
+            invite: false,
         });
     }
     let user = user
@@ -245,6 +257,7 @@ pub(crate) async fn check(inner: &Arc<Inner>, raw: &str, name: &str) -> Result<R
         user,
         name,
         first_owner: false,
+        invite: false,
     })
 }
 
@@ -266,26 +279,31 @@ pub(crate) async fn redeem(
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(sql)?;
             let now = now_ms();
-                let used = tx
-                    .execute(
-                        "UPDATE setup_tokens SET used_at = ?2
-                     WHERE hash = ?1 AND used_at IS NULL AND expires_at > ?2",
-                        params![r.token_hash, now],
-                    )
-                    .map_err(sql)?;
+            if r.invite {
+                let grant = crate::invites::find(&tx, r.token_hash.as_slice().try_into().map_err(Error::internal)?, now)?
+                    .ok_or_else(crate::invites::invalid)?;
+                ensure_person_name_available(&tx, &r.name, None, false)?;
+                let username = format!("{}-{}", username_for(&r.name), r.user.as_uuid().simple());
+                insert_account(&tx, r.user, &r.name, &username, now)?;
+                crate::invites::consume(&tx, grant, r.user, now)?;
+            } else {
+                let used = tx.execute(
+                   "UPDATE setup_tokens SET used_at=?2
+                    WHERE hash=?1 AND used_at IS NULL AND expires_at>?2",
+                    params![r.token_hash, now],
+                ).map_err(sql)?;
                 if used != 1 {
                     return Err(invalid("token used or expired meanwhile"));
                 }
                 if r.first_owner {
-                    let users: i64 = tx
-                        .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
-                        .map_err(sql)?;
+                    let users: i64 = tx.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0)).map_err(sql)?;
                     if users > 0 {
                         return Err(invalid("the server already has an owner"));
                     }
                     let username = username_for(&r.name);
                     insert_account(&tx, r.user, &r.name, &username, now)?;
                 }
+            }
             let added = tx
                 .execute(
                     "INSERT OR IGNORE INTO passkeys (cred_id, user_id, passkey, created_at, name)
@@ -370,8 +388,7 @@ fn name_skeletons(name: &str) -> [String; 2] {
 
 /// Guard inside the writing transaction, including after a passkey prompt.
 /// On promotion, check every other person so no existing name becomes an
-/// administrator impersonation. No person-name update API currently exists;
-/// future updates must use this same guard and exclude their own UUID.
+/// administrator impersonation. Profile updates exclude the updating account.
 pub(crate) fn ensure_person_name_available(
     c: &Connection,
     name: &str,
@@ -554,8 +571,8 @@ mod tests {
         let err = recover_in(&mut c, "nobody", 1000).unwrap_err();
         assert_eq!(err.code(), ErrorCode::NotFound);
         c.execute(
-            "INSERT INTO users (id, name, username, created_at) VALUES ('u1', 'Kayg', 'kayg', 0)",
-            [],
+            "INSERT INTO users (id, name, username, created_at) VALUES (?1, 'Kayg', 'kayg', 0)",
+            [AccountId::new().to_string()],
         )
         .unwrap();
         let (name, t1) = recover_in(&mut c, "kayg", 1000).unwrap();

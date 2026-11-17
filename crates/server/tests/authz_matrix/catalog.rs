@@ -24,12 +24,37 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "pending.cancel",
         "pending.confirm",
         "pending.submit",
+        // Exercised with passkeys in tests/conformance/notes_cases.rs.
+        "notes.delete",
+        "notes.restore",
+        "notes.rename",
+        "notes.lookup",
+        "tags.list",
+        "tags.lookup",
+        "trash.list",
+        "trash.purge",
         "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
         "spaces.create",
         "spaces.members",
+        // People directory and group grants are exercised by conformance/people_cases.rs.
+        "spaces.add_member",
         "spaces.set_role",
         "spaces.remove_member",
+        "roles.list",
+        "account.set_profile",
+        "people.list",
+        "people.disable",
+        "groups.list",
+        "groups.create",
+        "groups.rename",
+        "groups.delete",
+        "groups.add_member",
+        "groups.remove_member",
+        "invites.create",
+        "invites.list",
+        "invites.revoke",
+        "invites.redeem",
         "spaces.leave",
         "spaces.transfer",
         "spaces.delete",
@@ -49,6 +74,22 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             .iter()
             .map(|(id, _, _)| *id),
     );
+    // Request isolation and the instructions role matrix use real passkey
+    // sessions in conformance/requests_cases.rs.
+    for (id, required) in [
+        ("requests.list", Capability::SpaceRead),
+        ("requests.ask", Capability::PluginsUse),
+        ("requests.answer", Capability::SpaceRead),
+        ("requests.approve", Capability::PluginsUse),
+        ("requests.deny", Capability::PluginsUse),
+        ("space.instructions", Capability::SpaceSettings),
+    ] {
+        assert!(stored_rows.insert(id), "duplicate request operation {id}");
+        assert_eq!(
+            fixture.state.registry.policy(id).unwrap().required,
+            required
+        );
+    }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
@@ -75,10 +116,29 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         .map(|p| p.operation.to_string())
         .chain(calternal_core::account_input_operations().map(str::to_owned))
         .chain(
+            calternal_core::REQUEST_OPERATIONS
+                .iter()
+                .map(|row| row.id.to_owned()),
+        )
+        .chain(
             calternal_server::authz::agent_policies()
                 .iter()
                 .map(|p| p.operation.to_string()),
         )
+        .chain(
+            calternal_server::authz::people_policies()
+                .iter()
+                .map(|p| p.operation.to_string()),
+        )
+        .chain(calternal_core::NOTE_OPERATIONS.iter().map(|op| {
+            fixture
+                .state
+                .registry
+                .policy(op.id)
+                .unwrap()
+                .operation
+                .to_string()
+        }))
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -90,7 +150,10 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     assert_eq!(
         POLICIES.len()
             + calternal_core::account_input_operations().count()
+            + calternal_core::REQUEST_OPERATIONS.len()
             + calternal_server::authz::agent_policies().len()
+            + calternal_server::authz::people_policies().len()
+            + calternal_core::NOTE_OPERATIONS.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
@@ -183,7 +246,13 @@ fn built_in_roles_cover_exact_documented_capabilities() {
             roles().iter().any(|role| role.contains(capability))
                 || matches!(
                     capability,
-                    Capability::SpacesList | Capability::SpacesCreate
+                    Capability::SpacesList
+                        | Capability::SpacesCreate
+                        | Capability::PeopleManage
+                        | Capability::GroupsManage
+                        | Capability::AccountProfile
+                        | Capability::InviteRedeem
+                        | Capability::RolesList
                 ),
             "unheld capability: {}",
             capability.name()

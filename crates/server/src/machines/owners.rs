@@ -55,6 +55,7 @@ impl MachineService {
         } else {
             st.pool_grants.remove(&account);
         }
+        st.readiness.change(account);
         st.place_waiting(&self.settings);
         Ok(())
     }

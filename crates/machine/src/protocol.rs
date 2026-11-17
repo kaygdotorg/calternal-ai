@@ -129,24 +129,24 @@ pub struct SessionGranted {
     pub backend: String,
     /// Bearer token for `sync` and `output`; held in memory only, on both sides.
     pub token: String,
-    /// How long the server keeps this machine's leases without a sync. The machine
-    /// freezes its sandboxes when it has not synced for this long.
+    /// How long the server keeps leases without a sync. After local expiry the
+    /// machine removes disposable containers and retains mounted files.
     pub lease_ttl_ms: u64,
     /// The longest the server holds a `sync` request open.
     pub poll_hold_ms: u64,
 }
 
-/// What a machine can take on. The server places by its own lease count;
-/// these numbers are informational except `max_sandboxes`.
+/// Machine capacity. Placement accounts for both held machine slots and the
+/// server's active leases. CPU and memory figures are informational.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capacity {
     /// Logical CPUs.
     pub cpus: u32,
     /// Physical memory in bytes; 0 when unknown.
     pub memory_bytes: u64,
-    /// Most sandboxes (threads) this machine runs at once.
+    /// Most provider and worker slots the machine can hold at once.
     pub max_sandboxes: u32,
-    /// Sandboxes it currently holds, frozen ones included.
+    /// Slots currently held, including idle leases and pending removals.
     pub running_sandboxes: u32,
 }
 
@@ -154,13 +154,13 @@ pub struct Capacity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum SandboxState {
-    /// Being created or adopted.
+    /// Being created, or pending a new exec after idle removal.
     Starting,
     /// Ready for execs.
     Running,
-    /// Paused because the machine lost contact with the server for a lease TTL.
+    /// A paused sandbox.
     Frozen,
-    /// Could not be started; the lease ends with this reason.
+    /// Could not start, or was closed locally; the server reconciles the lease.
     Failed {
         /// Short, path-free description.
         reason: String,
@@ -275,7 +275,7 @@ pub enum Down {
         /// Thread workspace to discard; its persistent account home is retained.
         thread_id: Uuid,
     },
-    /// Run work for (space, account, thread): start or adopt the thread's sandbox.
+    /// Run work for (space, account, thread) in a site-local sandbox.
     Assign {
         /// The lease.
         lease_id: Uuid,

@@ -18,7 +18,7 @@ machine and never starts containers or VMs.
 - [`enroll`]: exchange a one-time code for a machine identity.
 - [`connection`]: the outbound session, long-poll loop and reconnect backoff.
 - [`runner`]: applies server messages to sandboxes and streams exec output.
-- [`sandbox`]: the sandbox interface with Podman and process backends.
-- [`cli`]: `calternal machine enroll | run | status`.
+- [`sandbox`]: the sandbox interface with Podman and direct backends.
+- [`cli`]: `calternal machine enroll | run | status | discard`.
 
 [Full Rust API reference](/docs/dev/rust/calternal_machine/index.html). Generated with stable `cargo doc --workspace --no-deps`; dependency documentation is omitted.

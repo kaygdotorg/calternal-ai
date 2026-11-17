@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 mod admin_cli;
 mod cli;
+mod people_maintenance;
 mod startup_io;
 mod transport;
 use calternal_cli::output::{CliError, Output, Reply};
@@ -29,6 +30,18 @@ fn main() {
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
         Cmd::Threads { args } => calternal_cli::threads::main(args, &out),
+        Cmd::Notes { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            calternal_cli::notes::run(connection, op, input, &out)
+        }
+        Cmd::Tags { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            calternal_cli::notes::run(connection, op, input, &out)
+        }
+        Cmd::Trash { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            calternal_cli::notes::run(connection, op, input, &out)
+        }
         Cmd::Agent { args } => calternal_cli::agent::main(args, &out),
         Cmd::Invoke {
             connection,
@@ -45,6 +58,24 @@ fn main() {
             ))
         }
         Cmd::Pending { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
+        Cmd::People { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Groups { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Invites { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
+        Cmd::Requests { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
             calternal_cli::account_input::run(connection, op, input, &out)
         })),
         Cmd::Watch {
@@ -77,6 +108,7 @@ fn main() {
             create,
             installation_id,
             receipt_retention_days,
+            invite_retention_days,
             port,
             web_dir,
             plugin_root,
@@ -117,6 +149,7 @@ fn main() {
                     std::time::Duration::from_secs(
                         u64::from(receipt_retention_days.max(1)) * 86_400,
                     ),
+                    std::time::Duration::from_secs(u64::from(invite_retention_days) * 86_400),
                     port,
                     web_dir,
                     plugin_root,
@@ -148,6 +181,7 @@ async fn serve(
     installation_id: Option<String>,
     create: bool,
     receipt_retention: std::time::Duration,
+    invite_retention: std::time::Duration,
     port: u16,
     web_dir: Option<PathBuf>,
     plugin_root: Option<PathBuf>,
@@ -255,6 +289,7 @@ async fn serve(
     };
     // Directory receipts follow the same retention as space receipts.
     config.receipt_retention = receipt_retention;
+    config.invite_retention = invite_retention;
     if config.set_trusted_proxies(&trusted_proxies).is_err() {
         return Err(boot(
             1,
@@ -331,6 +366,15 @@ async fn serve(
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
     .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let mut invite_tasks = tokio::task::JoinSet::new();
+    if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
+        let auth = service.auth.clone();
+        let backlog = auth
+            .purge_invites()
+            .await
+            .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
+        invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
+    }
     let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
     {
         match service.auth.first_owner_token().await {
@@ -366,6 +410,7 @@ async fn serve(
         .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
         .with_security(directory.spaces.agents())
+        .with_receipt_retention(store.content().receipt_retention())
         .with_thread_events(store.shared_content());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
@@ -401,7 +446,15 @@ async fn serve(
     calternal_server::turns::retry::recover(&state, &machines)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
-    let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
+    let _notes_retention = state.store.start_notes_retention().map_err(|e| {
+        boot(
+            2,
+            "invalid_input",
+            e.message,
+            "Check the Notes Trash retention setting.",
+        )
+    })?;
+    let app = api::router(state.clone(), web_dir.clone()).layer(axum::Extension(machines.clone()));
 
     let base_url = if development {
         format!("http://127.0.0.1:{port}")
@@ -452,7 +505,14 @@ async fn serve(
         transport::listener(listener),
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        let interrupt = tokio::task::spawn_blocking(move || machines.interrupt_on_shutdown());
+        state.workers.shutdown().await;
+        if !matches!(interrupt.await, Ok(Ok(()))) {
+            tracing::warn!("machine leases could not be fenced before shutdown");
+        }
+    })
     .await;
     let _ = tokio::fs::remove_file(&startup_path).await;
     served.map_err(|e| {

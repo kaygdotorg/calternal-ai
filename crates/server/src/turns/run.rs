@@ -1,10 +1,11 @@
 //! The one machine-output reader for each turn; fans out through the existing job live buffer.
-use super::{access::Authority, blocking};
+use super::{access::Authority, blocking, progress::save};
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
     machines::{LeaseState, MachineService},
     plugins::jobs::{Job, RunEnd},
+    threads::provider_session::ProviderSession,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use calternal_core::{
@@ -102,8 +103,9 @@ async fn execute<D: Directory>(
         .map_err(|_| Error::internal("invalid turn input"))?;
     let account = job.account;
     let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
-    let thread =
-        Uuid::parse_str(&i.thread_id).map_err(|_| Error::invalid_input("invalid thread id"))?;
+    let check = job.input["check"] == true;
+    let thread = Uuid::parse_str(if check { &job.id } else { &i.thread_id })
+        .map_err(|_| Error::invalid_input("invalid thread id"))?;
     let who = Identity { id: job.account };
     super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
     if super::enabled_generation(state, &job.space, &job.plugin).await? != job.generation {
@@ -173,44 +175,22 @@ async fn execute<D: Directory>(
         .get("machine_id")
         .and_then(Value::as_str)
         .and_then(|s| Uuid::parse_str(s).ok());
-    let placement_deadline = Instant::now() + Duration::from_secs(600);
-    let mut queued = None;
-    let acquire = state.jobs.permits().acquire_owned();
-    tokio::pin!(acquire);
-    let (machine_id, _permit) = loop {
-        if !live.is_current(job.runs) || !super::session_live(state, job).await? {
-            return Ok(RunEnd::Failed);
-        }
-        super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
-        let m = machines.clone();
-        let view = blocking(move || m.run(account, lease_id)).await?;
-        if view.state == LeaseState::Interrupted {
-            return Ok(RunEnd::Interrupted);
-        }
-        if view.state == LeaseState::Ended {
-            return Ok(RunEnd::OutcomeUnknown);
-        }
-        if let Some(machine) = view.machine_id {
-            tokio::select! {
-                permit=&mut acquire=>break (machine,permit.map_err(|_|Error::unavailable("turn execution stopped"))?),
-                _=tokio::time::sleep(Duration::from_secs(1))=>continue,
-            }
-        }
-        if queued != view.queue_position {
-            queued = view.queue_position;
-            live.publish(
-                job.runs,
-                &json!({"type":"placement","queue_position":queued}),
-            );
-        }
-        if Instant::now() >= placement_deadline {
-            return Ok(RunEnd::Interrupted);
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+    let (machine_id, _permit) = match super::progress::place(
+        state,
+        machines,
+        job,
+        live,
+        lease_id,
+        &mut checkpoint,
+    )
+    .await?
+    {
+        super::progress::Placement::Ready(machine, permit) => (machine, permit),
+        super::progress::Placement::Ended(end) => return Ok(end),
     };
+    checkpoint["placement"] = Value::Null;
     checkpoint["machine_id"] = json!(machine_id);
-    save(state, job, live, &mut checkpoint).await?;
-    let local_session = if previous_machine == Some(machine_id) {
+    let mut local_session = if previous_machine == Some(machine_id) {
         checkpoint
             .get("session_id")
             .and_then(Value::as_str)
@@ -218,6 +198,18 @@ async fn execute<D: Directory>(
     } else {
         None
     };
+    if job.runs == 1
+        && let Some(session) = ProviderSession::owned(&job.input, account)
+    {
+        match session.resume(provider_id, thread, machine_id) {
+            Ok(id) => local_session = Some(id),
+            Err(message) => {
+                checkpoint["session_notice"] = json!(message);
+                live.publish(job.runs, &json!({"type":"notice","message":message}));
+            }
+        }
+    }
+    super::lease::publish_placement(state, job, live, &mut checkpoint).await?;
     let mut context = i.context.clone();
     if job.runs > 1 && local_session.is_none() {
         context.push(calternal_core::ProviderContext {
@@ -226,7 +218,16 @@ async fn execute<D: Directory>(
                 .to_string(),
         });
     }
-    let check = job.input["check"] == true;
+    if job.runs > 1 {
+        let (st, id) = (state.clone(), job.id.clone());
+        let outcomes = blocking(move || st.jobs.agent_request_outcomes(account, &id)).await?;
+        if !outcomes.is_empty() {
+            context.push(calternal_core::ProviderContext {
+                source: "calternal/person-request".into(),
+                text: json!(outcomes).to_string(),
+            });
+        }
+    }
     let instructions = super::instructions::build(state, &i, &job.space, &scope).await?;
     if instructions.contains("[Space instructions truncated at 16 KiB.]") {
         live.publish(
@@ -306,6 +307,7 @@ async fn execute<D: Directory>(
     let mut provider_seq = 0;
     let mut outcome = None;
     let mut checked = false;
+    let mut sign_in_command = None;
     let mut failure = None;
     let mut retry_forbidden = false;
     let mut pending_tools = std::collections::HashSet::new();
@@ -342,11 +344,15 @@ async fn execute<D: Directory>(
         let (m, l) = (machines.clone(), lease_id);
         let view = blocking(move || m.run(account, l)).await?;
         if view.state == LeaseState::Interrupted {
+            let m = machines.clone();
+            let since = blocking(move || m.interrupted_at(account, lease_id)).await?;
+            checkpoint["interruption"] = json!({"why":"machine_offline","since_ms":since});
+            save(state, job, live, &mut checkpoint, None).await?;
             return Ok(RunEnd::Interrupted);
         }
         if Instant::now() >= deadline {
-            let m = machines.clone();
-            let _ = blocking(move || m.release_run(account, lease_id)).await;
+            checkpoint["interruption"] = json!({"why":"execution_timeout"});
+            save(state, job, live, &mut checkpoint, None).await?;
             return Ok(RunEnd::Interrupted);
         }
         let output = machines
@@ -394,9 +400,15 @@ async fn execute<D: Directory>(
                         for mut e in flush.into_iter().chain(std::iter::once(e)) {
                             published_seq += 1;
                             e.seq = published_seq;
+                            let mut thread_session = None;
                             match &e.event {
                                 ProviderEventKind::Session { session_id } => {
-                                    checkpoint["session_id"] = json!(session_id)
+                                    checkpoint["session_id"] = json!(session_id);
+                                    if job.input.get("thread_request").is_some() {
+                                        thread_session = Some(ProviderSession::new(
+                                            account, provider_id, thread, machine_id, session_id,
+                                        ));
+                                    }
                                 }
                                 ProviderEventKind::TextDelta { text } => {
                                     if job.input.get("thread_request").is_some() {
@@ -436,7 +448,10 @@ async fn execute<D: Directory>(
                                     code,
                                     message,
                                 } => {
-                                    checkpoint["error"] = json!({"code":code,"message":message});
+                                    checkpoint["error"] = json!({
+                                        "code":code,"message":message,"class":class,"reset_at_ms":reset_at_ms,
+                                        "provider":provider_id,"sign_in_command":sign_in_command,
+                                    });
                                     retry_forbidden |= !matches!(
                                         class,
                                         calternal_core::ProviderFailureClass::Transient
@@ -445,7 +460,18 @@ async fn execute<D: Directory>(
                                     failure = Some((*class, *billing, *reset_at_ms));
                                 }
                                 ProviderEventKind::Done { outcome: o } => outcome = Some(o.clone()),
-                                ProviderEventKind::Check { .. } => checked = true,
+                                ProviderEventKind::Check(status) => {
+                                    checked = true;
+                                    sign_in_command = Some(status.sign_in_command.clone());
+                                    let (m, provider, status) = (machines.clone(), provider_id.to_owned(), status.clone());
+                                    blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
+                                    // Only the owning person can observe a manual Check job.
+                                    // Normal turns record readiness privately without a public chunk.
+                                    if !check {
+                                        published_seq -= 1;
+                                        continue;
+                                    }
+                                }
                                 _ => {}
                             }
                             let value = serde_json::to_value(&e)
@@ -465,7 +491,7 @@ async fn execute<D: Directory>(
                             {
                                 checkpoint["provider_seq"] = json!(provider_seq);
                                 redactor.checkpoint(&mut checkpoint);
-                                save(state, job, live, &mut checkpoint).await?;
+                                save(state, job, live, &mut checkpoint, thread_session).await?;
                                 text_flush = Instant::now();
                             }
                         }
@@ -478,6 +504,10 @@ async fn execute<D: Directory>(
                         if blocking(move || m.run(account, lease_id)).await?.state
                             == LeaseState::Interrupted
                         {
+                            let m = machines.clone();
+                            let since = blocking(move || m.interrupted_at(account, lease_id)).await?;
+                            checkpoint["interruption"] = json!({"why":"machine_offline","since_ms":since});
+                            save(state, job, live, &mut checkpoint, None).await?;
                             return Ok(RunEnd::Interrupted);
                         }
                     }
@@ -513,13 +543,13 @@ async fn execute<D: Directory>(
                         ) {
                             checkpoint["retry"] = wait;
                             redactor.checkpoint(&mut checkpoint);
-                            save(state, job, live, &mut checkpoint).await?;
+                            save(state, job, live, &mut checkpoint, None).await?;
                             return Ok(RunEnd::RetryWaiting);
                         }
                     }
                     checkpoint["provider_seq"] = json!(provider_seq);
                     redactor.checkpoint(&mut checkpoint);
-                    save(state, job, live, &mut checkpoint).await?;
+                    save(state, job, live, &mut checkpoint, None).await?;
                     return Ok(if exit.code == Some(0) && check && checked {
                         RunEnd::Done(json!({"checked":true}))
                     } else {
@@ -541,36 +571,7 @@ async fn execute<D: Directory>(
     {
         checkpoint["provider_seq"] = json!(provider_seq);
         redactor.checkpoint(&mut checkpoint);
-        save(state, job, live, &mut checkpoint).await?;
+        save(state, job, live, &mut checkpoint, None).await?;
     }
     result
-}
-
-async fn save<D: Directory>(
-    state: &Shared<D>,
-    job: &Job,
-    live: &Arc<crate::plugins::live::Live>,
-    checkpoint: &mut Value,
-) -> Result<(), Error> {
-    let (st_output, output_job, output_checkpoint) =
-        (state.clone(), job.clone(), checkpoint.clone());
-    blocking(move || {
-        crate::threads::persistence::checkpoint(&st_output, &output_job, &output_checkpoint)
-    })
-    .await?;
-    checkpoint["thread_text"] = json!("");
-    let (st, sp, id, run, live, checkpoint) = (
-        state.clone(),
-        job.space.clone(),
-        job.id.clone(),
-        job.runs,
-        live.clone(),
-        checkpoint.clone(),
-    );
-    blocking(move || {
-        st.jobs
-            .checkpoint(&sp, &id, run, &live, &checkpoint)
-            .map(|_| ())
-    })
-    .await
 }

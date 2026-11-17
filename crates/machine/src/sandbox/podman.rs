@@ -2,14 +2,14 @@
 //!
 //! - Base image by reference (`docker.io/library/alpine:3` or a digest); the image
 //!   must already be present or pullable by the machine user.
-//! - The container's own overlay upper layer is the thread's private writable layer.
+//! - The container's private overlay is disposable. The /work and home bind mounts persist.
 //! - `<root>/accounts/<account-id>/threads/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
 //! - Limits map to `--memory`, `--cpus` and `--pids-limit`; defaults are 1 GiB and
 //!   256 processes, the configuration measured on perf-01.
 //! - Freeze and resume are `podman pause` / `unpause` (about 0.1 s each, memory
 //!   stays resident). Stop is `podman rm -f -t 0` plus removing the work directory.
 //! - Containers are named `calternal-account-<account-id>-thread-<thread-id>` and labelled
-//!   `org.calternal.thread`, so a restarted machine role adopts them.
+//!   with their machine's sandbox root. Start-up removes orphans for that root.
 //!
 //! The server never runs any of this: only the machine role calls Podman.
 
@@ -23,6 +23,8 @@ use uuid::Uuid;
 
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::{Limits, SandboxSpec};
+
+mod ownership;
 
 /// Default memory ceiling when the spec gives none.
 pub const DEFAULT_MEMORY_BYTES: u64 = 1 << 30;
@@ -67,8 +69,17 @@ impl PodmanBackend {
         Self::available(&self.podman).await
     }
 
+    async fn canonical_root(&self) -> SandboxResult<PathBuf> {
+        tokio::fs::create_dir_all(&self.root)
+            .await
+            .map_err(SandboxError::new)?;
+        tokio::fs::canonicalize(&self.root)
+            .await
+            .map_err(SandboxError::new)
+    }
+
     /// Account-qualified container name, so a caller reusing another account's
-    /// thread UUID can never adopt its mounts or login home.
+    /// thread UUID can never address its mounts or login home.
     pub fn container_name(account_id: Uuid, thread_id: Uuid) -> String {
         format!("calternal-account-{account_id}-thread-{thread_id}")
     }
@@ -102,15 +113,8 @@ async fn podman(bin: &std::path::Path, args: &[&str]) -> SandboxResult<String> {
 impl Backend for PodmanBackend {
     fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
-            // Scope cleanup to this machine directory, never other lanes or
-            // enrolled machines sharing the same Podman user.
-            let label = format!("label=org.calternal.worker-root={}", self.root.display());
-            let ids = podman(&self.podman, &["ps", "-aq", "--filter", &label]).await?;
-            if !ids.is_empty() {
-                let mut args = vec!["rm", "-f", "-t", "0"];
-                args.extend(ids.split_whitespace());
-                podman(&self.podman, &args).await?;
-            }
+            let root = self.canonical_root().await?;
+            ownership::sweep(&self.podman, &root).await?;
             match tokio::fs::remove_dir_all(self.root.join("workers")).await {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -124,8 +128,9 @@ impl Backend for PodmanBackend {
 
     fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            let root = self.canonical_root().await?;
             let name = Self::container_name(account, thread);
-            podman(&self.podman, &["rm", "-f", "--ignore", &name]).await?;
+            ownership::remove_named(&self.podman, &root, &name).await?;
             super::direct::DirectBackend::new(self.root.clone())
                 .discard(account, thread)
                 .await
@@ -136,12 +141,13 @@ impl Backend for PodmanBackend {
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
+            let root = self.canonical_root().await?;
+            let name = Self::container_name(spec.account_id, spec.thread_id);
             let result = async {
-                let name = Self::container_name(spec.account_id, spec.thread_id);
-                let account = self.root.join("accounts").join(spec.account_id.to_string());
+                let account = root.join("accounts").join(spec.account_id.to_string());
                 let home = account.join("home");
                 let dir = if spec.worker.is_some() {
-                    self.root.join("workers").join(spec.thread_id.to_string())
+                    root.join("workers").join(spec.thread_id.to_string())
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
@@ -163,134 +169,126 @@ impl Backend for PodmanBackend {
                 if let Some(worker) = &spec.worker {
                     super::worker::prepare(&work, worker).await?;
                 }
-                let state = podman(
-                    &self.podman,
-                    &[
-                        "container",
-                        "inspect",
-                        "--format",
-                        "{{.State.Status}}",
+                let Limits {
+                    memory_bytes,
+                    cpu_millis,
+                    pids,
+                } = if spec.worker.is_some() {
+                    super::worker::LIMITS
+                } else {
+                    spec.limits
+                };
+                let image = spec.image.as_deref().unwrap_or(&self.default_image);
+                let label = format!("org.calternal.thread={}", spec.thread_id);
+                let home_mount = format!("{}:/home/agent", home.display());
+                let mount = format!("{}:/work", work.display());
+                let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
+                let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
+                let mut args: Vec<String> = [
+                    "run",
+                    "-d",
+                    "--name",
+                    &name,
+                    "--label",
+                    &label,
+                    "--init",
+                    "--memory",
+                    &memory,
+                    "--pids-limit",
+                    &pids,
+                    "--volume",
+                    &mount,
+                    "--volume",
+                    &home_mount,
+                    "--workdir",
+                    "/work",
+                    "--env",
+                    "HOME=/home/agent",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+                if spec.worker.is_some() {
+                    // A worker sees only code. In particular it never inherits the
+                    // account home, writable work tree, CLI or Nix store mounts.
+                    let seccomp = super::worker::seccomp(&dir).await?;
+                    args = [
+                        "run",
+                        "-d",
+                        "--pull=never",
+                        "--name",
                         &name,
-                    ],
-                )
-                .await;
-                match state.as_deref() {
-                    Ok("running") => {}
-                    Ok("paused") => {
-                        podman(&self.podman, &["unpause", &name]).await?;
-                    }
-                    Ok(_) => {
-                        podman(&self.podman, &["start", &name]).await?;
-                    }
-                    Err(_) => {
-                        let Limits {
-                            memory_bytes,
-                            cpu_millis,
-                            pids,
-                        } = if spec.worker.is_some() {
-                            super::worker::LIMITS
-                        } else {
-                            spec.limits
-                        };
-                        let image = spec.image.as_deref().unwrap_or(&self.default_image);
-                        let label = format!("org.calternal.thread={}", spec.thread_id);
-                        let home_mount = format!("{}:/home/agent", home.display());
-                        let mount = format!("{}:/work", work.display());
-                        let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
-                        let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
-                        let mut args: Vec<String> = [
-                            "run",
-                            "-d",
-                            "--name",
-                            &name,
-                            "--label",
-                            &label,
-                            "--init",
-                            "--memory",
-                            &memory,
-                            "--pids-limit",
-                            &pids,
-                            "--volume",
-                            &mount,
-                            "--volume",
-                            &home_mount,
-                            "--workdir",
-                            "/work",
-                            "--env",
-                            "HOME=/home/agent",
-                        ]
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect();
-                        if spec.worker.is_some() {
-                            // A worker sees only code. In particular it never inherits the
-                            // account home, writable work tree, CLI or Nix store mounts.
-                            let seccomp = super::worker::seccomp(&dir).await?;
-                            let worker_label =
-                                format!("org.calternal.worker-root={}", self.root.display());
-                            args = [
-                                "run",
-                                "-d",
-                                "--pull=never",
-                                "--label",
-                                &worker_label,
-                                "--name",
-                                &name,
-                                "--label",
-                                &label,
-                                "--init",
-                                "--network=none",
-                                "--read-only",
-                                "--read-only-tmpfs=false",
-                                "--cap-drop=all",
-                                "--security-opt=no-new-privileges",
-                                &format!("--security-opt=seccomp={}", seccomp.display()),
-                                "--log-driver=none",
-                                "--memory",
-                                &memory,
-                                "--memory-swap",
-                                &memory,
-                                "--pids-limit",
-                                &pids,
-                                "--volume",
-                                &format!(
-                                    "{}:/plugin:ro",
-                                    spec.code_directory.as_ref().unwrap_or(&work).display()
-                                ),
-                                "--workdir",
-                                "/plugin",
-                            ]
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect();
-                        }
-                        // Linux hosts supply the matching operation CLI read-only. Other
-                        // host platforms must put a Linux CLI in the container image.
-                        // Nix builds retain immutable store references for their libraries.
-                        #[cfg(target_os = "linux")]
-                        if spec.worker.is_none()
-                            && let Some(exe) = super::cli_program().await
-                        {
-                            args.extend([
-                                "--volume".into(),
-                                format!("{}:/usr/local/bin/calternal:ro", exe.display()),
-                            ]);
-                            if tokio::fs::try_exists("/nix/store").await.unwrap_or(false) {
-                                args.extend(["--volume".into(), "/nix/store:/nix/store:ro".into()]);
-                            }
-                        }
-                        if let Some(m) = cpu_millis {
-                            args.push("--cpus".into());
-                            args.push(format!("{}.{:03}", m / 1000, m % 1000));
-                        }
-                        args.extend([image.to_owned(), "sleep".into(), "2147483647".into()]);
-                        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-                        podman(&self.podman, &refs).await?;
+                        "--label",
+                        &label,
+                        "--init",
+                        "--network=none",
+                        "--read-only",
+                        "--read-only-tmpfs=false",
+                        "--cap-drop=all",
+                        "--security-opt=no-new-privileges",
+                        &format!("--security-opt=seccomp={}", seccomp.display()),
+                        "--log-driver=none",
+                        "--memory",
+                        &memory,
+                        "--memory-swap",
+                        &memory,
+                        "--pids-limit",
+                        &pids,
+                        "--volume",
+                        &format!(
+                            "{}:/plugin:ro",
+                            spec.code_directory.as_ref().unwrap_or(&work).display()
+                        ),
+                        "--workdir",
+                        "/plugin",
+                    ]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect();
+                }
+                // Linux hosts supply the matching operation CLI read-only. Other
+                // host platforms must put a Linux CLI in the container image.
+                // Nix builds retain immutable store references for their libraries.
+                #[cfg(target_os = "linux")]
+                if spec.worker.is_none()
+                    && let Some(exe) = super::cli_program().await
+                {
+                    args.extend([
+                        "--volume".into(),
+                        format!("{}:/usr/local/bin/calternal:ro", exe.display()),
+                    ]);
+                    if tokio::fs::try_exists("/nix/store").await.unwrap_or(false) {
+                        args.extend(["--volume".into(), "/nix/store:/nix/store:ro".into()]);
                     }
                 }
+                if let Some(m) = cpu_millis {
+                    args.push("--cpus".into());
+                    args.push(format!("{}.{:03}", m / 1000, m % 1000));
+                }
+                // A failed create may leave a stopped container. A private cidfile
+                // identifies only this attempt, even if the requested name is busy.
+                let cidfile = dir.join(format!("create-{}.cid", Uuid::new_v4()));
+                args.extend([
+                    "--cidfile".into(),
+                    cidfile.display().to_string(),
+                    "--label".into(),
+                    ownership::root_label(&root),
+                    image.to_owned(),
+                    "sleep".into(),
+                    "2147483647".into(),
+                ]);
+                let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                let created = podman(&self.podman, &refs).await;
+                if created.is_err()
+                    && let Ok(id) = tokio::fs::read_to_string(&cidfile).await
+                {
+                    ownership::remove(&self.podman, &[id.trim()]).await?;
+                }
+                let _ = tokio::fs::remove_file(&cidfile).await;
+                let container = created?;
                 Ok(Arc::new(PodmanSandbox {
                     podman: self.podman.clone(),
-                    name,
+                    container,
                     dir,
                     clients: Mutex::new(HashSet::new()),
                     worker: spec.worker.is_some(),
@@ -298,10 +296,8 @@ impl Backend for PodmanBackend {
             }
             .await;
             if result.is_err() && spec.worker.is_some() {
-                let name = Self::container_name(spec.account_id, spec.thread_id);
-                let _ = podman(&self.podman, &["rm", "-f", "--ignore", &name]).await;
                 let _ = tokio::fs::remove_dir_all(
-                    self.root.join("workers").join(spec.thread_id.to_string()),
+                    root.join("workers").join(spec.thread_id.to_string()),
                 )
                 .await;
             }
@@ -313,7 +309,7 @@ impl Backend for PodmanBackend {
 /// One thread's container.
 pub struct PodmanSandbox {
     podman: PathBuf,
-    name: String,
+    container: String,
     dir: PathBuf,
     /// Process groups of local `podman exec` clients, killed on release.
     clients: Mutex<HashSet<i32>>,
@@ -339,7 +335,7 @@ impl Sandbox for PodmanSandbox {
                 // Values, especially thread credentials, never enter host argv.
                 cmd.arg("--env").arg(k).env(k, v);
             }
-            cmd.arg(&self.name);
+            cmd.arg(&self.container);
             if self.worker {
                 // Only this fixed, non-secret locale enters argv. Dynamic values
                 // remain in the exec client's environment via name-only --env.
@@ -360,12 +356,16 @@ impl Sandbox for PodmanSandbox {
     }
 
     fn freeze(&self) -> BoxFuture<'_, SandboxResult<()>> {
-        Box::pin(async move { podman(&self.podman, &["pause", &self.name]).await.map(drop) })
+        Box::pin(async move {
+            podman(&self.podman, &["pause", &self.container])
+                .await
+                .map(drop)
+        })
     }
 
     fn resume(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
-            podman(&self.podman, &["unpause", &self.name])
+            podman(&self.podman, &["unpause", &self.container])
                 .await
                 .map(drop)
         })
@@ -373,7 +373,7 @@ impl Sandbox for PodmanSandbox {
 
     fn stop(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
-            podman(&self.podman, &["rm", "-f", "-t", "0", &self.name]).await?;
+            self.release().await?;
             match tokio::fs::remove_dir_all(&self.dir).await {
                 Ok(()) => Ok(()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -389,9 +389,7 @@ impl Sandbox for PodmanSandbox {
 
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
-            // Stop the container's processes while retaining its layer and mounts.
-            // Killing only the local podman exec client can leave the CLI running.
-            podman(&self.podman, &["stop", "--time", "0", &self.name]).await?;
+            ownership::remove(&self.podman, &[&self.container]).await?;
             for &g in self.clients.lock().expect("clients").iter() {
                 if let Some(pid) = Pid::from_raw(g) {
                     let _ = kill_process_group(pid, Signal::KILL);
@@ -419,7 +417,7 @@ mod argv_tests {
             .unwrap();
         let sandbox = PodmanSandbox {
             podman: engine,
-            name: "fixture".into(),
+            container: "fixture".into(),
             dir: dir.path().join("work"),
             clients: Mutex::new(HashSet::new()),
             worker: false,

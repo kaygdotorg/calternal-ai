@@ -6,11 +6,10 @@ use calternal_types::{AccountId, SpaceId};
 use serde_json::json;
 use std::sync::Arc;
 
-const KIND: &str = "threads.turn_state_changed";
+/// Journal kind shared by publication and caller-scoped delivery.
+pub(crate) const KIND: &str = "threads.turn_state_changed";
 
-/// Observe every durable saved job transition, including recovery and retry.
-/// Events become eligible for publication only once the jobs transaction commits.
-pub(crate) const SCHEMA: &str = "
+const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS saved_turn_events (
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT NOT NULL,
@@ -18,6 +17,7 @@ CREATE TABLE IF NOT EXISTS saved_turn_events (
   job TEXT NOT NULL,
   account TEXT NOT NULL,
   state TEXT NOT NULL,
+  reason_checkpoint TEXT NOT NULL,
   created_at INTEGER NOT NULL
 ) STRICT;
 CREATE INDEX IF NOT EXISTS saved_turn_events_age ON saved_turn_events(created_at);
@@ -25,18 +25,27 @@ CREATE TRIGGER IF NOT EXISTS saved_turn_admitted AFTER INSERT ON jobs
 WHEN NEW.operation = 'agent.turn' AND json_type(NEW.input, '$.thread_request') = 'object'
 BEGIN
   DELETE FROM saved_turn_events WHERE created_at < unixepoch() - 604800;
-  INSERT INTO saved_turn_events(event_id,thread,job,account,state,created_at)
-  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,NEW.state,unixepoch());
+  INSERT INTO saved_turn_events(event_id,thread,job,account,state,reason_checkpoint,created_at)
+  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,CASE NEW.state WHEN 'placing' THEN 'admitted' ELSE NEW.state END,__REASON__,unixepoch());
 END;
-CREATE TRIGGER IF NOT EXISTS saved_turn_transition AFTER UPDATE OF state ON jobs
-WHEN NEW.state != OLD.state AND NEW.operation = 'agent.turn'
+CREATE TRIGGER IF NOT EXISTS saved_turn_transition AFTER UPDATE OF state,checkpoint ON jobs
+WHEN ((NEW.state != OLD.state AND NEW.state != 'placing')
+  OR (NEW.state='placing' AND json_extract(NEW.checkpoint,'$.placement') IS NOT json_extract(OLD.checkpoint,'$.placement')))
+ AND NEW.operation = 'agent.turn'
  AND json_type(NEW.input, '$.thread_request') = 'object'
 BEGIN
   DELETE FROM saved_turn_events WHERE created_at < unixepoch() - 604800;
-  INSERT INTO saved_turn_events(event_id,thread,job,account,state,created_at)
-  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,NEW.state,unixepoch());
+  INSERT INTO saved_turn_events(event_id,thread,job,account,state,reason_checkpoint,created_at)
+  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,CASE NEW.state WHEN 'placing' THEN 'admitted' ELSE NEW.state END,__REASON__,unixepoch());
 END;
 ";
+
+/// Build the saved-turn outbox schema once. Triggers capture only the fields
+/// needed by the journal and roll back together with the originating change.
+pub(crate) fn schema() -> &'static str {
+    static SQL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SQL.get_or_init(|| SCHEMA.replace("__REASON__", &crate::turns::reason::sql("NEW.")))
+}
 
 /// Publishes through the existing content service. The jobs connection
 /// coalesces concurrent wakes without taking an installation-wide lock.
@@ -104,19 +113,23 @@ struct Event {
     job: String,
     account: AccountId,
     state: String,
+    checkpoint: String,
 }
 
 impl Event {
     async fn publish(self, journal: &SpaceStore) -> Result<(), String> {
         let key = format!("threads/state/{}", self.event_id);
-        let state = super::turn_status::label(crate::plugins::job_sql::parse_state(&self.state));
+        let job_state = crate::plugins::job_sql::parse_state(&self.state);
+        let checkpoint = serde_json::from_str(&self.checkpoint).map_err(|e| e.to_string())?;
+        let reason = crate::turns::reason::describe(Some(job_state), &checkpoint, true);
+        let state = super::turn_status::label(job_state);
         let result = journal
             .commit(Commit {
                 events: vec![StampedEvent {
                     author: self.account,
                     kind: KIND.into(),
                     item: self.thread,
-                    data: json!({"job_id":self.job,"state":state,"job_state":self.state}),
+                    data: json!({"job_id":self.job,"state":state,"job_state":self.state,"turn_reason":reason}),
                     installation: None,
                     request_id: None,
                 }],
@@ -141,7 +154,7 @@ impl Event {
 fn read_page(conn: &JobDatabase) -> Result<Vec<Event>, rusqlite::Error> {
     let conn = conn.lock().unwrap_or_else(|e| e.into_inner());
     let mut stmt = conn.prepare_cached(
-        "SELECT seq,event_id,thread,job,account,state FROM saved_turn_events ORDER BY seq LIMIT 64",
+        "SELECT seq,event_id,thread,job,account,state,reason_checkpoint FROM saved_turn_events ORDER BY seq LIMIT 64",
     )?;
     stmt.query_map([], |row| {
         let account = row.get::<_, String>(4)?.parse().map_err(|e| {
@@ -154,6 +167,7 @@ fn read_page(conn: &JobDatabase) -> Result<Vec<Event>, rusqlite::Error> {
             job: row.get(3)?,
             account,
             state: row.get(5)?,
+            checkpoint: row.get(6)?,
         })
     })?
     .collect()

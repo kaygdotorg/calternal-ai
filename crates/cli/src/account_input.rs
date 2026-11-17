@@ -150,7 +150,7 @@ impl Pending {
         })
     }
 }
-/// Execute one private input command with the shared client gate and output.
+/// Execute one directory or private input command with the shared client gate and output.
 /// Cost: one bounded credential read and up to three retry-safe HTTP attempts.
 /// Call outside a runtime: CLI file reads finish before starting worker threads.
 pub fn run(
@@ -183,7 +183,13 @@ pub fn run(
     let data: Value = rt
         .block_on(client.execute_cancellable(pending.request(), &CancellationToken::new()))
         .map_err(error)?;
-    Ok(render(out, operation, &pending.request().request_id, data))
+    let id = &pending.request().request_id;
+    Ok(if operation.starts_with("requests.") {
+        crate::requests::reply(data, id)
+    } else {
+        crate::people::render(out, operation, id, &data)
+            .unwrap_or_else(|| render(out, operation, id, data))
+    })
 }
 fn error(e: calternal_client::ClientError) -> CliError {
     let api = e.api_error();

@@ -1,7 +1,8 @@
 //! Identifier routing and idempotent outbox publication after a content commit.
-use crate::{Content, Result, db::Space, journal::lock, types::internal};
+use crate::{Content, Result, db::Space, instructions, journal::lock, types::internal};
 use calternal_types::SpaceId;
 use rusqlite::{Connection, OptionalExtension, params};
+use serde_json::Value;
 use uuid::Uuid;
 impl Content {
     /// Records the global route of item `id`, once. An existing route (every update)
@@ -33,26 +34,50 @@ impl Content {
         }
         Ok(())
     }
-    /// Publish durable outbox intents in order, retaining failed work for retry.
-    /// Per entry: indexed intent/kind/route/receipt reads, one FULL journal commit
-    /// when new, and one FULL retirement; no content-body reread or file placement.
+    /// Publish ordered intents, finishing linked placements and purge intents
+    /// first. Cost: indexed intent/kind/route/receipt reads and one FULL journal
+    /// commit plus FULL retirement per new event; failures retain replayable work.
     pub(crate) fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
-            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
-            let Some((account, request, op, fp, id, revision, result)) = row else {
+            let row=space.conn.query_row(
+                "SELECT o.account,o.request,o.operation,o.fingerprint,o.item,o.revision,o.result,i.kind,i.mat_state,
+                    EXISTS(SELECT 1 FROM outbox_placement p WHERE p.account=o.account AND p.request=o.request)
+                 FROM outbox o LEFT JOIN items i ON i.id=o.item ORDER BY o.rowid LIMIT 1",
+                [], |r| Ok((
+                    r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,
+                    r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,
+                    r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?,r.get::<_,Option<String>>(8)?,r.get::<_,bool>(9)?,
+                )),
+            ).optional().map_err(internal)?;
+            let Some((account, request, op, fp, id, revision, result, kind, state, place_related)) =
+                row
+            else {
                 return Ok(());
             };
-            // Item writes route their item first; control changes have no item.
-            let item = match id {
-                Some(id) => {
-                    let kind: String = space
-                        .conn
-                        .query_row("SELECT kind FROM items WHERE id=?1", [&id], |r| r.get(0))
-                        .map_err(internal)?;
-                    self.route(space.id, &id, &kind)?;
-                    Some(Uuid::parse_str(&id).map_err(internal)?)
+            if place_related {
+                space.place_related(&account, &request, self.fault)?;
+            }
+            let item = if let Some(id) = id {
+                if state.as_deref() == Some("purging")
+                    && !space.finish_purge(&id, &account, &request, self.fault)?
+                {
+                    continue;
                 }
-                None => None,
+                self.route(
+                    space.id,
+                    &id,
+                    &kind.ok_or_else(|| internal("outbox item missing"))?,
+                )?;
+                Some(Uuid::parse_str(&id).map_err(internal)?)
+            } else {
+                None
+            };
+            let payload = serde_json::from_str(&result).map_err(internal)?;
+            let payload = if revision == instructions::INTENT {
+                self.place_instructions(space.id, &payload)?;
+                Value::Null
+            } else {
+                payload
             };
             self.journals.publish(
                 &space.journal,
@@ -62,10 +87,8 @@ impl Content {
                 &fp,
                 item,
                 &revision,
-                serde_json::from_str(&result).map_err(internal)?,
+                payload,
             )?;
-            // Retire durably: otherwise a power loss could resurrect an intent
-            // after its journal receipt has expired, extending request-ID reuse.
             space
                 .conn
                 .execute(

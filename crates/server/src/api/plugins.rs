@@ -159,7 +159,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
         .await;
     // Delivery checks run whatever the worker answered, so a refusal caused by a
     // revocation reports the same error the revocation itself would.
-    if !session.is_live(&state.directory).await {
+    if !session.is_live_in(&state).await {
         return Err(Error::unauthorized("missing or invalid session"));
     }
     let plugin2 = plugin.clone();

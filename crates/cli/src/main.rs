@@ -64,6 +64,10 @@ enum Command {
         #[command(subcommand)]
         command: calternal_cli::account_input::Pending,
     },
+    Requests {
+        #[command(subcommand)]
+        command: calternal_cli::requests::Command,
+    },
     #[command(
         about = "Follow a space and print changes as they arrive",
         after_help = "Examples:\n  cl watch <space-id>\n  cl watch <space-id> --json\n\nSee also: cl describe --help."
@@ -177,6 +181,9 @@ enum NotesCommand {
     List {
         #[command(flatten)]
         scope: Space,
+        /// Exact tag without a leading hash, including descendant tags.
+        #[arg(long)]
+        tag: Option<String>,
     },
     #[command(
         about = "Show one note and its current revision",
@@ -334,6 +341,12 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
                 .map_err(|_| "cannot read pending input; use --help")?;
             (op.into(), input)
         }
+        Command::Requests { command } => {
+            let (op, input) = command
+                .operation()
+                .map_err(|_| "--answer must be a JSON object")?;
+            (op.into(), input)
+        }
         Command::Watch { .. } => return Err("watch is a stream".into()),
         Command::Describe => return Err("describe is not an operation".into()),
         Command::Invoke { operation, input } => {
@@ -342,7 +355,13 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
             (operation, input)
         }
         Command::Notes { command } => match command {
-            NotesCommand::List { scope } => ("notes.list".into(), json!({"space_id":scope.space})),
+            NotesCommand::List { scope, tag } => {
+                let mut input = json!({"space_id":scope.space});
+                if let Some(tag) = tag {
+                    input["tag"] = json!(tag);
+                }
+                ("notes.list".into(), input)
+            }
             NotesCommand::Get { id, scope } => {
                 ("notes.get".into(), json!({"space_id":scope.space,"id":id}))
             }

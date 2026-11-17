@@ -17,6 +17,10 @@ use calternal_types::{Capability, CapabilitySet, Error, SpaceId};
 pub enum Scope {
     /// Account-scoped operation; the stored handler verifies account existence.
     Account,
+    /// Server-scoped capabilities, rechecked in the authorized directory transaction.
+    Server,
+    /// The protected handler authorizes by a current bearer invitation.
+    Invitation,
     /// The input's `space_id` is the complete access boundary.
     Space,
     /// The global item resolver derives the owning space before policy admission.
@@ -81,44 +85,14 @@ pub const POLICIES: &[Policy] = &[
         constraint: Constraint::None,
     },
     Policy {
-        operation: Cow::Borrowed("spaces.members"),
-        required: Capability::SpaceRead,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
-        operation: Cow::Borrowed("spaces.set_role"),
-        required: Capability::MembersManage,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
-        operation: Cow::Borrowed("spaces.remove_member"),
-        required: Capability::MembersManage,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
         operation: Cow::Borrowed("spaces.leave"),
         required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: Cow::Borrowed("spaces.transfer"),
-        required: Capability::SpaceTransfer,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
         operation: Cow::Borrowed("spaces.delete"),
         required: Capability::SpaceDelete,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
-        operation: Cow::Borrowed("notes.list"),
-        required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
@@ -217,13 +191,58 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
                 scope: Scope::Account,
                 constraint: Constraint::None,
             })
+            .chain(calternal_core::REQUEST_OPERATIONS.iter().map(|row| Policy {
+                operation: Cow::Borrowed(row.id),
+                required: row.required,
+                scope: match row.target {
+                    calternal_core::RequestTarget::Space => Scope::Space,
+                    _ => Scope::Account,
+                },
+                constraint: Constraint::None,
+            }))
+            .collect()
+    });
+    static NOTES: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    let notes = NOTES.get_or_init(|| {
+        calternal_core::NOTE_OPERATIONS
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id),
+                required: op.capability,
+                scope: if op.item { Scope::Item } else { Scope::Space },
+                constraint: Constraint::None,
+            })
             .collect()
     });
     POLICIES
         .iter()
+        .chain(notes)
         .chain(account)
         .chain(agent_policies())
+        .chain(people_policies())
         .find(|p| p.operation == operation)
+}
+
+/// Host policies derived from the people operation declarations, initialized once.
+pub fn people_policies() -> &'static [Policy] {
+    use calternal_core::{PeopleOperation, PeopleTarget};
+    static POLICIES: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    POLICIES.get_or_init(|| {
+        PeopleOperation::ALL
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id()),
+                required: op.capability(),
+                scope: match op.target() {
+                    PeopleTarget::Account => Scope::Account,
+                    PeopleTarget::Server => Scope::Server,
+                    PeopleTarget::Space => Scope::Space,
+                    PeopleTarget::Invitation => Scope::Invitation,
+                },
+                constraint: Constraint::None,
+            })
+            .collect()
+    })
 }
 
 impl Policy {
@@ -237,7 +256,10 @@ impl Policy {
         principal: &Identity,
         input: &JsonObject,
     ) -> Result<(), Error> {
-        if self.scope == Scope::Account {
+        if matches!(
+            self.scope,
+            Scope::Account | Scope::Server | Scope::Invitation
+        ) {
             return Ok(());
         }
         let space = input
@@ -308,7 +330,10 @@ pub fn agent_policies() -> &'static [Policy] {
                 } else {
                     Capability::PluginsUse
                 },
-                scope: if matches!(*id, "agent.run" | "agent.check") {
+                scope: if matches!(
+                    *id,
+                    "agent.run" | "agent.check" | calternal_core::AGENT_READINESS
+                ) {
                     Scope::Space
                 } else {
                     Scope::Account

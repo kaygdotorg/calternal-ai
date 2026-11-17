@@ -18,7 +18,7 @@ CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;
 CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;
-PRAGMA user_version=1;COMMIT;";
+COMMIT;";
 
 pub(super) fn db_err(e: rusqlite::Error) -> Error {
     tracing::error!(error = %e, "jobs sqlite error");
@@ -42,7 +42,7 @@ pub(super) fn state_name(state: JobState) -> &'static str {
 /// Decode the existing job storage state for trusted host readers in constant time.
 pub(crate) fn parse_state(name: &str) -> JobState {
     match name {
-        "admitted" => JobState::Admitted,
+        "admitted" | "placing" => JobState::Admitted,
         "running" => JobState::Running,
         "retry_waiting" => JobState::RetryWaiting,
         "interrupted" => JobState::Interrupted,
@@ -54,7 +54,8 @@ pub(crate) fn parse_state(name: &str) -> JobState {
     }
 }
 
-pub(super) const ACTIVE: &str = "('admitted','running','waiting','interrupted','retry_waiting')";
+pub(super) const ACTIVE: &str =
+    "('admitted','placing','running','waiting','interrupted','retry_waiting')";
 
 pub(crate) use calternal_types::now_ms;
 
@@ -210,7 +211,12 @@ impl Jobs {
                 let mut wake = vec![];
                 for Active { id, state, plugin, operation, runs, parent } in rows {
                     if operation == "agent.turn" {
-                        if state!="retry_waiting" {set_state(tx, &id, JobState::Interrupted, "null")?;}
+                        if !matches!(state.as_str(), "retry_waiting" | "waiting") {
+                            tx.execute(
+                                "UPDATE jobs SET state='interrupted',checkpoint=json_set(coalesce(nullif(checkpoint,'null'),'{}'),'$.interruption',json_object('why','server_restarted')) WHERE id=?1",
+                                [&id],
+                            ).map_err(db_err)?;
+                        }
                         continue;
                     }
                     match state.as_str() {

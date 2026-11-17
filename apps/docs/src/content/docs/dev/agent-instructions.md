@@ -57,6 +57,9 @@ permission mode, chosen in the composer:
   access always asks. Nothing inside the sandbox needs review. A reviewing model may be
   added later for the cannot-undo class only, able to allow or pass to the person.
 - Approvals appear in the request bar on a trusted form the agent cannot answer.
+  The preview offers once and this-thread lifetimes. Irreversible actions and
+  changes that widen access accept only once. An external this-thread approval
+  covers one exact action scope.
 - A mode requested with `agent.run` or `threads.send` applies directly to that
   turn, wider or narrower, and is saved as the thread mode (owner decision,
   2026-11-18). Choosing it on a send requires no additional passkey check.
@@ -74,9 +77,8 @@ kind placements and item writers, including Editor-level plugin operations.
 The previous filename is not an alias. Reads remain bounded and descriptor-relative;
 symlinks fail closed. Instructions provide context and never grant authority.
 
-The preview reads an operator-provisioned file. A Manager-only write operation
-still needs its public contract; the generic content API cannot be used as a
-workaround. See the instruction-writer question in morning-decisions.md.
+Managers and Owners can read or replace it through the journaled
+`space.instructions` operation. See person requests.
 
 ## Testing
 

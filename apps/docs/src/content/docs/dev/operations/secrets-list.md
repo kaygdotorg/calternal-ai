@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "read",
   "id": "secrets.list",
   "description": "List personal secret metadata and requests; space metadata requires secrets.manage",
   "mutates": false

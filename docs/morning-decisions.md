@@ -60,18 +60,23 @@ only for the same account/provider (small context cost, session identity lifecyc
 or hand off explicit conversation context (portable across accounts/providers,
 requires a bounded context/summary policy). Current sends admit fresh jobs.
 
-## Standing instruction writer (owner decision 2026-11-18)
+## Standing instructions and requests (owner direction 2026-11-18)
 
-`AI/AGENTS.md` is reserved and may only be written by Managers/Owner. There is no
-existing Manager-only file-write operation to reuse. Options: a narrow standing-
-instructions operation under `space.settings` (small surface, needs a durable
-file/receipt intent), or a general Manager-owned space-file operation (reusable,
-larger path-policy and recovery proof). No operation name or new write port is
-invented in this lane; generic kind writers are denied the reserved path.
+The requests lane implements the narrow `space.instructions` operation under
+`space.settings`. It writes the reserved Markdown with a durable placement
+intent and space journal receipt. A general protected-file writer is outside
+this direction.
 
-Approval lifetimes are handed to a separate lane: once-only grants need atomic
-consumption with request receipt replay, and thread grants need protected storage
-that survives jobs and is erased by thread deletion. Always-in-space remains later.
+- Credential rotation after consuming a once approval. A same-machine provider
+  restart can reuse the existing credential bootstrap but interrupts the calling
+  tool and needs a receipt-only replay path for the old invocation. A protected
+  local credential socket or file avoids the restart and changes how each
+  provider and CLI receives its credential.
+- Feed recovery across request and bookmark commits. A bounded outbox in each
+  source store preserves precise invalidations across a crash and adds recovery
+  coordination. An account snapshot on reconnect keeps the inbox authoritative
+  with fewer writes and can delay invalidation on an already open connection.
+
 ## Plugin worker placement and network contract (issue #29, 2026-11-17)
 
 - Decide how shared-space workers receive trusted placement and capacity: an
@@ -86,3 +91,36 @@ that survives jobs and is erased by thread deletion. Always-in-space remains lat
 
 [Worker execution](plugin-workers.md#placement-and-unresolved-contracts) lists the
 options, implementation costs and the placement revocation problem.
+
+## People and access follow-ups (issue #37)
+
+- **Server roles held by groups.** Keep the current server-role assignment with
+  the installation operator, which limits online escalation but needs local
+  provisioning, or add a protected role-grant operation with its own safeguards
+  for the last administrator.
+- **Local group managers.** Server group administrators can manage local
+  memberships in the preview. Expose the source ADR's delegated group-manager
+  workflow with its visible-people constraint, or keep group membership changes
+  operator-scoped if attaching a group to a space should keep that tighter
+  boundary.
+- **Disabled owners.** Disabling preserves the sole Owner record and makes its
+  grant inactive. Require transfer of shared spaces first, which can block
+  emergency disable, or add a separate recovery action with explicit policy for
+  shared and personal spaces.
+- **Invitation lifecycle.** Space invites support the requested role and expiry.
+  Extending expiry in place keeps the issued link alive, while revoking and
+  replacing issues a new credential. Server-plan invitations carrying group and
+  quota grants need an explicit server-scoped enrollment policy.
+- **Visible people picker.** A visibility-filtered picker can help non-admins
+  grant access to people whose accounts they can see. Inviting by link keeps
+  the directory smaller and requires no lookup by name.
+
+## Turn readiness (issue #39)
+
+- Pool refresh scope. A single anonymous pool probe has bounded setup cost. A
+  sweep across authorized pool machines gives direct coverage of every option
+  and needs a concurrency limit and a partial-result contract.
+- Visibility of provider changes made on the machine. A machine-local periodic
+  check would report them promptly and consume provider processes while idle.
+  Refresh on demand and checks during turns keep idle cost at zero, with changes
+  becoming visible at the next observation.

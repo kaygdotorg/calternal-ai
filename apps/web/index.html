@@ -8,18 +8,8 @@
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f7f7" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1f1f1f" />
     <title>Calternal</title>
-    <!-- Find the scheme before first paint and preload only its font family (no flash, no fallback face). The app paints after the same family loads. -->
-    <script>
-      (function () {
-        var d = document.documentElement, s = "light";
-        try { var v = localStorage.getItem("cal.scheme"); s = v === "dark" || v === "light" ? v : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (e) {}
-        d.dataset.scheme = s;
-        function pre(f) { var l = document.createElement("link"); l.rel = "preload"; l.as = "font"; l.type = "font/woff2"; l.crossOrigin = "anonymous"; l.href = "%BASE_URL%fonts/" + f; document.head.appendChild(l); }
-        pre("google-sans-flex-latin-" + (s === "dark" ? "opsz-grad" : "opsz") + "-normal.woff2");
-        pre("google-sans-flex-latin-rond-normal.woff2");
-        pre("maple-mono-latin-400-normal.woff2");
-      })();
-    </script>
+    <!-- The scheme and the font preload run from a same-origin classic script (public/boot.js): the server allows no inline script. -->
+    <script src="%BASE_URL%boot.js"></script>
     <style>html:not([data-ready]) body { visibility: hidden; } html { background: #efe6dc; } html[data-scheme="dark"] { background: #25222a; }</style>
   </head>
   <body>

@@ -4,7 +4,9 @@
 mod jobs;
 pub use jobs::*;
 mod models;
+mod note_operations;
 mod notes;
+pub use note_operations::*;
 pub use notes::*;
 mod plugin_wire;
 pub use plugin_wire::*;
@@ -25,9 +27,17 @@ pub use provider::*;
 
 mod agent;
 pub use agent::*;
+mod readiness;
+pub use readiness::*;
 
 mod live;
 pub use live::*;
 
 mod account_input;
 pub use account_input::*;
+
+mod people;
+pub use people::*;
+
+mod requests;
+pub use requests::*;

@@ -55,22 +55,24 @@
     {#if !folded}
       <div class="body">
         {#if cur.kind === "question"}
+          <p>The agent is waiting for your answer. It continues as soon as you send it.</p>
           {#if GenUi}<GenUi source={cur.form} bind:values={formState} />{/if}
           <div class="foot"><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></div>
         {:else if cur.kind === "approval"}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. An agent can’t answer this for you.</div>
           <h2>{cur.title}</h2>
-          <p>{cur.action}</p>
+          <p>{cur.action}. Nothing runs until you decide; “for this thread” keeps allowing the same action here until the thread is deleted.</p>
           <pre aria-label="The command"><code>{cur.command}</code></pre>
+          {#if !cur.lifetimes.includes("thread")}<p class="once">This can only be allowed once: it cannot be undone or it widens what the agent can reach, so you are asked each time.</p>{/if}
           <div class="foot">
             <Button variant="quiet" text="Deny" onclick={() => answer({ kind: "approval", decision: "deny" })} />
-            <Button text="Allow for this thread" onclick={() => answer({ kind: "approval", decision: "thread" })} />
+            {#if cur.lifetimes.includes("thread")}<Button text="Allow for this thread" onclick={() => answer({ kind: "approval", decision: "thread" })} />{/if}
             <Button variant="primary" text="Allow once" onclick={() => answer({ kind: "approval", decision: "once" })} />
           </div>
         {:else}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. The agent gets a handle, never the value.</div>
           <h2>{cur.label}</h2>
-          <p id="why">{cur.why}</p>
+          <p id="why">{cur.why} Paste the value below; it goes straight to Calternal’s secret store.</p>
           <div class="meta"><Badge text={cur.scope === "personal" ? "Personal" : "Shared with the space"} tone="info" /><Badge text={cur.required ? "Required" : "Optional"} /><code>{cur.name}</code></div>
           {#if expired}
             <p class="exp">This request expired after 15 minutes.</p>
@@ -105,6 +107,7 @@
   form input { flex: 1 1 12rem; min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-size: var(--text-ui); }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
   .meta code { font-size: var(--text-label); color: var(--ink-3); }
+  .once { font-size: var(--text-label); color: var(--ink-3); }
   .clock { font-size: var(--text-label); color: var(--ink-3); }
   .exp { color: var(--danger); }
 </style>

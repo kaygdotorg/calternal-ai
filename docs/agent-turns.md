@@ -37,27 +37,31 @@ file write per delta. Checkpoints store session identity, lease, last sequence a
 a bounded 16 KiB text tail after session discovery, every tool finish, at turn end
 and at least every three seconds of emitted output. Each such checkpoint is one
 FULL transaction. Live buffers hold at most 256 chunks / 1 MiB per job. Completed
-completed buffers last 30 seconds, with at most 64 retained completed streams.
+buffers last 30 seconds, with at most 64 retained completed streams.
 Durable final jobs last seven days (at most 1024 final jobs per space); at most
 64 active jobs fit in a space. Agent authority is capped at 1024 records per
-account, with 32 approvals per turn. The current mode remains until superseded or
-the account or space is deleted, so later turns cannot recover a broader initial
-mode. Starting another turn replaces the token/grants row and removes old approvals;
-`threads.delete` removes saved modes and credentials for every account using that thread.
+account. The inbox retains up to 32 request and grant rows per thread and 256
+per account. Starting another turn rotates the token, cancels superseded
+pending requests, and carries forward eligible grants. Archiving or deleting a
+thread removes its saved modes, credentials, and grants for every account.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
+An admitted run remains queued while it reserves a lease and waits for execution
+capacity. The first visible running state and its selected machine checkpoint
+commit together. A resumed run can expose the previous checkpoint while queued.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
 the lease and makes the turn interrupted; no machine automatically receives it.
 Only an explicit Resume starts interrupted work. Stop, completion and interruption
-end the token, stop processes and retain workspace files and the persistent account
-home. Container names and directories include the account UUID, preventing a
+end the token, remove the container, and retain the mounted workspace and persistent
+account home. Container names and directories include the account UUID, preventing a
 caller reusing a thread UUID from adopting another account's mounts. Persistent
 provider homes are intentionally retained until the machine owner removes them;
 the provider owns the files, and Calternal does not inspect or clean login files.
 
 Working areas follow the accepted orchestration retention rule: keep them until
-all changes are preserved or the person explicitly discards them. This lane keeps
-released workspaces and stopped containers until explicit deletion, with no timed
+all changes are preserved or the person explicitly discards them. The disposable
+container layer is removed on release. Persist work in the mounted `/work` directory
+and provider state in the mounted account home. Those directories have no timed
 expiry. A person runs `calternal agent ... discard <job-id>` after stopping the
 latest turn. The operation reports pending until every retained target machine
 confirms removal; the persistent account home remains. A failed result requires
@@ -75,6 +79,17 @@ per machine; completed rows are pruned after seven days or down to 1024 during
 cleanup activity. There are at most 64 target machines per request. Automatic
 cleanup after every change is preserved, and disk accounting against the person's
 plan, are named follow-ups. Neither is replaced by a timed workspace expiry.
+
+Each machine reserves at most `--max-sandboxes` slots across provider turns and
+plugin workers, including starts and unconfirmed removals. A provider turn
+removes its container when it ends. A lease with an idle provider container
+parks it on the first successful machine poll after one lease TTL without an
+exec (90 seconds by default). A later exec rebuilds the container over the same
+mounts on that machine. Plugin workers keep their existing 60-second idle limit.
+Machine shutdown and revocation close local containers. An unreachable server
+also triggers local removal after a lease TTL, when the machine detects the
+expiry. On startup the role removes orphan containers owned by its locked
+sandbox directory before accepting work. The sweep preserves provider files.
 
 Permission mode is independent of execution isolation. Cloud/pool machines always
 use a sandbox. An account-owned machine defaults to sandboxed execution; its owner
@@ -105,13 +120,12 @@ action hash. Approvals created by denials use that hash in every mode. Sensitive
 action approvals conservatively bind canonical operation input; an
 irreversible or widening action also binds its request ID. Reuse that ID after
 approval. An external scope covers identical canonical input. App grants name a
-prefix and read/write. Current grants still last this turn and use protected recovery. The owner's
-2026-11-18 decision is once-only (consumed on use) and this-thread (until thread
-deletion); a separate approval-lifetimes lane will add their protected storage
-and atomic consumption. Always-in-space is later work.
-An old token cannot approve, change mode, or reissue itself. Token changes revoke
-the old credential immediately and pause the turn; explicit Resume delivers its
-replacement to a fresh process. Tokens expire after ten minutes or turn end.
+prefix and read/write. An irreversible or widening action only allows once approval. This-thread
+approval is available for reads, reversible actions and an exact external
+scope. See [person requests](requests.md).
+A thread token cannot approve, change mode, or reissue itself. An in-flight mode
+change interrupts the job. Explicit Resume delivers a replacement to a fresh
+process. Tokens expire after ten minutes or turn end.
 Only hashes persist. Authority uses the existing account directory handle and
 worker; no new installation-wide lock, worker or connection is added. Issuance
 holds its space's jobs lock across the authority commit to fence stop/resume;
@@ -119,12 +133,24 @@ auth callbacks never acquire job or content locks. Worker callbacks recheck that
 and least-access content calls remain inside the granted kind scope.
 
 `access.request` creates a bounded pending approval. Denied sensitive operations
-also create an approval and return its ID in the error details. `agent.events`
-shows requests. The person signs in again with a passkey, then runs
-`calternal agent ... approve <job-id> <approval-id>`; development bearers and
-agent credentials cannot approve. There is no approval UI in this lane. The
-reviewer trait permits future advice only for irreversible actions; the shipped
-rules-only implementation asks the person. No model reviewer is selected.
+create an approval and return its ID. The recipient lists it through
+`calternal requests list` and approves with `calternal requests approve ID`
+and the chosen lifetime, using an installation session with a fresh passkey
+proof. The shipped reviewer uses rules and asks for irreversible actions.
+
+| Change | Credential behavior |
+| --- | --- |
+| Approve once or this thread | The requesting job must be waiting on that request. Its old token is revoked before it is readmitted. |
+| New turn | Issuance replaces any prior token for this account and thread. |
+| In-flight mode change | The job is interrupted and its old token revoked. Explicit Resume issues a replacement. |
+| Resume or wake after a decision | A fresh token binds the new run. |
+| Stop, finish, or interrupt | The old run cannot use its credential. Stop and finish close pending requests. |
+| Archive or delete thread | Thread authority and grants are erased. Pending requests are recorded as cancelled. |
+| Once consumption | The protected claim authorizes one execution. An identical retry may replay a saved response while otherwise authorized. The live token remains in place. |
+| Deny or answer | The parked job resumes with a fresh run credential. |
+| Leave, removal, or loss of space read access | The membership transaction erases the former member's saved authority and requests. Active native jobs are interrupted. |
+| Role change that retains space read access | The current token is checked against the new capabilities on each operation. |
+| Sign-out | Installation liveness checks refuse the old credential. |
 
 Core instructions live in `plugins/calternal-orchestrator/skills/core.md`. The
 provider appends core, the generated one-line operation index, then the space's
@@ -137,14 +163,15 @@ one-line seam until accounts have userdata.
 Automatic provider recovery is separate from machine interruption. Explicit
 transient/usage-limit errors with no pending tool effect receive five retries,
 after waits of 30, 60, 120, 240 and 480 seconds. If retry five fails, API billing
-checks availability every three hours. A subscription limit with a reported reset
-snoozes until that reset; no reset is guessed. Auth failures, refusals, invalid
+checks availability every three hours. After the short retries, a subscription limit with a reported reset
+snoozes until that reset. Auth failures, refusals, invalid
 configuration, adapter crashes, unknown outcomes, user stop and machine silence
 never enter this scheduler. Retried official sessions receive a continuation
 message, not a replay of the original task. A `retry_waiting` job has durable
 `checkpoint.retry` fields: retry count, reason, billing and next attempt in Unix
-milliseconds. It holds no provider process or execution permit; its same-machine
-lease remains fenced by the ordinary machine protocol. A silent waiting machine
+milliseconds. It holds no provider process or execution permit. The idle
+container can be removed while its same-machine lease remains fenced by the
+ordinary machine protocol. A silent waiting machine
 interrupts the job instead of moving it. Restart restores the wait deadline.
 
 Turning off the applicable recovery setting during a wait parks the turn as
@@ -184,3 +211,56 @@ The old credential is rotated on a mode change; thread credentials cannot choose
 a mode or reissue themselves. Explicit in-flight `agent.mode` retains its existing
 fresh-person check and explicit-resume flow. Source apps must match an enabled registered
 plugin prefix/kind or a built-in operation group.
+
+Turns waiting on a question or approval release their machine lease and resume
+only on the recorded machine after the recipient resolves the request. See
+[person requests](requests.md).
+
+## Machine and provider readiness
+
+`agent.readiness` takes `space_id` and an optional saved `thread_id`. It
+requires a person with `plugins.use` in the space. Unknown and inaccessible
+spaces or threads return the same not-found response. A member cannot read
+another member's personal machines, even when both can read the same thread.
+The caller's active, same-machine pin from a person request limits the
+thread-scoped snapshot.
+
+The result contains `machines`, `pool` and `check_ttl_ms`. A personal row
+has the enrolled machine UUID and name, `enrolled`, `connected`,
+`last_seen_ms` (null when this server has seen no connection), `execution`
+(`direct` or `sandboxed`), `available` (placement capacity), and
+`providers` keyed by provider ID. An entitled account receives anonymous pool
+options with the same capacity and provider fields. Pool rows omit host
+identifiers, names and timestamps. Without pool entitlement the array is empty.
+Each provider has `enabled` for the space, `check` (null until observed or
+after expiry), and `ready` when enabled, available and signed in. An observed
+check contains only `installed`, `signed_in` and `sign_in_command`.
+The provider's official program owns the login.
+
+Use a cached read with `calternal agent readiness --space-id SPACE_UUID`.
+Refresh a provider with `calternal agent check --space-id SPACE_UUID
+--machine-id MACHINE_UUID --provider PROVIDER_ID`. `--pool` checks an
+available entitled pool machine. A Check job is private to its admitting
+account. The scratch workspace is released after the check and the sandbox
+home is retained. The Claude adapter reports the official program's status
+during regular turns as well.
+
+The cache is in memory, keyed by account and provider on the selected
+machine. It holds at most 128 observations per machine for five minutes each.
+The oldest observation is evicted at capacity. Expiry or eviction returns
+the state to unknown. Restart clears the cache. Changes made outside Calternal
+become visible after the next provider check.
+
+Subscribe with `GET /api/v1/account/live?readiness=true`. The private
+`{"type":"readiness_changed"}` frame asks the account to reload readiness
+when its machines connect or drop, capacity changes, or its provider
+observations change or expire. This coalesced frame has no bookmark or machine
+payload. Read a snapshot after reconnect. Pool machine notifications go only
+to current pool-granted subscribers, and provider observation notifications go
+only to the account checked.
+
+The warm read takes the existing space capability lookup, a single indexed
+space-local SQL statement for activations and any pin, and one owner-indexed
+in-memory registry snapshot. No body reads, flushes or machine traffic. A cold
+space opens its existing indexes. A check uses the ordinary fenced lease and
+job receipt. Cache publication and invalidation add no durable writes.

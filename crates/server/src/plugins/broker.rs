@@ -204,6 +204,12 @@ impl<D: Directory> SpaceHost<D> {
             &actor,
             &self.plugin.manifest.id,
             name,
+            || {
+                self.state
+                    .inputs
+                    .invalidate(account)
+                    .map_err(|_| Error::Refused)
+            },
         )
     }
 

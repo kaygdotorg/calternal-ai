@@ -13,6 +13,18 @@ use uuid::Uuid;
 /// Shared eviction ceiling for per-space kind/name caches; eviction affects cost only.
 pub(crate) const KIND_CACHE: usize = 32;
 
+/// One current revision's header, loaded under the selected space lock. Reused
+/// for admission, the outside-edit guard and placement; contains no body bytes.
+pub(crate) struct Header {
+    pub(crate) kind: String,
+    pub(crate) revision: String,
+    pub(crate) seq: i64,
+    pub(crate) path: String,
+    pub(crate) state: String,
+    pub(crate) file_hash: Option<String>,
+    pub(crate) old_path: Option<String>,
+}
+
 pub(crate) struct Space {
     pub(crate) id: SpaceId,
     /// This space's journal and receipts; dropped (and drained) with the space.
@@ -75,6 +87,9 @@ impl Space {
             [id.to_string()],
         )
         .map_err(internal)?;
+        crate::discovery::install(&conn)?;
+        crate::linked_write::install(&conn)?;
+        crate::trash::install(&conn)?;
         let bound: String = conn
             .query_row("SELECT value FROM binding WHERE id='space'", [], |r| {
                 r.get(0)
@@ -93,8 +108,35 @@ impl Space {
             pending_since: None,
         })
     }
+    /// Load one indexed header without body or file reads. Missing items fail;
+    /// callers decide whether Trash/purge states are visible for their operation.
+    pub(crate) fn header(&self, id: Uuid) -> Result<Header> {
+        self.conn
+            .query_row(
+                "SELECT kind,revision,seq,path,mat_state,file_hash,old_path FROM items WHERE id=?1",
+                [id.to_string()],
+                |r| {
+                    Ok(Header {
+                        kind: r.get(0)?,
+                        revision: r.get(1)?,
+                        seq: r.get(2)?,
+                        path: r.get(3)?,
+                        state: r.get(4)?,
+                        file_hash: r.get(5)?,
+                        old_path: r.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(internal)?
+            .ok_or_else(missing)
+    }
+
     pub(crate) fn get(&self, id: Uuid) -> Result<Item> {
-        let row=self.conn.query_row("SELECT i.kind,v.metadata,v.bytes,v.revision,v.updated_at FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq WHERE i.id=?1",[id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(internal)?.ok_or_else(missing)?;
+        self.get_selected(id, false)
+    }
+    pub(crate) fn get_selected(&self, id: Uuid, live_only: bool) -> Result<Item> {
+        let row=self.conn.query_row("SELECT i.kind,v.metadata,v.bytes,v.revision,v.updated_at FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq WHERE i.id=?1 AND i.mat_state NOT IN ('purged','purging') AND (NOT ?2 OR substr(i.path,1,7) <> '.trash/')",params![id.to_string(),live_only],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(internal)?.ok_or_else(missing)?;
         Ok(Item {
             id,
             space: self.id,
@@ -105,8 +147,12 @@ impl Space {
             updated_at: row.4,
         })
     }
-    pub(crate) fn list(&self, kind: &str, limit: u32) -> Result<Vec<Summary>> {
-        let mut stmt=self.conn.prepare_cached("SELECT id,metadata,revision,updated_at FROM items WHERE kind=?1 ORDER BY updated_at DESC,id LIMIT ?2").map_err(internal)?;
+    pub(crate) fn list(&self, kind: &str, limit: u32, trashed: bool) -> Result<Vec<Summary>> {
+        let mut stmt = self.conn.prepare_cached(if trashed {
+            "SELECT id,metadata,revision,updated_at,path FROM items WHERE kind=?1 AND substr(path,1,7) = '.trash/' AND mat_state NOT IN ('purging','purged') ORDER BY updated_at DESC,id LIMIT ?2"
+        } else {
+            "SELECT id,metadata,revision,updated_at,path FROM items WHERE kind=?1 AND substr(path,1,7) <> '.trash/' ORDER BY updated_at DESC,id LIMIT ?2"
+        }).map_err(internal)?;
         let rows = stmt
             .query_map(params![kind, limit.min(1000)], |r| {
                 Ok((
@@ -114,15 +160,17 @@ impl Space {
                     r.get::<_, String>(1)?,
                     r.get::<_, String>(2)?,
                     r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
                 ))
             })
             .map_err(internal)?;
         rows.map(|row| {
-            let (id, metadata, revision, updated_at) = row.map_err(internal)?;
+            let (id, metadata, revision, updated_at, path) = row.map_err(internal)?;
             Ok(Summary {
                 id: Uuid::parse_str(&id).map_err(internal)?,
                 space: self.id,
                 kind: kind.into(),
+                path,
                 metadata: serde_json::from_str(&metadata).map_err(internal)?,
                 revision,
                 updated_at,
@@ -135,8 +183,12 @@ impl Space {
         id: Uuid,
         limit: u32,
         cursor: Option<&str>,
+        live_kind: Option<&str>,
     ) -> Result<(Vec<Item>, Option<String>)> {
-        let item = self.get(id)?;
+        let item = self.get_selected(id, live_kind.is_some())?;
+        if live_kind.is_some_and(|kind| kind != item.kind) {
+            return Err(missing());
+        }
         let before = if let Some(cursor) = cursor {
             let rev = cursor
                 .strip_prefix('h')

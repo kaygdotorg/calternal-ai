@@ -49,6 +49,9 @@ export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/appdata/dev-tokens/owner.token"
 ./target/debug/cl plugins list --space <space-uuid>
 ```
 
+Use `calternal people`, `calternal groups`, and `calternal invites` to
+manage space access through the same HTTP transport. See [people and access](docs/people.md).
+
 For mutation retries, retain the `--request-id` and repeat exactly the same operation and input. A transport failure can mean the server committed even though the reply was lost. Tokens are accepted from a protected file or environment, never a command-line token argument.
 
 Space changes can be followed with `calternal watch <space-uuid> --token-file
@@ -76,6 +79,8 @@ Every public code change includes matching reference comments. Run `npm run chec
 - Only repository-shipped, digest-pinned plugin bundles run. Workers use the machine role’s container sandbox; Node permission flags and cleared environments add defense in depth. Explicit direct development mode has no OS isolation. No arbitrary community plugin installation or provider credentials.
 - Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. Saved thread files and manual provider turns are development slices, with steering,
 large-output storage and the public TypeScript product bridge still unfinished.
+The private [request inbox](docs/requests.md) lists agent questions, approvals and
+secret prompts through `calternal requests` and the account feed.
 See [manual turns](docs/agent-turns.md) and [threads](docs/threads.md). Voice and
 memory integration remain unfinished.
 - UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.
@@ -99,3 +104,6 @@ AGPL-3.0-only; see [LICENSE](LICENSE). Dependencies retain their respective lice
 Plugin workers execute through the machine role’s existing sandbox interface.
 See [worker execution](docs/plugin-workers.md) for the container profile, runtime
 setup, lifecycle bounds and unresolved placement/network contracts.
+
+Notes supports title and tag pickers, relative-link rename, and 30-day space
+Trash. See the [Notes operations reference](docs/notes-operations.md).

@@ -6,16 +6,19 @@ title: "spaces.transfer"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Transfer ownership to an existing member
+Transfer ownership to a current account in the space.
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: space.transfer.
 
 ## Declaration
 
 ```json
 {
+  "risk": "widens_access",
+  "required_capability": "space.transfer",
+  "target": "space",
   "id": "spaces.transfer",
-  "description": "Transfer ownership to an existing member",
+  "description": "Transfer ownership to a current account in the space.",
   "mutates": true
 }
 ```
@@ -33,7 +36,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "type": "string"
     },
     "space_id": {
-      "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+      "description": "Space UUID; names are never accepted in its place.",
       "type": "string"
     }
   },

@@ -1,0 +1,26 @@
+{
+  "id": "calternal-notes",
+  "name": "Notes",
+  "icon": "note",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [
+    {
+      "id": "notes",
+      "storage": { "folder": "Notes" },
+      "claimed_text": true,
+      "schema": { "type": "object" }
+    }
+  ],
+  "operations": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": []
+}

@@ -21,11 +21,16 @@ mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
+mod people_cases;
+
+mod requests_cases;
+mod requests_review_cases;
 mod threads_cases;
 
 mod drafts_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
+mod notes_cases;
 mod perf_cases;
 mod simplify_review_cases;
 mod worker_cases;
@@ -184,7 +189,14 @@ impl Fixture {
         } else {
             command.current_dir(self.dir.path());
         }
-        let crash = self.dir.path().join("thread-send-fault").is_file();
+        let crash =
+            std::fs::read_to_string(self.dir.path().join("content-fault")).unwrap_or_else(|_| {
+                if self.dir.path().join("thread-send-fault").is_file() {
+                    "after_thread_message".into()
+                } else {
+                    String::new()
+                }
+            });
         self.child = Some(
             command
                 .args(["--port", "0", "--origin", ORIGIN, "--create"])
@@ -201,10 +213,7 @@ impl Fixture {
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env("RUST_LOG", "warn")
-                .env(
-                    "CALTERNAL_FAULT",
-                    if crash { "after_thread_message" } else { "" },
-                )
+                .env("CALTERNAL_FAULT", crash)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())
@@ -326,12 +335,11 @@ impl Fixture {
         .await
     }
     async fn enroll(&mut self, token: &str) {
+        self.enroll_named(token, "conformance account").await;
+    }
+    async fn enroll_named(&mut self, token: &str, name: &str) {
         let s = self
-            .auth(
-                "setup/start",
-                None,
-                json!({"token":token,"name":"conformance account"}),
-            )
+            .auth("setup/start", None, json!({"token":token,"name":name}))
             .await;
         s.ok();
         let mut d = Device::new();
@@ -402,7 +410,7 @@ impl Fixture {
             f.spaces
                 .push(s.body["data"]["space"]["id"].as_str().unwrap().into());
         }
-        // Roles are preprovisioned offline: no HTTP invite/join operation exists.
+        // Preprovision this common fixture so tests start with fixed roles.
         for role in ["reader", "editor", "manager"] {
             let s = f
                 .op(1, "spaces.create", json!({"name":format!("role {role}")}))
@@ -506,7 +514,7 @@ async fn all_operations_hide_foreign_ids() {
     )
     .await;
     let missing = uuid::Uuid::now_v7().to_string();
-    let cases = vec![
+    let mut cases = vec![
         ("jobs.get", json!({"job_id":job}), json!({"job_id":missing})),
         (
             "jobs.cancel",
@@ -581,18 +589,18 @@ async fn all_operations_hide_foreign_ids() {
         ),
         (
             "plugins.enable",
-            json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
-            json!({"space_id":missing,"plugin_id":"notes-insights"}),
+            json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
+            json!({"space_id":missing,"plugin_id":"calternal-notes-insights"}),
         ),
         (
             "plugins.disable",
-            json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
-            json!({"space_id":missing,"plugin_id":"notes-insights"}),
+            json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
+            json!({"space_id":missing,"plugin_id":"calternal-notes-insights"}),
         ),
         (
             "plugins.preview",
-            json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
-            json!({"space_id":missing,"plugin_id":"notes-insights"}),
+            json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
+            json!({"space_id":missing,"plugin_id":"calternal-notes-insights"}),
         ),
         (
             "secrets.request",
@@ -610,6 +618,7 @@ async fn all_operations_hide_foreign_ids() {
             json!({"space_id":missing,"name":"probe"}),
         ),
     ];
+    cases.extend(notes_cases::foreign_cases(&f.spaces[0], &n, &missing));
     let catalog = f
         .req(
             "GET",
@@ -623,6 +632,9 @@ async fn all_operations_hide_foreign_ids() {
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
+    covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
+
+    covered.extend(requests_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([
         "drafts.save",
@@ -873,7 +885,7 @@ async fn role_boundaries_and_demoted_receipts() {
             ),
             (
                 "plugins.enable",
-                json!({"space_id":s,"plugin_id":"notes-insights"}),
+                json!({"space_id":s,"plugin_id":"calternal-notes-insights"}),
                 role == "manager",
             ),
             (
@@ -1354,7 +1366,7 @@ async fn filesystem_modes_and_complete_sql_inventory() {
     f.op(
         1,
         "plugins.enable",
-        json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
+        json!({"space_id":f.spaces[0],"plugin_id":"calternal-notes-insights"}),
     )
     .await
     .ok();
@@ -1591,7 +1603,7 @@ async fn running_worker_revoke(mode: WorkerRevocation) {
     f.op(
         1,
         "plugins.enable",
-        json!({"space_id":s,"plugin_id":"notes-insights"}),
+        json!({"space_id":s,"plugin_id":"calternal-notes-insights"}),
     )
     .await
     .ok();
@@ -1898,6 +1910,7 @@ async fn simultaneous_transfers_preserve_exactly_one_owner() {
 async fn every_bound_space_operation_requires_its_policy_capability() {
     let cases = [
         ("resolve", "space.read"),
+        ("agent.readiness", "plugins.use"),
         ("spaces.members", "space.read"),
         ("spaces.set_role", "members.manage"),
         ("spaces.remove_member", "members.manage"),
@@ -1923,7 +1936,7 @@ async fn every_bound_space_operation_requires_its_policy_capability() {
         f.op(
             1,
             "plugins.enable",
-            json!({"space_id":space,"plugin_id":"notes-insights"}),
+            json!({"space_id":space,"plugin_id":"calternal-notes-insights"}),
         )
         .await
         .ok();
@@ -1939,7 +1952,7 @@ async fn every_bound_space_operation_requires_its_policy_capability() {
                 json!({"id":note["id"],"base_revision":note["revision"],"markdown":"policy"})
             }
             "plugins.enable" | "plugins.disable" | "plugins.preview" => {
-                json!({"space_id":space,"plugin_id":"notes-insights"})
+                json!({"space_id":space,"plugin_id":"calternal-notes-insights"})
             }
             _ => json!({"space_id":space}),
         };
@@ -2083,7 +2096,7 @@ async fn each_space_capability_is_independent_over_http() {
             ),
             (
                 "plugins.enable",
-                json!({"space_id":s,"plugin_id":"notes-insights"}),
+                json!({"space_id":s,"plugin_id":"calternal-notes-insights"}),
                 cap == "plugins.manage",
             ),
             (

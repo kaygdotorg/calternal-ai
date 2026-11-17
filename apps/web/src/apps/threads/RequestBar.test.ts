@@ -6,9 +6,10 @@ import RequestBar from "./RequestBar.svelte";
 import type { Request } from "./model";
 
 const Q: Request = { id: "q", kind: "question", threadId: "t", title: "Before I open the pull request", form: '$branch="lane/x"\n$how="Squash"\nForm([Input($branch,"Branch name"), Choice($how,["Rebase","Squash"],"How should I land it?")], "Before I open the pull request")' };
-const A: Request = { id: "a", kind: "approval", threadId: "t", title: "Run a command outside the workspace", action: "Push the branch", command: "git push origin lane/x" };
+const A: Request = { id: "a", kind: "approval", threadId: "t", title: "Run a command outside the workspace", action: "Push the branch", command: "git push origin lane/x", lifetimes: ["once", "thread"] };
 const S: Request = { id: "s", kind: "secret", threadId: "t", name: "FORGEJO_TOKEN", label: "Forgejo access token", why: "To publish pages.", scope: "personal", required: true, expiresAt: 1_000_000 + 15 * 60_000 };
 const now = () => 1_000_000;
+const A1: Request = { ...(A as Extract<Request, { kind: "approval" }>), lifetimes: ["once"] };
 
 describe("request bar", () => {
   it("is absent when nothing waits", () => {
@@ -97,3 +98,17 @@ describe("request bar", () => {
     expect(within(bar).getByRole("heading", { name: "Run a command outside the workspace" })).toBeTruthy();
   });
 });
+
+describe("single-use approvals", () => {
+  it("offers only Allow once when the server says the action cannot last for the thread", () => {
+    render(RequestBar, { requests: [A1], onanswer: () => {}, now });
+    expect(screen.getByRole("button", { name: "Allow once" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Allow for this thread" })).toBeNull();
+    expect(screen.getByText(/can only be allowed once/)).toBeTruthy();
+  });
+  it("offers both when the action may last for the thread", () => {
+    render(RequestBar, { requests: [A], onanswer: () => {}, now });
+    expect(screen.getByRole("button", { name: "Allow for this thread" })).toBeTruthy();
+  });
+});
+

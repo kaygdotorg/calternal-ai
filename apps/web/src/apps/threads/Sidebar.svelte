@@ -7,16 +7,18 @@
   // A row: the provider's mark at the left, the title, then the state (only when it means something). Pointing at a row (or focusing into it) swaps the state for exactly three actions: copy link,
   // archive and a three-dot button that opens the very menu right-click opens (`ctxItems`, one definition, two triggers). On touch, and on a trackpad, the row swipes (lib/swipe, the existing app's
   // engine): right shows Copy link; left shows Archive (a long swipe runs it) and More (the same menu). The shell's edge swipes (24 px at each screen edge) and dragging between sections are never started by it.
-  import { Icon, IconButton, InlineEditor, Menu, Row, toast, undoable, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, InlineEditor, Menu, Row, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
   import StateMark from "./StateMark.svelte";
   import SwipeRow, { type SwipeAction } from "../../lib/swipe/SwipeRow.svelte";
   import { swipeRows } from "../../lib/swipe/rows";
   import type { ThreadSummary } from "./model";
-  import { client, store } from "./store.svelte";
+  import { client, startThread, store } from "./store.svelte";
   import { spaces } from "../../shell/spaces.svelte";
 
+  // A fresh account: nothing listed, no section made, and the list has loaded (so it is not just still arriving).
+  const empty = $derived(store.ready && store.threads.length === 0 && layout.sections.length === 0);
   const current = $derived(segments()[0] === "threads" ? segments()[1] : undefined);
   const hidden = $derived(new Set(store.attention.slice(0, 3).map((a) => a.thread.id)));
   const shown = $derived(store.threads.filter((t) => !hidden.has(t.id) && t.spaceId === spaces.current.id)); // only the current space's threads
@@ -37,7 +39,7 @@
     if (!editing) return;
     const { kind, id } = editing;
     editing = null;
-    if (kind === "thread") void client.rename(id, draft);
+    if (kind === "thread") void client.rename(id, draft).catch((e: Error) => toast(`Not renamed: ${e.message}`));
     else if (id === LOOSE) layout.renameLoose(draft);
     else layout.rename(id, draft);
   }
@@ -183,6 +185,13 @@
 {/snippet}
 
 <nav aria-label="Threads" use:swipeRows>
+  {#if empty}
+    <div class="empty">
+      <h2>No threads yet</h2>
+      <p>A thread is a conversation with an agent that works on your files and notes, with only the access you allow. Start one and say what you want done.</p>
+      <Button variant="primary" text="Start a thread" onclick={() => void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`))} />
+    </div>
+  {:else}
   <div class="sec first" role="group" aria-label={layout.looseName}>
     <div class="sh" class:over={over?.c === null && !ids0.length} role="presentation" ondragover={(e) => { if (dragId) { e.preventDefault(); over = { c: null, index: ids0.length }; } }} ondrop={(e) => { e.preventDefault(); dropHere(null, ids0.length); }} oncontextmenu={(e) => openCtx(e, { section: LOOSE })}>
       {#if editing?.kind === "section" && editing.id === LOOSE}
@@ -215,6 +224,7 @@
   {/each}
 
   <button type="button" class="new" onclick={newSection}><Icon inline name="plus" /><span>New section</span></button>
+  {/if}
   <p class="visually-hidden" role="status" aria-live="polite">{said}</p>
 </nav>
 
@@ -232,6 +242,9 @@
     .rw:hover .tail, .rw:focus-within .tail { display: none; }
     .rw:hover :global(.row), .rw:focus-within :global(.row) { padding-right: calc(var(--s-2) * 2 + 3 * var(--ib-small) + 2 * var(--s-1)); }
   }
+  .empty { display: grid; gap: var(--s-4); justify-items: start; padding: var(--s-6) var(--s-5); }
+  .empty h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
+  .empty p { color: var(--ink-2); font-size: var(--text-ui); }
   nav { display: grid; gap: var(--s-1); padding-bottom: var(--s-6); }
   ul { display: grid; gap: var(--s-1); }
   li { position: relative; }

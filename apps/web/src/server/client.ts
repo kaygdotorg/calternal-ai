@@ -12,11 +12,16 @@ import type {
   SpacesListResult,
 } from "../../../../packages/contracts/src/index";
 import { events } from "./sse";
+import { link } from "./link.svelte";
 
 /** A failure the server reported (`code` is its stable category) or a transport failure (`code` is "unavailable"). */
 export class ServerError extends Error {
-  constructor(public code: ApiError["code"], message: string, public status = 0) { super(message); }
+  /** The server's stable category (`ApiError["code"]`), or one of the account routes' own (`passkey_failed`, `setup_token_invalid`, …) or this page's (`unavailable`, `cancelled`); say.ts words each. */
+  constructor(public code: ApiError["code"] | (string & {}), message: string, public status = 0) { super(message); }
 }
+
+/** The failure category of a response that carried no error body of its own. */
+const codeOfStatus = (s: number): string => (s === 401 ? "unauthorized" : s === 403 ? "forbidden" : s === 404 ? "not_found" : s === 409 ? "conflict" : s === 413 ? "too_large" : s === 429 ? "too_many_requests" : s < 500 ? "invalid_input" : "internal");
 
 export interface ServerOptions { base?: string; token: () => string | null; fetch?: typeof fetch }
 
@@ -24,11 +29,39 @@ export interface ServerOptions { base?: string; token: () => string | null; fetc
 export class ServerClient {
   private base: string;
   private f: typeof fetch;
+  /** `fetch` without the link-state reporting (see `json`). */
+  private plain: typeof fetch;
   private token: () => string | null;
   constructor(o: ServerOptions) {
     this.base = o.base ?? "";
     this.token = o.token;
-    this.f = o.fetch ?? ((...a) => fetch(...a));
+    const raw = o.fetch ?? ((...a: Parameters<typeof fetch>) => fetch(...a));
+    this.plain = raw;
+    // Every call reports to the shared link state (reconnecting banner, expired session); a call the caller cancelled is not a failure.
+    this.f = (...a) => raw(...a).then((r) => { if (r.status === 401) link.expired(!!this.token()); else link.ok(); return r; }, (e: Error) => { if (e?.name !== "AbortError") link.failed(); throw e; });
+  }
+  /**
+   * A call to a route that is not an operation (account, passkeys, machines): JSON in, JSON out (`{}` for 204), a failure as `ServerError` with the server's own code (or one from the status) and no server text
+   * reaching the screen (say.ts words it). The one place for this plumbing. `link: false` keeps it out of the session-ended logic: a refused passkey is a 401 too, and must not look like a session that ended.
+   */
+  async json<T = Record<string, unknown>>(path: string, o: { method?: "GET" | "POST"; body?: unknown; link?: boolean } = {}): Promise<T> {
+    const method = o.method ?? (o.body === undefined ? "GET" : "POST");
+    const res = await this.send(path, { method, headers: o.body === undefined ? {} : { "content-type": "application/json" }, body: o.body === undefined ? undefined : JSON.stringify(o.body) }, o.link === false);
+    if (res.status === 204) return {} as T;
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) { const e = (data.error ?? {}) as { code?: string; message?: string }; throw new ServerError(e.code ?? codeOfStatus(res.status), e.message ?? "", res.status); }
+    return data as T;
+  }
+  /** Every call goes through here: the session's headers, the link-state reporting (unless `plain`), and a transport failure as `ServerError("unavailable")`. */
+  private async send(path: string, init: RequestInit = {}, plain = false): Promise<Response> {
+    try { return await (plain ? this.plain : this.f)(`${this.base}${path}`, { ...init, headers: this.headers(init.headers as Record<string, string>) }); }
+    catch { throw new ServerError("unavailable", "Can't reach the server."); }
+  }
+  /** An event stream (SSE): the body to read, or `ServerError` when the server refuses it. */
+  private async stream(path: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array>> {
+    const res = await this.send(path, { headers: { accept: "text/event-stream" }, signal });
+    if (!res.ok || !res.body) throw new ServerError(res.status === 404 ? "not_found" : "unavailable", "", res.status);
+    return res.body;
   }
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     const t = this.token();
@@ -36,12 +69,7 @@ export class ServerClient {
   }
   /** Calls one operation. `requestId` makes a retry the same request. */
   async operate<T>(operation: string, input: Record<string, unknown> = {}, requestId: string = crypto.randomUUID()): Promise<T> {
-    let res: Response;
-    try {
-      res = await this.f(`${this.base}/api/v1/operations`, { method: "POST", headers: this.headers({ "content-type": "application/json" }), body: JSON.stringify({ request_id: requestId, operation, input }) });
-    } catch (e) {
-      throw new ServerError("unavailable", (e as Error).message);
-    }
+    const res = await this.send("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: requestId, operation, input }) });
     let body: OperationResponse<T>;
     try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }
     if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
@@ -49,15 +77,24 @@ export class ServerClient {
   }
   /** What the server offers and who is asking (`GET /api/v1/describe`). */
   async describe(): Promise<DescribeResult> {
-    const res = await this.f(`${this.base}/api/v1/describe`, { headers: this.headers() }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
+    const res = await this.send("/api/v1/describe");
     // Unlike an operation, discovery answers with the description itself (no envelope); a failure still arrives as a failure envelope.
     const body = (await res.json()) as DescribeResult | OperationResponse<never>;
     if ("ok" in body && body.ok === false) throw new ServerError(body.error.code, body.error.message, res.status);
     return body as DescribeResult;
   }
+  /** A plain JSON POST to a route that is not an operation (the trusted secret endpoint). The body is sent and dropped; a failure is thrown as `ServerError` with the server's words. */
+  async post(path: string, body: Record<string, unknown>): Promise<void> {
+    let res: Response;
+    try { res = await this.f(`${this.base}${path}`, { method: "POST", headers: this.headers({ "content-type": "application/json" }), body: JSON.stringify(body) }); }
+    catch (e) { throw new ServerError("unavailable", (e as Error).message); }
+    if (res.ok) return;
+    const j = (await res.json().catch(() => null)) as { error?: { code?: ApiError["code"]; message?: string } } | null;
+    throw new ServerError(j?.error?.code ?? "internal", j?.error?.message ?? `refused (${res.status})`, res.status);
+  }
   spaces = { list: () => this.operate<SpacesListResult>("spaces.list") };
   notes = {
-    list: (space_id: string) => this.operate<NotesListResult>("notes.list", { space_id }),
+    list: (space_id: string, tag?: string) => this.operate<NotesListResult>("notes.list", { space_id, ...(tag ? { tag } : {}) }),
     get: (space_id: string, id: string) => this.operate<NoteResult>("notes.get", { space_id, id }),
     create: (i: NotesCreateInput, requestId?: string) => this.operate<NoteResult>("notes.create", i as unknown as Record<string, unknown>, requestId),
     update: (i: NotesUpdateInput, requestId?: string) => this.operate<NoteResult>("notes.update", i as unknown as Record<string, unknown>, requestId),
@@ -89,9 +126,7 @@ export class ServerClient {
    * Resolves when the stream ends or `signal` aborts. A reset means: reload the derived state, then subscribe again.
    */
   async live(subs: LiveSubscription[], onFrame: (f: LiveFrame) => void, signal?: AbortSignal): Promise<void> {
-    const res = await this.f(`${this.base}/api/v1/live?subscriptions=${encodeURIComponent(JSON.stringify(subs))}`, { headers: this.headers({ accept: "text/event-stream" }), signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
-    if (!res.ok || !res.body) throw new ServerError("unavailable", `live stream refused (${res.status})`, res.status);
-    for await (const ev of events(res.body)) {
+    for await (const ev of events(await this.stream(`/api/v1/live?subscriptions=${encodeURIComponent(JSON.stringify(subs))}`, signal))) {
       const raw = JSON.parse(ev.data) as Record<string, unknown>;
       // The wire form is internally tagged (`{"type":"entry",...}`); the generated type names the variants externally. Accept both.
       const type = typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
@@ -106,9 +141,7 @@ export class ServerClient {
    */
   async accountLive(onFrame: (f: AccountFrame) => void, o: { bookmark?: string; signal?: AbortSignal } = {}): Promise<void> {
     const q = o.bookmark ? `?bookmark=${encodeURIComponent(o.bookmark)}` : "";
-    const res = await this.f(`${this.base}/api/v1/account/live${q}`, { headers: this.headers({ accept: "text/event-stream" }), signal: o.signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
-    if (!res.ok || !res.body) throw new ServerError("unavailable", `account stream refused (${res.status})`, res.status);
-    for await (const ev of events(res.body)) {
+    for await (const ev of events(await this.stream(`/api/v1/account/live${q}`, o.signal))) {
       const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
       // Internally tagged on the wire (`{"type":"changed","bookmark":...}`), externally in the generated type: accept both.
       const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
@@ -120,9 +153,7 @@ export class ServerClient {
   /** Follows a plugin job's events (`GET /api/v1/jobs/<id>/events`, SSE): `snapshot` first, then `chunk`s, possibly a `reset`, and `end`. `after` resumes (`<epoch>:<seq>`). */
   async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "state" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {
     const q = o.after ? `?after=${encodeURIComponent(o.after)}` : "";
-    const res = await this.f(`${this.base}/api/v1/jobs/${encodeURIComponent(jobId)}/events${q}`, { headers: this.headers({ accept: "text/event-stream" }), signal: o.signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
-    if (!res.ok || !res.body) throw new ServerError(res.status === 404 ? "not_found" : "unavailable", `job stream refused (${res.status})`, res.status);
-    for await (const ev of events(res.body)) onEvent(ev.event as "snapshot", ev.data ? JSON.parse(ev.data) : null, ev.id);
+    for await (const ev of events(await this.stream(`/api/v1/jobs/${encodeURIComponent(jobId)}/events${q}`, o.signal))) onEvent(ev.event as "snapshot", ev.data ? JSON.parse(ev.data) : null, ev.id);
   }
 }
 
@@ -143,6 +174,8 @@ export function devToken(): string | null {
 /** Whether the real server is the source: `?server=1` (kept) or `cal.server` in localStorage. Fixtures are the default. */
 export function serverMode(): boolean {
   try {
+    // An invitation link is for the real server, whoever opens it (the person has no flag set).
+    if (/\/invites\/[^/?#]+/.test(location.pathname)) localStorage.setItem("cal.server", "1");
     const q = new URLSearchParams(location.search).get("server");
     if (q === "1" || q === "0") localStorage.setItem("cal.server", q);
     return localStorage.getItem("cal.server") === "1";

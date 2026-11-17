@@ -47,8 +47,17 @@ fn rows(v: &Value, key: &str) -> Vec<Value> {
 
 /// The reply for `operation`'s successful `data`; `--json` carries `data` unchanged.
 pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -> Reply {
+    if operation.starts_with("requests.") {
+        return calternal_cli::requests::reply(data, request_id);
+    }
     if calternal_core::is_account_input_operation(operation) {
         return calternal_cli::account_input::render(out, operation, request_id, data);
+    }
+    if let Some(reply) = calternal_cli::people::render(out, operation, request_id, &data) {
+        return reply;
+    }
+    if operation != "notes.list" && calternal_core::note_operation(operation).is_some() {
+        return calternal_cli::notes::reply(out, operation, data).request_id(request_id);
     }
     let reply = Reply::new(data.clone()).request_id(request_id);
     match operation {

@@ -25,6 +25,7 @@ impl MachineService {
             thread,
             Some(worker::IMAGE.into()),
             Some(source),
+            None,
         )
     }
 

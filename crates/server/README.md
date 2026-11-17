@@ -209,6 +209,9 @@ Timings from these tests are development-host smoke numbers, not performance gat
 Manual provider jobs and their CLI, scoped credentials, risk review, machine homes
 and durable retry waits are documented in [manual turns](../../docs/agent-turns.md).
 The provider test suite uses an account-free fake official CLI.
+The [readiness operation](../../docs/agent-turns.md#machine-and-provider-readiness)
+reads private machine and provider observations. Saved turn reasons travel in
+the ordinary space journal, with owner-only details filtered on delivery.
 
 `GET /api/v1/live?subscriptions=<JSON array>` follows 1–16 distinct space UUIDs.
 Each array element is `{ "space_id": "<uuid>", "bookmark": null | "<opaque>" }`.
@@ -251,3 +254,19 @@ unchanged with its digest; handoff adds no body clone and the canonical digest i
 computed once. The existing canonical encoder still materializes sorted JSON
 trees. Synchronous callers retain the same canonical helper. CLI argument
 definitions live in `src/cli.rs`; `main.rs` keeps startup and dispatch.
+
+## People over HTTP
+
+See the [people and access reference](../../docs/people.md) for account profiles,
+space grants, groups and single-use passkey invitations. The people operations use
+the same protected authority and recovery publication as existing space changes.
+
+The Notes retention task probes one closed space at a time with a read-only
+SQLite connection, opening its content/journal lifecycle only for expired work.
+Purge eligibility is rechecked under that space's lock. This preserves startup
+and hourly expiration without filling the lazy space cache during installations
+with no expired Trash. Such probes can warm SQLite metadata; cold-space latency
+measurements retain that qualification. A matching HTTP receipt replay checks
+permanent-deletion state without forcing file placement: purge suppresses prior
+body receipts, while later outside-file conflicts do not revoke an acknowledged
+SSD result. The shared content receipt type carries the existing item UUID.

@@ -1,7 +1,15 @@
 //! Content/control mutation admission, shared receipts and guarded Trash placement.
 use super::*;
+use crate::linked_write::{self, Retarget, Staged};
 use rusqlite::TransactionBehavior;
 use std::time::{Duration, Instant};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Destination {
+    Current,
+    Trash,
+    Restore,
+}
 
 impl Content {
     /// Changes one per-space control value and records the request's receipt, as
@@ -192,7 +200,8 @@ impl Content {
             bytes,
             request,
             result,
-            false,
+            Destination::Current,
+            None,
             || Ok(()),
         )
     }
@@ -226,9 +235,75 @@ impl Content {
             bytes,
             request,
             result,
-            true,
+            Destination::Trash,
+            None,
             guard,
         )
+    }
+
+    /// Restore a trashed item's same identity and bytes through the guarded outbox.
+    /// The current revision must still match, and a claimed filename is skipped.
+    /// Cost: the same per-space reads and durable commits as trash.
+    pub fn restore(
+        &self,
+        item: &Item,
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+    ) -> Result<Item> {
+        self.write_placed(
+            item.space,
+            Some(item.id),
+            &item.kind,
+            Some(&item.revision),
+            item.metadata.clone(),
+            &item.bytes,
+            request,
+            result,
+            Destination::Restore,
+            None,
+            || Ok(()),
+        )
+    }
+
+    /// Commit a title edit and any same-kind links to its former path in a single
+    /// per-space content transaction. The supplied transform receives only the
+    /// indexed source snapshots and selected paths and may not re-enter content.
+    /// Placement completes before publishing the root receipt when sources are
+    /// rewritten. Each changed source incurs one checked file read and its
+    /// ordinary placement and journal costs. Oversized groups fail before commit.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_with_links(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        kind: &str,
+        base: &str,
+        metadata: Value,
+        bytes: &[u8],
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+        retarget: impl Fn(&Item, &str, &str) -> Result<Option<(Value, Vec<u8>)>>,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            Some(id),
+            kind,
+            Some(base),
+            metadata,
+            bytes,
+            request,
+            result,
+            Destination::Current,
+            Some(&retarget),
+            || Ok(()),
+        )
+    }
+
+    pub(crate) fn validate_write_size(metadata: &Value, bytes: &[u8]) -> Result<()> {
+        if bytes.len() > 2 * 1024 * 1024 || metadata.to_string().len() > crate::MAX_METADATA_BYTES {
+            return Err(Error::invalid_input("content input is too large"));
+        }
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -242,14 +317,12 @@ impl Content {
         bytes: &[u8],
         request: Request<'_>,
         result: impl FnOnce(&Item) -> Value,
-        trash: bool,
+        destination: Destination,
+        retarget: Option<&Retarget<'_>>,
         guard: impl FnOnce() -> Result<()>,
     ) -> Result<Item> {
-        let metadata_json = metadata.to_string();
-        if bytes.len() > 2 * 1024 * 1024
-            || metadata_json.len() > 256 * 1024
-            || request.id.len() > 256
-        {
+        Self::validate_write_size(&metadata, bytes)?;
+        if request.id.len() > 256 {
             return Err(Error::invalid_input("content input is too large"));
         }
         files::validate_kind(kind)?;
@@ -265,29 +338,70 @@ impl Content {
             // receipt before calling, so any receipt here is a reuse.
             if self.journals.receipt(&s.journal,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
             let (id,seq,old_path,expected)=if let Some(id)=id {
-                s.place(id,self.fault)?;
-                let (current_kind,revision,seq,path,sha):(String,String,i64,String,Option<String>)=s.conn.query_row("SELECT kind,revision,seq,path,file_hash FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional().map_err(internal)?.ok_or_else(missing)?;
-                if current_kind!=kind{return Err(missing());}
-                s.check_file(id)?;
-                if base!=Some(revision.as_str()) {return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":revision}))});}
+                let mut head = s.header(id)?;
+                if head.kind != kind || head.state == "purged" || head.state == "purging" {
+                    return Err(missing());
+                }
+                if base != Some(head.revision.as_str()) {
+                    return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":head.revision}))});
+                }
+                if head.path.starts_with(".trash/") != (destination == Destination::Restore) {
+                    return Err(Error::conflict(if destination == Destination::Restore {
+                        "item is not in Trash"
+                    } else {
+                        "restore this item from Trash first"
+                    }));
+                }
+                if head.state == "pending" {
+                    s.place_header(id,head,None,self.fault)?;
+                    // Placement changes the expected hash/state. Reload only on
+                    // this pending slow path, never for an ordinary warm save.
+                    head = s.header(id)?;
+                }
+                let sha = s.check_header(id,&head)?;
+                let (seq,path) = (head.seq,head.path);
                 (id,seq+1,Some(path),sha)
             }else{(Uuid::now_v7(),1,None,None)};
             guard()?;
             let title=metadata.get("title").and_then(Value::as_str).unwrap_or(kind);
-            let path=if trash { s.trash_path(kind,id)? } else { s.choose_path(kind,title,old_path.as_deref())? };
-            let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:format!("v{seq}.{}",Uuid::now_v7().simple()),updated_at:now_rfc3339()};
-            let response=result(&item);
+            let path = match destination {
+                Destination::Trash => s.trash_path(kind, id)?,
+                Destination::Restore => {
+                    let preferred = s.trash_origin(id)?;
+                    s.choose_path(kind, title, None, preferred.as_deref())?
+                }
+                Destination::Current => s.choose_path(kind, title, old_path.as_deref(), None)?,
+            };
+            let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:Staged::version(seq),updated_at:now_rfc3339()};
+            let mut root = Staged {item,seq,path,expected};
+            let related = if let (Some(edit), Some(old)) = (retarget, old_path.as_deref()) {
+                s.stage_related(&mut root,old,edit,self.fault)?
+            } else {
+                Vec::new()
+            };
+            let response=result(&root.item);
             let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,metadata_json,item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(internal)?;
-            tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,metadata_json,bytes,item.updated_at,request.account.to_string()]).map_err(internal)?;
-            tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(internal)?;
+            root.write(&tx, old_path.as_deref(), &request.account.to_string())?;
+            match destination {
+                Destination::Trash => {
+                    tx.execute("INSERT INTO trash_origins VALUES(?1,?2)", params![id.to_string(),old_path]).map_err(internal)?;
+                }
+                Destination::Restore => {
+                    tx.execute("DELETE FROM trash_origins WHERE item=?1", [id.to_string()]).map_err(internal)?;
+                }
+                Destination::Current => {}
+            }
+            root.outbox(&tx,request,&response)?;
+            linked_write::stage_related_outbox(&tx,&root,&related,request)?;
             tx.commit().map_err(internal)?;
             (self.fault)(FaultPoint::AfterCommit);
             self.publish_pending(s)?;
-            // Metadata/bytes and receipt are durable now. The existing lifecycle
-            // worker places the file; an older pending deadline is never extended.
-            if trash { s.place(id,self.fault)?; } else { s.pending_since.get_or_insert_with(Instant::now); }
-            Ok(item)
+            if destination != Destination::Current || retarget.is_some() {
+                s.place_snapshot(id,Some(&root.item),self.fault)?;
+            } else {
+                s.pending_since.get_or_insert_with(Instant::now);
+            }
+            Ok(root.item)
         })
     }
 }

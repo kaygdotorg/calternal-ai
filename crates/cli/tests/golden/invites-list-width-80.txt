@@ -1,0 +1,5 @@
+ID                             ROLE    CREATED       EXPIRES       USED  REVOKED
+01912345-6789-…3-000000000003  reader  2026-07-17 …  2026-07-24 …  —     —
+
+invite:  01912345-6789-7abc-8123-000000000003
+https://example.test/invites/example

@@ -5,6 +5,9 @@ mod admission;
 mod instructions;
 mod launch;
 mod lease;
+mod progress;
+mod readiness;
+pub(crate) mod reason;
 mod redact;
 pub mod retry;
 mod run;
@@ -53,8 +56,19 @@ pub async fn dispatch<D: Directory>(
     if let Some(a) = &agent {
         a.check(op, &input)?;
     }
+    if op == calternal_core::AGENT_READINESS {
+        if agent.is_some() {
+            return Err(Error::forbidden("a person must read machine readiness"));
+        }
+        let target = serde_json::from_value(json!(input))
+            .map_err(|_| Error::invalid_input("input does not match readiness schema"))?;
+        return readiness::read(state, machines, who, target).await;
+    }
     let mut i: AgentInput = serde_json::from_value(json!(input))
         .map_err(|_| Error::invalid_input("input does not match agent schema"))?;
+    if op == "agent.check" && agent.is_some() {
+        return Err(Error::forbidden("a person must check provider sign-in"));
+    }
     if op == "agent.settings" {
         if agent.is_some() {
             return Err(Error::forbidden(
@@ -152,7 +166,14 @@ pub async fn dispatch<D: Directory>(
                 .await?
             }
         };
-        let data = json!({"request":i,"check":op=="agent.check","retry_settings":settings});
+        let check = op == "agent.check";
+        let target = if check {
+            readiness::check_target(&machines, who.id, &i).await?
+        } else {
+            None
+        };
+        let data =
+            json!({"request":i,"check":check,"check_target":target,"retry_settings":settings});
         let compare = data["request"].clone();
         let space = SpaceId::parse(&scope).map_err(|_| Error::not_found("space not found"))?;
         let admission = admission::ManualAdmission::new(
@@ -190,7 +211,7 @@ pub async fn dispatch<D: Directory>(
             ));
         }
         run::schedule(&state, &machines, job.space.clone(), id.clone());
-        return Ok(json!({"job":job.view()}));
+        return Ok(json!({"job":job.view_for(who.id)}));
     }
     let job = load(&state, &i.job_id).await?;
     authorize(
@@ -204,7 +225,7 @@ pub async fn dispatch<D: Directory>(
         },
     )
     .await?;
-    if job.operation != "agent.turn" {
+    if job.operation != "agent.turn" || (job.input["check"] == true && job.account != who.id) {
         return Err(Error::not_found("turn not found"));
     }
     let is_owner = job.account == who.id;
@@ -238,12 +259,13 @@ pub async fn dispatch<D: Directory>(
         "agent.events" => {
             let batch = state.jobs.live(&job.id).read(i.after);
             let reset = (!i.epoch.is_empty() && i.epoch != batch.epoch) || i.after < batch.oldest;
-            let events:Vec<Value> = batch.chunks.iter().map(|c| json!({"seq":c.seq,"data":serde_json::from_str::<Value>(&c.data).unwrap_or(Value::Null)})).collect();
+            let events:Vec<Value> = batch.chunks.iter().map(|c| {
+                let data = serde_json::from_str(&c.data).unwrap_or(Value::Null);
+                json!({"seq":c.seq,"data":if is_owner { data } else { reason::public_event(data) }})
+            }).collect();
             let next = batch.chunks.last().map_or(i.after, |c| c.seq + 1);
-            let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
-            let requests = blocking(move || st.jobs.agent_requests(&sp, &id)).await?;
             Ok(
-                json!({"job":job.view(),"epoch":batch.epoch,"events":events,"next":next,"reset":reset,"requests":requests}),
+                json!({"job":job.view_for(who.id),"epoch":batch.epoch,"events":events,"next":next,"reset":reset}),
             )
         }
         "agent.discard" => {
@@ -270,7 +292,7 @@ pub async fn dispatch<D: Directory>(
             } else {
                 "done".into()
             };
-            Ok(json!({"job":load(&state,&job.id).await?.view(),"discard":status}))
+            Ok(json!({"job":load(&state,&job.id).await?.view_for(who.id),"discard":status}))
         }
         "agent.stop" => {
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
@@ -279,12 +301,13 @@ pub async fn dispatch<D: Directory>(
                 admission.apply(|| {
                     st.jobs.cancel(&sp, &id)?;
                     st.jobs.agent_revoke(&sp, &id)?;
+                    st.inputs.invalidate(ending.account)?;
                     release(&svc, &ending)?;
                     Ok(Value::Null)
                 })
             })
             .await?;
-            Ok(json!({"job":load(&state,&job.id).await?.view()}))
+            Ok(json!({"job":load(&state,&job.id).await?.view_for(who.id)}))
         }
         "agent.resume" => {
             let (st, sp, id, svc) = (
@@ -311,7 +334,7 @@ pub async fn dispatch<D: Directory>(
             })
             .await?;
             run::schedule(&state, &machines, job.space.clone(), job.id.clone());
-            Ok(json!({"job":load(&state,&job.id).await?.view()}))
+            Ok(json!({"job":load(&state,&job.id).await?.view_for(who.id)}))
         }
         "access.request" => {
             let (st, sp, id, app, write) = (
@@ -324,16 +347,19 @@ pub async fn dispatch<D: Directory>(
             let id = blocking(move || {
                 admission.apply(|| {
                     let a = st.jobs.agent_scope(&sp, &id)?;
-                    Ok(json!({"approval_id":st.jobs.agent_request(&a,&app,write)?}))
+                    let create = || st.jobs.agent_request(&a, &app, write);
+                    let id = crate::requests::park(&st, &machines, &a, create)?;
+                    st.inputs.invalidate(a.actor.account)?;
+                    Ok(json!({"approval_id":id}))
                 })
             })
             .await?["approval_id"]
                 .as_str()
                 .ok_or_else(|| Error::internal("approval result"))?
                 .to_owned();
-            Ok(json!({"approval_id":id,"status":"pending","scope":"this turn"}))
+            Ok(json!({"approval_id":id,"status":"pending","scope":"pending person decision"}))
         }
-        "agent.mode" | "access.approve" => {
+        "agent.mode" => {
             if agent.is_some() {
                 return Err(Error::forbidden(
                     "a freshly verified person must change agent access",
@@ -343,31 +369,22 @@ pub async fn dispatch<D: Directory>(
             if job.state.is_final() {
                 return Err(Error::conflict("finished turns cannot change access"));
             }
-            // Revoke authority before stopping processes so no old token can act.
-            let (st, sp, id, action) = (
-                state.clone(),
-                job.space.clone(),
-                job.id.clone(),
-                op.to_owned(),
-            );
+            // Fence the job before changing its protected credential.
+            let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             let (svc, ending) = (machines.clone(), job.clone());
             blocking(move || {
                 admission.apply(|| {
                     let mut a = st.jobs.agent_scope(&sp, &id)?;
-                    if action == "agent.mode" {
-                        a.mode = i.mode;
-                        st.jobs.agent_scope_change(&a)?;
-                    } else {
-                        st.jobs.agent_approve(&mut a, &i.approval_id)?;
-                    }
+                    a.mode = i.mode;
                     st.jobs.agent_interrupt(&sp, &id)?;
+                    st.jobs.agent_scope_change(&a)?;
                     release(&svc, &ending)?;
                     Ok(Value::Null)
                 })
             })
             .await?;
             Ok(
-                json!({"job":load(&state,&job.id).await?.view(),"hint":"Resume explicitly to deliver the replacement token."}),
+                json!({"job":load(&state,&job.id).await?.view_for(who.id),"hint":"Resume explicitly to deliver the replacement token."}),
             )
         }
         _ => Err(Error::not_found("unknown agent operation")),
@@ -416,7 +433,7 @@ pub(super) async fn authorize<D: Directory>(
     .await
 }
 
-async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(), Error> {
+pub(crate) async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(), Error> {
     let Session::Installation {
         account,
         installation,
@@ -437,12 +454,19 @@ async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(),
         .map_err(|_| Error::forbidden("sign in again with a passkey to approve access"))
 }
 
-fn release(machines: &MachineService, job: &Job) -> Result<(), Error> {
+pub(crate) fn release(machines: &MachineService, job: &Job) -> Result<(), Error> {
+    if job.state == JobState::Waiting && job.checkpoint["person_request"].is_string() {
+        return Ok(());
+    }
     if let Some(lease) = job.checkpoint["lease_id"]
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
     {
-        machines.release_run(job.account, lease)?;
+        if job.input["check"] == true {
+            machines.release_probe(job.account, lease)?;
+        } else {
+            machines.release_run(job.account, lease)?;
+        }
     }
     Ok(())
 }
@@ -455,7 +479,15 @@ async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), E
         .and_then(|v| Uuid::parse_str(v).ok())
     {
         let (svc, account) = (machines.clone(), job.account);
-        blocking(move || svc.release_run(account, id).map(|_| ())).await?;
+        let check = job.input["check"] == true;
+        blocking(move || {
+            if check {
+                svc.release_probe(account, id)
+            } else {
+                svc.release_run(account, id)
+            }
+        })
+        .await?;
     }
     Ok(())
 }
@@ -472,12 +504,15 @@ fn validate(i: &mut AgentInput, op: &str) -> Result<(), Error> {
     if matches!(op, "agent.run" | "agent.check") {
         let invalid = || Error::invalid_input("check/run needs space_id and thread_id UUIDs");
         let space = SpaceId::parse(&i.space_id).map_err(|_| invalid())?;
-        let thread = Uuid::parse_str(&i.thread_id).map_err(|_| invalid())?;
+        if op == "agent.run" || !i.thread_id.is_empty() {
+            i.thread_id = Uuid::parse_str(&i.thread_id)
+                .map_err(|_| invalid())?
+                .to_string();
+        }
         if !i.job_id.is_empty() {
             return Err(invalid());
         }
         i.space_id = space.to_string();
-        i.thread_id = thread.to_string();
         if op == "agent.run" && i.prompt.trim().is_empty() {
             return Err(Error::invalid_input("run needs a prompt"));
         }

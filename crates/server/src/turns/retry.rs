@@ -34,31 +34,35 @@ pub fn next(
     ) {
         return None;
     }
-    if class == ProviderFailureClass::UsageLimit && billing == ProviderBilling::Subscription {
-        if !settings.subscription_limits {
-            return None;
-        }
+    if settings.provider_errors
+        && let Some(wait) = RETRY_SECONDS.get(completed_retries as usize)
+    {
+        return Some(json!({
+            "retry_count":completed_retries + 1,
+            "next_attempt_ms":now.saturating_add((wait * 1000) as i64),
+            "reason":"provider_unavailable","billing":billing,
+        }));
+    }
+    if class == ProviderFailureClass::UsageLimit
+        && billing == ProviderBilling::Subscription
+        && settings.subscription_limits
+    {
         let at = i64::try_from(reset?).ok()?;
         if at > now {
-            return Some(
-                json!({"retry_count":completed_retries.saturating_add(1),"next_attempt_ms":at,"reason":"subscription_limit","billing":billing}),
-            );
+            return Some(json!({
+                "retry_count":completed_retries.saturating_add(1),"next_attempt_ms":at,
+                "reason":"subscription_limit","billing":billing,
+            }));
         }
-        return None;
     }
-    if !settings.provider_errors {
-        return None;
+    if billing == ProviderBilling::Api && settings.provider_errors {
+        return Some(json!({
+            "retry_count":completed_retries.saturating_add(1),
+            "next_attempt_ms":now.saturating_add((AVAILABILITY_SECONDS * 1000) as i64),
+            "reason":"provider_unavailable","billing":billing,
+        }));
     }
-    let (wait, count) = if let Some(wait) = RETRY_SECONDS.get(completed_retries as usize) {
-        (*wait, completed_retries + 1)
-    } else if billing == ProviderBilling::Api {
-        (AVAILABILITY_SECONDS, completed_retries.saturating_add(1))
-    } else {
-        return None;
-    };
-    Some(
-        json!({"retry_count":count,"next_attempt_ms":now.saturating_add((wait*1000)as i64),"reason":"provider_unavailable","billing":billing}),
-    )
+    None
 }
 
 pub(super) fn manifest_defaults<D: Directory>(
@@ -83,7 +87,8 @@ pub(super) fn manifest_defaults<D: Directory>(
     })
 }
 
-/// Restore provider wait timers once at server startup. Waits use one async task
+/// Restore provider wait timers and readmit resolved person waits at startup.
+/// Retry waits use one async task
 /// per active job (bounded by existing job admission); they hold no process or
 /// execution permit and recheck authority and machine fencing every second.
 pub async fn recover<D: Directory>(
@@ -93,6 +98,10 @@ pub async fn recover<D: Directory>(
     let st = state.clone();
     for (space, id) in blocking(move || st.jobs.agent_retry_waiting()).await? {
         schedule(state, machines, space, id);
+    }
+    let st = state.clone();
+    for (space, id) in blocking(move || st.jobs.recover_request_waits()).await? {
+        super::run::schedule(state, machines, space, id);
     }
     Ok(())
 }
@@ -126,7 +135,11 @@ pub(super) fn schedule<D: Directory>(
                 });
                 if !enabled {
                     let (s, sp, jid, run) = (st.clone(), space.clone(), id.clone(), job.runs);
-                    let _ = blocking(move || s.jobs.agent_interrupt_wait(&sp, &jid, run)).await;
+                    let _ = blocking(move || {
+                        s.jobs
+                            .agent_interrupt_wait(&sp, &jid, run, "retry_disabled")
+                    })
+                    .await;
                     let _ = super::stop_machine(&svc, &job).await;
                     return;
                 }
@@ -155,7 +168,14 @@ pub(super) fn schedule<D: Directory>(
                         .is_err()
                 {
                     let (s, sp, jid, run) = (st.clone(), space.clone(), id.clone(), job.runs);
-                    let _ = blocking(move || s.jobs.agent_interrupt_wait(&sp, &jid, run)).await;
+                    let why = if machine_ok {
+                        "access_changed"
+                    } else {
+                        "machine_offline"
+                    };
+                    let _ =
+                        blocking(move || s.jobs.agent_interrupt_wait(&sp, &jid, run, why)).await;
+                    let _ = super::stop_machine(&svc, &job).await;
                     return;
                 }
                 let (s, sp, jid) = (st.clone(), space.clone(), id.clone());
@@ -212,7 +232,7 @@ mod tests {
                 ProviderFailureClass::UsageLimit,
                 ProviderBilling::Subscription,
                 Some(999999),
-                2,
+                RETRY_SECONDS.len() as u32,
                 1000
             )
             .unwrap()["next_attempt_ms"],

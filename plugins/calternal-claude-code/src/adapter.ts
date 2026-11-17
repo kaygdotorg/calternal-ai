@@ -6,6 +6,7 @@ import type { ProviderCommand, ProviderEvent, ProviderEventKind, ProviderRequest
 const COMMAND_BYTES = 64 * 1024;
 const EVENT_BYTES = 12 * 1024;
 const CLI_LINE_BYTES = 1024 * 1024;
+const signInCommand = 'claude auth login';
 const sessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
 const clip = (s: unknown, max: number): string => {
@@ -102,7 +103,7 @@ export class Adapter {
       child.once('close', code => resolve(code));
     });
     clearTimeout(timer);
-    await this.emit({ type: 'check', installed, signed_in: installed && status === 0, sign_in_command: 'claude auth login' });
+    await this.emit({ type: 'check', installed, signed_in: installed && status === 0, sign_in_command: signInCommand });
   }
 
   private launch(prompt: string): void {
@@ -119,11 +120,17 @@ export class Adapter {
       // Read only the official status response, not a login file or token.
       const status = spawn(this.binary, ['auth','status'], { env: this.environment(), stdio: ['ignore','pipe','ignore'] });
       this.child = status;
-      const statusDone = new Promise<void>(resolve => { status.once('error', () => resolve()); status.once('close', () => resolve()); });
+      let installed = true;
+      const statusDone = new Promise<number | null>(resolve => {
+        status.once('error', () => { installed = false; resolve(null); });
+        status.once('close', resolve);
+      });
       const statusTimer = setTimeout(() => status.kill('SIGKILL'), 15_000);
       let statusText = '';
       for await (const chunk of status.stdout) { statusText += chunk.toString('utf8'); if (bytes(statusText) > 32*1024) {status.kill('SIGKILL'); statusText=''; break;} }
-      await statusDone; clearTimeout(statusTimer);
+      const statusCode = await statusDone;
+      clearTimeout(statusTimer);
+      await this.emit({type:'check',installed,signed_in:installed && statusCode === 0,sign_in_command:signInCommand});
       try {const method = JSON.parse(statusText).authMethod; billing = method === 'claude.ai' ? 'subscription' : ['api_key','api_key_helper','third_party'].includes(method) ? 'api' : 'unknown';} catch {}
       statusText = '';
       if (this.cancelled) {await this.emit({type:'done',outcome:'cancelled'});return;}

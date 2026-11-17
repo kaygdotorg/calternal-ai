@@ -1,4 +1,4 @@
--- auth.db, version 6: the current schema in one definition (no migration chain).
+-- auth.db, version 8: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -9,6 +9,7 @@ CREATE TABLE users (
     username    TEXT NOT NULL UNIQUE COLLATE NOCASE,
     created_at  INTEGER NOT NULL,
     role        TEXT NOT NULL DEFAULT 'member',
+    disabled_at INTEGER,
     quota_bytes INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0)
 );
 CREATE TABLE passkeys (
@@ -91,7 +92,14 @@ CREATE TABLE invites (
     revoked_at     INTEGER,
     quota_bytes    INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0),
     plan           TEXT,
-    lookup_version INTEGER NOT NULL DEFAULT 0
+    space_id       TEXT REFERENCES spaces(id) ON DELETE CASCADE,
+    space_role     TEXT REFERENCES space_roles(name) CHECK (space_role <> 'owner')
+);
+CREATE INDEX invites_live ON invites(space_id, expires_at)
+ WHERE used_at IS NULL AND revoked_at IS NULL;
+CREATE INDEX invites_page ON invites(space_id, id);
+CREATE INDEX invites_terminal ON invites(
+ min(expires_at, coalesce(used_at, expires_at), coalesce(revoked_at, expires_at))
 );
 CREATE TABLE invite_groups (
     invite_id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
@@ -129,6 +137,25 @@ CREATE TABLE space_memberships(
  PRIMARY KEY(space_id,account_id)
 ) STRICT;
 CREATE INDEX spaces_account ON space_memberships(account_id,space_id);
+CREATE TABLE space_group_memberships(
+ space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+ group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+ role TEXT NOT NULL REFERENCES space_roles(name) CHECK(role<>'owner'),
+ PRIMARY KEY(space_id,group_id)
+) STRICT;
+CREATE INDEX spaces_group ON space_group_memberships(group_id,space_id);
+-- This view expands current direct and group grants, without materialized
+-- membership or a cache to invalidate when a grant changes.
+CREATE VIEW space_account_roles AS
+ SELECT m.space_id,m.account_id,
+        CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END AS role
+ FROM space_memberships m JOIN spaces s ON s.id=m.space_id
+ JOIN users u ON u.id=m.account_id AND u.disabled_at IS NULL
+ UNION ALL
+ SELECT m.space_id,g.user_id,m.role
+ FROM group_members g JOIN space_group_memberships m ON m.group_id=g.group_id
+ JOIN users u ON u.id=g.user_id AND u.disabled_at IS NULL;
+
 -- Receipts of directory changes (spaces.*): one per (acting account, scope,
 -- request ID), where scope is the space, or the actor's own account for an
 -- operation with no space. Kept for the receipt retention, then pruned.
@@ -205,14 +232,74 @@ CREATE TABLE agent_access(
 ) STRICT;
 CREATE INDEX agent_access_account ON agent_access(account);
 CREATE TABLE agent_approvals(
- id TEXT PRIMARY KEY, job TEXT NOT NULL REFERENCES agent_access(job) ON DELETE CASCADE,
+ id TEXT PRIMARY KEY, job TEXT NOT NULL,
  account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
- app TEXT NOT NULL, write_access INTEGER NOT NULL, approved INTEGER NOT NULL,
- action TEXT NOT NULL CHECK(length(action)<=16384),
- action_hash TEXT CHECK(action_hash IS NULL OR length(action_hash)=64)
+ space TEXT NOT NULL, thread TEXT NOT NULL,
+ app TEXT NOT NULL, write_access INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','answered','denied','once','this_thread','cancelled')),
+ kind TEXT NOT NULL DEFAULT 'approval' CHECK(kind IN ('approval','question')),
+ action TEXT NOT NULL CHECK(length(CAST(action AS BLOB))<=16384),
+ action_hash TEXT CHECK(action_hash IS NULL OR length(action_hash)=64),
+ decision_request TEXT, decision_value TEXT CHECK(length(CAST(decision_value AS BLOB))<=16384),
+ resolved_ms INTEGER,
+ claimed_id TEXT, claimed_hash TEXT, claimed_ms INTEGER,
+ FOREIGN KEY(space) REFERENCES spaces(id) ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX agent_approvals_job ON agent_approvals(job);
-CREATE INDEX agent_approvals_account ON agent_approvals(account);
+CREATE INDEX agent_approvals_thread ON agent_approvals(space,thread);
+CREATE INDEX agent_approvals_account ON agent_approvals(account,space,thread);
+-- Membership changes and authority cleanup share the protected recovery commit.
+CREATE TRIGGER erase_member_agent_authority AFTER DELETE ON space_memberships
+WHEN NOT EXISTS (
+ SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+ WHERE m.account_id=OLD.account_id AND m.space_id=OLD.space_id AND c.capability='space.read'
+)
+BEGIN
+ DELETE FROM agent_approvals WHERE account=OLD.account_id AND space=OLD.space_id;
+ DELETE FROM agent_access WHERE account=OLD.account_id AND space=OLD.space_id;
+END;
+CREATE TRIGGER erase_unreadable_member_agent_authority AFTER UPDATE OF role ON space_memberships
+WHEN NOT EXISTS (
+ SELECT 1 FROM space_role_capabilities
+ WHERE role=NEW.role AND capability='space.read'
+ UNION ALL
+ SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+ WHERE m.account_id=NEW.account_id AND m.space_id=NEW.space_id AND c.capability='space.read'
+)
+BEGIN
+ DELETE FROM agent_approvals WHERE account=NEW.account_id AND space=NEW.space_id;
+ DELETE FROM agent_access WHERE account=NEW.account_id AND space=NEW.space_id;
+END;
+CREATE TRIGGER erase_group_grant_agent_authority AFTER DELETE ON space_group_memberships
+BEGIN
+ DELETE FROM agent_approvals WHERE space=OLD.space_id
+  AND account IN (SELECT user_id FROM group_members WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=agent_approvals.account AND m.space_id=OLD.space_id AND c.capability='space.read'
+  );
+ DELETE FROM agent_access WHERE space=OLD.space_id
+  AND account IN (SELECT user_id FROM group_members WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=agent_access.account AND m.space_id=OLD.space_id AND c.capability='space.read'
+  );
+END;
+CREATE TRIGGER erase_group_member_agent_authority AFTER DELETE ON group_members
+BEGIN
+ DELETE FROM agent_approvals WHERE account=OLD.user_id
+  AND space IN (SELECT space_id FROM space_group_memberships WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=OLD.user_id AND m.space_id=agent_approvals.space AND c.capability='space.read'
+  );
+ DELETE FROM agent_access WHERE account=OLD.user_id
+  AND space IN (SELECT space_id FROM space_group_memberships WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=OLD.user_id AND m.space_id=agent_access.space AND c.capability='space.read'
+  );
+END;
 CREATE TABLE agent_discards(
  account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  thread TEXT NOT NULL, lease TEXT NOT NULL, authorized_ms INTEGER NOT NULL,

@@ -7,7 +7,7 @@ import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
 import { permissionLabel, runsOnLabel } from "./permissions";
-import type { Answer, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadState, ThreadSummary } from "./model";
+import type { Answer, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadNotice, ThreadState, ThreadSummary } from "./model";
 
 const BASE = Date.UTC(2026, 10, 17, 6, 0, 0);
 const MIN = 60_000;
@@ -47,7 +47,7 @@ Form([Input($branch,"Branch name"), Choice($how,["Rebase","Merge","Squash"],"How
 function seedRequests(): Request[] {
   return [
     { id: "r-q", kind: "question", threadId: "t-wait", title: "Before I open the pull request", form: QUESTION_FORM },
-    { id: "r-a", kind: "approval", threadId: "t-wait", title: "Run a command outside the workspace", action: "Push the branch to the Forgejo remote", command: "git push origin lane/invites" },
+    { id: "r-a", kind: "approval", threadId: "t-wait", title: "Run a command outside the workspace", action: "Push the branch to the Forgejo remote", command: "git push origin lane/invites", lifetimes: ["once", "thread"] },
     { id: "r-s", kind: "secret", threadId: "t-secret", name: "FORGEJO_TOKEN", label: "Forgejo access token", why: "To publish pages to the wiki. The agent gets a handle, never the value.", scope: "personal", required: true, expiresAt: Date.now() + 15 * MIN },
   ];
 }
@@ -58,10 +58,36 @@ const STREAM_TEXT =
   "The public API did not change, so no caller moved. Every doc comment went with its item, and `scripts/check-docs.sh` is clean. " +
   "Next I am running the store tests on the dev VM, then I will ask the reviewer thread to read the diff before anything is merged.";
 
+/**
+ * Fixture scenarios for the screens that only show when something is wrong or missing, picked with `?scenario=` (fixtures only; tests and review): `empty` (a fresh account with no thread and no
+ * request), `no-machine`, `offline`, `signin`, `failed`, `retrying` and `interrupted` (the thread `t-idle` carries that notice).
+ */
+function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
+  let s: string | null = null;
+  try { s = new URLSearchParams(location.search).get("scenario"); } catch { /* not in a page */ }
+  if (!s) return;
+  if (s === "empty") { threads.length = 0; requests.length = 0; return; }
+  const t = threads.find((x) => x.id === "t-idle");
+  if (!t) return;
+  const machine = t.runsOn.machine;
+  const notices: Record<string, ThreadNotice> = {
+    "no-machine": { kind: "no-machine" },
+    offline: { kind: "machine-offline", machine },
+    signin: { kind: "provider-signin", machine, provider: "Claude Code" },
+    failed: { kind: "failed", reason: "The provider kept answering that it was overloaded" },
+    retrying: { kind: "retrying", reason: "The provider answered that it was overloaded", attempt: 3, of: 5, nextAt: Date.now() + 2 * 60_000 },
+    interrupted: { kind: "interrupted", machine },
+  };
+  t.notice = notices[s];
+  if (s === "failed") t.state = "failed";
+  if (s === "interrupted" || s === "retrying") t.state = "waiting";
+}
+
 /** The in-memory `ThreadsClient`. */
 export class FixtureClient implements ThreadsClient {
   private threadList = seedThreads();
   private requestList = seedRequests();
+  constructor() { applyScenario(this.threadList, this.requestList); }
   private extra = new Map<string, Message[]>();
   private threadWatchers = new Set<(t: ThreadSummary[]) => void>();
   private requestWatchers = new Set<(r: Request[]) => void>();
@@ -188,6 +214,10 @@ export class FixtureClient implements ThreadsClient {
       o.timer = undefined;
       this.finishStream(threadId, `${threadId}-stopped-${Date.now()}`, STREAM_TEXT.slice(0, o.sent));
     } else this.patch(threadId, { state: "idle" });
+  }
+  async resume(threadId: string): Promise<void> {
+    this.patch(threadId, { state: "running", notice: undefined });
+    setTimeout(() => this.patch(threadId, { state: "idle" }), 2500);
   }
   async rename(threadId: string, title: string): Promise<void> {
     if (title.trim()) this.patch(threadId, { title: title.trim() });

@@ -50,7 +50,9 @@ function section(text, heading) {
 
 const copies = {
   'dev/plugin-api': ['Plugin API decisions', 'docs/plugin-api.md'],
+  'user/people': ['People and access', 'docs/people.md'],
   'dev/addresses': ['Addresses', 'docs/addresses.md'],
+  'dev/notes-operations': ['Notes operations', 'docs/notes-operations.md'],
   'dev/agent-instructions': ['Agent instructions', 'docs/agent-instructions.md'],
   'dev/composer': ['Composer design', 'docs/composer.md'],
   'dev/glossary': ['Glossary', 'docs/glossary.md'],
@@ -106,11 +108,13 @@ for (const command of ['cl notes create', 'cl notes update', 'cl plugins disable
 for (const [command, shape] of Object.entries(commands)) {
   const id = slug(command);
   commandIds.push(id);
-  const key = command.replace(/^(?:cl|calternal) /, '').replaceAll(' ', '-');
-  const human = goldens.find(file => path.basename(file) === `${key}.txt`);
+  const key = command === 'calternal notes list' ? 'calternal-notes-list' : command.replace(/^(?:cl|calternal) /, '').replaceAll(' ', '-');
+  const human = goldens.find(file => path.basename(file) === `${key}.txt`)
+    ?? goldens.find(file => path.basename(file) === `${key}-width-120.txt`);
   const machine = goldens.find(file => path.basename(file) === `${key}.json`);
   const shortCommand = command.replace(/^(?:cl|calternal) /, '');
-  const row = cli.split('\n').find(line => line.startsWith('| `') && line.includes('`' + shortCommand) && !line.includes('---'));
+  const commandSource = shortCommand === 'notes list' ? section(cli, '`' + command.split(' ')[0] + '`') : cli;
+  const row = commandSource.split('\n').find(line => line.startsWith('| `') && line.includes('`' + shortCommand) && !line.includes('---'));
   const sources = ['docs/cli.md', 'docs/cli-shapes.json', ...[human, machine].filter(Boolean).map(file => path.relative(root, file))];
   page(`admin/commands/${id}`, command, sources,
     `${row ? '| Arguments | Purpose | Human output | JSON data |\n| --- | --- | --- | --- |\n' + row : 'Command output shape registered by the CLI tests. See CLI conventions for global options.'}\n\n## JSON data shape\n\n${shape === null ? 'No registered shape in cli-shapes.json; consult the recorded output below and the CLI conventions.' : json(shape)}\n\n## Human example\n\n${human ? 'Recorded test fixture:\n\n```text\n' + (await readFile(human, 'utf8')).trim() + '\n```' : 'No recorded human-output fixture is present for this command. Invocation pattern (supply the required arguments from `--help`):\n\n```sh\n' + command + ' --help\n```'}\n\n## JSON example\n\n${machine ? 'Recorded test fixture:\n\n```json\n' + (await readFile(machine, 'utf8')).trim() + '\n```' : 'No recorded JSON fixture is present. Invocation pattern (supply required arguments):\n\n```sh\n' + command + ' --json\n```'}`);
@@ -120,10 +124,14 @@ page('admin/commands/index', 'Command reference', ['docs/cli-shapes.json', 'docs
 const glossary = await read('docs/glossary.md');
 page('user/spaces-and-roles', 'Spaces and roles', ['docs/glossary.md'], section(glossary, 'People and access'));
 page('user/permissions-modes', 'Permission modes', ['docs/agent-instructions.md'], 'Accepted design; the complete approval experience is not a released feature.\n\n' + section(await read('docs/agent-instructions.md'), 'Access'));
-page('user/space-instructions', 'Space standing instructions', ['docs/agent-instructions.md'], section(await read('docs/agent-instructions.md'), 'Space standing instructions'));
+page('user/space-instructions', 'Space standing instructions', ['docs/agent-instructions.md'], // The source links to the developer document on requests, which has no user page.
+  section(await read('docs/agent-instructions.md'), 'Space standing instructions').replaceAll('[person requests](requests.md)', 'person requests'));
+page('dev/turn-readiness', 'Turn readiness', ['docs/agent-turns.md'],
+  section(await read('docs/agent-turns.md'), 'Machine and provider readiness'));
 const savedThreads = await read('docs/threads.md');
 page('user/threads', 'Threads', ['docs/threads.md', 'docs/orchestrator-proposal.md'],
-  '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates') +
+  '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates')
+    .replace('[machine and provider readiness](agent-turns.md#machine-and-provider-readiness)', 'the machine and provider readiness reference') +
   '\n## CLI\n' + section(savedThreads, 'CLI') +
   '\n## Accepted design\n' + section(await read('docs/orchestrator-proposal.md'), 'Decided in the grill (2026-11-17)'));
 for (const [id, title, source, note] of [
@@ -191,9 +199,9 @@ for (const pkg of ['plugin-sdk', 'genui']) {
 }
 await rm(scratch, { recursive: true, force: true });
 for (const [id, title, body] of [
-  ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [Threads](./threads/)\n- [Permission modes](./permissions-modes/)'],
+  ['user/index', 'Using Calternal', '- [Spaces and roles](./spaces-and-roles/)\n- [People and access](./people/)\n- [Threads](./threads/)\n- [Permission modes](./permissions-modes/)'],
   ['admin/index', 'Administration', '- [CLI conventions](./cli/)\n- [Commands](./commands/)\n- [Storage](./storage/)\n- [Machines](./machines/)\n- [Secrets](./secrets/)\n- [Recovery and backups](./recovery/)'],
-  ['dev/index', 'Developer reference', '- [Operations](./operations/)\n- [Manifest schema](./manifest/)\n- [Plugin SDK](./typescript/plugin-sdk/)\n- [GenUI API](./typescript/genui/)\n- [Rust crates](./crates/)\n- [Plugin decisions](./plugin-api/)\n- [Addresses](./addresses/)\n- [Agent instructions](./agent-instructions/)\n- [Composer](./composer/)\n- [Glossary](./glossary/)'],
+  ['dev/index', 'Developer reference', '- [Operations](./operations/)\n- [Notes operations](./notes-operations/)\n- [Manifest schema](./manifest/)\n- [Plugin SDK](./typescript/plugin-sdk/)\n- [GenUI API](./typescript/genui/)\n- [Rust crates](./crates/)\n- [Plugin decisions](./plugin-api/)\n- [Addresses](./addresses/)\n- [Agent instructions](./agent-instructions/)\n- [Composer](./composer/)\n- [Glossary](./glossary/)'],
   ['index', 'Calternal documentation', `[User guide](${base}user/) · [Administration](${base}admin/) · [Developer reference](${base}dev/)\n\nGenerated from repository contracts, command fixtures and API comments. Each page includes a source-file comment. Append \`.md\` to a page address for its Markdown source (both \`page.md\` and \`page/.md\` are emitted).\n\n[LLM index](${base}llms.txt) · [Complete Markdown documentation](${base}llms-full.txt)`],
 ]) page(id, title, ['scripts/docs-site/generate.mjs'], body);
 

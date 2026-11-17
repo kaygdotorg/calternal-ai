@@ -341,3 +341,66 @@ Listed, not changed (not the shell's, or not decided): the composer's chip label
 ## Simplify pass (2026-11-18)
 
 Read `shell/`, `appearance/`, `palette/`, `lib/` and `packages/ui` for exports nothing uses (a scan of every export against the whole repository, tests included) and removed what was dead: `setLook` and the unread `lastVeils` (wallpaper), `settingById` (settings registry), `fmtTime`, `fmtDay`, `dayName`, `monthName` and four constants behind them (palette dates), `adaptiveCount` (material), `springEasing` (spring engine), `scrollToIndex` (VirtualList); and took `export` off seven things only their own file uses (`THIS_SPACE`, `VISIBLE`, `keyChips`, `resolveScheme`, `FLOORS` and others). The Settings pages' own controls (shortcuts, machines, plugins) load when their page opens, so they are not in the first load. Not changed, with the reason: the translucent fills (`rgb(var(--ink-rgb) / 0.05 ... 0.1)`, 40 uses in six values) cannot become one root token, because a token computed at the root would not follow a sidebar's flipped ink (`data-ink`); the two `isMac` helpers (the app's shortcuts and the editor's text keys) stay apart because the editor package must not import from the app. Tests: 172 and 49 pass. First load: scripts 299.6 KB before the Settings pages of this round, 301.4 KB after them and these removals (raw; gzip 108.3 and 109.3 KB), stylesheet 71.3 and 71.8 KB.
+
+## Server mode beyond sign-in (2026-11-18)
+
+With `?server=1` Settings shows only what a server operation backs. Real now: **Account** (name and role read only, passkeys add/rename/remove with the fresh-passkey step, installations, sign out, sign out everywhere), **Members** of the current space (list, role, remove, leave), **Secrets** (names and labels, never values), **Space plugins** (list, switch), **Delete space**, **Machines** (list, state, sandboxed/direct, pause, revoke, enrollment code). Appearance and Keyboard are this browser's own. Admin has no operations at all, so no Admin section shows even for an operator (the capability is read from `/auth/me`: `server.settings`). Fixtures show everything as before.
+
+Shell states: **reconnecting** (any call or stream that cannot reach the server: a pill, probed every 3 s), **session ended** (a 401: a pill, then a reload into the sign-in screen at the same address), **version** (`describe.protocol_version` differs from this build's: a plain notice). Tested in `apps/web/e2e/sign-in.mjs`; the version notice is not (needs a server of another protocol).
+
+### Controls hidden in server mode: the operation needed
+
+| Page | Control | Operation needed |
+| --- | --- | --- |
+| Account | Connected provider accounts | an operation listing and disconnecting provider accounts |
+| Agents | Every control (retry, snooze, sandbox idle time, decision service, defaults) | `agent.settings` exists but its fields do not map to these controls yet; needs the list of settings and their bounds |
+| Plugins (user) | Installed / available catalogue, per-plugin options | `plugins.install`, `plugins.uninstall`, a plugin's declared settings read and write |
+| Members and roles | Transfer ownership | none in the UI yet (`spaces.transfer` exists; no control built) |
+| Secrets | Delete one, delete all | `secrets.revoke` exists; no control yet for space secrets by name |
+| Instructions and defaults | Instructions (AI/AGENTS.md), default look | space file read/write, space settings |
+| Space plugins | Turn off every plugin | none needed; not built (one `plugins.disable` per plugin) |
+| Machines | Add by SSH (guided flow) | server-side SSH enrollment; the enrollment code replaces it |
+| Admin | Machine pool | `pool.list`, `pool.drain` |
+| Admin | Storage | `storage.status` for the three roots |
+| Shell | Personal space | server creates it at sign-up (then delete `withPersonal` in `spaces.svelte.ts`) |
+
+## First use, failures, accessibility, light wallpapers (2026-11-18)
+
+- **Empty states (server mode):** Notes, Machines (what a machine is, Make a code, the enroll command), Secrets, Members, Plugins each say what the thing is and offer the one next action. Failures use `server/say.ts` (plain words plus the next step, by code, never the server's message). Screens for server unreachable, version mismatch and a wrong or used setup code.
+- **Accessibility:** `e2e/a11y.mjs` (fixtures, every screen and Settings page, both schemes, desktop and phone) and `e2e/a11y-server.mjs` (real server: setup, sign-in, shell, every Settings page, failure screens; 56 checks) are clean. `e2e/a11y-walk.mjs`: keyboard walk with focus indicator and names on the threads, notes and three Settings pages in both schemes, the palette opens, keeps focus and returns it on Escape, reduced motion leaves no movement, 200% zoom (720 px) has no sideways scroll and no axe violation. Found and fixed: Plugins group headings jumped from h1 to h3; the sheet returned focus to a field that had gone (now to where focus was before any sheet).
+- **Light wallpapers:** the eight built-ins checked in a headed GPU Chrome (screenshots on issue #15); nothing to fix. Phone width needs a real device or the WebKit simulator, not that Chrome.
+- **Served by the server itself:** deep-link reload and `blob:` wallpapers work with the current server (CSP and fallback in dev); the personal space comes from `personal: true`.
+
+## Notes on the real server (2026-11-18)
+
+Through the same adapter interface as fixtures (`apps/web/src/apps/notes/client.ts`): list, open, create, edit and save (whole-note replacement checked against the revision), rename (the first heading is the title), and following the space journal (live stream, no polling). The state of the open note is said in the header: Not saved yet, Saving, Saved, Changed elsewhere, or "Can't reach the server. Your text is still here and saves when it is back". The editor's text is never replaced by a save, so typing during a save is safe; a conflict keeps the typed text on screen and offers Keep mine or Use theirs; drafts use the account's `drafts.*` operations. Tested end to end in `e2e/notes-server.mjs` (real server, virtual authenticator): first note, saving, rename, a change from elsewhere (appeared in about 100 ms), conflict, offline and back, and a 10,000-line note.
+
+Development-host numbers (dev-02, debug server, Chromium): typing in the 10,000-line note while saves ran, 135 keystrokes, median 2.1 ms, p95 3.1 ms, worst 6.8 ms to paint; operations round trips seen by the page (saves, list refreshes, draft writes), median 5 ms, p95 118 ms, max 438 ms.
+
+| Page | Control | Operation needed |
+| --- | --- | --- |
+| Notes | `@` people | a members-with-names operation (also needed for Members); only agents and threads are offered |
+| Notes | Live co-editing | rooms; until then saves are whole-note with a revision check |
+
+## Start-up, people, Notes lists, adapter clean-up (2026-11-18)
+
+**Start-up in server mode (`apps/web/e2e/startup-server.mjs`, dev-02, median of 9 loads, ready = `data-ready`, the shell painted).** The shell now paints at once from a small record of what this device knows (account, capability names, spaces; `server/cache.ts`, under a day old, cleared by sign-out and by a refused session) and the server's answer confirms it a round trip later; a first visit, a signed-out device or an old record still waits for the server (no flash of the wrong screen). The four checks (session, protocol, who, spaces) run in parallel, not one after another, and begin before the fonts finish.
+
+| | before | after |
+| --- | --- | --- |
+| warm, no added latency | 254 ms | 63 ms |
+| cold, no added latency | 316 ms | 200 ms |
+| warm, +100 ms each way | 851 ms | 62 ms |
+| cold, +100 ms each way | 1428 ms | 943 ms |
+
+Fixtures are unchanged (first paint 108 vs 108-112 ms, interleaved). Known limit: a device whose session was revoked elsewhere paints the app from its record for one round trip, then turns into the sign-in screen; signing out clears the record, so that case is a remote revoke only.
+
+**People (`server/people.ts`, generated contract types).** Members with names and roles, role change, remove, ownership transfer, add a person or a group with a role, the Roles page, Invites (make with a role and a length of time, copy the link, revoke), the join page for an invited person (`/invites/<secret>`: name and passkey, lands in their own space with the invited one added; an existing account opens the link and joins), account name edit, Admin People (disable) and Groups (make, rename, delete, put people in and out), each by capability. Tested in `e2e/people-server.mjs` against a server built from this tree.
+
+**Notes (server mode).** Delete to Trash with Undo, a Trash view with Restore and Delete for good, rename from the list, a tag filter, and the `[[` and `#` pickers asking the space's index (title and tag lookups, one request per pause).
+
+**Typing cost found on the way.** After keys typed in a field stopped switching the page to keyboard mode, typing in a 10,000-line note cost about 7 ms a key more (median 3.4 to 10 ms): keyboard mode had been switching every animation off, hiding the editor caret's blink animation restarting at every key. The caret now holds still while keys are typed (`packages/ui/src/styles/base.css`, with the other typing pauses). Back to a 3 ms median.
+
+**Adapter clean-up (`apps/web/src/server`).** One request path in `ServerClient` (`send`, `stream`, `json`) instead of eight `fetch` wrappers; one error type (`ServerError`, with `AuthError` removed) worded by `say.ts` everywhere; the account, passkey, machines and people routes all use `server.json`; `spaces.load()` is the only place the space list is read (the Threads adapter had its own); `capabilities` is reactive. Size: `auth.ts` 20 lines shorter, the machines panel 5, `say.ts` 1; `client.ts` gains the shared helpers (26 net), so the total is about the same with one path instead of eight, not a large cut.
+
+Missing now: delete-for-everyone accounts, directory groups from outside (shown read-only), the invite link's address on the preview host (the server builds it from its own origin: `/invites/<secret>` at the root, which Caddy must route to the app under `/ai/`).

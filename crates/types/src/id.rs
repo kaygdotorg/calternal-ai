@@ -102,6 +102,15 @@ identifier!(
     "One signed-in client installation, owned by an account."
 );
 
+identifier!(
+    GroupId,
+    "A server group, independent of account and space identities."
+);
+identifier!(
+    InviteId,
+    "A space invitation record, distinct from its bearer secret."
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;

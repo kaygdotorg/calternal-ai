@@ -1,77 +1,106 @@
 /**
- * Requests on the real server: questions, approvals and secret requests (the request bar and the attention card), through the unified request operations of
- * issue #32: `requests.list`, `requests.answer`, `requests.approve` (lifetime `once` or `thread`) and `requests.deny`. The wire shape below is the lane's stated goal
- * (list / answer / approve / deny); it is NOT yet in dev, so the mapping here (`requestOf`, `answerInput`) is the one place to change when the contract lands. A secret's value leaves
- * the client in `requests.answer` and is not kept; a failure is thrown as it came (`ServerError`). The list is polled every 4 s while watched (a feed replaces the poll).
+ * Requests on the real server: questions, approvals and secret prompts (the request bar and the attention card), through the requests lane's operations (`docs/requests.md`, `crates/core/src/requests.rs`):
+ *   - `requests.list` `{}` -> `{ requests: [{ id, space_id|null, thread_id|null, detail }] }`, account-wide; `detail.kind` is `question` (`label`, `form: { genui_version: 2, source }`),
+ *     `approval` (`app`, `write`, `action: { operation, input, request_id, risk }`) or `secret` (`name`, `label`, `reason`, `expires_at_ms`).
+ *   - `requests.answer` `{ id, answer }` (a question's form values), `requests.approve` `{ id, lifetime: "once" | "this_thread" }`, `requests.deny` `{ id }`.
+ *   - A secret's value is not an operation: it goes to `POST /api/v1/auth/secrets/provide` `{ space_id?, request_id, value }` (a signed-in session with a fresh passkey check), and is not kept here.
+ * Approving needs a fresh passkey proof on an installation session, so a development bearer is refused: the refusal reaches the person as the server's own words.
+ * Which lifetimes an approval allows is the server's rule (irreversible and access-widening actions are single-use): `lifetimesOf` reads it from the action's risk (or a `lifetimes` list when the server sends one),
+ * and the bar offers nothing else. Not polled: the thread feed calls `refresh` when a turn starts or stops waiting.
  */
 import { spaces } from "../shell/spaces.svelte";
 import type { RequestsClient } from "../apps/threads/client";
 import type { Answer, Request } from "../apps/threads/model";
-import { ServerClient } from "./client";
+import { ServerClient, ServerError } from "./client";
 
-/** One open request as the server lists it (assumed shape, see the file header). */
+/** One request as the server lists it. */
 export interface WireRequest {
   id: string;
-  kind: "question" | "approval" | "secret";
-  thread_id: string;
-  title?: string;
-  /** question: the form in the generated-UI language. */
-  form?: string;
-  /** approval: what the agent wants, and the exact command. */
-  action?: string;
-  command?: string;
-  /** secret: the manifest name, label, reason, scope, whether the turn needs it, and when it expires (ms). */
-  name?: string;
-  label?: string;
-  why?: string;
-  scope?: "personal" | "space";
-  required?: boolean;
-  expires_ms?: number;
+  space_id?: string | null;
+  thread_id?: string | null;
+  detail:
+    | { kind: "question"; label: string; form: { genui_version: number; source: string } }
+    | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string; risk?: string }; lifetimes?: string[] }
+    | { kind: "secret"; name: string; label: string; reason: string; expires_at_ms: number };
+}
+
+/** The lifetimes an approval may be given for. A server-sent list wins; otherwise the action's risk decides (the requests lane's rule). */
+export function lifetimesOf(d: Extract<WireRequest["detail"], { kind: "approval" }>): ("once" | "thread")[] {
+  if (d.lifetimes?.length) return d.lifetimes.map((l) => (l === "this_thread" || l === "thread" ? "thread" : "once")).filter((l, i, a) => a.indexOf(l) === i) as ("once" | "thread")[];
+  const risk = d.action?.risk;
+  return risk === "irreversible" || risk === "widens_access" ? ["once"] : ["once", "thread"];
 }
 
 /** A listed request as the Threads app's type. An unknown kind is dropped (the bar cannot draw it). */
 export function requestOf(w: WireRequest): Request | null {
-  switch (w.kind) {
-    case "question": return { id: w.id, kind: "question", threadId: w.thread_id, title: w.title ?? "A question", form: w.form ?? "" };
-    case "approval": return { id: w.id, kind: "approval", threadId: w.thread_id, title: w.title ?? "Approval needed", action: w.action ?? "", command: w.command ?? "" };
-    case "secret": return { id: w.id, kind: "secret", threadId: w.thread_id, name: w.name ?? "", label: w.label ?? w.name ?? "", why: w.why ?? "", scope: w.scope ?? "personal", required: w.required ?? true, expiresAt: w.expires_ms ?? 0 };
+  const threadId = w.thread_id ?? "";
+  const d = w.detail;
+  switch (d?.kind) {
+    case "question": return { id: w.id, kind: "question", threadId, title: d.label, form: d.form?.source ?? "" };
+    case "approval": {
+      const op = d.action?.operation;
+      const input = d.action?.input;
+      return {
+        id: w.id, kind: "approval", threadId, title: "Approval needed",
+        action: op ? `The agent wants to run ${op}` : `The agent asks for ${d.write ? "write" : "read"} access to ${d.app}`,
+        command: op ? `${op} ${input === undefined ? "" : JSON.stringify(input)}`.trim().slice(0, 600) : `${d.app} (${d.write ? "read and write" : "read"})`,
+        lifetimes: lifetimesOf(d),
+      };
+    }
+    case "secret": return { id: w.id, kind: "secret", threadId, name: d.name, label: d.label || d.name, why: d.reason, scope: w.space_id ? "space" : "personal", spaceId: w.space_id ?? undefined, required: true, expiresAt: d.expires_at_ms };
     default: return null;
   }
 }
 
-/** The operation and input an answer becomes. */
-export function answerInput(id: string, a: Answer): { operation: string; input: Record<string, unknown> } {
+/** The operation and input an answer becomes; null when it needs none (a skipped secret has no server call: the prompt just expires). */
+export function answerInput(id: string, a: Answer): { operation: string; input: Record<string, unknown> } | null {
   switch (a.kind) {
-    case "question": return { operation: "requests.answer", input: { id, values: a.values } };
-    case "approval": return a.decision === "deny" ? { operation: "requests.deny", input: { id } } : { operation: "requests.approve", input: { id, lifetime: a.decision } };
-    case "secret": return { operation: "requests.answer", input: { id, secret: a.value } };
-    case "secret-skip": return { operation: "requests.deny", input: { id } };
+    case "question": return { operation: "requests.answer", input: { id, answer: a.values } };
+    case "approval": return a.decision === "deny" ? { operation: "requests.deny", input: { id } } : { operation: "requests.approve", input: { id, lifetime: a.decision === "thread" ? "this_thread" : "once" } };
+    default: return null;
   }
 }
 
-const EVERY = 4000;
-
 export class ServerRequests implements RequestsClient {
   private watchers = new Set<(r: Request[]) => void>();
-  private timer = 0;
-  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) {}
+  /** Prompts the person chose to skip on this page: hidden until the page is reloaded (the server has nothing to decline; the prompt expires by itself). */
+  private skipped = new Set<string>();
+  private known = new Map<string, Request>();
+  /** Set when the server answered `not_found` to `requests.list`: it does not offer requests, so there is nothing to ask again until the page is reloaded. */
+  private absent = false;
+  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) { void this.space; }
 
   async requests(): Promise<Request[]> {
-    const { requests } = await this.server.operate<{ requests: WireRequest[] }>("requests.list", { space_id: this.space() });
-    return requests.flatMap((w) => requestOf(w) ?? []);
+    if (this.absent) return [];
+    try {
+      const { requests } = await this.server.operate<{ requests: WireRequest[] }>("requests.list", {});
+      const out = requests.flatMap((w) => requestOf(w) ?? []).filter((r) => !this.skipped.has(r.id));
+      this.known = new Map(out.map((r) => [r.id, r]));
+      return out;
+    } catch (e) {
+      if (e instanceof ServerError && e.code === "not_found") { this.absent = true; return []; }
+      throw e;
+    }
   }
+  /** Watchers hear a new list whenever `refresh` runs: after an answer, and when the thread feed says a turn started or stopped waiting. Nothing is polled. */
   watchRequests(cb: (r: Request[]) => void): () => void {
     this.watchers.add(cb);
-    if (!this.timer) this.timer = window.setInterval(() => { if (!document.hidden) void this.refresh(); }, EVERY);
-    return () => { this.watchers.delete(cb); if (!this.watchers.size) { clearInterval(this.timer); this.timer = 0; } };
+    return () => { this.watchers.delete(cb); };
   }
-  /** Re-reads and tells every watcher (after an answer, and on each tick). */
+  /** Re-reads and tells every watcher. */
   async refresh(): Promise<void> {
-    try { const r = await this.requests(); for (const w of this.watchers) w(r); } catch { /* offline: the next tick tries again */ }
+    if (this.absent || !this.watchers.size) return;
+    try { const r = await this.requests(); for (const w of this.watchers) w(r); } catch { /* the server is away: the next change tries again */ }
   }
   async answer(id: string, a: Answer): Promise<void> {
-    const { operation, input } = answerInput(id, a);
-    await this.server.operate(operation, input);
+    if (a.kind === "secret") await this.provide(id, a.value);
+    else if (a.kind === "secret-skip") this.skipped.add(id);
+    else { const call = answerInput(id, a)!; await this.server.operate(call.operation, call.input); }
     await this.refresh();
+  }
+  /** Sends a secret's value to the trusted endpoint. The value is not kept; a refusal (no fresh passkey check, expired) is thrown as the server said it. */
+  private async provide(id: string, value: string): Promise<void> {
+    const r = this.known.get(id);
+    await this.server.post("/api/v1/auth/secrets/provide", { request_id: id, ...(r?.kind === "secret" && r.spaceId ? { space_id: r.spaceId } : {}), value });
   }
 }

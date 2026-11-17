@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "read",
   "id": "notes-insights.summarize",
   "description": "Compute word, character and line statistics",
   "mutates": false
@@ -55,242 +56,26 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
-    "GenUiAction": {
+    "GenUiView": {
       "additionalProperties": false,
-      "description": "Button operation call in `plugins.preview` and `notes-insights.summarize` views or plugin manifests; dispatch still checks current authority.",
+      "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",
       "properties": {
-        "input": {
-          "additionalProperties": true,
-          "description": "Operation-specific JSON object; must pass the selected operation schema before dispatch.",
-          "type": "object"
+        "genui_version": {
+          "description": "Generated-UI language version; exactly 2 (version 1 was the retired JSON tree).",
+          "format": "uint32",
+          "maximum": 2,
+          "minimum": 2,
+          "type": "integer"
         },
-        "operation": {
-          "description": "Versioned operation identifier; operation envelopes and actions require 1..128 UTF-8 bytes.",
+        "source": {
+          "description": "Program source, at most 64 KiB of UTF-8.",
+          "maxLength": 65536,
           "type": "string"
         }
       },
       "required": [
-        "input",
-        "operation"
-      ],
-      "type": "object"
-    },
-    "GenUiNode": {
-      "description": "Portable declarative nodes in plugin previews and `notes-insights.summarize` results. Validation bounds depth to 8, nodes to 128 and enforces unique IDs.",
-      "oneOf": [
-        {
-          "additionalProperties": false,
-          "description": "Ordered container of child nodes.",
-          "properties": {
-            "children": {
-              "description": "Ordered child nodes; the complete tree must remain within depth 8 and 128 nodes.",
-              "items": {
-                "$ref": "#/definitions/GenUiNode"
-              },
-              "type": "array"
-            },
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "stack"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "children",
-            "id",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Literal non-interactive text.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "text": {
-              "description": "Literal display text, limited to 8 KiB of UTF-8.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "text"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "text",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Labeled action dispatched through the operation boundary.",
-          "properties": {
-            "action": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/GenUiAction"
-                }
-              ],
-              "description": "Declared operation to dispatch on activation; no authority is embedded in the action."
-            },
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Accessible display label, 1..256 Unicode scalars.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "button"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "action",
-            "id",
-            "label",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Labeled statistic rendered as text.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Accessible display label, 1..256 Unicode scalars.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "stat"
-              ],
-              "type": "string"
-            },
-            "value": {
-              "description": "Display-formatted statistic value; rendering must treat it as text.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "label",
-            "type",
-            "value"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Link to a stable resource resolved through current access checks.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Accessible display label, 1..256 Unicode scalars.",
-              "type": "string"
-            },
-            "resource_id": {
-              "description": "Stable UUID resource target; resolving it requires access to its space.",
-              "type": "string"
-            },
-            "space_id": {
-              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "resource"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "label",
-            "resource_id",
-            "space_id",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Host-owned document editor bound to an authorized resource.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "resource_id": {
-              "description": "Stable UUID resource target; resolving it requires access to its space.",
-              "type": "string"
-            },
-            "space_id": {
-              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "document-editor"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "resource_id",
-            "space_id",
-            "type"
-          ],
-          "type": "object"
-        }
-      ]
-    },
-    "GenUiView": {
-      "additionalProperties": false,
-      "description": "Versioned portable view in plugin manifests, previews and `notes-insights.summarize`. Validation limits JSON to 64 KiB and string values to 32 KiB.",
-      "properties": {
-        "genui_version": {
-          "description": "Portable view contract version; exactly 1 in this preview.",
-          "format": "uint32",
-          "maximum": 1,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "root": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/GenUiNode"
-            }
-          ],
-          "description": "Root node of the bounded portable tree; IDs are unique across the tree."
-        }
-      },
-      "required": [
         "genui_version",
-        "root"
+        "source"
       ],
       "type": "object"
     },
@@ -341,7 +126,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "$ref": "#/definitions/GenUiView"
         }
       ],
-      "description": "Validated portable presentation with bounded node, depth, text and serialized sizes."
+      "description": "Generated-UI view, compiled by the host before delivery."
     }
   },
   "required": [

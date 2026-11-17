@@ -6,7 +6,7 @@ use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
 use std::{
     fs::{self, File},
-    path::{Path, PathBuf},
+    path::Path,
 };
 use uuid::Uuid;
 
@@ -143,20 +143,6 @@ impl Space {
         }
         Ok(())
     }
-    pub(crate) fn file_path(&self, id: Uuid) -> Result<PathBuf> {
-        let path: String = self
-            .conn
-            .query_row(
-                "SELECT path FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(internal)?
-            .ok_or_else(missing)?;
-        ensure_item_path(&path)?;
-        Ok(self.files.join(path))
-    }
     /// UUID names avoid Trash collisions; placement remains the existing guarded move.
     pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
         let (_, format) = self.registration(kind)?;
@@ -171,6 +157,7 @@ impl Space {
         kind: &str,
         title: &str,
         current: Option<&str>,
+        preferred: Option<&str>,
     ) -> Result<String> {
         let (placement, format) = self.registration(kind)?;
         let folder = folder(&placement, kind);
@@ -200,6 +187,33 @@ impl Space {
             let own = current.is_some_and(|p| names::fold(p) == names::fold(&rel));
             Ok(reserved || (names.taken(folded) && !own))
         };
+        let suffix = format!(".{extension}");
+        let basename = |path: &str| {
+            let (parent, name) = path.rsplit_once('/')?;
+            (parent == folder && name.ends_with(&suffix)).then_some(name.to_owned())
+        };
+        // Keep a collision suffix once assigned. A later save must not quietly
+        // change a readable path merely because an earlier filename was freed.
+        if let Some(path) = current
+            && let Some(name) = basename(path)
+            && let Some(name_stem) = name.rsplit_once('.').map(|(stem, _)| stem)
+            && (name_stem == stem
+                || name_stem
+                    .strip_prefix(&stem)
+                    .and_then(|suffix| suffix.strip_prefix(' '))
+                    .and_then(|number| number.parse::<u32>().ok())
+                    .is_some_and(|number| number >= 2))
+        {
+            ensure_item_path(path)?;
+            return Ok(path.to_owned());
+        }
+        if let Some(path) = preferred
+            && let Some(name) = basename(path)
+            && !taken(&names::fold(&name))?
+        {
+            ensure_item_path(path)?;
+            return Ok(path.to_owned());
+        }
         let mut number = 1u32;
         let candidate = loop {
             let candidate = if number == 1 {
@@ -220,16 +234,19 @@ impl Space {
         };
         Ok(format!("{folder}/{candidate}"))
     }
-    pub(crate) fn check_file(&mut self, id: Uuid) -> Result<()> {
-        let (state, expected): (String, Option<String>) = self
-            .conn
-            .query_row(
-                "SELECT mat_state,file_hash FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .map_err(internal)?;
-        let found = match hash(&self.file_path(id)?) {
+    pub(crate) fn check_file(&mut self, id: Uuid) -> Result<Option<String>> {
+        let head = self.header(id)?;
+        self.check_header(id, &head)
+    }
+    /// Check the current file once against an already loaded header. The caller
+    /// holds the space lock; conflicts durably block this item and preserve bytes.
+    pub(crate) fn check_header(
+        &mut self,
+        id: Uuid,
+        head: &crate::db::Header,
+    ) -> Result<Option<String>> {
+        ensure_item_path(&head.path)?;
+        let found = match hash(&self.files.join(&head.path)) {
             Ok(found) => found,
             Err(e) if e.code == calternal_types::ErrorCode::Conflict => {
                 self.block(id)?;
@@ -237,11 +254,11 @@ impl Space {
             }
             Err(e) => return Err(e),
         };
-        if state == "blocked" || found != expected {
+        if head.state == "blocked" || found != head.file_hash {
             self.block(id)?;
             return Err(blocked());
         }
-        Ok(())
+        Ok(head.file_hash.clone())
     }
     fn block(&self, id: Uuid) -> Result<()> {
         self.conn
@@ -253,33 +270,69 @@ impl Space {
         Ok(())
     }
     pub(crate) fn place(&mut self, id: Uuid, fault: fn(FaultPoint)) -> Result<()> {
-        let (state, expected, old): (String, Option<String>, Option<String>) = self
-            .conn
-            .query_row(
-                "SELECT mat_state,file_hash,old_path FROM items WHERE id=?1",
-                [id.to_string()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .map_err(internal)?;
+        self.place_snapshot(id, None, fault)
+    }
+
+    // Reuse the immutable snapshot held by a newly committed write. Recovery
+    // opens the same version from SQLite when it has no in-memory snapshot.
+    pub(crate) fn place_snapshot(
+        &mut self,
+        id: Uuid,
+        snapshot: Option<&Item>,
+        fault: fn(FaultPoint),
+    ) -> Result<()> {
+        let head = self.header(id)?;
+        self.place_header(id, head, snapshot, fault)
+    }
+
+    /// Place the already loaded revision header under its space lock, preserving
+    /// the final checked file read and all file/directory durability boundaries.
+    pub(crate) fn place_header(
+        &mut self,
+        id: Uuid,
+        head: crate::db::Header,
+        snapshot: Option<&Item>,
+        fault: fn(FaultPoint),
+    ) -> Result<()> {
+        let crate::db::Header {
+            state,
+            file_hash: expected,
+            old_path: old,
+            path,
+            ..
+        } = head;
+        if state == "purged" || state == "purging" {
+            return Err(missing());
+        }
         if state == "materialized" {
             return Ok(());
         }
         if state != "pending" {
             return Err(blocked());
         }
-        let item = self.get(id)?;
+        let loaded;
+        let item = if let Some(snapshot) = snapshot {
+            debug_assert_eq!(snapshot.id, id);
+            snapshot
+        } else {
+            loaded = self.get(id)?;
+            &loaded
+        };
         let (_, format) = self.registration(&item.kind)?;
-        let bytes = encoded(&item, &format)?;
+        let bytes = encoded(item, &format)?;
         let new_hash = file_hash(&bytes);
-        let path = self.file_path(id)?;
+        ensure_item_path(&path)?;
+        let path = self.files.join(path);
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
         // Normally prepared by `choose_path`; recreate only if it vanished since.
-        if !dir.is_dir() {
+        if !fs::symlink_metadata(dir).is_ok_and(|metadata| metadata.is_dir()) {
             calternal_fsio::private::directory(dir).map_err(internal)?;
         }
         let result = (|| {
-            if let Some(old) = old {
-                ensure_item_path(&old)?;
+            let moved_from = old.as_deref();
+            let mut moved = false;
+            if let Some(old) = &old {
+                ensure_item_path(old)?;
                 let old = self.files.join(old);
                 let moving = dir.join(format!(".calternal-move-{id}"));
                 // A fixed private staging name makes both halves of case-only
@@ -301,16 +354,31 @@ impl Space {
                             }
                         })?;
                     }
+                    moved = true;
                 } else if hash(&moving)? == expected && expected.is_some() {
                     rename_safely(&moving, &path).map_err(internal)?;
+                    moved = true;
                 }
             }
             let found = hash(&path)?;
             if found.as_deref() == Some(&new_hash) {
-                File::open(&path)
-                    .and_then(|f| f.sync_all())
-                    .map_err(internal)?;
-                calternal_fsio::sync_dir(dir).map_err(internal)?;
+                // A checked move began with a fully placed revision and fsio
+                // has synced both directories. Replays reestablish that boundary.
+                if !moved {
+                    File::open(&path)
+                        .and_then(|f| f.sync_all())
+                        .map_err(internal)?;
+                    if let Some(from) = moved_from {
+                        let source = self.files.join(from);
+                        if let Some(parent) = source.parent().filter(|parent| *parent != dir) {
+                            calternal_fsio::sync_dir(parent).map_err(internal)?;
+                        }
+                    }
+                    calternal_fsio::sync_dir(dir).map_err(internal)?;
+                }
+                if moved_from.is_some() {
+                    fault(FaultPoint::AfterPlacement);
+                }
             } else if found == expected {
                 fault(FaultPoint::BeforePlacement);
                 if expected.is_none() {

@@ -17,7 +17,7 @@
   const on = (id: string) => values.get<boolean>(`plugins.${id}.enabled`, true);
 </script>
 
-<h3 class="gh">Installed</h3>
+<h2 class="gh">Installed</h2>
 <ul>
   {#each CATALOGUE.filter((p) => installed.includes(p.id)) as p (p.id)}
     <li data-setting="plugins.{p.id}">
@@ -31,7 +31,7 @@
     </li>
   {/each}
 </ul>
-<h3 class="gh">Available</h3>
+<h2 class="gh">Available</h2>
 <ul>
   {#each CATALOGUE.filter((p) => !installed.includes(p.id)) as p (p.id)}
     <li data-setting="plugins.{p.id}"><div class="r"><span class="n"><span class="t">{p.name}</span><span class="h">Once installed, it may: {p.access.charAt(0).toLowerCase() + p.access.slice(1)}</span></span><Button text="Install" variant="secondary" onclick={() => { installed = [...installed, p.id]; save(); }} /></div></li>
@@ -41,7 +41,7 @@
 </ul>
 
 <style>
-  .gh { padding: var(--s-4) var(--s-6) 0; font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
+  h2.gh { padding: var(--s-4) var(--s-6) 0; font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   ul { display: grid; }
   .r { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); min-height: var(--row-h-settings); padding: var(--s-3) var(--s-6); }
   .n { display: grid; flex: 1; min-width: 0; gap: var(--s-1); }

@@ -232,217 +232,6 @@
     }
   },
   {
-    "risk": "read",
-    "id": "spaces.members",
-    "description": "List current members",
-    "mutates": false,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "Input for members, leave and directory-record deletion.",
-      "properties": {
-        "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "space_id"
-      ],
-      "title": "SpaceInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "SpaceMember": {
-          "additionalProperties": false,
-          "description": "Account membership in a space.",
-          "properties": {
-            "account_id": {
-              "description": "Member's stable account UUID.",
-              "type": "string"
-            },
-            "role": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/SpaceRole"
-                }
-              ],
-              "description": "Current effective role."
-            }
-          },
-          "required": [
-            "account_id",
-            "role"
-          ],
-          "type": "object"
-        },
-        "SpaceRole": {
-          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
-          "oneOf": [
-            {
-              "description": "Read authorized space content.",
-              "enum": [
-                "reader"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Read and edit authorized space content.",
-              "enum": [
-                "editor"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Read, edit and manage space plugins.",
-              "enum": [
-                "manager"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
-              "enum": [
-                "owner"
-              ],
-              "type": "string"
-            }
-          ]
-        }
-      },
-      "description": "Member directory visible to a current space reader.",
-      "properties": {
-        "members": {
-          "description": "Current account memberships, including exactly one Owner.",
-          "items": {
-            "$ref": "#/definitions/SpaceMember"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "members"
-      ],
-      "title": "SpaceMembersResult",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "widens_access",
-    "id": "spaces.set_role",
-    "description": "Change an existing member role",
-    "mutates": true,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "SpaceRole": {
-          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
-          "oneOf": [
-            {
-              "description": "Read authorized space content.",
-              "enum": [
-                "reader"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Read and edit authorized space content.",
-              "enum": [
-                "editor"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Read, edit and manage space plugins.",
-              "enum": [
-                "manager"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
-              "enum": [
-                "owner"
-              ],
-              "type": "string"
-            }
-          ]
-        }
-      },
-      "description": "Change an existing member's role; assigning Owner requires transfer instead.",
-      "properties": {
-        "account_id": {
-          "description": "Stable target account UUID.",
-          "type": "string"
-        },
-        "role": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/SpaceRole"
-            }
-          ],
-          "description": "Requested membership role; Owner is refused here."
-        },
-        "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "account_id",
-        "role",
-        "space_id"
-      ],
-      "title": "SpaceSetRoleInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "A completed membership mutation or directory-record deletion.",
-      "title": "SpaceChangedResult",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "irreversible",
-    "id": "spaces.remove_member",
-    "description": "Remove a member",
-    "mutates": true,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "Target account for removal or explicit ownership transfer.",
-      "properties": {
-        "account_id": {
-          "description": "Stable target account UUID, independently allocated from the space.",
-          "type": "string"
-        },
-        "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "account_id",
-        "space_id"
-      ],
-      "title": "SpaceMemberInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "A completed membership mutation or directory-record deletion.",
-      "title": "SpaceChangedResult",
-      "type": "object"
-    }
-  },
-  {
     "risk": "irreversible",
     "id": "spaces.leave",
     "description": "Leave after transferring ownership if necessary",
@@ -461,40 +250,6 @@
         "space_id"
       ],
       "title": "SpaceInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "A completed membership mutation or directory-record deletion.",
-      "title": "SpaceChangedResult",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "widens_access",
-    "id": "spaces.transfer",
-    "description": "Transfer ownership to an existing member",
-    "mutates": true,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "Target account for removal or explicit ownership transfer.",
-      "properties": {
-        "account_id": {
-          "description": "Stable target account UUID, independently allocated from the space.",
-          "type": "string"
-        },
-        "space_id": {
-          "description": "Space UUID; names are never accepted in its place.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "account_id",
-        "space_id"
-      ],
-      "title": "SpaceMemberInput",
       "type": "object"
     },
     "output_schema": {
@@ -536,91 +291,6 @@
   },
   {
     "risk": "read",
-    "id": "notes.list",
-    "description": "List up to 100 notes",
-    "mutates": false,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "Input for `notes.list`; the server independently checks access to the selected space.",
-      "properties": {
-        "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[a-zA-Z0-9_.:-]+$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "space_id"
-      ],
-      "title": "NotesListInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "NoteSummary": {
-          "additionalProperties": false,
-          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
-          "properties": {
-            "id": {
-              "description": "Stable UUID note identity; access is checked against the accompanying space.",
-              "type": "string"
-            },
-            "revision": {
-              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
-              "type": "string"
-            },
-            "space_id": {
-              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-              "maxLength": 80,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9_.:-]+$",
-              "type": "string"
-            },
-            "title": {
-              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
-              "maxLength": 256,
-              "minLength": 1,
-              "type": "string"
-            },
-            "updated_at": {
-              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "revision",
-            "space_id",
-            "title",
-            "updated_at"
-          ],
-          "type": "object"
-        }
-      },
-      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
-      "properties": {
-        "notes": {
-          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
-          "items": {
-            "$ref": "#/definitions/NoteSummary"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "notes"
-      ],
-      "title": "NotesListResult",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "read",
     "id": "resolve",
     "description": "Resolve an item address with current access",
     "mutates": false,
@@ -651,6 +321,34 @@
     "output_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
+      "definitions": {
+        "ItemState": {
+          "description": "Stable state of an item address.",
+          "oneOf": [
+            {
+              "description": "The item is in its ordinary collection.",
+              "enum": [
+                "active"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The item can be restored from the space's Trash.",
+              "enum": [
+                "in_trash"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The identity is retained after permanent deletion.",
+              "enum": [
+                "deleted"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
       "description": "Current owning space and effective capabilities for a visible address.",
       "properties": {
         "access": {
@@ -671,6 +369,14 @@
         "space_id": {
           "description": "Owning space UUID, independent of account identity.",
           "type": "string"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ItemState"
+            }
+          ],
+          "description": "Lifecycle state of a Notes address, omitted for kinds without this projection."
         }
       },
       "required": [
@@ -4047,7 +3753,7 @@
               "type": "string"
             },
             {
-              "description": "Parked until its child jobs report; it runs again when they all have.",
+              "description": "Parked without a process until its child jobs report or its person request is resolved.",
               "enum": [
                 "waiting"
               ],
@@ -4214,7 +3920,7 @@
               "type": "string"
             },
             {
-              "description": "Parked until its child jobs report; it runs again when they all have.",
+              "description": "Parked without a process until its child jobs report or its person request is resolved.",
               "enum": [
                 "waiting"
               ],
@@ -4547,6 +4253,2030 @@
       "additionalProperties": false,
       "description": "Empty success for `secrets.revoke`.",
       "title": "SecretsRevokeResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "space.read",
+    "target": "space",
+    "id": "spaces.members",
+    "description": "List direct account and group grants.",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A continuation scoped to one space.",
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor for this space and operation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceDirectoryPageInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SpaceGroupMember": {
+          "description": "A group grant visible to current members of the space.",
+          "properties": {
+            "group_id": {
+              "description": "The group's stable UUID.",
+              "type": "string"
+            },
+            "member_count": {
+              "description": "Number of active people in the group.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "description": "Current group display name.",
+              "type": "string"
+            },
+            "role": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/SpaceRole"
+                }
+              ],
+              "description": "The role assigned to the group."
+            }
+          },
+          "required": [
+            "group_id",
+            "member_count",
+            "name",
+            "role"
+          ],
+          "type": "object"
+        },
+        "SpaceMember": {
+          "additionalProperties": false,
+          "description": "Account membership in a space.",
+          "properties": {
+            "account_id": {
+              "description": "Member's stable account UUID.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Current account display name.",
+              "type": "string"
+            },
+            "role": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/SpaceRole"
+                }
+              ],
+              "description": "Current directly granted role."
+            }
+          },
+          "required": [
+            "account_id",
+            "name",
+            "role"
+          ],
+          "type": "object"
+        },
+        "SpaceRole": {
+          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
+          "oneOf": [
+            {
+              "description": "Read authorized space content.",
+              "enum": [
+                "reader"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit authorized space content.",
+              "enum": [
+                "editor"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read, edit and manage space plugins.",
+              "enum": [
+                "manager"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
+              "enum": [
+                "owner"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Member directory visible to a current space reader.",
+      "properties": {
+        "groups": {
+          "description": "Direct group grants, including names and active member counts.",
+          "items": {
+            "$ref": "#/definitions/SpaceGroupMember"
+          },
+          "type": "array"
+        },
+        "members": {
+          "description": "Direct account grants on this page. Exactly one Owner has a direct grant.",
+          "items": {
+            "$ref": "#/definitions/SpaceMember"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continue after the last grant, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "groups",
+        "members"
+      ],
+      "title": "SpaceMembersResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "space.transfer",
+    "target": "space",
+    "id": "spaces.transfer",
+    "description": "Transfer ownership to a current account in the space.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target account for removal or explicit ownership transfer.",
+      "properties": {
+        "account_id": {
+          "description": "Stable target account UUID, independently allocated from the space.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID; names are never accepted in its place.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "space_id"
+      ],
+      "title": "SpaceMemberInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A completed membership mutation or directory-record deletion.",
+      "title": "SpaceChangedResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "members.invite",
+    "target": "space",
+    "id": "spaces.add_member",
+    "description": "Grant a person or group access to a space.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SpaceRole": {
+          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
+          "oneOf": [
+            {
+              "description": "Read authorized space content.",
+              "enum": [
+                "reader"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit authorized space content.",
+              "enum": [
+                "editor"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read, edit and manage space plugins.",
+              "enum": [
+                "manager"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
+              "enum": [
+                "owner"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "A role assignment to exactly one person or group.",
+      "properties": {
+        "account_id": {
+          "description": "Account UUID when granting access directly to a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when granting access through current group membership.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ],
+          "description": "Requested role. Ownership uses explicit transfer."
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "space_id"
+      ],
+      "title": "SpaceGrantRoleInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A completed membership mutation or directory-record deletion.",
+      "title": "SpaceChangedResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "members.manage",
+    "target": "space",
+    "id": "spaces.set_role",
+    "description": "Change a direct account or group grant.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SpaceRole": {
+          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
+          "oneOf": [
+            {
+              "description": "Read authorized space content.",
+              "enum": [
+                "reader"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit authorized space content.",
+              "enum": [
+                "editor"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read, edit and manage space plugins.",
+              "enum": [
+                "manager"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
+              "enum": [
+                "owner"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "A role assignment to exactly one person or group.",
+      "properties": {
+        "account_id": {
+          "description": "Account UUID when granting access directly to a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when granting access through current group membership.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ],
+          "description": "Requested role. Ownership uses explicit transfer."
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "space_id"
+      ],
+      "title": "SpaceGrantRoleInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A completed membership mutation or directory-record deletion.",
+      "title": "SpaceChangedResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "required_capability": "members.manage",
+    "target": "space",
+    "id": "spaces.remove_member",
+    "description": "Remove a direct account or group grant.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A direct space grant identifies exactly one person or group.",
+      "properties": {
+        "account_id": {
+          "description": "Account UUID when the grant targets a person.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when the grant targets a group.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceGrantInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A completed membership mutation or directory-record deletion.",
+      "title": "SpaceChangedResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "roles.list",
+    "target": "account",
+    "id": "roles.list",
+    "description": "List the space roles and their capabilities.",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "An operation scoped to the authenticated account or server with no input fields.",
+      "title": "DirectoryInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "RoleDefinition": {
+          "description": "A space role and its currently declared capabilities.",
+          "properties": {
+            "capabilities": {
+              "description": "Stable dotted capability names from the authority catalog.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "name": {
+              "description": "The stored role name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "capabilities",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Space role catalog result.",
+      "properties": {
+        "roles": {
+          "description": "Role definitions, ordered by name.",
+          "items": {
+            "$ref": "#/definitions/RoleDefinition"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "roles"
+      ],
+      "title": "RolesResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "required_capability": "account.profile",
+    "target": "account",
+    "id": "account.set_profile",
+    "description": "Change your own display name.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The current account's new display name.",
+      "properties": {
+        "name": {
+          "description": "Name shown to other people.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ProfileInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "The updated profile's public display fields.",
+      "properties": {
+        "account_id": {
+          "description": "The unchanged account UUID.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The normalized name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "name"
+      ],
+      "title": "ProfileResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "people.manage",
+    "target": "server",
+    "id": "people.list",
+    "description": "List server accounts.",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A continuation for a server directory.",
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor. Omit it to start at the first row.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "DirectoryPageInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "DirectoryPerson": {
+          "description": "A person in the authorized server directory.",
+          "properties": {
+            "account_id": {
+              "description": "The account's stable UUID.",
+              "type": "string"
+            },
+            "disabled": {
+              "description": "Whether the account may sign in and exercise its grants.",
+              "type": "boolean"
+            },
+            "name": {
+              "description": "Current display name.",
+              "type": "string"
+            },
+            "role": {
+              "description": "Server role, independent of space access.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "account_id",
+            "disabled",
+            "name",
+            "role"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Server people visible to the operator.",
+      "properties": {
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "people": {
+          "description": "Current accounts, including disabled records.",
+          "items": {
+            "$ref": "#/definitions/DirectoryPerson"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "people"
+      ],
+      "title": "PeopleResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "required_capability": "people.manage",
+    "target": "server",
+    "id": "people.disable",
+    "description": "Disable an account and revoke its sessions.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target of a server people operation.",
+      "properties": {
+        "account_id": {
+          "description": "Account UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id"
+      ],
+      "title": "PersonInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A completed account disable.",
+      "properties": {
+        "account_id": {
+          "description": "Disabled account UUID.",
+          "type": "string"
+        },
+        "disabled": {
+          "description": "Always true on a successful disable.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "account_id",
+        "disabled"
+      ],
+      "title": "DisabledPerson",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "groups.manage",
+    "target": "server",
+    "id": "groups.list",
+    "description": "List server groups.",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List groups or continue an individual group's member page.",
+      "properties": {
+        "cursor": {
+          "description": "Use the group list cursor or, with `group_id`, its member cursor.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "group_id": {
+          "description": "Group UUID when reading one group's members.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "GroupDirectoryPageInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "DirectoryGroup": {
+          "description": "A server group and its active members.",
+          "properties": {
+            "group_id": {
+              "description": "The group's stable UUID.",
+              "type": "string"
+            },
+            "members": {
+              "description": "Account UUIDs for each active member.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "members_next_cursor": {
+              "description": "Continue these members with this group's UUID, omitted at the end.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Current display name.",
+              "type": "string"
+            },
+            "source": {
+              "description": "Local or identity-provider managed.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "group_id",
+            "members",
+            "name",
+            "source"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Server group directory result.",
+      "properties": {
+        "groups": {
+          "description": "Groups ordered by UUID.",
+          "items": {
+            "$ref": "#/definitions/DirectoryGroup"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "groups"
+      ],
+      "title": "GroupsResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "groups.manage",
+    "target": "server",
+    "id": "groups.create",
+    "description": "Create a local group.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A group's display name on creation.",
+      "properties": {
+        "name": {
+          "description": "Printable name shown to authorized people.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "GroupCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target group UUID.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "title": "GroupInput",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "required_capability": "groups.manage",
+    "target": "server",
+    "id": "groups.rename",
+    "description": "Rename a local group.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Rename a local group.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its new name.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id",
+        "name"
+      ],
+      "title": "GroupRenameInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target group UUID.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "title": "GroupInput",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "required_capability": "groups.manage",
+    "target": "server",
+    "id": "groups.delete",
+    "description": "Delete a local group and remove its grants.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target group UUID.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "title": "GroupInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target group UUID.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "title": "GroupInput",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "groups.manage",
+    "target": "server",
+    "id": "groups.add_member",
+    "description": "Add a person to a local group.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "One membership in a local group.",
+      "properties": {
+        "account_id": {
+          "description": "The person's account UUID.",
+          "type": "string"
+        },
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "group_id"
+      ],
+      "title": "GroupPersonInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target group UUID.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "title": "GroupInput",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "required_capability": "groups.manage",
+    "target": "server",
+    "id": "groups.remove_member",
+    "description": "Remove a person from a local group.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "One membership in a local group.",
+      "properties": {
+        "account_id": {
+          "description": "The person's account UUID.",
+          "type": "string"
+        },
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "group_id"
+      ],
+      "title": "GroupPersonInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Target group UUID.",
+      "properties": {
+        "group_id": {
+          "description": "The group's stable UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group_id"
+      ],
+      "title": "GroupInput",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "members.invite",
+    "target": "space",
+    "id": "invites.create",
+    "description": "Create a single-use space invitation.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SpaceRole": {
+          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
+          "oneOf": [
+            {
+              "description": "Read authorized space content.",
+              "enum": [
+                "reader"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit authorized space content.",
+              "enum": [
+                "editor"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read, edit and manage space plugins.",
+              "enum": [
+                "manager"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
+              "enum": [
+                "owner"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Create a single-use invitation to a space.",
+      "properties": {
+        "expires_at": {
+          "description": "Absolute Unix milliseconds; omission defaults to seven days.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "role": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SpaceRole"
+            }
+          ],
+          "description": "Role granted on redemption. Owner is never assignable by invitation."
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "space_id"
+      ],
+      "title": "InviteCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A created invitation. Use the authorized list to copy the link.",
+      "properties": {
+        "expires_at": {
+          "description": "Absolute expiry in Unix milliseconds.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expires_at",
+        "invite_id"
+      ],
+      "title": "InviteCreated",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "members.invite",
+    "target": "space",
+    "id": "invites.list",
+    "description": "List and copy current space invitations.",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A continuation scoped to one space.",
+      "properties": {
+        "cursor": {
+          "description": "The previous page's cursor for this space and operation.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceDirectoryPageInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "DirectoryInvite": {
+          "description": "An invitation visible to an authorized space manager or owner.",
+          "properties": {
+            "created_at": {
+              "description": "Creation time in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "expires_at": {
+              "description": "Expiration time in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "invite_id": {
+              "description": "Invitation record UUID.",
+              "type": "string"
+            },
+            "link": {
+              "description": "Bearer link, present only for a usable invitation.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "revoked_at": {
+              "description": "Revocation time in Unix milliseconds, or null before revocation.",
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "role": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/SpaceRole"
+                }
+              ],
+              "description": "Role granted upon successful redemption."
+            },
+            "used_at": {
+              "description": "Redemption time in Unix milliseconds, or null before redemption.",
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "created_at",
+            "expires_at",
+            "invite_id",
+            "role"
+          ],
+          "type": "object"
+        },
+        "SpaceRole": {
+          "description": "Preview role exposed by `GET /api/v1/describe`; membership is enforced by the host, never by this enum alone.",
+          "oneOf": [
+            {
+              "description": "Read authorized space content.",
+              "enum": [
+                "reader"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit authorized space content.",
+              "enum": [
+                "editor"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read, edit and manage space plugins.",
+              "enum": [
+                "manager"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Sole owner; includes Manager grants plus management of Managers, transfer and deletion.",
+              "enum": [
+                "owner"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Current invitation directory, including unexpired used and revoked records.",
+      "properties": {
+        "invites": {
+          "description": "Authorized invitation records.",
+          "items": {
+            "$ref": "#/definitions/DirectoryInvite"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Continuation after the last row, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "invites"
+      ],
+      "title": "InvitesResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "required_capability": "members.invite",
+    "target": "space",
+    "id": "invites.revoke",
+    "description": "Revoke an unused space invitation.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Identify an invitation within its owning space.",
+      "properties": {
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invite_id",
+        "space_id"
+      ],
+      "title": "InviteInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "A revoked invitation's public identity.",
+      "properties": {
+        "invite_id": {
+          "description": "Invitation record UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "invite_id"
+      ],
+      "title": "InviteRevoked",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "required_capability": "invites.redeem",
+    "target": "invitation",
+    "id": "invites.redeem",
+    "description": "Redeem a space invitation as the signed-in account.",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Redeem a link as the signed-in account.",
+      "properties": {
+        "secret": {
+          "description": "The secret from the invite URL, passed in the HTTP body.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "secret"
+      ],
+      "title": "InviteRedeemInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for members, leave and directory-record deletion.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID; names are never accepted in its place.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInput",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "notes.list",
+    "description": "List up to 100 live notes, optionally under a tag",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for `notes.list`; the server independently checks access to the selected space.",
+      "properties": {
+        "space_id": {
+          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        },
+        "tag": {
+          "description": "Exact tag name (without a leading hash), including notes with descendant tags.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "NotesListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
+      "properties": {
+        "notes": {
+          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
+          "items": {
+            "$ref": "#/definitions/NoteSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "notes.delete",
+    "description": "Move a note to its space's Trash",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A single note UUID targeted by a lifecycle operation.",
+      "properties": {
+        "id": {
+          "description": "Global note UUID, resolved to its owning space by the host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "NoteTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result of a recoverable Trash move.",
+      "properties": {
+        "note": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NoteSummary"
+            }
+          ],
+          "description": "Updated metadata including the revision and the time of the move."
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteChange",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "notes.restore",
+    "description": "Restore a note from its space's Trash",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A single note UUID targeted by a lifecycle operation.",
+      "properties": {
+        "id": {
+          "description": "Global note UUID, resolved to its owning space by the host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "NoteTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result of a recoverable Trash move.",
+      "properties": {
+        "note": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NoteSummary"
+            }
+          ],
+          "description": "Updated metadata including the revision and the time of the move."
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteChange",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "trash.list",
+    "description": "List notes in the space's Trash",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for members, leave and directory-record deletion.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID; names are never accepted in its place.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
+      "properties": {
+        "notes": {
+          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
+          "items": {
+            "$ref": "#/definitions/NoteSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "id": "trash.purge",
+    "description": "Permanently delete a note from Trash",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A single note UUID targeted by a lifecycle operation.",
+      "properties": {
+        "id": {
+          "description": "Global note UUID, resolved to its owning space by the host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "NoteTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ItemState": {
+          "description": "Stable state of an item address.",
+          "oneOf": [
+            {
+              "description": "The item is in its ordinary collection.",
+              "enum": [
+                "active"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The item can be restored from the space's Trash.",
+              "enum": [
+                "in_trash"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The identity is retained after permanent deletion.",
+              "enum": [
+                "deleted"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Permanent deletion acknowledgement. Contains no note contents.",
+      "properties": {
+        "id": {
+          "description": "Stable UUID retained for address resolution.",
+          "type": "string"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ItemState"
+            }
+          ],
+          "description": "Deleted state of the address."
+        }
+      },
+      "required": [
+        "id",
+        "state"
+      ],
+      "title": "PurgeResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "notes.rename",
+    "description": "Rename a note at its current revision",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Rename one note at the revision shown in the list.",
+      "properties": {
+        "base_revision": {
+          "description": "Opaque revision selected by the caller.",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "description": "Global note UUID; its current space is resolved by the host.",
+          "type": "string"
+        },
+        "title": {
+          "description": "New title, used for the first H1 and readable filename.",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_revision",
+        "id",
+        "title"
+      ],
+      "title": "NoteRenameInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "Note": {
+          "additionalProperties": false,
+          "description": "Current snapshot returned by `notes.get`, `notes.create` and `notes.update`.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "markdown": {
+              "description": "UTF-8 Markdown content, at most 1 MiB; byte size differs from character count.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "markdown",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
+      "properties": {
+        "note": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Note"
+            }
+          ],
+          "description": "Current note snapshot visible to the authenticated caller."
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "notes.lookup",
+    "description": "Find notes by title prefix",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Space-scoped lookup of notes or tags by literal prefix.",
+      "properties": {
+        "prefix": {
+          "description": "Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.",
+          "maxLength": 256,
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the space whose index to query.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix",
+        "space_id"
+      ],
+      "title": "NotePrefixInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteMatch": {
+          "description": "Metadata for one picker match, including its relative Markdown destination.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "link_target": {
+              "description": "Encoded relative target for a Markdown link from another note.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "link_target",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bounded title-matching page in folded title and UUID order.",
+      "properties": {
+        "notes": {
+          "description": "At most 100 live matches with their exact on-disk destinations.",
+          "items": {
+            "$ref": "#/definitions/NoteMatch"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesLookupResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "tags.list",
+    "description": "List tags and their current note counts",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for members, leave and directory-record deletion.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID; names are never accepted in its place.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "TagCount": {
+          "additionalProperties": false,
+          "description": "A named tag and its current note count in one space.",
+          "properties": {
+            "count": {
+              "description": "Number of live notes with this tag or one nested underneath it.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "description": "Tag name without a leading hash.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "count",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bounded tag lookup result.",
+      "properties": {
+        "tags": {
+          "description": "Up to 100 tag names and counts, in literal name order.",
+          "items": {
+            "$ref": "#/definitions/TagCount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tags"
+      ],
+      "title": "TagsResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "tags.lookup",
+    "description": "Find tags by name prefix",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Space-scoped lookup of notes or tags by literal prefix.",
+      "properties": {
+        "prefix": {
+          "description": "Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.",
+          "maxLength": 256,
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the space whose index to query.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix",
+        "space_id"
+      ],
+      "title": "NotePrefixInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "TagCount": {
+          "additionalProperties": false,
+          "description": "A named tag and its current note count in one space.",
+          "properties": {
+            "count": {
+              "description": "Number of live notes with this tag or one nested underneath it.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "description": "Tag name without a leading hash.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "count",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bounded tag lookup result.",
+      "properties": {
+        "tags": {
+          "description": "Up to 100 tag names and counts, in literal name order.",
+          "items": {
+            "$ref": "#/definitions/TagCount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tags"
+      ],
+      "title": "TagsResult",
       "type": "object"
     }
   },
@@ -5968,6 +7698,713 @@
     }
   },
   {
+    "risk": "read",
+    "id": "requests.list",
+    "description": "List requests waiting on the signed-in account",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Account-private list input. No caller-supplied account is accepted.",
+      "title": "AccountInputList",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "GenUiView": {
+          "additionalProperties": false,
+          "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",
+          "properties": {
+            "genui_version": {
+              "description": "Generated-UI language version; exactly 2 (version 1 was the retired JSON tree).",
+              "format": "uint32",
+              "maximum": 2.0,
+              "minimum": 2.0,
+              "type": "integer"
+            },
+            "source": {
+              "description": "Program source, at most 64 KiB of UTF-8.",
+              "maxLength": 65536,
+              "type": "string"
+            }
+          },
+          "required": [
+            "genui_version",
+            "source"
+          ],
+          "type": "object"
+        },
+        "PersonRequest": {
+          "description": "A request is presented only to the authenticated recipient.",
+          "properties": {
+            "detail": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/RequestDetail"
+                }
+              ],
+              "description": "Question, approval or trusted secret prompt."
+            },
+            "id": {
+              "description": "Stable request UUID.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Addressed space UUID, absent for personal secret requests.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "thread_id": {
+              "description": "Thread UUID when the request was raised during a turn.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "detail",
+            "id"
+          ],
+          "type": "object"
+        },
+        "RequestDetail": {
+          "description": "The information needed to render each pending request.",
+          "oneOf": [
+            {
+              "description": "One generated form, which may have multiple fields.",
+              "properties": {
+                "form": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/GenUiView"
+                    }
+                  ],
+                  "description": "Form drawn by the application."
+                },
+                "kind": {
+                  "enum": [
+                    "question"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Label shown in inbox summaries and non-interactive clients.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "form",
+                "kind",
+                "label"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Trusted, fixed form describing the proposed authority.",
+              "properties": {
+                "action": {
+                  "additionalProperties": true,
+                  "description": "Exact operation details when raised by an automatic approval check.",
+                  "type": "object"
+                },
+                "app": {
+                  "description": "App operation prefix.",
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                "write": {
+                  "description": "Whether the proposed grant includes writes.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "action",
+                "app",
+                "kind",
+                "write"
+              ],
+              "type": "object"
+            },
+            {
+              "description": "Trusted, fixed form describing the existing secret request.",
+              "properties": {
+                "expires_at_ms": {
+                  "description": "Unix milliseconds when the original fifteen-minute request expires.",
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "kind": {
+                  "enum": [
+                    "secret"
+                  ],
+                  "type": "string"
+                },
+                "label": {
+                  "description": "Short human-readable name.",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "Secret name, never the value.",
+                  "type": "string"
+                },
+                "reason": {
+                  "description": "Why the caller requested the credential.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "expires_at_ms",
+                "kind",
+                "label",
+                "name",
+                "reason"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "description": "Account-private pending request snapshot.",
+      "properties": {
+        "requests": {
+          "description": "Currently authorized requests, ordered by ID.",
+          "items": {
+            "$ref": "#/definitions/PersonRequest"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "title": "RequestsListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "requests.ask",
+    "description": "Ask the person a question from the current turn",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "GenUiView": {
+          "additionalProperties": false,
+          "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",
+          "properties": {
+            "genui_version": {
+              "description": "Generated-UI language version; exactly 2 (version 1 was the retired JSON tree).",
+              "format": "uint32",
+              "maximum": 2.0,
+              "minimum": 2.0,
+              "type": "integer"
+            },
+            "source": {
+              "description": "Program source, at most 64 KiB of UTF-8.",
+              "maxLength": 65536,
+              "type": "string"
+            }
+          },
+          "required": [
+            "genui_version",
+            "source"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Raise a question from the caller's current thread.",
+      "properties": {
+        "form": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/GenUiView"
+            }
+          ],
+          "description": "Form capable of asking several questions at once."
+        }
+      },
+      "required": [
+        "form"
+      ],
+      "title": "RequestAskInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "requests.answer",
+    "description": "Answer a pending question",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Resolve a pending question with the submitted form values.",
+      "properties": {
+        "answer": {
+          "additionalProperties": true,
+          "description": "Submitted form values.",
+          "type": "object"
+        },
+        "id": {
+          "description": "Question UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "answer",
+        "id"
+      ],
+      "title": "RequestAnswerInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "requests.approve",
+    "description": "Approve with a fresh verified passkey",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ApprovalLifetime": {
+          "description": "How long approved authority remains usable.",
+          "oneOf": [
+            {
+              "description": "The first matching action may use the grant.",
+              "enum": [
+                "once"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The grant survives turns until the thread is archived or deleted.",
+              "enum": [
+                "this_thread"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Resolve a pending approval with the selected lifetime.",
+      "properties": {
+        "id": {
+          "description": "Approval UUID.",
+          "type": "string"
+        },
+        "lifetime": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ApprovalLifetime"
+            }
+          ],
+          "description": "Maximum duration of the grant."
+        }
+      },
+      "required": [
+        "id",
+        "lifetime"
+      ],
+      "title": "RequestApproveInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "requests.deny",
+    "description": "Decline a pending approval",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Decline one pending approval.",
+      "properties": {
+        "id": {
+          "description": "Approval UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RequestDenyInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Result of resolving a private request.",
+      "properties": {
+        "id": {
+          "description": "Resolved request UUID.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Answered, approved or denied.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "status"
+      ],
+      "title": "RequestResolution",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "id": "space.instructions",
+    "description": "Read or replace standing space instructions",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Standing instructions for one space. Omitting Markdown reads the file.",
+      "properties": {
+        "markdown": {
+          "description": "Replacement Markdown, limited to 16 KiB.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInstructionsInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "The bounded standing instructions document.",
+      "properties": {
+        "markdown": {
+          "description": "Markdown text. An absent file is represented by empty text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "markdown"
+      ],
+      "title": "SpaceInstructionsResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "agent.readiness",
+    "description": "Read your machine and provider readiness in a space",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select the space and optionally a saved thread's placement constraint.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID. The person needs the space's plugins.use capability.",
+          "type": "string"
+        },
+        "thread_id": {
+          "default": null,
+          "description": "Saved thread UUID, if readiness should be restricted by a thread pin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "ReadinessInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "MachineExecution": {
+          "description": "The effective execution environment available on a machine.",
+          "oneOf": [
+            {
+              "description": "The machine runs turns in its configured sandbox.",
+              "enum": [
+                "sandboxed"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The account chose execution without a container.",
+              "enum": [
+                "direct"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "MachineReadiness": {
+          "description": "An eligible personal machine or anonymous pool option.",
+          "properties": {
+            "available": {
+              "description": "The machine is accepting additional placements.",
+              "type": "boolean"
+            },
+            "connected": {
+              "description": "The server has a current connection from the machine.",
+              "type": "boolean"
+            },
+            "enrolled": {
+              "description": "The machine has an active enrollment record.",
+              "type": "boolean"
+            },
+            "execution": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/MachineExecution"
+                }
+              ],
+              "description": "How this machine runs turns."
+            },
+            "providers": {
+              "additionalProperties": {
+                "$ref": "#/definitions/ProviderReadiness"
+              },
+              "description": "Installed provider plugins and their account-scoped check results.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "available",
+            "connected",
+            "enrolled",
+            "execution",
+            "providers"
+          ],
+          "type": "object"
+        },
+        "PersonalMachineReadiness": {
+          "description": "Readiness for a machine owned by the caller.",
+          "properties": {
+            "available": {
+              "description": "The machine is accepting additional placements.",
+              "type": "boolean"
+            },
+            "connected": {
+              "description": "The server has a current connection from the machine.",
+              "type": "boolean"
+            },
+            "enrolled": {
+              "description": "The machine has an active enrollment record.",
+              "type": "boolean"
+            },
+            "execution": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/MachineExecution"
+                }
+              ],
+              "description": "How this machine runs turns."
+            },
+            "last_seen_ms": {
+              "description": "Last observed contact in Unix milliseconds, when known.",
+              "format": "int64",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "machine_id": {
+              "description": "Stable enrolled machine UUID.",
+              "type": "string"
+            },
+            "name": {
+              "description": "The owner's machine label.",
+              "type": "string"
+            },
+            "providers": {
+              "additionalProperties": {
+                "$ref": "#/definitions/ProviderReadiness"
+              },
+              "description": "Installed provider plugins and their account-scoped check results.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "available",
+            "connected",
+            "enrolled",
+            "execution",
+            "machine_id",
+            "name",
+            "providers"
+          ],
+          "type": "object"
+        },
+        "ProviderCheck": {
+          "additionalProperties": false,
+          "description": "A bounded observation of the official provider program's own check.",
+          "properties": {
+            "installed": {
+              "description": "The provider program was found inside the machine's execution environment.",
+              "type": "boolean"
+            },
+            "sign_in_command": {
+              "description": "The program's own sign-in command, for display only.",
+              "type": "string"
+            },
+            "signed_in": {
+              "description": "The program reported an active login for this account.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "installed",
+            "sign_in_command",
+            "signed_in"
+          ],
+          "type": "object"
+        },
+        "ProviderReadiness": {
+          "additionalProperties": false,
+          "description": "A machine's readiness for one provider in this space.",
+          "properties": {
+            "check": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ProviderCheck"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Recent provider status, or null until a fresh check is available."
+            },
+            "enabled": {
+              "description": "The provider and orchestrator are enabled for this space.",
+              "type": "boolean"
+            },
+            "ready": {
+              "description": "The machine has capacity and the enabled provider reports a login.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "enabled",
+            "ready"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "One cached readiness snapshot. Pool options carry no host identity.",
+      "properties": {
+        "check_ttl_ms": {
+          "description": "Lifetime of one provider observation in milliseconds.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "machines": {
+          "description": "Nonrevoked machines enrolled to the requesting account.",
+          "items": {
+            "$ref": "#/definitions/PersonalMachineReadiness"
+          },
+          "type": "array"
+        },
+        "pool": {
+          "description": "Anonymous options from the entitled pool, if any.",
+          "items": {
+            "$ref": "#/definitions/MachineReadiness"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "check_ttl_ms",
+        "machines",
+        "pool"
+      ],
+      "title": "ReadinessResult",
+      "type": "object"
+    }
+  },
+  {
     "risk": "reversible",
     "id": "agent.settings",
     "description": "Read or set your account defaults or thread retry settings",
@@ -6055,11 +8492,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -6112,6 +8544,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -6259,11 +8696,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -6316,6 +8748,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -6463,11 +8900,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -6520,6 +8952,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -6667,11 +9104,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -6724,6 +9156,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -6871,11 +9308,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -6928,6 +9360,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -7075,11 +9512,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7132,6 +9564,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -7279,11 +9716,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7336,6 +9768,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -7483,11 +9920,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7540,6 +9972,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -7687,11 +10124,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7744,6 +10176,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -7891,11 +10328,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -7948,6 +10380,11 @@
           "default": {},
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
+        },
+        "pool": {
+          "default": false,
+          "description": "Check an entitled pool machine without exposing its identity.",
+          "type": "boolean"
         },
         "prompt": {
           "default": "",
@@ -8095,11 +10532,6 @@
           "description": "Requested app prefix for an access request.",
           "type": "string"
         },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
         "context": {
           "default": [],
           "description": "Labelled context contributions, bounded by the provider command budget.",
@@ -8153,209 +10585,10 @@
           "description": "Options declared by the selected provider, bounded by the command budget.",
           "type": "object"
         },
-        "prompt": {
-          "default": "",
-          "description": "Person's prompt; at most 16 KiB, required for run.",
-          "type": "string"
-        },
-        "provider_id": {
-          "default": "",
-          "description": "Enabled provider plugin; empty selects calternal-claude-code.",
-          "type": "string"
-        },
-        "retry_failed": {
+        "pool": {
           "default": false,
-          "description": "Explicit retry of a failed workspace discard; never implied by status polling.",
+          "description": "Check an entitled pool machine without exposing its identity.",
           "type": "boolean"
-        },
-        "retry_settings": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/AgentRetrySettings"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Per-thread recovery override; absent uses the account defaults."
-        },
-        "source_app": {
-          "default": "",
-          "description": "Originating app operation prefix; empty grants no originating-app access.",
-          "type": "string"
-        },
-        "space_id": {
-          "default": "",
-          "description": "Owning space UUID, required for check/run, otherwise derived from the job.",
-          "type": "string"
-        },
-        "thread_id": {
-          "default": "",
-          "description": "Thread UUID for check/run; no thread file is created in step one.",
-          "type": "string"
-        },
-        "write": {
-          "default": false,
-          "description": "Whether the requested grant allows mutations as well as reads.",
-          "type": "boolean"
-        }
-      },
-      "title": "AgentInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": true,
-      "title": "Map_of_AnyValue",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "widens_access",
-    "id": "access.approve",
-    "description": "Approve a scope with a freshly verified person session",
-    "mutates": true,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "AgentMode": {
-          "description": "Thread permission mode; every change revokes the previous thread token.",
-          "oneOf": [
-            {
-              "description": "Thread, workspace and originating app only; other scopes require approval.",
-              "enum": [
-                "least_access"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Current space access, reviewed by rules; high-risk classes require approval.",
-              "enum": [
-                "approve_for_me"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Current space access without approvals, independently of sandboxing.",
-              "enum": [
-                "full_access"
-              ],
-              "type": "string"
-            }
-          ]
-        },
-        "AgentRetrySettings": {
-          "additionalProperties": false,
-          "description": "Typed automatic provider recovery settings; manifest defaults apply per account and a manual turn may override them. Neither permits machine re-placement.",
-          "properties": {
-            "provider_errors": {
-              "description": "Retry explicit transient provider errors, with no pending tool effect.",
-              "type": "boolean"
-            },
-            "subscription_limits": {
-              "description": "Resume subscription usage limits at the reset reported by the provider.",
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "provider_errors",
-            "subscription_limits"
-          ],
-          "type": "object"
-        },
-        "ProviderContext": {
-          "additionalProperties": false,
-          "description": "A labelled contribution; data, never authority or system instructions.",
-          "properties": {
-            "source": {
-              "description": "Plugin or attachment label, at most 128 UTF-8 bytes.",
-              "type": "string"
-            },
-            "text": {
-              "description": "Contribution text; included in the command's total bound.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "source",
-            "text"
-          ],
-          "type": "object"
-        }
-      },
-      "description": "Input union for manual-turn operations. Each operation rejects irrelevant fields. UUIDs are full resource identifiers; model work never starts without a space check.",
-      "properties": {
-        "after": {
-          "default": 0,
-          "description": "Next job sequence requested; zero on first read.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        },
-        "app": {
-          "default": "",
-          "description": "Requested app prefix for an access request.",
-          "type": "string"
-        },
-        "approval_id": {
-          "default": "",
-          "description": "Approval UUID for a freshly verified person to approve.",
-          "type": "string"
-        },
-        "context": {
-          "default": [],
-          "description": "Labelled context contributions, bounded by the provider command budget.",
-          "items": {
-            "$ref": "#/definitions/ProviderContext"
-          },
-          "type": "array"
-        },
-        "direct": {
-          "default": false,
-          "description": "Whether an account-owned machine runs directly; pool machines refuse this.",
-          "type": "boolean"
-        },
-        "epoch": {
-          "default": "",
-          "description": "Stream epoch last seen, empty on first read.",
-          "type": "string"
-        },
-        "job_id": {
-          "default": "",
-          "description": "Job UUID for events/stop/resume/mode/access operations.",
-          "type": "string"
-        },
-        "lease_id": {
-          "default": "",
-          "description": "Fenced lease UUID for explicit machine-level resumption.",
-          "type": "string"
-        },
-        "machine_id": {
-          "default": "",
-          "description": "Machine UUID for owner-controlled execution settings.",
-          "type": "string"
-        },
-        "mode": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/AgentMode"
-            }
-          ],
-          "default": "approve_for_me",
-          "description": "Permission mode; defaults to Approve for me."
-        },
-        "model": {
-          "default": "",
-          "description": "Official CLI model; empty uses `sonnet`.",
-          "type": "string"
-        },
-        "options": {
-          "additionalProperties": true,
-          "default": {},
-          "description": "Options declared by the selected provider, bounded by the command budget.",
-          "type": "object"
         },
         "prompt": {
           "default": "",

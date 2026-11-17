@@ -58,6 +58,15 @@ pub struct NoteVersion {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct NotesListInput {
+    /// Exact tag name (without a leading hash), including notes with descendant tags.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_present"
+    )]
+    #[ts(optional)]
+    #[schemars(with = "String")]
+    pub tag: Option<String>,
     /// Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
     #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
     pub space_id: String,
@@ -82,6 +91,11 @@ pub struct ResolveResult {
     pub id: String,
     /// Owning space UUID, independent of account identity.
     pub space_id: String,
+    /// Lifecycle state of a Notes address, omitted for kinds without this projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    #[schemars(with = "ItemState")]
+    pub state: Option<ItemState>,
     /// Current effective capability names; informational, rechecked on use.
     pub access: Vec<String>,
 }

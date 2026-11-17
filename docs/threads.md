@@ -116,11 +116,23 @@ job checkpoints retain their existing bounded tail. Each nonempty output flush
 loads the thread once, then uses the same content write's reads and four SQLite
 commit boundaries plus file placement; the job checkpoint adds one FULL commit.
 Checkpoint request IDs prevent duplicate text on replay; concurrent revisions
-retry at most four times. Empty checkpoints add no content write.
+retry at most four times. A provider's session event can add one content write
+before any text arrives. Other empty checkpoints add no content write.
+
+Each thread retains one `provider-session` record in its Markdown envelope.
+It contains a native session ID bound to the account that started it, the
+provider, and the enrolled machine. It follows the thread's lifetime and
+survives job pruning. It carries no credential. Admission snapshots the
+current account's record from the already loaded thread. The next send uses
+it only when placement selects that same provider and machine. A change in
+either starts a fresh session and emits a `notice` on the job stream. The
+current job checkpoint also carries the text in `session_notice` so it can
+be shown after reconnect. A different account receives a fresh session
+without a notice about the prior account's binding.
 
 ## Client reads and live updates
 
-`threads.list` returns rows with `id`, `address`, `revision`, `turn_state` and
+`threads.list` returns rows with `id`, `address`, `revision`, `turn_state`, `turn_reason` and
 `metadata`. The file-derived metadata includes `provider`, `model` (null until
 known), `mode`, `message_count`, `last_activity_at`, `archived` and an optional
 `parent_thread`. Last activity is the creation time or the time of the latest
@@ -130,8 +142,8 @@ mode when the input omits one.
 
 A warm list executes **one index query and zero thread file reads** for N threads.
 The bounded content index scan joins the space's current turn index with one
-indexed seek per candidate. It reads no message bytes or job checkpoint payloads
-and has zero flushes. The jobs connection attaches the same space's content
+indexed seek per candidate. It reads no message bytes and selects only the reason fields from the retained
+checkpoint. It has zero flushes. The jobs connection attaches the same space's content
 database read-only, once per cached connection. A cold read also opens the
 existing indexes. Static metadata is mirrored in Markdown and can be indexed
 again from its envelope. Live state comes from the retained jobs index. Full
@@ -145,7 +157,7 @@ checkpoint. The turn labels are `idle`, `queued`, `running`, `waiting`,
 waiting, and successful or canceled work returns to idle. Final failure remains
 visible for the existing job retention period. The requests lane parks turns waiting on a person in this same durable
 `waiting` state. Reading a thread exposes its job state without exposing private
-request contents.
+request contents. The turn reason is also returned at `thread.turn_reason`.
 
 Subscribe to the owning space on `/api/v1/live` and save its journal bookmark.
 Refresh the list or open thread for an entry whose `item` is the thread UUID and
@@ -161,7 +173,7 @@ whose `kind` is one of these values.
 | Deleted | `threads.delete` |
 
 The turn-state entry carries `data.job_id`, `data.state` (the sidebar label) and
-`data.job_state` (the underlying job lifecycle value). The same committed journal
+`data.job_state` (the underlying job lifecycle value) and `data.turn_reason`. The same committed journal
 wakes both list and detail subscribers. The feed rechecks current space access and
 item ownership on replay and delivery. Turn state uses a space-local outbox
 written in the existing job transaction. One drain per cached space job connection reads at
@@ -183,8 +195,8 @@ the accepted grill decision; this change does not invent an attachment format.
 
 The list operation currently returns a bounded metadata page; an addressable
 standard collection awaits the foundation's accepted Markdown Views format.
-Cross-turn provider-session continuation and transcript handoff also remain turn
-engine integration work; each send currently admits a fresh job.
+Cross-turn transcript handoff remains turn engine integration work. Each
+send admits a fresh job and can resume the native provider session.
 
 The turn engine currently refuses a send while a turn is active or interrupted.
 Live steering needs an incremental machine-input transport; the existing exec
@@ -203,6 +215,27 @@ comes from that account's protected saved mode, not another member's last choice
 Before its first turn, the creator's own `mode-for` initial setting applies;
 other accounts start at Approve for me. Each new turn replaces the old credential. Thread credentials cannot select a mode. This follows the owner's
 2026-11-18 decision; explicit in-flight mode changes keep their existing checks.
+
+Use `turn_reason.code` to explain turn state. A running
+turn has a null reason. Before placement the public label is queued. The
+following reason payloads use Unix milliseconds for timestamps.
+
+| Code | Fields and meaning |
+| --- | --- |
+| `idle`, `queued`, `completed`, `cancelled` | No turn, pending admission, completed work, or cancelled work |
+| `no_machine`, `waiting_for_capacity` | Placement wait with `queue_position` |
+| `machine_offline` | Placement wait with `queue_position` and `since_ms` (last contact when known) |
+| `provider_signed_out` | `provider` and the reported `sign_in_command` |
+| `waiting_on_person` | Private `request_id` visible to the turn account |
+| `retrying` | `attempt`, `next_attempt_ms`, and `rule` (`provider_backoff`, `api_availability`, or `subscription_reset`) |
+| `failed` | `class` (`transient`, `usage_limit`, or `permanent`) and `reset_at_ms` when the provider reports it |
+| `interrupted` | `resumable`, `why`, and the last machine contact `since_ms` when known. Uncertain outcomes are nonresumable. |
+
+The account that submitted a turn receives its private machine and sign-in
+reasons. Other space members receive generic queue, failure or interruption
+reasons for those states. The journal applies the same projection on live
+delivery and replay. See [machine and provider readiness](agent-turns.md#machine-and-provider-readiness)
+for account-scoped availability and provider checks.
 
 ## CLI
 
