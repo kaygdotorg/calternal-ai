@@ -93,6 +93,16 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Jobs: a running job stops only when its account loses access to the space, not when a
   device signs out; any member who can read the space can watch its output; the person
   who started it or a Manager can cancel.
+- Secrets are keyed with one key file per owner (account or space) in that owner's appdata
+  folder; no server-wide key, no unlock step. On a person's own machines, provider logins
+  stay on the machine. A plugin declares the secrets it needs in its manifest (name, label,
+  why, space or personal, required or optional); they belong to the space that enabled the
+  plugin. A secret request appears in a sticky bar above the composer, expires after 15
+  minutes and can be asked again.
+- Cloud machines keep a small warm pool of pre-started sandboxes.
+- Drafts sync across a person's devices and stay until sent or erased. After sign-out,
+  unsent edits are kept as drafts. After revocation the device offers an export of what it
+  holds, then deletes it; revocation is immediate and never waits for the export.
 
 ## Open
 

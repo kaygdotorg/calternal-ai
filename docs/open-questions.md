@@ -1,26 +1,33 @@
 # Open questions
 
-Decisions waiting on kayg, newest first. Answer here or in chat; answered items move to
-the decision record they belong to (`docs/plugin-api.md`, `docs/ui-shell.md`,
-`docs/addresses.md`) and are removed from this list.
+Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
+move to the decision record they belong to and leave this list. Terms: see
+[glossary](glossary.md). Updated 2026-11-17 17:10 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| 1 | Sandbox boundary: one microVM per person per space, per workspace, or per person? | Decide from the hybrid measurement (issue #7) | Cloud agents |
-| 2 | Containers now and microVMs before public sign-up, or microVMs from the start? | Containers inside a per-person microVM if #7 supports it | Cloud agents |
-| 3 | A warm pool of pre-started sandboxes per cloud machine? | Yes, small | Subagent start time |
-| 4 | Offline: nothing queued to run later (decided). Confirm drafts and cached reading only. | Yes | Client core sync |
-| 5 | Client sync: how a client catches up after a gap (snapshot plus cursor, or leased replay)? | Snapshot plus cursor | Client core sync |
-| 6 | Unsaved offline edits after sign-out or revocation: keep encrypted for recovery, or offer export then delete? | Offer export | Client core sync |
-| 7 | Who owns a plugin's own secrets: the space that enabled it, or the plugin? | The space | Plugin secrets |
-| 8 | Do pending secret requests expire? | Yes, after a day | Secrets |
+| 1 | Sandbox boundary: one microVM per person per space, per workspace, or per person? | Decide from the hybrid measurement (issue #7, report being written) | Cloud agents |
+| 2 | Containers now and microVMs before public sign-up, or containers inside a per-person microVM from the start? | Follow #7's numbers | Cloud agents |
+| 3 | Client sync after a long gap: snapshot plus bookmark, or leased replay? | Snapshot plus bookmark | Client core sync |
+| 4 | Sticky request bar: should agent questions and approvals use the same bar as secret requests, and do they expire too? | Same bar; questions and approvals do not expire | Orchestrator UI |
 
-## Design rounds not yet held
+## Design rounds
 
-- Composer and chat experience: mentions, commands, context chips.
+- **Provider terms** (in progress): whether personal AI subscriptions may be used from servers we operate and charge for. Research running.
+- **The orchestrator plugin** (next): threads, turns, subagents, review.
+- Composer and chat experience: mentions, commands, context chips, the request bar.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
-- The orchestrator plugin itself: threads, turns, subagents, review.
-- Provider terms: whether personal AI subscriptions may be used from servers we operate and charge for.
+
+## Recently decided (2026-11-17), now in the decision records
+
+- Warm pool of pre-started sandboxes on each cloud machine: yes.
+- Offline: cached reading and drafts only; nothing is queued to run later.
+- Drafts sync across a person's devices and stay until sent or erased.
+- After sign-out, unsent edits are kept as drafts. After revocation, the device offers an export of what it holds and then deletes it; revocation itself is immediate and never waits for that.
+- A plugin's secrets belong to the space that enabled it. Plugins declare the secrets they need in their manifest.
+- A secret request shows in a sticky bar above the composer and expires after 15 minutes; it can be asked again at any time.
+- Secrets: one key file per owner in appdata; provider logins on a person's own machines stay on the machine.
+- Request IDs are unique per account and space. The root guard and recovery log are wired into the server.
