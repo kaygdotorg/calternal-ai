@@ -504,7 +504,8 @@ async fn serve(
     }
     let jobs = plugins::Jobs::open(&data_dir)
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
-        .with_security(directory.spaces.agents());
+        .with_security(directory.spaces.agents())
+        .with_thread_events(store.shared_content());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         inputs: calternal_server::account_input::Inputs::new(
