@@ -19,6 +19,8 @@ export interface Wallpaper {
   recipe?: string;
   /** For an Unsplash photo: who took it and where it is, as their licence asks. */
   credit?: { author: string; link: string };
+  /** The stored size, for pictures kept in the library (uploads, saved photos, pasted links). */
+  bytes?: number;
 }
 
 /** One search hit, not yet stored. */
@@ -39,6 +41,8 @@ export interface WallpaperLibrary {
   thumbOf?(w: Wallpaper): Promise<string>;
   /** Stores an image file the person chose. */
   upload(file: File): Promise<Wallpaper>;
+  /** Stores the picture a pasted link points to (the real server downloads it; the fixture can only when the picture's site allows it). */
+  fromLink?(url: string): Promise<Wallpaper>;
   /** Removes an upload or saved photo (built-ins cannot be removed). */
   remove(id: string): Promise<void>;
   /** Searches Unsplash. Needs the server's access key; without it the real implementation returns an empty list and says why. */
@@ -130,7 +134,7 @@ export class FixtureLibrary implements WallpaperLibrary {
     } catch {
       /* no IndexedDB (private mode): built-ins only */
     }
-    const own = mine.map<Wallpaper>((m) => { const u = URL.createObjectURL(m.blob); return { id: m.id, name: m.name, source: m.source, url: u, thumb: u, credit: m.credit }; });
+    const own = mine.map<Wallpaper>((m) => { const u = URL.createObjectURL(m.blob); return { id: m.id, name: m.name, source: m.source, url: u, thumb: u, credit: m.credit, bytes: m.blob.size }; });
     return [...(await this.builtins()), ...own];
   }
 
@@ -140,6 +144,27 @@ export class FixtureLibrary implements WallpaperLibrary {
     await tx("w", "readwrite", (s) => s.put({ id, name: file.name.replace(/\.[^.]+$/, ""), blob: file, source: "upload" } satisfies Stored, id));
     const u = URL.createObjectURL(file);
     return { id, name: file.name.replace(/\.[^.]+$/, ""), source: "upload", url: u, thumb: u };
+  }
+
+  async fromLink(link: string): Promise<Wallpaper> {
+    let u: URL;
+    try { u = new URL(link.trim()); } catch { throw new Error("That is not a link."); }
+    if (u.protocol !== "https:" && u.protocol !== "http:") throw new Error("Only http and https links work.");
+    let blob: Blob;
+    try {
+      const r = await fetch(u.href);
+      if (!r.ok) throw new Error(String(r.status));
+      blob = await r.blob();
+    } catch {
+      throw new Error("The browser could not fetch that picture (its site may not allow it). The server will download links itself.");
+    }
+    if (!blob.type.startsWith("image/")) throw new Error("That link is not a picture.");
+    if (blob.size > 15 * 1024 * 1024) throw new Error("That picture is larger than 15 MB.");
+    const name = decodeURIComponent(u.pathname.split("/").filter(Boolean).pop() ?? "Picture").replace(/\.[^.]+$/, "").slice(0, 40) || "Picture";
+    const id = `up-${Date.now().toString(36)}`;
+    await tx("w", "readwrite", (s) => s.put({ id, name, blob, source: "upload" } satisfies Stored, id));
+    const o = URL.createObjectURL(blob);
+    return { id, name, source: "upload", url: o, thumb: o, bytes: blob.size };
   }
 
   async remove(id: string): Promise<void> {

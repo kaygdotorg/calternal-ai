@@ -32,6 +32,37 @@
       error = (err as Error).message;
     }
   }
+  let link = $state("");
+  async function fromLink() {
+    if (!A.library.fromLink) { error = "This library cannot take links."; return; }
+    error = ""; busy = "link";
+    try {
+      const w = await A.library.fromLink(link);
+      await A.refresh();
+      A.change((x) => (x.wallpaperId = w.id));
+      link = "";
+    } catch (err) { error = (err as Error).message; }
+    busy = "";
+  }
+  // Pasting a picture link anywhere in the open sheet uses it (outside a text field, which keeps its own paste).
+  $effect(() => {
+    if (!open) return;
+    const onpaste = (e: ClipboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea")) return;
+      const text = e.clipboardData?.getData("text")?.trim() ?? "";
+      if (/^https?:\/\/\S+$/.test(text)) { link = text; void fromLink(); }
+    };
+    addEventListener("paste", onpaste);
+    return () => removeEventListener("paste", onpaste);
+  });
+  const bytes = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  const mine = $derived(A.wallpapers.filter((w) => w.bytes));
+  async function removeId(id: string) {
+    await A.library.remove(id);
+    await A.refresh();
+    if (A.prefs.wallpaperId === id) A.change((x) => (x.wallpaperId = null));
+  }
   async function search() {
     error = "";
     busy = "search";
@@ -101,6 +132,18 @@
     {#if view === "main"}
       <header><h1>Appearance</h1><IconButton icon="close" label="Close settings" onclick={close} /></header>
 
+      {#if mine.length}
+        <section aria-labelledby="s-store">
+          <h2 id="s-store">Your pictures</h2>
+          <ul class="store">
+            {#each mine as w (w.id)}
+              <li><span class="sn">{w.name}</span><span class="note">{bytes(w.bytes!)}</span><Button variant="quiet" text="Remove" onclick={() => removeId(w.id)} /></li>
+            {/each}
+            <li class="tot"><span class="sn">Total</span><span class="note">{bytes(mine.reduce((s, w) => s + (w.bytes ?? 0), 0))}</span></li>
+          </ul>
+        </section>
+      {/if}
+
       <section aria-labelledby="s-theme">
         <h2 id="s-theme">Themes</h2>
         <PresetGallery />
@@ -121,6 +164,11 @@
           {#if removable}<Button variant="destructive" text="Remove this picture" onclick={remove} />{/if}
         </div>
         {#if A.wallpaper?.credit}<p class="note">Photo by <a href={A.wallpaper.credit.link} target="_blank" rel="noopener noreferrer">{A.wallpaper.credit.author}</a> on Unsplash</p>{/if}
+        <form class="search" onsubmit={(e) => { e.preventDefault(); void fromLink(); }}>
+          <label class="visually-hidden" for="u-link">Paste a picture link</label>
+          <input id="u-link" type="url" placeholder="Paste a picture link" bind:value={link} autocomplete="off" />
+          <Button text="Use link" type="submit" disabled={busy === "link" || !link.trim()} />
+        </form>
         <form class="search" onsubmit={(e) => { e.preventDefault(); void search(); }}>
           <label class="visually-hidden" for="u-q">Search Unsplash</label>
           <input id="u-q" type="search" placeholder="Search Unsplash" bind:value={query} autocomplete="off" />
@@ -237,6 +285,10 @@
   .field, .search input { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); width: 100%; }
   .search input { flex: 1 1 7rem; width: auto; }
   :global(.sources) { --seg-pad: var(--s-2); }
+  .store { display: grid; gap: var(--s-1); }
+  .store li { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); }
+  .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tot { border-top: 1px solid var(--line); font-weight: var(--strong-weight); }
   .check { display: flex; align-items: flex-start; gap: var(--s-4); min-height: var(--pill-h); }
   .check input { margin-top: var(--s-2); width: 1.1em; height: 1.1em; accent-color: var(--accent); flex: none; }
   .cl { display: grid; font-weight: var(--strong-weight); }

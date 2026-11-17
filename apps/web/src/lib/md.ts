@@ -13,7 +13,8 @@ export type MdBlock =
   | { t: "h"; v: Inline[] }
   | { t: "ul"; v: Inline[][] }
   | { t: "ol"; v: Inline[][] }
-  | { t: "code"; lang: string; v: string };
+  | { t: "code"; lang: string; v: string }
+  | { t: "img"; alt: string; src: string };
 
 const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(\[[^\]\n]+\]\(https?:\/\/[^)\s]+\))/g;
 
@@ -45,6 +46,8 @@ export function parse(src: string): MdBlock[] {
   while (i < lines.length) {
     const line = lines[i]!;
     if (!line.trim()) { i++; continue; }
+    const img = /^!\[([^\]\n]*)\]\(((?:https?:\/\/|data:image\/(?:png|jpeg|webp|svg\+xml)[;,])[^)\s]+)\)\s*$/.exec(line);
+    if (img) { out.push({ t: "img", alt: img[1]!, src: img[2]! }); i++; continue; }
     const fence = /^```(\w*)\s*$/.exec(line);
     if (fence) {
       const body: string[] = [];
