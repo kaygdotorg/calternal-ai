@@ -1,7 +1,15 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 //! Async HTTP effects adapter. The pure contract and pending identities live in core.
-//! Dropping a request future stops waiting locally; it does not undo server commits.
+//! Session credentials come from the trusted passkey/OIDC flow; platform adapters own
+//! secret storage and supply the credential without logging it. A 401 requires sign-in.
+//! Dropping a request future or cancelling a token stops waiting locally; it does not
+//! undo server commits. Retain pending identities after an uncertain mutation outcome.
+//!
+//! UniFFI is a background operation boundary: editor composition, selection, keystrokes,
+//! layout, animation and per-frame rendering stay native. Submit coalesced transactions
+//! and consume batched results; never copy an entire document per keystroke. Journal
+//! following and offline storage are deliberately unbuilt; see `SYNC.md`.
 use calternal_core::*;
 use reqwest::{
     Client as HttpClient, Url,
@@ -10,6 +18,10 @@ use reqwest::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::time::Duration;
+mod cancellation;
+pub use cancellation::CancellationToken;
+mod typed;
+pub use typed::{Operation, PendingCall, operations};
 
 const MAX_RESPONSE_BYTES: usize = 128 * 1024 * 1024;
 
@@ -19,6 +31,12 @@ pub enum ClientError {
     #[error("{0}")]
     /// Local contract validation failed before dispatch.
     Validation(#[from] ValidationError),
+    #[error("session expired or revoked; sign in again")]
+    /// Authentication is no longer valid; no automatic retry or credential refresh occurs.
+    ReauthenticationRequired,
+    #[error("local wait cancelled; server outcome may be unknown")]
+    /// Local cancellation ends transport/retry waiting, without requesting server rollback.
+    Cancelled,
     #[error("invalid client configuration: {0}")]
     /// The loopback URL, credential or HTTP client could not be configured.
     Configuration(&'static str),
@@ -40,7 +58,8 @@ pub enum ClientError {
     },
 }
 impl ClientError {
-    /// Convert this failure to a safe portable API error; clones diagnostic strings, maps local transport/protocol failures to unavailable.
+    /// Convert to a portable error; O(diagnostic bytes) allocations, no locks or I/O.
+    /// Authentication retains Unauthorized; local transport/protocol failures map to Unavailable.
     pub fn api_error(&self) -> ApiError {
         match self {
             Self::Validation(e) => ApiError {
@@ -49,6 +68,11 @@ impl ClientError {
                 details: None,
             },
             Self::Api { error, .. } => error.clone(),
+            Self::ReauthenticationRequired => ApiError {
+                code: ErrorCode::Unauthorized,
+                message: self.to_string(),
+                details: None,
+            },
             Self::Configuration(_) => ApiError {
                 code: ErrorCode::InvalidInput,
                 message: self.to_string(),
@@ -66,13 +90,17 @@ impl ClientError {
 // Deliberately no Debug: the HTTP adapter owns a sensitive Authorization header.
 #[derive(Clone)]
 /// Reusable HTTP adapter holding a sensitive bearer header; cloning shares the connection pool.
+/// Construction allocates HTTP state; calls buffer bounded bodies and never persist credentials.
 /// Deliberately omits Debug to avoid exposing credentials.
 pub struct Client {
     http: HttpClient,
     base: Url,
 }
 impl Client {
-    /// Build a reusable preview HTTP client for an HTTP loopback origin and ASCII graphic bearer token. Uses 15-second request and 3-second connection timeouts; disables proxies and redirects.
+    /// Build a reusable session client for an HTTP loopback origin and ASCII graphic
+    /// credential. Allocates URL/header/connection-pool state, O(URL + token bytes),
+    /// without network or persistent I/O. Uses 15-second request and 3-second connection
+    /// timeouts; disables proxies and redirects. No credential appears in Debug/errors.
     ///
     /// # Errors
     /// Returns configuration errors for invalid origins/tokens or HTTP initialization failure.
@@ -115,6 +143,64 @@ impl Client {
             .map_err(|_| ClientError::Configuration("HTTP client initialization failed"))?;
         Ok(Self { http, base })
     }
+    /// Run a contract-associated operation with at most three transport attempts and
+    /// 100/200 ms backoff. One pending identity is allocated before the first attempt.
+    /// Keep `pending` to reconcile a cancelled or exhausted mutation; API/protocol errors
+    /// are never retried. Cancellation drops local HTTP work, not server effects.
+    /// Cost: up to three HTTP round trips; serialization/validation O(input bytes),
+    /// at most 128 MiB buffered per attempt; no durable writes or fsyncs.
+    pub async fn call<O: Operation>(
+        &self,
+        pending: &PendingCall<O>,
+        cancellation: &CancellationToken,
+    ) -> Result<O::Output, ClientError> {
+        self.execute_cancellable(pending.request(), cancellation)
+            .await
+    }
+
+    /// Execute a retained envelope with bounded transport retries and prompt local
+    /// cancellation, including during backoff and response-body reads. Reuses the exact
+    /// envelope on every attempt; validation, authentication and protocol failures stop.
+    /// Cost: at most three HTTP round trips and 128 MiB buffered per attempt,
+    /// O(input bytes) validation/serialization; no persistent storage or fsync.
+    pub async fn execute_cancellable<T: DeserializeOwned>(
+        &self,
+        request: &OperationRequest,
+        cancellation: &CancellationToken,
+    ) -> Result<T, ClientError> {
+        retry_transport(cancellation, || self.execute_once(request)).await
+    }
+
+    /// Discover compatible contracts with at most three transport attempts and local
+    /// cancellation. Buffers at most 128 MiB per attempt; no durable storage or fsync.
+    /// Authentication failure requires trusted sign-in; credentials are not refreshed here.
+    pub async fn describe_cancellable(
+        &self,
+        cancellation: &CancellationToken,
+    ) -> Result<DescribeResult, ClientError> {
+        retry_transport(cancellation, || self.describe_once()).await
+    }
+
+    /// Resolve a kind and UUID under current authority, with bounded transport retries.
+    /// Inaccessible and missing items have the same server-defined not-found result.
+    /// Cost: one request allocation, up to three HTTP round trips, bounded buffering;
+    /// errors match [`Self::execute_cancellable`]. No local storage or fsync.
+    pub async fn resolve(
+        &self,
+        kind: &str,
+        id: &str,
+        cancellation: &CancellationToken,
+    ) -> Result<ResolveResult, ClientError> {
+        self.call(
+            &PendingCall::<operations::Resolve>::new(&ResolveInput {
+                kind: kind.into(),
+                id: id.into(),
+            })?,
+            cancellation,
+        )
+        .await
+    }
+
     async fn body(response: reqwest::Response) -> Result<(u16, Vec<u8>), ClientError> {
         let status = response.status().as_u16();
         let json = response
@@ -149,7 +235,7 @@ impl Client {
     ///
     /// # Errors
     /// Returns transport, API or protocol errors for failed or incompatible replies.
-    pub async fn describe(&self) -> Result<DescribeResult, ClientError> {
+    async fn describe_once(&self) -> Result<DescribeResult, ClientError> {
         let response = self
             .http
             .get(self.base.join("api/v1/describe").unwrap())
@@ -168,11 +254,20 @@ impl Client {
         }
         Ok(describe)
     }
+    /// Discover contracts with bounded transport retries; up to three HTTP round trips
+    /// and 128 MiB buffered per attempt. No persistent writes. Returns safe protocol,
+    /// transport or re-authentication errors; drop the future to stop local waiting.
+    pub async fn describe(&self) -> Result<DescribeResult, ClientError> {
+        self.describe_cancellable(&CancellationToken::new()).await
+    }
     fn failure(
         status: u16,
         bytes: &[u8],
         expected: Option<&str>,
     ) -> Result<ClientError, ClientError> {
+        if status == 401 {
+            return Ok(ClientError::ReauthenticationRequired);
+        }
         let failure: Failure = serde_json::from_slice(bytes)
             .map_err(|_| ClientError::Protocol("invalid error envelope"))?;
         if status != failure.error.code.http_status() {
@@ -194,7 +289,7 @@ impl Client {
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors, including result decoding errors.
-    pub async fn execute<T: DeserializeOwned>(
+    async fn execute_once<T: DeserializeOwned>(
         &self,
         request: &OperationRequest,
     ) -> Result<T, ClientError> {
@@ -217,7 +312,21 @@ impl Client {
         }
         Ok(result.data)
     }
-    /// Execute one operation with an untyped JSON result; inherits the buffering, timeout and retry semantics of [`Self::execute`].
+    /// Execute a validated envelope with three transport attempts, 100/200 ms backoff,
+    /// and one retained request identity. Dropping the future stops local waiting only.
+    /// Use [`Self::execute_cancellable`] for an explicit cancellation handle.
+    /// Cost: O(input bytes) encoding/validation, at most 128 MiB response buffering
+    /// per attempt, no persistent storage or fsync; errors match that method.
+    pub async fn execute<T: DeserializeOwned>(
+        &self,
+        request: &OperationRequest,
+    ) -> Result<T, ClientError> {
+        self.execute_cancellable(request, &CancellationToken::new())
+            .await
+    }
+    /// Execute with an untyped result; up to three round trips, O(input/result bytes)
+    /// allocation, 128 MiB response cap per attempt, no persistent I/O or fsync.
+    /// Inherits cancellation-by-drop and errors from [`Self::execute`].
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors.
@@ -242,7 +351,7 @@ impl Client {
             None => PendingRequest::new(operation, input)?,
         })
     }
-    /// Call `notes.list` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    /// Call `notes.list` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Creates one fresh request identity, reused on bounded transport retry.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -250,7 +359,7 @@ impl Client {
         self.execute(Self::pending("notes.list", input, None)?.request())
             .await
     }
-    /// Call `notes.get` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    /// Call `notes.get` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Creates one fresh request identity, reused on bounded transport retry.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -258,7 +367,7 @@ impl Client {
         self.execute(Self::pending("notes.get", input, None)?.request())
             .await
     }
-    /// Call `notes.history` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    /// Call `notes.history` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Creates one fresh request identity, reused on bounded transport retry.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -269,7 +378,7 @@ impl Client {
         self.execute(Self::pending("notes.history", input, None)?.request())
             .await
     }
-    /// Call `notes.create` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    /// Call `notes.create` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Reuse `request_id` and identical input after uncertain outcomes; bounded transport retries retain it.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -281,7 +390,7 @@ impl Client {
         self.execute(Self::pending("notes.create", input, Some(request_id.into()))?.request())
             .await
     }
-    /// Call `notes.update` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    /// Call `notes.update` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Reuse `request_id` and identical input after uncertain outcomes; bounded transport retries retain it.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -293,7 +402,7 @@ impl Client {
         self.execute(Self::pending("notes.update", input, Some(request_id.into()))?.request())
             .await
     }
-    /// Call `plugins.list` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    /// Call `plugins.list` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Creates one fresh request identity, reused on bounded transport retry.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -304,7 +413,7 @@ impl Client {
         self.execute(Self::pending("plugins.list", input, None)?.request())
             .await
     }
-    /// Call `plugins.enable` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    /// Call `plugins.enable` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Reuse `request_id` and identical input after uncertain outcomes; bounded transport retries retain it.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -316,7 +425,7 @@ impl Client {
         self.execute(Self::pending("plugins.enable", input, Some(request_id.into()))?.request())
             .await
     }
-    /// Call `plugins.disable` once with typed input/output and a buffered response capped at 128 MiB. Reuse `request_id` and identical input after uncertain outcomes; no automatic retry occurs.
+    /// Call `plugins.disable` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Reuse `request_id` and identical input after uncertain outcomes; bounded transport retries retain it.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -328,7 +437,7 @@ impl Client {
         self.execute(Self::pending("plugins.disable", input, Some(request_id.into()))?.request())
             .await
     }
-    /// Call `plugins.preview` once with typed input/output and a buffered response capped at 128 MiB. Creates a fresh request identity; no automatic retry occurs.
+    /// Call `plugins.preview` with typed input/output and a buffered response capped at 128 MiB per attempt (up to three round trips; O(input/result bytes) allocation, no local writes/fsync). Creates one fresh request identity, reused on bounded transport retry.
     ///
     /// # Errors
     /// Returns validation, transport, API or protocol errors; dispatch checks current space access.
@@ -338,5 +447,29 @@ impl Client {
     ) -> Result<PluginPreviewResult, ClientError> {
         self.execute(Self::pending("plugins.preview", input, None)?.request())
             .await
+    }
+}
+
+// One policy for discovery and operations; API/protocol errors never enter backoff.
+async fn retry_transport<T, F, Fut>(
+    cancellation: &CancellationToken,
+    mut attempt: F,
+) -> Result<T, ClientError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, ClientError>>,
+{
+    tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(ClientError::Cancelled),
+        result = async {
+            for index in 0..3 {
+                match attempt().await {
+                    Err(ClientError::Transport) if index < 2 => tokio::time::sleep(Duration::from_millis(100 << index)).await,
+                    result => return result,
+                }
+            }
+            unreachable!()
+        } => result,
     }
 }

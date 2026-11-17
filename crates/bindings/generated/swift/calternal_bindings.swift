@@ -437,12 +437,751 @@ fileprivate struct FfiConverterString: FfiConverter {
         writeBytes(&buf, value.utf8)
     }
 }
+
+
+
+
+/**
+ * One-way cancellation shared by explicit Swift control and Rust async waits.
+ * Bounded watch state; cloning the Arc is constant cost, no persistent I/O.
+ */
+public protocol NativeCancellationProtocol: AnyObject, Sendable {
+
+    /**
+     * Stop local waits; synchronizes one watch value and wakes O(waiters), no I/O.
+     * Does not undo a committed write.
+     */
+    func cancel()
+
+}
+/**
+ * One-way cancellation shared by explicit Swift control and Rust async waits.
+ * Bounded watch state; cloning the Arc is constant cost, no persistent I/O.
+ */
+open class NativeCancellation: NativeCancellationProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_calternal_bindings_fn_clone_nativecancellation(self.pointer, $0) }
+    }
+    /**
+     * Allocate one Arc and watch channel; constant cost, no I/O or errors.
+     * Reuse only within one operation group.
+     */
+public convenience init() {
+    let pointer =
+        try! rustCall() {
+    uniffi_calternal_bindings_fn_constructor_nativecancellation_new($0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_calternal_bindings_fn_free_nativecancellation(pointer, $0) }
+    }
+
+
+
+
+    /**
+     * Stop local waits; synchronizes one watch value and wakes O(waiters), no I/O.
+     * Does not undo a committed write.
+     */
+open func cancel()  {try! rustCall() {
+    uniffi_calternal_bindings_fn_method_nativecancellation_cancel(self.uniffiClonePointer(),$0
+    )
+}
+}
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNativeCancellation: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = NativeCancellation
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeCancellation {
+        return NativeCancellation(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: NativeCancellation) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NativeCancellation {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: NativeCancellation, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeCancellation_lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeCancellation {
+    return try FfiConverterTypeNativeCancellation.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeCancellation_lower(_ value: NativeCancellation) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeNativeCancellation.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Reusable async HTTP session; platform code owns credential acquisition and storage.
+ * No Debug implementation exposes the sensitive bearer header. Construction allocates
+ * a connection pool; requests use bounded transport, no local persistent writes.
+ */
+public protocol NativeClientProtocol: AnyObject, Sendable {
+
+    /**
+     * Execute a retained validated operation asynchronously; transport retries reuse
+     * its identity. Dynamic plugin results remain JSON validated by the server.
+     * Up to three round trips, O(input/result bytes) copying and bounded buffering;
+     * no local storage/fsync. Typed local failures preserve uncertain outcome semantics.
+     */
+    func call(request: NativeRequest, cancellation: NativeCancellation) async throws  -> String
+
+    /**
+     * Discover contracts asynchronously; at most three round trips, 128 MiB buffering
+     * per attempt plus O(result bytes) JSON serialization. No local writes/fsync.
+     * Returns typed cancellation/authentication/transport or safe protocol failures.
+     */
+    func describe(cancellation: NativeCancellation) async throws  -> String
+
+    /**
+     * Resolve a kind and UUID; up to three round trips, bounded response buffering and
+     * O(result bytes) JSON allocation. No local writes/fsync; missing/inaccessible
+     * resources share the server not-found failure, with typed local failures.
+     */
+    func resolve(kind: String, id: String, cancellation: NativeCancellation) async throws  -> String
+
+}
+/**
+ * Reusable async HTTP session; platform code owns credential acquisition and storage.
+ * No Debug implementation exposes the sensitive bearer header. Construction allocates
+ * a connection pool; requests use bounded transport, no local persistent writes.
+ */
+open class NativeClient: NativeClientProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_calternal_bindings_fn_clone_nativeclient(self.pointer, $0) }
+    }
+    /**
+     * Accept a session credential from trusted passkey/OIDC endpoints, or an explicitly
+     * selected disposable development token. Current transport accepts loopback HTTP.
+     * Allocates Arc/header/HTTP state without network I/O; invalid origins/tokens fail.
+     */
+public convenience init(baseUrl: String, credential: String)throws  {
+    let pointer =
+        try rustCallWithError(FfiConverterTypeNativeError_lift) {
+    uniffi_calternal_bindings_fn_constructor_nativeclient_new(
+        FfiConverterString.lower(baseUrl),
+        FfiConverterString.lower(credential),$0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_calternal_bindings_fn_free_nativeclient(pointer, $0) }
+    }
+
+
+
+
+    /**
+     * Execute a retained validated operation asynchronously; transport retries reuse
+     * its identity. Dynamic plugin results remain JSON validated by the server.
+     * Up to three round trips, O(input/result bytes) copying and bounded buffering;
+     * no local storage/fsync. Typed local failures preserve uncertain outcome semantics.
+     */
+open func call(request: NativeRequest, cancellation: NativeCancellation)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativeclient_call(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeNativeRequest_lower(request),FfiConverterTypeNativeCancellation_lower(cancellation)
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_rust_buffer,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_rust_buffer,
+            freeFunc: ffi_calternal_bindings_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
+    /**
+     * Discover contracts asynchronously; at most three round trips, 128 MiB buffering
+     * per attempt plus O(result bytes) JSON serialization. No local writes/fsync.
+     * Returns typed cancellation/authentication/transport or safe protocol failures.
+     */
+open func describe(cancellation: NativeCancellation)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativeclient_describe(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeNativeCancellation_lower(cancellation)
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_rust_buffer,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_rust_buffer,
+            freeFunc: ffi_calternal_bindings_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
+    /**
+     * Resolve a kind and UUID; up to three round trips, bounded response buffering and
+     * O(result bytes) JSON allocation. No local writes/fsync; missing/inaccessible
+     * resources share the server not-found failure, with typed local failures.
+     */
+open func resolve(kind: String, id: String, cancellation: NativeCancellation)async throws  -> String  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_calternal_bindings_fn_method_nativeclient_resolve(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(kind),FfiConverterString.lower(id),FfiConverterTypeNativeCancellation_lower(cancellation)
+                )
+            },
+            pollFunc: ffi_calternal_bindings_rust_future_poll_rust_buffer,
+            completeFunc: ffi_calternal_bindings_rust_future_complete_rust_buffer,
+            freeFunc: ffi_calternal_bindings_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeNativeError_lift
+        )
+}
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNativeClient: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = NativeClient
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeClient {
+        return NativeClient(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: NativeClient) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NativeClient {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: NativeClient, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeClient_lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeClient {
+    return try FfiConverterTypeNativeClient.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeClient_lower(_ value: NativeClient) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeNativeClient.lower(value)
+}
+
+
+
+
+
+
+/**
+ * Validated immutable operation envelope with one request identity, retained for retry.
+ * No credential is stored in this object. Persist identity/input before durable use;
+ * this preview does not implement an offline outbox. Holds O(input bytes) in memory;
+ * no credential, persistent writes or per-frame use.
+ */
+public protocol NativeRequestProtocol: AnyObject, Sendable {
+
+    /**
+     * Serialize the envelope for platform retention; O(input bytes) allocation, no I/O.
+     * The platform must persist it atomically before claiming durable offline intent.
+     */
+    func envelopeJson()  -> String
+
+    /**
+     * Clone the stable identity, O(ID bytes) allocation; no locks, I/O or errors.
+     */
+    func requestId()  -> String
+
+}
+/**
+ * Validated immutable operation envelope with one request identity, retained for retry.
+ * No credential is stored in this object. Persist identity/input before durable use;
+ * this preview does not implement an offline outbox. Holds O(input bytes) in memory;
+ * no credential, persistent writes or per-frame use.
+ */
+open class NativeRequest: NativeRequestProtocol, @unchecked Sendable {
+    fileprivate let pointer: UnsafeMutableRawPointer!
+
+    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public struct NoPointer {
+        public init() {}
+    }
+
+    // TODO: We'd like this to be `private` but for Swifty reasons,
+    // we can't implement `FfiConverter` without making this `required` and we can't
+    // make it `required` without making it `public`.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
+        self.pointer = pointer
+    }
+
+    // This constructor can be used to instantiate a fake object.
+    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
+    //
+    // - Warning:
+    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public init(noPointer: NoPointer) {
+        self.pointer = nil
+    }
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
+        return try! rustCall { uniffi_calternal_bindings_fn_clone_nativerequest(self.pointer, $0) }
+    }
+    /**
+     * Prepare one request from generated-contract JSON input, optionally restoring a
+     * retained identity. A restored identity must always use identical input/operation.
+     * O(input bytes) parsing/validation/allocation plus UUID entropy for fresh IDs;
+     * no network/persistent I/O. Invalid input returns Failure.
+     */
+public convenience init(operation: String, inputJson: String, requestId: String?)throws  {
+    let pointer =
+        try rustCallWithError(FfiConverterTypeNativeError_lift) {
+    uniffi_calternal_bindings_fn_constructor_nativerequest_new(
+        FfiConverterString.lower(operation),
+        FfiConverterString.lower(inputJson),
+        FfiConverterOptionString.lower(requestId),$0
+    )
+}
+    self.init(unsafeFromRawPointer: pointer)
+}
+
+    deinit {
+        guard let pointer = pointer else {
+            return
+        }
+
+        try! rustCall { uniffi_calternal_bindings_fn_free_nativerequest(pointer, $0) }
+    }
+
+
+
+
+    /**
+     * Serialize the envelope for platform retention; O(input bytes) allocation, no I/O.
+     * The platform must persist it atomically before claiming durable offline intent.
+     */
+open func envelopeJson() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_calternal_bindings_fn_method_nativerequest_envelope_json(self.uniffiClonePointer(),$0
+    )
+})
+}
+
+    /**
+     * Clone the stable identity, O(ID bytes) allocation; no locks, I/O or errors.
+     */
+open func requestId() -> String  {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_calternal_bindings_fn_method_nativerequest_request_id(self.uniffiClonePointer(),$0
+    )
+})
+}
+
+
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNativeRequest: FfiConverter {
+
+    typealias FfiType = UnsafeMutableRawPointer
+    typealias SwiftType = NativeRequest
+
+    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeRequest {
+        return NativeRequest(unsafeFromRawPointer: pointer)
+    }
+
+    public static func lower(_ value: NativeRequest) -> UnsafeMutableRawPointer {
+        return value.uniffiClonePointer()
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NativeRequest {
+        let v: UInt64 = try readInt(&buf)
+        // The Rust code won't compile if a pointer won't fit in a UInt64.
+        // We have to go via `UInt` because that's the thing that's the size of a pointer.
+        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
+        if (ptr == nil) {
+            throw UniffiInternalError.unexpectedNullPointer
+        }
+        return try lift(ptr!)
+    }
+
+    public static func write(_ value: NativeRequest, into buf: inout [UInt8]) {
+        // This fiddling is because `Int` is the thing that's the same size as a pointer.
+        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
+        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeRequest_lift(_ pointer: UnsafeMutableRawPointer) throws -> NativeRequest {
+    return try FfiConverterTypeNativeRequest.lift(pointer)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeRequest_lower(_ value: NativeRequest) -> UnsafeMutableRawPointer {
+    return FfiConverterTypeNativeRequest.lower(value)
+}
+
+
+
+
+/**
+ * Safe native failure categories. No transport URL or credential enters diagnostics.
+ * Carries at most one serialized diagnostic; no I/O or synchronization.
+ */
+public enum NativeError: Swift.Error {
+
+
+
+    /**
+     * The trusted sign-in flow must obtain a fresh session credential.
+     */
+    case ReauthenticationRequired
+    /**
+     * Waiting stopped locally; a mutation may already have committed.
+     */
+    case Cancelled
+    /**
+     * Transport attempts exhausted; retain the request for reconciliation.
+     */
+    case Transport
+    /**
+     * Configuration, validation, protocol or server failure, with safe JSON details.
+     */
+    case Failure(
+        /**
+         * Serialized portable ApiError with category, message and optional details.
+         */details: String
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNativeError: FfiConverterRustBuffer {
+    typealias SwiftType = NativeError
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NativeError {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+
+
+
+        case 1: return .ReauthenticationRequired
+        case 2: return .Cancelled
+        case 3: return .Transport
+        case 4: return .Failure(
+            details: try FfiConverterString.read(from: &buf)
+            )
+
+         default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NativeError, into buf: inout [UInt8]) {
+        switch value {
+
+
+
+
+
+        case .ReauthenticationRequired:
+            writeInt(&buf, Int32(1))
+
+
+        case .Cancelled:
+            writeInt(&buf, Int32(2))
+
+
+        case .Transport:
+            writeInt(&buf, Int32(3))
+
+
+        case let .Failure(details):
+            writeInt(&buf, Int32(4))
+            FfiConverterString.write(details, into: &buf)
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeError_lift(_ buf: RustBuffer) throws -> NativeError {
+    return try FfiConverterTypeNativeError.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNativeError_lower(_ value: NativeError) -> RustBuffer {
+    return FfiConverterTypeNativeError.lower(value)
+}
+
+
+extension NativeError: Equatable, Hashable {}
+
+
+
+
+extension NativeError: Foundation.LocalizedError {
+    public var errorDescription: String? {
+        String(reflecting: self)
+    }
+}
+
+
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
+    typealias SwiftType = String?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterString.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterString.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+private let UNIFFI_RUST_FUTURE_POLL_READY: Int8 = 0
+private let UNIFFI_RUST_FUTURE_POLL_MAYBE_READY: Int8 = 1
+
+fileprivate let uniffiContinuationHandleMap = UniffiHandleMap<UnsafeContinuation<Int8, Never>>()
+
+fileprivate func uniffiRustCallAsync<F, T>(
+    rustFutureFunc: () -> UInt64,
+    pollFunc: (UInt64, @escaping UniffiRustFutureContinuationCallback, UInt64) -> (),
+    completeFunc: (UInt64, UnsafeMutablePointer<RustCallStatus>) -> F,
+    freeFunc: (UInt64) -> (),
+    liftFunc: (F) throws -> T,
+    errorHandler: ((RustBuffer) throws -> Swift.Error)?
+) async throws -> T {
+    // Make sure to call the ensure init function since future creation doesn't have a
+    // RustCallStatus param, so doesn't use makeRustCall()
+    uniffiEnsureCalternalBindingsInitialized()
+    let rustFuture = rustFutureFunc()
+    defer {
+        freeFunc(rustFuture)
+    }
+    var pollResult: Int8;
+    repeat {
+        pollResult = await withUnsafeContinuation {
+            pollFunc(
+                rustFuture,
+                uniffiFutureContinuationCallback,
+                uniffiContinuationHandleMap.insert(obj: $0)
+            )
+        }
+    } while pollResult != UNIFFI_RUST_FUTURE_POLL_READY
+
+    return try liftFunc(makeRustCall(
+        { completeFunc(rustFuture, $0) },
+        errorHandler: errorHandler
+    ))
+}
+
+// Callback handlers for an async calls.  These are invoked by Rust when the future is ready.  They
+// lift the return value or error and resume the suspended function.
+fileprivate func uniffiFutureContinuationCallback(handle: UInt64, pollResult: Int8) {
+    if let continuation = try? uniffiContinuationHandleMap.remove(handle: handle) {
+        continuation.resume(returning: pollResult)
+    } else {
+        print("uniffiFutureContinuationCallback invalid handle")
+    }
+}
+/**
+ * Generate the complete operation/worker JSON Schema as a UTF-8 JSON string. Allocates the schema tree and serialized output on every call.
+ *
+ * # Panics
+ * Panics only if serialization of the generated JSON Schema unexpectedly fails.
+ */
 public func contractSchemaJson() -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_calternal_bindings_fn_func_contract_schema_json($0
     )
 })
 }
+/**
+ * Validate a JSON portable view synchronously without rendering or dispatch. Returns JSON with `valid` and a safe `error` on failure. Enforces tree budgets after decoding; allocates O(input bytes).
+ */
 public func validateGenuiJson(viewJson: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_calternal_bindings_fn_func_validate_genui_json(
@@ -450,6 +1189,9 @@ public func validateGenuiJson(viewJson: String) -> String  {
     )
 })
 }
+/**
+ * Validate a JSON operation envelope synchronously without dispatch or authorization. Returns JSON with `valid` and either `request_id` or a safe `error`. Unknown operation schemas remain server-validated. Allocates O(input bytes); malformed input returns `valid: false`.
+ */
 public func validateRequestJson(requestJson: String) -> String  {
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_calternal_bindings_fn_func_validate_request_json(
@@ -473,13 +1215,40 @@ private let initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
-    if (uniffi_calternal_bindings_checksum_func_contract_schema_json() != 56572) {
+    if (uniffi_calternal_bindings_checksum_func_contract_schema_json() != 26093) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_calternal_bindings_checksum_func_validate_genui_json() != 52002) {
+    if (uniffi_calternal_bindings_checksum_func_validate_genui_json() != 24412) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_calternal_bindings_checksum_func_validate_request_json() != 8264) {
+    if (uniffi_calternal_bindings_checksum_func_validate_request_json() != 6914) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativecancellation_cancel() != 17022) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativeclient_call() != 31738) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativeclient_describe() != 46606) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativeclient_resolve() != 24195) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativerequest_envelope_json() != 29558) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_method_nativerequest_request_id() != 32703) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_constructor_nativecancellation_new() != 17196) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_constructor_nativeclient_new() != 65074) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_calternal_bindings_checksum_constructor_nativerequest_new() != 53190) {
         return InitializationResult.apiChecksumMismatch
     }
 

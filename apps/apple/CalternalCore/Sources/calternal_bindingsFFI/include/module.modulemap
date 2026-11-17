@@ -1,0 +1,7 @@
+module calternal_bindingsFFI {
+    header "calternal_bindingsFFI.h"
+    export *
+    use "Darwin"
+    use "_Builtin_stdbool"
+    use "_Builtin_stdint"
+}

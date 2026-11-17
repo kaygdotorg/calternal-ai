@@ -1,8 +1,13 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-//! Optional synchronous native contract/validation scaffolding, not a network client.
-//! This facade starts no async or server operation. Swift task cancellation cannot
-//! cancel a separately running HTTP request or reverse a committed server write.
+//! Async native operation boundary plus optional contract validation helpers.
+//! Credentials are supplied by trusted platform sign-in/secret storage and are never
+//! formatted in diagnostics. Explicit cancellation stops local waiting, not server
+//! effects. Retain NativeRequest after an uncertain mutation for safe retry.
+//!
+//! No editor input, composition, caret, layout, animation or per-frame work crosses
+//! this boundary. Invoke background operations with coalesced edits and batched results;
+//! JSON helpers copy payloads and must stay off native UI hot paths.
 use calternal_core::*;
 use serde_json::json;
 #[cfg(feature = "uniffi")]
@@ -58,3 +63,6 @@ mod tests {
         assert!(contract_schema_json().contains("WorkerRequest"));
     }
 }
+
+mod native;
+pub use native::*;

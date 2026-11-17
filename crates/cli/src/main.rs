@@ -1,7 +1,7 @@
 //! Command-line adapter for the disposable loopback preview; uses shared client validation and retry identities.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
-use calternal_client::{Client, ClientError};
+use calternal_client::{CancellationToken, Client, ClientError};
 use calternal_core::*;
 use clap::{Args, Parser, Subcommand};
 use serde_json::{Value, json};
@@ -25,7 +25,7 @@ struct Cli {
         long,
         env = "CALTERNAL_TOKEN_FILE",
         global = true,
-        help = "Owner-only file containing the dev bearer; tokens are never accepted in argv"
+        help = "Owner-only file containing a session credential or development bearer; tokens are never accepted in argv"
     )]
     token_file: Option<PathBuf>,
     #[arg(
@@ -306,7 +306,7 @@ async fn main() -> ExitCode {
         Err(e) => return report(None, e.api_error()),
     };
     if matches!(cli.command, Command::Describe) {
-        return match client.describe().await {
+        return match client.describe_cancellable(&CancellationToken::new()).await {
             Ok(result) => {
                 println!("{}", serde_json::to_string_pretty(&result).unwrap());
                 ExitCode::SUCCESS
@@ -328,7 +328,10 @@ async fn main() -> ExitCode {
         }
     };
     let id = pending.request().request_id.clone();
-    match client.invoke(pending.request()).await {
+    match client
+        .execute_cancellable::<Value>(pending.request(), &CancellationToken::new())
+        .await
+    {
         Ok(data) => {
             println!(
                 "{}",

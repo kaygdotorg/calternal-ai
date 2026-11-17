@@ -169,7 +169,7 @@ async fn predispatch_auth_failure_can_have_null_identity() {
             .unwrap()
             .invoke(pending.request())
             .await,
-        Err(ClientError::Api { status: 401, .. })
+        Err(ClientError::ReauthenticationRequired)
     ));
     task.await.unwrap();
     assert_eq!(pending.request().request_id, "r");
@@ -228,14 +228,88 @@ async fn dropped_mutation_response_retries_same_retained_identity_and_input() {
         markdown: "Hello world\n".into(),
     };
     let request_id = "retained-mutation";
-    assert!(matches!(
-        client.notes_create(&input, request_id).await,
-        Err(ClientError::Transport)
-    ));
     client.notes_create(&input, request_id).await.unwrap();
     let bodies = task.await.unwrap();
     assert_eq!(bodies.len(), 2);
     assert_eq!(bodies[0], bodies[1]);
     let request: Value = serde_json::from_slice(&bodies[0]).unwrap();
     assert_eq!(request["request_id"], request_id);
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_inflight_transport_and_is_sticky() {
+    use calternal_client::{CancellationToken, PendingCall, operations};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = Client::new(
+        &format!("http://{}", listener.local_addr().unwrap()),
+        "token",
+    )
+    .unwrap();
+    let pending = PendingCall::<operations::SpacesList>::new(&SpacesListInput {}).unwrap();
+    let cancellation = CancellationToken::new();
+    let cancel = cancellation.clone();
+    let peer = tokio::spawn(async move {
+        let (_socket, _) = listener.accept().await.unwrap();
+        cancel.cancel();
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    });
+    assert!(matches!(
+        client.call(&pending, &cancellation).await,
+        Err(ClientError::Cancelled)
+    ));
+    assert!(matches!(
+        client.call(&pending, &cancellation).await,
+        Err(ClientError::Cancelled)
+    ));
+    peer.await.unwrap();
+}
+
+#[tokio::test]
+async fn transport_retry_is_bounded_and_preserves_exact_envelope() {
+    use calternal_client::CancellationToken;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = Client::new(
+        &format!("http://{}", listener.local_addr().unwrap()),
+        "token",
+    )
+    .unwrap();
+    let pending =
+        Client::pending("spaces.list", &SpacesListInput {}, Some("bounded".into())).unwrap();
+    let peer = tokio::spawn(async move {
+        let mut bodies = Vec::new();
+        for _ in 0..3 {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = Vec::new();
+            loop {
+                let mut chunk = [0; 2048];
+                let n = socket.read(&mut chunk).await.unwrap();
+                assert_ne!(n, 0);
+                bytes.extend_from_slice(&chunk[..n]);
+                if let Some(offset) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let header = String::from_utf8_lossy(&bytes[..offset]).to_lowercase();
+                    let length = header
+                        .lines()
+                        .find_map(|s| {
+                            s.strip_prefix("content-length: ")
+                                .and_then(|s| s.parse::<usize>().ok())
+                        })
+                        .unwrap();
+                    if bytes.len() >= offset + 4 + length {
+                        bodies.push(bytes[offset + 4..offset + 4 + length].to_vec());
+                        break;
+                    }
+                }
+            }
+        }
+        bodies
+    });
+    assert!(matches!(
+        client
+            .execute_cancellable::<serde_json::Value>(pending.request(), &CancellationToken::new())
+            .await,
+        Err(ClientError::Transport)
+    ));
+    let bodies = peer.await.unwrap();
+    assert_eq!(bodies.len(), 3);
+    assert!(bodies.windows(2).all(|pair| pair[0] == pair[1]));
 }

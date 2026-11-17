@@ -15,8 +15,11 @@ uniffi = ["dep:uniffi"]
 [dependencies]
 calternal-core.workspace = true
 serde_json.workspace = true
-uniffi = { version = "0.29", optional = true, features = ["cli"] }
+uniffi = { version = "0.29", optional = true, features = ["cli", "tokio"] }
 schemars.workspace = true
+calternal-client.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
 
 [[bin]]
 name = "calternal-bindgen"

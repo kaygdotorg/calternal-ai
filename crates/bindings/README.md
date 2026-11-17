@@ -1,26 +1,34 @@
-# Native validation facade (scaffolding)
+# Async native client bridge
 
-This optional UniFFI crate exports three synchronous JSON functions:
-`contract_schema_json()`, `validate_request_json(String)` and
-`validate_genui_json(String)`. Validation returns `{"valid":true,...}` or
-`{"valid":false,"error":{"code":...,"message":...}}`; it uses the Rust core
-validators and generated contract. Unknown operation inputs still require the
-server's registered schema; the generic facade only knows frozen operations.
+UniFFI exposes `NativeClient.describe`, `resolve` and `call` as async Swift APIs.
+`NativeRequest` validates generated-contract JSON and allocates one stable request
+ID before dispatch. Retain its envelope and identity after uncertain outcomes;
+transport retries reuse the exact request (three attempts, 100/200 ms backoff).
+No API, authentication, validation or protocol error is automatically retried.
+`NativeCancellation` cancels HTTP/body/retry waiting locally; committed mutations
+are not undone. A 401 surfaces `NativeError.ReauthenticationRequired`.
+
+Platform code obtains session credentials through trusted passkey/OIDC endpoints
+and stores them in its secret store. Supply the credential to `NativeClient`;
+never log it. The preview transport accepts loopback HTTP only and also accepts
+explicit disposable development tokens. This library does not implement passkey
+UI, a Keychain adapter or automatic session refresh.
+
+The synchronous schema/request/GenUI validation helpers remain available for
+background contract tooling. All JSON helpers copy input/result bytes. Nothing
+per keystroke, composition event, selection change, frame, animation or layout
+crosses UniFFI. Native editors submit coalesced transactions off the UI thread;
+stream rendering will require batched updates. Sync, offline cache and outbox
+persistence remain unbuilt; see [the client design](../client/SYNC.md).
+
+Build and generate on an authorized dev VM (use `.dylib` on macOS):
 
 ```sh
-scripts/with-toolchain.sh cargo build -p calternal-bindings --features uniffi
+scripts/with-toolchain.sh cargo build -j4 -p calternal-bindings --features uniffi
 target/debug/calternal-bindgen generate --library target/debug/libcalternal_bindings.so --language swift --out-dir crates/bindings/generated/swift
 ```
 
-`generated/swift` contains a usable generated Swift facade, C header and module
-map. Generation and Rust compilation were exercised on Linux; this is not an
-Apple build/run or native rendering proof. No UI code is present. `swift-format`
-was unavailable during generation, so generated Swift is unformatted.
-
-Core has no network, async runtime or UniFFI dependency. `crates/client` owns
-network effects; this facade has no client/session/outbox/credential adapter or
-network operation to cancel. Cancelling a future Swift caller would not cancel
-an independently running HTTP request or reverse a committed write. A real
-native client must retain request identities and use the same protocol semantics;
-platform credentials, explicit operation cancellation, offline/reconnect and
-native renderer conformance remain later gates.
+The Swift library/test target and disposable real-server harness are under
+[CalternalCore](../../apps/apple/CalternalCore/README.md). Generated code must
+match its linked library. A successful Linux generation alone is not Apple
+execution or native rendering qualification.
