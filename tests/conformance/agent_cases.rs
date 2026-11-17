@@ -194,7 +194,7 @@ async fn source_app_requires_an_enabled_plugin_or_a_native_operation_group() {
     let f = Fixture::new().await;
     for (source, status) in [
         ("invented-app", 400),
-        ("calternal-notes-insights", 403),
+        ("notes-insights", 403),
         ("notes", 200),
         ("spaces", 200),
     ] {
