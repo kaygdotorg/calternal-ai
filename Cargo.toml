@@ -22,6 +22,7 @@ calternal-client = { path = "crates/client" }
 calternal-machine = { path = "crates/machine" }
 calternal-types = { path = "crates/types" }
 calternal-cli = { path = "crates/cli" }
+calternal-genui = { path = "crates/genui" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "0.8"

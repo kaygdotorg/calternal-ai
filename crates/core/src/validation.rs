@@ -2,7 +2,6 @@ use crate::*;
 use calternal_types::Error;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::collections::HashSet;
 
 fn require(ok: bool, message: &str) -> Result<(), Error> {
     if ok {
@@ -293,139 +292,22 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
     }
 }
 
-fn string_bytes(value: &Value) -> usize {
-    match value {
-        Value::String(s) => s.len(),
-        Value::Array(a) => a.iter().map(string_bytes).sum(),
-        Value::Object(o) => o.values().map(string_bytes).sum(),
-        _ => 0,
-    }
-}
-/// Validate portable tree version, unique IDs and budgets: 64 KiB JSON, 32 KiB string values, 8 KiB text, depth 8 and 128 nodes. Serializes the tree and allocates O(tree bytes) temporary storage.
+/// Checks a generated-UI view's version and size. The host additionally compiles
+/// the source (`calternal-genui`) and refuses any diagnostic.
 ///
 /// # Errors
-/// Returns invalid input for any tree or budget violation; does not grant operation authority.
+/// Invalid input for another version; too large above 64 KiB of source.
+/// Cost: O(1).
 pub fn validate_genui(view: &GenUiView) -> Result<(), Error> {
     require(
         view.genui_version == GENUI_VERSION,
         "unsupported GenUI version",
     )?;
-    let bytes = serde_json::to_vec(view).map_err(|_| Error::invalid_input("invalid GenUI"))?;
-    require(bytes.len() <= 64 * 1024, "GenUI exceeds 64 KiB")?;
-    require(
-        string_bytes(&serde_json::to_value(view).unwrap()) <= 32 * 1024,
-        "GenUI string budget exceeds 32 KiB",
-    )?;
-    fn visit(node: &GenUiNode, depth: usize, ids: &mut HashSet<String>) -> Result<(), Error> {
-        require(depth <= 8, "GenUI depth exceeds 8")?;
-        validate_id(node.id())?;
-        require(ids.insert(node.id().into()), "duplicate GenUI id")?;
-        require(ids.len() <= 128, "GenUI exceeds 128 nodes")?;
-        let label = match node {
-            GenUiNode::Button { label, .. }
-            | GenUiNode::Stat { label, .. }
-            | GenUiNode::Resource { label, .. } => Some(label),
-            _ => None,
-        };
-        if let Some(label) = label {
-            require(
-                !label.is_empty() && label.chars().count() <= 256,
-                "label must have 1..256 characters",
-            )?;
-        }
-        match node {
-            GenUiNode::Stack { children, .. } => {
-                for child in children {
-                    visit(child, depth + 1, ids)?
-                }
-            }
-            GenUiNode::Text { text, .. } => require(text.len() <= 8 * 1024, "text exceeds 8 KiB")?,
-            GenUiNode::Button { action, .. } => {
-                require(
-                    !action.operation.is_empty() && action.operation.len() <= 128,
-                    "invalid action operation",
-                )?;
-            }
-            GenUiNode::Resource {
-                resource_id,
-                space_id,
-                ..
-            }
-            | GenUiNode::DocumentEditor {
-                resource_id,
-                space_id,
-                ..
-            } => resource(space_id, resource_id)?,
-            GenUiNode::Stat { .. } => {}
-        }
-        Ok(())
-    }
-    visit(&view.root, 1, &mut HashSet::new())
-}
-/// Validate the tree and every action against declared read-only operations. Traversal costs O(nodes × declared operations), plus tree validation.
-///
-/// # Errors
-/// Returns tree/input errors or invalid input for undeclared or mutating actions.
-pub fn validate_extension_view(view: &GenUiView, manifest: &PluginManifest) -> Result<(), Error> {
-    validate_genui(view)?;
-    fn visit(node: &GenUiNode, manifest: &PluginManifest) -> Result<(), Error> {
-        match node {
-            GenUiNode::Stack { children, .. } => {
-                for child in children {
-                    visit(child, manifest)?
-                }
-            }
-            GenUiNode::Button { action, .. } => {
-                require(
-                    manifest
-                        .operations
-                        .iter()
-                        .any(|op| op.id == action.operation),
-                    "extension action is not declared",
-                )?;
-                require(
-                    !matches!(
-                        action.operation.as_str(),
-                        "notes.create" | "notes.update" | "plugins.enable" | "plugins.disable"
-                    ),
-                    "extension action must not invoke a mutating host operation",
-                )?;
-                validate_operation_input(&action.operation, &action.input)?;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-    visit(&view.root, manifest)
-}
-/// Check plugin IDs, version, API compatibility, unique operation/view IDs and all contributed views. Cost includes each view validation and declared-operation lookup. Does not load code or issue grants.
-///
-/// # Errors
-/// Returns invalid input or propagated view/input errors for invalid declarations.
-pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), Error> {
-    validate_id(&manifest.id)?;
-    require(
-        manifest.api_version == PROTOCOL_VERSION,
-        "unsupported plugin API",
-    )?;
-    require(
-        !manifest.version.is_empty() && !manifest.name.is_empty(),
-        "plugin version/name required",
-    )?;
-    let mut ids = HashSet::new();
-    for op in &manifest.operations {
-        validate_id(&op.id)?;
-        require(ids.insert(&op.id), "duplicate plugin operation")?;
-    }
-    for dep in &manifest.dependencies {
-        validate_id(&dep.id)?;
-        require(!dep.version.is_empty(), "dependency version required")?;
-    }
-    let mut views = HashSet::new();
-    for view in &manifest.views {
-        validate_id(&view.id)?;
-        require(views.insert(&view.id), "duplicate plugin view")?;
-        validate_extension_view(&view.view, manifest)?;
+    if view.source.len() > 64 * 1024 {
+        return Err(Error::new(
+            ErrorCode::TooLarge,
+            "GenUI source exceeds 64 KiB",
+        ));
     }
     Ok(())
 }

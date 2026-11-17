@@ -275,7 +275,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
                         &collections,
                     )?;
                 }
-                let manifest = plugin.wire.clone();
+                let manifest = plugin.manifest.clone();
                 let (_, value) = s.set_plugin_enabled(
                     principal,
                     &rid,

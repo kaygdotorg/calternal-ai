@@ -26,6 +26,7 @@ calternal-recovery.workspace = true
 calternal-auth.workspace = true
 calternal-fsio.workspace = true
 calternal-core.workspace = true
+calternal-genui.workspace = true
 calternal-plugin-host.workspace = true
 calternal-machine.workspace = true
 calternal-cli.workspace = true

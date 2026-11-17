@@ -10,8 +10,8 @@ use ts_rs::TS;
 pub type JsonObject = BTreeMap<String, Value>;
 /// Operation and worker transport version accepted by this preview.
 pub const PROTOCOL_VERSION: u32 = 1;
-/// Portable declarative view version accepted by this preview.
-pub const GENUI_VERSION: u32 = 1;
+/// Generated-UI language version accepted by this preview (2; 1 was the retired JSON tree).
+pub const GENUI_VERSION: u32 = 2;
 /// Maximum Markdown document size in UTF-8 bytes (1 MiB).
 pub const MAX_DOCUMENT_BYTES: usize = 1024 * 1024;
 /// Maximum serialized operation body size in bytes (2 MiB).

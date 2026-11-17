@@ -128,7 +128,7 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.equal(describe.status, 200);
     const catalog = await describe.json();
     assert.equal(catalog.protocol_version, 1);
-    assert.equal(catalog.genui_version, 1);
+    assert.equal(catalog.genui_version, 2);
     assert.ok(catalog.operations.some((entry) => entry.id === "notes-insights.summarize"));
 
     const createInput = { space_id: server.personal, title: "Integration note", markdown: "Hello world\n" };
@@ -209,9 +209,8 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     });
     assert.equal(preview.status, 200, JSON.stringify(preview.body));
     assert.equal(preview.body.data.preview, true);
-    assert.equal(preview.body.data.view.genui_version, 1);
-    assert.equal(preview.body.data.view.root.type, "stack");
-    assert.deepEqual(preview.body.data.view.root.children.map((node) => node.type), ["stat", "stat", "stat"]);
+    assert.equal(preview.body.data.view.genui_version, 2);
+    assert.match(preview.body.data.view.source, /^Row\(\[Metric\("Words"/);
 
     const stillDisabled = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
     assert.equal(stillDisabled.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights").enabled, false);
@@ -229,7 +228,7 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     const summarize = await operation(server, server.ownerToken, "notes-insights.summarize", { space_id: server.personal, id: note.id });
     assert.equal(summarize.status, 200, JSON.stringify(summarize.body));
     assert.deepEqual(summarize.body.data.stats, { words: 2, characters: 12, lines: 1 });
-    assert.deepEqual(summarize.body.data.view.root.children.map((node) => node.value), ["2", "12", "1"]);
+    assert.equal(summarize.body.data.view.source, 'Row([Metric("Words", "2"), Metric("Characters", "12"), Metric("Lines", "1")])');
 
     const tokenBeforeRestart = server.ownerToken;
     await stopServer(server);

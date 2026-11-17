@@ -63,7 +63,7 @@ const inv=new Map();
 const frame=(f,message)=>({{protocol_version:2,invocation_id:f.invocation_id,message}});
 const call=(f,method,input)=>send(frame(f,{{type:'host_call',call_id:'c'+Math.random().toString(36).slice(2,8),method,input,authority:inv.get(f.invocation_id).authority}}));
 const done=(f,data)=>send(frame(f,{{type:'complete',data}}));
-const stats=t=>{{const s={{words:t.split(/\s+/).filter(Boolean).length,characters:[...t].length,lines:t.split('\n').filter((l,i,a)=>i<a.length-1||l).length}};return {{stats:s,view:{{genui_version:1,root:{{type:'stack',id:'root',children:[{{type:'stat',id:'w',label:'Words',value:String(s.words)}}]}}}}}}}};
+const stats=t=>{{const s={{words:t.split(/\s+/).filter(Boolean).length,characters:[...t].length,lines:t.split('\n').filter((l,i,a)=>i<a.length-1||l).length}};return {{stats:s,view:{{genui_version:2,source:'Metric("Words", "'+s.words+'")'}}}}}};
 rl.on('line',l=>{{const f=JSON.parse(l);const m=f.message;
  if(m.type==='invoke'){{inv.set(f.invocation_id,m);{on_invoke}}}
  else if(m.type==='host_reply'){{const i=inv.get(f.invocation_id);{on_reply}}}

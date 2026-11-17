@@ -425,6 +425,7 @@ version = "0.1.0"
 dependencies = [
  "calternal-client",
  "calternal-core",
+ "calternal-genui",
  "calternal-types",
  "schemars",
  "serde_json",
@@ -440,6 +441,7 @@ dependencies = [
  "calternal-cli",
  "calternal-client",
  "calternal-core",
+ "calternal-types",
  "clap",
  "rustix",
  "serde_json",
@@ -605,6 +607,7 @@ dependencies = [
  "calternal-content",
  "calternal-core",
  "calternal-fsio",
+ "calternal-genui",
  "calternal-machine",
  "calternal-plugin-host",
  "calternal-recovery",

@@ -12,7 +12,7 @@ pub(super) fn plugin_state(
 ) -> Result<PluginState, Error> {
     let row = activation(s, space, plugin)?;
     Ok(PluginState {
-        manifest: plugin.wire.clone(),
+        manifest: plugin.manifest.clone(),
         enabled: row.enabled,
         generation: row.generation,
     })
@@ -48,9 +48,10 @@ pub(super) fn outcome_value(outcome: Outcome) -> Result<Value, Error> {
     }
 }
 
-/// A portable view in a plugin result must pass the same checks as the v0 host:
-/// bounded tree, unique IDs, and actions only to declared read-only operations.
-/// Cost: one view decode and validation when the result carries `view`.
+/// A generated-UI view in a plugin result must be version 2, at most 64 KiB, and
+/// compile without diagnostics (`calternal-genui`: syntax, catalog components,
+/// accessibility and budgets). Its actions only describe operations; dispatch checks
+/// them again. Cost: one decode and one compile when the result carries `view`.
 pub(super) fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
     let Some(view) = value.get("view") else {
         return Ok(());
@@ -61,7 +62,13 @@ pub(super) fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
     };
     let view: calternal_core::GenUiView =
         serde_json::from_value(view.clone()).map_err(|_| rejected())?;
-    calternal_core::validate_extension_view(&view, &plugin.wire).map_err(|_| rejected())
+    calternal_core::validate_genui(&view).map_err(|_| rejected())?;
+    let compiled = calternal_genui::compile(&view.source, calternal_genui::Budgets::default());
+    if compiled.diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(rejected())
+    }
 }
 
 /// Invoke a manifest-declared operation on its (plugin, space) worker.

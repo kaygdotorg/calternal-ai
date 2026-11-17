@@ -331,7 +331,7 @@ mod tests {
             (
                 "plugins.preview",
                 "plugins-preview",
-                json!({"view":{"type":"text","text":"hello"},"preview":true}),
+                json!({"view":{"genui_version":2,"source":"Text(\"hello\")"},"preview":true}),
             ),
             ("future.read", "invoke", json!({"anything":[1,2]})),
         ]
@@ -419,7 +419,7 @@ mod tests {
             }
             let result: DescribeResult = serde_json::from_value(json!({
                 "protocol_version":1,
-                "genui_version":1,
+                "genui_version":2,
                 "principal":{"id":"12345678-1234-4abc-8def-123456789012","spaces":[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","role":"owner"}]},
                 "operations":[{"id":"notes.list","description":"List notes in the selected space","mutates":false,"input_schema":{},"output_schema":{}}]
             })).unwrap();
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn describe_golden() {
         let result: DescribeResult = serde_json::from_value(json!({
-            "protocol_version":1,"genui_version":1,
+            "protocol_version":1,"genui_version":2,
             "principal":{"id":"acct-1","spaces":[{"id":"space-1","role":"owner"}]},
             "operations":[{"id":"notes.list","description":"List notes","mutates":false,"input_schema":{},"output_schema":{}}]
         })).unwrap();

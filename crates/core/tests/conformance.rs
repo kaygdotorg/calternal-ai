@@ -21,21 +21,6 @@ fn request_fixture_corpus() {
     }
 }
 #[test]
-fn genui_fixture_corpus() {
-    let cases: Vec<Value> = serde_json::from_str(&fixture("genui-cases.json")).unwrap();
-    for case in cases {
-        let result = serde_json::from_value::<GenUiView>(case["value"].clone())
-            .map_err(|e| e.to_string())
-            .and_then(|v| validate_genui(&v).map_err(|e| e.to_string()));
-        assert_eq!(
-            result.is_ok(),
-            case["valid"].as_bool().unwrap(),
-            "{}: {result:?}",
-            case["name"]
-        );
-    }
-}
-#[test]
 fn schema_and_catalog_snapshots_do_not_drift() {
     let schema: Value =
         serde_json::from_str(include_str!("../../../contract/v0.schema.json")).unwrap();
@@ -69,68 +54,6 @@ fn unknown_outcome_keeps_id_and_input_and_checks_revision() {
     assert_eq!(
         canonical_request_input(&serde_json::from_value(original).unwrap()),
         canonical_request_input(&serde_json::from_value(reordered).unwrap())
-    );
-}
-#[test]
-fn hostile_tree_limits_and_utf8_bytes() {
-    let mut node = GenUiNode::Text {
-        id: "leaf".into(),
-        text: "text".into(),
-    };
-    for i in 0..8 {
-        node = GenUiNode::Stack {
-            id: format!("depth-{i}"),
-            children: vec![node],
-        };
-    }
-    assert!(
-        validate_genui(&GenUiView {
-            genui_version: 1,
-            root: node
-        })
-        .is_err()
-    );
-    let node = GenUiNode::Stack {
-        id: "root".into(),
-        children: (0..128)
-            .map(|i| GenUiNode::Text {
-                id: format!("node-{i}"),
-                text: String::new(),
-            })
-            .collect(),
-    };
-    assert!(
-        validate_genui(&GenUiView {
-            genui_version: 1,
-            root: node
-        })
-        .is_err()
-    );
-    assert!(
-        validate_genui(&GenUiView {
-            genui_version: 1,
-            root: GenUiNode::Text {
-                id: "utf8".into(),
-                text: "🦀".repeat(2049)
-            }
-        })
-        .is_err()
-    );
-    let node = GenUiNode::Stack {
-        id: "root".into(),
-        children: (0..5)
-            .map(|i| GenUiNode::Text {
-                id: format!("node-{i}"),
-                text: "a".repeat(8000),
-            })
-            .collect(),
-    };
-    assert!(
-        validate_genui(&GenUiView {
-            genui_version: 1,
-            root: node
-        })
-        .is_err()
     );
 }
 #[test]
@@ -179,27 +102,6 @@ fn input_limits_and_errors() {
     );
 }
 #[test]
-fn extension_cannot_lie_about_mutating_host_action() {
-    let view:GenUiView=serde_json::from_value(json!({"genui_version":1,"root":{"type":"button","id":"bad","label":"Run","action":{"operation":"notes.create","input":{"space_id":"personal","title":"Bad","markdown":"bad"}}}})).unwrap();
-    let manifest = PluginManifest {
-        id: "notes-insights".into(),
-        version: "0.1.0".into(),
-        api_version: 1,
-        name: "Insights".into(),
-        description: "Test".into(),
-        dependencies: vec![],
-        capabilities: vec![],
-        operations: vec![PluginOperation {
-            id: "notes.create".into(),
-            description: "Lies about mutation".into(),
-            mutates: False,
-        }],
-        views: vec![],
-    };
-    assert!(validate_genui(&view).is_ok());
-    assert!(validate_extension_view(&view, &manifest).is_err());
-}
-#[test]
 fn required_nullable_response_fields_are_not_optional() {
     assert!(
         serde_json::from_value::<Failure>(
@@ -215,6 +117,24 @@ fn required_nullable_response_fields_are_not_optional() {
     assert!(
         serde_json::from_value::<ApiError>(
             json!({"code":"invalid_input","message":"bad","details":null})
+        )
+        .is_err()
+    );
+}
+#[test]
+fn genui_views_are_versioned_bounded_source() {
+    let view = |version, source: String| GenUiView {
+        genui_version: version,
+        source,
+    };
+    assert!(validate_genui(&view(GENUI_VERSION, "Text(\"hi\")".into())).is_ok());
+    assert!(validate_genui(&view(1, "Text(\"hi\")".into())).is_err());
+    let big = view(GENUI_VERSION, "x".repeat(64 * 1024 + 1));
+    assert_eq!(validate_genui(&big).unwrap_err().code, ErrorCode::TooLarge);
+    // The retired JSON tree no longer parses as a view.
+    assert!(
+        serde_json::from_value::<GenUiView>(
+            json!({"genui_version":1,"root":{"type":"text","id":"t","text":"x"}})
         )
         .is_err()
     );

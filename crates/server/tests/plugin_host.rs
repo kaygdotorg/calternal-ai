@@ -74,7 +74,13 @@ fn tagger(dir: &Path) -> Plugin {
 async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixture {
     let root = tmp(tag);
     let roots = support::roots(&root);
-    let store = Store::open(&roots, uuid::Uuid::from_u128(1), true, calternal_content::DEFAULT_RECEIPT_RETENTION).unwrap();
+    let store = Store::open(
+        &roots,
+        uuid::Uuid::from_u128(1),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
     let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13 on PATH");
     let workers = match pool {
@@ -299,6 +305,16 @@ async fn one_long_lived_worker_per_plugin_and_space() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// The string a probing worker put in its view as `Metric("Probe", "<value>")`.
+fn probe(r: &Value) -> String {
+    let source = r["view"]["source"].as_str().unwrap();
+    let literal = source
+        .strip_prefix("Metric(\"Probe\", ")
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap();
+    serde_json::from_str(literal).unwrap()
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn worker_reads_only_its_own_space_and_has_no_ambient_access() {
     // The worker ignores its input and probes: a foreign note ID planted in its
@@ -307,7 +323,7 @@ async fn worker_reads_only_its_own_space_and_has_no_ambient_access() {
     let plugin = insights(
         &dir,
         "call(f,'read_item',{kind:'notes',item_id:fs.readFileSync(__dirname+'/foreign','utf8')})",
-        "const env=Object.keys(process.env).sort().join(',');let fsr;try{fs.readFileSync('/etc/hostname');fsr='read'}catch(e){fsr=e.code}const r=stats(m.ok?m.data.text:'');r.view.root.children[0].value=env+'|'+fsr+'|'+m.ok;done(f,r)",
+        "const env=Object.keys(process.env).sort().join(',');let fsr;try{fs.readFileSync('/etc/hostname');fsr='read'}catch(e){fsr=e.code}const r=stats(m.ok?m.data.text:'');r.view.source='Metric(\"Probe\", '+JSON.stringify(env+'|'+fsr+'|'+m.ok)+')';done(f,r)",
     );
     let f = fixture("probe", vec![plugin], None).await;
     let foreign = f.note(f.dev.shared, "secret words here\n").await;
@@ -315,10 +331,7 @@ async fn worker_reads_only_its_own_space_and_has_no_ambient_access() {
     std::fs::write(dir.join("foreign"), &foreign).unwrap();
     let r = f.summarize(&own).await.unwrap();
     assert_eq!(r["stats"]["words"], 0, "foreign text reached the worker");
-    assert_eq!(
-        r["view"]["root"]["children"][0]["value"],
-        "LANG|ERR_ACCESS_DENIED|false"
-    );
+    assert_eq!(probe(&r), "LANG|ERR_ACCESS_DENIED|false");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -433,7 +446,7 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     let worker = support::worker(
         &dir,
         "call(f,'read_item',{kind:'notes',item_id:m.input.note})",
-        "const r=stats(m.ok?m.data.text:'');r.view.root.children[0].value=JSON.stringify(inv.get(f.invocation_id).input);done(f,r)",
+        "const r=stats(m.ok?m.data.text:'');r.view.source='Metric(\"Probe\", '+JSON.stringify(JSON.stringify(inv.get(f.invocation_id).input))+')';done(f,r)",
     );
     let mut manifest = support::insights_manifest();
     manifest.id = "targeted".into();
@@ -464,8 +477,7 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     assert_eq!(r["stats"]["words"], 3);
     // Compare as JSON, not text: key order depends on serde_json's `preserve_order`
     // feature, which other workspace crates may switch on.
-    let echoed: Value =
-        serde_json::from_str(r["view"]["root"]["children"][0]["value"].as_str().unwrap()).unwrap();
+    let echoed: Value = serde_json::from_str(&probe(&r)).unwrap();
     assert_eq!(echoed, json!({"note": own, "mode": "fast"}));
     // A note in a space the caller cannot read answers exactly like a missing one.
     let missing = uuid::Uuid::now_v7().to_string();
