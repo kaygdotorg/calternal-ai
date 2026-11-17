@@ -484,6 +484,9 @@ fn crash_points_recover_without_duplicates() {
         let (id, base, personal) = {
             let srv = start(&d.0, None);
             let n = create(&srv, "c", &srv.personal, "before\n");
+            // Arm faults against the next revision, after this acknowledged base
+            // has actually reached userdata under the deferred placement contract.
+            note_file(&d.0, &srv.personal, n["id"].as_str().unwrap());
             (
                 n["id"].as_str().unwrap().to_string(),
                 n["revision"].clone(),

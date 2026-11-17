@@ -4,7 +4,13 @@ use super::*;
 #[tokio::test]
 async fn acknowledged_save_survives_immediate_restart_with_isolation() {
     let mut f = Fixture::new().await;
-    let created = f.op(1, "notes.create", json!({"space_id":f.spaces[0],"title":"Durable","markdown":"initial"})).await;
+    let created = f
+        .op(
+            1,
+            "notes.create",
+            json!({"space_id":f.spaces[0],"title":"Durable","markdown":"initial"}),
+        )
+        .await;
     created.ok();
     let mut note = created.body["data"]["note"].clone();
     for i in 0..4 {
@@ -20,7 +26,10 @@ async fn acknowledged_save_survives_immediate_restart_with_isolation() {
         let replay = f.op_id(1, "notes.update", input, &request).await;
         replay.ok();
         assert_eq!(replay.body, saved.body);
-        assert_eq!(f.op(2, "notes.get", json!({"id":note["id"]})).await.status, 404);
+        assert_eq!(
+            f.op(2, "notes.get", json!({"id":note["id"]})).await.status,
+            404
+        );
         note = saved.body["data"]["note"].clone();
     }
 }
