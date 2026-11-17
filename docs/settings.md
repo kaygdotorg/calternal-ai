@@ -14,6 +14,31 @@ Decided with kayg, 2026-11-17. Terms: [glossary](glossary.md).
   for me: reversible changes such as appearance and shortcuts just happen; anything about
   access asks.
 
+## Access model
+
+One model everywhere, nothing more complex:
+
+- A **user** is one account. A **group** is a named set of users.
+- A **capability** is one permission. A **role** is a named set of capabilities.
+- A user or a group is given a role **in a scope**: the server, or one space.
+- Space administration and server administration are therefore the same mechanism at two
+  scopes (Owner and Manager in a space; Operator on the server), not two systems. Plans
+  are groups holding server-scope entitlements.
+
+## Structure decided so far
+
+- The Admin group shows only if you manage something.
+- Destructive actions sit in a separate Danger area at the bottom of each Admin page and
+  ask for a fresh passkey check.
+- Plugins are managed on one page: installed, available, and what each may access; a
+  plugin's own settings open from its row.
+- Machines are added through a guided flow, with the SSH option.
+- The default provider and model are per thread, remembering the last choice.
+- Onboarding: pick a look, name your space, sign in to an AI provider. It also asks whether
+  you are a developer; what follows from that is its own round.
+- No separate history or export features: settings are files, so version history is the
+  record of changes (with undo) and copying the files is export and import.
+
 ## Appearance
 
 - Personal by default; a space can set defaults that members may override.
@@ -52,7 +77,8 @@ to git; this list is the source.
 | Geronimo Giqueaux | `ngWVYP9NIYM` |
 | Nataliya Melnychuk | `I_xBR4NmDhU` |
 
-Each is at `https://unsplash.com/photos/<Photo ID>`.
+Each is at `https://unsplash.com/photos/<Photo ID>`. The default is Geronimo Giqueaux's
+`EX_STserBZM`.
 
 ## Being tried
 

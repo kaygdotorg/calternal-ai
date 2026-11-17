@@ -12,6 +12,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "docs:site": "node scripts/docs-site/build.mjs",
     "check:docs": "./scripts/check-docs.sh",
     "build:docs": "./scripts/build-docs.sh",
     "build:plugins": "npm run build --workspace @calternal/plugin-sdk && npm run build --workspace @calternal/notes-insights",
