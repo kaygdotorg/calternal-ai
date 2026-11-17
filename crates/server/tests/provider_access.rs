@@ -231,6 +231,29 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
             .0,
         200
     );
+    // Secret audit provenance reuses the existing Actor/Via type for the agent.
+    scope.mode = AgentMode::FullAccess;
+    state.jobs.agent_scope_change(&scope).unwrap();
+    let new = state.jobs.agent_token(&scope, _run.job.runs).unwrap();
+    let (status,reply)=call(new.clone(),"secrets.request",json!({"space_id":space,"name":"provider-audit","label":"Fixture","reason":"Agent provenance"})).await;
+    assert_eq!(status, 200, "{reply}");
+    let path = data.path().join("spaces").join(&space).join("secrets.db");
+    let actor: String = tokio::task::spawn_blocking(move || {
+        rusqlite::Connection::open(path)
+            .unwrap()
+            .query_row(
+                "SELECT actor FROM audit ORDER BY id DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    })
+    .await
+    .unwrap();
+    assert_eq!(
+        actor,
+        format!("account:{} agent-thread:{}", who.id, scope.thread)
+    );
     let read = Request::builder()
         .uri("/api/v1/describe")
         .header("host", "localhost:3210")

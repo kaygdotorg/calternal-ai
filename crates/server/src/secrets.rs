@@ -108,7 +108,8 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
 }
 
 /// Run an admitted `secrets.*` operation. `policy` is its registry row; its
-/// `required` capability applies when the input names a space.
+/// `required` capability applies when the input names a space. `via` is trusted
+/// session provenance, never a value from operation input.
 /// Cost: one directory read for a space owner, then one owner-database open and
 /// at most one fsync'd transaction on a blocking task.
 pub async fn dispatch<D: Directory>(
@@ -116,13 +117,14 @@ pub async fn dispatch<D: Directory>(
     p: Identity,
     policy: Policy,
     input: JsonObject,
+    via: Via,
 ) -> Result<Value, HostError> {
     tokio::task::spawn_blocking(move || {
         let op = policy.operation.as_ref();
         let secrets = store(&state)?;
         let actor = Actor {
             account: account(&p)?,
-            via: Via::Session,
+            via,
         };
         match op {
             "secrets.request" => {

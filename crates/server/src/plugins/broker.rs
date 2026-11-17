@@ -191,7 +191,22 @@ impl<D: Directory> SpaceHost<D> {
         };
         let actor = Actor {
             account: calternal_auth::AccountId::parse(&account).ok_or(Error::Refused)?,
-            via: Via::Plugin(self.plugin.manifest.id.clone()),
+            via: if let Session::Agent {
+                space,
+                job,
+                token_hash,
+            } = &self.session
+            {
+                let scope = self
+                    .state
+                    .jobs
+                    .agent_current(space, job, token_hash)
+                    .map_err(|_| Error::Refused)?
+                    .ok_or(Error::Refused)?;
+                Via::Agent(uuid::Uuid::parse_str(&scope.thread).map_err(|_| Error::Refused)?)
+            } else {
+                Via::Plugin(self.plugin.manifest.id.clone())
+            },
         };
         crate::secrets::plugin_handle(
             secrets.as_ref(),

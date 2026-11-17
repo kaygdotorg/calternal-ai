@@ -704,7 +704,15 @@ async fn dispatch_scoped<D: Directory>(
         return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
     }
     if op.starts_with("secrets.") {
-        return crate::secrets::dispatch(state, p, policy, input).await;
+        let via = if let Some(a) = &agent {
+            calternal_secrets::Via::Agent(
+                uuid::Uuid::parse_str(&a.thread)
+                    .map_err(|_| HostError::internal("invalid thread provenance"))?,
+            )
+        } else {
+            calternal_secrets::Via::Session
+        };
+        return crate::secrets::dispatch(state, p, policy, input, via).await;
     }
     if op.starts_with("spaces.") {
         let st = state.clone();
