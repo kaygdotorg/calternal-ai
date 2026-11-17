@@ -915,22 +915,8 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
             .unwrap()
         );
     }
-    let global = rusqlite::Connection::open_with_flags(
-        d.0.join("appdata/state.sqlite3"),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    for name in ["notes", "versions", "items", "outbox"] {
-        assert!(
-            !global
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
-                    [name],
-                    |r| r.get::<_, bool>(0)
-                )
-                .unwrap()
-        );
-    }
+    // No installation-wide state database holds content or plugin state.
+    assert!(!d.0.join("appdata/state.sqlite3").exists());
     let path = note_file(&d.0, aid, a["id"].as_str().unwrap());
     assert_eq!(path.file_name().unwrap(), "T.md");
     let bytes = std::fs::read_to_string(path).unwrap();

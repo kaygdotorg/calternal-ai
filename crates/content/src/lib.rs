@@ -480,19 +480,26 @@ impl Content {
     }
     fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
-            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
+            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
             let Some((account, request, op, fp, id, revision, result)) = row else {
                 return Ok(());
             };
-            let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
-            self.route(space.id, &id, &item.kind)?;
+            // Item writes route their item first; control changes have no item.
+            let item = match id {
+                Some(id) => {
+                    let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
+                    self.route(space.id, &id, &item.kind)?;
+                    Some(item.id)
+                }
+                None => None,
+            };
             self.journals.publish(
                 &space.journal,
                 account.parse().map_err(internal)?,
                 &request,
                 &op,
                 &fp,
-                Some(item.id),
+                item,
                 &revision,
                 serde_json::from_str(&result).map_err(internal)?,
             )?;
@@ -504,6 +511,79 @@ impl Content {
                 )
                 .map_err(internal)?;
         }
+    }
+    /// Reads one per-space control value, such as a plugin's enablement, from the
+    /// space's own database. Callers authorize the space first.
+    /// Cost: the space's lock and one indexed read; no other space is touched.
+    pub fn control(&self, space: SpaceId, key: &str) -> Result<Option<Value>> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(internal)?
+                .map(|v| serde_json::from_str(&v).map_err(internal))
+                .transpose()
+        })
+    }
+    /// Changes one per-space control value and records the request's receipt, as
+    /// one admission: a stored receipt for the same request replays its response
+    /// (or is a conflict for different input) without calling `change`. `change`
+    /// gets the current value and returns the new value and the response (an
+    /// error writes nothing); both
+    /// commit with an outbox intent in one FULL transaction, then the receipt is
+    /// published to the space's journal. Callers authorize the space first.
+    /// Cost: the space's lock (this space only), one receipt read, one FULL
+    /// content transaction and one FULL journal commit.
+    pub fn set_control(
+        &self,
+        space: SpaceId,
+        request: Request<'_>,
+        key: &str,
+        change: impl FnOnce(Option<Value>) -> Result<(Value, Value)>,
+    ) -> Result<Value> {
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            if let Some(saved) = self.journals.receipt(&s.journal, request.account, request.id)? {
+                if saved.operation != request.operation || saved.fingerprint != request.fingerprint {
+                    return Err(Error::request_reused());
+                }
+                return Ok(saved.result);
+            }
+            let tx = s
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(internal)?;
+            let current = tx
+                .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(internal)?
+                .map(|v| serde_json::from_str(&v).map_err(internal))
+                .transpose()?;
+            let (next, response) = change(current)?;
+            tx.execute(
+                "INSERT INTO controls VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![key, next.to_string()],
+            )
+            .map_err(internal)?;
+            tx.execute(
+                "INSERT INTO outbox VALUES(?1,?2,?3,?4,NULL,'control',?5)",
+                params![
+                    request.account.to_string(),
+                    request.id,
+                    request.operation,
+                    request.fingerprint,
+                    response.to_string()
+                ],
+            )
+            .map_err(internal)?;
+            tx.commit().map_err(internal)?;
+            self.publish_pending(s)?;
+            Ok(response)
+        })
     }
     /// Commits generic bytes/metadata and finishes journal publication and placement.
     /// `id=None` creates a UUIDv7; updates require the current base token. The host

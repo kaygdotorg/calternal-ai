@@ -47,7 +47,7 @@ impl Space {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(internal)?;
-        if version != 0 && version != 2 {
+        if version != 0 && version != 3 {
             return Err(internal("unsupported content schema"));
         }
         conn.execute_batch("BEGIN IMMEDIATE;
@@ -57,9 +57,10 @@ impl Space {
             CREATE INDEX IF NOT EXISTS item_list ON items(kind,updated_at DESC,id);
             CREATE INDEX IF NOT EXISTS item_pending ON items(mat_state,id);
             CREATE TABLE IF NOT EXISTS versions(item TEXT NOT NULL REFERENCES items(id),seq INTEGER NOT NULL,revision TEXT NOT NULL UNIQUE,metadata TEXT NOT NULL,bytes BLOB NOT NULL,updated_at TEXT NOT NULL,author TEXT NOT NULL,PRIMARY KEY(item,seq)) STRICT;
-            CREATE TABLE IF NOT EXISTS outbox(account TEXT NOT NULL,request TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,item TEXT NOT NULL REFERENCES items(id),revision TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;
+            CREATE TABLE IF NOT EXISTS outbox(account TEXT NOT NULL,request TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,item TEXT REFERENCES items(id),revision TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;
+            CREATE TABLE IF NOT EXISTS controls(key TEXT PRIMARY KEY,value TEXT NOT NULL) STRICT;
             CREATE UNIQUE INDEX IF NOT EXISTS standard_collections ON items(json_extract(metadata,'$.item_kind'),json_extract(metadata,'$.standard_key')) WHERE kind='collections' AND json_extract(metadata,'$.standard_key') IS NOT NULL;
-            PRAGMA user_version=2; COMMIT;").map_err(internal)?;
+            PRAGMA user_version=3; COMMIT;").map_err(internal)?;
         conn.execute(
             "INSERT OR IGNORE INTO binding VALUES('space',?1)",
             [id.to_string()],

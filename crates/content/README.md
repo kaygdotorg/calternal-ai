@@ -15,13 +15,12 @@ and a journal-witness root outside appdata backups.
 
 | Location | Contents |
 | --- | --- |
-| appdata/spaces/<space-uuid>/content.db | One space's kind registrations, item metadata, immutable versions, pending publication intents and ID-to-path mapping |
+| appdata/spaces/<space-uuid>/content.db | One space's kind registrations, item metadata, immutable versions, control values (such as plugin enablement), pending publication intents and ID-to-path mapping |
 | appdata/spaces/<space-uuid>/index.db | That space's inherited journal and account-qualified request receipts |
 | appdata/system/content-index.db | Item-to-space/kind routes, request-to-space routes and account-collection ID routes; no titles, bytes, history or response payloads |
 | userdata-ssd/spaces/<space-uuid>/<registered folder>/ | Current real files, with human-readable names |
 | userdata-ssd/spaces/<space-uuid>/.calternal/<registered plugin>/<kind>/ | Hidden internal files, when the kind registration chooses hidden placement |
 | appdata/accounts/<account-uuid>/content.db | Protected account-owned Collection definitions and membership |
-| appdata/state.sqlite3 | Plugin enablement/generations and unfinished plugin-control publication intents; no note content/history or request receipts |
 
 A kind must be registered before its first write. Registration declares visible
 placement (including a safe visible subtree) or hidden placement, plus Markdown

@@ -276,7 +276,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
                     )?;
                 }
                 let manifest = plugin.manifest.clone();
-                let (_, value) = s.set_plugin_enabled(
+                s.set_plugin_enabled(
                     principal,
                     &rid,
                     &op,
@@ -295,8 +295,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
                         })
                         .expect("encode")
                     },
-                )?;
-                Ok(value)
+                )
             })
             .await
         }

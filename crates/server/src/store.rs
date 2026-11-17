@@ -1,32 +1,26 @@
 //! Notes adapter over generic, physically per-space content storage.
 //!
-//! `state.sqlite3` retains plugin enablement and unfinished control publication intents only;
-//! it has no item, content or history tables. `system/content-index.db` holds
+//! There is no installation-wide state database: plugin enablement is a control
+//! value in each space's own `content.db`. `system/content-index.db` holds
 //! identifier-only item routes. The content crate owns each UUID space's
 //! `content.db`, inherited `index.db` journal/receipts and SSD-tree files.
 //! [`Store::open`] validates and locks the three roots through `calternal-roots`
 //! before it creates or opens anything, and holds those locks for its lifetime.
 use crate::fault::{self, FaultPoint};
-use calternal_content::{Content, Item, ReadPool, Request};
+use calternal_content::{Content, Item, Request};
 use calternal_core::{Note, NoteSummary, NoteVersion};
 use calternal_types::Error;
 use calternal_types::{AccountId, SpaceId};
-use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use std::{sync::Mutex, time::Duration};
+use std::time::Duration;
 use uuid::Uuid;
 
 /// Host adapter over the generic per-space content service, shared by every request
 /// thread without an outer lock: its methods take `&self`.
 ///
-/// Locks: content work takes only the target space's lock (see
-/// [`calternal_content`]). `state.sqlite3` (plugin activation and the control
-/// outbox) has one writer connection, locked only for an enable/disable transaction
-/// or an outbox delete; every read goes through a [`ReadPool`] and never waits for it.
-/// Enable/disable are rare manager actions, so this installation-wide writer (held
-/// across that transaction's fsync) is not on any content read or write path.
+/// Locks: content, plugin enablement and receipts take only the target space's
+/// lock (see [`calternal_content`]). The one installation-wide writer left is the
+/// catalog's, taken once when a new item is first routed.
 pub struct Store {
-    writer: Mutex<Connection>,
-    readers: ReadPool,
     /// Shared with live streams and account inputs; never behind a store-wide lock.
     content: std::sync::Arc<Content>,
     /// The appdata root (account-input databases live under it).
@@ -63,10 +57,6 @@ pub fn now_rfc3339() -> String {
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(ring::digest::digest(&ring::digest::SHA256, bytes))
 }
-fn db_err(e: rusqlite::Error) -> Error {
-    tracing::error!(error=%e,"sqlite error");
-    Error::internal("storage error")
-}
 fn io_err(context: &'static str, e: std::io::Error) -> Error {
     tracing::error!(error=%e,context,"io error");
     Error::internal("storage io error")
@@ -78,28 +68,21 @@ fn content_fault(point: calternal_content::FaultPoint) {
         calternal_content::FaultPoint::AfterPlacement => FaultPoint::AfterPlacement,
     });
 }
-/// A typed ID read back from the plugin outbox, written by this adapter.
-fn stored_id<T: std::str::FromStr>(text: &str) -> Result<T, Error> {
-    text.parse()
-        .map_err(|_| Error::internal("corrupt plugin publication"))
+/// The control key holding a plugin's enablement in a space.
+fn plugin_key(plugin_id: &str) -> String {
+    format!("plugin/{plugin_id}")
 }
-/// One space's stored activation row for `plugin_id`. Cost: one indexed read.
-fn plugin_row(
-    c: &Connection,
-    space_id: SpaceId,
-    plugin_id: &str,
-) -> rusqlite::Result<Option<PluginRow>> {
-    c.query_row(
-        "SELECT enabled, generation FROM plugin_state WHERE space_id = ?1 AND plugin_id = ?2",
-        params![space_id.to_string(), plugin_id],
-        |r| {
-            Ok(PluginRow {
-                enabled: r.get::<_, i64>(0)? != 0,
-                generation: r.get(1)?,
-            })
-        },
-    )
-    .optional()
+/// Decodes a stored enablement value; anything unreadable is a storage error.
+fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
+    Ok(PluginRow {
+        enabled: value["enabled"]
+            .as_bool()
+            .ok_or_else(|| Error::internal("corrupt plugin state"))?,
+        generation: value["generation"]
+            .as_u64()
+            .and_then(|g| u32::try_from(g).ok())
+            .ok_or_else(|| Error::internal("corrupt plugin state"))?,
+    })
 }
 fn item_id(id: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(id).map_err(|_| Error::not_found("item not found"))
@@ -115,11 +98,6 @@ fn note(item: &Item) -> Note {
     }
 }
 impl Store {
-    /// The `state.sqlite3` writer. Held for one short transaction; never across
-    /// content or journal work.
-    fn writer(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.writer.lock().unwrap_or_else(|e| e.into_inner())
-    }
     /// The pinned installation UUID the root markers carry. Cost: a copy.
     pub fn installation(&self) -> Uuid {
         self.installation
@@ -143,8 +121,8 @@ impl Store {
     /// # Errors
     /// Unavailable for a refused or locked root, or a store that cannot open.
     ///
-    /// Cost: the roots guard (marker reads, three locks), plugin/catalog database
-    /// opens and schema fsyncs, then startup-only pending publication and
+    /// Cost: the roots guard (marker reads, three locks), the catalog database open
+    /// and schema fsync, then startup-only pending publication and
     /// materialization recovery per space.
     pub fn open(
         roots: &calternal_roots::Roots,
@@ -157,26 +135,6 @@ impl Store {
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let secrets = root.join("secrets");
-        let path = root.join("state.sqlite3");
-        calternal_fsio::private::file(&path).map_err(|e| io_err("prepare plugin database", e))?;
-        let conn = Connection::open(&path).map_err(db_err)?;
-        conn.pragma_update(None, "journal_mode", "WAL")
-            .map_err(db_err)?;
-        conn.pragma_update(None, "synchronous", "FULL")
-            .map_err(db_err)?;
-        conn.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
-        let version: i64 = conn
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .map_err(db_err)?;
-        if version != 0 && version != 4 {
-            return Err(Error::unavailable(
-                "unsupported preview schema; use fresh disposable data",
-            ));
-        }
-        conn.execute_batch("BEGIN;
-            CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
-            CREATE TABLE IF NOT EXISTS plugin_outbox(account TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(account,space_id,request_id));
-            PRAGMA user_version=4;COMMIT;").map_err(db_err)?;
         let content = Content::open(
             roots.clone(),
             secrets,
@@ -188,33 +146,13 @@ impl Store {
         // minting a key that cannot read the stored secrets.
         let secrets = calternal_secrets::LocalStore::open(&root)
             .map_err(|e| Error::unavailable(e.to_string()))?;
-        let store = Self {
-            writer: Mutex::new(conn),
-            readers: ReadPool::new(path),
+        Ok(Self {
             content: std::sync::Arc::new(content),
             appdata: root.clone(),
             secrets: std::sync::Arc::new(secrets),
             installation,
             _roots: locks,
-        };
-        let pending = store
-            .readers
-            .read(|c| {
-                c.prepare("SELECT account,space_id,request_id FROM plugin_outbox ORDER BY rowid")?
-                    .query_map([], |r| {
-                        Ok((
-                            r.get::<_, String>(0)?,
-                            r.get::<_, String>(1)?,
-                            r.get::<_, String>(2)?,
-                        ))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .map_err(db_err)?;
-        for (account, space, request) in pending {
-            store.publish_plugin_pending(stored_id(&account)?, stored_id(&space)?, &request)?;
-        }
-        Ok(store)
+        })
     }
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
@@ -285,16 +223,15 @@ impl Store {
     }
     /// Reads `account`'s receipt for `request_id` in `space`, after the caller has
     /// checked current grants there. Request IDs are scoped to (account, space), so
-    /// another account or space never sees it. A pending control intent for the same
-    /// key finishes publication first. Cost: one indexed outbox read and one journal
-    /// receipt read; journal fsyncs only during pending replay.
+    /// another account or space never sees it. The space's pending intents finish
+    /// publication first. Cost: the space's lock and one journal receipt read;
+    /// journal fsyncs only during pending replay.
     pub fn receipt(
         &self,
         account: AccountId,
         space: SpaceId,
         request_id: &str,
     ) -> Result<Option<Receipt>, Error> {
-        self.publish_plugin_pending(account, space, request_id)?;
         self.content.receipt(space, account, request_id).map(|r| {
             r.map(|r| Receipt {
                 operation: r.operation,
@@ -303,44 +240,6 @@ impl Store {
                 note_id: r.item.map(|id| id.to_string()),
             })
         })
-    }
-    fn publish_plugins_for_space(&self, space_id: SpaceId) -> Result<(), Error> {
-        loop {
-            let first=self.readers.read(|c| c.query_row("SELECT account,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional()).map_err(db_err)?;
-            let Some((account, request)) = first else {
-                return Ok(());
-            };
-            self.publish_plugin_pending(stored_id(&account)?, space_id, &request)?;
-        }
-    }
-    fn publish_plugin_pending(
-        &self,
-        account: AccountId,
-        space: SpaceId,
-        request_id: &str,
-    ) -> Result<(), Error> {
-        let pending=self.readers.read(|c| c.query_row("SELECT operation,fingerprint,result_json FROM plugin_outbox WHERE account=?1 AND space_id=?2 AND request_id=?3",params![account.to_string(),space.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional()).map_err(db_err)?;
-        if let Some((operation, fingerprint, json)) = pending {
-            let result = serde_json::from_str(&json)
-                .map_err(|_| Error::internal("corrupt plugin publication"))?;
-            self.content.record_receipt(
-                space,
-                Request {
-                    account: account,
-                    id: request_id,
-                    operation: &operation,
-                    fingerprint: &fingerprint,
-                },
-                result,
-            )?;
-            self.writer()
-                .execute(
-                    "DELETE FROM plugin_outbox WHERE account=?1 AND space_id=?2 AND request_id=?3",
-                    params![account.to_string(), space.to_string(), request_id],
-                )
-                .map_err(db_err)?;
-        }
-        Ok(())
     }
     /// Creates a globally UUIDv7-identified Notes item with a human filename and
     /// frontmatter identity. Cost: generic write allocations/locks, FULL content and
@@ -542,25 +441,25 @@ impl Store {
         Ok(())
     }
     /// Read one space's plugin state without inheriting another space's enablement.
-    /// Cost: one indexed read on a pooled read connection; no lock wait, content I/O
-    /// or fsync.
+    /// Cost: the space's lock and one indexed read in its `content.db`; no other
+    /// space is touched and nothing is written.
     pub fn plugin_row(
         &self,
         space_id: SpaceId,
         plugin_id: &str,
     ) -> Result<Option<PluginRow>, Error> {
-        self.readers
-            .read(|c| plugin_row(c, space_id, plugin_id))
-            .map_err(db_err)
+        self.content
+            .control(space_id, &plugin_key(plugin_id))?
+            .map(plugin_row)
+            .transpose()
     }
 
-    /// Set enabled (bump generation on change) and record the request
-    /// publication intent in the same transaction, then durably publish its receipt
-    /// through the owning space store, so a retried old enable can never
-    /// undo a newer disable.
-    /// Cost: plugin connection reads and one FULL SQLite transaction, with result
-    /// serialization and WAL fsync, followed by per-space receipt publication and
-    /// FULL journal durability, then outbox retirement. No user file access.
+    /// Set enabled (bump generation on change) and record the request's receipt,
+    /// as one admission in the space (see [`Content::set_control`]), returning the
+    /// response `result` builds from the new row. A retried request replays its
+    /// stored response, so a retried old enable can never undo a newer disable.
+    /// Cost: the space's lock (this space only), one receipt read, one FULL
+    /// content transaction and one FULL journal commit. No user file access.
     #[allow(clippy::too_many_arguments)]
     pub fn set_plugin_enabled(
         &self,
@@ -573,47 +472,30 @@ impl Store {
         default: PluginRow,
         enabled: bool,
         result: impl FnOnce(&PluginRow) -> serde_json::Value,
-    ) -> Result<(PluginRow, serde_json::Value), Error> {
-        self.publish_plugins_for_space(space_id)?;
-        let mut writer = self.writer();
-        let tx = writer
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_err)?;
-        // Read inside the write transaction so concurrent toggles see each other.
-        let current = plugin_row(&tx, space_id, plugin_id)
-            .map_err(db_err)?
-            .unwrap_or(default);
-        let next = if current.enabled == enabled {
-            current
-        } else {
-            PluginRow {
-                enabled,
-                generation: current.generation + 1,
-            }
+    ) -> Result<serde_json::Value, Error> {
+        let request = Request {
+            account,
+            id: request_id,
+            operation,
+            fingerprint,
         };
-        let value = result(&next);
-        tx.execute(
-            "INSERT INTO plugin_state (space_id, plugin_id, enabled, generation) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(space_id, plugin_id) DO UPDATE SET enabled = excluded.enabled, generation = excluded.generation",
-            params![space_id.to_string(), plugin_id, next.enabled as i64, next.generation],
-        )
-        .map_err(db_err)?;
-        tx.execute(
-            "INSERT INTO plugin_outbox VALUES(?1,?2,?3,?4,?5,?6)",
-            params![
-                account.to_string(),
-                request_id,
-                operation,
-                fingerprint,
-                value.to_string(),
-                space_id.to_string()
-            ],
-        )
-        .map_err(db_err)?;
-        tx.commit().map_err(db_err)?;
-        drop(writer);
-        self.publish_plugin_pending(account, space_id, request_id)?;
-        Ok((next, value))
+        self.content
+            .set_control(space_id, request, &plugin_key(plugin_id), |current| {
+                let current = current.map(plugin_row).transpose()?.unwrap_or(default);
+                let next = if current.enabled == enabled {
+                    current
+                } else {
+                    PluginRow {
+                        enabled,
+                        generation: current.generation + 1,
+                    }
+                };
+                let response = result(&next);
+                Ok((
+                    serde_json::json!({"enabled": next.enabled, "generation": next.generation}),
+                    response,
+                ))
+            })
     }
 }
 
