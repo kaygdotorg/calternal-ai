@@ -29,8 +29,10 @@ Not a card: it sits directly on the tinted background.
 - Attention card: things that need the user's attention, at most 3 items. It is a card
   because it asks for attention. With nothing to show, the card is absent.
 - Body: app-specific.
-- Footer: account picture on the left; a three-dot app switcher in the middle that expands
-  into the list of apps; a search icon on the right.
+- Footer: account picture on the left; the app switcher in the middle; a search icon on
+  the right. Switching always happens at the bottom: apps in the sidebar footer, panels
+  as tabs at the bottom of the right card, the tab bar on phones. The header's app name is
+  a label, not a control; discoverability wins over removing the switcher.
 
 ### Middle card
 
@@ -45,7 +47,14 @@ Not a card: it sits directly on the tinted background.
 - Tabs at the bottom of the card switch between AI chat and the current app's panels.
   The app's plugin decides which panels exist (for Notes: the inspector and style sheet).
 
+## Order of work
+
+No UI lane starts until the foundation is solid and break-tested. The orchestrator is the
+first app built, so that development can move onto it.
+
 ## Open
 
-- The narrow-screen arrangement of the three regions.
+- Narrow screens, to be drawn out: the sidebar and right card slide over; the current view
+  slides into them; the mockup's bottom tab morph is kept. The middle card must visibly
+  float above the sidebar, which it does.
 - The backdrop-sampling technique for adaptive blur and its frame cost.
