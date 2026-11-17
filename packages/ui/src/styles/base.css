@@ -4,7 +4,8 @@ html { font-size: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; 
 body {
   margin: 0; height: 100%; overflow: hidden;
   font-family: var(--font-ui); font-size: var(--text-ui); font-weight: var(--ui-weight);
-  font-variation-settings: "GRAD" var(--text-grad);
+  /* opsz is pinned: left to the browser it follows the font size (13 px text gets opsz 13, about 5 % wider and looser than the reference look at 18 and up). */
+  font-variation-settings: "GRAD" var(--text-grad), "opsz" var(--text-opsz);
   line-height: 1.45; color: var(--ink); background: var(--paper);
   -webkit-font-smoothing: auto; text-rendering: optimizeLegibility;
 }
