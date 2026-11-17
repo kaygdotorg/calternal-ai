@@ -2,7 +2,7 @@
 
 Lane `native-ui-study`, issue #19, 2026-11-17. Purpose: study the system apps once so nobody
 has to again, and turn the numbers into web tokens for `docs/ui-shell.md`. Token-style values
-are in `docs/native-ui-study.json`; reference images are in `docs/assets/native-ui-study/`.
+are in `docs/native-ui-study.json`; reference images are attachments on issue #19 (https://git.kayg.org/kayg/calternal-ai/issues/19), linked below.
 
 Read section 1 first: it says what every number is worth. Section 9 lists what could **not**
 be measured. Nothing here is a Calternal decision; sections 7 and 8 are proposals for the UI
@@ -120,7 +120,7 @@ Mac system sizes are smaller than iOS: the standard text is **13 pt**.
 | Grouped list (Settings) | page #F2F2F7, cards white, **17 pt** side margin (16 plus anti-alias), rows **52 pt** pitch, 1 pt separators, icon tile **28 x 28** at 13 pt inside the card, separator starts 72 pt from the card's left (icon rows) | px |
 | Row title text | digits and parentheses span 15.7 pt = 17 pt (Body) | px, fit |
 | Chevron | right end, about 9 pt wide, secondary colour | px |
-| Reminders first-run sheet | edge-to-edge sheet, top about 62 pt below the screen top, very large top corners (about 40 pt+), primary action a blue **capsule** button 326 x 51 pt with 38 pt side margins (`ios27-reminders.png`) | px (approx, from the screenshot) |
+| Reminders first-run sheet | edge-to-edge sheet, top about 62 pt below the screen top, very large top corners (about 40 pt+), primary action a blue **capsule** button 326 x 51 pt with 38 pt side margins ([ios27-reminders.png](https://git.kayg.org/attachments/0e0817aa-be8d-43e6-9a31-6618d0c60fbf)) | px (approx, from the screenshot) |
 | Status bar | time at 177 to 311 px = x about 59 to 104 pt; battery right edge about 276 pt (island layout) | px |
 
 Safe areas were **not** read from the system (no accessibility tree). Known for this class of
@@ -140,7 +140,7 @@ These match Apple's table: Large Title 31, 32, 33, **34**, 36, 38, 40 for XS to 
 44, 48, 52, 56, 60 for accessibility sizes; Body 14, 15, 16, **17**, 19, 21, 23, then 28, 33,
 40, 47, 53. At the accessibility sizes the layout reflows rather than scaling: names wrap onto
 several lines, the date drops *below* the name (the two-column row becomes a stack), and the
-chevron stays right-aligned (`ios27-messages-accessibility-extra-extra-extra-large.png`). The
+chevron stays right-aligned ([ios27-messages-accessibility-extra-extra-extra-large.png](https://git.kayg.org/attachments/ca13cea3-d360-449e-b043-b6b1fb1e68a3)). The
 bottom search pill does **not** grow with Dynamic Type (it stays 49 pt, glyph and text
 inside stay at the default).
 
@@ -156,19 +156,19 @@ What was observed:
 - **macOS 26 windows**: the toolbar is *transparent*. Buttons are glass capsules (translucent
   fill, a faint edge, very soft shadow) floating on the content; the content scrolls under
   them with a soft fade. Safari's toolbar tints with the page colour (the blue-grey in
-  `macos26-safari-mac.png` is the system tinting the glass toolbar, not a flat fill).
+  [macos26-safari-mac.png](https://git.kayg.org/attachments/6dd228aa-5392-4721-b6b5-13ffc269e100) is the system tinting the glass toolbar, not a flat fill).
 - **Sidebars** are floating glass panels inset from the window edge and rounded to be
   concentric with the window (window about 28, panel about 20). Over the very light VM
   wallpaper the sidebar read as a flat #F7F7F7; the translucency is real but low contrast
   here. A dark-wallpaper run would show more (not done).
 - **iPhone**: the bottom search and Safari's bar are glass capsules floating *above* the
   content (they overlap the page text, which shows blurred through them, see
-  `ios27-safari-page.png`), with a thin lighter edge and a very soft shadow. Navigation and
+  [ios27-safari-page.png](https://git.kayg.org/attachments/30dbe3d1-8a9a-4493-9853-5ae01853eb19)), with a thin lighter edge and a very soft shadow. Navigation and
   tab surfaces in Settings are not separate bars any more; content runs under them.
 - **Where it is not used**: list rows, grouped cards, the content itself, and text areas are
   opaque. Glass is for the layer that floats above content (controls, sidebars), never for the
   reading surface.
-- **Light vs dark (iPhone)**: dark page a dark grey (about #222 in Safari, not pure black; eyeballed, colours not sampled), the glass fill goes a darker grey with a light edge; text switches to white with secondary lowered (`ios27-safari-dark.png`, `ios27-settings-dark.png`, `ios27-messages-dark.png`).
+- **Light vs dark (iPhone)**: dark page a dark grey (about #222 in Safari, not pure black; eyeballed, colours not sampled), the glass fill goes a darker grey with a light edge; text switches to white with secondary lowered ([ios27-safari-dark.png](https://git.kayg.org/attachments/bb90142a-9f70-4599-ac34-ed042069df63), [ios27-settings-dark.png](https://git.kayg.org/attachments/38b09e28-9fa5-45f8-80c2-c660afcf31cd), [ios27-messages-dark.png](https://git.kayg.org/attachments/b5aef430-7a6c-4578-b06b-a69f59cfab1a)).
 - **Vibrancy**: secondary labels (previews, dates, captions, section headers) are a lowered
   alpha of the label colour, not a separate grey, so they stay legible over any wallpaper.
 
