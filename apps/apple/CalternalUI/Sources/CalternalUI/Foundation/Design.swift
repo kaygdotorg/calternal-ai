@@ -25,6 +25,7 @@ public struct Design: DynamicProperty {
 
     public init() {}
 
+    /// The resolved context. Cost: a few struct constructions per view update; no allocation beyond them.
     public var wrappedValue: DesignContext {
         DesignContext(theme: Theme(scheme: scheme, accentBase: accentBase, surfaceInk: surfaceInk), metrics: Metrics(uiSize: uiSize),
                       motion: MotionPolicy(reduced: reduceMotion || motionOff),

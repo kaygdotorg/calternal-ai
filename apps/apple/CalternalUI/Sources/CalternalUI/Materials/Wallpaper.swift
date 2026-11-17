@@ -21,6 +21,7 @@ public final class Wallpaper: @unchecked Sendable {
     /// The accent base inferred from the picture's most vivid hue.
     public let accentBase: RGBA
 
+    /// Side of the sample grids, in cells (48 by 48, as the web reads).
     public static let gridSize = 48
     private static let context = CIContext(options: [.useSoftwareRenderer: false])
 

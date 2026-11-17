@@ -1,14 +1,17 @@
 import SwiftUI
 
 /// Lays children out left to right and wraps to a new line when the width runs out (the catalog's `Row`).
-struct FlowLayout: Layout {
+public struct FlowLayout: Layout {
     var spacing: CGFloat
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    /// A flow with `spacing` between children, horizontally and between lines.
+    public init(spacing: CGFloat) { self.spacing = spacing }
+
+    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         arrange(width: proposal.width ?? .infinity, subviews).size
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let r = arrange(bounds.width, subviews)
         for (i, f) in r.frames.enumerated() { subviews[i].place(at: CGPoint(x: bounds.minX + f.minX, y: bounds.minY + f.minY), proposal: .unspecified) }
     }

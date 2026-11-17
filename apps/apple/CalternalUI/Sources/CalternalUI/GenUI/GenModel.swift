@@ -38,6 +38,7 @@ public indirect enum GenValue: Codable, Equatable, Sendable {
         }
     }
 
+    /// The payload when this value is of that kind, else nil.
     public var string: String? { if case .string(let s) = self { s } else { nil } }
     public var number: Double? { if case .number(let n) = self { n } else { nil } }
     public var bool: Bool? { if case .bool(let b) = self { b } else { nil } }

@@ -13,7 +13,7 @@ struct GalleryScene: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     section("Pills and buttons") {
-                        HStack(spacing: 8) {
+                        FlowLayout(spacing: 8) {
                             Pill(label: "Search", icon: .search) {}
                             Pill(label: "New thread", icon: .plus, showLabel: true) {}
                             Pill(label: "Pinned", icon: .check, showLabel: true, glass: false, isOn: true) {}
@@ -24,7 +24,7 @@ struct GalleryScene: View {
                         }
                     }
                     section("Toolbar and capsule") {
-                        HStack(spacing: 16) {
+                        FlowLayout(spacing: 16) {
                             ToolbarPill(label: "Message actions") { IconButton(label: "Copy", icon: .copy) {}; IconButton(label: "Reply", icon: .reply) {}; IconButton(label: "More", icon: .more) {} }
                             SegmentedCapsule(label: "Apps", items: [CapsuleItem(id: "threads", label: "Threads"), CapsuleItem(id: "notes", label: "Notes"), CapsuleItem(id: "tasks", label: "Tasks")], selection: $tab).frame(maxWidth: 320)
                         }
@@ -32,7 +32,7 @@ struct GalleryScene: View {
                                          selection: $panel, morph: true, tall: true).frame(maxWidth: 346)
                     }
                     section("Badges") {
-                        HStack(spacing: 8) { Badge(text: "Running", tone: .accent, dot: true); Badge(text: "Passed", tone: .good); Badge(text: "Slow", tone: .warn); Badge(text: "Failed", tone: .bad); Badge(text: "Info", tone: .info); Badge(text: "Idle") }
+                        FlowLayout(spacing: 8) { Badge(text: "Running", tone: .accent, dot: true); Badge(text: "Passed", tone: .good); Badge(text: "Slow", tone: .warn); Badge(text: "Failed", tone: .bad); Badge(text: "Info", tone: .info); Badge(text: "Idle") }
                     }
                     section("Rows") {
                         VStack(spacing: 0) {
@@ -47,7 +47,7 @@ struct GalleryScene: View {
                                    primary: (text: "Enter secret", action: {}), secondary: (text: "Not now", action: {})).frame(maxWidth: 520)
                     }
                     section("Cards") {
-                        HStack(spacing: 16) {
+                        FlowLayout(spacing: 16) {
                             Card(label: "Solid card", variant: .solid) { Text("Solid").padding(24) }
                             Card(label: "Attention card", variant: .attention) { Text("Attention").padding(24) }
                             Card(label: "Pane card", variant: .pane) { Text("Pane").padding(24) }

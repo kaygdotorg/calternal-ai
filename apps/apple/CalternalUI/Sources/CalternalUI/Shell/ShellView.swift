@@ -9,6 +9,7 @@ import SwiftUI
 public struct ShellView: View {
     private let fixture: ShellFixture
     private let palette: WallpaperFixtures.Palette?
+    private let adapts: Bool
     @State private var state: ShellState
     @State private var model = WallpaperModel()
     @Design private var d
@@ -16,10 +17,11 @@ public struct ShellView: View {
     /// - Parameters:
     ///   - fixture: What to show.
     ///   - palette: A fixed wallpaper; nil follows the scheme ("Automatic": Dune in light, Aurora in dark).
-    ///   - state: What starts open.
+    ///   - state: What starts open. Without it the shell opens the sidebars on a wide window and closes them on a phone.
     public init(fixture: ShellFixture = .standard, palette: WallpaperFixtures.Palette? = nil, state: ShellState? = nil) {
         self.fixture = fixture
         self.palette = palette
+        adapts = state == nil
         _state = State(initialValue: state ?? ShellState())
     }
 
@@ -47,7 +49,7 @@ public struct ShellView: View {
             .environment(\.wallpaperContext, model.context)
             .environment(\.accentBase, model.accent ?? Tokens.accentBase)
             .task(id: input) { await model.refresh(input, palette: chosen) }
-            .onChange(of: wide, initial: true) { _, w in state.sidebarOpen = w; state.rightOpen = w }
+            .onChange(of: wide, initial: true) { _, w in if adapts { state.sidebarOpen = w; state.rightOpen = w } }
         }
     }
 }
@@ -158,10 +160,10 @@ private struct PhoneLayout: View {
                 .clipShape(RoundedRectangle(cornerRadius: m.radiusPane, style: .continuous))
                 .sidebarInk(model.rightVeil, scheme: d.scheme)
                 .offset(x: state.rightOpen ? size.width - rightW : size.width + 12)
-            BottomTabCapsule(label: "\(fixture.appName) sections", items: [CapsuleItem(id: "main", label: fixture.appName, icon: fixture.appIcon)] + fixture.panels.map { CapsuleItem(id: $0.id, label: $0.label, icon: $0.icon) },
+            if !state.sidebarOpen { BottomTabCapsule(label: "\(fixture.appName) sections", items: [CapsuleItem(id: "main", label: fixture.appName, icon: fixture.appIcon)] + fixture.panels.map { CapsuleItem(id: $0.id, label: $0.label, icon: $0.icon) },
                              selection: Binding(get: { tab }, set: { v in withAnimation(slide) { if v == "main" { state.rightOpen = false } else { state.panel = v; state.rightOpen = true } } }))
                 .padding(.bottom, max(0, insets.bottom - m.capOffset))
-                .frame(width: size.width, height: size.height, alignment: .bottom)
+                .frame(width: size.width, height: size.height, alignment: .bottom).transition(.opacity) }
         }
         .animation(slide, value: state.sidebarOpen)
         .animation(slide, value: state.rightOpen)

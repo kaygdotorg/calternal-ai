@@ -22,7 +22,7 @@ public struct Pill: View {
         Button(action: action) {
             HStack(spacing: d.metrics.space(3)) {
                 if let icon { Icon(icon) }
-                if showLabel || icon == nil { Text(label).textRole(.ui, weight: .strong).lineLimit(1) }
+                if showLabel || icon == nil { Text(label).textRole(.ui, weight: .strong).lineLimit(1).fixedSize(horizontal: true, vertical: false) }
             }
             .foregroundStyle(d.theme.ink)
             .padding(.leading, showLabel ? d.metrics.space(5) : 0).padding(.trailing, showLabel ? d.metrics.space(6) : 0)
@@ -81,7 +81,7 @@ public struct ActionButton: View {
         case .destructive: (t.colour(.bad), t.colour(.bad).opacity(0.12))
         }
         Button(action: action) {
-            Text(text).textRole(.ui, weight: .strong).lineLimit(1).foregroundStyle(fg)
+            Text(text).textRole(.ui, weight: .strong).lineLimit(1).fixedSize(horizontal: true, vertical: false).foregroundStyle(fg)
                 .padding(.horizontal, d.metrics.space(6)).frame(minHeight: h).background(bg, in: Capsule())
         }
         .pressable(PressableLook(hover: variant == .quiet ? t.hover : nil, pressed: nil, cornerRadius: h / 2), probe: text)

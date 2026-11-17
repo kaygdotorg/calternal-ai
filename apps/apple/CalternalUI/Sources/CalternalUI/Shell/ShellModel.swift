@@ -43,6 +43,7 @@ final class WallpaperModel {
         let key = "\(input.palette)@\(aspect)"
         if wallpaperKey != key || wallpaper == nil {
             let made = await Task.detached(priority: .userInitiated) { Wallpaper(id: key, image: WallpaperFixtures.image(palette), aspect: aspect) }.value
+            guard !Task.isCancelled else { return }   // a newer input (a resize, a scheme change) superseded this one; never let a stale result overwrite it
             wallpaper = made
             wallpaperKey = key
         }
@@ -60,6 +61,7 @@ final class WallpaperModel {
             }
             return (solve(regions.side, .side), solve(regions.card, .card), solve(regions.right, .side))
         }.value
+        guard !Task.isCancelled else { return }
         context = WallpaperContext(wallpaper: w, side: veils.0, card: veils.1, windowSize: size)
         rightVeil = veils.2
         accent = w.accentBase

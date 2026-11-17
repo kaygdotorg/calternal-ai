@@ -13,14 +13,18 @@ public struct WallpaperScene<Content: View>: View {
     public var body: some View {
         GeometryReader { geo in
             let chosen = palette ?? WallpaperFixtures.automatic(dark: d.scheme == .dark)
-            let input = WallpaperModel.Input(palette: chosen.name, dark: d.scheme == .dark, blur: d.materials.blur, dim: d.materials.dim, tint: d.materials.tint, width: Int(geo.size.width),
-                                             height: Int(geo.size.height), sideWidth: 0, rightWidth: 0, inset: Int(d.metrics.inset), wide: false)
+            let full = CGSize(width: geo.size.width + geo.safeAreaInsets.leading + geo.safeAreaInsets.trailing, height: geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom)
+            let input = WallpaperModel.Input(palette: chosen.name, dark: d.scheme == .dark, blur: d.materials.blur, dim: d.materials.dim, tint: d.materials.tint, width: Int(full.width),
+                                             height: Int(full.height), sideWidth: 0, rightWidth: 0, inset: Int(d.metrics.inset), wide: false)
             ZStack {
-                if d.materials.isOpaque || d.reduceTransparency { d.theme.paper }
-                else if let w = model.context.wallpaper {
-                    Image(decorative: d.materials.blur ? w.sideCopy : w.sharp, scale: 1).resizable()
-                    if let v = model.context.side { VeilLayers(veil: v) }
-                } else { Color(WallpaperBackdrop.mean(d.theme.colors.backdrop)) }
+                ZStack {
+                    if d.materials.isOpaque || d.reduceTransparency { d.theme.paper }
+                    else if let w = model.context.wallpaper {
+                        Image(decorative: d.materials.blur ? w.sideCopy : w.sharp, scale: 1).resizable()
+                        if let v = model.context.side { VeilLayers(veil: v) }
+                    } else { Color(WallpaperBackdrop.mean(d.theme.colors.backdrop)) }
+                }
+                .frame(width: full.width, height: full.height).ignoresSafeArea().accessibilityHidden(true)
                 content
             }
             .frame(width: geo.size.width, height: geo.size.height)
