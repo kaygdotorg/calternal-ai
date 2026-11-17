@@ -405,7 +405,6 @@ mod tests {
 
     use super::*;
     use std::fs::OpenOptions;
-    use std::io::Write;
     use std::path::PathBuf;
 
     /// A private scratch directory for one witness file test.

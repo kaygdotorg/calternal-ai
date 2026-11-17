@@ -4,6 +4,10 @@
 mod jobs;
 pub use jobs::*;
 mod models;
+mod notes;
+pub use notes::*;
+mod plugin_wire;
+pub use plugin_wire::*;
 mod spaces;
 pub use spaces::*;
 mod secrets;
