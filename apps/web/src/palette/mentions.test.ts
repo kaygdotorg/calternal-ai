@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { marksOf } from "./engine";
-import { mentionPool, pick, skillPool, triggerAt } from "./mentions";
+import { blockPool, mentionPool, notePool, pick, skillPool, tagPool, triggerAt } from "./mentions";
 
 const pool = mentionPool(["Claude Code", "Codex"], [{ id: "t1", title: "Split store.rs by concern" }, { id: "t2", title: "Expired invite test" }], [{ id: "n1", title: "Storage layout" }]);
 
@@ -39,5 +39,21 @@ describe("marks (shared by the palette and the composer)", () => {
   });
   test("quoted text is never read", () => {
     expect(marksOf('call "friday" @[Storage layout]').some((x) => x.kind === "date")).toBe(false);
+  });
+});
+
+describe("note pickers", () => {
+  test("[[ lists notes and inserts the link", () => {
+    const g = pick(notePool([{ id: "n1", title: "Storage layout" }]), "stor");
+    expect(g[0]!.entries[0]!.insert).toBe("[[Storage layout]]");
+  });
+  test("# offers the typed word as a new tag only when no tag starts with it", () => {
+    expect(tagPool(["design"], "des").some((m) => m.sub === "New tag")).toBe(false);
+    expect(tagPool(["design"], "ops")[0]!.insert).toBe("#ops");
+  });
+  test("/ lists blocks; the code block puts the caret inside the fence", () => {
+    const code = pick(blockPool(), "code")[0]!.entries[0]!;
+    expect(code.insert).toBe("```\n\n```");
+    expect(code.caret).toBe(4);
   });
 });

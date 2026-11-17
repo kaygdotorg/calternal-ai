@@ -32,8 +32,10 @@
     el?: HTMLInputElement | HTMLTextAreaElement;
   } = $props();
 
+  // `field-sizing: content` lets the browser size the field to its text with no script (no forced layout per key); where it is missing the field grows by measuring.
+  const native = typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content");
   function grow() {
-    if (!multiline || !el) return;
+    if (!multiline || !el || native) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, maxRows * 1.5 * parseFloat(getComputedStyle(el).fontSize))}px`;
   }
@@ -46,15 +48,27 @@
   // The mirror: a hidden-text copy of the field behind it, in the same box, so the marked ranges show as soft highlights. Its metrics are copied from the field.
   let mirror = $state<HTMLElement>();
   const PROPS = ["font", "lineHeight", "letterSpacing", "padding", "textIndent", "wordSpacing", "textTransform", "textAlign"] as const;
-  function syncMirror() {
+  // The mirror's metrics are copied from the field when it appears and whenever the field is resized or its font loads, never per keystroke (a computed-style read forces a style recalculation).
+  function copyMetrics() {
     if (!mirror || !el) return;
     const cs = getComputedStyle(el);
     for (const p of PROPS) (mirror.style as unknown as Record<string, string>)[p] = (cs as unknown as Record<string, string>)[p]!;
     mirror.style.whiteSpace = multiline ? "pre-wrap" : "pre";
     mirror.style.overflowWrap = "break-word";
+  }
+  function syncMirror() {
+    if (!mirror || !el) return;
     mirror.scrollTop = el.scrollTop;
     mirror.scrollLeft = el.scrollLeft;
   }
+  $effect(() => {
+    if (!mirror || !el) return;
+    copyMetrics();
+    const ro = new ResizeObserver(copyMetrics);
+    ro.observe(el);
+    void document.fonts?.ready.then(copyMetrics);
+    return () => ro.disconnect();
+  });
   const parts = $derived.by(() => {
     if (!marks?.length) return [{ t: value, on: false, kind: "" }];
     const out: { t: string; on: boolean; kind: string }[] = [];
@@ -82,7 +96,7 @@
 </script>
 
 <div class="ie">
-  {#if marks}<div class="mirror" aria-hidden="true" bind:this={mirror}>{#each parts as x}{#if x.on}<mark data-kind={x.kind}>{x.t}</mark>{:else}{x.t}{/if}{/each}{"\n"}</div>{/if}
+  {#if marks?.length}<div class="mirror" aria-hidden="true" bind:this={mirror}>{#each parts as x}{#if x.on}<mark data-kind={x.kind}>{x.t}</mark>{:else}{x.t}{/if}{/each}{"\n"}</div>{/if}
   {#if multiline}
     <textarea {id} class={["inline-editor", klass]} bind:this={el} bind:value rows="1" aria-label={label} {placeholder} oninput={() => { grow(); oninput?.(); }} onkeydown={key} onkeyup={onselect} onclick={onselect} onscroll={syncMirror} {onblur}></textarea>
   {:else}
@@ -97,7 +111,7 @@
   .mirror mark { background: var(--accent-soft); color: transparent; border-radius: var(--s-2); box-shadow: 0 0 0 var(--s-1) var(--accent-soft); }
   .mirror mark[data-kind="mention"], .mirror mark[data-kind="skill"] { background: color-mix(in oklab, var(--accent) 22%, transparent); box-shadow: 0 0 0 var(--s-1) color-mix(in oklab, var(--accent) 22%, transparent); }
   .inline-editor { font: inherit; color: var(--ink); caret-color: var(--accent); background: none; border: 0; min-width: 0; }
-  textarea.inline-editor { resize: none; line-height: 1.5; }
+  textarea.inline-editor { resize: none; line-height: 1.5; field-sizing: content; }
   .inline-editor::placeholder { color: var(--ink-3); opacity: 1; }
   .inline-editor:focus, .inline-editor:focus-visible { outline: none; }
 </style>

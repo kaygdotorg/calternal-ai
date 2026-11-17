@@ -32,9 +32,10 @@ if (what === "startup") {
   await page.waitForSelector("html[data-ready]"); await page.waitForSelector("h1"); await page.waitForTimeout(2500);
   await report();
 } else {
-  await page.goto(BASE + "/threads/" + (what === "scroll" ? "t-long" : "t-run"));
+  await page.goto(BASE + "/threads/" + (what === "scroll" ? "t-long" : what === "typing" ? "t-idle" : "t-run"));
   await page.waitForSelector("html[data-ready]"); await page.waitForSelector("h1"); await page.waitForTimeout(3000);
   await start();
+  if (what === "typing") { await page.locator("#composer-field").click(); await page.locator("#composer-field").pressSequentially("the quick brown fox jumps over the lazy dog, then naps @Priya friday 5pm. ", { delay: 60 }); }
   if (what === "palette") { await page.keyboard.press("Control+k"); await page.waitForSelector(".pal-input"); await page.locator(".pal-input").pressSequentially("call plumber friday 5pm about journal", { delay: 30 }); }
   if (what === "scroll") { const box = await page.getByRole("feed").boundingBox(); await page.mouse.move(box.x + 300, box.y + 300); for (let i = 0; i < 80; i++) { await page.mouse.wheel(0, -700); await page.waitForTimeout(16); } }
   if (what === "switch") for (let i = 1; i < 7; i++) { await page.locator("a.row").nth(i).click(); await page.waitForTimeout(250); }

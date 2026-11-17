@@ -5,6 +5,9 @@
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
   import { notes } from "./store.svelte";
+  import { store as threadStore } from "../threads/store.svelte";
+  // Tags in use: fixture words until the server lists them (its search index will).
+  const TAGS = ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
   $effect(() => { void notes.open(id); });
   let heads = $state<{ level: number; text: string; from: number }[]>([]);
@@ -51,7 +54,7 @@
       {#if notes.draft}
         <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
       {/if}
-      <NoteEditor bind:this={editor} id={notes.note.id} text={notes.note.markdown} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} />
+      <NoteEditor bind:this={editor} id={notes.note.id} text={notes.note.markdown} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     {:else}
       <h1>{id ? "Note not found" : "Notes"}</h1>
