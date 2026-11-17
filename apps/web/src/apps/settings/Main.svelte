@@ -39,7 +39,7 @@
 </div>
 
 <style>
-  .page { box-sizing: border-box; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
+  .page { box-sizing: border-box; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); }
   .blurb { margin-top: var(--s-3); color: var(--ink-2); }
   .soft { margin-top: var(--s-4); color: var(--ink-3); font-size: var(--text-label); }

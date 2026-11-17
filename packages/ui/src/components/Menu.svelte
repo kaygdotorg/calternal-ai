@@ -14,11 +14,13 @@
 </script>
 
 <script lang="ts">
-  // A menu on a Popover (placement, portal and material are the Popover's). Items are radio-style when any is `checked`. Arrows move focus, Enter picks,
+  // A menu on a Popover (placement, portal and material are the Popover's); on a touch screen it is an inset sheet from the bottom instead, with rows of the native menu height (42). Items are radio-style when any is `checked`. Arrows move focus, Enter picks,
   // Escape and an outside press close it. `search` adds an inline field at the top that filters by label and sub text (Down moves into the list).
   // Anchored to `trigger` (a button) or to `anchor` (a point, for a context menu). `label` names the menu.
   import Icon from "./Icon.svelte";
   import Popover from "./Popover.svelte";
+  import Sheet from "./Sheet.svelte";
+  import { currentForm } from "../lib/theme";
   import { roving } from "../lib/roving";
   import type { Anchor } from "../lib/place";
   let {
@@ -59,7 +61,7 @@
   }
 </script>
 
-<Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {trigger} onclose={onclose}>
+{#snippet content()}
   {#if search}
     <div class="s">
       <Icon inline name="search" />
@@ -77,9 +79,16 @@
       <p class="none">Nothing matches.</p>
     {/each}
   </div>
-</Popover>
+{/snippet}
+
+{#if currentForm() === "touch"}
+  <Sheet {open} {label} onclose={onclose}><div class="sh" role="menu" aria-label={label}>{@render content()}</div></Sheet>
+{:else}
+  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {trigger} onclose={onclose}>{@render content()}</Popover>
+{/if}
 
 <style>
+  .sh { padding: var(--s-2) 0; } .sh .menu { min-width: 0; max-width: none; } .sh .it { min-height: var(--menu-row-h, 42px); }
   .menu { min-width: 15rem; max-width: 22rem; padding: var(--s-2); display: grid; gap: var(--s-1); }
   .s { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-2) var(--s-2) 0; padding: 0 var(--s-4); min-height: var(--pill-h); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink-3); }
   .s input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font-size: var(--text-ui); }

@@ -1,0 +1,121 @@
+/**
+ * The real server's client, for what the server on origin/dev already offers: `describe`, spaces, notes, plugins, the live space stream (SSE) and the
+ * jobs stream (SSE). Types come from `packages/contracts` (generated from the Rust contract). Same origin: in development the Vite server proxies `/api` to
+ * the server on 127.0.0.1 (vite.config.ts, `CAL_SERVER`), which is also how its Host and Origin checks are satisfied.
+ *
+ * Sign-in is not wired for browsers yet (passkeys exist on the server; the web flow does not). Until it is, this uses the DEVELOPMENT TOKEN MODE: a bearer token
+ * from `calternal serve --development` (written to `<data>/dev-tokens/<principal>.token`), given once as `?token=` and kept in localStorage; it is never printed.
+ * Every call is one `POST /api/v1/operations` with a fresh `request_id` (kept on retry), and a failure is thrown as `ServerError` with the server's safe code.
+ */
+import type {
+  ApiError, DescribeResult, LiveFrame, LiveSubscription, NoteResult, NotesCreateInput, NotesHistoryResult, NotesListResult, NotesUpdateInput, OperationResponse,
+  SpacesListResult,
+} from "../../../../packages/contracts/src/index";
+import { events } from "./sse";
+
+/** A failure the server reported (`code` is its stable category) or a transport failure (`code` is "unavailable"). */
+export class ServerError extends Error {
+  constructor(public code: ApiError["code"], message: string, public status = 0) { super(message); }
+}
+
+export interface ServerOptions { base?: string; token: () => string | null; fetch?: typeof fetch }
+
+/** The server's client. */
+export class ServerClient {
+  private base: string;
+  private f: typeof fetch;
+  private token: () => string | null;
+  constructor(o: ServerOptions) {
+    this.base = o.base ?? "";
+    this.token = o.token;
+    this.f = o.fetch ?? ((...a) => fetch(...a));
+  }
+  private headers(extra: Record<string, string> = {}): Record<string, string> {
+    const t = this.token();
+    return { ...(t ? { authorization: `Bearer ${t}` } : {}), ...extra };
+  }
+  /** Calls one operation. `requestId` makes a retry the same request. */
+  async operate<T>(operation: string, input: Record<string, unknown> = {}, requestId: string = crypto.randomUUID()): Promise<T> {
+    let res: Response;
+    try {
+      res = await this.f(`${this.base}/api/v1/operations`, { method: "POST", headers: this.headers({ "content-type": "application/json" }), body: JSON.stringify({ request_id: requestId, operation, input }) });
+    } catch (e) {
+      throw new ServerError("unavailable", (e as Error).message);
+    }
+    let body: OperationResponse<T>;
+    try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }
+    if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
+    return body.data;
+  }
+  /** What the server offers and who is asking (`GET /api/v1/describe`). */
+  async describe(): Promise<DescribeResult> {
+    const res = await this.f(`${this.base}/api/v1/describe`, { headers: this.headers() }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
+    // Unlike an operation, discovery answers with the description itself (no envelope); a failure still arrives as a failure envelope.
+    const body = (await res.json()) as DescribeResult | OperationResponse<never>;
+    if ("ok" in body && body.ok === false) throw new ServerError(body.error.code, body.error.message, res.status);
+    return body as DescribeResult;
+  }
+  spaces = { list: () => this.operate<SpacesListResult>("spaces.list") };
+  notes = {
+    list: (space_id: string) => this.operate<NotesListResult>("notes.list", { space_id }),
+    get: (space_id: string, id: string) => this.operate<NoteResult>("notes.get", { space_id, id }),
+    create: (i: NotesCreateInput, requestId?: string) => this.operate<NoteResult>("notes.create", i as unknown as Record<string, unknown>, requestId),
+    update: (i: NotesUpdateInput, requestId?: string) => this.operate<NoteResult>("notes.update", i as unknown as Record<string, unknown>, requestId),
+    history: (space_id: string, id: string) => this.operate<NotesHistoryResult>("notes.history", { space_id, id }),
+  };
+  jobs = {
+    get: (job_id: string) => this.operate<unknown>("jobs.get", { job_id }),
+    cancel: (job_id: string) => this.operate<unknown>("jobs.cancel", { job_id }),
+  };
+
+  /**
+   * Follows the live space stream (`GET /api/v1/live`, SSE) for the given subscriptions, calling `onFrame` for each frame (an entry, ready with a bookmark, or a reset).
+   * Resolves when the stream ends or `signal` aborts. A reset means: reload the derived state, then subscribe again.
+   */
+  async live(subs: LiveSubscription[], onFrame: (f: LiveFrame) => void, signal?: AbortSignal): Promise<void> {
+    const res = await this.f(`${this.base}/api/v1/live?subscriptions=${encodeURIComponent(JSON.stringify(subs))}`, { headers: this.headers({ accept: "text/event-stream" }), signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
+    if (!res.ok || !res.body) throw new ServerError("unavailable", `live stream refused (${res.status})`, res.status);
+    for await (const ev of events(res.body)) {
+      const raw = JSON.parse(ev.data) as Record<string, unknown>;
+      // The wire form is internally tagged (`{"type":"entry",...}`); the generated type names the variants externally. Accept both.
+      const type = typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
+      const body = typeof raw.type === "string" ? raw : (Object.values(raw)[0] as Record<string, unknown>);
+      onFrame(({ [type === "entry" ? "Entry" : type === "ready" ? "Ready" : "Reset"]: body } as unknown) as LiveFrame);
+    }
+  }
+
+  /** Follows a plugin job's events (`GET /api/v1/jobs/<id>/events`, SSE): `snapshot` first, then `chunk`s, possibly a `reset`, and `end`. `after` resumes (`<epoch>:<seq>`). */
+  async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {
+    const q = o.after ? `?after=${encodeURIComponent(o.after)}` : "";
+    const res = await this.f(`${this.base}/api/v1/jobs/${encodeURIComponent(jobId)}/events${q}`, { headers: this.headers({ accept: "text/event-stream" }), signal: o.signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
+    if (!res.ok || !res.body) throw new ServerError(res.status === 404 ? "not_found" : "unavailable", `job stream refused (${res.status})`, res.status);
+    for await (const ev of events(res.body)) onEvent(ev.event as "snapshot", ev.data ? JSON.parse(ev.data) : null, ev.id);
+  }
+}
+
+const KEY = "cal.devtoken";
+/** The development token: from `?token=` (stored, then removed from the address), else from localStorage. Null when there is none. */
+export function devToken(): string | null {
+  try {
+    const q = new URLSearchParams(location.search).get("token");
+    if (q) {
+      localStorage.setItem(KEY, q);
+      const u = new URL(location.href);
+      u.searchParams.delete("token");
+      history.replaceState(null, "", u.pathname + (u.search ? u.search : "") + u.hash);
+    }
+    return localStorage.getItem(KEY);
+  } catch { return null; }
+}
+/** Whether the real server is the source: `?server=1` (kept) or `cal.server` in localStorage. Fixtures are the default. */
+export function serverMode(): boolean {
+  try {
+    const q = new URLSearchParams(location.search).get("server");
+    if (q === "1" || q === "0") localStorage.setItem("cal.server", q);
+    return localStorage.getItem("cal.server") === "1";
+  } catch { return false; }
+}
+/** The shared client (development token mode). */
+export const server = new ServerClient({ token: devToken });
+// Read the token at load, before the router rewrites the address: `?token=` is stored and removed at once.
+void devToken();

@@ -20,13 +20,33 @@
     const q = route.query.get("switcher");
     if ((q === "card" || q === "sidebar") && appearance.prefs.switcher !== q) appearance.change((x) => (x.switcher = q));
   });
+  // Phone gestures: swipe right from the left edge opens the sidebar, swipe left closes it; swipe left from the right edge opens the side panel, swipe right closes it.
+  // Touch only, horizontal intent (more across than down), at least 56 px; the page itself keeps its vertical scroll.
+  let gx = 0, gy = 0, gedge: "l" | "r" | null = null, gskip = false;
+  function gdown(e: PointerEvent) {
+    if (!shell.narrow || e.pointerType !== "touch") return;
+    gx = e.clientX; gy = e.clientY;
+    gskip = !!(e.target as Element).closest(".slide, [role=dialog], input, textarea, pre"); // a row swipe, a sheet drag or a text selection is not a panel gesture
+    gedge = e.clientX < 24 ? "l" : e.clientX > innerWidth - 24 ? "r" : null;
+  }
+  function gup(e: PointerEvent) {
+    if (!shell.narrow || e.pointerType !== "touch" || (!gx && !gy) || gskip) { gx = gy = 0; return; }
+    const dx = e.clientX - gx, dy = e.clientY - gy;
+    gx = gy = 0;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx > 0 && gedge === "l" && !shell.sidebarOpen && !rightOpen) shell.toggleSidebar();
+    else if (dx < 0 && shell.sidebarOpen) shell.toggleSidebar();
+    else if (dx < 0 && gedge === "r" && !rightOpen && !shell.sidebarOpen && hasRight) shell.toggleRight();
+    else if (dx > 0 && rightOpen) shell.toggleRight();
+  }
   const hasRight = $derived(app.panels.length > 0);
   const rightOpen = $derived(shell.rightOpen && hasRight);
   const cardSwitcher = $derived(!shell.narrow && appearance.prefs.switcher === "card");
 </script>
 
 <Backdrop />
-<div class="shell" class:narrow={shell.narrow} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="shell" class:narrow={shell.narrow} onpointerdown={gdown} onpointerup={gup} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
   <aside class="side" data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
   <main class="mid" inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
@@ -77,7 +97,7 @@
   .right > :global(.rs) { width: var(--right-w); }
 
   /* Narrow: layers. */
-  .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(var(--tier-cap) + var(--cap-offset) + var(--s-4) + var(--safe-bottom)); }
+  .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(var(--tier-cap) + var(--cap-offset) + var(--s-4)); }
   .narrow .side { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
   .narrow .side > :global(.side) { width: calc(100% - var(--peek)); }
   .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--dur-sheet); }

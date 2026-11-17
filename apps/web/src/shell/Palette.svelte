@@ -3,7 +3,7 @@
   // desktop, a bottom sheet on a phone. Plain language is read on the device (palette/engine.ts, no model): recognised words are highlighted behind the
   // text, one line says what Enter will do, Up and Down choose another row, Esc closes. Outward actions (Ask) are their own row and never the default.
   import { Icon, InlineEditor, Sheet, toast } from "@calternal/ui";
-  import { plan, setItems, type Row } from "../palette/engine";
+  import { marksOf, plan, setItems, type Row } from "../palette/engine";
   import { fixtureItems, THIS_SPACE } from "../palette/fixtures";
   import { navigate, segments } from "../lib/route.svelte";
   import { client, store } from "../apps/threads/store.svelte";
@@ -23,19 +23,7 @@
   });
   const p = $derived(plan(text, provider));
   $effect(() => { p; sel = 0; });
-  // The highlight: the text cut at the recognised spans (kept as text, never claimed twice).
-  const parts = $derived.by(() => {
-    const out: { t: string; on: boolean }[] = [];
-    let at = 0;
-    for (const s of p.parsed.spans) {
-      if (s.start < at) continue;
-      if (s.start > at) out.push({ t: text.slice(at, s.start), on: false });
-      out.push({ t: text.slice(s.start, s.end), on: true });
-      at = s.end;
-    }
-    if (at < text.length) out.push({ t: text.slice(at), on: false });
-    return out;
-  });
+  const marks = $derived(marksOf(text));
   function run(r: Row | undefined) {
     if (!r) return;
     const a = r.action;
@@ -62,10 +50,7 @@
   <div class="in">
     <div class="field">
       <Icon inline name="search" />
-      <div class="ed">
-        <div class="mirror" aria-hidden="true">{#each parts as x}{#if x.on}<mark>{x.t}</mark>{:else}{x.t}{/if}{/each}</div>
-        <InlineEditor class="pal-input" label="Search, go to, or ask" bind:value={text} placeholder="Search, go to, or ask…" autoselect onsubmit={() => run(p.rows[sel])} onkeydown={key} />
-      </div>
+      <InlineEditor class="pal-input" label="Search, go to, or ask" bind:value={text} placeholder="Search, go to, or ask…" autoselect onsubmit={() => run(p.rows[sel])} onkeydown={key} {marks} />
     </div>
     {#if p.intent}<p class="intent" aria-live="polite">{p.intent}</p>{/if}
     <ul bind:this={list} role="listbox" aria-label="Results">
@@ -84,9 +69,6 @@
 <style>
   .in { display: grid; gap: var(--s-3); padding: var(--s-5); }
   .field { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); padding: 0 var(--s-6); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink-3); }
-  .ed { position: relative; flex: 1; min-width: 0; font-size: var(--text-ui); }
-  .mirror { position: absolute; inset: 0; display: flex; align-items: center; white-space: pre; overflow: hidden; color: transparent; pointer-events: none; }
-  .mirror mark { background: var(--accent-soft); border-radius: var(--s-2); color: transparent; box-shadow: 0 0 0 var(--s-1) var(--accent-soft); }
   :global(.pal-input) { position: relative; width: 100%; height: var(--pill-h); }
   .intent { padding: 0 var(--s-4); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   ul { display: grid; gap: var(--s-1); max-height: min(50vh, 24rem); overflow-y: auto; scrollbar-width: none; }

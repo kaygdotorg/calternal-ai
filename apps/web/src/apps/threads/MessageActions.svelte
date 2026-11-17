@@ -4,7 +4,9 @@
   import { IconButton, Menu, toast, type MenuItem } from "@calternal/ui";
   import { bridge } from "./compose.svelte";
   import type { Message } from "./model";
-  let { message }: { message: Message } = $props();
+  // `armed`: the message has been pointed at or focused (or there is no hover). The three controls and the menu are only created then, so a long list does not
+  // pay for hundreds of controls nobody has reached for.
+  let { message, armed = false }: { message: Message; armed?: boolean } = $props();
   const text = $derived(message.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
   const time = $derived(new Date(message.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }));
   let menu = $state(false);
@@ -19,12 +21,12 @@
 
 <div class="meta {message.role}">
   <span class="t">{time}</span>
-  <span class="acts">
+  {#if armed}<span class="acts">
     <IconButton small icon="copy" label="Copy message" onclick={copy} />
     <IconButton small icon="threads" label="Reply in side chat" onclick={() => bridge.ask(text)} />
     <IconButton small icon="more" label="Message actions" aria-haspopup="menu" aria-expanded={menu} bind:el={more} onclick={() => (menu = !menu)} />
   </span>
-  <Menu open={menu} {items} label="Message actions" trigger={more} onclose={() => (menu = false)} onpick={pick} />
+  <Menu open={menu} {items} label="Message actions" trigger={more} onclose={() => (menu = false)} onpick={pick} />{/if}
 </div>
 
 <style>

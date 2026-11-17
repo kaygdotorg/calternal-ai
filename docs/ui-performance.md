@@ -71,3 +71,45 @@ more) was recorded.
 - Memory after a long session, and a thread of 100,000 messages (the height table and the tree are O(n) memory, 16 bytes a row).
 - Cold start: the app waits for its font family before first paint; its cost on a slow network is unknown.
 - First-open of a long thread against the real server (pages of 100 messages per call is a guess).
+
+## Costs measured on 2026-11-17, and the three fixed
+
+`e2e/perf-suite.mjs` measures the five things that matter (frames from `requestAnimationFrame`, long tasks of 50 ms or more, time to the visible result), at 1x and at 4x CPU
+slowdown; `e2e/perf-profile.mjs` is a V8 sampling profile of one scenario by function. Dev VM (shared, load about 1), headless Chromium, 1440 by 900. One frame is 16.7 ms.
+These are development-host numbers, not benchmarks.
+
+**Before (at 1x nothing is late; at 4x the costs show):**
+
+| Scenario | 1x | 4x CPU |
+| --- | --- | --- |
+| First load (cold, no cache) | first contentful paint 108 ms; 2,143 KiB transferred (images 1,643, fonts 376, JS 110, CSS 13); 10 requests | FCP 308 ms |
+| Scroll the 10,000-message thread (200 wheel steps) | 0 late frames, no long task | 161 late frames of 584, p95 50 ms, 5 long tasks (worst 422 ms) |
+| Switch thread (12 clicks) | click to painted 31 ms median | 54 ms median, 12 late frames, 3 long tasks (worst 439 ms) |
+| Open the Account sheet over the wallpaper (6 times) | ready in 56 ms | 7 late frames, 3 long tasks (worst 400 ms) |
+| Open the palette and type 36 characters | open 38 ms, keystroke to painted rows 16.6 ms median | 5 late frames, 3 long tasks (worst 399 ms) |
+
+**The three worst costs:**
+
+1. **Start-up rendered every generated wallpaper.** The profile at 4x showed 1,445 ms in one anonymous function: the library drew 9 generated looks in 3 forms each (27 canvases) while the
+   default is a photograph. Now a look is only listed; its picture is rendered when it is chosen, its thumbnail when a picker opens (`library.resolve`, `thumbOf`, `appearance.ensureThumbs`).
+   Start-up self time at 4x: 1,445 ms to 226 ms. The 400 ms long tasks inside the sheet, palette and thread-switch runs (they were this work finishing late) are gone.
+2. **Every message row paid for a style recalculation.** `bounce` read two tokens with `getComputedStyle` when each button was created; a message row creates three buttons, so scrolling
+   created hundreds and forced a style recalculation each (187 ms at 4x in 80 steps, in the profile). The tokens are now read when a click happens. And the three buttons and the menu of a
+   message are created when the message is first pointed at or focused (`armed`), not for every row (touch has no hover, so there they are made at once).
+   Scrolling at 4x: late frames 161 to 94 to 102 of 584, p95 50 to 33 ms, long tasks 5 to 0 to 1.
+3. **The wallpaper files were bigger than the pre-blurred copies need.** The photographs and their light renditions were 2,400 px; the app draws them at 1/8 to 1/2 scale with a blur. They are
+   now 1,600 px at quality 72 (`scripts/wallpapers.mjs`): first load 2,143 KiB to 1,097 KiB (images 1,643 to 594), no visible change.
+
+**After:**
+
+| Scenario | 1x | 4x CPU |
+| --- | --- | --- |
+| First load | FCP 108 ms; 1,097 KiB | FCP 356 to 400 ms (308 before: within the run-to-run spread, three runs; the win is bytes and main-thread work, not first paint) |
+| Scroll 10,000 messages | 0 late frames | 94 to 102 late frames, p95 33 ms, 0 to 1 long task |
+| Switch thread | 33 ms median | 7 to 9 late frames, 0 long tasks |
+| Open a sheet over the wallpaper | ready in 57 ms | 1 to 2 late frames, 0 long tasks |
+| Palette open and typing | open 31 ms, keystroke 16.6 ms | 1 late frame, keystroke 16.4 ms median, 0 long tasks |
+
+**Blur and veils add no per-frame work.** The wallpaper is blurred once into small canvases and the veil is solved once per wallpaper, scheme, box or window-size change
+(`appearance/veil.ts`); while scrolling, the surfaces are plain images and gradients. At 1x the 10,000-message scroll still has 0 late frames. What remains at 4x is the message list itself
+(creating and removing rows) and the sampling profiler's own `elementsFromPoint` hit tests.

@@ -4,8 +4,17 @@
   import { Panel } from "@calternal/ui";
   import { shell } from "../../shell/shell.svelte";
   import { IconButton } from "@calternal/ui";
+  import { InlineEditor, Button } from "@calternal/ui";
+  import Md from "../../lib/Md.svelte";
+  import { notes } from "./store.svelte";
   let { id }: { id?: string } = $props();
-  const sections = ["Why the journal is read twice", "What changes on restart", "The bookmark", "Open questions"];
+  $effect(() => { void notes.open(id); });
+  const sections = $derived((notes.note?.markdown.match(/^## .+$/gm) ?? []).map((h) => h.slice(3)));
+  let editing = $state(false);
+  let title = $state("");
+  let body = $state("");
+  const edit = () => { title = notes.note?.title ?? ""; body = notes.note?.markdown ?? ""; editing = true; };
+  async function done() { editing = false; if (notes.note && (title !== notes.note.title || body !== notes.note.markdown)) await notes.save(title, body); }
   let toc = $state(false);
   const uid = $props.id();
 </script>
@@ -30,13 +39,21 @@
   </header>
 
   <article>
-    <h1>Journal replay notes</h1>
-    <p class="lede">{id ? `Note ${id}` : "A placeholder note"} on fixture text. The column is narrow on purpose and has no card around it.</p>
-    {#each sections as s, i}
-      <h2 id="s{i}">{s}</h2>
-      <p>The journal is read once to find the tail and once more to verify it. Both passes touch every entry, which is why a restart with a long journal feels slow. The plan is to read the tail a single time and keep the hash chain in memory while it is verified, so the second pass disappears.</p>
-      <p>Nothing about the file format changes. A reader that only wants the last screen should never have to parse the rest.</p>
-    {/each}
+    {#if notes.note}
+      {#if editing}
+        <InlineEditor class="t-edit" label="Title" bind:value={title} />
+        <InlineEditor class="b-edit" multiline maxRows={30} label="Note" bind:value={body} />
+        <div><Button variant="primary" text="Done" onclick={done} /></div>
+      {:else}
+        <h1 ondblclick={edit}>{notes.note.title}</h1>
+        <Md text={notes.note.markdown.replace(/^# .+\n*/, "")} />
+        <div><Button variant="quiet" text="Edit" onclick={edit} /></div>
+      {/if}
+      {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
+    {:else}
+      <h1>{id ? "Note not found" : "Notes"}</h1>
+      <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : "Choose a note on the left, or make a new one.")}</p>
+    {/if}
   </article>
   </div>
 </div>
@@ -44,11 +61,13 @@
 <style>
   .note { position: absolute; inset: 0; }
   .scroll { position: absolute; inset: 0; overflow-y: auto; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: var(--bar-h); padding: 0 var(--s-5); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: calc(var(--bar-h) + var(--safe-top)); padding: var(--safe-top) var(--s-5) 0; }
   .grow { flex: 1; }
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
+  .err { color: var(--danger); font-size: var(--text-label); }
+  :global(.t-edit) { font-size: var(--text-title); font-weight: var(--strong-weight); width: 100%; }
+  :global(.b-edit) { width: 100%; min-height: 12rem; line-height: 1.55; }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); line-height: 1.2; letter-spacing: -0.01em; }
-  h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); margin-top: var(--s-6); }
   p { font-size: var(--text-ui); line-height: 1.65; font-weight: var(--body-weight); }
   .lede { color: var(--ink-3); }
   .rail { position: absolute; z-index: 3; top: 50%; translate: 0 -50%; left: 0; }

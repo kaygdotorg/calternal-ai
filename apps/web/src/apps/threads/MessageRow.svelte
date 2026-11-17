@@ -10,11 +10,14 @@
   import type { Message } from "./model";
   import { store } from "./store.svelte";
   let { message }: { message: Message } = $props();
+  // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
+  let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
 
-<div class="msg {message.role}">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="msg {message.role}" onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
   {#if message.role === "user"}
-    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={b.text} />{/if}{/each}</div><MessageActions {message} /></div>
+    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={b.text} />{/if}{/each}</div><MessageActions {message} {armed} /></div>
   {:else}
     <div class="agent" id={message.id}>
       {#each message.blocks as b}
@@ -26,7 +29,7 @@
           {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" inline /><span>{t.title}</span><small>{t.state}</small></a>{/if}
         {/if}
       {/each}
-      <MessageActions {message} />
+      <MessageActions {message} {armed} />
     </div>
   {/if}
 </div>

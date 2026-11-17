@@ -67,6 +67,8 @@
   .cap.tall { height: var(--tier-cap); padding: var(--s-1); }
   .tall .seg { height: calc(var(--tier-cap) - 2 * var(--s-1)); }
   .morph .seg[aria-selected="true"] { flex-grow: 2.6; }
+  /* The phone bar is five tabs wide: the selected one needs room for its icon and its whole word. */
+  .tall.morph .seg[aria-selected="true"] { flex-grow: 3.8; }
   .txt { overflow: hidden; text-overflow: ellipsis; transition: opacity var(--dur-base) var(--ease-out), max-width var(--dur-slow) var(--spring); max-width: 12em; }
   .txt.icononly { opacity: 0; max-width: 0; }
   .n { min-width: var(--s-7); height: var(--s-7); padding: 0 var(--s-3); border-radius: var(--r-pill); background: var(--accent-base); color: #fff; font-size: var(--text-section); display: inline-grid; place-items: center; }

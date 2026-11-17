@@ -13,8 +13,10 @@ export interface Wallpaper {
   url: string;
   /** For a generated look or a photograph, the dark scheme's rendition (the same recipe with lightness remapped); `url` is the light one. */
   urlDark?: string;
-  /** A small version for the picker. */
+  /** A small version for the picker (empty for a generated look until `thumb()` has rendered it). */
   thumb: string;
+  /** A generated look: its recipe id. Its pictures are rendered on demand (`resolve`, `thumb`), not when the library loads. */
+  recipe?: string;
   /** For an Unsplash photo: who took it and where it is, as their licence asks. */
   credit?: { author: string; link: string };
 }
@@ -31,6 +33,10 @@ export interface StockResult {
 export interface WallpaperLibrary {
   /** Built-ins first, then the person's uploads and saved stock photos. */
   list(): Promise<Wallpaper[]>;
+  /** The image to show for a wallpaper in a scheme (renders a generated look the first time, then remembers it). */
+  resolve?(w: Wallpaper, scheme: "light" | "dark"): Promise<string>;
+  /** The picker thumbnail of a wallpaper (renders a generated look the first time). */
+  thumbOf?(w: Wallpaper): Promise<string>;
   /** Stores an image file the person chose. */
   upload(file: File): Promise<Wallpaper>;
   /** Removes an upload or saved photo (built-ins cannot be removed). */
@@ -93,16 +99,28 @@ export class FixtureLibrary implements WallpaperLibrary {
 
   private async builtins(): Promise<Wallpaper[]> {
     this.built ??= (async () => {
-      // Generated looks, rendered once per scheme, then the fetched photographs.
-      const looks = await Promise.all(
-        [{ id: "haze", name: "Haze" }, ...RECIPES].map(async (r) => ({ id: r.id, name: r.name, source: "builtin" as const, url: await renderRecipe(r.id, "light", 1600, 900), urlDark: await renderRecipe(r.id, "dark", 1600, 900), thumb: await renderRecipe(r.id, "light", 240, 150) })),
-      );
+      // Generated looks are only listed here: their pictures are rendered when one is chosen or shown in the picker (`resolve`, `thumbOf`), not at start.
+      const looks = [{ id: "haze", name: "Haze" }, ...RECIPES].map((r) => ({ id: r.id, name: r.name, source: "builtin" as const, url: "", thumb: "", recipe: r.id }));
       const credits: { id: string; name: string; author: string; link: string }[] = await fetch(`${BASE}wallpapers/credits.json`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
       const photos = credits.map((c) => ({ id: c.id, name: `Photo by ${c.author}`, source: "builtin" as const, url: `${BASE}wallpapers/${c.id}-light.jpg`, urlDark: `${BASE}wallpapers/${c.id}.jpg`, thumb: `${BASE}wallpapers/${c.id}-thumb.jpg`, credit: { author: c.author, link: c.link } }));
       // Photos first (the defaults), then the generated looks.
       return [...photos, ...looks];
     })();
     return this.built;
+  }
+
+  private rendered = new Map<string, Promise<string>>();
+  private once(key: string, make: () => Promise<string>): Promise<string> {
+    let p = this.rendered.get(key);
+    if (!p) this.rendered.set(key, (p = make()));
+    return p;
+  }
+  async resolve(w: Wallpaper, scheme: "light" | "dark"): Promise<string> {
+    if (!w.recipe) return scheme === "dark" && w.urlDark ? w.urlDark : w.url;
+    return this.once(`${w.recipe}:${scheme}`, () => renderRecipe(w.recipe!, scheme, 1600, 900));
+  }
+  async thumbOf(w: Wallpaper): Promise<string> {
+    return w.recipe ? this.once(`${w.recipe}:thumb`, () => renderRecipe(w.recipe!, "light", 240, 150)) : w.thumb;
   }
 
   async list(): Promise<Wallpaper[]> {

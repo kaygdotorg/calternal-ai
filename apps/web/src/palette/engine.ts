@@ -6,6 +6,7 @@ import { allCommands, type CommandDef } from "./manifest";
 import { buildIndex, search, type Index, type Item } from "./search";
 import { recognise } from "./phrases";
 import type { Parsed } from "./recognise";
+import { MENTION_RE, SKILL_RE } from "./mentions";
 
 /** What running a row does. The host (Palette.svelte) turns it into navigation or an operation. */
 export interface Action { go?: string; op?: string; ask?: string; text?: string }
@@ -56,4 +57,21 @@ export function plan(text: string, provider = "the agent"): Plan {
   // Sending to an agent is outward: always its own row, last, never the default when something matches.
   rows.push({ id: "ask", kind: "ask", label: `Ask ${provider}: ${q}`, sub: "Send to the agent", action: { ask: q } });
   return { parsed, intent, rows };
+}
+
+/** A highlighted range of the line: a recognised word (date, priority, tag ...), an `@mention` or a `/skill`. */
+export interface Mark { start: number; end: number; kind: string }
+
+/**
+ * The ranges to highlight in a line, for the palette and the thread composer alike: the recogniser's spans, then `@mentions` and a leading `/skill` that
+ * do not overlap them. Quoted or backticked text is never read (the recogniser keeps it out; the others skip it too).
+ */
+export function marksOf(text: string): Mark[] {
+  if (!text) return [];
+  const taken: Mark[] = recognise(text).spans.map((s) => ({ start: s.start, end: s.end, kind: s.type }));
+  const quoted = [...text.matchAll(/"[^"\n]*"|`[^`\n]*`/g)].map((m) => [m.index!, m.index! + m[0].length] as const);
+  const free = (a: number, b: number) => !taken.some((t) => a < t.end && b > t.start) && !quoted.some(([x, y]) => a < y && b > x);
+  for (const m of text.matchAll(MENTION_RE)) if (free(m.index!, m.index! + m[0].length) && !taken.some((t) => t.kind === "person" && t.start === m.index)) taken.push({ start: m.index!, end: m.index! + m[0].length, kind: "mention" });
+  for (const m of text.matchAll(SKILL_RE)) { const start = m.index! + m[0].length - m[1]!.length; if (free(start, start + m[1]!.length)) taken.push({ start, end: start + m[1]!.length, kind: "skill" }); }
+  return taken.sort((a, b) => a.start - b.start);
 }

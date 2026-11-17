@@ -12,6 +12,7 @@
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
   const p = $derived(A.prefs);
+  $effect(() => { if (open) void A.ensureThumbs(); });
   let view = $state<"main" | FontRole>("main");
   let query = $state("");
   let results = $state<StockResult[]>([]);
@@ -112,7 +113,7 @@
           <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === "auto"} aria-label="Automatic: follows the colour scheme" onclick={() => A.change((x) => (x.wallpaperId = "auto"))}><Icon name="sun" /></button>
           <button type="button" role="radio" class="tile none" aria-checked={p.wallpaperId === null} aria-label="No wallpaper" onclick={() => A.change((x) => (x.wallpaperId = null))}><Icon name="image" /></button>
           {#each A.wallpapers as w (w.id)}
-            <button type="button" role="radio" class="tile" aria-checked={p.wallpaperId === w.id} aria-label={w.name} use:tip={{ label: w.credit ? `Photo by ${w.credit.author} on Unsplash` : "" }} style:background-image="url({w.thumb})" onclick={() => A.change((x) => (x.wallpaperId = w.id))}></button>
+            <button type="button" role="radio" class="tile" aria-checked={p.wallpaperId === w.id} aria-label={w.name} use:tip={{ label: w.credit ? `Photo by ${w.credit.author} on Unsplash` : "" }} style:background-image="url({A.thumbOf(w)})" onclick={() => A.change((x) => (x.wallpaperId = w.id))}></button>
           {/each}
         </div>
         <div class="actions">

@@ -77,7 +77,10 @@ class Appearance {
   scheme = $state<SchemePreference>(schemePreference());
   library: WallpaperLibrary = new FixtureLibrary();
   fonts: FontLibrary = new FixtureFonts();
+  /** Thumbnails of generated looks, filled in when the picker or the preset gallery first needs them. */
+  thumbs = $state<Record<string, string>>({});
   private colours: WallpaperColours | null = null;
+  private applySeq = 0;
   private started = false;
 
   /** The chosen wallpaper, if the library has it. */
@@ -109,7 +112,11 @@ class Appearance {
     st.setProperty("--ui-scale", String(Math.min(150, Math.max(80, p.uiSize)) / 100));
     setFlags(m);
     const w = this.wallpaper;
-    setWallpaper(w ? (currentScheme() === "dark" && w.urlDark ? w.urlDark : w.url) : null, { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 });
+    const look = { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 };
+    const mine = ++this.applySeq;
+    const scheme = currentScheme();
+    if (!w) setWallpaper(null, look);
+    else void (this.library.resolve?.(w, scheme) ?? Promise.resolve(scheme === "dark" && w.urlDark ? w.urlDark : w.url)).then((src) => { if (mine === this.applySeq) setWallpaper(src, look); });
     applyTheme(p.themeId ? (presetById(p.themeId)?.theme ?? null) : null, currentScheme());
     updateVeil(m);
     this.applyAccent();
@@ -160,6 +167,17 @@ class Appearance {
     this.prefs = structuredClone(DEFAULTS);
     this.apply();
   }
+
+  /** Renders the thumbnails of generated looks that have none yet (when a picker opens). Each is rendered once. */
+  async ensureThumbs(): Promise<void> {
+    for (const w of this.wallpapers) {
+      if (w.thumb || this.thumbs[w.id] || !this.library.thumbOf) continue;
+      const t = await this.library.thumbOf(w);
+      this.thumbs = { ...this.thumbs, [w.id]: t };
+    }
+  }
+  /** The thumbnail to draw for a wallpaper. */
+  thumbOf(w: Wallpaper): string { return w.thumb || this.thumbs[w.id] || ""; }
 
   /** Re-reads the library (after an upload or removal). */
   async refresh(): Promise<void> {

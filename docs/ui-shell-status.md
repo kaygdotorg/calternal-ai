@@ -152,14 +152,9 @@ Design choices the documents do not settle. I chose the first option in each cas
 
 ## Unfinished
 
-- The plugin's edge fades (scroll-driven per-row fades under floating bars), the title pill, the wordmark row, paste-a-wallpaper-link, the storage list
-  with sizes, and pill-contrast "hazards" (media scrolling under pills) are not built.
-- Phone gestures (edge swipe to open the sidebar, drag to dismiss a sheet); the sidebar opens from the header button.
-- Offline pending submissions (visible, editable, cancellable) and drafts that sync; drafts are kept in memory per thread.
-- Editing a sent message and forking a thread from a message.
-- The adaptive material is unit tested and wired to every glass surface, but with this background (calm on
-  purpose) it barely moves; it needs a user wallpaper or a darker mesh to be seen.
-- Skills, automations, plugin management screens.
+- Not built: paste-a-wallpaper-link, the storage list with sizes, and pill-contrast "hazards" (media scrolling under pills).
+- Offline pending submissions (visible, editable, cancellable) and drafts that sync; drafts are kept in memory per thread (the server has `drafts.*` and `pending.*`, not wired).
+- Phone gestures built: swipe actions and long press on rows, edge swipe to open and close the sidebar and the side panel, drag a sheet's grabber to dismiss. Not built: swipe back, pull to refresh, interactive card dismissal.
 
 ## Simplification opportunities
 
@@ -191,7 +186,7 @@ phone composer hit target fixed to 44 px. `e2e/interact.mjs` checks these (10 of
 
 Fixture-only: `unarchive` and `rename` are fixture client methods; the backend must provide both (undo of archive needs a stable, reversible archive).
 
-Open: whether deleting a section should offer Undo (not done); the composer palette (`docs/ui-composer-palette.md`) is planned, not built.
+Open: the composer palette is built (see the table below).
 
 ## The owner's four lists, item by item (2026-11-17)
 
@@ -215,7 +210,7 @@ Screenshots are attached to issue #15 (review set: `desktop-light`, `desktop-dar
 | Thread rows one line, one state signal, provider mark | yes | `sidebar-sections`, `interact.mjs` |
 | Toasts ported; Undo for Archive and for deleting a section | yes | `toast-archive-undo`, `toast-*.test.ts`, `layout.test.ts` |
 | Warm tooltip, pill bounce, title rename, InlineEditor | yes | `interact.mjs`, tooltip comparison in `docs/ui-design-system.md` |
-| Composer as a command palette | no | planned in `docs/ui-composer-palette.md` (next) |
+| Composer on the palette's engine (highlighted words, @ picker, / skills, context chips, Comment quotes) | yes | `e2e/composer.mjs` (8 checks), `palette/mentions.test.ts` |
 | Settings is an app (User and Admin sections, empty pages) | yes | `settings-app`, `apps/settings/` |
 | Materials: three checkboxes (Blur, Dim, Tint), strength computed from the wallpaper | yes | `settings-appearance-sheet`, `SettingsSheet.test.ts`, `washFor` for the sidebars and for the card |
 | One UI size slider scales type, spacing and controls | yes | `--ui-scale` in `build-tokens.mjs`, `SettingsSheet.test.ts` |
@@ -240,9 +235,38 @@ Notes (2026-11-17): the default photographs are fetched when the app is built (`
 | Stray underline: the active-children bar drawn bare; now a glass pill | yes | #15 comment |
 | First-run gallery reachable with `?firstrun=1`, tested | yes | `e2e/firstrun.mjs` |
 | Auto-hide setting for the card switcher (off by default) | yes | `appearance.app-switcher-auto-hide` |
-| Composer palette: plan, ported recogniser, search, palette surface | yes (composer itself not yet) | `docs/ui-composer-palette.md`, `e2e/palette.mjs` |
+| Composer palette: plan, ported recogniser, search, palette surface | yes (the thread composer now uses the engine) | `docs/ui-composer-palette.md`, `e2e/palette.mjs` |
 | Veil from the study's function, on rendered pixels | yes | `e2e/veil-pixels.mjs` 16 of 16 |
 | Settings pages with stable ids, in the palette | yes | `apps/settings/registry.ts`, `settings-*` shots |
 | Documentation site themed with the design system | yes | `apps/docs/`, `/docs/` |
 
 Open: the ink flip makes a sidebar light next to a dark card in the dark scheme on bright photographs (Barrow, Hoefler): the owner should judge it on the preview; turning it off is one line (`solve` in `veil.ts`, the `other` argument). The card can be almost fully transparent on light generated looks (veil 0.02), because the floor is that low there.
+
+## The real-server adapter (2026-11-17)
+
+`apps/web/src/server/` is a client for what the server on `origin/dev` already offers: `describe`, the operations catalogue (`POST /api/v1/operations`: spaces, notes, plugins, jobs, secrets, drafts, pending), the live space stream (`GET /api/v1/live`, SSE) and the jobs stream
+(`GET /api/v1/jobs/<id>/events`, SSE), with types from `packages/contracts`. The Notes app sits on a `NotesClient` interface with two implementations: fixtures (the default) and the server.
+
+**Sign-in is not wired for browsers yet, so this uses the development token mode:** start `calternal serve --data-dir <dir> --development`, then open the app with
+`?server=1&token=<contents of <dir>/dev-tokens/owner.token>` (the token is kept in localStorage and removed from the address; it is never printed). In development, `vite` and `vite preview` proxy `/api` to the server
+(`CAL_SERVER`, default `http://127.0.0.1:3210`) and present the server's own Host and Origin, which its checks require. `?server=0` goes back to fixtures. The preview host serves the static build only, so it runs on fixtures.
+
+Checked against a real server (`e2e/server-notes.mjs`, 7 of 7): the sidebar shows the server's space and notes, a new note is created, an edit is saved with `base_revision`, a note written by another client appears through the live stream, `describe` lists the 34 operations,
+a wrong token is refused. The jobs stream is covered by unit tests on a mocked response (`server/server.test.ts`), not by a real job, because running a job needs the plugin worker.
+
+**Fixture calls that still have no server equivalent** (the server has no orchestrator or thread operations yet; every one stays on fixtures):
+
+| Fixture call (`ThreadsClient`) | Server today |
+| --- | --- |
+| `listThreads`, `watchThreads`, `messages`, `watch`, `send`, `stop`, `rename`, `archive`, `unarchive` | none: no thread operations |
+| `setProvider`, `setPermission`, `setRunsOn`, `providers` | none |
+| `machines` | none as an operation (machines are managed by the `calternal machines` CLI and the machine protocol) |
+| `requests`, `watchRequests`, `answer` (questions, approvals) | none; secret requests have `secrets.request` / `secrets.list` / `secrets.revoke` and `POST /api/v1/auth/secrets/provide`, not wired yet |
+| `changes`, `run`, files for the right panel | none |
+| the composer's drafts (in memory) | `drafts.save` / `list` / `get` / `delete` exist, not wired yet |
+| queued sends | `pending.*` exist, not wired yet |
+| palette search over spaces | no search operation (only `notes.list`); the palette searches fixtures |
+| appearance, shortcuts and the other Settings values (localStorage) | no settings operation; `plugins.list` / `enable` / `disable` exist for the Plugins page, not wired yet |
+| account, passkeys | `/api/v1/auth/*` exists; the web sign-in flow is not built |
+
+Open: nothing in the adapter retries a dropped live stream beyond five attempts after a `reset`; a visible "reconnecting" state belongs with the real sign-in work.
