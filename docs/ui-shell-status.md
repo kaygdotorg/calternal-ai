@@ -281,3 +281,34 @@ Notes pickers for `@`, `[[`, `#` and `/` (one shared picker component with the c
 ## Phone navigation (2026-11-17)
 
 The sidebar and side panel are history entries on a phone; edge swipes, the card and the panel follow the finger and settle on the sheet tokens, and a touch mid-settle takes hold of them. `docs/ui-shell.md` "Phone navigation"; `e2e/phone-nav.mjs` (15). Fixture spaces are no longer called "Home" (a space has a UUID and a name such as "Personal"). The palette's "Ctrl+K opens the palette with the field focused" check failed once in three runs (a focus timing flake, not in this change).
+
+## Audit against docs/ui-shell.md and docs/settings.md (2026-11-18)
+
+Method: `e2e/shell-audit.mjs` drives a fresh browser profile (nothing stored) at desktop and phone widths and checks the decisions one by one (about 60 checks, all passing now); the faults the owner saw in the preview came first. A fix has its check in `shell-audit.mjs`, `first-visit.mjs`, `flat-sidebars.mjs` or `resize.mjs`.
+
+| Decision | State found | Fix |
+| --- | --- | --- |
+| Sidebars are flat (no card, border, strip or edge beside the card) | The veil stopped at the sidebar, leaving a strip of bare wallpaper in the gap beside the card | The veil runs on under the gap (`Backdrop.svelte`); pixel check across and down the full height, both schemes, four bright wallpapers, plus the first-run state |
+| A closed sidebar or side panel can be opened again | Only some pages had a button | A pill at the card's corner with its shortcut in the tooltip, in every app; the right sidebar has its own hide button, leading (the left one trails) |
+| Account picture opens the Settings app (settings.md); no settings sheet on desktop | An account sheet, then a settings sheet for wallpaper and fonts | The picture opens `/settings/appearance`; wallpaper and fonts are a page of the Settings app (a phone keeps its bottom sheet) |
+| App switcher: a three-label capsule at the bottom of the middle card | An experiment, off by default | Default; the Settings choice stays |
+| The footer (account, switcher, search) is in every app | Settings pages taller than the window stretched the shell grid; the footer sat 1000 px below the window | The grid row is the window's height; settings pages scroll inside the card |
+| Default wallpaper from the first paint, no stored setting | Appeared only after the async blur, and a first visit wrote its defaults to storage | `index.html` paints tiny pre-blurred renditions of the default photo from the defaults; nothing is stored until a change |
+| Right sidebar: AI chat by default, then the app's panels | Changes first; Notes had no chat | Chat is the first tab in every app |
+| Sidebars resize | No handles | A handle at the vertical centre of the gap (hover, pointer, keyboard, range, reset, remembered per device) |
+| Top and bottom fades fade to nothing | A kinked curve whose end showed as a band | A smoothstep ramp over 1.5 times the bar height (GPU-backed Chrome before and after) |
+| Wide chat (the plugin's) is the desktop default | A 44 rem column | Full-card column, 3.25 rem and 1.5 rem margins, your bubbles right with tails; Appearance > Chat layout switches back |
+| First-run chooser | A bordered card in the right sidebar | Decided: "a short gallery of presets, then straight in" (settings.md) and onboarding "pick a look, name your space, sign in to a provider"; where it sits was not decided. Now a centred window-level dialog (a phone: bottom sheet) |
+| Settings: User, Admin, the current space | User, "Admin: this space", "Admin: server" | Three sections; the third is named for the current space |
+| Motion follows the system's reduce-motion setting, plus an off switch | No off switch | Appearance > Animations |
+| Roles can go to a group as well as a person | No such control | Members and roles: Add a person, Add a group (fixture buttons) |
+| Spaces (decisions 2026-11-18): dots, current space only, personal space | Not built | `SpaceDots`, `spaces.svelte.ts`; threads and notes carry a space; the palette searches all; opening an item of another space switches |
+| Differs, not fixed | | |
+| Admin shows only if you manage something | Always shown (the fixture person is the operator) | Not wired to a role |
+| Destructive actions ask for a fresh passkey | A fixture alert | Needs the real passkey flow |
+| Machines are added through a guided flow with the SSH option | A fixture button | Not built |
+| Onboarding also asks to name the space, sign in to a provider and whether you are a developer | Only the look is asked | Not built (the server owns sign-in) |
+| The default provider and model are per thread, remembering the last choice | Per thread; no "last choice" for a new thread | Threads lane |
+| The composer doubles as the command palette | A separate Cmd-K palette on the same engine | Question for the owner |
+| Phone: the app switcher is a capsule under the card | A pill in the sidebar footer (the bottom of the card is the panel tab bar) | Question for the owner |
+| Bottom band / edge at the right sidebar's tab capsule (owner) | Not reproduced in headless Chromium, GPU-backed Chrome on macOS (3 window sizes, dark and light) or WebKit on an iPad simulator: the only edges are the capsule's own glass outline and the card's edge and shadow | Waiting for the owner's window size or zoom |
