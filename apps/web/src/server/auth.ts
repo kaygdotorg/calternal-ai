@@ -31,6 +31,8 @@ const b64 = {
 };
 export const base64url = b64;
 
+import { clearCache } from "./cache";
+
 type Json = Record<string, unknown>;
 /** The bearer in development token mode, nothing for a cookie session. */
 const authHeaders = (): Record<string, string> => { try { const t = localStorage.getItem("cal.devtoken"); return t ? { authorization: `Bearer ${t}` } : {}; } catch { return {}; } };
@@ -123,7 +125,7 @@ export async function signIn(): Promise<void> {
 }
 
 /** Ends this browser's session on the server. */
-export async function signOut(): Promise<void> { await post("logout"); }
+export async function signOut(): Promise<void> { clearCache(); await post("logout"); }
 
 /** Who is signed in: the account (`name`, `role`, `capabilities`) and this browser's installation id. */
 export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string }

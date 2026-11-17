@@ -13,7 +13,7 @@ import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
 import { devToken, serverMode } from "../../server/client";
-import { caps } from "../../shell/capabilities";
+import { caps } from "../../shell/capabilities.svelte";
 
 export type Control =
   | { type: "switch" }
