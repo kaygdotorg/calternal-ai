@@ -1,0 +1,1743 @@
+{
+  "components": {
+    "Card": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "title",
+          "kind": "string",
+          "nullable": true
+        },
+        {
+          "name": "children",
+          "kind": "nodes"
+        }
+      ],
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Row": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "children",
+          "kind": "nodes"
+        }
+      ],
+      "summary": "equal-width, wraps",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Stack": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "children",
+          "kind": "nodes"
+        }
+      ],
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Grid": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "children",
+          "kind": "nodes"
+        },
+        {
+          "name": "columns",
+          "kind": "number",
+          "optional": true
+        }
+      ],
+      "summary": "tiles",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Tabs": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "labels",
+          "kind": "list"
+        },
+        {
+          "name": "children",
+          "kind": "nodes"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Details": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "title",
+          "kind": "string"
+        },
+        {
+          "name": "children",
+          "kind": "nodes"
+        },
+        {
+          "name": "open",
+          "kind": "boolean",
+          "optional": true
+        }
+      ],
+      "summary": "collapsible",
+      "accessibility": {
+        "required": [
+          "title"
+        ]
+      }
+    },
+    "Divider": {
+      "group": "Layout",
+      "params": [],
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Text": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "text",
+          "kind": "text"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        }
+      ],
+      "summary": "markdown",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Callout": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "text",
+          "kind": "text"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "title",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Metric": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "value",
+          "kind": "string"
+        },
+        {
+          "name": "note",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "source",
+          "kind": "string",
+          "optional": true,
+          "unlisted": true
+        }
+      ],
+      "summary": "key number; 2-4 in a Row",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Badge": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "text",
+          "kind": "string"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        }
+      ],
+      "summary": "1-3 word status; explain in the next cell",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Icon": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "name",
+          "kind": "string"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "lucide name",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "KeyValue": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "pairs",
+          "kind": "any"
+        }
+      ],
+      "summary": "object or [[k, v]]",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Image": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "src",
+          "kind": "string"
+        },
+        {
+          "name": "alt",
+          "kind": "string"
+        }
+      ],
+      "summary": "image source identifier, resolved by an authorized client adapter",
+      "accessibility": {
+        "required": [
+          "alt"
+        ]
+      }
+    },
+    "Table": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "columns",
+          "kind": "list"
+        },
+        {
+          "name": "rows",
+          "kind": "list"
+        },
+        {
+          "name": "source",
+          "kind": "string",
+          "optional": true,
+          "unlisted": true
+        }
+      ],
+      "summary": "rows: lists of values or components",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Chart": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "type",
+          "kind": "enum",
+          "values": [
+            "bar",
+            "line",
+            "area",
+            "pie",
+            "scatter",
+            "radar",
+            "funnel",
+            "heatmap",
+            "histogram",
+            "box"
+          ]
+        },
+        {
+          "name": "labels",
+          "kind": "list"
+        },
+        {
+          "name": "series",
+          "kind": "series"
+        },
+        {
+          "name": "unit",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "stacked",
+          "kind": "boolean",
+          "optional": true
+        },
+        {
+          "name": "source",
+          "kind": "string",
+          "optional": true,
+          "unlisted": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "series: numbers or {name: numbers | {values, tone}}; labels: scatter x values, histogram bin edges or []; heatmap: series = rows",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Sparkline": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "values",
+          "kind": "list"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Progress": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "value",
+          "kind": "number"
+        },
+        {
+          "name": "max",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "% without max",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Steps": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "items",
+          "kind": "list"
+        }
+      ],
+      "summary": "{title,detail?,status?:done|current|blocked}",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Timeline": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "items",
+          "kind": "list"
+        }
+      ],
+      "summary": "{time,title,detail?,tone?}",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Tree": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "items",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "paths or {label,children?,note?}",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Code": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "code",
+          "kind": "string"
+        },
+        {
+          "name": "language",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Diff": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "patch",
+          "kind": "string"
+        }
+      ],
+      "summary": "unified, one file",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Diagram": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "mermaid",
+          "kind": "string"
+        },
+        {
+          "name": "details",
+          "kind": "any",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "details {nodeId: text or components} open when that node is clicked",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Slider": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "number"
+        },
+        {
+          "name": "min",
+          "kind": "number"
+        },
+        {
+          "name": "max",
+          "kind": "number"
+        },
+        {
+          "name": "step",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Stepper": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "number"
+        },
+        {
+          "name": "min",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "max",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "step",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "counts",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Toggle": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "boolean"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Choice": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "scalar"
+        },
+        {
+          "name": "options",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "short options",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Radio": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "scalar"
+        },
+        {
+          "name": "options",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "{value,detail} options",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Select": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "scalar"
+        },
+        {
+          "name": "options",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "many options",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Checklist": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "list"
+        },
+        {
+          "name": "options",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "multi-select, state []",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "ListEditor": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "placeholder",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "summary": "editable list of strings",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Input": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "text"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "placeholder",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "TextArea": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "text"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "placeholder",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "DateInput": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "text"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "yyyy-mm-dd",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Rating": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "number"
+        },
+        {
+          "name": "max",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Button": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "action",
+          "kind": "actions",
+          "optional": true
+        },
+        {
+          "name": "variant",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "primary",
+            "secondary",
+            "destructive"
+          ]
+        },
+        {
+          "name": "icon",
+          "kind": "string",
+          "optional": true
+        }
+      ],
+      "summary": "no action: a choice; its label is the answer; primary: the one main action; destructive: deleting or discarding; icon: lucide name",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Form": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "children",
+          "kind": "nodes"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "one labeled field per question; the answers go into the user's message",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Timer": {
+      "group": "Widgets",
+      "params": [
+        {
+          "name": "seconds",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "no seconds = stopwatch",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Quiz": {
+      "group": "Widgets",
+      "params": [
+        {
+          "name": "questions",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "{q,options,answer:index,why?}",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Flashcards": {
+      "group": "Widgets",
+      "params": [
+        {
+          "name": "cards",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "{front,back}",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Gallery": {
+      "group": "Media",
+      "params": [
+        {
+          "name": "images",
+          "kind": "list"
+        },
+        {
+          "name": "columns",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "paths, https URLs or {src|query, caption?}",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Map": {
+      "group": "Media",
+      "params": [
+        {
+          "name": "places",
+          "kind": "list"
+        },
+        {
+          "name": "route",
+          "kind": "boolean",
+          "optional": true
+        },
+        {
+          "name": "tour",
+          "kind": "boolean",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "{name, lat?, lng?, note?, day?, wiki?: Wikipedia title (credited photo)}; names without lat/lng are looked up; route joins them day by day; tour drops pins in turn",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Hotspots": {
+      "group": "Media",
+      "params": [
+        {
+          "name": "image",
+          "kind": "string"
+        },
+        {
+          "name": "points",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "numbered pins on an image: {x, y (% across, down), title, text?}",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Entity": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "name",
+          "kind": "string"
+        },
+        {
+          "name": "kind",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "product",
+            "place",
+            "person",
+            "org",
+            "link",
+            "other"
+          ]
+        },
+        {
+          "name": "image",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "facts",
+          "kind": "any",
+          "optional": true
+        },
+        {
+          "name": "url",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "note",
+          "kind": "text",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "a product, place or person card; facts {label: value} open in its detail view",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Sources": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "links",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "https URLs or {url, title?, note?}",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "List": {
+      "group": "Content",
+      "params": [
+        {
+          "name": "items",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "rows {title, detail?, icon?, value?, tone?, action?}",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Calendar": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "events",
+          "kind": "list"
+        },
+        {
+          "name": "month",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "{date: yyyy-mm-dd, title, tone?} on a month grid; month yyyy-mm",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Gauge": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "value",
+          "kind": "number"
+        },
+        {
+          "name": "min",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "max",
+          "kind": "number",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "a dial; max defaults to 100",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "CalendarHeatmap": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "days",
+          "kind": "any"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "tone",
+          "kind": "enum",
+          "optional": true,
+          "values": [
+            "neutral",
+            "good",
+            "warn",
+            "bad",
+            "info"
+          ]
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "{yyyy-mm-dd: count} or [{date, value}]",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "SegmentedBar": {
+      "group": "Data",
+      "params": [
+        {
+          "name": "parts",
+          "kind": "list"
+        },
+        {
+          "name": "unit",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "shares of one whole: {label, value, tone?}",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Carousel": {
+      "group": "Layout",
+      "params": [
+        {
+          "name": "children",
+          "kind": "nodes"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "a swipeable row of cards",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "OptionCards": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding"
+        },
+        {
+          "name": "options",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "picture or detail options {value, title?, detail?, image?, icon?}; a list state picks several",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Swatches": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "colors",
+          "kind": "list"
+        },
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "text",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "CSS colors or {value, name?}; with a $state the user picks one",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "EditableTable": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "value",
+          "kind": "binding",
+          "holds": "list"
+        },
+        {
+          "name": "columns",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "state: list of row objects; columns: keys or {key, label?, type?: text|number|boolean}",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "FollowUps": {
+      "group": "Inputs",
+      "params": [
+        {
+          "name": "prompts",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "suggested next questions; a tap picks one",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Walkthrough": {
+      "group": "Widgets",
+      "params": [
+        {
+          "name": "steps",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "{title, body, code?, language?} one step at a time",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Board": {
+      "group": "Manage",
+      "params": [
+        {
+          "name": "items",
+          "kind": "any"
+        },
+        {
+          "name": "columns",
+          "kind": "list",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "kanban: [{title, status, …}]",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Roadmap": {
+      "group": "Manage",
+      "params": [
+        {
+          "name": "items",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "Gantt [{title, start, end, lane?, status?, milestone?}], dates yyyy-mm-dd",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Status": {
+      "group": "Manage",
+      "params": [
+        {
+          "name": "items",
+          "kind": "list"
+        }
+      ],
+      "summary": "health [{name, status: on-track|at-risk|off-track|done, progress?, owner?, due?, note?}]",
+      "accessibility": {
+        "required": []
+      }
+    },
+    "Plan": {
+      "group": "Manage",
+      "params": [
+        {
+          "name": "steps",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "steps the user approves first [{title, detail?, files?, risk?, estimate?}]",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Decision": {
+      "group": "Manage",
+      "params": [
+        {
+          "name": "options",
+          "kind": "list"
+        },
+        {
+          "name": "criteria",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "options [{name, scores: 1-5 per criterion, pros?, cons?}] vs criteria; user tunes weights",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Estimate": {
+      "group": "Manage",
+      "params": [
+        {
+          "name": "tasks",
+          "kind": "list"
+        },
+        {
+          "name": "unit",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "three-point effort [{title, low, high, likely?}]: P50/P90 total",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Acceptance": {
+      "group": "Evidence",
+      "params": [
+        {
+          "name": "criteria",
+          "kind": "any"
+        },
+        {
+          "name": "columns",
+          "kind": "list",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        }
+      ],
+      "summary": "is it really done (criteria, a review verdict, claimed vs checked): [{name, status | cells: {column: status | {status, note?, evidence?}}}]; passed|failed|blocked|untested|claimed",
+      "accessibility": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    "Compare": {
+      "group": "Evidence",
+      "params": [
+        {
+          "name": "images",
+          "kind": "list"
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "a visual difference vs a reference or before/after: [src | {src, label?}], reference first; wipe, blink, pixel diff",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Transcript": {
+      "group": "Evidence",
+      "params": [
+        {
+          "name": "tracks",
+          "kind": "any"
+        },
+        {
+          "name": "audio",
+          "kind": "string",
+          "optional": true
+        },
+        {
+          "name": "label",
+          "kind": "string"
+        },
+        {
+          "name": "description",
+          "kind": "string"
+        }
+      ],
+      "summary": "transcription or speaker errors: [{name, words: [{text, start, end, speaker?}]} | {name, text}], the first is the reference; WER; a word seeks the audio",
+      "accessibility": {
+        "required": [
+          "label",
+          "description"
+        ]
+      }
+    },
+    "Provenance": {
+      "group": "Evidence",
+      "params": [
+        {
+          "name": "stages",
+          "kind": "list"
+        },
+        {
+          "name": "expected",
+          "kind": "any",
+          "optional": true
+        }
+      ],
+      "summary": "which build/revision is really installed or deployed where: [{name, status, facts?: {branch, sha, build, device}}], source to live; expected flags mismatches",
+      "accessibility": {
+        "required": []
+      }
+    }
+  },
+  "actions": {
+    "Send": {
+      "params": [
+        {
+          "name": "text",
+          "kind": "string"
+        }
+      ],
+      "summary": "the answer a picked Button or List row puts in the user's message"
+    },
+    "Set": {
+      "params": [
+        {
+          "name": "state",
+          "kind": "binding"
+        },
+        {
+          "name": "value",
+          "kind": "any"
+        }
+      ],
+      "summary": "assign a state variable"
+    },
+    "OpenUrl": {
+      "params": [
+        {
+          "name": "url",
+          "kind": "string"
+        }
+      ],
+      "summary": "open an http(s) URL"
+    },
+    "Copy": {
+      "params": [
+        {
+          "name": "text",
+          "kind": "string"
+        }
+      ],
+      "summary": "copy text to the clipboard"
+    }
+  },
+  "functions": {
+    "round": "round(x, digits?)",
+    "fmt": "fmt(x, digits?) → grouped string, e.g. 1,234.5",
+    "sum": "sum(list)",
+    "min": "min(list | ...numbers)",
+    "max": "max(list | ...numbers)",
+    "abs": "abs(x)",
+    "floor": "floor(x)",
+    "ceil": "ceil(x)",
+    "sqrt": "sqrt(x)",
+    "pow": "pow(x, y)",
+    "sin": "sin(radians)",
+    "cos": "cos(radians)",
+    "tan": "tan(radians)",
+    "asin": "asin(x) → radians",
+    "acos": "acos(x) → radians",
+    "atan": "atan(x) → radians",
+    "atan2": "atan2(y, x) → radians",
+    "clamp": "clamp(x, lo, hi)",
+    "lerp": "lerp(a, b, t) → a + (b - a) * t",
+    "range": "range(a, b, step?) → [a, a + step, …] up to b, exclusive",
+    "random": "random(i) → 0–1, the same for the same i on every render",
+    "keys": "keys(object) → list of keys",
+    "values": "values(object) → list of values",
+    "entries": "entries(object) → list of [key, value]"
+  },
+  "methods": {
+    "list": [
+      "map",
+      "filter",
+      "find",
+      "some",
+      "every",
+      "join",
+      "slice",
+      "includes",
+      "indexOf"
+    ],
+    "string": [
+      "includes",
+      "slice",
+      "split",
+      "trim",
+      "toUpperCase",
+      "toLowerCase",
+      "startsWith",
+      "endsWith"
+    ],
+    "number": [
+      "toFixed"
+    ]
+  },
+  "constants": {
+    "PI": 3.141592653589793,
+    "TAU": 6.283185307179586
+  },
+  "forbiddenProperties": [
+    "__proto__",
+    "prototype",
+    "constructor"
+  ]
+}

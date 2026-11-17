@@ -1,0 +1,4462 @@
+{
+  "version": 1,
+  "origin": "Adapted from bb-plugin-genui d8cac8d core/language.test.ts and core/components.test.ts; additional explicit accessibility and resource cases.",
+  "cases": [
+    {
+      "name": "catalog-Card",
+      "kind": "evaluate",
+      "source": "Card(title:\"Accessible\",children:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Card",
+            "key": "1:1",
+            "props": {
+              "title": "Accessible",
+              "children": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Row",
+      "kind": "evaluate",
+      "source": "Row(children:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Row",
+            "key": "1:1",
+            "props": {
+              "children": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Stack",
+      "kind": "evaluate",
+      "source": "Stack(children:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Stack",
+            "key": "1:1",
+            "props": {
+              "children": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Grid",
+      "kind": "evaluate",
+      "source": "Grid(children:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Grid",
+            "key": "1:1",
+            "props": {
+              "children": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Tabs",
+      "kind": "evaluate",
+      "source": "Tabs(labels:[],children:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Tabs",
+            "key": "1:1",
+            "props": {
+              "labels": [],
+              "children": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Tabs-label",
+      "kind": "validate",
+      "source": "Tabs(labels:[],children:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Tabs.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Details",
+      "kind": "evaluate",
+      "source": "Details(title:\"Accessible\",children:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Details",
+            "key": "1:1",
+            "props": {
+              "title": "Accessible",
+              "children": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Details-title",
+      "kind": "validate",
+      "source": "Details(children:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Details.title is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Divider",
+      "kind": "evaluate",
+      "source": "Divider()",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Divider",
+            "key": "1:1",
+            "props": {}
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Text",
+      "kind": "evaluate",
+      "source": "Text(text:\"Value\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "Value"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Callout",
+      "kind": "evaluate",
+      "source": "Callout(text:\"Value\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Callout",
+            "key": "1:1",
+            "props": {
+              "text": "Value"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Metric",
+      "kind": "evaluate",
+      "source": "Metric(label:\"Accessible\",value:\"Value\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Metric",
+            "key": "1:1",
+            "props": {
+              "label": "Accessible",
+              "value": "Value"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Badge",
+      "kind": "evaluate",
+      "source": "Badge(text:\"Value\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Badge",
+            "key": "1:1",
+            "props": {
+              "text": "Value"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Icon",
+      "kind": "evaluate",
+      "source": "Icon(name:\"Value\",label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Icon",
+            "key": "1:1",
+            "props": {
+              "name": "Value",
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Icon-label",
+      "kind": "validate",
+      "source": "Icon(name:\"Value\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Icon.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-KeyValue",
+      "kind": "evaluate",
+      "source": "KeyValue(pairs:null)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "KeyValue",
+            "key": "1:1",
+            "props": {
+              "pairs": null
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Image",
+      "kind": "evaluate",
+      "source": "Image(src:\"Value\",alt:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Image",
+            "key": "1:1",
+            "props": {
+              "src": "Value",
+              "alt": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Image-alt",
+      "kind": "validate",
+      "source": "Image(src:\"Value\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Image.alt is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Table",
+      "kind": "evaluate",
+      "source": "Table(columns:[],rows:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Table",
+            "key": "1:1",
+            "props": {
+              "columns": [],
+              "rows": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Chart",
+      "kind": "evaluate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Chart",
+            "key": "1:1",
+            "props": {
+              "type": "bar",
+              "labels": [],
+              "series": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Chart-label",
+      "kind": "validate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Chart.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Chart-description",
+      "kind": "validate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Chart.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Sparkline",
+      "kind": "evaluate",
+      "source": "Sparkline(values:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Sparkline",
+            "key": "1:1",
+            "props": {
+              "values": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Sparkline-label",
+      "kind": "validate",
+      "source": "Sparkline(values:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Sparkline.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Sparkline-description",
+      "kind": "validate",
+      "source": "Sparkline(values:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Sparkline.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Progress",
+      "kind": "evaluate",
+      "source": "Progress(value:1,label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Progress",
+            "key": "1:1",
+            "props": {
+              "value": 1,
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Progress-label",
+      "kind": "validate",
+      "source": "Progress(value:1,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Progress.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Progress-description",
+      "kind": "validate",
+      "source": "Progress(value:1,label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Progress.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Steps",
+      "kind": "evaluate",
+      "source": "Steps(items:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Steps",
+            "key": "1:1",
+            "props": {
+              "items": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Timeline",
+      "kind": "evaluate",
+      "source": "Timeline(items:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Timeline",
+            "key": "1:1",
+            "props": {
+              "items": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Tree",
+      "kind": "evaluate",
+      "source": "Tree(items:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Tree",
+            "key": "1:1",
+            "props": {
+              "items": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Tree-label",
+      "kind": "validate",
+      "source": "Tree(items:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Tree.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Code",
+      "kind": "evaluate",
+      "source": "Code(code:\"Value\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Code",
+            "key": "1:1",
+            "props": {
+              "code": "Value"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Diff",
+      "kind": "evaluate",
+      "source": "Diff(patch:\"Value\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Diff",
+            "key": "1:1",
+            "props": {
+              "patch": "Value"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Diagram",
+      "kind": "evaluate",
+      "source": "Diagram(mermaid:\"Value\",label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Diagram",
+            "key": "1:1",
+            "props": {
+              "mermaid": "Value",
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Diagram-label",
+      "kind": "validate",
+      "source": "Diagram(mermaid:\"Value\",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Diagram.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Diagram-description",
+      "kind": "validate",
+      "source": "Diagram(mermaid:\"Value\",label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Diagram.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Slider",
+      "kind": "evaluate",
+      "source": "$value=1\nSlider(value:$value,min:1,max:1,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": 1
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Slider",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": 1
+              },
+              "min": 1,
+              "max": 1,
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Slider-label",
+      "kind": "validate",
+      "source": "$value=1\nSlider(value:$value,min:1,max:1)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Slider.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Stepper",
+      "kind": "evaluate",
+      "source": "$value=1\nStepper(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": 1
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Stepper",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": 1
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Stepper-label",
+      "kind": "validate",
+      "source": "$value=1\nStepper(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Stepper.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Toggle",
+      "kind": "evaluate",
+      "source": "$value=true\nToggle(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": true
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Toggle",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": true
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Toggle-label",
+      "kind": "validate",
+      "source": "$value=true\nToggle(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Toggle.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Choice",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nChoice(value:$value,options:[],label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Choice",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "options": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Choice-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nChoice(value:$value,options:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Choice.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Radio",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nRadio(value:$value,options:[],label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Radio",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "options": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Radio-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nRadio(value:$value,options:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Radio.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Select",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nSelect(value:$value,options:[],label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Select",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "options": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Select-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nSelect(value:$value,options:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Select.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Checklist",
+      "kind": "evaluate",
+      "source": "$value=[]\nChecklist(value:$value,options:[],label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": []
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Checklist",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": []
+              },
+              "options": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Checklist-label",
+      "kind": "validate",
+      "source": "$value=[]\nChecklist(value:$value,options:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Checklist.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-ListEditor",
+      "kind": "evaluate",
+      "source": "$value=[]\nListEditor(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": []
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "ListEditor",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": []
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-ListEditor-label",
+      "kind": "validate",
+      "source": "$value=[]\nListEditor(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: ListEditor.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Input",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nInput(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Input",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Input-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nInput(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Input.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-TextArea",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nTextArea(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "TextArea",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-TextArea-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nTextArea(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: TextArea.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-DateInput",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nDateInput(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "DateInput",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-DateInput-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nDateInput(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: DateInput.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Rating",
+      "kind": "evaluate",
+      "source": "$value=1\nRating(value:$value,label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": 1
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Rating",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": 1
+              },
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Rating-label",
+      "kind": "validate",
+      "source": "$value=1\nRating(value:$value)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Rating.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Button",
+      "kind": "evaluate",
+      "source": "Button(label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Button",
+            "key": "1:1",
+            "props": {
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Button-label",
+      "kind": "validate",
+      "source": "Button()",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Button.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Form",
+      "kind": "evaluate",
+      "source": "Form(children:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Form",
+            "key": "1:1",
+            "props": {
+              "children": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Form-label",
+      "kind": "validate",
+      "source": "Form(children:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Form.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Timer",
+      "kind": "evaluate",
+      "source": "Timer(label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Timer",
+            "key": "1:1",
+            "props": {
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Timer-label",
+      "kind": "validate",
+      "source": "Timer()",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Timer.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Quiz",
+      "kind": "evaluate",
+      "source": "Quiz(questions:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Quiz",
+            "key": "1:1",
+            "props": {
+              "questions": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Quiz-label",
+      "kind": "validate",
+      "source": "Quiz(questions:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Quiz.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Flashcards",
+      "kind": "evaluate",
+      "source": "Flashcards(cards:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Flashcards",
+            "key": "1:1",
+            "props": {
+              "cards": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Flashcards-label",
+      "kind": "validate",
+      "source": "Flashcards(cards:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Flashcards.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Gallery",
+      "kind": "evaluate",
+      "source": "Gallery(images:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Gallery",
+            "key": "1:1",
+            "props": {
+              "images": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Gallery-label",
+      "kind": "validate",
+      "source": "Gallery(images:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Gallery.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Gallery-description",
+      "kind": "validate",
+      "source": "Gallery(images:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Gallery.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Map",
+      "kind": "evaluate",
+      "source": "Map(places:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Map",
+            "key": "1:1",
+            "props": {
+              "places": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Map-label",
+      "kind": "validate",
+      "source": "Map(places:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Map.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Map-description",
+      "kind": "validate",
+      "source": "Map(places:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Map.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Hotspots",
+      "kind": "evaluate",
+      "source": "Hotspots(image:\"Value\",points:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Hotspots",
+            "key": "1:1",
+            "props": {
+              "image": "Value",
+              "points": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Hotspots-label",
+      "kind": "validate",
+      "source": "Hotspots(image:\"Value\",points:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Hotspots.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Hotspots-description",
+      "kind": "validate",
+      "source": "Hotspots(image:\"Value\",points:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Hotspots.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Entity",
+      "kind": "evaluate",
+      "source": "Entity(name:\"Value\",label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Entity",
+            "key": "1:1",
+            "props": {
+              "name": "Value",
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Entity-label",
+      "kind": "validate",
+      "source": "Entity(name:\"Value\",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Entity.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Entity-description",
+      "kind": "validate",
+      "source": "Entity(name:\"Value\",label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Entity.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Sources",
+      "kind": "evaluate",
+      "source": "Sources(links:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Sources",
+            "key": "1:1",
+            "props": {
+              "links": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Sources-label",
+      "kind": "validate",
+      "source": "Sources(links:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Sources.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-List",
+      "kind": "evaluate",
+      "source": "List(items:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "List",
+            "key": "1:1",
+            "props": {
+              "items": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-List-label",
+      "kind": "validate",
+      "source": "List(items:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: List.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Calendar",
+      "kind": "evaluate",
+      "source": "Calendar(events:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Calendar",
+            "key": "1:1",
+            "props": {
+              "events": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Calendar-label",
+      "kind": "validate",
+      "source": "Calendar(events:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Calendar.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Gauge",
+      "kind": "evaluate",
+      "source": "Gauge(value:1,label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Gauge",
+            "key": "1:1",
+            "props": {
+              "value": 1,
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Gauge-label",
+      "kind": "validate",
+      "source": "Gauge(value:1,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Gauge.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Gauge-description",
+      "kind": "validate",
+      "source": "Gauge(value:1,label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Gauge.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-CalendarHeatmap",
+      "kind": "evaluate",
+      "source": "CalendarHeatmap(days:null,label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "CalendarHeatmap",
+            "key": "1:1",
+            "props": {
+              "days": null,
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-CalendarHeatmap-label",
+      "kind": "validate",
+      "source": "CalendarHeatmap(days:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: CalendarHeatmap.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-CalendarHeatmap-description",
+      "kind": "validate",
+      "source": "CalendarHeatmap(days:null,label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: CalendarHeatmap.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-SegmentedBar",
+      "kind": "evaluate",
+      "source": "SegmentedBar(parts:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "SegmentedBar",
+            "key": "1:1",
+            "props": {
+              "parts": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-SegmentedBar-label",
+      "kind": "validate",
+      "source": "SegmentedBar(parts:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: SegmentedBar.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-SegmentedBar-description",
+      "kind": "validate",
+      "source": "SegmentedBar(parts:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: SegmentedBar.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Carousel",
+      "kind": "evaluate",
+      "source": "Carousel(children:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Carousel",
+            "key": "1:1",
+            "props": {
+              "children": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Carousel-label",
+      "kind": "validate",
+      "source": "Carousel(children:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Carousel.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-OptionCards",
+      "kind": "evaluate",
+      "source": "$value=\"\"\nOptionCards(value:$value,options:[],label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "OptionCards",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": ""
+              },
+              "options": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-OptionCards-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nOptionCards(value:$value,options:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: OptionCards.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Swatches",
+      "kind": "evaluate",
+      "source": "Swatches(colors:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Swatches",
+            "key": "1:1",
+            "props": {
+              "colors": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Swatches-label",
+      "kind": "validate",
+      "source": "Swatches(colors:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Swatches.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-EditableTable",
+      "kind": "evaluate",
+      "source": "$value=[]\nEditableTable(value:$value,columns:[],label:\"Accessible\")",
+      "expected": {
+        "state": {
+          "value": []
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "EditableTable",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "value",
+                "value": []
+              },
+              "columns": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-EditableTable-label",
+      "kind": "validate",
+      "source": "$value=[]\nEditableTable(value:$value,columns:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: EditableTable.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-FollowUps",
+      "kind": "evaluate",
+      "source": "FollowUps(prompts:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "FollowUps",
+            "key": "1:1",
+            "props": {
+              "prompts": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-FollowUps-label",
+      "kind": "validate",
+      "source": "FollowUps(prompts:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: FollowUps.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Walkthrough",
+      "kind": "evaluate",
+      "source": "Walkthrough(steps:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Walkthrough",
+            "key": "1:1",
+            "props": {
+              "steps": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Walkthrough-label",
+      "kind": "validate",
+      "source": "Walkthrough(steps:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Walkthrough.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Board",
+      "kind": "evaluate",
+      "source": "Board(items:null,label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Board",
+            "key": "1:1",
+            "props": {
+              "items": null,
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Board-label",
+      "kind": "validate",
+      "source": "Board(items:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Board.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Roadmap",
+      "kind": "evaluate",
+      "source": "Roadmap(items:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Roadmap",
+            "key": "1:1",
+            "props": {
+              "items": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Roadmap-label",
+      "kind": "validate",
+      "source": "Roadmap(items:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Roadmap.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Status",
+      "kind": "evaluate",
+      "source": "Status(items:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Status",
+            "key": "1:1",
+            "props": {
+              "items": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "catalog-Plan",
+      "kind": "evaluate",
+      "source": "Plan(steps:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Plan",
+            "key": "1:1",
+            "props": {
+              "steps": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Plan-label",
+      "kind": "validate",
+      "source": "Plan(steps:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Plan.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Decision",
+      "kind": "evaluate",
+      "source": "Decision(options:[],criteria:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Decision",
+            "key": "1:1",
+            "props": {
+              "options": [],
+              "criteria": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Decision-label",
+      "kind": "validate",
+      "source": "Decision(options:[],criteria:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Decision.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Estimate",
+      "kind": "evaluate",
+      "source": "Estimate(tasks:[],label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Estimate",
+            "key": "1:1",
+            "props": {
+              "tasks": [],
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Estimate-label",
+      "kind": "validate",
+      "source": "Estimate(tasks:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Estimate.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Acceptance",
+      "kind": "evaluate",
+      "source": "Acceptance(criteria:null,label:\"Accessible\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Acceptance",
+            "key": "1:1",
+            "props": {
+              "criteria": null,
+              "label": "Accessible"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Acceptance-label",
+      "kind": "validate",
+      "source": "Acceptance(criteria:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Acceptance.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Compare",
+      "kind": "evaluate",
+      "source": "Compare(images:[],label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Compare",
+            "key": "1:1",
+            "props": {
+              "images": [],
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Compare-label",
+      "kind": "validate",
+      "source": "Compare(images:[],description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Compare.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Compare-description",
+      "kind": "validate",
+      "source": "Compare(images:[],label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Compare.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Transcript",
+      "kind": "evaluate",
+      "source": "Transcript(tracks:null,label:\"Accessible\",description:\"Description\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Transcript",
+            "key": "1:1",
+            "props": {
+              "tracks": null,
+              "label": "Accessible",
+              "description": "Description"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-missing-Transcript-label",
+      "kind": "validate",
+      "source": "Transcript(tracks:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Transcript.label is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-missing-Transcript-description",
+      "kind": "validate",
+      "source": "Transcript(tracks:null,label:\"Accessible\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "accessibility: Transcript.description is required"
+          }
+        ]
+      }
+    },
+    {
+      "name": "catalog-Provenance",
+      "kind": "evaluate",
+      "source": "Provenance(stages:[])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Provenance",
+            "key": "1:1",
+            "props": {
+              "stages": []
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "accessibility-blank-Tabs-label",
+      "kind": "validate",
+      "source": "Tabs(labels:[],children:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 34,
+            "message": "accessibility: Tabs.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Tabs-label",
+      "kind": "validate",
+      "source": "Tabs(labels:[],children:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 34,
+            "message": "accessibility: Tabs.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Details-title",
+      "kind": "validate",
+      "source": "Details(title:\"   \",children:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 15,
+            "message": "accessibility: Details.title must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Details-title",
+      "kind": "validate",
+      "source": "Details(title:null,children:[])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 15,
+            "message": "accessibility: Details.title must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Icon-label",
+      "kind": "validate",
+      "source": "Icon(name:\"Value\",label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Icon.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Icon-label",
+      "kind": "validate",
+      "source": "Icon(name:\"Value\",label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Icon.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Image-alt",
+      "kind": "validate",
+      "source": "Image(src:\"Value\",alt:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 23,
+            "message": "accessibility: Image.alt must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Image-alt",
+      "kind": "validate",
+      "source": "Image(src:\"Value\",alt:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 23,
+            "message": "accessibility: Image.alt must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Chart-label",
+      "kind": "validate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 44,
+            "message": "accessibility: Chart.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Chart-label",
+      "kind": "validate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 44,
+            "message": "accessibility: Chart.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Chart-description",
+      "kind": "validate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 69,
+            "message": "accessibility: Chart.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Chart-description",
+      "kind": "validate",
+      "source": "Chart(type:\"bar\",labels:[],series:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 69,
+            "message": "accessibility: Chart.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Sparkline-label",
+      "kind": "validate",
+      "source": "Sparkline(values:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 27,
+            "message": "accessibility: Sparkline.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Sparkline-label",
+      "kind": "validate",
+      "source": "Sparkline(values:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 27,
+            "message": "accessibility: Sparkline.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Sparkline-description",
+      "kind": "validate",
+      "source": "Sparkline(values:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 52,
+            "message": "accessibility: Sparkline.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Sparkline-description",
+      "kind": "validate",
+      "source": "Sparkline(values:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 52,
+            "message": "accessibility: Sparkline.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Progress-label",
+      "kind": "validate",
+      "source": "Progress(value:1,label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Progress.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Progress-label",
+      "kind": "validate",
+      "source": "Progress(value:1,label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Progress.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Progress-description",
+      "kind": "validate",
+      "source": "Progress(value:1,label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 49,
+            "message": "accessibility: Progress.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Progress-description",
+      "kind": "validate",
+      "source": "Progress(value:1,label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 49,
+            "message": "accessibility: Progress.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Tree-label",
+      "kind": "validate",
+      "source": "Tree(items:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Tree.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Tree-label",
+      "kind": "validate",
+      "source": "Tree(items:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Tree.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Diagram-label",
+      "kind": "validate",
+      "source": "Diagram(mermaid:\"Value\",label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 31,
+            "message": "accessibility: Diagram.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Diagram-label",
+      "kind": "validate",
+      "source": "Diagram(mermaid:\"Value\",label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 31,
+            "message": "accessibility: Diagram.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Diagram-description",
+      "kind": "validate",
+      "source": "Diagram(mermaid:\"Value\",label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 56,
+            "message": "accessibility: Diagram.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Diagram-description",
+      "kind": "validate",
+      "source": "Diagram(mermaid:\"Value\",label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 56,
+            "message": "accessibility: Diagram.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Slider-label",
+      "kind": "validate",
+      "source": "$value=1\nSlider(value:$value,min:1,max:1,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 39,
+            "message": "accessibility: Slider.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Slider-label",
+      "kind": "validate",
+      "source": "$value=1\nSlider(value:$value,min:1,max:1,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 39,
+            "message": "accessibility: Slider.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Stepper-label",
+      "kind": "validate",
+      "source": "$value=1\nStepper(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 28,
+            "message": "accessibility: Stepper.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Stepper-label",
+      "kind": "validate",
+      "source": "$value=1\nStepper(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 28,
+            "message": "accessibility: Stepper.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Toggle-label",
+      "kind": "validate",
+      "source": "$value=true\nToggle(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 27,
+            "message": "accessibility: Toggle.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Toggle-label",
+      "kind": "validate",
+      "source": "$value=true\nToggle(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 27,
+            "message": "accessibility: Toggle.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Choice-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nChoice(value:$value,options:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 38,
+            "message": "accessibility: Choice.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Choice-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nChoice(value:$value,options:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 38,
+            "message": "accessibility: Choice.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Radio-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nRadio(value:$value,options:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 37,
+            "message": "accessibility: Radio.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Radio-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nRadio(value:$value,options:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 37,
+            "message": "accessibility: Radio.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Select-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nSelect(value:$value,options:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 38,
+            "message": "accessibility: Select.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Select-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nSelect(value:$value,options:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 38,
+            "message": "accessibility: Select.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Checklist-label",
+      "kind": "validate",
+      "source": "$value=[]\nChecklist(value:$value,options:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 41,
+            "message": "accessibility: Checklist.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Checklist-label",
+      "kind": "validate",
+      "source": "$value=[]\nChecklist(value:$value,options:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 41,
+            "message": "accessibility: Checklist.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-ListEditor-label",
+      "kind": "validate",
+      "source": "$value=[]\nListEditor(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 31,
+            "message": "accessibility: ListEditor.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-ListEditor-label",
+      "kind": "validate",
+      "source": "$value=[]\nListEditor(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 31,
+            "message": "accessibility: ListEditor.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Input-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nInput(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 26,
+            "message": "accessibility: Input.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Input-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nInput(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 26,
+            "message": "accessibility: Input.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-TextArea-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nTextArea(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 29,
+            "message": "accessibility: TextArea.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-TextArea-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nTextArea(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 29,
+            "message": "accessibility: TextArea.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-DateInput-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nDateInput(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 30,
+            "message": "accessibility: DateInput.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-DateInput-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nDateInput(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 30,
+            "message": "accessibility: DateInput.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Rating-label",
+      "kind": "validate",
+      "source": "$value=1\nRating(value:$value,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 27,
+            "message": "accessibility: Rating.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Rating-label",
+      "kind": "validate",
+      "source": "$value=1\nRating(value:$value,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 27,
+            "message": "accessibility: Rating.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Button-label",
+      "kind": "validate",
+      "source": "Button(label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 14,
+            "message": "accessibility: Button.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Button-label",
+      "kind": "validate",
+      "source": "Button(label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 14,
+            "message": "accessibility: Button.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Form-label",
+      "kind": "validate",
+      "source": "Form(children:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Form.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Form-label",
+      "kind": "validate",
+      "source": "Form(children:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Form.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Timer-label",
+      "kind": "validate",
+      "source": "Timer(label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 13,
+            "message": "accessibility: Timer.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Timer-label",
+      "kind": "validate",
+      "source": "Timer(label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 13,
+            "message": "accessibility: Timer.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Quiz-label",
+      "kind": "validate",
+      "source": "Quiz(questions:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Quiz.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Quiz-label",
+      "kind": "validate",
+      "source": "Quiz(questions:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Quiz.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Flashcards-label",
+      "kind": "validate",
+      "source": "Flashcards(cards:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 27,
+            "message": "accessibility: Flashcards.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Flashcards-label",
+      "kind": "validate",
+      "source": "Flashcards(cards:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 27,
+            "message": "accessibility: Flashcards.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Gallery-label",
+      "kind": "validate",
+      "source": "Gallery(images:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Gallery.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Gallery-label",
+      "kind": "validate",
+      "source": "Gallery(images:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Gallery.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Gallery-description",
+      "kind": "validate",
+      "source": "Gallery(images:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 50,
+            "message": "accessibility: Gallery.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Gallery-description",
+      "kind": "validate",
+      "source": "Gallery(images:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 50,
+            "message": "accessibility: Gallery.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Map-label",
+      "kind": "validate",
+      "source": "Map(places:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Map.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Map-label",
+      "kind": "validate",
+      "source": "Map(places:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Map.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Map-description",
+      "kind": "validate",
+      "source": "Map(places:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 46,
+            "message": "accessibility: Map.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Map-description",
+      "kind": "validate",
+      "source": "Map(places:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 46,
+            "message": "accessibility: Map.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Hotspots-label",
+      "kind": "validate",
+      "source": "Hotspots(image:\"Value\",points:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 40,
+            "message": "accessibility: Hotspots.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Hotspots-label",
+      "kind": "validate",
+      "source": "Hotspots(image:\"Value\",points:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 40,
+            "message": "accessibility: Hotspots.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Hotspots-description",
+      "kind": "validate",
+      "source": "Hotspots(image:\"Value\",points:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 65,
+            "message": "accessibility: Hotspots.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Hotspots-description",
+      "kind": "validate",
+      "source": "Hotspots(image:\"Value\",points:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 65,
+            "message": "accessibility: Hotspots.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Entity-label",
+      "kind": "validate",
+      "source": "Entity(name:\"Value\",label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 27,
+            "message": "accessibility: Entity.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Entity-label",
+      "kind": "validate",
+      "source": "Entity(name:\"Value\",label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 27,
+            "message": "accessibility: Entity.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Entity-description",
+      "kind": "validate",
+      "source": "Entity(name:\"Value\",label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 52,
+            "message": "accessibility: Entity.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Entity-description",
+      "kind": "validate",
+      "source": "Entity(name:\"Value\",label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 52,
+            "message": "accessibility: Entity.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Sources-label",
+      "kind": "validate",
+      "source": "Sources(links:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Sources.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Sources-label",
+      "kind": "validate",
+      "source": "Sources(links:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Sources.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-List-label",
+      "kind": "validate",
+      "source": "List(items:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: List.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-List-label",
+      "kind": "validate",
+      "source": "List(items:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: List.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Calendar-label",
+      "kind": "validate",
+      "source": "Calendar(events:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 26,
+            "message": "accessibility: Calendar.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Calendar-label",
+      "kind": "validate",
+      "source": "Calendar(events:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 26,
+            "message": "accessibility: Calendar.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Gauge-label",
+      "kind": "validate",
+      "source": "Gauge(value:1,label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Gauge.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Gauge-label",
+      "kind": "validate",
+      "source": "Gauge(value:1,label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Gauge.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Gauge-description",
+      "kind": "validate",
+      "source": "Gauge(value:1,label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 46,
+            "message": "accessibility: Gauge.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Gauge-description",
+      "kind": "validate",
+      "source": "Gauge(value:1,label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 46,
+            "message": "accessibility: Gauge.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-CalendarHeatmap-label",
+      "kind": "validate",
+      "source": "CalendarHeatmap(days:null,label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 33,
+            "message": "accessibility: CalendarHeatmap.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-CalendarHeatmap-label",
+      "kind": "validate",
+      "source": "CalendarHeatmap(days:null,label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 33,
+            "message": "accessibility: CalendarHeatmap.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-CalendarHeatmap-description",
+      "kind": "validate",
+      "source": "CalendarHeatmap(days:null,label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 58,
+            "message": "accessibility: CalendarHeatmap.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-CalendarHeatmap-description",
+      "kind": "validate",
+      "source": "CalendarHeatmap(days:null,label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 58,
+            "message": "accessibility: CalendarHeatmap.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-SegmentedBar-label",
+      "kind": "validate",
+      "source": "SegmentedBar(parts:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 29,
+            "message": "accessibility: SegmentedBar.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-SegmentedBar-label",
+      "kind": "validate",
+      "source": "SegmentedBar(parts:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 29,
+            "message": "accessibility: SegmentedBar.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-SegmentedBar-description",
+      "kind": "validate",
+      "source": "SegmentedBar(parts:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 54,
+            "message": "accessibility: SegmentedBar.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-SegmentedBar-description",
+      "kind": "validate",
+      "source": "SegmentedBar(parts:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 54,
+            "message": "accessibility: SegmentedBar.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Carousel-label",
+      "kind": "validate",
+      "source": "Carousel(children:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 28,
+            "message": "accessibility: Carousel.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Carousel-label",
+      "kind": "validate",
+      "source": "Carousel(children:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 28,
+            "message": "accessibility: Carousel.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-OptionCards-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nOptionCards(value:$value,options:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 43,
+            "message": "accessibility: OptionCards.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-OptionCards-label",
+      "kind": "validate",
+      "source": "$value=\"\"\nOptionCards(value:$value,options:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 43,
+            "message": "accessibility: OptionCards.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Swatches-label",
+      "kind": "validate",
+      "source": "Swatches(colors:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 26,
+            "message": "accessibility: Swatches.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Swatches-label",
+      "kind": "validate",
+      "source": "Swatches(colors:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 26,
+            "message": "accessibility: Swatches.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-EditableTable-label",
+      "kind": "validate",
+      "source": "$value=[]\nEditableTable(value:$value,columns:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 45,
+            "message": "accessibility: EditableTable.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-EditableTable-label",
+      "kind": "validate",
+      "source": "$value=[]\nEditableTable(value:$value,columns:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 45,
+            "message": "accessibility: EditableTable.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-FollowUps-label",
+      "kind": "validate",
+      "source": "FollowUps(prompts:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 28,
+            "message": "accessibility: FollowUps.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-FollowUps-label",
+      "kind": "validate",
+      "source": "FollowUps(prompts:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 28,
+            "message": "accessibility: FollowUps.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Walkthrough-label",
+      "kind": "validate",
+      "source": "Walkthrough(steps:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 28,
+            "message": "accessibility: Walkthrough.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Walkthrough-label",
+      "kind": "validate",
+      "source": "Walkthrough(steps:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 28,
+            "message": "accessibility: Walkthrough.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Board-label",
+      "kind": "validate",
+      "source": "Board(items:null,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Board.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Board-label",
+      "kind": "validate",
+      "source": "Board(items:null,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Board.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Roadmap-label",
+      "kind": "validate",
+      "source": "Roadmap(items:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Roadmap.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Roadmap-label",
+      "kind": "validate",
+      "source": "Roadmap(items:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 24,
+            "message": "accessibility: Roadmap.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Plan-label",
+      "kind": "validate",
+      "source": "Plan(steps:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Plan.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Plan-label",
+      "kind": "validate",
+      "source": "Plan(steps:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 21,
+            "message": "accessibility: Plan.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Decision-label",
+      "kind": "validate",
+      "source": "Decision(options:[],criteria:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 39,
+            "message": "accessibility: Decision.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Decision-label",
+      "kind": "validate",
+      "source": "Decision(options:[],criteria:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 39,
+            "message": "accessibility: Decision.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Estimate-label",
+      "kind": "validate",
+      "source": "Estimate(tasks:[],label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Estimate.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Estimate-label",
+      "kind": "validate",
+      "source": "Estimate(tasks:[],label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Estimate.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Acceptance-label",
+      "kind": "validate",
+      "source": "Acceptance(criteria:null,label:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 32,
+            "message": "accessibility: Acceptance.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Acceptance-label",
+      "kind": "validate",
+      "source": "Acceptance(criteria:null,label:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 32,
+            "message": "accessibility: Acceptance.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Compare-label",
+      "kind": "validate",
+      "source": "Compare(images:[],label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Compare.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Compare-label",
+      "kind": "validate",
+      "source": "Compare(images:[],label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 25,
+            "message": "accessibility: Compare.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Compare-description",
+      "kind": "validate",
+      "source": "Compare(images:[],label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 50,
+            "message": "accessibility: Compare.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Compare-description",
+      "kind": "validate",
+      "source": "Compare(images:[],label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 50,
+            "message": "accessibility: Compare.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Transcript-label",
+      "kind": "validate",
+      "source": "Transcript(tracks:null,label:\"   \",description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 30,
+            "message": "accessibility: Transcript.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Transcript-label",
+      "kind": "validate",
+      "source": "Transcript(tracks:null,label:null,description:\"Description\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 30,
+            "message": "accessibility: Transcript.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-blank-Transcript-description",
+      "kind": "validate",
+      "source": "Transcript(tracks:null,label:\"Accessible\",description:\"   \")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 55,
+            "message": "accessibility: Transcript.description must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "accessibility-null-Transcript-description",
+      "kind": "validate",
+      "source": "Transcript(tracks:null,label:\"Accessible\",description:null)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 55,
+            "message": "accessibility: Transcript.description must be nonblank text"
+          }
+        ]
+      }
+    }
+  ]
+}

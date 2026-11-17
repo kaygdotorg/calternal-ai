@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "origin": "Adapted from bb-plugin-genui d8cac8d core/language.test.ts and core/components.test.ts; additional explicit accessibility and resource cases.",
+  "cases": [
+    {
+      "name": "parse-literal",
+      "kind": "parse",
+      "source": "Text(\"hi\")",
+      "expected": {
+        "statements": [
+          {
+            "kind": "root",
+            "value": {
+              "type": "call",
+              "name": "Text",
+              "args": [
+                {
+                  "type": "literal",
+                  "value": "hi",
+                  "pos": {
+                    "line": 1,
+                    "column": 6
+                  }
+                }
+              ],
+              "named": [],
+              "pos": {
+                "line": 1,
+                "column": 1
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "parse-state",
+      "kind": "parse",
+      "source": "$n=2\nText($n)",
+      "expected": {
+        "statements": [
+          {
+            "kind": "state",
+            "name": "n",
+            "value": {
+              "type": "literal",
+              "value": 2,
+              "pos": {
+                "line": 1,
+                "column": 4
+              }
+            },
+            "pos": {
+              "line": 1,
+              "column": 1
+            }
+          },
+          {
+            "kind": "root",
+            "value": {
+              "type": "call",
+              "name": "Text",
+              "args": [
+                {
+                  "type": "state",
+                  "name": "n",
+                  "pos": {
+                    "line": 2,
+                    "column": 6
+                  }
+                }
+              ],
+              "named": [],
+              "pos": {
+                "line": 2,
+                "column": 1
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "parse-precedence",
+      "kind": "parse",
+      "source": "Text(1+2*3)",
+      "expected": {
+        "statements": [
+          {
+            "kind": "root",
+            "value": {
+              "type": "call",
+              "name": "Text",
+              "args": [
+                {
+                  "type": "binary",
+                  "op": "+",
+                  "left": {
+                    "type": "literal",
+                    "value": 1,
+                    "pos": {
+                      "line": 1,
+                      "column": 6
+                    }
+                  },
+                  "right": {
+                    "type": "binary",
+                    "op": "*",
+                    "left": {
+                      "type": "literal",
+                      "value": 2,
+                      "pos": {
+                        "line": 1,
+                        "column": 8
+                      }
+                    },
+                    "right": {
+                      "type": "literal",
+                      "value": 3,
+                      "pos": {
+                        "line": 1,
+                        "column": 10
+                      }
+                    },
+                    "pos": {
+                      "line": 1,
+                      "column": 9
+                    }
+                  },
+                  "pos": {
+                    "line": 1,
+                    "column": 7
+                  }
+                }
+              ],
+              "named": [],
+              "pos": {
+                "line": 1,
+                "column": 1
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "syntax-unclosed",
+      "kind": "validate",
+      "source": "Text(\"a\"",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 9,
+            "message": "expected `,` or `)` to close `(` from 1:5, found end of input"
+          }
+        ]
+      }
+    },
+    {
+      "name": "syntax-string",
+      "kind": "validate",
+      "source": "Text(\"x)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "unterminated string: close it with \" on the same line"
+          },
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 9,
+            "message": "expected an expression, found end of input"
+          }
+        ]
+      }
+    },
+    {
+      "name": "syntax-invalid-number",
+      "kind": "validate",
+      "source": "Text(12abc)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "invalid number `12a`"
+          },
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 8,
+            "message": "expected `,` or `)` to close `(` from 1:5, found `abc`"
+          }
+        ]
+      }
+    },
+    {
+      "name": "syntax-unexpected",
+      "kind": "validate",
+      "source": "Text(@)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "unexpected character `@`"
+          }
+        ]
+      }
+    },
+    {
+      "name": "syntax-unicode-column",
+      "kind": "validate",
+      "source": "Text(\"🚀\"); @",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 13,
+            "message": "unexpected character `@`"
+          }
+        ]
+      }
+    }
+  ]
+}

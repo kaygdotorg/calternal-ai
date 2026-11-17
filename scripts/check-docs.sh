@@ -17,3 +17,4 @@ fi
   -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content \
   --all-features --target-dir reference-docs/rust
 npm run check --prefix scripts/docs-tools
+node packages/genui/scripts/check-docs.mjs
