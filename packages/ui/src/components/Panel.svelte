@@ -21,7 +21,7 @@
 </div>
 
 <style>
-  .panel { position: relative; isolation: isolate; }
+  :where(.panel) { position: relative; isolation: isolate; }
   .panel[data-radius="pill"] { border-radius: var(--r-pill); }
   .panel[data-radius="card"] { border-radius: var(--r-card); }
   .panel[data-radius="pane"] { border-radius: var(--r-pane); }

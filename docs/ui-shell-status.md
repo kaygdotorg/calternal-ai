@@ -192,3 +192,28 @@ phone composer hit target fixed to 44 px. `e2e/interact.mjs` checks these (10 of
 Fixture-only: `unarchive` and `rename` are fixture client methods; the backend must provide both (undo of archive needs a stable, reversible archive).
 
 Open: whether deleting a section should offer Undo (not done); the composer palette (`docs/ui-composer-palette.md`) is planned, not built.
+
+## The owner's four lists, item by item (2026-11-17)
+
+Screenshots are attached to issue #15 (review set: `desktop-light`, `desktop-dark`, `phone-light`, `phone-dark`, `sidebar-sections`, `context-menu`, `model-picker`, `toast-archive-undo`, `request-bar`, `shortcuts-sheet`, `selection-actions`, `phone-machine-sheet`, `phone-sidebar`). Tests are `npm test`, `e2e/interact.mjs` (10 checks), `e2e/a11y.mjs`, `e2e/audit.mjs`, `e2e/align.mjs` (now self-tested), `e2e/motion.mjs`, `e2e/perf.mjs`, `e2e/paint-cost.mjs`, `e2e/preview-check.mjs`.
+
+| Item | Done | Evidence |
+| --- | --- | --- |
+| Flat right sidebar (no card) | yes | `desktop-light` |
+| Fades at the top and bottom of both sidebars and under the middle card title | yes | `.edge-fade` in `Sidebar`, `RightSidebar`, `VirtualList`; `desktop-light` |
+| Wallpaper blurred once, paint cost measured | yes | `docs/ui-performance.md` (0 late frames against 47 to 60 % with a live blur), `e2e/perf.mjs`, `e2e/paint-cost.mjs` |
+| Accent inferred from the wallpaper, guarded, overridable | yes | `appearance/accent.ts`, `theme.test.ts`, `wallpapers.mjs` contrast |
+| Cursive wordmark, no icon, name and font configurable | yes | `desktop-light` (top left), `SettingsSheet` |
+| "Needs you" plain (same font, not accent-tinted) | yes | `desktop-light` |
+| Nothing draws out of bounds (inset rings, placed menus) | yes | `lib/place.ts`; a regression where sheets lost `position: fixed` (Panel's own rule out-ranked `.sheet`) was found in the review shots and fixed |
+| Focus rings for the keyboard only; no animation from the keyboard | yes | `interact.mjs`, `motion.mjs` (key mode: 0 s) |
+| No streaming by default (setting) | yes | `prefs.streamText = false` |
+| Shortcut sheet on Cmd-/ and ? | yes | `shortcuts-sheet`, `shortcuts.test.ts` |
+| "Comment" and "Ask in Side Chat" on text selection | yes | `selection-actions` |
+| Model picker with provider icons and inline search | yes | `model-picker`, `Composer.test.ts` |
+| Machine picker: two steps, a sheet on a phone | yes | `phone-machine-sheet`, `RunsOnPicker.test.ts` |
+| Thread rows one line, one state signal, provider mark | yes | `sidebar-sections`, `interact.mjs` |
+| Toasts ported; Undo for Archive and for deleting a section | yes | `toast-archive-undo`, `toast-*.test.ts`, `layout.test.ts` |
+| Warm tooltip, pill bounce, title rename, InlineEditor | yes | `interact.mjs`, tooltip comparison in `docs/ui-design-system.md` |
+| Composer as a command palette | no | planned in `docs/ui-composer-palette.md` (next) |
+| Settings structure (sections, UI size, materials, Unsplash defaults) | in progress | `docs/settings.md` decisions, built after this table |
