@@ -1,10 +1,9 @@
-import type { Stats, WorkerRequest, WorkerResponse } from "@calternal/contracts";
-import {
-  MAX_WORKER_INPUT_BYTES,
-  MAX_WORKER_OUTPUT_BYTES,
-  parseWorkerRequest,
-  validateWorkerResponse,
-} from "@calternal/plugin-sdk";
+/** Long-lived notes statistics worker. All item reads go through the authorized host broker.
+ * @module
+ */
+import type { ManifestV1, Stats } from "@calternal/contracts";
+import { WorkerRuntimeV2, parseWorkerFrameV2, encodeWorkerFrameV2, MAX_V2_FRAME_BYTES } from "@calternal/plugin-sdk";
+import manifest from "../manifest.json" with { type: "json" };
 
 function summarize(markdown: string): Stats {
   const words = markdown.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? [];
@@ -17,66 +16,34 @@ function summarize(markdown: string): Stats {
   };
 }
 
-function makeResponse(request: WorkerRequest): WorkerResponse {
-  const stats = summarize(request.resource.markdown);
-  return {
-    protocol_version: 1,
-    invocation_id: request.invocation_id,
-    ok: true,
-    data: {
-      stats,
-      view: {
-        genui_version: 1,
-        root: {
-          type: "stack",
-          id: "notes-insights.stats",
-          children: [
-            { type: "stat", id: "notes-insights.words", label: "Words", value: String(stats.words) },
-            { type: "stat", id: "notes-insights.characters", label: "Characters", value: String(stats.characters) },
-            { type: "stat", id: "notes-insights.lines", label: "Lines", value: String(stats.lines) },
-          ],
-        },
-      },
-    },
-  };
-}
-
-async function readInput(): Promise<Uint8Array> {
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  for await (const chunk of process.stdin) {
-    const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
-    size += bytes.byteLength;
-    if (size > MAX_WORKER_INPUT_BYTES) throw new Error("input limit exceeded");
-    chunks.push(bytes);
-  }
-  const joined = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    joined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return joined;
-}
-
-async function writeResponse(response: WorkerResponse): Promise<void> {
-  const line = JSON.stringify(response);
-  const bytes = new TextEncoder().encode(line);
-  if (bytes.byteLength > MAX_WORKER_OUTPUT_BYTES) throw new Error("output limit exceeded");
-  await new Promise<void>((resolve, reject) => {
-    process.stdout.write(bytes, (error?: Error | null) => error ? reject(error) : resolve());
-  });
-}
+const runtime = new WorkerRuntimeV2(manifest as ManifestV1, {
+  "notes-insights.summarize": async (input, context) => {
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || !("note_id" in input) || typeof input.note_id !== "string") throw new Error("invalid input");
+    const item = await context.call("read_item", { kind: "notes", item_id: input.note_id });
+    if (!item || typeof item !== "object" || !("markdown" in item) || typeof item.markdown !== "string") throw new Error("invalid item");
+    return { stats: summarize(item.markdown) };
+  },
+}, async frame => {
+  const line = encodeWorkerFrameV2(frame);
+  await new Promise<void>((resolve, reject) => process.stdout.write(line, error => error ? reject(error) : resolve()));
+});
 
 async function main(): Promise<void> {
-  const input = await readInput();
-  const request = parseWorkerRequest(input);
-  const response = validateWorkerResponse(makeResponse(request), request.invocation_id);
-  await writeResponse(response);
+  let buffered = new Uint8Array(0);
+  for await (const chunk of process.stdin) {
+    const bytes = typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk;
+    // Consume incrementally so a multi-frame OS read cannot bypass the per-frame budget.
+    let start = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      if (bytes[i] !== 10) continue;
+      if (buffered.length + i - start > MAX_V2_FRAME_BYTES) throw new Error("frame limit");
+      const line = new Uint8Array(buffered.length + i - start); line.set(buffered); line.set(bytes.subarray(start, i), buffered.length);
+      await runtime.receive(parseWorkerFrameV2(line));
+      buffered = new Uint8Array(0); start = i + 1;
+    }
+    if (buffered.length + bytes.length - start > MAX_V2_FRAME_BYTES) throw new Error("frame limit");
+    const tail = new Uint8Array(buffered.length + bytes.length - start); tail.set(buffered); tail.set(bytes.subarray(start), buffered.length); buffered = tail;
+  }
+  if (buffered.length) throw new Error("unterminated frame");
 }
-
-main().catch(() => {
-  // Diagnostics never include request contents or exception details.
-  process.stderr.write("notes-insights worker protocol failure\n");
-  process.exitCode = 1;
-});
+main().catch(() => { process.stderr.write("notes-insights worker protocol failure\n"); process.exitCode = 1; process.stdin.destroy(); });

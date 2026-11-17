@@ -9,11 +9,11 @@ if [ ! -d scripts/docs-tools/node_modules/typedoc ]; then
 fi
 ./scripts/with-toolchain.sh cargo check --locked -j4 \
   -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
-  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content \
+  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content -p calternal-plugin-host \
   --all-targets --all-features
 # rustdoc link checks run only during documentation generation, not cargo check.
 ./scripts/with-toolchain.sh cargo doc --locked -j4 --no-deps \
   -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
-  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content \
+  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content -p calternal-plugin-host \
   --all-features --target-dir reference-docs/rust
 npm run check --prefix scripts/docs-tools

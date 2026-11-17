@@ -2,6 +2,300 @@
 /** Arbitrary JSON object at the transport boundary; validate operation-specific values before use. */
 export type JsonObject = Record<string, unknown>;
 /**
+ * Closed host vocabulary, matching protected host capability names.
+ */
+
+export type ManifestCapability = "space.read" | "content.write" | "plugins.use" | "plugins.manage" | "members.invite" | "members.manage" | "managers.manage" | "space.settings" | "space.transfer" | "space.delete" | "spaces.list" | "spaces.create";
+/**
+ * The only broker methods a worker may request.
+ */
+
+export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "request_secret_handle";
+/**
+ * Retry behavior declared by an operation.
+ */
+
+export type ManifestIdempotency = "read_only" | "request_id" | "never";
+/**
+ * Shell region populated by a component reference.
+ */
+
+export type ManifestRegion = "sidebar" | "main" | "right_card";
+/**
+ * Hooks observe or block; rewriting is unavailable.
+ */
+
+export type ManifestHookMode = "watch" | "block";
+/**
+ * Primitive setting value type.
+ */
+
+export type ManifestSettingType = "string" | "boolean" | "number";
+/**
+ * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
+ */
+
+export type ManifestPlacement = { "Visible": {
+/**
+ * One NFC folder component, with no leading dot or reserved name.
+ */
+folder: string, } } | { "Hidden": {
+/**
+ * Must be true; placement is `.calternal/<plugin-id>/<kind>/` within userdata.
+ */
+hidden: boolean, } };
+/**
+ * Kind identity remains independent of plugin identity.
+ */
+
+export type ManifestKind = {
+/**
+ * Placement within the selected per-space userdata tree; never an appdata database path.
+ */
+storage: ManifestPlacement,
+/**
+ * True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.
+ */
+claimed_text: boolean,
+/**
+ * Stable kind name used in item addresses.
+ */
+id: string,
+/**
+ * JSON Schema for the kind content; no executable code.
+ */
+schema: unknown, };
+/**
+ * Public operation declaration consumed by host policy.
+ */
+
+export type ManifestOperation = {
+/**
+ * Globally unique operation identifier.
+ */
+id: string,
+/**
+ * JSON Schema of operation input.
+ */
+input_schema: unknown,
+/**
+ * JSON Schema of successful output.
+ */
+output_schema: unknown,
+/**
+ * Required current host capability.
+ */
+required_capability: ManifestCapability,
+/**
+ * Whether this operation can produce durable effects.
+ */
+mutates: boolean,
+/**
+ * Retry and host receipt contract.
+ */
+idempotency: ManifestIdempotency, };
+/**
+ * Provisioning template; the host allocates a fresh Collection UUID per enable.
+ */
+
+export type ManifestCollection = {
+/**
+ * Globally unique template identifier, never a Collection address.
+ */
+id: string,
+/**
+ * Kind of items in this collection.
+ */
+kind: string,
+/**
+ * Display name for provisioned collections.
+ */
+name: string, };
+/**
+ * Component reference only; component format is separately versioned.
+ */
+
+export type ManifestView = {
+/**
+ * Stable contribution identifier.
+ */
+id: string,
+/**
+ * Shell region.
+ */
+region: ManifestRegion,
+/**
+ * Registered component identifier; no inline code.
+ */
+component: string, };
+/**
+ * Authorized attention candidates; the shell selects at most three.
+ */
+
+export type ManifestAttention = {
+/**
+ * Stable attention source identifier.
+ */
+id: string,
+/**
+ * Declared operation providing candidates.
+ */
+operation: string, };
+/**
+ * Typed space setting; secrets use separate handles.
+ */
+
+export type ManifestSetting = {
+/**
+ * Stable setting identifier.
+ */
+id: string,
+/**
+ * Primitive type of the default and stored values.
+ */
+value_type: ManifestSettingType,
+/**
+ * Default setting value.
+ */
+default: unknown, };
+/**
+ * Schedule declaration; durable execution belongs to the host.
+ */
+
+export type ManifestSchedule = {
+/**
+ * Stable schedule identifier.
+ */
+id: string,
+/**
+ * Declared operation to invoke.
+ */
+operation: string,
+/**
+ * Schedule expression; activation awaits host scheduler validation.
+ */
+expression: string, };
+/**
+ * Webhook declaration; this does not mount an HTTP route.
+ */
+
+export type ManifestWebhook = {
+/**
+ * Stable webhook identifier.
+ */
+id: string,
+/**
+ * Declared operation receiving authorized webhook input.
+ */
+operation: string, };
+/**
+ * Space-scoped hook enabled by a Manager; never a global interceptor.
+ */
+
+export type ManifestHook = {
+/**
+ * Stable hook identifier.
+ */
+id: string,
+/**
+ * Watch or block only.
+ */
+mode: ManifestHookMode,
+/**
+ * Exact operation IDs or namespace patterns ending in .* .
+ */
+patterns: Array<string>,
+/**
+ * Declared operation implementing the hook.
+ */
+operation: string, };
+/**
+ * Network-free theme asset; protected surfaces cannot be themed.
+ */
+
+export type ManifestTheme = {
+/**
+ * Stable theme identifier.
+ */
+id: string,
+/**
+ * Relative packaged CSS asset; activation requires sealed theme validation.
+ */
+stylesheet: string, };
+/**
+ * Plugin menu read without running plugin code; all fields are required.
+ */
+
+export type ManifestV1 = {
+/**
+ * Stable plugin identifier.
+ */
+id: string,
+/**
+ * Human-readable plugin name.
+ */
+name: string,
+/**
+ * Registered icon identifier.
+ */
+icon: string,
+/**
+ * Exact package version.
+ */
+version: string,
+/**
+ * Manifest API version, currently 1.
+ */
+api_version: number,
+/**
+ * Kinds offered by this plugin.
+ */
+kinds: Array<ManifestKind>,
+/**
+ * Public operation schemas and policy.
+ */
+operations: Array<ManifestOperation>,
+/**
+ * Collection provisioning templates.
+ */
+collections: Array<ManifestCollection>,
+/**
+ * Shell region component references.
+ */
+views: Array<ManifestView>,
+/**
+ * Attention sources.
+ */
+attention: Array<ManifestAttention>,
+/**
+ * Typed space settings.
+ */
+settings: Array<ManifestSetting>,
+/**
+ * Schedule declarations.
+ */
+schedules: Array<ManifestSchedule>,
+/**
+ * Webhook declarations.
+ */
+webhooks: Array<ManifestWebhook>,
+/**
+ * Requested secret names only; no values.
+ */
+secrets: Array<string>,
+/**
+ * Space-scoped watch or block hooks.
+ */
+hooks: Array<ManifestHook>,
+/**
+ * Packaged theme declarations.
+ */
+themes: Array<ManifestTheme>,
+/**
+ * Broker calls the worker may request; each still needs live authorization.
+ */
+host_calls: Array<HostCallKind>, };
+/**
  * Envelope for every `POST /api/v1/operations` call. Retain request identity and input unchanged after uncertain mutation outcomes.
  */
 

@@ -1,0 +1,419 @@
+[
+  {
+    "name": "valid invoke",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown invoke field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        },
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "valid host_call",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "host_call",
+        "call_id": "call-1",
+        "method": "read_item",
+        "input": {
+          "item_id": "x"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown host_call field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "host_call",
+        "call_id": "call-1",
+        "method": "read_item",
+        "input": {
+          "item_id": "x"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        },
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "valid host_reply",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "host_reply",
+        "call_id": "call-1",
+        "ok": true,
+        "data": {}
+      }
+    }
+  },
+  {
+    "name": "unknown host_reply field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "host_reply",
+        "call_id": "call-1",
+        "ok": true,
+        "data": {},
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "valid chunk",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "chunk",
+        "job_id": "job-1",
+        "sequence": 0,
+        "data": {}
+      }
+    }
+  },
+  {
+    "name": "unknown chunk field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "chunk",
+        "job_id": "job-1",
+        "sequence": 0,
+        "data": {},
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "valid complete",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "complete",
+        "data": {}
+      }
+    }
+  },
+  {
+    "name": "unknown complete field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "complete",
+        "data": {},
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "valid failed",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "failed"
+      }
+    }
+  },
+  {
+    "name": "unknown failed field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "failed",
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "valid cancel",
+    "valid": true,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "cancel"
+      }
+    }
+  },
+  {
+    "name": "unknown cancel field",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "cancel",
+        "unknown": 1
+      }
+    }
+  },
+  {
+    "name": "bad protocol_version",
+    "valid": false,
+    "value": {
+      "protocol_version": 1,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "bad invocation_id",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "../escape",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "bad unknown",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      },
+      "unknown": true
+    }
+  },
+  {
+    "name": "bad authority account_id 01932910-0000-7000-8000-000000000002",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000002",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "bad authority account_id 01932910000070008000000000000001",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910000070008000000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "bad authority account_id 01932910-0000-4000-8000-000000000001",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-4000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference"
+        }
+      }
+    }
+  },
+  {
+    "name": "bad authority grant ",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": ""
+        }
+      }
+    }
+  },
+  {
+    "name": "bad authority unknown True",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "invoke",
+        "operation": "notes-insights.summarize",
+        "input": {
+          "note_id": "01932910-0000-7000-8000-000000000003"
+        },
+        "authority": {
+          "account_id": "01932910-0000-7000-8000-000000000001",
+          "space_id": "01932910-0000-7000-8000-000000000002",
+          "grant": "host-reference",
+          "unknown": true
+        }
+      }
+    }
+  },
+  {
+    "name": "bad chunk sequence-1",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "chunk",
+        "job_id": "job-1",
+        "sequence": -1,
+        "data": {}
+      }
+    }
+  },
+  {
+    "name": "bad chunk sequence4294967296",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "chunk",
+        "job_id": "job-1",
+        "sequence": 4294967296,
+        "data": {}
+      }
+    }
+  },
+  {
+    "name": "bad chunk job_id../x",
+    "valid": false,
+    "value": {
+      "protocol_version": 2,
+      "invocation_id": "inv-1",
+      "message": {
+        "type": "chunk",
+        "job_id": "../x",
+        "sequence": 0,
+        "data": {}
+      }
+    }
+  }
+]

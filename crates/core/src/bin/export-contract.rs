@@ -31,6 +31,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )*};
     }
     emit!(
+        ManifestCapability,
+        HostCallKind,
+        ManifestIdempotency,
+        ManifestRegion,
+        ManifestHookMode,
+        ManifestSettingType,
+        ManifestPlacement,
+        ManifestKind,
+        ManifestOperation,
+        ManifestCollection,
+        ManifestView,
+        ManifestAttention,
+        ManifestSetting,
+        ManifestSchedule,
+        ManifestWebhook,
+        ManifestHook,
+        ManifestTheme,
+        ManifestV1,
         OperationRequest,
         ErrorCode,
         ApiError,
@@ -100,7 +118,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         formatted_ts.push('\n');
     }
     let operations = format!("{}\n", serde_json::to_string_pretty(&operation_catalog())?);
+    let manifest_schema = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&schemars::schema_for!(ManifestV1))?
+    );
     let artifacts = [
+        ("contract/plugin-manifest-v1.schema.json", manifest_schema),
         ("contract/v0.schema.json", schema),
         ("packages/contracts/src/index.ts", formatted_ts),
         ("contract/operations.json", operations),
