@@ -24,16 +24,46 @@ use uuid::Uuid;
 /// Queue a turn; claim prevents duplicate request retries from starting it twice.
 /// Admission is bounded per space. Only placed output readers hold the shared
 /// execution budget; offline-machine queues cannot occupy those slots.
-pub(super) fn schedule<D: Directory>(
+pub(crate) fn schedule<D: Directory>(
     state: &Shared<D>,
     machines: &Arc<MachineService>,
     space: String,
     id: String,
 ) {
+    schedule_checked(state, machines, space, id, None);
+}
+
+/// Account-bound scheduling for a thread send or an account pending submission.
+/// The claim transaction checks native operation identity and account together;
+/// result data from a plugin never selects a different job interpreter. Cost:
+/// one route-map read and async task, then the existing FULL claim transaction;
+/// unknown routes and operation/account mismatches do not start work.
+pub(crate) fn schedule_for_account<D: Directory>(
+    state: &Shared<D>,
+    machines: &Arc<MachineService>,
+    space: String,
+    id: String,
+    account: calternal_types::AccountId,
+) {
+    schedule_checked(state, machines, space, id, Some(account));
+}
+fn schedule_checked<D: Directory>(
+    state: &Shared<D>,
+    machines: &Arc<MachineService>,
+    space: String,
+    id: String,
+    account: Option<calternal_types::AccountId>,
+) {
+    // Result data may come from a pending plugin operation. Route only known
+    // jobs before touching a space file; never create state from a supplied UUID.
+    if state.jobs.route(&id).as_deref() != Some(space.as_str()) {
+        return;
+    }
     let (st, svc) = (state.clone(), machines.clone());
     tokio::spawn(async move {
         let (s, sp, jid) = (st.clone(), space.clone(), id.clone());
-        let Ok(Some(claimed)) = blocking(move || s.jobs.claim(&sp, &jid)).await else {
+        let Ok(Some(claimed)) = blocking(move || s.jobs.claim_turn(&sp, &jid, account)).await
+        else {
             return;
         };
         claimed.live.retain_for_subscriber();
@@ -141,7 +171,7 @@ async fn execute<D: Directory>(
         checkpoint = json!({});
     }
     checkpoint["lease_id"] = json!(lease_id);
-    if let Err(e) = save(state, job, live, &checkpoint).await {
+    if let Err(e) = save(state, job, live, &mut checkpoint).await {
         let m = machines.clone();
         let _ = blocking(move || m.release_run(account, lease_id)).await;
         return Err(e);
@@ -187,7 +217,7 @@ async fn execute<D: Directory>(
         tokio::time::sleep(Duration::from_secs(1)).await;
     };
     checkpoint["machine_id"] = json!(machine_id);
-    save(state, job, live, &checkpoint).await?;
+    save(state, job, live, &mut checkpoint).await?;
     let local_session = if previous_machine == Some(machine_id) {
         checkpoint
             .get("session_id")
@@ -289,7 +319,7 @@ async fn execute<D: Directory>(
     let mut pending_tools = std::collections::HashSet::new();
     let mut text_flush = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(600);
-    loop {
+    let result = async { loop {
         if !live.is_current(job.runs) || !super::session_live(state, job).await? {
             return Ok(RunEnd::Failed);
         }
@@ -377,6 +407,11 @@ async fn execute<D: Directory>(
                                     checkpoint["session_id"] = json!(session_id)
                                 }
                                 ProviderEventKind::TextDelta { text } => {
+                                    if job.input.get("thread_request").is_some() {
+                                        let saved =
+                                            checkpoint["thread_text"].as_str().unwrap_or("");
+                                        checkpoint["thread_text"] = json!(format!("{saved}{text}"));
+                                    }
                                     let tail = checkpoint
                                         .get("text_tail")
                                         .and_then(Value::as_str)
@@ -431,11 +466,14 @@ async fn execute<D: Directory>(
                                 ProviderEventKind::Session { .. }
                                     | ProviderEventKind::ToolFinished { .. }
                                     | ProviderEventKind::Done { .. }
-                            ) || text_flush.elapsed() >= Duration::from_secs(3)
+                            ) || checkpoint["thread_text"]
+                                .as_str()
+                                .is_some_and(|s| s.len() >= 16 * 1024)
+                                || text_flush.elapsed() >= Duration::from_secs(3)
                             {
                                 checkpoint["provider_seq"] = json!(provider_seq);
                                 redactor.checkpoint(&mut checkpoint);
-                                save(state, job, live, &checkpoint).await?;
+                                save(state, job, live, &mut checkpoint).await?;
                                 text_flush = Instant::now();
                             }
                         }
@@ -483,15 +521,18 @@ async fn execute<D: Directory>(
                         ) {
                             checkpoint["retry"] = wait;
                             redactor.checkpoint(&mut checkpoint);
-                            save(state, job, live, &checkpoint).await?;
+                            save(state, job, live, &mut checkpoint).await?;
                             return Ok(RunEnd::RetryWaiting);
                         }
                     }
+                    checkpoint["provider_seq"] = json!(provider_seq);
+                    redactor.checkpoint(&mut checkpoint);
+                    save(state, job, live, &mut checkpoint).await?;
                     return Ok(if exit.code == Some(0) && check && checked {
                         RunEnd::Done(json!({"checked":true}))
                     } else {
                         match outcome.as_deref() {
-                            Some("done") if exit.code == Some(0) => RunEnd::Done(checkpoint),
+                            Some("done") if exit.code == Some(0) => RunEnd::Done(checkpoint.clone()),
                             Some("failed") => RunEnd::Failed,
                             _ => RunEnd::OutcomeUnknown,
                         }
@@ -499,15 +540,33 @@ async fn execute<D: Directory>(
                 }
             }
         }
+    }}.await;
+    // Preserve scrubbed output at every exit, including cancellation, malformed
+    // provider output and machine interruption; live chunks are never replayed.
+    if checkpoint["thread_text"]
+        .as_str()
+        .is_some_and(|text| !text.is_empty())
+    {
+        checkpoint["provider_seq"] = json!(provider_seq);
+        redactor.checkpoint(&mut checkpoint);
+        save(state, job, live, &mut checkpoint).await?;
     }
+    result
 }
 
 async fn save<D: Directory>(
     state: &Shared<D>,
     job: &Job,
     live: &Arc<crate::plugins::live::Live>,
-    checkpoint: &Value,
+    checkpoint: &mut Value,
 ) -> Result<(), Error> {
+    let (st_output, output_job, output_checkpoint) =
+        (state.clone(), job.clone(), checkpoint.clone());
+    blocking(move || {
+        crate::threads::persistence::checkpoint(&st_output, &output_job, &output_checkpoint)
+    })
+    .await?;
+    checkpoint["thread_text"] = json!("");
     let (st, sp, id, run, live, checkpoint) = (
         state.clone(),
         job.space.clone(),

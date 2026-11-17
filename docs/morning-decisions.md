@@ -35,3 +35,40 @@ Remaining engineering work includes durable platform offline retention and
 sign-out/export integration, general addressed agent-request publication, atomic
 snapshot/bookmark leases, and the strict revoke/publication fence. These are not
 proofs supplied by the drafts slice.
+
+## Threads follow-ups (issue #28, 2026-11-17)
+
+The grill already decided one Markdown file per thread, with long tool output
+kept separately and linked; file splitting is not an open product choice.
+The remaining artifact shape needs a decision: reuse generic `/files/<uuid>`
+attachments (one existing address kind, requires file upload/materialization),
+or declare a Markdown thread-output kind (human-readable logs and versioning,
+adds a kind and renderer). Keep long output disabled until that contract exists.
+
+Engineering follow-ups that need no product decision: incremental provider
+steering over machine input, tail/block indexing for the accepted one-file
+layout, and reducing the inherited repeated content head loads on each send.
+
+The backend currently exposes manifest-owned native thread operations, as Notes
+does. The public TypeScript product bridge still needs a contract: a narrow
+agent-turn host call (small authority surface, another vocabulary entry) or a
+same-authority operation broker (one route for plugins, additional recursion,
+deadline and receipt proofs). The lane has not invented that public API.
+
+Cross-turn continuation also needs the turn-engine bridge: reuse a provider session
+only for the same account/provider (small context cost, session identity lifecycle),
+or hand off explicit conversation context (portable across accounts/providers,
+requires a bounded context/summary policy). Current sends admit fresh jobs.
+
+## Standing instruction writer (owner decision 2026-11-18)
+
+`AI/AGENTS.md` is reserved and may only be written by Managers/Owner. There is no
+existing Manager-only file-write operation to reuse. Options: a narrow standing-
+instructions operation under `space.settings` (small surface, needs a durable
+file/receipt intent), or a general Manager-owned space-file operation (reusable,
+larger path-policy and recovery proof). No operation name or new write port is
+invented in this lane; generic kind writers are denied the reserved path.
+
+Approval lifetimes are handed to a separate lane: once-only grants need atomic
+consumption with request receipt replay, and thread grants need protected storage
+that survives jobs and is erased by thread deletion. Always-in-space remains later.

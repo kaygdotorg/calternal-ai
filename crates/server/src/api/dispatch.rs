@@ -264,6 +264,28 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         .await
         .map_err(|_| Error::internal("directory task failed"))?;
     }
+    if state
+        .registry
+        .owner_of_operation(op)
+        .is_some_and(|p| p.manifest.id == "calternal-orchestrator")
+        && op.starts_with("threads.")
+    {
+        let result = crate::threads::dispatch(
+            state.clone(),
+            p.clone(),
+            session,
+            agent,
+            request_id,
+            op,
+            input.clone(),
+        )
+        .await?;
+        let (st, checked) = (state.clone(), input.clone());
+        tokio::task::spawn_blocking(move || policy.authorize(&st.directory, &p, &checked))
+            .await
+            .map_err(|_| Error::internal("delivery check failed"))??;
+        return Ok(result);
+    }
     if policy.constraint == Constraint::PluginInvocation {
         return invoke_plugin(state, p, session, request_id, op, policy, input).await;
     }

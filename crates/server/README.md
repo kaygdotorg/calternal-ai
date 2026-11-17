@@ -218,3 +218,5 @@ Account-private drafts, pending submissions and `/api/v1/account/live` are
 implemented in separate owner-local modules; see [account input](../../docs/account-input.md).
 The live space/subscriber defaults above are operator-configurable through
 `CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.
+
+Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.

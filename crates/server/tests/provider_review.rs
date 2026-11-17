@@ -195,29 +195,44 @@ fn least_access_accepts_the_action_approval_its_denial_created() {
     );
 }
 
-/// The person chooses the mode in the composer for each message. A narrower mode
-/// requested for the next turn must take effect, since no other operation can
-/// change a thread's mode while no turn is active (agent.mode refuses final turns).
+/// Every mode requested with a new send applies directly and persists; no fresh
+/// passkey proof is needed. A new credential replaces the previous turn's token.
 #[test]
-fn next_turn_honours_a_narrower_mode_chosen_by_the_person() {
-    let f = fixture();
-    let thread = Uuid::now_v7();
-    let (first, run) = f.turn(thread, Session::Static, "full-turn");
-    let full = f.authority(thread, &first, AgentMode::FullAccess, "");
-    f.jobs.agent_prepare_scope(&full, run).unwrap();
-    f.jobs
-        .finish(&f.space, &first, run, RunEnd::Done(json!({})))
-        .unwrap();
-    f.jobs.agent_revoke_run(&f.space, &first, run).unwrap();
-
-    let (next, run) = f.turn(thread, Session::Static, "least-turn");
-    let least = f.authority(thread, &next, AgentMode::LeastAccess, "");
-    let saved = f.jobs.agent_prepare_scope(&least, run).unwrap();
-    assert_eq!(
-        saved.mode,
+fn next_turn_applies_and_saves_every_requested_mode_transition() {
+    for from in [
         AgentMode::LeastAccess,
-        "the next turn ran in the previous wider mode although the person chose Least access"
-    );
+        AgentMode::ApproveForMe,
+        AgentMode::FullAccess,
+    ] {
+        for requested in [
+            AgentMode::LeastAccess,
+            AgentMode::ApproveForMe,
+            AgentMode::FullAccess,
+        ] {
+            let f = fixture();
+            let thread = Uuid::now_v7();
+            let (first, run) = f.turn(thread, Session::Static, "first");
+            let previous = f.authority(thread, &first, from, "");
+            f.jobs.agent_prepare_scope(&previous, run).unwrap();
+            let old = f.jobs.agent_token(&previous, run).unwrap();
+            f.jobs
+                .finish(&f.space, &first, run, RunEnd::Done(json!({})))
+                .unwrap();
+            f.jobs.agent_revoke_run(&f.space, &first, run).unwrap();
+            let (next, run) = f.turn(thread, Session::Static, "next");
+            let chosen = f.authority(thread, &next, requested, "");
+            let saved = f.jobs.agent_prepare_scope(&chosen, run).unwrap();
+            assert_eq!(saved.mode, requested, "{from:?} -> {requested:?}");
+            assert_eq!(f.jobs.agent_scope(&f.space, &next).unwrap().mode, requested);
+            let token = f.jobs.agent_token(&saved, run).unwrap();
+            assert_ne!(old, token);
+            assert!(f.jobs.agent_authenticate(&old).unwrap().is_none());
+            assert_eq!(
+                f.jobs.agent_authenticate(&token).unwrap().unwrap().mode,
+                requested
+            );
+        }
+    }
 }
 
 /// A thread token acts as the person and must not outlive the person's own sign-in:
