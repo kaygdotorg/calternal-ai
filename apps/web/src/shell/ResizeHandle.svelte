@@ -64,6 +64,7 @@
   .grip.drag i { background: var(--accent); }
   /* Touch has no hover and no precise pointer: the handles are not offered (a phone has no sidebars to resize at all). */
   @media (pointer: coarse) { .grip { display: none; } }
-  .grip:focus-visible { outline: none; }
+  /* The slim bar draws the ring (round, like the bar); the hit area around it shows none. */
+  .grip:focus-visible { outline: none !important; }
   .grip:focus-visible i { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>

@@ -312,3 +312,17 @@ Method: `e2e/shell-audit.mjs` drives a fresh browser profile (nothing stored) at
 | The composer doubles as the command palette | A separate Cmd-K palette on the same engine | Question for the owner |
 | Phone: the app switcher is a capsule under the card | A pill in the sidebar footer (the bottom of the card is the panel tab bar) | Question for the owner |
 | Bottom band / edge at the right sidebar's tab capsule (owner) | Not reproduced in headless Chromium, GPU-backed Chrome on macOS (3 window sizes, dark and light) or WebKit on an iPad simulator: the only edges are the capsule's own glass outline and the card's edge and shadow | Waiting for the owner's window size or zoom |
+
+## Design review pass (2026-11-18)
+
+Lenses: Emil Kowalski's design-engineering rules, Jakub Krehel's interface skills (accessibility, layout), Hallmark's floor; headed GPU-backed Chrome on the macOS VM (desktop 1500x970 and 1280x720, dark and light; Threads, Notes, Settings with Compare, closed sidebars, popover) plus the earlier iPad (WebKit) and iPhone checks. Fixed where the documents already decide:
+
+| Flag | Where | Fix |
+| --- | --- | --- |
+| Animates width and height (Emil: transform and opacity only; Hallmark floor 2) | Space dots, resize handle | Scale and opacity only |
+| Middle-dot meta strings (Hallmark floor 10) | Palette group "Settings · Appearance", Notes sidebar "Personal · server" | Plain commas and parentheses |
+| Touch target under 44 px (Jakub, minimum hit area) | Space dots | 44 px wide on a coarse pointer |
+| A control that overflows its container | The right sidebar's tab capsule at the narrowest width (and on an iPad) | Segments shrink and truncate; `resize.mjs` checks it |
+| Square focus rings on rounded controls | The two resize grips, the side-chat field | The ring is drawn by the round bar and by the rounded box (`e2e/ring-shell.mjs`) |
+
+Listed, not changed (not the shell's, or not decided): the composer's chip labels still join with a middle dot ("Codex · GPT-6.1 Sol", "calternal-dev-02-std · Sandboxed") (Threads lane); popovers do not yet grow from their trigger (Emil: origin-aware; the attempt is the saved patch); `left` and `right` are physical, not logical, properties (nothing decided about right-to-left); the Compare heading's colon is temporary.
