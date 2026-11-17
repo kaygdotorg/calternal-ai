@@ -1,0 +1,188 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProviderRequest",
+  "description": "A command envelope. `seq` starts at one and increases exactly once per command.",
+  "type": "object",
+  "required": [
+    "command",
+    "seq",
+    "version"
+  ],
+  "properties": {
+    "command": {
+      "description": "Action to perform.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProviderCommand"
+        }
+      ]
+    },
+    "seq": {
+      "description": "Consecutive command number, independent of event sequence numbers.",
+      "type": "integer",
+      "format": "uint64",
+      "maximum": 9007199254740991.0,
+      "minimum": 1.0
+    },
+    "version": {
+      "description": "Must equal [`PROVIDER_VERSION`].",
+      "type": "integer",
+      "format": "uint32",
+      "maximum": 1.0,
+      "minimum": 1.0
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ProviderCommand": {
+      "description": "Commands accepted by an adapter; one active turn per adapter.",
+      "oneOf": [
+        {
+          "description": "Check installation and sign-in through the official program's own status command.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "check"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Configure a session without starting model work.",
+          "type": "object",
+          "required": [
+            "cwd",
+            "instructions",
+            "model",
+            "options",
+            "type"
+          ],
+          "properties": {
+            "cwd": {
+              "description": "Sandbox workspace; the machine supplies this, never a provider login path.",
+              "type": "string"
+            },
+            "instructions": {
+              "description": "Trusted instruction layers, appended through the harness's documented channel.",
+              "type": "string"
+            },
+            "model": {
+              "description": "Model name understood by the official CLI.",
+              "type": "string"
+            },
+            "options": {
+              "description": "Provider-declared typed options; unknown keys are refused by its adapter.",
+              "type": "object",
+              "additionalProperties": true
+            },
+            "resume": {
+              "description": "Official CLI session to resume; null starts a new session.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "start"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Start work with the person's unchanged prompt and labelled contributions.",
+          "type": "object",
+          "required": [
+            "context",
+            "prompt",
+            "type"
+          ],
+          "properties": {
+            "context": {
+              "description": "At most 32 contributions, bounded by the command budget.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ProviderContext"
+              }
+            },
+            "prompt": {
+              "description": "Person's message, preserved verbatim.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "send"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Interrupt active work and continue the same official session with this message.",
+          "type": "object",
+          "required": [
+            "prompt",
+            "type"
+          ],
+          "properties": {
+            "prompt": {
+              "description": "New message, bounded by the command budget.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "steer"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Stop active work; do not report completion as success.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "stop"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProviderContext": {
+      "description": "A labelled contribution; data, never authority or system instructions.",
+      "type": "object",
+      "required": [
+        "source",
+        "text"
+      ],
+      "properties": {
+        "source": {
+          "description": "Plugin or attachment label, at most 128 UTF-8 bytes.",
+          "type": "string"
+        },
+        "text": {
+          "description": "Contribution text; included in the command's total bound.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

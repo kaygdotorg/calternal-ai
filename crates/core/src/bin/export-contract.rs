@@ -49,7 +49,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ManifestWebhook,
         ManifestHook,
         ManifestTheme,
+        ManifestProvider,
         ManifestV1,
+        OperationRisk,
+        AgentMode,
+        AgentInput,
+        ProviderFailureClass,
+        ProviderBilling,
+        AgentRetrySettings,
+        ProviderContext,
+        ProviderCommand,
+        ProviderRequest,
+        ProviderEventKind,
+        ProviderEvent,
         JobState,
         JobInput,
         JobView,
@@ -137,7 +149,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "{}\n",
         serde_json::to_string_pretty(&schemars::schema_for!(ManifestV1))?
     );
+    let provider_schema = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&schemars::schema_for!(ProviderRequest))?
+    );
+    let provider_events = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&schemars::schema_for!(ProviderEvent))?
+    );
     let artifacts = [
+        ("contract/provider-v1.schema.json", provider_schema),
+        ("contract/provider-events-v1.schema.json", provider_events),
         ("contract/plugin-manifest-v1.schema.json", manifest_schema),
         ("contract/v0.schema.json", schema),
         ("packages/contracts/src/index.ts", formatted_ts),

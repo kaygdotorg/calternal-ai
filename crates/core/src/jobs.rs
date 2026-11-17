@@ -14,6 +14,10 @@ pub enum JobState {
     Running,
     /// Parked until its child jobs report; it runs again when they all have.
     Waiting,
+    /// Machine or server went silent; only explicit resume may restart this turn.
+    Interrupted,
+    /// No provider process is held; checkpoint.retry records the durable next attempt.
+    RetryWaiting,
     /// Finished with a result.
     Done,
     /// Finished without a result.

@@ -1,0 +1,30 @@
+{
+  "id": "calternal-orchestrator",
+  "name": "Threads",
+  "icon": "terminal",
+  "version": "0.1.0",
+  "api_version": 1,
+  "kinds": [],
+  "operations": [],
+  "collections": [],
+  "views": [],
+  "attention": [],
+  "settings": [
+    {
+      "id": "retry-provider-errors",
+      "value_type": "boolean",
+      "default": true
+    },
+    {
+      "id": "snooze-subscription-limits",
+      "value_type": "boolean",
+      "default": true
+    }
+  ],
+  "schedules": [],
+  "webhooks": [],
+  "secrets": [],
+  "hooks": [],
+  "themes": [],
+  "host_calls": []
+}

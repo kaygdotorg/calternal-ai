@@ -132,33 +132,36 @@ pub fn validate_request(request: &OperationRequest) -> Result<(), ValidationErro
 }
 /// Test membership in the fixed preview operation catalog without allocation or authority checks.
 pub fn is_known_operation(operation: &str) -> bool {
-    matches!(
-        operation,
-        "spaces.list"
-            | "spaces.create"
-            | "spaces.members"
-            | "spaces.set_role"
-            | "spaces.remove_member"
-            | "spaces.leave"
-            | "spaces.transfer"
-            | "spaces.delete"
-            | "notes.list"
-            | "notes.get"
-            | "resolve"
-            | "notes.create"
-            | "notes.update"
-            | "notes.history"
-            | "plugins.list"
-            | "plugins.enable"
-            | "plugins.disable"
-            | "plugins.preview"
-            | "notes-insights.summarize"
-            | "jobs.get"
-            | "jobs.cancel"
-            | "secrets.request"
-            | "secrets.list"
-            | "secrets.revoke"
-    )
+    crate::AGENT_OPERATIONS
+        .iter()
+        .any(|(id, _, _)| *id == operation)
+        || matches!(
+            operation,
+            "spaces.list"
+                | "spaces.create"
+                | "spaces.members"
+                | "spaces.set_role"
+                | "spaces.remove_member"
+                | "spaces.leave"
+                | "spaces.transfer"
+                | "spaces.delete"
+                | "notes.list"
+                | "notes.get"
+                | "resolve"
+                | "notes.create"
+                | "notes.update"
+                | "notes.history"
+                | "plugins.list"
+                | "plugins.enable"
+                | "plugins.disable"
+                | "plugins.preview"
+                | "notes-insights.summarize"
+                | "jobs.get"
+                | "jobs.cancel"
+                | "secrets.request"
+                | "secrets.list"
+                | "secrets.revoke"
+        )
 }
 /// Validate the envelope and known operation inputs; leave unknown operation schemas to server discovery for forward compatibility. Cost is proportional to serialized input.
 ///
@@ -199,6 +202,14 @@ pub fn validate_operation_input(
     operation: &str,
     input: &JsonObject,
 ) -> Result<(), ValidationError> {
+    if crate::AGENT_OPERATIONS
+        .iter()
+        .any(|(id, _, _)| *id == operation)
+    {
+        let _: crate::AgentInput = decode(input)?;
+        return Ok(());
+    }
+
     if matches!(
         operation,
         "notes.get" | "notes.history" | "notes.update" | "notes-insights.summarize"
@@ -589,6 +600,7 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
     ) -> OperationDescription {
         let object = |value: Value| serde_json::from_value(value).expect("schema is object");
         OperationDescription {
+            risk: crate::builtin_operation_risk(id, mutates),
             id: id.into(),
             description: description.into(),
             mutates,
@@ -686,4 +698,24 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             true,
         ),
     ]
+    .into_iter()
+    .chain(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {
+        entry::<crate::AgentInput, crate::JsonObject>(id, text, *mutates)
+    }))
+    .collect()
+}
+
+/// Borrow a built-in operation's compiled schema and risk metadata. Catalog
+/// construction happens once; calls scan the bounded operation list without I/O.
+pub fn cached_operation(operation: &str) -> Option<&'static OperationDescription> {
+    cached_operation_catalog()
+        .iter()
+        .find(|d| d.id == operation)
+}
+
+/// Borrow the generated operation metadata and schemas, initialized once.
+/// Cost after initialization: one immutable reference; no I/O or schema rebuilding.
+pub fn cached_operation_catalog() -> &'static [OperationDescription] {
+    static CATALOG: std::sync::OnceLock<Vec<OperationDescription>> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(operation_catalog)
 }

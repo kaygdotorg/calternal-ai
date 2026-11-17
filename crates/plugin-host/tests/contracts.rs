@@ -738,3 +738,17 @@ fn a_full_unrelated_output_queue_cannot_keep_cancelled_authority_alive() {
     );
     assert_eq!(h.calls, MAX_QUEUE);
 }
+
+#[test]
+fn operation_risk_is_required_closed_and_consistent_with_effects() {
+    let value = serde_json::to_value(manifest()).unwrap();
+    for risk in [None, Some(json!("unknown")), Some(json!("external"))] {
+        let mut m = value.clone();
+        if let Some(risk) = risk {
+            m["operations"][0]["risk"] = risk;
+        } else {
+            m["operations"][0].as_object_mut().unwrap().remove("risk");
+        }
+        assert!(parse_manifest(&serde_json::to_vec(&m).unwrap()).is_err());
+    }
+}

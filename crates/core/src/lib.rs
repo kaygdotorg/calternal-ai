@@ -14,3 +14,9 @@ pub use validation::*;
 
 mod plugin_manifest;
 pub use plugin_manifest::*;
+
+mod provider;
+pub use provider::*;
+
+mod agent;
+pub use agent::*;

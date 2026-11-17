@@ -1101,7 +1101,8 @@
         "id",
         "input_schema",
         "mutates",
-        "output_schema"
+        "output_schema",
+        "risk"
       ],
       "properties": {
         "description": {
@@ -1125,6 +1126,14 @@
           "description": "Generated JSON Schema object for the successful operation result.",
           "type": "object",
           "additionalProperties": true
+        },
+        "risk": {
+          "description": "Declared risk used by the permission-mode reviewer, independent of capabilities.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/OperationRisk"
+            }
+          ]
         }
       },
       "additionalProperties": false
@@ -1173,6 +1182,46 @@
             {
               "$ref": "#/definitions/Failure"
             }
+          ]
+        }
+      ]
+    },
+    "OperationRisk": {
+      "description": "Declared risk class, evaluated in addition to capabilities and token scope.",
+      "oneOf": [
+        {
+          "description": "Reads data without changing durable state.",
+          "type": "string",
+          "enum": [
+            "read"
+          ]
+        },
+        {
+          "description": "Changes that ordinary application history can undo.",
+          "type": "string",
+          "enum": [
+            "reversible"
+          ]
+        },
+        {
+          "description": "Effects that cannot reliably be undone; reviewer seam may advise here only.",
+          "type": "string",
+          "enum": [
+            "irreversible"
+          ]
+        },
+        {
+          "description": "Communicates or publishes outside the space; approval is scoped.",
+          "type": "string",
+          "enum": [
+            "external"
+          ]
+        },
+        {
+          "description": "Expands authority or changes access; always requires a person.",
+          "type": "string",
+          "enum": [
+            "widens_access"
           ]
         }
       ]

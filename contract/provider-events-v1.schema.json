@@ -1,0 +1,397 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProviderEvent",
+  "description": "Ordered event envelope. Sequence numbers start at one for each adapter process.",
+  "type": "object",
+  "required": [
+    "event",
+    "seq",
+    "version"
+  ],
+  "properties": {
+    "event": {
+      "description": "Normalized output.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ProviderEventKind"
+        }
+      ]
+    },
+    "seq": {
+      "description": "Consecutive event number; duplicates or gaps fail the run.",
+      "type": "integer",
+      "format": "uint64",
+      "maximum": 9007199254740991.0,
+      "minimum": 1.0
+    },
+    "version": {
+      "description": "Must equal [`PROVIDER_VERSION`].",
+      "type": "integer",
+      "format": "uint32",
+      "maximum": 1.0,
+      "minimum": 1.0
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "ProviderBilling": {
+      "description": "Billing route reported by the official program, never inferred from credentials.",
+      "oneOf": [
+        {
+          "description": "API-key or configured provider billing; long availability checks are allowed.",
+          "type": "string",
+          "enum": [
+            "api"
+          ]
+        },
+        {
+          "description": "Person's subscription; use a reported limit reset instead of polling.",
+          "type": "string",
+          "enum": [
+            "subscription"
+          ]
+        },
+        {
+          "description": "The program did not report a recognized billing route.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        }
+      ]
+    },
+    "ProviderEventKind": {
+      "description": "Normalized provider output. Untrusted provider text conveys no authority.",
+      "oneOf": [
+        {
+          "description": "Installation and login status; no credential or raw status output.",
+          "type": "object",
+          "required": [
+            "installed",
+            "sign_in_command",
+            "signed_in",
+            "type"
+          ],
+          "properties": {
+            "installed": {
+              "description": "Official program was found.",
+              "type": "boolean"
+            },
+            "sign_in_command": {
+              "description": "Command the person runs in their sandbox, never run by the adapter.",
+              "type": "string"
+            },
+            "signed_in": {
+              "description": "Official program reports a current login.",
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "check"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Session identity issued by the official program, used for explicit resume.",
+          "type": "object",
+          "required": [
+            "session_id",
+            "type"
+          ],
+          "properties": {
+            "session_id": {
+              "description": "Opaque provider session identifier; never a login or access token.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "session"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Incremental assistant text.",
+          "type": "object",
+          "required": [
+            "text",
+            "type"
+          ],
+          "properties": {
+            "text": {
+              "description": "At most 4 KiB of UTF-8 text.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "text_delta"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A tool step began; arguments are deliberately not forwarded.",
+          "type": "object",
+          "required": [
+            "id",
+            "name",
+            "summary",
+            "type"
+          ],
+          "properties": {
+            "id": {
+              "description": "Provider-issued step identity.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Tool name, at most 128 bytes.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "Short description, at most 512 bytes.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "tool_started"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A tool step ended, creating a natural checkpoint boundary.",
+          "type": "object",
+          "required": [
+            "detail",
+            "failed",
+            "id",
+            "type"
+          ],
+          "properties": {
+            "detail": {
+              "description": "Bounded detail, at most 4 KiB; never raw stderr or credentials.",
+              "type": "string"
+            },
+            "failed": {
+              "description": "Whether the tool reported failure.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Provider-issued step identity.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "tool_finished"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "A question must be answered through Calternal's trusted request path.",
+          "type": "object",
+          "required": [
+            "text",
+            "type"
+          ],
+          "properties": {
+            "text": {
+              "description": "Short question, at most 4 KiB.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "question"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "An action is waiting for an authorized person; the adapter cannot approve it.",
+          "type": "object",
+          "required": [
+            "summary",
+            "type"
+          ],
+          "properties": {
+            "summary": {
+              "description": "Short action description, at most 4 KiB.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "approval_request"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Usage reported by the official CLI; no billing credentials.",
+          "type": "object",
+          "required": [
+            "input_tokens",
+            "output_tokens",
+            "type"
+          ],
+          "properties": {
+            "input_tokens": {
+              "description": "Input tokens reported for the completed turn.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "output_tokens": {
+              "description": "Output tokens reported for the completed turn.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "usage"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Safe adapter failure; raw CLI diagnostics are never forwarded.",
+          "type": "object",
+          "required": [
+            "billing",
+            "class",
+            "code",
+            "message",
+            "type"
+          ],
+          "properties": {
+            "billing": {
+              "description": "Billing route from the official CLI status, without login details.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ProviderBilling"
+                }
+              ]
+            },
+            "class": {
+              "description": "Stable class; auth/refusal/unknown failures are never retried.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ProviderFailureClass"
+                }
+              ]
+            },
+            "code": {
+              "description": "Stable category, at most 128 bytes.",
+              "type": "string"
+            },
+            "message": {
+              "description": "Fixed human-readable description, at most 512 bytes.",
+              "type": "string"
+            },
+            "reset_at_ms": {
+              "description": "Reported subscription reset in Unix milliseconds; absent if unknown.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "error"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Final turn event, always after any error.",
+          "type": "object",
+          "required": [
+            "outcome",
+            "type"
+          ],
+          "properties": {
+            "outcome": {
+              "description": "`done`, `failed`, `cancelled` or `outcome_unknown`.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "done"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProviderFailureClass": {
+      "description": "Provider-declared failure category; only transient and usage-limit failures with no pending tool effect may be retried automatically.",
+      "oneOf": [
+        {
+          "description": "Provider service or its connection is temporarily unavailable.",
+          "type": "string",
+          "enum": [
+            "transient"
+          ]
+        },
+        {
+          "description": "Provider usage limit; a reported reset can schedule subscription resumption.",
+          "type": "string",
+          "enum": [
+            "usage_limit"
+          ]
+        },
+        {
+          "description": "Sign-in is missing or expired; a person must use the official login flow.",
+          "type": "string",
+          "enum": [
+            "authentication"
+          ]
+        },
+        {
+          "description": "Provider declined the request; retrying would not change its authority.",
+          "type": "string",
+          "enum": [
+            "refusal"
+          ]
+        },
+        {
+          "description": "Invalid model, request or billing configuration.",
+          "type": "string",
+          "enum": [
+            "permanent"
+          ]
+        },
+        {
+          "description": "Adapter crash or unclassified outcome; never automatically repeated.",
+          "type": "string",
+          "enum": [
+            "unknown"
+          ]
+        }
+      ]
+    }
+  }
+}

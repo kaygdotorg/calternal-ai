@@ -565,3 +565,8 @@ export { WorkerHandlerV2 } from "./worker-v2.js";
 
 /** Worker v2: WorkerRuntimeV2; bounded transport and host-authorized effects. */
 export { WorkerRuntimeV2 } from "./worker-v2.js";
+
+/** Provider-neutral stdio adapter protocol; Rust is the authoritative type source. */
+export type { ProviderContext, ProviderCommand, ProviderRequest, ProviderEvent, ProviderEventKind } from '@calternal/contracts';
+/** Stable provider failure and billing categories for durable retry decisions. */
+export type { ProviderFailureClass, ProviderBilling } from '@calternal/contracts';
