@@ -11,6 +11,14 @@
   // Each note's menu (the "…" button and a right-click): Rename in place, Move to Trash (with Undo).
   let ctx = $state<{ x: number; y: number; note: (typeof notes.list)[number] } | null>(null);
   let allTags = $state(false);
+  // Find a note by the start of its title (the space's title index, one request per pause): the list holds only the newest page, and this reaches every note.
+  let q = $state(""), hits = $state<{ id: string; title: string }[] | null>(null);
+  $effect(() => {
+    const text = q.trim(), space = notes.space?.id;
+    if (!text || !space) { hits = null; return; }
+    const h = setTimeout(() => void notes.client.lookupNotes(space, text).then((r) => (hits = r), () => (hits = [])), 150);
+    return () => clearTimeout(h);
+  });
   let renaming = $state<string | null>(null), draft = $state("");
   const items: MenuItem[] = [{ id: "rename", label: "Rename" }, { id: "trash", label: "Move to Trash", danger: true }];
   const menuAt = (e: MouseEvent, note: (typeof notes.list)[number], el?: HTMLElement) => { e.preventDefault(); e.stopPropagation(); const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? e.clientX, y: r?.bottom ?? e.clientY, note }; };
@@ -32,6 +40,10 @@
     {#if notes.tags.length > 12}<button type="button" class="tg" onclick={() => (allTags = !allTags)}>{allTags ? "Fewer tags" : `${notes.tags.length - 12} more…`}</button>{/if}
     </div>
   {/if}
+  <input class="find" type="search" aria-label="Find a note by title" placeholder="Find a note" bind:value={q} autocomplete="off" />
+  {#if hits}
+    <ul>{#each hits as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">No note starts with “{q.trim()}”.</li>{/each}</ul>
+  {:else}
   <ul>{#each notes.list as n (n.id)}<li oncontextmenu={(e) => menuAt(e, n)}>
     {#if renaming === n.id}
       <input class="ren" aria-label="Note title" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") commit(n); else if (e.key === "Escape") renaming = null; }} onblur={() => commit(n)} use:focusNow />
@@ -39,7 +51,8 @@
       <Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id}>{#snippet trailing()}<IconButton icon="more" label="Actions for {n.title}" onclick={(e) => menuAt(e, n, e.currentTarget as HTMLElement)} />{/snippet}</Row>
     {/if}
   </li>{:else}<li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li>{/each}</ul>
-  {#if notes.list.length >= 100}<p class="cap">Showing the newest 100. Use a tag, or search with Cmd-K, to find the others.</p>{/if}
+  {/if}
+  {#if notes.list.length >= 100}<p class="cap">Showing the newest 100. Use a tag, or the search above, to find the others.</p>{/if}
   <button type="button" class="new" onclick={create}>New note</button>
   <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
   {#if notes.waiting.length}
@@ -68,6 +81,7 @@
   .tg[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: var(--strong-weight); }
   .ct { color: var(--ink-3); }
   .trash { display: flex; align-items: center; }
+  .find { margin: 0 var(--s-5) var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink); font-size: var(--text-label); }
   .cap { padding: var(--s-2) var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   .wait { display: grid; gap: var(--s-1); margin-top: var(--s-4); }

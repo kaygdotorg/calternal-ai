@@ -6,18 +6,29 @@
   import * as people from "../../server/people";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
+  import { reach } from "./reach";
   import "./panel.css";
   let g = $state<people.SpaceGrants>({ members: [], groups: [] }), me = $state(""), error = $state(""), busy = $state(false), loaded = $state(false);
   let adding = $state<"person" | "group" | null>(null), pool = $state<{ id: string; name: string }[]>([]), role = $state<people.GrantRole>("editor"), find = $state("");
   const space = $derived(spaces.current.id);
-  let shown_n = $state(50);
   const mine = $derived(g.members.find((m) => m.account_id === me)?.role);
   const canManage = $derived(mine === "owner" || mine === "manager");
   const ROLES = [{ id: "reader", label: "Reader" }, { id: "editor", label: "Editor" }, { id: "manager", label: "Manager" }];
   const label = (r: string) => r[0]!.toUpperCase() + r.slice(1);
+  // The first page, then the next as the person scrolls toward the end (a server page is 50).
+  let pg = $state<people.Pager<people.Member> | null>(null), loading = false;
   async function load() {
-    try { [g, me] = await Promise.all([people.grants(space), account.me().then((m) => m.user.id)]); error = ""; loaded = true; }
-    catch (e) { error = say(e, "load the members"); }
+    try {
+      const fresh = people.memberPager(space, (groups) => (g.groups = groups));
+      const [first, who] = await Promise.all([fresh.next(), account.me().then((m) => m.user.id)]);
+      g.members = first; me = who; pg = fresh; error = ""; loaded = true;
+    } catch (e) { error = say(e, "load the members"); }
+  }
+  async function more() {
+    if (!pg || pg.done || loading) return;
+    loading = true;
+    try { g.members = [...g.members, ...(await pg.next())]; } catch (e) { error = say(e, "load more people"); }
+    loading = false;
   }
   async function act(f: () => Promise<unknown>) { busy = true; error = ""; try { await f(); } catch (e) { error = say(e); } await load(); busy = false; }
   async function open(kind: "person" | "group") {
@@ -33,7 +44,7 @@
 </script>
 
 <div class="sp">
-  {#each g.members.slice(0, shown_n) as m (m.account_id)}
+  {#each g.members as m (m.account_id)}
     <div class="r" class:col={canManage && m.role !== "owner" && m.account_id !== me} data-setting="space.member.{m.account_id}">
       <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{label(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}
@@ -45,7 +56,7 @@
       {/if}
     </div>
   {/each}
-  {#if g.members.length > shown_n}<div class="r"><span class="h">Showing {shown_n} of {g.members.length} people.</span><Button text="Show {Math.min(50, g.members.length - shown_n)} more" variant="quiet" onclick={() => (shown_n += 50)} /></div>{/if}
+  {#if pg && !pg.done}<div class="r" use:reach={() => void more()}><span class="h">Loading more people…</span></div>{/if}
   {#if g.groups.length}<h2>Groups</h2>{/if}
   {#each g.groups as x (x.group_id)}
     <div class="r" data-setting="space.group.{x.group_id}"><span class="n"><span class="t">{x.name}</span><span class="h">{label(x.role)} · {x.member_count} {x.member_count === 1 ? "person" : "people"}</span></span></div>
