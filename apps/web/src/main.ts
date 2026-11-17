@@ -19,3 +19,6 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
   mount(App, { target: document.getElementById("app")! });
   document.documentElement.dataset.ready = "";
 });
+
+// In-page benchmark for browsers that cannot be driven from outside (docs/ui-performance.md): loaded only with ?bench=1.
+if (new URLSearchParams(location.search).has("bench")) void document.fonts.ready.then(() => setTimeout(() => import("./bench"), 1500));

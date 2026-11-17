@@ -144,3 +144,18 @@ What changed: the field grows with `field-sizing: content` where supported (no `
 | Bundle | the editor is a lazy chunk, **90.8 KB brotli**, loaded when a note opens; the first-paint chunk is unchanged (105 KB brotli in total) |
 
 What is not measured yet: typing inside a table cell and a 1,000-item nested list (tables are deferred; the long note has nested lists), and the Safari/WebKit target (p50 50 ms in the existing app); both belong with stage 3.
+
+## WebKit: iOS Simulator Safari (2026-11-17)
+
+Run with the in-page benchmark (`?bench=1&firstrun=0&test=1` on `/notes/n-1`, `src/bench.ts`, loaded only with that parameter), because Safari cannot be driven from outside. Typing goes through `execCommand("insertText")` on the focused field, the browser's own text-input path. Device: a fresh iPhone 18 Pro simulator, iOS 27.0, Safari, 402x714 viewport at 3x, on the Mac Studio (created for the run and deleted after). The Simulator runs on the host CPU, so these are faster than a phone: they show that nothing is slow in WebKit's layout or paint, not what a phone will measure. WebKit has no CPU throttle.
+
+| Scenario | Result | Target |
+| --- | --- | --- |
+| Type in the long note (56 keys), key to next frame | p50 9 ms, p95 10 ms, worst 13 ms | WebKit typing p50 50 ms: met |
+| Same, script work only | p50 8 ms, p95 9 ms, worst 10 ms | |
+| Type in the composer (56 keys), key to next frame | p50 2 ms, p95 6 ms, worst 30 ms | composer p95 8 ms: met here |
+| Open the long note, warm (5 runs) | p50 32 ms, p95 47 ms, worst 49 ms (a first run showed 111 ms once) | open p95 15 ms is the Chromium 4x desktop budget; no WebKit target set |
+| Open a short note | 32 to 57 ms | |
+| Scroll the long note (200 frames, 800 px steps) | p50 17 ms, p95 18 ms, worst 29 ms, 0 frames over 50 ms | p95 frame 50 ms: met |
+
+Nothing breaches, so nothing was changed for WebKit. Playwright's WebKit does not run on the dev VMs: the build downloads, but the host lacks GTK 4, GStreamer and Pango libraries, and installing them needs root, which this lane does not use. The screenshot of the run is attached to issue #15. For a device number, run the same URL on a real phone.
