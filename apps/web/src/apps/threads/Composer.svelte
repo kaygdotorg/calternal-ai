@@ -143,20 +143,20 @@
       <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
       </Pill>
-      <Menu open={menuOpen} {items} search label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
+      <Menu open={menuOpen} {items} search morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
     </span>
     <span class="chip permc">
       <Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>
         <span class="perm">{permissionLabel(thread.permission)}</span>
       </Pill>
-      <Menu open={permOpen} items={permItems} label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
+      <Menu open={permOpen} items={permItems} morph label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
     </span>
     <span class="chip where">
       <Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel glass={false} aria-haspopup="dialog" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => (whereOpen = !whereOpen)}>
         <span class="rl">{thread.runsOn.machine} · {thread.runsOn.mode === "sandboxed" ? "Sandboxed" : "Direct"}</span><span class="rm">{thread.runsOn.machine}</span><span class="mode"><Icon inline name={thread.runsOn.mode === "sandboxed" ? "shield" : "folder"} /></span>
       </Pill>
       {#if !sheet}
-        <Popover open={whereOpen} anchor={whereTrigger} label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
+        <Popover open={whereOpen} anchor={whereTrigger} morph label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Popover>
       {/if}
     </span>
   </div>

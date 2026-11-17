@@ -32,8 +32,9 @@
     trigger,
     anchor,
     search = false,
+    morph = false,
     placement = "top",
-  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; placement?: "top" | "bottom" } = $props();
+  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; morph?: boolean; placement?: "top" | "bottom" } = $props();
   let q = $state("");
   let list = $state<HTMLElement>();
   const radio = $derived(items.some((i) => i.checked !== undefined));
@@ -84,7 +85,7 @@
 {#if currentForm() === "touch"}
   <Sheet {open} {label} onclose={onclose}><div class="sh" role="menu" aria-label={label}>{@render content()}</div></Sheet>
 {:else}
-  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {trigger} onclose={onclose}>{@render content()}</Popover>
+  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>
 {/if}
 
 <style>

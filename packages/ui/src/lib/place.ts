@@ -12,15 +12,20 @@ export interface PlaceOptions {
   prefer?: "top" | "bottom";
   gap?: number;
   margin?: number;
+  /** The surface covers its anchor instead of sitting beside it: its near edge lines up with the anchor's (bottom edge when it grows upward, top edge when downward) and it is at least as wide, so a popover that morphs out of a button starts inside the button's own box. */
+  cover?: boolean;
 }
 
 /** Positions `el` (already `position: fixed`) against `anchor`. Returns the side it ended up on. */
-export function place(el: HTMLElement, anchor: Anchor, { prefer = "bottom", gap = 6, margin = 8 }: PlaceOptions = {}): "top" | "bottom" {
+export function place(el: HTMLElement, anchor: Anchor, { prefer = "bottom", gap = 6, margin = 8, cover = false }: PlaceOptions = {}): "top" | "bottom" {
   const a = anchor instanceof Element ? anchor.getBoundingClientRect() : anchor;
   el.style.maxHeight = "";
+  if (cover) el.style.minWidth = `${a.right - a.left}px`;
   const r = el.getBoundingClientRect();
-  const above = a.top - margin - gap;
-  const below = innerHeight - a.bottom - margin - gap;
+  // Covering, the surface grows from the anchor's own edge, so there is no gap and the room is measured from that edge.
+  const g = cover ? 0 : gap;
+  const above = (cover ? a.bottom : a.top) - margin - g;
+  const below = innerHeight - (cover ? a.top : a.bottom) - margin - g;
   let side = prefer;
   if (side === "top" && r.height > above && below > above) side = "bottom";
   else if (side === "bottom" && r.height > below && above > below) side = "top";
@@ -30,7 +35,7 @@ export function place(el: HTMLElement, anchor: Anchor, { prefer = "bottom", gap 
   el.style.overflowY = "auto";
   const left = Math.min(Math.max(a.left, margin), Math.max(margin, innerWidth - margin - r.width));
   el.style.left = `${left}px`;
-  el.style.top = `${side === "top" ? a.top - gap - h : a.bottom + gap}px`;
+  el.style.top = `${cover ? (side === "top" ? a.bottom - h : a.top) : side === "top" ? a.top - gap - h : a.bottom + gap}px`;
   el.style.setProperty("--origin", `${side === "top" ? "bottom" : "top"} ${a.left < left + r.width / 2 ? "left" : "right"}`);
   return side;
 }

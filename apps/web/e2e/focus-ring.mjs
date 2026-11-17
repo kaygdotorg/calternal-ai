@@ -14,14 +14,10 @@ for (const [name, kind] of chips) {
   await chip.click();
   await page.waitForTimeout(500);
   ok(`mouse click on the ${name} chip draws no ring (open)`, (await rings()).length === 0, (await rings()).join("; "));
-  // close by clicking the chip again, then by pressing outside
-  await chip.click();
-  await page.waitForTimeout(500);
-  ok(`... and after the chip closes it again`, (await rings()).length === 0, (await rings()).join("; "));
-  await chip.click(); await page.waitForTimeout(400);
+  // close by pressing outside (the popover covers its chip, so the chip itself is not a target while it is open)
   await page.mouse.click(700, 120);
   await page.waitForTimeout(500);
-  ok(`... and after a press outside closes it`, (await rings()).length === 0, (await rings()).join("; "));
+  ok(`... and after it closes`, (await rings()).length === 0, (await rings()).join("; "));
 }
 // Pick a row of a menu with the mouse.
 await page.locator(".composer .chips .pill").nth(1).click();
@@ -45,7 +41,8 @@ for (let i = 0; i < 60; i++) {
 }
 console.log(seen.filter((s, i) => seen.findIndex((t) => t.name === s.name) === i).map((s) => `    ${s.ring ? "ring" : "none"} r=${s.radius} ${s.name}`).join("\n"));
 const drawn = seen.filter((s) => s.ring);
-ok("Tab draws a ring on every control it reaches", drawn.length === seen.length, `${drawn.length} of ${seen.length}`);
+const missing = seen.filter((s) => !s.ring && s.name !== "body.").map((s) => s.name);
+ok("Tab draws a ring on every control it reaches", missing.length === 0, missing.join(", "));
 const square = drawn.filter((s) => s.radius === 0 && s.w > 0).map((s) => s.name);
 ok("every ring has a rounded corner (own radius, never the parent's)", square.length === 0, [...new Set(square)].join(", "));
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);

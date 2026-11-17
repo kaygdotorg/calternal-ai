@@ -182,6 +182,22 @@ The existing app's press, as plain CSS on each control (`Pill`, `IconButton`, `B
 `--dur-fast` on `--ease-out`, transform only. There is no rebound past 1 (owner, 2026-11-18: the overshoot was too much; the existing app has none). A keyboard activation never
 moves it (key modality makes every transition 0 s) and reduced motion keeps only the scale.
 
+## Popover morph
+
+`Popover` and `Menu` take `morph` (the composer's three chips use it): with a pointer or touch driving and motion not reduced, the popover covers its button (`place(..., { cover: true })`:
+left and bottom edges aligned, at least as wide) and grows out of the button's own shape, and shrinks back into it, as Apple's ⋯ menus do. Ported from the calternal-ui plugin
+(`frame/clip-morph.ts`, fitted from iOS 27): `lib/clip-morph.ts`. Open: a damped spring (response 330 ms, damping 0.74, settled 480 ms), a capsule until 75 % grown then the menu's radius, a 2 to 4 %
+overshoot as a scale about the button's corner, rows blurred 10 px to 0 and fading in between 75 % and 95 %. Close: rows out in 70 ms, the glass back into the button over 250 ms on
+cubic-bezier(0.2, 0, 0.5, 1), the button returns at 160 ms with a small swell. These are the fitted values, not motion tokens. The clip is on the glass layer and on the words, never on an ancestor of the
+glass (that would make a backdrop root and the blur would pop in at the end). Driven by a requestAnimationFrame loop, first frame painted synchronously. Interruptible: a reversal continues from the
+progress reached. Keyboard use and reduced motion place the popover beside the button and fade it (nothing moves). Proof: `e2e/morph.mjs`. Headless Chromium does not draw backdrop-filter, so the blur
+and the look of the morph are judged on a real GPU (the Mac).
+
+## Focus ring
+
+Keyboard only (`data-input="key"`), 2 px, inside the control, following the control's own radius (the rule sets no `border-radius`). A host that holds a text field draws the ring itself (`data-ring-host`,
+`--ring-offset`). A modifier on its own and a Meta or Control chord with a character (a screenshot shortcut) are not the keyboard. Proof: `e2e/focus-ring.mjs`.
+
 ## Motion, per transition (measured on the dev VM, p50 / p90 / p98 ms to reach the end value)
 
 | Transition | Duration and curve | p50 / p90 / p98 |
