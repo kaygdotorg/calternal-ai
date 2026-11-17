@@ -68,8 +68,10 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   human-readable Views file with a `## Name` section per view and `key: value` lines
   (including the view's `id`); unknown keys are kept. Skills and automations live hidden
   under `.calternal/`.
-- Automation schedules use systemd timer calendar expressions (`OnCalendar=`) with an IANA
-  time zone, for example `Mon *-*-* 09:00:00 Asia/Kolkata`.
+- An automation is a Markdown file under `.calternal/automations/`: frontmatter holds its
+  id, `schedule` (a systemd timer calendar expression, for example `Mon *-*-* 09:00:00`),
+  `timezone` (IANA) and agent settings; the body is the prompt. The app shows the schedule
+  in plain words.
 
 ## Open
 
