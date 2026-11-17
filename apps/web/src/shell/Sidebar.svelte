@@ -2,7 +2,7 @@
   // The left region. Not a card: it sits on the wallpaper. A wordmark at the top (the person's own name for the product, in a cursive face, both set in
   // Settings; no icon) with the sidebar button at the other end; the attention card and the app's own body scroll as one column that fades out under
   // the wordmark row and the footer (no opaque band); the footer holds the account picture, the app switcher and search. Switching apps happens here.
-  import { IconButton, Menu, Pill, type MenuItem } from "@calternal/ui";
+  import { Menu, Pill, type MenuItem } from "@calternal/ui";
   import { appearance } from "../appearance/prefs.svelte";
   import { APPS, type AppDef } from "../apps/registry";
   import { navigate } from "../lib/route.svelte";
@@ -24,7 +24,7 @@
 <div class="side">
   <header>
     <p class="mark">{appearance.prefs.brand}</p>
-    {#if !shell.narrow}<IconButton icon="sidebar" label="Hide the sidebar" onclick={() => shell.toggleSidebar()} />{/if}
+    {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" onclick={() => shell.toggleSidebar()} />{/if}
   </header>
 
   <div class="scroll edge-fade">
@@ -38,7 +38,7 @@
       <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
       <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
     </span>{:else}<span class="switch"></span>{/if}
-    <IconButton icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
+    <Pill icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
   </footer>
 </div>
 

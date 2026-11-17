@@ -40,3 +40,9 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 /* Content fades out under a floating bar, progressively along an eased curve (extra stops, no visible edge, no opaque strip): set --fade-t and --fade-b
    (the heights of the bars over the top and bottom edges) on a scroller and give it this class. Used by the message list and both sidebars. */
 .edge-fade { mask-image: linear-gradient(to bottom, transparent 0, rgb(0 0 0 / 0.06) calc(var(--fade-t, 0px) * 0.45), rgb(0 0 0 / 0.28) calc(var(--fade-t, 0px) * 0.68), rgb(0 0 0 / 0.68) calc(var(--fade-t, 0px) * 0.86), #000 var(--fade-t, 0px), #000 calc(100% - var(--fade-b, 0px)), rgb(0 0 0 / 0.68) calc(100% - var(--fade-b, 0px) * 0.86), rgb(0 0 0 / 0.28) calc(100% - var(--fade-b, 0px) * 0.68), rgb(0 0 0 / 0.06) calc(100% - var(--fade-b, 0px) * 0.45), transparent 100%); }
+
+/* The one calm pulse for things that are running: opacity eases between full and a little under half, over --dur-pulse. Paused under reduced motion (the
+   duration token becomes 1 ms there) and still in keyboard mode. */
+@keyframes pulse { 50% { opacity: 0.5; } }
+.pulse { animation: pulse var(--dur-pulse) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }

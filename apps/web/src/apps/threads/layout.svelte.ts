@@ -20,6 +20,9 @@ export type Container = string | null;
 interface Stored {
   sections: Section[];
   loose: string[];
+  /** The name and folded state of the section that holds threads in no section of their own ("Threads" until renamed). */
+  looseName?: string;
+  looseCollapsed?: boolean;
 }
 
 const KEY = "cal.threads.layout";
@@ -38,10 +41,13 @@ class Layout {
   sections = $state<Section[]>(read().sections);
   /** Order of the unlabelled list; threads not mentioned are appended by recency. */
   loose = $state<string[]>(read().loose);
+  /** The unlabelled list is a section too: it sits first, named "Threads" until renamed, and folds like the others. */
+  looseName = $state<string>(read().looseName || "Threads");
+  looseCollapsed = $state<boolean>(!!read().looseCollapsed);
 
   private save(): void {
     try {
-      localStorage.setItem(KEY, JSON.stringify({ sections: this.sections, loose: this.loose } satisfies Stored));
+      localStorage.setItem(KEY, JSON.stringify({ sections: this.sections, loose: this.loose, looseName: this.looseName, looseCollapsed: this.looseCollapsed } satisfies Stored));
     } catch {
       /* private mode */
     }
@@ -74,6 +80,16 @@ class Layout {
   rename(id: string, name: string): void {
     const s = this.sections.find((x) => x.id === id);
     if (s && name.trim()) s.name = name.trim();
+    this.save();
+  }
+  /** Renames the section of threads that are in no section of their own. */
+  renameLoose(name: string): void {
+    if (name.trim()) this.looseName = name.trim();
+    this.save();
+  }
+  /** Folds or unfolds that section. */
+  toggleLoose(): void {
+    this.looseCollapsed = !this.looseCollapsed;
     this.save();
   }
   /** Collapses or expands a section. */

@@ -17,7 +17,8 @@
     const head = APPS.slice(0, MAX - 1);
     return head.some((a) => a.kind === app.kind) ? head : [...head.slice(0, MAX - 2), app];
   });
-  const items = $derived([...shown.map((a) => ({ id: a.kind, label: a.name, icon: a.icon })), ...(overflow ? [{ id: "__more", label: "More apps", icon: "more" as const }] : [])]);
+  // Labels only, no icons: the capsule is a row of words on the pill's own glass.
+  const items = $derived([...shown.map((a) => ({ id: a.kind, label: a.name })), ...(overflow ? [{ id: "__more", label: "More" }] : [])]);
   const all = $derived<MenuItem[]>(APPS.map((a) => ({ id: a.kind, label: a.name, icon: a.icon, checked: a.kind === app.kind })));
   function change(id: string) {
     if (id === "__more") { sel = app.kind; menu = true; return; }
@@ -26,7 +27,7 @@
 </script>
 
 <div class="switcher" bind:this={box}>
-  <Capsule label="Apps" morph={items.length > 2} items={items} bind:value={sel} onchange={change} />
+  <Capsule label="Apps" items={items} bind:value={sel} onchange={change} />
   {#if overflow}<Menu open={menu} items={all} label="All apps" trigger={box} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />{/if}
 </div>
 

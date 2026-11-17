@@ -29,4 +29,10 @@ try {
   await shot("selection-actions", "desktop", "light", "/threads/t-idle", async (p) => { const m = p.locator(".selectable").first(); await m.dblclick(); await p.waitForTimeout(300); });
   await shot("phone-machine-sheet", "phone", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: /Sandboxed/ }).click(); });
   await shot("phone-sidebar", "phone", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Show threads" }).click(); });
+  await shot("switcher-card", "desktop", "light", "/threads/t-run?switcher=card");
+  await shot("switcher-card-dark", "desktop", "dark", "/threads/t-run?switcher=card");
+  await shot("message-actions-hover", "desktop", "light", "/threads/t-idle", async (p) => { await p.locator(".msg.agent").nth(1).hover(); await p.waitForTimeout(300); await p.locator(".msg.agent").nth(1).getByRole("button", { name: "Reply in side chat" }).hover(); await p.waitForTimeout(700); });
+  await shot("settings-app", "desktop", "light", "/settings");
+  await shot("settings-appearance-sheet", "desktop", "light", "/settings/appearance");
+  await shot("children-bar", "desktop", "light", "/threads/t-run", async (p) => { await p.locator(".kids").hover(); await p.waitForTimeout(500); });
 } finally { await browser.close(); stop(); }

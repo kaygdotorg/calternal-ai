@@ -13,7 +13,7 @@ try {
       const { page, ctx } = await open(browser, device, scheme, path);
       const r = await page.evaluate((isPhone) => {
         const root = getComputedStyle(document.documentElement);
-        const scale = ["--s-1", "--s-2", "--s-3", "--s-4", "--s-5", "--s-6", "--s-7", "--s-8", "--s-9", "--s-10"].map((n) => parseFloat(root.getPropertyValue(n)));
+        const scale = ["--s-1", "--s-2", "--s-3", "--s-4", "--s-5", "--s-6", "--s-7", "--s-8", "--s-9", "--s-10"].map((n) => { const e = document.createElement("div"); e.style.cssText = `position:absolute;visibility:hidden;width:var(${n})`; document.body.append(e); const w = e.getBoundingClientRect().width; e.remove(); return w; }); // tokens are calc(Npx * var(--ui-scale)), so the browser resolves them
         const out = { fonts: [], sizes: {}, weights: [], spacing: {}, small: [], scale, icons: {} };
         for (const v of document.querySelectorAll("svg[data-icon]")) { const r = v.getBoundingClientRect(); if (!r.width) continue; const sw = parseFloat(getComputedStyle(v).strokeWidth) * r.width / 24; const k = `${Math.round(r.width)}px / ${sw.toFixed(1)}px line`; out.icons[k] = (out.icons[k] ?? 0) + 1; }
         const px = (v) => (v.endsWith("px") ? parseFloat(v) : NaN);

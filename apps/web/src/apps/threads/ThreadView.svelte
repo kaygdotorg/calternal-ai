@@ -12,6 +12,7 @@
   import SelectionActions from "./SelectionActions.svelte";
   import StreamRow from "./StreamRow.svelte";
   import StateMark from "./StateMark.svelte";
+  import ActiveChildren from "./ActiveChildren.svelte";
   import Composer from "./Composer.svelte";
   import MessageRow from "./MessageRow.svelte";
   import RequestBar from "./RequestBar.svelte";
@@ -107,6 +108,7 @@
     <div class="bottom" bind:this={bottomEl}>
       <div class="inner">
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a)} />
+        <ActiveChildren {id} />
         <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID())} onstop={() => client.stop(id)} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>

@@ -18,12 +18,14 @@
   const byId = $derived(new Map(shown.map((t) => [t.id, t])));
   const top = $derived(shown.filter((t) => !t.parentId || !byId.has(t.parentId)).sort((a, b) => b.updatedAt - a.updatedAt).map((t) => t.id));
   const idsIn = (c: Container) => layout.idsOf(c, top);
+  const ids0 = $derived(idsIn(null));
   const kids = (id: string) => shown.filter((t) => t.parentId === id).sort((a, b) => b.updatedAt - a.updatedAt);
   const containers = $derived<Container[]>([null, ...layout.sections.map((s) => s.id)]);
-  const nameOf = (c: Container) => (c === null ? "no section" : layout.sections.find((s) => s.id === c)?.name ?? "section");
+  const nameOf = (c: Container) => (c === null ? layout.looseName : layout.sections.find((s) => s.id === c)?.name ?? "section");
 
   // ---- renaming in place ----
   let editing = $state<{ kind: "thread" | "section"; id: string } | null>(null);
+  const LOOSE = "__loose__";
   let draft = $state("");
   const edit = (kind: "thread" | "section", id: string, text: string) => { editing = { kind, id }; draft = text; };
   function commit() {
@@ -31,6 +33,7 @@
     const { kind, id } = editing;
     editing = null;
     if (kind === "thread") void client.rename(id, draft);
+    else if (id === LOOSE) layout.renameLoose(draft);
     else layout.rename(id, draft);
   }
 
@@ -40,15 +43,21 @@
     ctx?.thread
       ? [
           { id: "rename", label: "Rename" },
-          ...containers.filter((c) => c !== layout.containerOf(ctx!.thread!.id)).map((c) => ({ id: `move:${c ?? ""}`, label: `Move to ${c === null ? "no section" : nameOf(c)}` })),
+          ...containers.filter((c) => c !== layout.containerOf(ctx!.thread!.id)).map((c) => ({ id: `move:${c ?? ""}`, label: `Move to ${nameOf(c)}` })),
           { id: "copy", label: "Copy link" },
           ...(ctx.thread.state === "running" ? [{ id: "stop", label: "Stop" }] : []),
           { id: "archive", label: "Archive", danger: true },
         ]
       : ctx?.section
-        ? [{ id: "srename", label: "Rename section" }, { id: "up", label: "Move up" }, { id: "down", label: "Move down" }, { id: "delete", label: "Delete section", danger: true }]
-        : [],
+        ? ctx.section === LOOSE
+        ? [{ id: "srename", label: "Rename section" }]
+        : [{ id: "srename", label: "Rename section" }, { id: "up", label: "Move up" }, { id: "down", label: "Move down" }, { id: "delete", label: "Delete section", danger: true }]
+      : [],
   );
+  function archive(t: ThreadSummary) {
+    void client.archive(t.id).then(() => undoable("thread.archive", t.id, "Archived", () => client.unarchive(t.id)));
+    if (current === t.id) navigate("/threads");
+  }
   function pick(id: string) {
     const c = ctx;
     ctx = null;
@@ -59,8 +68,9 @@
       else if (id.startsWith("move:")) { const to = id.slice(5) || null; layout.move(t.id, to, idsIn(to).length, idsIn(to)); }
       else if (id === "copy") void navigator.clipboard?.writeText(location.origin + href(`/threads/${t.id}`));
       else if (id === "stop") void client.stop(t.id);
-      else if (id === "archive") { void client.archive(t.id).then(() => undoable("thread.archive", t.id, "Archived", () => client.unarchive(t.id))); if (current === t.id) navigate("/threads"); }
+      else if (id === "archive") archive(t);
     } else if (c.section) {
+      if (c.section === LOOSE) { if (id === "srename") edit("section", LOOSE, layout.looseName); return; }
       const s = layout.sections.find((x) => x.id === c.section);
       if (!s) return;
       if (id === "srename") edit("section", s.id, s.name);
@@ -127,8 +137,9 @@
       onkeydown={(e) => keyRow(e, t, c, i, n)}
     >
       <Row title={t.title} href={href(`/threads/${t.id}`)} selected={current === t.id}>
-        {#snippet trailing()}<span class="tail"><span class="when">{time(t.updatedAt)}</span><StateMark state={t.state} /><Icon inline name={t.provider} /></span>{/snippet}
+        {#snippet trailing()}<span class="tail"><span class="when">{time(t.updatedAt)}</span><StateMark state={t.state} /><span class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span></span>{/snippet}
       </Row>
+      <span class="ra"><IconButton small icon="archive" label="Archive" onclick={() => archive(t)} /></span>
       {#each kids(t.id) as k (k.id)}
         <Row depth={1} title={k.title} href={href(`/threads/${k.id}`)} selected={current === k.id} onclick={() => {}}>
         {#snippet trailing()}<span class="tail"><span class="when">{time(k.updatedAt)}</span><StateMark state={k.state} /><Icon inline name={k.provider} /></span>{/snippet}
@@ -146,11 +157,23 @@
 {/snippet}
 
 <nav aria-label="Threads">
-  {@render list(null, idsIn(null))}
+  <div class="sec first" role="group" aria-label={layout.looseName}>
+    <div class="sh" class:over={over?.c === null && !ids0.length} role="presentation" ondragover={(e) => { if (dragId) { e.preventDefault(); over = { c: null, index: ids0.length }; } }} ondrop={(e) => { e.preventDefault(); dropHere(null, ids0.length); }} oncontextmenu={(e) => openCtx(e, { section: LOOSE })}>
+      {#if editing?.kind === "section" && editing.id === LOOSE}
+        <InlineEditor class="rename" label="Rename section" bind:value={draft} autoselect onblur={commit} onsubmit={commit} oncancel={() => (editing = null)} />
+      {:else}
+        <button type="button" class="tg" aria-expanded={!layout.looseCollapsed} onclick={() => layout.toggleLoose()} ondblclick={() => edit("section", LOOSE, layout.looseName)}>
+          <span class="chev" class:open={!layout.looseCollapsed}><Icon inline name="chevron" /></span><span class="nm">{layout.looseName}</span>
+        </button>
+        <IconButton small icon="more" label="Section options: {layout.looseName}" onclick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, section: LOOSE }; }} />
+      {/if}
+    </div>
+    {#if !layout.looseCollapsed}{@render list(null, ids0)}{/if}
+  </div>
 
   {#each layout.sections as s (s.id)}
     {@const ids = idsIn(s.id)}
-    <section class="sec" aria-label={s.name}>
+    <div class="sec" role="group" aria-label={s.name}>
       <div class="sh" class:over={over?.c === s.id && !ids.length} role="presentation" ondragover={(e) => { if (dragId) { e.preventDefault(); over = { c: s.id, index: ids.length }; } }} ondrop={(e) => { e.preventDefault(); dropHere(s.id, ids.length); }} oncontextmenu={(e) => openCtx(e, { section: s.id })}>
         {#if editing?.kind === "section" && editing.id === s.id}
           <InlineEditor class="rename" label="Rename section" bind:value={draft} autoselect onblur={commit} onsubmit={commit} oncancel={() => (editing = null)} />
@@ -158,11 +181,11 @@
           <button type="button" class="tg" aria-expanded={!s.collapsed} onclick={() => layout.toggle(s.id)} ondblclick={() => edit("section", s.id, s.name)}>
             <span class="chev" class:open={!s.collapsed}><Icon inline name="chevron" /></span><span class="nm">{s.name}</span>
           </button>
-          <IconButton icon="more" label="Section options: {s.name}" onclick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, section: s.id }; }} />
+          <IconButton small icon="more" label="Section options: {s.name}" onclick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, section: s.id }; }} />
         {/if}
       </div>
       {#if !s.collapsed}{@render list(s.id, ids)}{/if}
-    </section>
+    </div>
   {/each}
 
   <button type="button" class="new" onclick={newSection}><Icon inline name="plus" /><span>New section</span></button>
@@ -173,6 +196,10 @@
 
 <style>
   .tail { display: inline-flex; align-items: center; gap: var(--s-3); color: var(--ink-3); }
+  .ra { position: absolute; right: var(--s-3); top: calc(var(--row-h) / 2); translate: 0 -50%; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out); }
+  li:hover > .ra, li:focus-within > .ra { opacity: 1; pointer-events: auto; }
+  @media (hover: none) { .ra { display: none; } }
+  li:hover :global(.tail), li:focus-within :global(.tail) { margin-right: var(--ib-small); }
   .when { display: none; font-size: var(--text-label); font-variant-numeric: tabular-nums; }
   :global(.row:hover) .when, :global(.row:focus-visible) .when { display: inline; }
   nav { display: grid; gap: var(--s-1); padding-bottom: var(--s-6); }
