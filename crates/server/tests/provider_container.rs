@@ -1,5 +1,7 @@
 //! Account-free provider proof in the shipped container layout, when its fixture image exists.
 mod machines_common;
+#[path = "../../../tests/support/podman_guard.rs"]
+mod podman_guard;
 use machines_common::*;
 use serde_json::{Value, json};
 use std::{
@@ -9,32 +11,6 @@ use std::{
 };
 use uuid::Uuid;
 
-// Every fixture has a fresh account UUID. Remove only that account's test containers.
-struct Containers(Uuid);
-impl Drop for Containers {
-    fn drop(&mut self) {
-        if let Ok(out) = Command::new("podman")
-            .args([
-                "ps",
-                "-aq",
-                "--filter",
-                &format!("name=calternal-account-{}-thread-", self.0),
-            ])
-            .output()
-        {
-            let ids = String::from_utf8_lossy(&out.stdout);
-            if !ids.trim().is_empty() {
-                let _ = Command::new("podman")
-                    .args(["rm", "-f", "--ignore"])
-                    .args(ids.split_whitespace())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-        }
-    }
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     let Ok(image) = std::env::var("CALTERNAL_TEST_PROVIDER_IMAGE") else {
@@ -42,7 +18,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
         return;
     };
     let data = TempDir::new("provider-container-data");
-    let server = Server::start_with_standard_timing(
+    let mut server = Server::start_with_standard_timing(
         &data.0,
         free_port(),
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),
@@ -50,14 +26,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     let mdir = TempDir::new("provider-container-machine");
     let code = server.code(&server.owner).await;
     assert_eq!(enrol(&server.url(), &code, &mdir.0), 0);
-    let calternal_machine::protocol::Owner::Account { id: account } =
-        calternal_machine::identity::Credentials::load(&mdir.0)
-            .unwrap()
-            .owner
-    else {
-        panic!("account machine")
-    };
-    let _containers = Containers(account.as_uuid());
+    let _containers = podman_guard::PodmanGuard::new(mdir.0.join("sandboxes"));
     let _machine = Proc(
         Command::new(BIN)
             .args([
@@ -77,6 +46,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     );
     wait_online(&server, &server.owner, 1).await;
     let space = server.owned_space(&server.owner).await;
+    let account = Uuid::parse_str(&server.principal(&server.owner).await.0).unwrap();
     let thread = Uuid::new_v4();
     let mut command = tokio::process::Command::new(BIN);
     command.kill_on_drop(true);
@@ -118,6 +88,9 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     assert!(frames.iter().any(|v| v["event"]["type"] == "tool_finished"));
     let job = &frames.last().unwrap()["job"];
     assert_eq!(job["state"], "done");
+    wait_container_removed(account, thread, Duration::from_secs(20)).await;
+    let root = mdir.join(&format!("sandboxes/accounts/{account}"));
+    assert!(root.join("threads").join(thread.to_string()).exists());
     let id = job["id"].as_str().unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     loop {
@@ -130,7 +103,37 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
         assert!(std::time::Instant::now() < deadline);
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let root = mdir.join(&format!("sandboxes/accounts/{account}"));
     assert!(!root.join("threads").join(thread.to_string()).exists());
     assert!(root.join("home").exists());
+
+    let live_thread = Uuid::new_v4();
+    let run = server.request_run(&server.owner, &space, live_thread).await;
+    let lease = run["lease_id"].as_str().unwrap();
+    server
+        .wait_run(&server.owner, lease, Duration::from_secs(20), |v| {
+            v["state"] == "running"
+        })
+        .await;
+    let exec = server
+        .exec(
+            &server.owner,
+            lease,
+            &["sh", "-c", "echo retained > marker"],
+        )
+        .await;
+    server
+        .output(&server.owner, &exec, Duration::from_secs(20))
+        .await;
+    server.proc.signal("-TERM");
+    wait_container_removed(account, live_thread, Duration::from_secs(20)).await;
+    assert_eq!(
+        std::fs::read_to_string(
+            root.join("threads")
+                .join(live_thread.to_string())
+                .join("work/marker")
+        )
+        .unwrap(),
+        "retained\n"
+    );
+    assert_eq!(server.proc.wait_exit(Duration::from_secs(25)), Some(0));
 }

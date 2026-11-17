@@ -190,9 +190,9 @@ impl Drop for Process {
         let sandbox = self.sandbox.clone();
         let permits = self.permits.take();
         self.runtime.spawn(async move {
-            if let Err(error) = sandbox.stop().await {
-                tracing::error!(%error, "worker teardown failed; capacity stays reserved");
-                std::future::pending::<()>().await;
+            while let Err(error) = sandbox.stop().await {
+                tracing::warn!(%error, "worker teardown failed; retrying with capacity reserved");
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
             tracing::debug!("worker teardown confirmed");
             drop(permits);

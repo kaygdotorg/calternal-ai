@@ -1,4 +1,8 @@
 //! OS-boundary probes for the worker profile; direct mode intentionally has none.
+#[path = "../../../tests/support/podman_guard.rs"]
+mod podman_guard;
+use podman_guard::PodmanGuard;
+
 use calternal_machine::{
     protocol::{PluginWorker, SandboxSpec, Stream},
     sandbox::{Backend, ExecRequest, OutputEvent, Sandbox, podman::PodmanBackend, worker},
@@ -75,6 +79,7 @@ async fn container_denies_sockets_host_files_foreign_space_and_code_writes() {
     let Some(backend) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
     let secret = root.path().join("appdata-key");
     tokio::fs::write(&secret, "synthetic-appdata")
         .await
@@ -114,6 +119,7 @@ async fn container_enforces_memory_cpu_pids_and_streams_ordered_stdin() {
     let Some(backend) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
     let limits = spec("limits");
     let sb = backend.start(&limits).await.unwrap();
     let (output, code) = run(&sb, r#"
@@ -241,6 +247,7 @@ async fn development_worker_measurements() {
     let Some(podman) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
     let direct = calternal_machine::sandbox::direct::DirectBackend::new(root.path());
     let source = "require('node:readline').createInterface({input:process.stdin}).on('line',line=>{const f=JSON.parse(line);console.log(JSON.stringify({protocol_version:2,invocation_id:f.invocation_id,message:{type:'complete',data:{pid:process.pid,node:process.version}}}));});";
     let mut rows = Vec::new();
@@ -356,6 +363,8 @@ async fn machine_restart_removes_only_its_own_ephemeral_workers() {
     let Some(backend) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
+    let _other = PodmanGuard::new(other.path());
     let other_backend = PodmanBackend::new("podman", other.path(), worker::IMAGE);
     let first = spec("first machine");
     let second = spec("second machine");

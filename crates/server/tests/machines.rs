@@ -2,6 +2,8 @@
 //! backend), on loopback with a 3 s lease TTL and 1 s poll hold.
 
 mod machines_common;
+#[path = "../../../tests/support/podman_guard.rs"]
+mod podman_guard;
 
 use std::time::Duration;
 
@@ -228,6 +230,7 @@ async fn pool_machines_serve_only_granted_accounts() {
     let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
     let code = issued["data"]["code"].as_str().unwrap();
     let mdir = TempDir::new("pool-m");
+    let _containers = podman_guard::PodmanGuard::new(mdir.0.join("sandboxes"));
     let status = std::process::Command::new(BIN)
         .args([
             "machine",
@@ -251,9 +254,8 @@ async fn pool_machines_serve_only_granted_accounts() {
             .unwrap(),
     );
     let space = server.owned_space(&server.owner).await;
-    let run = server
-        .request_run(&server.owner, &space, Uuid::new_v4())
-        .await;
+    let thread = Uuid::new_v4();
+    let run = server.request_run(&server.owner, &space, thread).await;
     let lease = run["lease_id"].as_str().unwrap().to_owned();
     tokio::time::sleep(Duration::from_millis(2000)).await;
     assert_eq!(
@@ -271,6 +273,18 @@ async fn pool_machines_serve_only_granted_accounts() {
     server
         .wait_run(&server.owner, &lease, T, |v| v["state"] == "running")
         .await;
+    let account = Uuid::parse_str(&owner_id).unwrap();
+    let write = server
+        .exec(
+            &server.owner,
+            &lease,
+            &["sh", "-c", "echo survives > marker"],
+        )
+        .await;
+    server.output(&server.owner, &write, T).await;
+    wait_container_removed(account, thread, T).await;
+    let read = server.exec(&server.owner, &lease, &["cat", "marker"]).await;
+    assert_eq!(server.output(&server.owner, &read, T).await.0, "survives\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]

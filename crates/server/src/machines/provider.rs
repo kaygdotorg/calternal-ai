@@ -76,3 +76,34 @@ impl MachineService {
         Ok(())
     }
 }
+
+impl MachineService {
+    /// Fence active provider leases at server shutdown and tell connected
+    /// machines to remove their containers while keeping workspace files.
+    /// Uses the existing registry lock and commits once per interrupted lease.
+    pub fn interrupt_on_shutdown(&self) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        let active: Vec<_> = st
+            .leases
+            .values()
+            .filter(|lease| {
+                !lease.row.worker
+                    && matches!(lease.state, LeaseState::Assigned | LeaseState::Running)
+            })
+            .filter_map(|lease| Some((lease.row.id, lease.row.machine?)))
+            .collect();
+        let reason = "the server stopped";
+        for (lease_id, machine) in active {
+            st.interrupt(lease_id, reason);
+            st.push(
+                machine,
+                calternal_machine::protocol::Down::Stop {
+                    lease_id,
+                    reason: reason.into(),
+                    keep_files: true,
+                },
+            );
+        }
+        Ok(())
+    }
+}

@@ -156,6 +156,7 @@ pub(super) fn schedule<D: Directory>(
                 {
                     let (s, sp, jid, run) = (st.clone(), space.clone(), id.clone(), job.runs);
                     let _ = blocking(move || s.jobs.agent_interrupt_wait(&sp, &jid, run)).await;
+                    let _ = super::stop_machine(&svc, &job).await;
                     return;
                 }
                 let (s, sp, jid) = (st.clone(), space.clone(), id.clone());
