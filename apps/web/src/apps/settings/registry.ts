@@ -11,6 +11,7 @@ import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
+import { caps } from "../../shell/capabilities";
 
 export type Control =
   | { type: "switch" }
@@ -205,17 +206,19 @@ export const SECTIONS: Section[] = [
   { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
 ];
 
-export const pageById = (id: string | undefined): Page | undefined => SECTIONS.flatMap((s) => s.pages).find((p) => p.id === id);
+/** The sections this person sees: Admin (the server) only with the server-admin capability. */
+export const visibleSections = (): Section[] => SECTIONS.filter((s) => s.id !== "server" || caps.serverAdmin);
+export const pageById = (id: string | undefined): Page | undefined => visibleSections().flatMap((s) => s.pages).find((p) => p.id === id);
 /** Every setting with the page it lives on. */
-export const allSettings = (): { page: Page; setting: Setting }[] => SECTIONS.flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));
+export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));
 export const settingById = (id: string | undefined) => allSettings().find((x) => x.setting.id === id);
 
 // The palette finds every setting by its label, help and section, and opens its address (decided: Settings has no search box of its own).
 registerManifest({
   plugin: "calternal-settings",
   commands: [
-    ...SECTIONS.flatMap((s) => s.pages.map((p) => ({ id: `settings.${p.id}`, label: p.name, group: "Settings", go: `/settings/${p.id}`, words: [p.blurb] }))),
-    ...allSettings().filter((x) => x.setting.control.type !== "info").map(({ page, setting }) => ({ id: setting.id, label: setting.label, group: `Settings · ${page.name}`, go: `/settings/${page.id}/${setting.id}`, words: [setting.help ?? ""] })),
+    ...visibleSections().flatMap((s) => s.pages.map((p) => ({ id: `settings.${p.id}`, label: p.name, group: "Settings", go: `/settings/${p.id}`, words: [p.blurb] }))),
+    ...allSettings().filter((x) => x.setting.control.type !== "info").map(({ page, setting }) => ({ id: setting.id, label: setting.label, group: `Settings, ${page.name}`, go: `/settings/${page.id}/${setting.id}`, words: [setting.help ?? ""] })),
     { id: "settings.shortcuts", label: "Keyboard shortcuts", group: "Settings", op: "help.shortcuts", words: ["keys", "hotkeys"] },
   ],
 });

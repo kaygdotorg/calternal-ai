@@ -3,4 +3,11 @@ export { apply, diff, invert, mapPos, snap, type Change, type Transaction } from
 export { History, type HistoryOptions } from "./history";
 export { ImeGate } from "./ime";
 export { probeOn, startProbe } from "./probe";
-export { FieldEditor, type FieldOptions } from "./field";
+export { FieldEditor, type FieldOptions, type FieldTrigger } from "./field";
+export { COMMANDS, INDENT, type CommandId } from "./text/commands";
+export { stringDoc, type Doc, type Edit, type Sel } from "./text/doc";
+export { isolatedInput } from "./text/grouping";
+export { KEYMAP, matchKey, type KeySpec } from "./text/keys";
+export { pickerKey, type PickerState } from "./text/picker";
+export { applyTextAttrs, textAttrs, type TextKind } from "./text/attrs";
+export { matchTrigger, type Match, type TriggerKind } from "./text/triggers";

@@ -7,7 +7,7 @@
   import { shell } from "../../shell/shell.svelte";
   import SettingGroup from "./SettingGroup.svelte";
   import SettingRow from "./SettingRow.svelte";
-  import { pageById, SECTIONS } from "./registry";
+  import { pageById, visibleSections } from "./registry";
   let { id }: { id?: string } = $props();
   const page = $derived(pageById(id));
   const target = $derived(segments()[0] === "settings" ? segments()[2] : undefined);
@@ -41,7 +41,7 @@
   {:else}
     <h1>Settings</h1>
     <p class="blurb">Choose a section on the left.</p>
-    {#each SECTIONS as s}<p class="soft">{s.name}: {s.pages.map((p) => p.name).join(", ")}</p>{/each}
+    {#each visibleSections() as s}<p class="soft">{s.name}: {s.pages.map((p) => p.name).join(", ")}</p>{/each}
   {/if}
 </div>
 {/if}

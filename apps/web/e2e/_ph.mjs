@@ -1,0 +1,12 @@
+import { chromium } from "playwright";
+import { serve, BASE, DEVICES } from "./lib.mjs";
+const stop = await serve(); const b = await chromium.launch();
+const ctx = await b.newContext({ ...DEVICES.phone, colorScheme: "light" }); const page = await ctx.newPage();
+await page.goto(BASE + "/threads/t-idle?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1000);
+await page.getByRole("button", { name: "Show threads" }).click(); await page.waitForTimeout(600);
+await page.screenshot({ path: "/tmp/ph-side.png" });
+console.log(JSON.stringify(await page.evaluate(() => ({ grips: document.querySelectorAll(".grip").length, dots: [...document.querySelectorAll("[aria-label=Spaces] [role=radio]")].map((d) => { const r = d.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; }), foot: document.querySelector("aside.side footer").getBoundingClientRect().toJSON() }))));
+await page.goto(BASE + "/settings/appearance?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+await page.getByRole("button", { name: "Show threads" }).or(page.getByRole("button", { name: /Show/ })).first().click().catch(() => {}); await page.waitForTimeout(600);
+await page.screenshot({ path: "/tmp/ph-settings-side.png" });
+await b.close(); stop();
