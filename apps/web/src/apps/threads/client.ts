@@ -3,7 +3,7 @@
  * generated operations (`threads.list`, `threads.send` and the rest of `contract/operations.json`), plugs in here and no component changes.
  * Every call is async because the real one crosses the network. Reads are bounded: a thread is read in message ranges, never whole.
  */
-import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
+import type { Answer, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
 
 /** What a watcher is told about a thread while it is open. */
 export interface ThreadEvents {
@@ -11,8 +11,10 @@ export interface ThreadEvents {
   onMessage(message: Message, index: number): void;
   /** A streaming agent message started. Its text arrives through `onDelta` and ends with `onMessage` for the same ID. */
   onStreamStart(messageId: string): void;
-  /** More text for the streaming message. Called often; must stay cheap. */
+  /** More text for the streaming message. Called often; must stay cheap. A client that is told the person does not want streaming may skip it. */
   onDelta(text: string): void;
+  /** The agent started another tool step. The thread shows a working state and these steps while it runs, then the finished message at once. */
+  onStep(step: Step): void;
   /** The thread's summary changed (state, title, provider). */
   onSummary(summary: ThreadSummary): void;
 }
@@ -35,6 +37,10 @@ export interface ThreadsClient {
   stop(threadId: string): Promise<void>;
   /** Changes the provider and model for the next message. Nothing visible happens in the thread. */
   setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void>;
+  /** Renames a thread. */
+  rename(threadId: string, title: string): Promise<void>;
+  /** Archives a thread (and its finished children): it leaves the list and keeps its file. */
+  archive(threadId: string): Promise<void>;
   /** How much the agent may do without asking, for the next message. */
   setPermission(threadId: string, permission: Permission): Promise<void>;
   /** The machines this person can run a thread on (their own, and the pool if their group allows it). */

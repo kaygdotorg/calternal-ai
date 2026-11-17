@@ -2,7 +2,7 @@
   // Appearance settings in a sheet (a side panel on a desktop, a bottom sheet on a phone): wallpaper (built-in, own upload, Unsplash search),
   // glass strengths, colour scheme and accent, and a font per role (interface, chat, code) from Google Fonts, Fontsource, Fontshare, the person's own
   // files or the system. Everything goes through the adapters in library.ts and fonts.ts, so the real server plugs in without changes here.
-  import { Button, Capsule, Icon, IconButton, Row, Sheet } from "@calternal/ui";
+  import { Button, Capsule, Icon, IconButton, Row, Sheet, Switch } from "@calternal/ui";
   import Slider from "./Slider.svelte";
   import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import type { StockResult } from "./library";
@@ -143,6 +143,11 @@
         <Capsule label="Colour scheme" kind="radio" glass={false} items={[{ id: "system", label: "System", icon: "apps" }, { id: "light", label: "Light", icon: "sun" }, { id: "dark", label: "Dark", icon: "moon" }]} value={A.scheme} onchange={(v) => A.setScheme(v as never)} />
         <Capsule label="Accent colour" kind="radio" glass={false} items={[{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }]} value={p.accent} onchange={(v) => A.change((x) => (x.accent = v as never))} />
         {#if p.accent === "custom"}<label class="color"><span>Accent colour</span><input type="color" value={p.accentColor} oninput={(e) => A.change((x) => (x.accentColor = e.currentTarget.value))} /></label>{/if}
+      </section>
+
+      <section aria-labelledby="s-beh">
+        <h2 id="s-beh">Behaviour</h2>
+        <Switch label="Stream messages as they are written" hint="Off: a working state and the steps show, then the finished message appears at once." checked={p.streamText} onchange={(v) => A.change((x) => (x.streamText = v))} />
       </section>
 
       <section aria-labelledby="s-mark">

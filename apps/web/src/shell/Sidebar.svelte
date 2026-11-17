@@ -6,6 +6,7 @@
   import { appearance } from "../appearance/prefs.svelte";
   import { APPS, type AppDef } from "../apps/registry";
   import { navigate } from "../lib/route.svelte";
+  import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import AccountSheet from "./AccountSheet.svelte";
   import Attention from "./Attention.svelte";
   import SearchSheet from "./SearchSheet.svelte";
@@ -14,7 +15,6 @@
   let { app }: { app: AppDef } = $props();
   let menu = $state(false);
   let account = $state(false);
-  let search = $state(false);
   let trigger = $state<HTMLButtonElement>();
   const items = $derived<MenuItem[]>(APPS.map((a) => ({ id: a.kind, label: a.name, icon: a.icon, checked: a.kind === app.kind })));
 </script>
@@ -36,12 +36,12 @@
       <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
       <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
     </span>
-    <IconButton icon="search" label="Search" onclick={() => (search = true)} />
+    <IconButton icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
   </footer>
 </div>
 
 <AccountSheet open={account} onclose={() => (account = false)} />
-<SearchSheet open={search} onclose={() => (search = false)} />
+<SearchSheet open={shell.searchOpen} onclose={() => (shell.searchOpen = false)} />
 
 <style>
   /* The bars float over one scrolling column; its fades are as tall as the bars. */

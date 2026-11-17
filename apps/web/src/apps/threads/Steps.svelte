@@ -1,12 +1,13 @@
 <script lang="ts">
   // A folded group of tool calls ("Worked for 1 min · 6 tools"): quiet row that opens in place into the steps; each step opens into its
   // command and output. Folded by default so a long thread reads as a conversation, not a log.
+  import { untrack } from "svelte";
   import { Icon, type IconName } from "@calternal/ui";
   import LogView from "./LogView.svelte";
   import type { Step, StepKind } from "./model";
   let { steps, ms, running = false }: { steps: Step[]; ms: number; running?: boolean } = $props();
   const ICON: Record<StepKind, IconName> = { read: "file", edit: "code", run: "terminal", search: "search", spawn: "branch" };
-  let open = $state(false);
+  let open = $state(untrack(() => running));
   let openStep = $state<string | null>(null);
   const kinds = $derived([...new Set(steps.map((s) => s.kind))].slice(0, 3));
   const secs = $derived(Math.round(ms / 1000));

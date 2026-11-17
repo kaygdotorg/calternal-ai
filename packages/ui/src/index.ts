@@ -10,6 +10,7 @@ export { default as Sheet } from "./components/Sheet.svelte";
 export { default as Button } from "./components/Button.svelte";
 export { default as IconButton } from "./components/IconButton.svelte";
 export { default as Row } from "./components/Row.svelte";
+export { default as Switch } from "./components/Switch.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Spinner } from "./components/Spinner.svelte";
 export { ICONS, type IconName } from "./icons";

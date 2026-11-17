@@ -2,12 +2,14 @@
   // The account sheet: who is signed in, and the way into settings. Fixture identity; sign-in and passkeys are the server's.
   import { Row, Sheet } from "@calternal/ui";
   import { href } from "../lib/route.svelte";
+  import { shell } from "./shell.svelte";
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
 </script>
 
 <Sheet {open} label="Account" {onclose}>
   <div class="in">
     <header><span class="av" aria-hidden="true">K</span><div><h2>Kay</h2><p>Personal space</p></div></header>
+    <Row tall title="Keyboard shortcuts" sub="See and change them" icon="terminal" onclick={() => { onclose(); shell.helpOpen = true; }} />
     <Row tall title="Appearance" sub="Wallpaper, glass, colour, fonts" icon="settings" href={href("/settings/appearance")} onclick={onclose} />
   </div>
 </Sheet>

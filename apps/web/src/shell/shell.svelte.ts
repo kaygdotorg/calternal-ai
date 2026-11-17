@@ -9,6 +9,9 @@ class Shell {
   narrow = $state(false);
   sidebarOpen = $state(true);
   rightOpen = $state(true);
+  /** The search sheet and the keyboard shortcut sheet. */
+  searchOpen = $state(false);
+  helpOpen = $state(false);
   /** The right card's tab: a panel id from the current app. */
   panel = $state("");
 

@@ -66,7 +66,8 @@
   const running = $derived(thread.state === "running");
   const provider = $derived(providers.find((p) => p.id === thread.provider));
   const modelName = $derived(provider?.models.find((m) => m.id === thread.model)?.name ?? thread.model);
-  const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.name, checked: p.id === thread.provider && m.id === thread.model }))));
+  const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.name, icon: p.id === "codex" ? "codex" : "spark", checked: p.id === thread.provider && m.id === thread.model }))));
+  const providerIcon = $derived(thread.provider === "codex" ? "codex" : "spark");
   const permItems = $derived<MenuItem[]>(PERMISSIONS.map((p) => ({ id: p.id, label: p.label, sub: p.sub, icon: p.icon, checked: p.id === thread.permission })));
   const sheet = $derived(shell.narrow || currentForm() === "touch");
   const PERM_ICON = $derived(PERMISSIONS.find((p) => p.id === thread.permission)!.icon);
@@ -104,10 +105,10 @@
   </div>
   <div class="chips">
     <span class="chip prov">
-      <Pill label="{provider?.name ?? ''} · {modelName}" icon="spark" showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
+      <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
       </Pill>
-      <Menu open={menuOpen} {items} label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
+      <Menu open={menuOpen} {items} search label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
     </span>
     <span class="chip permc">
       <Pill label={permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>

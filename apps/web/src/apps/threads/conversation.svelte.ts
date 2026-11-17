@@ -5,7 +5,8 @@
  * field, `stream.text`, which only the streaming row reads, so a delta re-renders one component and not the list.
  */
 import type { ThreadsClient } from "./client";
-import type { Message, ThreadSummary } from "./model";
+import { appearance } from "../../appearance/prefs.svelte";
+import type { Message, Step, ThreadSummary } from "./model";
 
 const PAGE = 100;
 
@@ -16,7 +17,7 @@ export class Conversation {
   /** Bumped when a page arrives, so rows waiting on it redraw. Not bumped by streaming. */
   rev = $state(0);
   /** The streaming agent message, or null. */
-  stream = $state<{ id: string; text: string } | null>(null);
+  stream = $state<{ id: string; text: string; steps: Step[] } | null>(null);
   summary = $state<ThreadSummary>();
 
   private cache = new Map<number, Message>();
@@ -37,9 +38,13 @@ export class Conversation {
         this.count = Math.max(this.count, i + 1);
         this.rev++;
       },
-      onStreamStart: (id) => (this.stream = { id, text: "" }),
+      onStreamStart: (id) => (this.stream = { id, text: "", steps: [] }),
+      // Text is shown as it arrives only when the person turned streaming on (off by default): otherwise the working state and steps show, and the finished message appears at once.
       onDelta: (t) => {
-        if (this.stream) this.stream.text += t;
+        if (this.stream && appearance.prefs.streamText) this.stream.text += t;
+      },
+      onStep: (s) => {
+        if (this.stream) this.stream.steps = [...this.stream.steps, s];
       },
       onSummary: (s) => (this.summary = s),
     });

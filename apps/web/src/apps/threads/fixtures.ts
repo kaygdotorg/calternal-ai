@@ -6,7 +6,7 @@
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
 import { permissionLabel, runsOnLabel } from "./permissions";
-import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, ThreadState, ThreadSummary } from "./model";
+import type { Answer, Change, Message, Permission, Step, ProviderOption, Request, RunInfo, RunsOn, ThreadState, ThreadSummary } from "./model";
 
 const BASE = Date.UTC(2026, 10, 17, 6, 0, 0);
 const MIN = 60_000;
@@ -121,7 +121,15 @@ export class FixtureClient implements ThreadsClient {
     const id = `${threadId}-stream-${this.summary(threadId).messageCount}`;
     o.sent = 0;
     for (const e of o.events) e.onStreamStart(id);
+    let stepN = 0;
     o.timer = setInterval(() => {
+      // A tool step about every 700 ms of the run, so the working state has something to show.
+      if (o.sent % 60 < 5 && o.sent / 60 >= stepN) {
+        const s: Step = { id: `${id}-s${stepN}`, kind: (["read", "search", "edit", "run"] as const)[stepN % 4]!, title: ["Read", "Searched", "Edited", "Ran"][stepN % 4]!, detail: ["crates/store/src/lib.rs", "rg -n 'sync_all' crates", "crates/store/src/journal.rs", "cargo test -j6 -p calternal-store"][stepN % 4], status: "ok", ms: 400 + stepN * 150 };
+        stepN++;
+        this.stepLog.set(id, [...(this.stepLog.get(id) ?? []), s]);
+        for (const e of o.events) e.onStep(s);
+      }
       const step = 4 + (o.sent % 5);
       const chunk = STREAM_TEXT.slice(o.sent, o.sent + step);
       o.sent += step;
@@ -134,9 +142,14 @@ export class FixtureClient implements ThreadsClient {
     }, this.streamInterval);
   }
 
+  private stepLog = new Map<string, Step[]>();
+  private stepsOf(id: string): Step[] {
+    return this.stepLog.get(id) ?? [];
+  }
+
   private finishStream(threadId: string, id: string, text: string): void {
     const t = this.summary(threadId);
-    const msg: Message = { id, role: "agent", at: Date.now(), blocks: [{ type: "text", text }] };
+    const msg: Message = { id, role: "agent", at: Date.now(), blocks: [{ type: "steps", steps: this.stepsOf(id), ms: 12_000 }, { type: "text", text }] };
     this.extra.set(threadId, [...(this.extra.get(threadId) ?? []), msg]);
     this.patch(threadId, { messageCount: t.messageCount + 1, state: "idle", updatedAt: Date.now() });
     const o = this.open.get(threadId);
@@ -159,6 +172,16 @@ export class FixtureClient implements ThreadsClient {
       o.timer = undefined;
       this.finishStream(threadId, `${threadId}-stopped-${Date.now()}`, STREAM_TEXT.slice(0, o.sent));
     } else this.patch(threadId, { state: "idle" });
+  }
+  async rename(threadId: string, title: string): Promise<void> {
+    if (title.trim()) this.patch(threadId, { title: title.trim() });
+  }
+  async archive(threadId: string): Promise<void> {
+    const gone = new Set([threadId, ...this.threadList.filter((t) => t.parentId === threadId && t.state === "done").map((t) => t.id)]);
+    this.threadList = this.threadList.filter((t) => !gone.has(t.id));
+    this.requestList = this.requestList.filter((r) => !gone.has(r.threadId));
+    for (const w of this.threadWatchers) w(this.threadList);
+    for (const w of this.requestWatchers) w(this.requestList);
   }
   async setPermission(threadId: string, permission: Permission): Promise<void> {
     this.patch(threadId, { permission });

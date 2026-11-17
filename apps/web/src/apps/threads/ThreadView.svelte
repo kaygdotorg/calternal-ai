@@ -3,13 +3,13 @@
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
   import { Panel, Pill } from "@calternal/ui";
-  import Md from "../../lib/Md.svelte";
   import VirtualList from "../../lib/VirtualList.svelte";
   import { href } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { bridge } from "./compose.svelte";
   import { Conversation } from "./conversation.svelte";
   import SelectionActions from "./SelectionActions.svelte";
+  import StreamRow from "./StreamRow.svelte";
   import StateMark from "./StateMark.svelte";
   import Composer from "./Composer.svelte";
   import MessageRow from "./MessageRow.svelte";
@@ -80,7 +80,7 @@
               {@const m = conv.get(i)}
               {#if m}<MessageRow message={m} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
             {:else if conv?.stream}
-              <div class="msg selectable"><Md text={conv.stream.text} caret /></div>
+              <StreamRow text={conv.stream.text} steps={conv.stream.steps} />
             {/if}
           {/snippet}
         </VirtualList>
@@ -110,7 +110,6 @@
   h1 { font-size: var(--text-ui); font-weight: var(--strong-weight); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb { font-size: var(--text-section); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }
   .list { position: absolute; inset: 0; }
-  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region); }
   .skeleton { height: 96px; margin: var(--s-4) var(--pad-region); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
   .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--pad-region) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)); }
   .inner { pointer-events: auto; display: flex; flex-direction: column; gap: var(--s-4); width: 100%; max-width: calc(var(--msg-w) - 2 * var(--pad-region)); min-width: 0; }
