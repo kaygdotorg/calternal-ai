@@ -24,8 +24,9 @@ await page.keyboard.type("@Pri");
 await page.waitForSelector('[role="listbox"]');
 ok((await opts()).some((t) => t.includes("Priya")), "@ lists people");
 await page.keyboard.press("Escape");
-await page.waitForTimeout(200);
-ok(await page.locator('[role="listbox"]').count() === 0, "Escape closes the picker");
+// The popover fades out before it is removed: wait for the removal itself, not a fixed time.
+const gone = await page.waitForSelector('[role="listbox"]', { state: "detached", timeout: 2000 }).then(() => true, () => false);
+ok(gone && await page.locator('[role="listbox"]').count() === 0, "Escape closes the picker");
 await page.keyboard.press("Backspace"); await page.keyboard.press("Backspace"); await page.keyboard.press("Backspace"); await page.keyboard.press("Backspace");
 await page.keyboard.press("Enter");
 await page.keyboard.type("/tas");
