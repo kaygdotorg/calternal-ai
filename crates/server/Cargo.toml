@@ -20,6 +20,7 @@ calternal-auth.workspace = true
 calternal-fsio.workspace = true
 calternal-core.workspace = true
 calternal-plugin-host.workspace = true
+calternal-machine.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
@@ -34,9 +35,12 @@ subtle = "2"
 getrandom = "0.3"
 time = { version = "0.3", features = ["formatting", "macros"] }
 tracing = "0.1"
+ring = "0.17"
+base64 = "0.22"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 [dev-dependencies]
+reqwest.workspace = true
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 
