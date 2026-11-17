@@ -177,9 +177,6 @@ const inkOf = (s: Scheme): Ink => ({ ink: hex(tokens[s].ink), ink2: hex(tokens[s
 const rgbCss = (c: RGB): string => `${Math.round(c[0])} ${Math.round(c[1])} ${Math.round(c[2])}`;
 
 let copies: { side: HTMLCanvasElement; card: HTMLCanvasElement } | null = null;
-/** The most recent solutions, for tests and the settings page. */
-export const lastVeils: { left?: Veil; right?: Veil; card?: Veil } = {};
-
 /**
  * Solves the veil of each surface from the pixels under it and writes the result as CSS variables: for each of `l` (left sidebar), `r` (right sidebar) and
  * `c` (the card) the tint and dim layers (`--l-tint`, `--l-tint-a`, `--l-dim`, `--l-dim-a`), the surface's own secondary inks (`--l-ink2`, `--l-ink3`) and the
@@ -210,7 +207,6 @@ export function updateVeil(want: Flags): void {
     root().setProperty(`--${k}-ink3`, `rgb(${rgbCss(ink3)})`);
     root().setProperty(`--veil-${k}`, `linear-gradient(rgb(var(--${k}-dim) / var(--${k}-dim-a)) 0 0), linear-gradient(rgb(var(--${k}-tint) / var(--${k}-tint-a)) 0 0)`);
   }
-  lastVeils.left = out.l; lastVeils.right = out.r; lastVeils.card = out.c;
   const flip = (v: Veil | undefined) => (v && v.scheme !== scheme ? v.scheme : null);
   surfaces.left = flip(out.l);
   surfaces.right = flip(out.r);
@@ -283,13 +279,6 @@ export function setWallpaper(src: string | null, l?: WallpaperLook): void {
   if (src === source && !l) return;
   source = src;
   schedule();
-}
-
-/** Changes the blur radii (0 shows the picture sharp). */
-export function setLook(l: WallpaperLook): void {
-  if (l.sideBlur === look.sideBlur && l.cardBlur === look.cardBlur) return;
-  look = l;
-  if (source) schedule();
 }
 
 let resizeTimer = 0;

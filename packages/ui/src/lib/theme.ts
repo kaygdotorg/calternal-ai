@@ -24,7 +24,7 @@ export function schemePreference(): SchemePreference {
 }
 
 /** The scheme a preference resolves to right now. */
-export function resolveScheme(pref: SchemePreference = schemePreference()): Scheme {
+function resolveScheme(pref: SchemePreference = schemePreference()): Scheme {
   return pref === "system" ? (dark().matches ? "dark" : "light") : pref;
 }
 
