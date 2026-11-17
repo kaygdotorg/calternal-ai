@@ -233,7 +233,9 @@ impl<D: Directory> Stream<D> {
                 if !entry.item.is_empty() {
                     let content = follow.content.clone();
                     let space = follow.content_space;
-                    let kind = entry.kind.split('.').next().unwrap_or("").to_owned();
+                    let kind = crate::notes::journal_kind(&entry.kind)
+                        .unwrap_or_else(|| entry.kind.split('.').next().unwrap_or(""))
+                        .to_owned();
                     let id = uuid::Uuid::parse_str(&entry.item).ok()?;
                     let visible = blocking(move || {
                         content

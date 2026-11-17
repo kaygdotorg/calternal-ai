@@ -11,6 +11,7 @@ pub mod auth;
 pub mod authz;
 pub mod fault;
 pub mod machines;
+mod notes;
 pub mod plugins;
 pub mod resolve;
 pub mod secrets;

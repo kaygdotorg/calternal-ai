@@ -57,7 +57,7 @@ pub fn validate_markdown(value: &str) -> Result<(), Error> {
         Ok(())
     }
 }
-fn decode<T: DeserializeOwned>(input: &JsonObject) -> Result<T, Error> {
+pub(crate) fn decode<T: DeserializeOwned>(input: &JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.clone().into_iter().collect()))
         .map_err(|_| Error::invalid_input("input does not match operation schema"))
 }
@@ -115,6 +115,7 @@ pub fn is_known_operation(operation: &str) -> bool {
         .iter()
         .any(|(id, _, _)| *id == operation)
         || is_account_input_operation(operation)
+        || crate::note_operation(operation).is_some()
         || matches!(
             operation,
             "spaces.list"
@@ -125,7 +126,6 @@ pub fn is_known_operation(operation: &str) -> bool {
                 | "spaces.leave"
                 | "spaces.transfer"
                 | "spaces.delete"
-                | "notes.list"
                 | "notes.get"
                 | "resolve"
                 | "notes.create"
@@ -183,6 +183,9 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         let _: crate::AgentInput = decode(input)?;
         return Ok(());
     }
+    if let Some(op) = crate::note_operation(operation) {
+        return op.validate(input);
+    }
     if is_account_input_operation(operation) {
         return validate_account_input(operation, input);
     }
@@ -227,10 +230,6 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
             let i: ResolveInput = decode(input)?;
             validate_id(&i.kind)?;
             resource("", &i.id)
-        }
-        "notes.list" => {
-            let i: NotesListInput = decode(input)?;
-            space(&i.space_id)
         }
         "jobs.get" | "jobs.cancel" => {
             let i: JobInput = decode(input)?;
@@ -441,7 +440,6 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             "Delete directory records; content cleanup is a later step",
             true,
         ),
-        entry::<NotesListInput, NotesListResult>("notes.list", "List up to 100 notes", false),
         entry::<ResolveInput, ResolveResult>(
             "resolve",
             "Resolve an item address with current access",
@@ -498,6 +496,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             true,
         ),
     ];
+    catalog.extend(
+        crate::NOTE_OPERATIONS
+            .iter()
+            .map(crate::NoteOperation::describe),
+    );
     catalog.extend(account_input_catalog());
     catalog.extend(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {
         entry::<crate::AgentInput, crate::JsonObject>(id, text, *mutates)

@@ -559,6 +559,14 @@ async fn serve(
     calternal_server::turns::retry::recover(&state, &machines)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    let _notes_retention = state.store.start_notes_retention().map_err(|e| {
+        boot(
+            2,
+            "invalid_input",
+            e.message,
+            "Check the Notes Trash retention setting.",
+        )
+    })?;
     let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
 
     let base_url = if development {

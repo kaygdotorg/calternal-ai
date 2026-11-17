@@ -104,8 +104,20 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             .unwrap_or(calternal_types::Capability::SpaceRead);
         let st = state.clone();
         let account = p.clone();
+        let resolve_address = op == "resolve";
         let (resolved, caps) = tokio::task::spawn_blocking(move || {
-            crate::resolve::resolve_for(&st.directory, &st.store, &account, &kind, &id, op_required)
+            let (mut resolved, caps) = crate::resolve::resolve_for(
+                &st.directory,
+                &st.store,
+                &account,
+                &kind,
+                &id,
+                op_required,
+            )?;
+            if resolve_address && kind == "notes" {
+                resolved.state = Some(crate::notes::state(&st.store, &resolved)?);
+            }
+            Ok::<_, Error>((resolved, caps))
         })
         .await
         .map_err(|_| Error::internal("resolver task failed"))??;
@@ -312,11 +324,8 @@ pub(super) async fn dispatch_checked<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     match op {
-        "notes.list" => {
-            let i: NotesListInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let notes = blocking(&state, move |s| s.list(space, 100)).await?;
-            to_value(NotesListResult { notes })
+        "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list" => {
+            super::notes::discover(&state, op, input).await
         }
         "notes.get" => {
             let i: NotesGetInput = decode(input)?;
@@ -336,6 +345,9 @@ pub(super) async fn dispatch_checked<D: Directory>(
                 versions,
                 next_cursor,
             })
+        }
+        "notes.delete" | "notes.restore" | "trash.purge" | "notes.rename" => {
+            super::notes::mutate(&state, p, request_id, op, input).await
         }
         "notes.create" | "notes.update" => mutate_note(state, p, request_id, op, input).await,
         "plugins.list" => {
@@ -444,9 +456,11 @@ pub(super) fn replay_receipt(
     if r.operation != op || r.fingerprint != fp {
         return Err(Error::request_reused());
     }
-    if let Some(n) = &r.note_id {
+    if op != "trash.purge"
+        && let Some(n) = &r.note_id
+    {
         s.materialize(n).map_err(|e| {
-            if e.code == ErrorCode::Conflict {
+            if matches!(e.code, ErrorCode::Conflict | ErrorCode::NotFound) {
                 e
             } else {
                 Error::unavailable("committed but not yet materialized; retry")

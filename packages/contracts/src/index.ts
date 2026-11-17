@@ -1053,9 +1053,139 @@ updated_at: string, };
 
 export type NotesListInput = {
 /**
+ * Exact tag name (without a leading hash), including notes with descendant tags.
+ */
+tag?: string,
+/**
  * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
  */
 space_id: string, };
+/**
+ * Space-scoped lookup of notes or tags by literal prefix.
+ */
+
+export type NotePrefixInput = {
+/**
+ * UUID of the space whose index to query.
+ */
+space_id: string,
+/**
+ * Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.
+ */
+prefix: string, };
+/**
+ * Metadata for one picker match, including its relative Markdown destination.
+ */
+
+export type NoteMatch = {
+/**
+ * Encoded relative target for a Markdown link from another note.
+ */
+link_target: string,
+/**
+ * Stable UUID note identity; access is checked against the accompanying space.
+ */
+id: string,
+/**
+ * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ */
+space_id: string,
+/**
+ * Display title, nonblank, at most 256 Unicode scalars and without control characters.
+ */
+title: string,
+/**
+ * Opaque nonempty server revision; compare for equality, never infer order or parse it.
+ */
+revision: string,
+/**
+ * Server-authored UTC RFC 3339 timestamp for this snapshot.
+ */
+updated_at: string, };
+/**
+ * Bounded title-matching page in folded title and UUID order.
+ */
+
+export type NotesLookupResult = {
+/**
+ * At most 100 live matches with their exact on-disk destinations.
+ */
+notes: Array<NoteMatch>, };
+/**
+ * A named tag and its current note count in one space.
+ */
+
+export type TagCount = {
+/**
+ * Tag name without a leading hash.
+ */
+name: string,
+/**
+ * Number of live notes with this tag or one nested underneath it.
+ */
+count: number, };
+/**
+ * Rename one note at the revision shown in the list.
+ */
+
+export type NoteRenameInput = {
+/**
+ * Global note UUID; its current space is resolved by the host.
+ */
+id: string,
+/**
+ * Opaque revision selected by the caller.
+ */
+base_revision: string,
+/**
+ * New title, used for the first H1 and readable filename.
+ */
+title: string, };
+/**
+ * A single note UUID targeted by a lifecycle operation.
+ */
+
+export type NoteTarget = {
+/**
+ * Global note UUID, resolved to its owning space by the host.
+ */
+id: string, };
+/**
+ * Result of a recoverable Trash move.
+ */
+
+export type NoteChange = {
+/**
+ * Updated metadata including the revision and the time of the move.
+ */
+note: NoteSummary, };
+/**
+ * Stable state of an item address.
+ */
+
+export type ItemState = "active" | "in_trash" | "deleted";
+/**
+ * Permanent deletion acknowledgement. Contains no note contents.
+ */
+
+export type PurgeResult = {
+/**
+ * Stable UUID retained for address resolution.
+ */
+id: string,
+/**
+ * Deleted state of the address.
+ */
+state: ItemState, };
+/**
+ * Bounded tag lookup result.
+ */
+
+export type TagsResult = {
+/**
+ * Up to 100 tag names and counts, in literal name order.
+ */
+tags: Array<TagCount>, };
 /**
  * Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.
  */
@@ -1099,6 +1229,10 @@ id: string,
  * Owning space UUID, independent of account identity.
  */
 space_id: string,
+/**
+ * Lifecycle state of a Notes address, omitted for kinds without this projection.
+ */
+state?: ItemState,
 /**
  * Current effective capability names; informational, rechecked on use.
  */
