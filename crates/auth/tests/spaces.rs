@@ -2,9 +2,9 @@
 use calternal_auth::{
     ErrorCode,
     db::open_conn,
-    spaces::{DevelopmentIds, SpaceChange, Spaces},
+    spaces::{DevelopmentIds, MemberTarget, SpaceChange, Spaces},
 };
-use calternal_types::{AccountId, SpaceId};
+use calternal_types::{AccountId, GroupId, SpaceId};
 use rusqlite::params;
 
 struct Fixture {
@@ -52,6 +52,77 @@ impl Fixture {
 }
 fn forbidden<T: std::fmt::Debug>(r: calternal_auth::Result<T>) {
     assert_eq!(r.unwrap_err().code(), ErrorCode::Forbidden);
+}
+
+#[test]
+fn losing_the_last_group_grant_erases_protected_requests_and_turn_authority() {
+    for remove_group_member in [false, true] {
+        let f = Fixture::new();
+        let c = open_conn(&f.path).unwrap();
+        let (space, guest) = (f.ids.shared.to_string(), f.ids.guest.to_string());
+        let group = GroupId::new();
+        c.execute(
+            "INSERT INTO groups(id,name) VALUES(?1,'Editors')",
+            [group.to_string()],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO group_members(group_id,user_id) VALUES(?1,?2)",
+            params![group.to_string(), guest],
+        )
+        .unwrap();
+        f.change(
+            f.ids.owner,
+            f.ids.shared,
+            SpaceChange::Add {
+                target: MemberTarget::Group(group),
+                role: "editor".into(),
+            },
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO agent_access VALUES('thread','job',?1,?2,NULL,'{}',0,1,0)",
+            params![guest, space],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO agent_approvals(id,job,account,space,thread,app,write_access,action)
+            VALUES('approval','job',?1,?2,'thread','app',0,'{}')",
+            params![guest, space],
+        )
+        .unwrap();
+        let authority = || {
+            c.query_row(
+            "SELECT (SELECT count(*) FROM agent_access), (SELECT count(*) FROM agent_approvals)",
+            [], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        ).unwrap()
+        };
+
+        f.change(
+            f.ids.owner,
+            f.ids.shared,
+            SpaceChange::Remove {
+                target: f.ids.guest,
+            },
+        )
+        .unwrap();
+        assert_eq!(authority(), (1, 1));
+        if remove_group_member {
+            c.execute(
+                "DELETE FROM group_members WHERE group_id=?1 AND user_id=?2",
+                params![group.to_string(), guest],
+            )
+            .unwrap();
+        } else {
+            f.change(
+                f.ids.owner,
+                f.ids.shared,
+                SpaceChange::RemoveGroup { target: group },
+            )
+            .unwrap();
+        }
+        assert_eq!(authority(), (0, 0));
+    }
 }
 
 // Source people.rs first_owner_has_capabilities_and_cannot_demote_the_last_admin:

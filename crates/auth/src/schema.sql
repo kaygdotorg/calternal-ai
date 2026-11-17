@@ -250,6 +250,10 @@ CREATE INDEX agent_approvals_thread ON agent_approvals(space,thread);
 CREATE INDEX agent_approvals_account ON agent_approvals(account,space,thread);
 -- Membership changes and authority cleanup share the protected recovery commit.
 CREATE TRIGGER erase_member_agent_authority AFTER DELETE ON space_memberships
+WHEN NOT EXISTS (
+ SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+ WHERE m.account_id=OLD.account_id AND m.space_id=OLD.space_id AND c.capability='space.read'
+)
 BEGIN
  DELETE FROM agent_approvals WHERE account=OLD.account_id AND space=OLD.space_id;
  DELETE FROM agent_access WHERE account=OLD.account_id AND space=OLD.space_id;
@@ -258,10 +262,43 @@ CREATE TRIGGER erase_unreadable_member_agent_authority AFTER UPDATE OF role ON s
 WHEN NOT EXISTS (
  SELECT 1 FROM space_role_capabilities
  WHERE role=NEW.role AND capability='space.read'
+ UNION ALL
+ SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+ WHERE m.account_id=NEW.account_id AND m.space_id=NEW.space_id AND c.capability='space.read'
 )
 BEGIN
  DELETE FROM agent_approvals WHERE account=NEW.account_id AND space=NEW.space_id;
  DELETE FROM agent_access WHERE account=NEW.account_id AND space=NEW.space_id;
+END;
+CREATE TRIGGER erase_group_grant_agent_authority AFTER DELETE ON space_group_memberships
+BEGIN
+ DELETE FROM agent_approvals WHERE space=OLD.space_id
+  AND account IN (SELECT user_id FROM group_members WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=agent_approvals.account AND m.space_id=OLD.space_id AND c.capability='space.read'
+  );
+ DELETE FROM agent_access WHERE space=OLD.space_id
+  AND account IN (SELECT user_id FROM group_members WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=agent_access.account AND m.space_id=OLD.space_id AND c.capability='space.read'
+  );
+END;
+CREATE TRIGGER erase_group_member_agent_authority AFTER DELETE ON group_members
+BEGIN
+ DELETE FROM agent_approvals WHERE account=OLD.user_id
+  AND space IN (SELECT space_id FROM space_group_memberships WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=OLD.user_id AND m.space_id=agent_approvals.space AND c.capability='space.read'
+  );
+ DELETE FROM agent_access WHERE account=OLD.user_id
+  AND space IN (SELECT space_id FROM space_group_memberships WHERE group_id=OLD.group_id)
+  AND NOT EXISTS (
+   SELECT 1 FROM space_account_roles m JOIN space_role_capabilities c USING(role)
+   WHERE m.account_id=OLD.user_id AND m.space_id=agent_access.space AND c.capability='space.read'
+  );
 END;
 CREATE TABLE agent_discards(
  account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
