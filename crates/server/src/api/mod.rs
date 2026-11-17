@@ -65,7 +65,8 @@ pub struct AppState<D: Directory = StoredDirectory> {
     pub directory: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,
-    /// Bounded pool of long-lived (plugin, space) workers; refuses calls without Node.
+    /// Bounded pool of long-lived (plugin, space) workers routed through enrolled
+    /// machines; explicit direct adapters serve disposable development and tests.
     pub workers: WorkerPool,
     /// Durable plugin jobs and their live streams; [`Jobs::disabled`] refuses jobs.
     pub jobs: Jobs,

@@ -71,7 +71,7 @@ Every public code change includes matching reference comments. Run `npm run chec
 ## Scope and limitations
 
 - Each space's SQLite databases in appdata are authoritative for its revisions and request receipts; Markdown files in userdata are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
-- Only repository-shipped, digest-pinned plugin bundles run. Node permission flags and cleared environments are defense in depth, **not an OS sandbox**. No arbitrary community plugin installation or provider credentials.
+- Only repository-shipped, digest-pinned plugin bundles run. Workers use the machine role’s container sandbox; Node permission flags and cleared environments add defense in depth. Explicit direct development mode has no OS isolation. No arbitrary community plugin installation or provider credentials.
 - Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. There is no real AI conversation, machine pairing, provider login, voice or memory integration yet.
 - UniFFI exposes async operations and cancellable journal following; subscribe/cancel is exercised by XCTest on the authorized Mac Studio. Platform persistence, Keychain integration and the native app remain unfinished. The preview HTTP client accepts loopback origins only.
 - Two low-severity npm audit findings affect a build-tool dependency; the UI report records their review. No production-readiness claim is made.
@@ -90,3 +90,7 @@ UI design and implementation are Claude-only. See [AGENTS.md](AGENTS.md).
 ## License
 
 AGPL-3.0-only; see [LICENSE](LICENSE). Dependencies retain their respective licenses.
+
+Plugin workers execute through the machine role’s existing sandbox interface.
+See [worker execution](docs/plugin-workers.md) for the container profile, runtime
+setup, lifecycle bounds and unresolved placement/network contracts.

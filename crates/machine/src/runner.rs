@@ -43,27 +43,33 @@ struct Slot {
     stop: OnceCell<()>,
     keep_files: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
+    inputs: Mutex<
+        HashMap<Uuid, tokio::sync::watch::Receiver<Option<tokio::sync::mpsc::Sender<Vec<u8>>>>>,
+    >,
 }
 
 impl Slot {
     /// Stop the sandbox once, if the slot was removed and its start succeeded.
-    async fn stop_if_removed(&self) {
+    async fn stop_if_removed(&self) -> bool {
         if self.removed.load(Ordering::Acquire)
             && let Some(Ok(sb)) = self.sandbox.get()
         {
-            self.stop
-                .get_or_init(|| async {
+            return self
+                .stop
+                .get_or_try_init(|| async {
                     let result = if self.keep_files.load(Ordering::Acquire) {
                         sb.release().await
                     } else {
                         sb.stop().await
                     };
-                    if let Err(e) = result {
+                    result.map_err(|e| {
                         tracing::warn!(lease=%self.lease_id,error=%e,"sandbox stop failed");
-                    }
+                    })
                 })
-                .await;
+                .await
+                .is_ok();
         }
+        true
     }
 }
 
@@ -181,6 +187,7 @@ impl Runner {
                                 stop: OnceCell::new(),
                                 keep_files: AtomicBool::new(false),
                                 execs: Mutex::new(HashSet::new()),
+                                inputs: Mutex::new(HashMap::new()),
                             })
                         })
                         .clone()
@@ -196,6 +203,7 @@ impl Runner {
                 });
             }
             Down::Exec {
+                interactive,
                 lease_id,
                 fence,
                 exec_id,
@@ -205,6 +213,14 @@ impl Runner {
             } => {
                 env.retain(|(key, _)| key != "CALTERNAL_URL");
                 env.push(("CALTERNAL_URL".into(), self.link.base().to_owned()));
+                let (ready, input) = tokio::sync::watch::channel(None);
+                if interactive && let Some(slot) = self.slot(lease_id) {
+                    slot.inputs
+                        .lock()
+                        .expect("inputs")
+                        .entry(exec_id)
+                        .or_insert(input);
+                }
                 let me = self.clone();
                 tokio::spawn(async move {
                     let slot = me
@@ -219,14 +235,58 @@ impl Runner {
                             match me.sandbox(s).await {
                                 Err(reason) => failed_exec(reason),
                                 Ok(sb) => sb
-                                    .exec(ExecRequest { argv, stdin, env })
+                                    .exec(ExecRequest {
+                                        argv,
+                                        stdin,
+                                        env,
+                                        interactive,
+                                    })
                                     .await
                                     .unwrap_or_else(|e| failed_exec(e.0)),
                             }
                         }
                     };
+                    let _ = ready.send(exec.input.clone());
                     me.upload(lease_id, fence, exec_id, exec).await;
+                    if let Some(slot) = slot {
+                        slot.inputs.lock().expect("inputs").remove(&exec_id);
+                    }
                 });
+            }
+            Down::Input {
+                lease_id,
+                fence,
+                exec_id,
+                data,
+            } => {
+                if data.len() > calternal_types::MAX_FRAME_BYTES + 1 {
+                    return;
+                }
+                let Some(slot) = self
+                    .slot(lease_id)
+                    .filter(|s| s.fence.load(Ordering::Acquire) == fence)
+                else {
+                    return;
+                };
+                let input = slot.inputs.lock().expect("inputs").get(&exec_id).cloned();
+                if let Some(mut input) = input {
+                    let result = tokio::time::timeout(Duration::from_secs(5), async {
+                        loop {
+                            let writer = input.borrow().clone();
+                            if let Some(writer) = writer {
+                                return writer.try_send(data).map_err(|_| ());
+                            }
+                            if input.changed().await.is_err() {
+                                return Err(());
+                            }
+                        }
+                    })
+                    .await;
+                    if !matches!(result, Ok(Ok(()))) {
+                        slot.removed.store(true, Ordering::Release);
+                        slot.stop_if_removed().await;
+                    }
+                }
             }
             Down::Discard {
                 request_id,
@@ -266,7 +326,9 @@ impl Runner {
                     // A start still in flight stops the sandbox when it finishes.
                     // Join any start already in flight, then join cleanup itself.
                     let _ = self.sandbox(&slot).await;
-                    slot.stop_if_removed().await;
+                    if !slot.stop_if_removed().await {
+                        self.slots.lock().expect("slots").insert(lease_id, slot);
+                    }
                 }
             }
         }
@@ -278,6 +340,9 @@ impl Runner {
             .get_or_init(|| async {
                 if slot.removed.load(Ordering::Acquire) {
                     return Err("lease ended before sandbox start".into());
+                }
+                if slot.spec.worker.is_some() && self.backend.preference() == "direct" {
+                    return Err("plugin workers require the container backend; run this machine with --backend auto or podman".into());
                 }
                 self.backend.start(&slot.spec).await.map_err(|e| {
                     tracing::warn!(lease = %slot.lease_id, error = %e, "sandbox start failed");

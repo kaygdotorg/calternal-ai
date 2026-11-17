@@ -1,37 +1,21 @@
 //! Long-lived worker processes speaking protocol v2, one per (plugin, space).
 //!
-//! Each worker is a Node child process driven by a [`WorkerSession`] on a dedicated
-//! session thread, with one reader thread (bounded newline frames from stdout) and
-//! one writer thread (bounded frame queue to stdin). Plugin code reaches host state
-//! only through host-call frames, which the session refuses unless declared in the
-//! manifest and which the per-invocation [`InvocationHost`] rechecks against
-//! current authority before and after the effect and again before delivery.
+//! Workers use the machine sandbox and exec interfaces; the server never starts
+//! a container. The default is an enrolled machine, with a read-only code mount,
+//! no network, 256 MiB, one CPU and 64 PIDs. DirectBackend is an explicit
+//! development/test adapter with no OS isolation. Protocol v2 is unchanged.
 //!
-//! Bounds: at most [`MAX_WORKERS`] live processes (an idle one is evicted to make
-//! room; if all are busy the call is refused with `worker_capacity`), at most 32
-//! in-flight invocations and 32 queued frames per direction per worker (library
-//! limits), frames of at most 256 KiB, a [`WORKER_TIMEOUT`] deadline per invocation,
-//! a V8 heap cap of [`WORKER_HEAP_MB`] MiB, and retirement after
-//! [`MAX_LIFETIME_INVOCATIONS`]. A worker idle for [`WORKER_IDLE`] exits.
-//! Any protocol violation, overflow or missed deadline kills the whole process and
-//! fails its in-flight invocations: one JavaScript event loop serves them all, so a
-//! stuck invocation would stall the rest anyway.
-//!
-//! **Not an OS sandbox.** The child gets a cleared environment and Node's permission
-//! model (filesystem reads limited to the bundle directory; no writes, child
-//! processes, worker threads, native addons or WASI; no string code generation).
-//! It can still open network connections (Node 22's permission model does not
-//! restrict sockets, including to this server on loopback), use CPU until its
-//! deadline, allocate up to its heap cap plus native memory, read its own bundle
-//! directory, and keep state in memory across invocations in the same
-//! (plugin, space). Cost per live worker: one process and three OS threads.
+//! Bounds: eight workers, 32 concurrent invocations and 32 outgoing frames per
+//! worker, 256 KiB frames, 60 seconds idle, 3 seconds per interactive invocation,
+//! 128 MiB V8 heap, retirement at 4096 calls. A fault kills the worker; current
+//! callers receive a safe error and the next call starts a fresh worker without
+//! replaying an uncertain operation.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdout, Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -44,14 +28,19 @@ use calternal_types::{AccountId, SpaceId};
 use serde_json::Value;
 use tokio::sync::oneshot;
 
-use super::{InvocationHost, Plugin, verify_digest};
+use super::{InvocationHost, Plugin};
 use calternal_types::Error;
 
-/// Deadline for one invocation, from admission to delivery.
+/// Deadline after resource admission, including cold launch and queued execution.
 pub const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
+/// Controller admission deadline covering prior teardown and capacity. Podman
+/// teardown alone takes about two seconds on the development VM; it is distinct
+/// from the invocation deadline, which also bounds launch after capacity is held.
+/// An expired startup is detached and cleaned up.
+pub const WORKER_START_TIMEOUT: Duration = Duration::from_secs(10);
 /// A worker with no in-flight invocation for this long exits.
 pub const WORKER_IDLE: Duration = Duration::from_secs(60);
-/// Maximum live worker processes across all plugins and spaces.
+/// Maximum worker slots, including cold starts and unconfirmed teardown.
 pub const MAX_WORKERS: usize = 8;
 /// Invocations after which a worker is retired and replaced (library replay bound: 4096).
 pub const MAX_LIFETIME_INVOCATIONS: u32 = 4096;
@@ -59,7 +48,7 @@ pub const MAX_LIFETIME_INVOCATIONS: u32 = 4096;
 pub const WORKER_HEAP_MB: u32 = 128;
 const MIN_NODE: (u32, u32) = (22, 13);
 
-/// A verified Node executable used to run worker bundles.
+/// A verified Node executable for explicit development and fixture adapters.
 #[derive(Debug, Clone)]
 pub struct NodeRuntime {
     /// Canonical absolute executable path.
@@ -69,19 +58,24 @@ pub struct NodeRuntime {
 }
 
 /// Resolve and verify an absolute Node executable (>= 22.13 for `--permission`).
-/// Cost: one `node --version` process.
+/// Cost: one blocking path lookup and one `node --version` process.
 pub async fn resolve_node(explicit: Option<&Path>) -> Result<NodeRuntime, String> {
-    let candidate = match explicit {
-        Some(p) => p.to_path_buf(),
-        None => {
-            let path_var = std::env::var_os("PATH").ok_or("PATH not set; pass --node")?;
-            std::env::split_paths(&path_var)
-                .map(|d| d.join("node"))
-                .find(|p| p.is_file())
-                .ok_or("node not found on PATH; pass --node")?
-        }
-    };
-    let abs = std::fs::canonicalize(&candidate).map_err(|e| format!("node: {e}"))?;
+    let explicit = explicit.map(Path::to_path_buf);
+    let abs = tokio::task::spawn_blocking(move || {
+        let candidate = match explicit {
+            Some(path) => path,
+            None => {
+                let path_var = std::env::var_os("PATH").ok_or("PATH not set; pass --node")?;
+                std::env::split_paths(&path_var)
+                    .map(|dir| dir.join("node"))
+                    .find(|path| path.is_file())
+                    .ok_or("node not found on PATH; pass --node")?
+            }
+        };
+        std::fs::canonicalize(&candidate).map_err(|e| format!("node: {e}"))
+    })
+    .await
+    .map_err(|_| "Node lookup task failed")??;
     let out = tokio::process::Command::new(&abs)
         .arg("--version")
         .env_clear()
@@ -131,7 +125,7 @@ pub struct Call {
 /// answers the caller with [`Outcome::Cancelled`].
 pub struct CancelFlag {
     cancelled: AtomicBool,
-    wake: Mutex<Option<Sender<Event>>>,
+    wake: Mutex<Option<SyncSender<Event>>>,
 }
 
 impl CancelFlag {
@@ -153,11 +147,11 @@ impl CancelFlag {
         self.cancelled.store(true, Ordering::Release);
         let wake = self.wake.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(events) = wake {
-            let _ = events.send(Event::Cancel(self.clone()));
+            let _ = events.try_send(Event::Cancel(self.clone()));
         }
     }
 
-    fn bind(&self, events: &Sender<Event>) {
+    fn bind(&self, events: &SyncSender<Event>) {
         *self.wake.lock().unwrap_or_else(|p| p.into_inner()) = Some(events.clone());
     }
 }
@@ -193,6 +187,7 @@ enum Event {
 struct Pending {
     call: Call,
     reply: oneshot::Sender<Outcome>,
+    deadline: Instant,
 }
 
 struct Active {
@@ -204,7 +199,7 @@ struct Active {
 
 /// Handle to one live worker's session thread.
 struct Worker {
-    events: Sender<Event>,
+    events: SyncSender<Event>,
     alive: Arc<AtomicBool>,
     busy: Arc<AtomicUsize>,
 }
@@ -219,56 +214,71 @@ impl Worker {
 /// that was cancelled) stops its process; a second Shutdown is ignored.
 impl Drop for Worker {
     fn drop(&mut self) {
-        let _ = self.events.send(Event::Shutdown);
+        tracing::debug!("worker handle retired");
+        self.alive.store(false, Ordering::Release);
+        let _ = self.events.try_send(Event::Shutdown);
     }
 }
 
-/// One reserved cold-start slot; dropping it releases the slot, on success,
-/// failure, panic or cancellation alike. Cost: two atomic operations.
-struct Starting(Arc<AtomicUsize>);
-impl Starting {
-    fn reserve(count: &Arc<AtomicUsize>) -> Self {
-        count.fetch_add(1, Ordering::AcqRel);
-        Self(count.clone())
-    }
-}
-impl Drop for Starting {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
-    }
+/// Per-key admission serialization and physical worker lifetime. The latter
+/// remains held through teardown, including a cancelled caller's cold start.
+struct StartKey {
+    admission: Arc<tokio::sync::Mutex<()>>,
+    worker: Arc<tokio::sync::Semaphore>,
 }
 
 /// Bounded pool of long-lived workers keyed by (plugin ID, space key).
 pub struct WorkerPool {
     node: Option<NodeRuntime>,
+    backend: Option<Arc<dyn calternal_machine::sandbox::Backend>>,
     workers: Mutex<HashMap<(String, SpaceId), Worker>>,
-    /// Cold starts in progress; they count against `max_workers`. Each is held
-    /// by a [`Starting`] reservation, so cancellation cannot leak a slot.
-    starting: Arc<AtomicUsize>,
     in_flight: Arc<AtomicUsize>,
+    starts: Mutex<HashMap<(String, SpaceId), std::sync::Weak<StartKey>>>,
     max_workers: usize,
+    permits: Arc<tokio::sync::Semaphore>,
 }
 
 impl WorkerPool {
-    /// A pool that runs workers with `node`; `None` refuses every call as unavailable.
+    /// Explicit development/fixture pool; `None` refuses calls as unavailable.
+    /// The direct adapter has no OS isolation; tests may select Podman with
+    /// `CALTERNAL_WORKER_TEST_BACKEND=podman`. Cost: configuration allocations only.
     pub fn new(node: Option<NodeRuntime>) -> Self {
         Self::with_capacity(node, MAX_WORKERS)
     }
 
-    /// A pool with a custom live-worker cap (tests use 1 to prove admission).
+    /// Development/fixture pool with a custom worker-slot cap (at least one).
+    /// Same adapter selection as [`Self::new`]; costs configuration allocations only.
     pub fn with_capacity(node: Option<NodeRuntime>, max_workers: usize) -> Self {
         Self {
+            backend: node.as_ref().map(|_| {
+                let root =
+                    std::env::temp_dir().join(format!("calternal-worker-{}", uuid::Uuid::new_v4()));
+                if std::env::var("CALTERNAL_WORKER_TEST_BACKEND").as_deref() == Ok("podman") {
+                    Arc::new(calternal_machine::sandbox::podman::PodmanBackend::new(
+                        "podman",
+                        root,
+                        calternal_machine::sandbox::worker::IMAGE,
+                    )) as Arc<dyn calternal_machine::sandbox::Backend>
+                } else {
+                    Arc::new(calternal_machine::sandbox::direct::DirectBackend::new(root))
+                        as Arc<dyn calternal_machine::sandbox::Backend>
+                }
+            }),
             node,
             workers: Mutex::new(HashMap::new()),
-            starting: Arc::new(AtomicUsize::new(0)),
             in_flight: Arc::new(AtomicUsize::new(0)),
+            starts: Mutex::new(HashMap::new()),
             max_workers: max_workers.max(1),
+            permits: Arc::new(tokio::sync::Semaphore::new(max_workers.max(1))),
         }
     }
 
-    /// The configured Node runtime, if any.
-    pub fn node(&self) -> Option<&NodeRuntime> {
-        self.node.as_ref()
+    /// Route workers through enrolled machines. No local runtime or engine is
+    /// inspected or launched. Cost: one shared backend allocation, no I/O.
+    pub fn machines(service: Arc<crate::machines::MachineService>) -> Self {
+        let mut pool = Self::new(None);
+        pool.backend = Some(Arc::new(super::machine_worker::MachineBackend(service)));
+        pool
     }
 
     /// Invocations admitted to a worker and not yet answered. Cost: one atomic load.
@@ -276,7 +286,8 @@ impl WorkerPool {
         self.in_flight.load(Ordering::Acquire)
     }
 
-    /// Live worker processes. Cost: pool lock and O(workers) scan.
+    /// Usable worker sessions; teardown retains a separate admission permit.
+    /// Cost: pool lock and O(workers) scan.
     pub fn live(&self) -> usize {
         self.workers
             .lock()
@@ -287,11 +298,11 @@ impl WorkerPool {
     /// Run one operation on the (plugin, space) worker, starting it if needed.
     /// `space` selects the process and is the space its session is pinned to.
     /// Cost: the pool lock for a lookup (never held across I/O); a cold start hashes
-    /// the bundle and spawns the process on a blocking thread with a reserved pool
+    /// the bundle on a blocking task and awaits sandbox startup with a reserved pool
     /// slot; then one channel round trip plus the worker's own frames and effects.
     pub async fn invoke(&self, plugin: &Arc<Plugin>, space: SpaceId, call: Call) -> Outcome {
-        let Some(node) = &self.node else {
-            return Outcome::Failed(Error::unavailable("Node runtime unavailable"));
+        let Some(backend) = &self.backend else {
+            return Outcome::Failed(Error::unavailable("worker execution unavailable"));
         };
         if let Some(why) = &plugin.unavailable {
             return Outcome::Failed(Error::unavailable(format!("plugin unavailable: {why}")));
@@ -300,50 +311,147 @@ impl WorkerPool {
             return Outcome::Failed(Error::unavailable("plugin has no worker"));
         };
         let (reply, answer) = oneshot::channel();
-        let mut pending = Box::new(Pending { call, reply });
+        let deadline = Instant::now() + call.timeout;
+        let mut pending = Box::new(Pending {
+            call,
+            reply,
+            deadline,
+        });
         // A worker that exited idle between lookup and send drops its receiver;
         // the send then fails and one fresh worker is started.
         let key = (plugin.manifest.id.clone(), space);
+        // A per-key admission lock prevents duplicate cold starts. The small map
+        // lock is released before waiting or I/O; weak entries are pruned on use.
+        let gate = {
+            let mut starts = self.starts.lock().unwrap_or_else(|p| p.into_inner());
+            starts.retain(|_, weak| weak.strong_count() > 0);
+            if let Some(gate) = starts.get(&key).and_then(std::sync::Weak::upgrade) {
+                gate
+            } else {
+                if starts.len() >= self.max_workers.saturating_mul(2) {
+                    return Outcome::Failed(
+                        Error::unavailable("worker admission capacity exhausted")
+                            .with_details(serde_json::json!({"reason":"worker_capacity"})),
+                    );
+                }
+                let gate = Arc::new(StartKey {
+                    admission: Arc::new(tokio::sync::Mutex::new(())),
+                    worker: Arc::new(tokio::sync::Semaphore::new(1)),
+                });
+                starts.insert(key.clone(), Arc::downgrade(&gate));
+                gate
+            }
+        };
+        let startup_deadline = tokio::time::Instant::now() + WORKER_START_TIMEOUT;
+        let mut admission =
+            match tokio::time::timeout_at(startup_deadline, gate.admission.clone().lock_owned())
+                .await
+            {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return Outcome::Failed(Error::unavailable(
+                        "worker admission timed out; retry shortly",
+                    ));
+                }
+            };
+        pending.deadline = Instant::now() + pending.call.timeout;
         for _ in 0..2 {
-            let started = {
+            let start = {
                 let mut workers = match self.workers.lock() {
-                    Ok(w) => w,
+                    Ok(workers) => workers,
                     Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
                 };
                 if workers.get(&key).is_some_and(Worker::usable) {
-                    None
+                    false
                 } else {
                     workers.remove(&key);
-                    if let Err(e) = self.make_room(&mut workers) {
-                        return Outcome::Failed(e);
+                    if let Err(error) = self.make_room(&mut workers) {
+                        return Outcome::Failed(error);
                     }
-                    // Reserve the slot, then start outside the lock and off the
-                    // async thread: hashing and spawning never block other workers.
-                    Some(Starting::reserve(&self.starting))
+                    true
                 }
             };
-            if let Some(reservation) = started {
+            if start {
+                let key_permit = match tokio::time::timeout_at(
+                    startup_deadline,
+                    gate.worker.clone().acquire_owned(),
+                )
+                .await
+                {
+                    Ok(Ok(permit)) => permit,
+                    _ => {
+                        return Outcome::Failed(Error::unavailable(
+                            "the previous worker is still draining; retry shortly",
+                        ));
+                    }
+                };
+                // A permit survives retirement until actual sandbox teardown,
+                // bounding physical workers even while an old session drains.
+                let permit = match tokio::time::timeout_at(
+                    startup_deadline,
+                    self.permits.clone().acquire_owned(),
+                )
+                .await
+                {
+                    Ok(Ok(permit)) => permit,
+                    _ => {
+                        return Outcome::Failed(Error::unavailable(
+                            "worker capacity is still draining; retry shortly",
+                        ));
+                    }
+                };
+                pending.deadline = Instant::now() + pending.call.timeout;
+                let execution_deadline =
+                    startup_deadline.min(tokio::time::Instant::from_std(pending.deadline));
                 let (node, plugin2, bundle2, in_flight) = (
-                    node.clone(),
+                    self.node.clone(),
                     plugin.clone(),
                     bundle.clone(),
                     self.in_flight.clone(),
                 );
-                // The reservation travels with the start: if this caller is
-                // cancelled, the detached task's output (and the slot) is dropped
-                // when the start finishes, never leaked.
-                let spawned = tokio::task::spawn_blocking(move || {
+                // Admission and lifetime permits travel with the start. A cancelled
+                // caller cannot release either while a detached startup runs.
+                let backend = backend.clone();
+                let account = pending.call.account;
+                let runtime = tokio::runtime::Handle::current();
+                let start_key = gate.clone();
+                let start_task = tokio::spawn(async move {
                     (
-                        reservation,
-                        spawn(&node, &plugin2, &bundle2, space, in_flight),
+                        admission,
+                        spawn(
+                            node.as_ref(),
+                            permit,
+                            key_permit,
+                            start_key,
+                            backend,
+                            runtime,
+                            account,
+                            &plugin2,
+                            &bundle2,
+                            space,
+                            in_flight,
+                        )
+                        .await,
                     )
-                })
-                .await;
-                let (reservation, worker) = match spawned {
-                    Ok((r, Ok(w))) => (r, w),
-                    Ok((_, Err(e))) => return Outcome::Failed(e),
+                });
+                let spawned = match tokio::time::timeout_at(execution_deadline, start_task).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        return Outcome::Failed(Error::unavailable(
+                            if Instant::now() >= pending.deadline {
+                                "extension timed out"
+                            } else {
+                                "worker startup timed out; check the enrolled machine runtime"
+                            },
+                        ));
+                    }
+                };
+                let (guard, worker) = match spawned {
+                    Ok((guard, Ok(worker))) => (guard, worker),
+                    Ok((_, Err(error))) => return Outcome::Failed(error),
                     Err(_) => return Outcome::Failed(Error::internal("worker start failed")),
                 };
+                admission = guard;
                 let mut workers = match self.workers.lock() {
                     Ok(w) => w,
                     Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
@@ -354,8 +462,6 @@ impl WorkerPool {
                 } else {
                     workers.insert(key.clone(), worker);
                 }
-                // The worker now counts in the map; release the start slot.
-                drop(reservation);
             }
             let sent = {
                 let workers = match self.workers.lock() {
@@ -365,14 +471,31 @@ impl WorkerPool {
                 let Some(worker) = workers.get(&key) else {
                     continue;
                 };
-                worker.busy.fetch_add(1, Ordering::AcqRel);
+                if worker
+                    .busy
+                    .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                        (n < calternal_plugin_host::MAX_IN_FLIGHT).then_some(n + 1)
+                    })
+                    .is_err()
+                {
+                    return Outcome::Failed(Error::unavailable(
+                        "extension worker is busy; retry shortly",
+                    ));
+                }
                 self.in_flight.fetch_add(1, Ordering::AcqRel);
                 if let Some(cancel) = &pending.call.cancel {
                     cancel.bind(&worker.events);
                 }
-                match worker.events.send(Event::Invoke(pending)) {
+                match worker.events.try_send(Event::Invoke(pending)) {
                     Ok(()) => None,
-                    Err(mpsc::SendError(event)) => {
+                    Err(mpsc::TrySendError::Full(_)) => {
+                        worker.busy.fetch_sub(1, Ordering::AcqRel);
+                        self.in_flight.fetch_sub(1, Ordering::AcqRel);
+                        return Outcome::Failed(Error::unavailable(
+                            "extension worker input queue is full",
+                        ));
+                    }
+                    Err(mpsc::TrySendError::Disconnected(event)) => {
                         worker.busy.fetch_sub(1, Ordering::AcqRel);
                         self.in_flight.fetch_sub(1, Ordering::AcqRel);
                         drop(workers);
@@ -388,6 +511,7 @@ impl WorkerPool {
             };
             match sent {
                 None => {
+                    drop(admission);
                     return answer.await.unwrap_or_else(|_| {
                         Outcome::Failed(Error::unavailable("extension worker stopped"))
                     });
@@ -401,7 +525,7 @@ impl WorkerPool {
     /// Evict one idle worker if the pool is full; refuse when every worker is busy.
     fn make_room(&self, workers: &mut HashMap<(String, SpaceId), Worker>) -> Result<(), Error> {
         workers.retain(|_, w| w.usable());
-        if workers.len() + self.starting.load(Ordering::Acquire) < self.max_workers {
+        if self.permits.available_permits() > 0 {
             return Ok(());
         }
         let idle = workers
@@ -410,9 +534,11 @@ impl WorkerPool {
             .map(|(k, _)| k.clone());
         match idle {
             Some(key) => {
+                tracing::debug!("evicting idle worker");
                 workers.remove(&key); // dropping the handle stops it
                 Ok(())
             }
+            None if workers.len() < self.max_workers => Ok(()),
             None => Err(
                 Error::unavailable("extension workers are busy; retry shortly")
                     .with_details(serde_json::json!({ "reason": "worker_capacity" })),
@@ -421,398 +547,8 @@ impl WorkerPool {
     }
 }
 
-/// Start one worker process and its threads. The pinned digest is rechecked first.
-fn spawn(
-    node: &NodeRuntime,
-    plugin: &Arc<Plugin>,
-    bundle: &Path,
-    space: SpaceId,
-    in_flight: Arc<AtomicUsize>,
-) -> Result<Worker, Error> {
-    verify_digest(bundle, plugin.entry.worker_sha256.as_deref()).map_err(|why| {
-        tracing::warn!(plugin = %plugin.manifest.id, reason = %why, "refusing to start worker");
-        Error::unavailable("plugin bundle failed verification")
-    })?;
-    let session = WorkerSession::new(plugin.manifest.clone(), plugin.schemas.clone(), space)
-        .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
-    let dir = bundle.parent().unwrap_or(Path::new("/"));
-    let mut child = Command::new(&node.path)
-        .arg("--permission")
-        .arg(format!("--allow-fs-read={}", dir.display()))
-        .arg("--disallow-code-generation-from-strings")
-        .arg(format!("--max-old-space-size={WORKER_HEAP_MB}"))
-        .arg(bundle)
-        .env_clear()
-        .env("LANG", "C.UTF-8")
-        .current_dir(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        // Never read: diagnostics may echo private item text.
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| {
-            tracing::error!(error = %e, "failed to start worker");
-            Error::unavailable("extension worker could not start")
-        })?;
-    let stdin = child.stdin.take().expect("piped stdin");
-    let stdout = child.stdout.take().expect("piped stdout");
-    let (events, rx) = mpsc::channel();
-    let (frames, frames_rx) = mpsc::sync_channel::<Vec<u8>>(MAX_QUEUE);
-    let reader_events = events.clone();
-    std::thread::Builder::new()
-        .name("plugin-worker-read".into())
-        .spawn(move || read_frames(stdout, reader_events))
-        .map_err(|_| Error::unavailable("extension worker could not start"))?;
-    std::thread::Builder::new()
-        .name("plugin-worker-write".into())
-        .spawn(move || {
-            let mut stdin = stdin;
-            for frame in frames_rx {
-                if stdin
-                    .write_all(&frame)
-                    .and_then(|()| stdin.flush())
-                    .is_err()
-                {
-                    return;
-                }
-            }
-        })
-        .map_err(|_| Error::unavailable("extension worker could not start"))?;
-    let alive = Arc::new(AtomicBool::new(true));
-    let busy = Arc::new(AtomicUsize::new(0));
-    let thread = Thread {
-        child,
-        session,
-        space,
-        frames,
-        active: BTreeMap::new(),
-        next: 0,
-        alive: alive.clone(),
-        busy: busy.clone(),
-        in_flight,
-    };
-    std::thread::Builder::new()
-        .name("plugin-worker".into())
-        .spawn(move || thread.run(rx))
-        .map_err(|_| Error::unavailable("extension worker could not start"))?;
-    tracing::debug!(plugin = %plugin.manifest.id, "worker started");
-    Ok(Worker {
-        events,
-        alive,
-        busy,
-    })
-}
+mod session;
+use session::Thread;
 
-/// Read newline-delimited frames, never buffering more than one frame budget.
-fn read_frames(stdout: ChildStdout, events: Sender<Event>) {
-    let mut reader = BufReader::new(stdout);
-    loop {
-        let mut line = Vec::new();
-        let limit = MAX_FRAME_BYTES as u64 + 1;
-        match (&mut reader).take(limit).read_until(b'\n', &mut line) {
-            Ok(0) | Err(_) => {
-                let _ = events.send(Event::Closed);
-                return;
-            }
-            Ok(_) if line.last() == Some(&b'\n') => {
-                if events.send(Event::Line(line)).is_err() {
-                    return;
-                }
-            }
-            Ok(_) => {
-                // Either the budget ran out before a newline, or output ended mid-frame.
-                let event = if line.len() as u64 >= limit {
-                    Event::Overflow
-                } else {
-                    Event::Closed
-                };
-                let _ = events.send(event);
-                return;
-            }
-        }
-    }
-}
-
-/// Adapts the per-invocation hosts to the library's broker interface.
-/// The grant in each authority is the host-issued invocation ID.
-struct Broker<'a>(&'a BTreeMap<String, Active>);
-
-impl HostBroker for Broker<'_> {
-    fn authorize(&mut self, authority: &Authority, required: ManifestCapability) -> bool {
-        self.0
-            .get(&authority.grant)
-            .is_some_and(|a| a.host.authorize(required))
-    }
-    fn call(
-        &mut self,
-        authority: &Authority,
-        method: calternal_core::HostCallKind,
-        input: &Value,
-    ) -> Result<Value, calternal_plugin_host::Error> {
-        let active = self
-            .0
-            .get(&authority.grant)
-            .ok_or(calternal_plugin_host::Error::Refused)?;
-        active.host.call(method, input)
-    }
-}
-
-/// State owned by one worker's session thread.
-struct Thread {
-    child: Child,
-    session: WorkerSession,
-    space: SpaceId,
-    frames: SyncSender<Vec<u8>>,
-    active: BTreeMap<String, Active>,
-    next: u32,
-    alive: Arc<AtomicBool>,
-    busy: Arc<AtomicUsize>,
-    in_flight: Arc<AtomicUsize>,
-}
-
-/// Why a worker process is being stopped.
-enum Stop {
-    Idle,
-    Fault(&'static str),
-}
-
-impl Thread {
-    fn run(mut self, rx: Receiver<Event>) {
-        let stop = loop {
-            let wait = self
-                .active
-                .values()
-                .map(|a| a.deadline.saturating_duration_since(Instant::now()))
-                .min()
-                .unwrap_or(WORKER_IDLE);
-            match rx.recv_timeout(wait) {
-                Ok(Event::Invoke(p)) => self.invoke(*p),
-                Ok(Event::Line(line)) => {
-                    if let Err(why) = self.line(&line) {
-                        break Stop::Fault(why);
-                    }
-                }
-                Ok(Event::Cancel(flag)) => self.cancel(&flag),
-                Ok(Event::Overflow) => break Stop::Fault("extension output exceeded limit"),
-                Ok(Event::Closed) => break Stop::Fault("extension worker stopped"),
-                Ok(Event::Shutdown) if self.active.is_empty() => break Stop::Idle,
-                Ok(Event::Shutdown) => self.retire(),
-                Err(RecvTimeoutError::Timeout) if self.active.is_empty() => {
-                    // Mark unusable first; an invocation that raced in is still served.
-                    self.alive.store(false, Ordering::Release);
-                    match rx.try_recv() {
-                        Ok(Event::Invoke(p)) => self.invoke(*p),
-                        _ => break Stop::Idle,
-                    }
-                }
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => break Stop::Idle,
-            }
-            // Checked after every event, so a chatty worker cannot outrun its deadline.
-            if self.active.values().any(|a| a.deadline <= Instant::now()) {
-                break Stop::Fault("extension timed out");
-            }
-            if !self.alive.load(Ordering::Acquire) && self.active.is_empty() {
-                break Stop::Idle;
-            }
-        };
-        self.alive.store(false, Ordering::Release);
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        let message = match stop {
-            Stop::Idle => "extension worker stopped",
-            Stop::Fault(why) => {
-                tracing::warn!(reason = why, "worker stopped");
-                why
-            }
-        };
-        for id in self.active.keys().cloned().collect::<Vec<_>>() {
-            self.finish(&id, Outcome::Failed(Error::unavailable(message)));
-        }
-        // Reply to invocations queued behind the stop instead of dropping them silently.
-        while let Ok(event) = rx.try_recv() {
-            if let Event::Invoke(p) = event {
-                self.busy.fetch_sub(1, Ordering::AcqRel);
-                self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                let _ = p.reply.send(Outcome::Failed(Error::unavailable(message)));
-            }
-        }
-    }
-
-    /// Stop accepting new work; the thread exits once in-flight invocations finish.
-    fn retire(&mut self) {
-        self.alive.store(false, Ordering::Release);
-    }
-
-    fn invoke(&mut self, p: Pending) {
-        self.next += 1;
-        if self.next >= MAX_LIFETIME_INVOCATIONS {
-            // Serve this last one; the pool starts a replacement for the next call.
-            self.retire();
-        }
-        let id = format!("i{}", self.next);
-        let authority = Authority {
-            account_id: p.call.account,
-            space_id: self.space,
-            grant: id.clone(),
-        };
-        self.active.insert(
-            id.clone(),
-            Active {
-                host: p.call.host,
-                cancel: p.call.cancel.clone(),
-                reply: p.reply,
-                deadline: Instant::now() + p.call.timeout,
-            },
-        );
-        let admitted = self.session.invoke(
-            id.clone(),
-            p.call.operation,
-            p.call.input,
-            authority,
-            &mut Broker(&self.active),
-        );
-        if admitted.is_ok()
-            && let Some(job) = &p.call.job
-            && self.session.attach_job(&id, job).is_err()
-        {
-            let _ = self.session.cancel(&id);
-            self.finish(&id, Outcome::Refused);
-            self.flush(&id);
-            return;
-        }
-        match admitted {
-            Ok(()) if p.call.cancel.as_ref().is_some_and(|c| c.is_cancelled()) => {
-                if let Some(flag) = p.call.cancel {
-                    self.cancel(&flag);
-                }
-            }
-            Ok(()) => self.flush(&id),
-            Err(calternal_plugin_host::Error::Invalid) => self.finish(&id, Outcome::InvalidInput),
-            Err(calternal_plugin_host::Error::Refused) => self.finish(&id, Outcome::Refused),
-            Err(_) => self.finish(
-                &id,
-                Outcome::Failed(
-                    Error::unavailable("extension worker is busy; retry shortly")
-                        .with_details(serde_json::json!({ "reason": "worker_capacity" })),
-                ),
-            ),
-        }
-    }
-
-    /// Handle one worker frame. `Err` means the process must be stopped.
-    fn line(&mut self, line: &[u8]) -> Result<(), &'static str> {
-        let frame = decode_frame(line).map_err(|_| "extension returned invalid output")?;
-        let id = frame.invocation_id.clone();
-        if !self.active.contains_key(&id) {
-            // Late output for an invocation already answered: discard it.
-            return Ok(());
-        }
-        let delivers = matches!(
-            frame.message,
-            Message::Complete { .. } | Message::Failed {} | Message::Chunk { .. }
-        );
-        match self.session.receive(frame, &mut Broker(&self.active)) {
-            Ok(()) => {}
-            Err(calternal_plugin_host::Error::Refused) => {
-                // Undeclared/forged host call, or authority no longer current.
-                let _ = self.session.cancel(&id);
-                self.finish(&id, Outcome::Refused);
-            }
-            Err(calternal_plugin_host::Error::BackPressure) => {
-                return Err("extension exceeded its queue");
-            }
-            Err(_) => {
-                let _ = self.session.cancel(&id);
-                self.finish(
-                    &id,
-                    Outcome::Failed(Error::unavailable("extension returned invalid output")),
-                );
-            }
-        }
-        if delivers {
-            self.deliver(&id);
-        }
-        self.flush(&id);
-        Ok(())
-    }
-
-    /// Cancel the invocation holding `flag`: invalidate it in the session, queue the
-    /// worker's `cancel` frame and answer [`Outcome::Cancelled`].
-    fn cancel(&mut self, flag: &Arc<CancelFlag>) {
-        let Some(id) = self
-            .active
-            .iter()
-            .find(|(_, a)| a.cancel.as_ref().is_some_and(|c| Arc::ptr_eq(c, flag)))
-            .map(|(id, _)| id.clone())
-        else {
-            return;
-        };
-        let _ = self.session.cancel(&id);
-        self.finish(&id, Outcome::Cancelled);
-        self.flush(&id);
-    }
-
-    /// Drain the delivery for `id` that a chunk or completion just queued. A chunk
-    /// goes to the invocation's host; a completion answers the caller.
-    fn deliver(&mut self, id: &str) {
-        if !self.active.contains_key(id) {
-            return;
-        }
-        let outcome = match self.session.next_delivery(&mut Broker(&self.active)) {
-            Ok(Some(Frame {
-                message: Message::Chunk { job_id, data, .. },
-                ..
-            })) => {
-                if let Some(active) = self.active.get(id) {
-                    active.host.chunk(&job_id, &data);
-                }
-                return;
-            }
-            Ok(Some(Frame {
-                message: Message::Complete { data },
-                ..
-            })) => Outcome::Complete(data),
-            Ok(Some(_)) => Outcome::Failed(Error::unavailable("extension failed")),
-            Ok(None) => return,
-            Err(_) => Outcome::Refused,
-        };
-        self.finish(id, outcome);
-    }
-
-    /// Send every queued host frame. Every enqueue is followed by a flush on this
-    /// thread, so queued frames belong to `id` (or are cancellations, which bypass
-    /// the authority check). A frame refused because `id`'s authority no longer
-    /// holds is discarded and `id` refused. A full transport queue stops the worker.
-    fn flush(&mut self, id: &str) {
-        loop {
-            let frame = match self.session.next_outgoing(&mut Broker(&self.active)) {
-                Ok(Some(frame)) => frame,
-                Ok(None) => return,
-                Err(calternal_plugin_host::Error::Refused) => {
-                    let _ = self.session.cancel(id);
-                    self.finish(id, Outcome::Refused);
-                    continue;
-                }
-                Err(_) => continue,
-            };
-            let Ok(bytes) = encode_frame(&frame) else {
-                continue;
-            };
-            if self.frames.try_send(bytes).is_err() {
-                // The worker stopped reading: stop it rather than block this thread.
-                self.alive.store(false, Ordering::Release);
-                let _ = self.child.kill();
-                return;
-            }
-        }
-    }
-
-    fn finish(&mut self, id: &str, outcome: Outcome) {
-        if let Some(active) = self.active.remove(id) {
-            self.busy.fetch_sub(1, Ordering::AcqRel);
-            self.in_flight.fetch_sub(1, Ordering::AcqRel);
-            let _ = active.reply.send(outcome);
-        }
-    }
-}
+mod transport;
+use transport::{Process, spawn};
