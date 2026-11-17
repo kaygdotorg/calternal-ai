@@ -200,3 +200,17 @@ transitions, no animation for keyboard actions. Hallmark's and the existing app'
 Mechanism from `docs/ui-backgrounds-and-themes.md`: the wallpaper is blurred once (canvas, then a JPEG blob), brightness grid drives the wash and the
 material, a 48×48 hue sample gives the accent (guarded to 4.5:1, overridable), twelve presets map palette to tokens, and recipes (OKLab gradients) render
 light and dark. Choices (default wallpaper `haze`, default preset `calternal`, grain) are tokens in `tokens.json`; the mechanism is code.
+
+## Material: the veil (replaces the brightness heuristic)
+
+`appearance/veil.ts` implements section 5 of `docs/ui-craft-and-settings-study.md`. For each surface (left sidebar, right sidebar, middle card) it reads the pixels of the
+pre-blurred copy under it and solves how much of the scheme's paper colour must cover them: primary ink 7:1, ink-2 5.5:1 and ink-3 4.5:1 on the worst 1 % (with 0.35
+headroom for grain and JPEG), compositing in gamma-encoded sRGB as CSS does. Layers: **Tint** (paper with a whisper of the picture's hue, OKLCH chroma 0.25 of the mean, at
+most 0.05) then **Dim** (plain paper); **Blur** is the pre-blurred copy itself, not a layer. A box off makes the others carry the floor; all three off is opaque paper;
+reduced transparency behaves the same. Sidebars start at tint 0.35 and dim 0.25 and rise only as needed; the card's veil is the floor plus 0.02 split between the layers
+that are on. Secondary and tertiary ink move toward the primary per surface until they reach their targets (`--l-ink2`, `--r-ink3`, `--c-ink2`, ...). A sidebar may flip to the
+other scheme's ink when that needs clearly (0.12) less veil (`data-ink`, the generated `[data-ink]` token blocks); the card never flips.
+`washFor` (still used by pills) now mixes in encoded sRGB; before, it mixed in linear light and delivered 3.0 to 3.8:1 where it promised 4.5:1.
+Checked on rendered pixels: `e2e/veil-pixels.mjs` (all eight photographs, both schemes).
+
+The photographs suit the dark scheme, so the light scheme uses a lighter rendition of each, made at build time (`scripts/wallpapers.mjs`).

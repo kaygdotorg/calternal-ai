@@ -1,5 +1,7 @@
 # The composer and the palette in the web shell (plan and status)
 
+Status 2026-11-17: the engine and the palette surface are built on fixtures and tested (`palette/*.test.ts`, `e2e/palette.mjs`); the thread composer does not use the engine yet.
+
 Plan for bringing the existing app's composer and palette across, following `docs/composer.md` (decisions) and `docs/reviews/composer-map-2026-11-17.md` (how the existing app does it). Built on fixtures in `apps/web/src/palette/`.
 
 ## What is ported, what is new
