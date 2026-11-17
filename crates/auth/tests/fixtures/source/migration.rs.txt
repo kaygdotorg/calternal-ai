@@ -1,0 +1,123 @@
+//! An old-schema copy with a real passkey and session remains usable.
+mod common;
+use common::*;
+use serde_json::json;
+
+#[tokio::test]
+async fn schema_two_copy_keeps_real_credentials_sessions_and_recovery() {
+    let source = app();
+    let (cookie, mut device) = first_owner(&source, "Owner").await;
+    let owner = get(&source, "/api/v1/auth/me", Some(&cookie)).await.body["user"]["id"].clone();
+    let member = calternal_auth::create(source.dir.path(), "Member 雪").unwrap();
+    let (name, recovery) = calternal_auth::recover(source.dir.path(), "owner").unwrap();
+    assert_eq!(name, "Owner");
+    let copy = calternal_testkit::TempDir::new();
+    std::fs::create_dir_all(copy.path().join("system")).unwrap();
+    let path = copy.path().join("system/auth.db");
+    let db = rusqlite::Connection::open(source.dir.path().join("system/auth.db")).unwrap();
+    db.execute("VACUUM INTO ?1", [path.to_str().unwrap()])
+        .unwrap();
+    let fixture = rusqlite::Connection::open(&path).unwrap();
+    // Build the existing v2 schema with real rows from a software passkey
+    // enrollment. No migration code runs on the source or on a real server.
+    remove_v11_sharing_schema(&fixture).unwrap();
+    fixture
+        .execute_batch(
+            "PRAGMA foreign_keys=OFF;
+        DROP TRIGGER installation_scopes_insert; DROP TRIGGER installation_scopes_update; ALTER TABLE installations DROP COLUMN registration_session; ALTER TABLE installations DROP COLUMN assertion_at; ALTER TABLE installations DROP COLUMN scopes;
+        DROP TRIGGER first_person_admin;
+        DROP TRIGGER user_role_insert;
+        DROP TRIGGER user_role_update;
+        DROP TRIGGER role_in_use;
+        DROP TABLE invite_groups;
+        DROP TABLE invites;
+        DROP TABLE group_members;
+        DROP TABLE groups;
+        ALTER TABLE users DROP COLUMN quota_bytes;
+        ALTER TABLE users DROP COLUMN role;
+        DROP TABLE role_capabilities;
+        DROP TABLE roles;
+        PRAGMA user_version=2;",
+        )
+        .unwrap();
+    let credential: String = fixture
+        .query_row("SELECT passkey FROM passkeys", [], |r| r.get(0))
+        .unwrap();
+    let session: Vec<u8> = fixture
+        .query_row("SELECT token_hash FROM installations", [], |r| r.get(0))
+        .unwrap();
+    drop(fixture);
+    let restored = app_in(copy, |_| {});
+    let fixture = rusqlite::Connection::open(&path).unwrap();
+    assert_eq!(
+        fixture
+            .query_row("SELECT passkey FROM passkeys", [], |r| r
+                .get::<_, String>(0))
+            .unwrap(),
+        credential
+    );
+    assert_eq!(
+        fixture
+            .query_row("SELECT token_hash FROM installations", [], |r| r
+                .get::<_, Vec<u8>>(0))
+            .unwrap(),
+        session
+    );
+    let me = get(&restored, "/api/v1/auth/me", Some(&cookie)).await;
+    assert_eq!(me.status, 200);
+    assert_eq!(me.body["user"]["id"], owner);
+    assert_eq!(login(&restored, &mut device).await.status, 200);
+    let recovery = post(
+        &restored,
+        "/api/v1/auth/setup/start",
+        None,
+        json!({"token":recovery}),
+    )
+    .await;
+    assert_eq!(recovery.status, 200);
+    let pending = post(
+        &restored,
+        "/api/v1/auth/setup/start",
+        None,
+        json!({"token":member.token}),
+    )
+    .await;
+    assert_eq!(pending.status, 200);
+    let listed = action(&restored, &cookie, "people.list", "list", json!(null)).await;
+    let rows = listed.body["result"]["people"].as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    assert!(
+        rows.iter()
+            .any(|p| p["id"] == owner && p["role"] == "admin")
+    );
+    assert!(
+        rows.iter()
+            .any(|p| p["id"] == member.id && p["role"] == "member" && p["quota_bytes"].is_null())
+    );
+    let version: i64 = fixture
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 15);
+    assert_eq!(
+        fixture
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE type='table' AND name='sharing_reset_cursors'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        fixture
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE type='table' AND name='share_fanout_deliveries'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+}

@@ -9,6 +9,7 @@ rust-version = "1.99.1"
 license = "AGPL-3.0-only"
 
 [workspace.dependencies]
+calternal-auth = { path = "crates/auth" }
 calternal-fsio = { path = "crates/fsio" }
 calternal-roots = { path = "crates/roots" }
 calternal-core = { path = "crates/core" }
