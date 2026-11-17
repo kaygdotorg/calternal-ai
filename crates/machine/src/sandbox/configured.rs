@@ -32,6 +32,15 @@ impl ConfiguredBackend {
     }
 }
 impl Backend for ConfiguredBackend {
+    fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            if self.podman.engine_available().await {
+                self.podman.initialize().await
+            } else {
+                self.direct.initialize().await
+            }
+        })
+    }
     fn name(&self) -> &'static str {
         if self.selected.load(Ordering::Acquire) == 1 {
             "direct"
@@ -68,7 +77,7 @@ impl Backend for ConfiguredBackend {
         &'a self,
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
-        if self.selected.load(Ordering::Acquire) == 1 {
+        if spec.worker.is_none() && self.selected.load(Ordering::Acquire) == 1 {
             self.direct.start(spec)
         } else {
             self.podman.start(spec)

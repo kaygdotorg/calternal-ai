@@ -26,7 +26,7 @@ Exit code 3 means the machine was revoked.
 
 ## Design
 
-- **Transport**: version 2 long-poll over HTTP(S) ([`protocol`](src/protocol.rs)). There are no
+- **Transport**: version 3 long-poll over HTTP(S) ([`protocol`](src/protocol.rs)). There are no
   new dependencies on either side, it passes any proxy in front of the server, and it
   reuses the server's request guard. Both directions carry sequence numbers and
   acknowledgements, so a dropped request loses nothing. The cost is one held request
@@ -75,3 +75,9 @@ never appear in the engine argv. Direct execution sets environment values with
 the process API, and configured execution delegates to those same backends.
 Enrollment codes travel over HTTP; use `CALTERNAL_ENROLL_CODE` or `--code -` with
 stdin when invoking the machine CLI so the code stays out of the caller argv.
+
+Plugin workers use these same backend and exec interfaces with a separate confined
+profile: no network, read-only code only, no persistent home or host data mounts,
+256 MiB / 1 CPU / 64 PIDs. Interactive execs return a bounded stdin sender;
+machine `Input` messages retain ordering and fencing. Details, lifecycle, test
+commands and placement restrictions: [plugin workers](../../docs/plugin-workers.md).

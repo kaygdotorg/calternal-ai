@@ -27,6 +27,7 @@ mod drafts_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
 mod simplify_review_cases;
+mod worker_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
@@ -130,6 +131,7 @@ struct Fixture {
     devices: Vec<Device>,
     spaces: Vec<String>,
     development: bool,
+    remote_workers: bool,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -154,6 +156,7 @@ impl Fixture {
             .expect("set CALTERNAL_SERVER_BIN to built dev-VM binary");
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut command = Command::new(binary);
+        command.env_clear();
         if self.dir.path().join("node-gate").is_file() {
             command
                 .arg("serve")
@@ -161,6 +164,9 @@ impl Fixture {
                 .arg(self.dir.path().join("node-gate"));
         } else {
             command.arg("serve");
+        }
+        if !self.remote_workers {
+            command.env("CALTERNAL_WORKER_TEST_BACKEND", "direct");
         }
         if self.development {
             command.arg("--development");
@@ -182,7 +188,6 @@ impl Fixture {
                 .arg("--test-plugin-root")
                 .arg(repo.join("tests/plugins"))
                 .current_dir(repo)
-                .env_clear()
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env("RUST_LOG", "warn")
@@ -363,6 +368,7 @@ impl Fixture {
             devices: vec![],
             spaces: vec![],
             development: false,
+            remote_workers: false,
         };
         f.start().await;
         let token = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
@@ -2681,7 +2687,7 @@ async fn machines_and_runs_are_owner_private() {
     let forged = MachineKey::generate()
         .unwrap()
         .sign_session(machine, &challenge);
-    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":2,"backend":"podman"});
+    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":"podman"});
     assert_eq!(
         f.machine(
             "/api/v1/machine/session/finish",

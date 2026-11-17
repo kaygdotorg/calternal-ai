@@ -1,4 +1,4 @@
-//! Wire protocol between the server role and the machine role, version 2.
+//! Wire protocol between the server role and the machine role, version 3.
 //!
 //! The machine always connects out; the server never opens a connection to a
 //! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
@@ -28,14 +28,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Path prefix of every machine-facing endpoint. The server's account guard
 /// skips it: these endpoints authenticate the machine themselves.
 pub const PATH_PREFIX: &str = "/api/v1/machine/";
 
 /// Domain separation prefix of the signed session challenge.
-pub const SESSION_CONTEXT: &[u8] = b"calternal-machine-session-v2\n";
+pub const SESSION_CONTEXT: &[u8] = b"calternal-machine-session-v3\n";
 
 /// Bytes a machine signs to open a session: context, machine id, challenge.
 /// Binding the machine id stops a signature for one machine opening another's session.
@@ -236,14 +236,30 @@ pub struct Limits {
 /// What to start for a thread.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SandboxSpec {
+    /// Local development fixture code directory, mounted read-only by the same
+    /// backend. Never serialized: a remote assignment can carry source only.
+    #[serde(skip)]
+    pub code_directory: Option<std::path::PathBuf>,
     /// Account owning the persistent login home; validated UUID from the server.
     pub account_id: Uuid,
     /// The thread; one sandbox per thread, reused across leases.
     pub thread_id: Uuid,
     /// Base image by reference; `None` uses the machine's configured default.
     pub image: Option<String>,
+    /// Verified worker source and its space; absent for agent sandboxes.
+    pub worker: Option<PluginWorker>,
     /// Resource limits.
     pub limits: Limits,
+}
+
+/// A single verified, self-contained JavaScript bundle, never a host path.
+/// Limited to 1 MiB; transferred over the authenticated machine connection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginWorker {
+    /// Space whose broker owns this worker; never inferred from a file path.
+    pub space_id: SpaceId,
+    /// UTF-8 JavaScript source, already checked against the registry digest.
+    pub source: String,
 }
 
 /// A message from the server to a machine.
@@ -274,6 +290,8 @@ pub enum Down {
     },
     /// Run a command in the lease's sandbox and stream its output.
     Exec {
+        /// Keep stdin open for bounded, ordered Input messages.
+        interactive: bool,
         /// The lease.
         lease_id: Uuid,
         /// Its current fence.
@@ -282,7 +300,7 @@ pub enum Down {
         exec_id: Uuid,
         /// Program and arguments; no shell is implied.
         argv: Vec<String>,
-        /// Bounded UTF-8 stdin, delivered once then closed; at most 128 KiB.
+        /// Bounded UTF-8 stdin, delivered once then closed; at most 128 KiB; empty for interactive execs.
         stdin: String,
         /// Extra environment; the sandbox starts from an empty environment.
         /// Never a credential: secret values reach a sandbox only as
@@ -290,6 +308,17 @@ pub enum Down {
         /// released by `SecretStore::use_value` when the server builds this
         /// message (see `MachineService::exec` for the seam).
         env: Vec<(String, String)>,
+    },
+    /// One bounded write to an interactive exec; envelope replay protection applies.
+    Input {
+        /// Lease owning the exec.
+        lease_id: Uuid,
+        /// Current lease fence.
+        fence: u64,
+        /// Interactive exec identity.
+        exec_id: Uuid,
+        /// At most 256 KiB plus a newline, never placed on a command line.
+        data: Vec<u8>,
     },
     /// Stop and remove the lease's sandbox (the lease ended or was fenced).
     Stop {
