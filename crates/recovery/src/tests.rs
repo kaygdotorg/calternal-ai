@@ -1482,3 +1482,6 @@ fn secret_key_lifecycle_is_protected_idempotent_and_cannot_revive() {
         Cell::Integer(1)
     );
 }
+
+#[path = "startup_tests.rs"]
+mod startup_tests;

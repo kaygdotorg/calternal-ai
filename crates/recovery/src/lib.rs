@@ -3,6 +3,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod model;
+mod sink;
 mod state;
 mod storage;
 use calternal_auth::spaces::RecoverySink;
@@ -137,6 +138,9 @@ pub struct Coordinator {
 impl Coordinator {
     /// Opens a mode-0700 Linux root; provisions only an entirely empty directory.
     /// Unknown formats and partial provisioning refuse rather than guessing state.
+    /// Cost: one eager snapshot/segment validation, retained in the existing
+    /// stamp-checked cache for authority reconciliation before admission. Requires
+    /// the host's root locks and trusted ancestry; no space stores are opened.
     pub fn open(root: &Path, installation: Uuid) -> Result<Self> {
         Self::with_observer(root, installation, Arc::new(|_| Ok(())))
     }
@@ -185,7 +189,8 @@ impl Coordinator {
                 records: BTreeMap::new(),
             })?)?;
         }
-        this.load()?;
+        let loaded = this.load()?;
+        *this.gate.lock().map_err(err)? = Some(loaded);
         Ok(this)
     }
     fn stamps(&self, segment: &str) -> Result<(Vec<u64>, Vec<u64>)> {
@@ -413,6 +418,18 @@ impl Coordinator {
     }
     fn read_locked(&self, expected: Option<&Checkpoint>) -> Result<Snapshot> {
         let s = self.load()?;
+        Self::validate_loaded(&s, expected)?;
+        state::assemble(
+            self.installation,
+            s.image.transaction,
+            s.image.committed_sequence,
+            s.image.records.into_values().collect(),
+        )
+    }
+    /// Validate the current map's proof before assembling it. Startup can reuse
+    /// verified bytes under the private-file stamp cache; standalone reads own
+    /// a freshly loaded map and transfer its records without cloning.
+    fn validate_loaded(s: &Loaded, expected: Option<&Checkpoint>) -> Result<()> {
         if s.pending.is_some()
             || !s.tail.is_empty()
             || s.image.committed_sequence == 0
@@ -420,11 +437,15 @@ impl Coordinator {
         {
             return Err(invalid());
         }
+        Ok(())
+    }
+    fn read_loaded(&self, s: &Loaded, expected: Option<&Checkpoint>) -> Result<Snapshot> {
+        Self::validate_loaded(s, expected)?;
         state::assemble(
             self.installation,
             s.image.transaction,
             s.image.committed_sequence,
-            s.image.records.into_values().collect(),
+            s.image.records.values().cloned().collect(),
         )
     }
     /// Replays the full snapshot and log, refusing gaps, corruption and unresolved
@@ -497,73 +518,6 @@ impl Coordinator {
         *cache = Some(s);
         Ok(transaction.to_string())
     }
-}
-impl RecoverySink for Coordinator {
-    fn serial(&self) -> &Mutex<()> {
-        &self.serial
-    }
-    fn reconcile(&self, c: &Connection) -> calternal_auth::Result<()> {
-        let run = || -> Result<()> {
-            if !c.is_autocommit() {
-                return Err(invalid());
-            }
-            let mut cache = self.gate.lock().map_err(err)?;
-            let mut s = self.load()?;
-            let exists: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='security_recovery_commits')",[],|r|r.get(0)).map_err(err)?;
-            if !exists && (s.image.head.sequence > 0 || s.pending.is_some() || !s.tail.is_empty()) {
-                return Err(invalid());
-            }
-            state::initialize(c)?;
-            self.replay_loaded(c, &mut s)?;
-            self.compact(&mut s)?;
-            // Obsolete segments and fsio temporary files are harmless; only the
-            // exact snapshot-selected segment participates in validation.
-            let mut removed = false;
-            for name in self.store.names()? {
-                if Self::segment_name(&name) && name != s.image.segment {
-                    self.store.remove(&name)?;
-                    removed = true;
-                }
-            }
-            if removed {
-                self.store.sync()?;
-            }
-            if s.image.committed_sequence > 0 {
-                self.read_locked(None)?;
-            }
-            *cache = Some(s);
-            Ok(())
-        };
-        run().map_err(auth_error)
-    }
-    fn prepare(&self, c: &Connection) -> calternal_auth::Result<String> {
-        self.prepare_inner(c).map_err(auth_error)
-    }
-    fn complete(&self, c: &Connection, id: &str) -> calternal_auth::Result<()> {
-        let run = || -> Result<()> {
-            if !c.is_autocommit() {
-                return Err(invalid());
-            }
-            if id.is_empty() {
-                return Ok(());
-            }
-            let id = Uuid::parse_str(id).map_err(err)?;
-            let mut cache = self.gate.lock().map_err(err)?;
-            let mut s = self.load_cached(&mut cache)?;
-            self.store.tick(Step::AfterCommit)?;
-            self.replay_loaded(c, &mut s)?;
-            if s.image.transaction != id {
-                return Err(err("requested transaction did not commit"));
-            }
-            self.compact(&mut s)?;
-            *cache = Some(s);
-            Ok(())
-        };
-        run().map_err(auth_error)
-    }
-}
-fn auth_error(e: impl std::fmt::Display) -> calternal_auth::Error {
-    calternal_auth::Error::Internal(e.to_string())
 }
 
 #[cfg(test)]

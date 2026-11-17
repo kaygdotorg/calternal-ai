@@ -8,10 +8,9 @@ use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
 use calternal_server::auth::StoredDirectory;
 use calternal_server::machines::MachineService;
-use calternal_server::plugins::{self, Registry};
-use calternal_server::store::Store;
+use calternal_server::plugins;
 use clap::{Parser, Subcommand};
-use startup_io::write_private_atomic;
+use startup_io::{DATA_HINT, write_private_atomic};
 
 #[derive(Parser)]
 #[command(
@@ -315,8 +314,6 @@ async fn serve(
     machine_settings: calternal_server::machines::Settings,
     out: &Output,
 ) -> Result<(), CliError> {
-    const DATA_HINT: &str =
-        "Check that --appdata exists (or can be created) and that you can write to it.";
     // The roots guard runs first: a missing, swapped or foreign root is refused
     // before any directory, lock or database is created.
     const PIN_HINT: &str = "Put this installation's UUID in the server configuration as \
@@ -342,35 +339,17 @@ async fn serve(
             })
         })?;
     let (store, data_dir, recovery, registry) = tokio::task::spawn_blocking(move || {
-    let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
-        boot(
-            1,
-            "failed",
-            e.message,
-            "Pass the three roots this installation was set up with (--create only for \
-             first setup), and make sure no other server is using them.",
+        startup_io::open_stores(
+            roots,
+            installation,
+            create,
+            receipt_retention,
+            plugin_root,
+            test_plugin_root,
         )
-    })?;
-    let data_dir = std::fs::canonicalize(&roots.appdata)
-        .map_err(|e| boot(1, "io", format!("appdata: {e}"), DATA_HINT))?;
-    // Every security change is written to this log in userdata-ssd before it is
-    // acknowledged (crates/recovery), so auth.db can be rebuilt if appdata is lost.
-    let recovery = store.open_recovery(create).map_err(|e| {
-        boot(
-            1,
-            "failed",
-            e.message,
-            "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
-        )
-    })?;
-    let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
-    let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = match &test_root {
-        Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
-        None => Registry::load(&plugin_root),
-    };
-        Ok::<_, CliError>((store, data_dir, recovery, registry))
-    }).await.map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
     let node = match plugins::resolve_node(node.as_deref()).await {
         Ok(n) => {
             tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");

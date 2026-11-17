@@ -1,6 +1,7 @@
 //! CLI presentation regression fixtures.
 
 use super::*;
+use calternal_server::store::Store;
 use calternal_cli::testing::assert_golden;
 use std::path::{Path, PathBuf};
 use time::UtcOffset;
