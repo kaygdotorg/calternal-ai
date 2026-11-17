@@ -26,7 +26,6 @@
 //! [`MAX_SUBSCRIBERS`] stream subscribers. Final jobs are deleted [`RETAIN_FINAL`]
 //! after they finish, and beyond the newest [`MAX_FINAL_PER_SPACE`] per space.
 
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -270,7 +269,8 @@ impl Jobs {
             return Ok(c.clone());
         }
         let dir = root.join(space);
-        calternal_fsio::private::directory(&dir).map_err(|_| Error::internal("job storage directory"))?;
+        calternal_fsio::private::directory(&dir)
+            .map_err(|_| Error::internal("job storage directory"))?;
         let path = dir.join("jobs.db");
         calternal_fsio::private::file(&path).map_err(|_| Error::internal("job storage file"))?;
         let c = Connection::open(path).map_err(db_err)?;
@@ -338,8 +338,7 @@ impl Jobs {
     /// Cost: one FULL transaction with a few indexed reads and one insert.
     pub fn admit(&self, a: Admission) -> Result<String, Error> {
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
-        let session =
-            serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
+        let session = serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
         let space = a.space.clone();
         let id = self.tx(&space, |tx| {
             if let Some(id) = tx

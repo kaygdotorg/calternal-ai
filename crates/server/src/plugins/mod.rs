@@ -14,7 +14,6 @@
 //!
 //! Workers are NOT an OS security sandbox; see [`worker`] for what one can still reach.
 
-
 pub mod broker;
 pub mod job_api;
 pub mod job_sql;
@@ -38,9 +37,9 @@ use calternal_plugin_host as host;
 use serde::Deserialize;
 
 use crate::authz::{self, Constraint, Policy, Scope};
-use calternal_types::{Capability, SpaceId};
-use calternal_types::Error;
 use crate::store::{PluginRow, Store, sha256_hex};
+use calternal_types::Error;
+use calternal_types::{Capability, SpaceId};
 
 pub use broker::{InvocationHost, PREVIEW_FIXTURE, PREVIEW_ITEM_ID, PreviewHost};
 pub use jobs::Jobs;
@@ -104,7 +103,8 @@ impl Plugin {
         worker: Option<PathBuf>,
     ) -> Result<Self, String> {
         let schemas = Arc::new(
-            host::CompiledSchemas::compile(&manifest).map_err(|e| format!("manifest invalid: {e}"))?,
+            host::CompiledSchemas::compile(&manifest)
+                .map_err(|e| format!("manifest invalid: {e}"))?,
         );
         if manifest.id != entry.id || manifest.version != entry.version {
             return Err(format!(

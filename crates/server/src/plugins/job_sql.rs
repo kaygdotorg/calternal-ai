@@ -3,7 +3,6 @@
 //! [`super::jobs::Jobs`]. Every function runs inside the caller's transaction or
 //! connection lock and performs only indexed statements.
 
-
 use calternal_core::JobState;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
@@ -100,10 +99,7 @@ pub(super) fn set_state(
 }
 
 /// Whether every child of `parent` has reported.
-pub(super) fn all_reported(
-    tx: &rusqlite::Transaction<'_>,
-    parent: &str,
-) -> Result<bool, Error> {
+pub(super) fn all_reported(tx: &rusqlite::Transaction<'_>, parent: &str) -> Result<bool, Error> {
     let pending: i64 = tx
         .query_row(
             "SELECT count(*) FROM jobs j WHERE j.parent=?1 AND NOT EXISTS (SELECT 1 FROM child_results c WHERE c.parent=?1 AND c.child=j.id)",

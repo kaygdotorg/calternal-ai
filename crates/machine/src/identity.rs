@@ -17,9 +17,9 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use calternal_types::AccountId;
 use ring::rand::SystemRandom;
 use ring::signature::{Ed25519KeyPair, KeyPair};
-use calternal_types::AccountId;
 use uuid::Uuid;
 
 use crate::protocol::{Owner, session_message};
@@ -148,7 +148,9 @@ mod tests {
         let c = Credentials {
             server: "http://127.0.0.1:1".into(),
             machine_id: Uuid::new_v4(),
-            owner: Owner::Account { id: AccountId::new() },
+            owner: Owner::Account {
+                id: AccountId::new(),
+            },
             key: MachineKey::generate().unwrap(),
         };
         c.save(dir.path()).unwrap();

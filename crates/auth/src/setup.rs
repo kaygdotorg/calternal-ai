@@ -65,9 +65,7 @@ pub(crate) async fn first_owner_token(inner: &Arc<Inner>) -> Result<Option<Strin
 pub(crate) fn find_in(c: &Connection, who: &str) -> Result<(String, String)> {
     // Display names are never identity selectors, even when currently unique.
     // BINARY overrides the username column's case-insensitive uniqueness collation.
-    let id = AccountId::parse(who)
-        .ok()
-        .map(|id| id.to_string());
+    let id = AccountId::parse(who).ok().map(|id| id.to_string());
     let mut st = c
         .prepare("SELECT id, name FROM users WHERE id = ?1 OR username = ?2 COLLATE BINARY")
         .map_err(sql)?;

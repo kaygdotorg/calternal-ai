@@ -1,10 +1,10 @@
 //! Stored space invariants and source people-action projections, using only temp DBs.
-use calternal_types::{AccountId, SpaceId};
 use calternal_auth::{
     ErrorCode,
     db::open_conn,
     spaces::{DevelopmentIds, SpaceChange, Spaces},
 };
+use calternal_types::{AccountId, SpaceId};
 use rusqlite::params;
 
 struct Fixture {

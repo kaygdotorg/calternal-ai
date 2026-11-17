@@ -387,7 +387,9 @@ impl Spaces {
             let mut rows = st.query([role]).map_err(sql)?;
             let mut set = CapabilitySet::empty();
             while let Some(row) = rows.next().map_err(sql)? {
-                if let Some(capability) = Capability::from_name(row.get_ref(0).map_err(sql)?.as_str().map_err(sql)?) {
+                if let Some(capability) =
+                    Capability::from_name(row.get_ref(0).map_err(sql)?.as_str().map_err(sql)?)
+                {
                     set = set.with(capability);
                 }
             }

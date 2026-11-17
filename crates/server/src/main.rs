@@ -293,18 +293,20 @@ async fn serve(
             "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
         ));
     }
-    let directory = match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(boot(
-                1,
-                "failed",
-                format!("account directory: {e}"),
-                DATA_HINT,
-            ));
-        }
-    };
-    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
+    let directory =
+        match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
+            Ok(t) => t,
+            Err(e) => {
+                return Err(boot(
+                    1,
+                    "failed",
+                    format!("account directory: {e}"),
+                    DATA_HINT,
+                ));
+            }
+        };
+    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
+    {
         match service.auth.first_owner_token().await {
             Ok(Some(token)) => {
                 let path = data_dir.join("setup.token");

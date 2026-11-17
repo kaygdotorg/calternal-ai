@@ -10,10 +10,7 @@ use calternal_server::{
     store::Store,
 };
 use serde_json::{Value, json};
-use std::{
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 use tower::ServiceExt;
 
 struct Fixture {
@@ -39,7 +36,11 @@ impl Fixture {
         tokio::task::spawn_blocking(move || {
             let base =
                 std::env::temp_dir().join(format!("calternal-spaces-{}", uuid::Uuid::new_v4()));
-            let roots = calternal_roots::Roots { appdata: base.join("appdata"), userdata_ssd: base.join("userdata-ssd"), userdata_hdd: base.join("userdata-hdd") };
+            let roots = calternal_roots::Roots {
+                appdata: base.join("appdata"),
+                userdata_ssd: base.join("userdata-ssd"),
+                userdata_hdd: base.join("userdata-hdd"),
+            };
             let store = Store::open(&roots, true).unwrap();
             // Every later path is in appdata; `base` holds all three roots.
             let root = roots.appdata.clone();
@@ -453,6 +454,10 @@ async fn directory_and_content_request_ids_are_independent() {
     ] {
         let first = f.call(Some(&f.token), "same-id", op, input.clone()).await;
         assert_eq!(first.0, StatusCode::OK, "{op}");
-        assert_eq!(f.call(Some(&f.token), "same-id", op, input).await, first, "{op} replays");
+        assert_eq!(
+            f.call(Some(&f.token), "same-id", op, input).await,
+            first,
+            "{op} replays"
+        );
     }
 }

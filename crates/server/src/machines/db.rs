@@ -11,8 +11,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use calternal_auth::token::{hash32, new_setup_token, normalize_setup_token};
-use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::Owner;
+use calternal_types::{AccountId, SpaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
@@ -69,7 +69,8 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         calternal_fsio::private::directory(dir)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     }
-    calternal_fsio::private::file(path).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    calternal_fsio::private::file(path)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let c = Connection::open(path)?;
     c.busy_timeout(std::time::Duration::from_secs(5))?;
     c.pragma_update(None, "journal_mode", "WAL")?;

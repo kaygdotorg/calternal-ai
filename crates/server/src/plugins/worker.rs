@@ -26,7 +26,6 @@
 //! directory, and keep state in memory across invocations in the same
 //! (plugin, space). Cost per live worker: one process and three OS threads.
 
-
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -38,8 +37,8 @@ use std::time::{Duration, Instant};
 
 use calternal_core::ManifestCapability;
 use calternal_plugin_host::{
-    Authority, Frame, HostBroker, MAX_FRAME_BYTES, MAX_QUEUE, Message, WorkerSession,
-    decode_frame, encode_frame,
+    Authority, Frame, HostBroker, MAX_FRAME_BYTES, MAX_QUEUE, Message, WorkerSession, decode_frame,
+    encode_frame,
 };
 use calternal_types::{AccountId, SpaceId};
 use serde_json::Value;
@@ -266,12 +265,7 @@ impl WorkerPool {
     /// Cost: the pool lock for a lookup (never held across I/O); a cold start hashes
     /// the bundle and spawns the process on a blocking thread with a reserved pool
     /// slot; then one channel round trip plus the worker's own frames and effects.
-    pub async fn invoke(
-        &self,
-        plugin: &Arc<Plugin>,
-        space: SpaceId,
-        call: Call,
-    ) -> Outcome {
+    pub async fn invoke(&self, plugin: &Arc<Plugin>, space: SpaceId, call: Call) -> Outcome {
         let Some(node) = &self.node else {
             return Outcome::Failed(Error::unavailable("Node runtime unavailable"));
         };
@@ -306,8 +300,12 @@ impl WorkerPool {
                 }
             };
             if started.is_some() {
-                let (node, plugin2, bundle2, in_flight) =
-                    (node.clone(), plugin.clone(), bundle.clone(), self.in_flight.clone());
+                let (node, plugin2, bundle2, in_flight) = (
+                    node.clone(),
+                    plugin.clone(),
+                    bundle.clone(),
+                    self.in_flight.clone(),
+                );
                 let spawned = tokio::task::spawn_blocking(move || {
                     spawn(&node, &plugin2, &bundle2, space, in_flight)
                 })
@@ -523,7 +521,10 @@ impl HostBroker for Broker<'_> {
         method: calternal_core::HostCallKind,
         input: &Value,
     ) -> Result<Value, calternal_plugin_host::Error> {
-        let active = self.0.get(&authority.grant).ok_or(calternal_plugin_host::Error::Refused)?;
+        let active = self
+            .0
+            .get(&authority.grant)
+            .ok_or(calternal_plugin_host::Error::Refused)?;
         active.host.call(method, input)
     }
 }
@@ -605,9 +606,7 @@ impl Thread {
             if let Event::Invoke(p) = event {
                 self.busy.fetch_sub(1, Ordering::AcqRel);
                 self.in_flight.fetch_sub(1, Ordering::AcqRel);
-                let _ = p
-                    .reply
-                    .send(Outcome::Failed(Error::unavailable(message)));
+                let _ = p.reply.send(Outcome::Failed(Error::unavailable(message)));
             }
         }
     }
@@ -692,7 +691,9 @@ impl Thread {
                 let _ = self.session.cancel(&id);
                 self.finish(&id, Outcome::Refused);
             }
-            Err(calternal_plugin_host::Error::BackPressure) => return Err("extension exceeded its queue"),
+            Err(calternal_plugin_host::Error::BackPressure) => {
+                return Err("extension exceeded its queue");
+            }
             Err(_) => {
                 let _ = self.session.cancel(&id);
                 self.finish(

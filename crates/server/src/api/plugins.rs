@@ -5,7 +5,11 @@ pub(super) fn default_row(plugin: &Plugin) -> PluginRow {
     crate::plugins::default_row(plugin)
 }
 
-pub(super) fn plugin_state(s: &Store, space: SpaceId, plugin: &Plugin) -> Result<PluginState, Error> {
+pub(super) fn plugin_state(
+    s: &Store,
+    space: SpaceId,
+    plugin: &Plugin,
+) -> Result<PluginState, Error> {
     let row = activation(s, space, plugin)?;
     Ok(PluginState {
         manifest: plugin.wire.clone(),
@@ -152,10 +156,10 @@ pub(super) async fn invoke_plugin<D: Directory>(
     let plugin2 = plugin.clone();
     let still = blocking(&state, move |s| activation(s, space, &plugin2)).await?;
     if !still.enabled || still.generation != generation {
-        return Err(Error::conflict(
-            "plugin state changed during invocation; result discarded",
-        )
-        .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })));
+        return Err(
+            Error::conflict("plugin state changed during invocation; result discarded")
+                .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })),
+        );
     }
     let st = state.clone();
     let caller = p.id;
@@ -223,4 +227,3 @@ pub(super) async fn preview<D: Directory>(
         preview: True,
     })
 }
-

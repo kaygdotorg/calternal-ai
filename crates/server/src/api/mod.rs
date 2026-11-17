@@ -4,7 +4,6 @@
 //! `dispatch` (operation admission and host handlers) and `plugins` (plugin
 //! invocation and preview).
 
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -16,11 +15,11 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use calternal_core::{
-    ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult,
-    NotesCreateInput, NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
-    NotesListResult, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
-    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
-    canonical_request_input, operation_catalog, parse_request,
+    ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
+    NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput, NotesListResult,
+    NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput, PluginPreviewResult,
+    PluginResult, PluginState, PluginsListInput, PluginsListResult, True, canonical_request_input,
+    operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -28,7 +27,6 @@ use tower_http::services::ServeDir;
 
 use crate::auth::{Directory, Identity, StoredDirectory};
 use crate::authz::{self, Constraint};
-use calternal_types::{AccountId, Error, SpaceId};
 use crate::fault::{self, FaultPoint};
 use crate::plugins::worker::Outcome;
 use crate::plugins::{
@@ -36,6 +34,7 @@ use crate::plugins::{
     broker::SpaceHost,
 };
 use crate::store::{PluginRow, Store, sha256_hex};
+use calternal_types::{AccountId, Error, SpaceId};
 
 mod dispatch;
 mod guard;

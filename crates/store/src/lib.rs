@@ -23,6 +23,7 @@ mod writer;
 
 mod contracts;
 mod types;
+use calternal_types::{AccountId, SpaceId};
 pub use contracts::{JournalEntry, SyncToken, TokenProof};
 use serde_json::Value;
 use shared::{Guard, Shared};
@@ -32,7 +33,6 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use calternal_types::{AccountId, SpaceId};
 pub use types::{Error, ErrorCode, Result};
 
 /// One event, stamped with who made it, ready to store.

@@ -20,7 +20,6 @@
 //! plugin's activation at the job's generation; on failure the stream closes. A job
 //! the caller cannot see is the same not-found as a missing one.
 
-
 use std::time::Duration;
 
 use axum::body::Body;
@@ -35,8 +34,8 @@ use super::live::Subscription;
 use super::{Session, activation, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use calternal_types::{Capability, SpaceId};
 use calternal_types::Error;
+use calternal_types::{Capability, SpaceId};
 
 /// Longest wait between deliveries; an idle stream sends a comment and rechecks access.
 pub const KEEPALIVE: Duration = Duration::from_secs(15);

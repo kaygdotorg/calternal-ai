@@ -1,7 +1,6 @@
 //! Host allowlist, Origin and session checks and security headers for every response.
 use super::*;
 
-
 pub(super) fn is_api(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/")
 }
@@ -82,7 +81,9 @@ pub(super) async fn guard<D: Directory>(
             let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, req.headers())
                     .await
-                    .map(|(id, installation)| (Identity { id }, Session::installation(id, installation)))
+                    .map(|(id, installation)| {
+                        (Identity { id }, Session::installation(id, installation))
+                    })
             } else {
                 None
             };
@@ -111,8 +112,8 @@ pub(super) async fn guard<D: Directory>(
             } else {
                 None
             };
-            let current =
-                session.or_else(|| bearer(&credentials).and_then(|t| state.directory.authenticate(t)));
+            let current = session
+                .or_else(|| bearer(&credentials).and_then(|t| state.directory.authenticate(t)));
             if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
                 || current.is_none()
             {
@@ -147,4 +148,3 @@ pub(super) fn bearer(headers: &HeaderMap) -> Option<&[u8]> {
     let rest = v.strip_prefix(b"Bearer ")?;
     if rest.is_empty() { None } else { Some(rest) }
 }
-

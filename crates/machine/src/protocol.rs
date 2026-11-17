@@ -23,8 +23,8 @@
 //! (start a new one), 403 means the machine is revoked (stop everything and exit),
 //! 409 means a lease is fenced (stop that sandbox), 404 an unknown code or lease.
 
-use serde::{Deserialize, Serialize};
 use calternal_types::{AccountId, SpaceId};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.

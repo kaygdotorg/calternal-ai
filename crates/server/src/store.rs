@@ -7,15 +7,12 @@
 //! [`Store::open`] validates and locks the three roots through `calternal-roots`
 //! before it creates or opens anything, and holds those locks for its lifetime.
 use crate::fault::{self, FaultPoint};
-use calternal_types::Error;
 use calternal_content::{Content, Item, ReadPool, Request};
-use calternal_types::{AccountId, SpaceId};
 use calternal_core::{Note, NoteSummary, NoteVersion};
+use calternal_types::Error;
+use calternal_types::{AccountId, SpaceId};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use std::{
-    sync::Mutex,
-    time::Duration,
-};
+use std::{sync::Mutex, time::Duration};
 use uuid::Uuid;
 
 /// Host adapter over the generic per-space content service, shared by every request
@@ -92,7 +89,12 @@ fn plugin_row(
     c.query_row(
         "SELECT enabled, generation FROM plugin_state WHERE space_id = ?1 AND plugin_id = ?2",
         params![space_id.to_string(), plugin_id],
-        |r| Ok(PluginRow { enabled: r.get::<_, i64>(0)? != 0, generation: r.get(1)? }),
+        |r| {
+            Ok(PluginRow {
+                enabled: r.get::<_, i64>(0)? != 0,
+                generation: r.get(1)?,
+            })
+        },
     )
     .optional()
 }
@@ -145,8 +147,7 @@ impl Store {
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let secrets = root.join("secrets");
         let path = root.join("state.sqlite3");
-        calternal_fsio::private::file(&path)
-            .map_err(|e| io_err("prepare plugin database", e))?;
+        calternal_fsio::private::file(&path).map_err(|e| io_err("prepare plugin database", e))?;
         let conn = Connection::open(&path).map_err(db_err)?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
@@ -165,7 +166,12 @@ impl Store {
             CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
             CREATE TABLE IF NOT EXISTS plugin_outbox(account TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(account,space_id,request_id));
             PRAGMA user_version=4;COMMIT;").map_err(db_err)?;
-        let content = Content::open(roots.clone(), secrets, Duration::from_secs(600), content_fault)?;
+        let content = Content::open(
+            roots.clone(),
+            secrets,
+            Duration::from_secs(600),
+            content_fault,
+        )?;
         // Fails closed: a missing or wrong secret key stops startup instead of
         // minting a key that cannot read the stored secrets.
         let secrets = calternal_secrets::LocalStore::open(&root)
@@ -183,7 +189,11 @@ impl Store {
             .read(|c| {
                 c.prepare("SELECT account,space_id,request_id FROM plugin_outbox ORDER BY rowid")?
                     .query_map([], |r| {
-                        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                        Ok((
+                            r.get::<_, String>(0)?,
+                            r.get::<_, String>(1)?,
+                            r.get::<_, String>(2)?,
+                        ))
                     })?
                     .collect::<Result<Vec<_>, _>>()
             })
@@ -212,28 +222,22 @@ impl Store {
     /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
     /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
     pub fn list(&self, space_id: SpaceId, limit: u32) -> Result<Vec<NoteSummary>, Error> {
-        self.content
-            .list(space_id, "notes", limit)
-            
-            .map(|rows| {
-                rows.into_iter()
-                    .map(|i| NoteSummary {
-                        id: i.id.to_string(),
-                        space_id: space_id.to_string(),
-                        title: i.metadata["title"].as_str().unwrap_or("").into(),
-                        revision: i.revision,
-                        updated_at: i.updated_at,
-                    })
-                    .collect()
-            })
+        self.content.list(space_id, "notes", limit).map(|rows| {
+            rows.into_iter()
+                .map(|i| NoteSummary {
+                    id: i.id.to_string(),
+                    space_id: space_id.to_string(),
+                    title: i.metadata["title"].as_str().unwrap_or("").into(),
+                    revision: i.revision,
+                    updated_at: i.updated_at,
+                })
+                .collect()
+        })
     }
     /// Gets one Notes item from its selected physical database. A foreign ID is absent.
     /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.
     pub fn get(&self, space_id: SpaceId, id: &str) -> Result<Note, Error> {
-        let item = self
-            .content
-            .get(space_id, item_id(id)?)
-            ?;
+        let item = self.content.get(space_id, item_id(id)?)?;
         if item.kind != "notes" {
             return Err(Error::not_found("item not found"));
         }
@@ -252,8 +256,7 @@ impl Store {
         self.get(space_id, id)?;
         let (versions, next) = self
             .content
-            .history(space_id, item_id(id)?, limit, cursor)
-            ?;
+            .history(space_id, item_id(id)?, limit, cursor)?;
         Ok((
             versions
                 .into_iter()
@@ -279,16 +282,14 @@ impl Store {
         request_id: &str,
     ) -> Result<Option<Receipt>, Error> {
         self.publish_plugin_pending(account, space, request_id)?;
-        self.content
-            .receipt(space, account, request_id)
-            .map(|r| {
-                r.map(|r| Receipt {
-                    operation: r.operation,
-                    fingerprint: r.fingerprint,
-                    result: r.result,
-                    note_id: r.item.map(|id| id.to_string()),
-                })
+        self.content.receipt(space, account, request_id).map(|r| {
+            r.map(|r| Receipt {
+                operation: r.operation,
+                fingerprint: r.fingerprint,
+                result: r.result,
+                note_id: r.item.map(|id| id.to_string()),
             })
+        })
     }
     fn publish_plugins_for_space(&self, space_id: SpaceId) -> Result<(), Error> {
         loop {
@@ -309,18 +310,16 @@ impl Store {
         if let Some((operation, fingerprint, json)) = pending {
             let result = serde_json::from_str(&json)
                 .map_err(|_| Error::internal("corrupt plugin publication"))?;
-            self.content
-                .record_receipt(
-                    space,
-                    Request {
-                        account: account,
-                        id: request_id,
-                        operation: &operation,
-                        fingerprint: &fingerprint,
-                    },
-                    result,
-                )
-                ?;
+            self.content.record_receipt(
+                space,
+                Request {
+                    account: account,
+                    id: request_id,
+                    operation: &operation,
+                    fingerprint: &fingerprint,
+                },
+                result,
+            )?;
             self.writer()
                 .execute(
                     "DELETE FROM plugin_outbox WHERE account=?1 AND space_id=?2 AND request_id=?3",
@@ -344,35 +343,30 @@ impl Store {
         title: &str,
         markdown: &str,
     ) -> Result<Note, Error> {
-        self.content
-            .register_kind(
-                space_id,
-                "notes",
-                calternal_content::Placement::Visible {
-                    folder: "Notes".into(),
-                },
-                calternal_content::FileFormat::Markdown,
-            )
-            ?;
+        self.content.register_kind(
+            space_id,
+            "notes",
+            calternal_content::Placement::Visible {
+                folder: "Notes".into(),
+            },
+            calternal_content::FileFormat::Markdown,
+        )?;
         let request = Request {
             account: account,
             id: request_id,
             operation,
             fingerprint,
         };
-        let item = self
-            .content
-            .write(
-                space_id,
-                None,
-                "notes",
-                None,
-                serde_json::json!({"title":title}),
-                markdown.as_bytes(),
-                request,
-                |i| serde_json::json!({"note":note(i)}),
-            )
-            ?;
+        let item = self.content.write(
+            space_id,
+            None,
+            "notes",
+            None,
+            serde_json::json!({"title":title}),
+            markdown.as_bytes(),
+            request,
+            |i| serde_json::json!({"note":note(i)}),
+        )?;
         Ok(note(&item))
     }
     /// Updates only the current base revision, preserving external edits/deletes.
@@ -399,19 +393,16 @@ impl Store {
             operation,
             fingerprint,
         };
-        let item = self
-            .content
-            .write(
-                space_id,
-                Some(item_id(id)?),
-                "notes",
-                Some(base_revision),
-                serde_json::json!({"title":title.unwrap_or(&current.title)}),
-                markdown.as_bytes(),
-                request,
-                |i| serde_json::json!({"note":note(i)}),
-            )
-            ?;
+        let item = self.content.write(
+            space_id,
+            Some(item_id(id)?),
+            "notes",
+            Some(base_revision),
+            serde_json::json!({"title":title.unwrap_or(&current.title)}),
+            markdown.as_bytes(),
+            request,
+            |i| serde_json::json!({"note":note(i)}),
+        )?;
         Ok(note(&item))
     }
     /// Finishes checked placement before retry replay. Cost: catalog lookup and
@@ -420,9 +411,7 @@ impl Store {
         let space = self
             .locate("notes", id)?
             .ok_or_else(|| Error::not_found("item not found"))?;
-        self.content
-            .materialize(space, item_id(id)?)
-            
+        self.content.materialize(space, item_id(id)?)
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
     /// so a retry replays it through [`Self::receipt`] instead of running the plugin
@@ -443,9 +432,7 @@ impl Store {
             operation,
             fingerprint,
         };
-        self.content
-            .record_receipt(space_id, request, result)
-            
+        self.content.record_receipt(space_id, request, result)
     }
     /// Reads one item of `kind` for a plugin broker. The global route must place it in
     /// `space_id`; a foreign, absent or wrong-kind ID is the same not-found.
@@ -489,18 +476,16 @@ impl Store {
             operation: "plugin.write_item",
             fingerprint,
         };
-        self.content
-            .write(
-                space_id,
-                id,
-                kind,
-                base,
-                metadata,
-                text.as_bytes(),
-                request,
-                |i| serde_json::json!({"id": i.id, "revision": i.revision}),
-            )
-            
+        self.content.write(
+            space_id,
+            id,
+            kind,
+            base,
+            metadata,
+            text.as_bytes(),
+            request,
+            |i| serde_json::json!({"id": i.id, "revision": i.revision}),
+        )
     }
     /// Provisions a plugin in one space: registers each declared kind's placement
     /// and format, then creates (or returns) each standard collection with its
@@ -511,35 +496,35 @@ impl Store {
         &self,
         space_id: SpaceId,
         account: AccountId,
-        kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
+        kinds: &[(
+            String,
+            calternal_content::Placement,
+            calternal_content::FileFormat,
+        )],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
         let space = space_id;
         for (kind, placement, format) in kinds {
             self.content
-                .register_kind(space, kind, placement.clone(), format.clone())
-                ?;
+                .register_kind(space, kind, placement.clone(), format.clone())?;
         }
         if collections.is_empty() {
             return Ok(());
         }
         // Collections are host-owned items with one fixed hidden placement.
-        self.content
-            .register_kind(
-                space,
-                "collections",
-                calternal_content::Placement::Hidden {
-                    plugin_id: "collections".into(),
-                },
-                calternal_content::FileFormat::Opaque {
-                    extension: "json".into(),
-                },
-            )
-            ?;
+        self.content.register_kind(
+            space,
+            "collections",
+            calternal_content::Placement::Hidden {
+                plugin_id: "collections".into(),
+            },
+            calternal_content::FileFormat::Opaque {
+                extension: "json".into(),
+            },
+        )?;
         for (kind, key, title) in collections {
             self.content
-                .ensure_standard_collection(space, account, kind, key, title)
-                ?;
+                .ensure_standard_collection(space, account, kind, key, title)?;
         }
         Ok(())
     }

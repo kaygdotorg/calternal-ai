@@ -9,7 +9,6 @@
 //! A session is identified by its installation ID, never by its token, so it can be
 //! stored in a job record without storing a secret.
 
-
 use calternal_types::{AccountId, InstallationId};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;

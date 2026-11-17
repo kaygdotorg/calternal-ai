@@ -63,10 +63,7 @@ impl Auth {
         &self,
         sink: Arc<dyn crate::spaces::RecoverySink>,
     ) -> Result<()> {
-        self.inner
-            .db
-            .configure_recovery_async(sink)
-            .await
+        self.inner.db.configure_recovery_async(sink).await
     }
 
     /// Issues a one-time first-account token only while no account exists.

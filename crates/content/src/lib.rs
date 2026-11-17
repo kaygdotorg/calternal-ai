@@ -31,12 +31,12 @@ mod files;
 mod journal;
 mod pool;
 mod types;
-pub use pool::ReadPool;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
 use db::Space;
 use journal::{Journals, lock};
+pub use pool::ReadPool;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
 use std::{
@@ -47,8 +47,8 @@ use std::{
     time::{Duration, Instant},
 };
 pub use types::{
-    Collection, CollectionOwner, FaultPoint, FileFormat, Item, Placement,
-    Receipt, Request, Result, Summary,
+    Collection, CollectionOwner, FaultPoint, FileFormat, Item, Placement, Receipt, Request, Result,
+    Summary,
 };
 use uuid::Uuid;
 
@@ -130,7 +130,12 @@ impl Content {
         idle_after: Duration,
         fault: fn(FaultPoint),
     ) -> Result<Self> {
-        for path in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd, &secrets] {
+        for path in [
+            &roots.appdata,
+            &roots.userdata_ssd,
+            &roots.userdata_hdd,
+            &secrets,
+        ] {
             calternal_fsio::private::directory(path).map_err(internal)?;
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
@@ -180,9 +185,10 @@ impl Content {
                         for id in ids {
                             if let Err(e) =
                                 space.place(Uuid::parse_str(&id).map_err(internal)?, fault)
-                                && e.code != ErrorCode::Conflict {
-                                    return Err(e);
-                                }
+                                && e.code != ErrorCode::Conflict
+                            {
+                                return Err(e);
+                            }
                         }
                         Ok(())
                     })?;
@@ -223,7 +229,12 @@ impl Content {
         let mut held = lock(&slot.space);
         if held.is_none() {
             let journal = self.journals.open_store(id)?;
-            *held = Some(Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?);
+            *held = Some(Space::open(
+                &self.roots.appdata,
+                &self.roots.userdata_ssd,
+                id,
+                journal,
+            )?);
         }
         let result = f(held.as_mut().expect("opened above"));
         *lock(&slot.last_used) = Instant::now();
@@ -344,8 +355,17 @@ impl Content {
         request: Request<'_>,
         result: Value,
     ) -> Result<()> {
-        self.with_space(space,|s| {
-            self.journals.publish(&s.journal,request.account,request.id,request.operation,request.fingerprint,None,"control",result)
+        self.with_space(space, |s| {
+            self.journals.publish(
+                &s.journal,
+                request.account,
+                request.id,
+                request.operation,
+                request.fingerprint,
+                None,
+                "control",
+                result,
+            )
         })
     }
     /// Returns a bounded journal page for host diagnostics and conformance tests.
@@ -399,7 +419,9 @@ impl Content {
                         params![id, space.to_string(), kind],
                     )
                     .map_err(internal)?;
-                read(&index).map_err(internal)?.ok_or_else(|| internal("route missing"))?
+                read(&index)
+                    .map_err(internal)?
+                    .ok_or_else(|| internal("route missing"))?
             }
         };
         if existing != (space.to_string(), kind.to_owned()) {

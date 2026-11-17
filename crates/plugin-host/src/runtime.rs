@@ -1,7 +1,7 @@
 //! Transport-independent, single-worker session state machine and newline JSON frames.
 use crate::{Error, validate_manifest};
-use calternal_types::{AccountId, SpaceId};
 use calternal_core::{HostCallKind, ManifestCapability, ManifestV1};
+use calternal_types::{AccountId, SpaceId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};

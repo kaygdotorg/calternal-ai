@@ -9,10 +9,10 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod account;
-mod http_facing;
 mod ceremony;
 mod config;
 pub mod db;
+mod http_facing;
 pub mod limit;
 mod passkey;
 mod passkeys;
@@ -38,7 +38,6 @@ struct Inner {
     setup_targets: limit::TargetLimiter,
     login_starts: limit::Limiter,
 }
-
 
 /// Stable refusal categories for account and stored-space operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

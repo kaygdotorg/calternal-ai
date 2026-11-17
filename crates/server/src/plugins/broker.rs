@@ -14,7 +14,6 @@
 //! [`crate::secrets::plugin_handle`]. Every other declared host call is
 //! refused until its host service exists.
 
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -31,8 +30,8 @@ use super::live::Live;
 use super::{Plugin, Session, activation, host_capability, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use calternal_types::{Capability, SpaceId};
 use crate::store::sha256_hex;
+use calternal_types::{Capability, SpaceId};
 
 /// Fixed fixture text served to previews. Never user data.
 pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
@@ -202,7 +201,13 @@ impl<D: Directory> SpaceHost<D> {
         let n = self
             .state
             .jobs
-            .checkpoint(&self.space.to_string(), &run.job, run.run, &run.live, checkpoint)
+            .checkpoint(
+                &self.space.to_string(),
+                &run.job,
+                run.run,
+                &run.live,
+                checkpoint,
+            )
             .map_err(|_| Error::Refused)?;
         run.checkpoints.store(n, Ordering::Release);
         self.writes.store(0, Ordering::Release);

@@ -96,9 +96,7 @@ impl MachineService {
     /// was running are reported lost.
     pub fn session_finish(&self, f: &SessionFinish) -> Result<SessionGranted, Error> {
         if f.protocol != PROTOCOL_VERSION {
-            return Err(Error::invalid_input(
-                "unsupported machine protocol version",
-            ));
+            return Err(Error::invalid_input("unsupported machine protocol version"));
         }
         let mut st = self.lock()?;
         let st = &mut *st;

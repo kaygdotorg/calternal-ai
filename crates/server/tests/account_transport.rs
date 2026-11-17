@@ -113,8 +113,7 @@ async fn session_authenticates_an_account_and_never_implies_space_authority() {
     assert_eq!(discovery.body["principal"]["spaces"], json!([]));
     let me = get(&app, "/api/v1/auth/me", Some(&cookie)).await;
     assert_eq!(me.body["user"]["role"], "admin");
-    let request =
-        json!({"request_id":"denied","operation":"notes.list","input":{"space_id":calternal_types::SpaceId::new()}});
+    let request = json!({"request_id":"denied","operation":"notes.list","input":{"space_id":calternal_types::SpaceId::new()}});
     let refused = post(&app, "/api/v1/operations", Some(&cookie), request).await;
     assert_eq!(refused.status, 404);
     let created = post(

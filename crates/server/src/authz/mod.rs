@@ -5,12 +5,9 @@
 //! only when constructing the existing wire error. Resource IDs are always bound
 //! to the authorized space by the storage APIs; possession of an ID grants nothing.
 
-
 use std::borrow::Cow;
 
 use calternal_core::JsonObject;
-
-
 
 use crate::auth::{Directory, Identity};
 use calternal_types::{Capability, CapabilitySet, Error, SpaceId};

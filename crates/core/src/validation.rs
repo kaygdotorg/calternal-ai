@@ -172,10 +172,7 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, Error> {
 ///
 /// # Errors
 /// Returns invalid input for schema/value violations, too large for oversized Markdown, or not found for unknown operations.
-pub fn validate_operation_input(
-    operation: &str,
-    input: &JsonObject,
-) -> Result<(), Error> {
+pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(), Error> {
     if matches!(
         operation,
         "notes.get" | "notes.history" | "notes.update" | "notes-insights.summarize"
@@ -315,11 +312,7 @@ pub fn validate_genui(view: &GenUiView) -> Result<(), Error> {
         string_bytes(&serde_json::to_value(view).unwrap()) <= 32 * 1024,
         "GenUI string budget exceeds 32 KiB",
     )?;
-    fn visit(
-        node: &GenUiNode,
-        depth: usize,
-        ids: &mut HashSet<String>,
-    ) -> Result<(), Error> {
+    fn visit(node: &GenUiNode, depth: usize, ids: &mut HashSet<String>) -> Result<(), Error> {
         require(depth <= 8, "GenUI depth exceeds 8")?;
         validate_id(node.id())?;
         require(ids.insert(node.id().into()), "duplicate GenUI id")?;
@@ -369,10 +362,7 @@ pub fn validate_genui(view: &GenUiView) -> Result<(), Error> {
 ///
 /// # Errors
 /// Returns tree/input errors or invalid input for undeclared or mutating actions.
-pub fn validate_extension_view(
-    view: &GenUiView,
-    manifest: &PluginManifest,
-) -> Result<(), Error> {
+pub fn validate_extension_view(view: &GenUiView, manifest: &PluginManifest) -> Result<(), Error> {
     validate_genui(view)?;
     fn visit(node: &GenUiNode, manifest: &PluginManifest) -> Result<(), Error> {
         match node {

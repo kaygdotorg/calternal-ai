@@ -16,7 +16,6 @@
 //! blocking task; the secret store has no installation-wide lock or connection.
 //! Spaces are named by UUID only.
 
-
 use std::borrow::Cow;
 
 use axum::Router;
@@ -24,7 +23,6 @@ use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use calternal_types::SpaceId;
 use calternal_core::{
     JsonObject, SecretMetadata, SecretPendingRequest, SecretsListInput, SecretsListResult,
     SecretsProvideInput, SecretsProvideResult, SecretsRequestInput, SecretsRequestResult,
@@ -33,6 +31,7 @@ use calternal_core::{
 use calternal_secrets::{
     Actor, LocalStore, Owner, RequestId, SecretName, SecretStore, SecretValue, Via,
 };
+use calternal_types::SpaceId;
 use serde_json::{Value, json};
 
 use crate::api::Shared;

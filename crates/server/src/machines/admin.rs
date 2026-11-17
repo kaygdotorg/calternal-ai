@@ -9,8 +9,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use calternal_types::AccountId;
 use calternal_machine::protocol::Owner;
+use calternal_types::AccountId;
 use uuid::Uuid;
 
 use super::{db, sql};
@@ -22,11 +22,7 @@ fn open(data_dir: &Path) -> Result<rusqlite::Connection, Error> {
 
 /// Issue an enrolment code for `owner` (an account, or the pool) valid for `ttl`.
 /// Returns the code and its expiry in Unix milliseconds.
-pub fn issue_code(
-    data_dir: &Path,
-    owner: Owner,
-    ttl: Duration,
-) -> Result<(String, i64), Error> {
+pub fn issue_code(data_dir: &Path, owner: Owner, ttl: Duration) -> Result<(String, i64), Error> {
     db::new_code(&open(data_dir)?, owner, ttl)
 }
 

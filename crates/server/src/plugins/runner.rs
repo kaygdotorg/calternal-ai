@@ -14,7 +14,6 @@
 //! worker, only its place in the semaphore queue, which the per-space active-job
 //! bound limits.
 
-
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 use std::time::Duration;

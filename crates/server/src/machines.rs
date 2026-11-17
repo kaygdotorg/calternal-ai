@@ -40,7 +40,6 @@
 //! [`MachineService::run`] and [`MachineService::stop_run`] are the whole
 //! caller-facing API; the HTTP endpoints are thin wrappers over them.
 
-
 pub mod admin;
 pub mod db;
 pub mod http;
@@ -52,8 +51,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::{Capacity, Chunk, ChunkEvent, ExitInfo, Limits, Owner};
+use calternal_types::{AccountId, SpaceId};
 use serde::Serialize;
 use tokio::sync::Notify;
 use uuid::Uuid;

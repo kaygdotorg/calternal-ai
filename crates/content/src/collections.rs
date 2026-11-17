@@ -4,7 +4,7 @@
 use crate::types::{internal, missing};
 use crate::{
     AccountId, Collection, CollectionOwner, Content, Error, Request, Result, SpaceId, db,
-    journal::lock, now_rfc3339, file_hash,
+    file_hash, journal::lock, now_rfc3339,
 };
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};

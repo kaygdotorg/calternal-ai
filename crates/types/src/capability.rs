@@ -116,7 +116,9 @@ impl CapabilitySet {
 
     /// The granted capabilities in [`Capability::ALL`] order.
     pub fn iter(self) -> impl Iterator<Item = Capability> {
-        Capability::ALL.into_iter().filter(move |c| self.contains(*c))
+        Capability::ALL
+            .into_iter()
+            .filter(move |c| self.contains(*c))
     }
 }
 

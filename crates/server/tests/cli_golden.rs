@@ -144,7 +144,8 @@ fn enrolled_data_dir() -> (tempfile::TempDir, String) {
             "macos",
             "aarch64",
             calternal_machine::protocol::Owner::Account {
-                id: calternal_types::AccountId::parse("cccccccc-cccc-7ccc-8ccc-cccccccccccc").unwrap(),
+                id: calternal_types::AccountId::parse("cccccccc-cccc-7ccc-8ccc-cccccccccccc")
+                    .unwrap(),
             },
         ),
     ] {
@@ -312,7 +313,10 @@ fn machine_status_and_enroll_failures_say_what_to_do() {
 fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
     let d = tempfile::tempdir().unwrap();
     let dir = data(&d.path().join("appdata"));
-    let (ssd, hdd) = (data(&d.path().join("userdata-ssd")), data(&d.path().join("userdata-hdd")));
+    let (ssd, hdd) = (
+        data(&d.path().join("userdata-ssd")),
+        data(&d.path().join("userdata-hdd")),
+    );
     let mut args = vec![
         "serve",
         "--development",

@@ -1,7 +1,7 @@
 //! Physical separation and restart recovery on disposable roots.
 use calternal_content::{Content, FaultPoint, FileFormat, Placement, Request};
-use calternal_types::{AccountId, ErrorCode, SpaceId};
 use calternal_roots::Roots;
+use calternal_types::{AccountId, ErrorCode, SpaceId};
 use serde_json::json;
 use std::{path::Path, time::Duration};
 
@@ -356,7 +356,12 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
     }
     let dir = tempfile::tempdir().unwrap();
     let content = open(dir.path(), stall);
-    let (a, b, c, actor) = (SpaceId::new(), SpaceId::new(), SpaceId::new(), AccountId::new());
+    let (a, b, c, actor) = (
+        SpaceId::new(),
+        SpaceId::new(),
+        SpaceId::new(),
+        AccountId::new(),
+    );
     let notes = || Placement::Visible {
         folder: "Notes".into(),
     };
@@ -366,7 +371,16 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
             .unwrap();
     }
     let in_b = content
-        .write(b, None, "notes", None, json!({"title":"B"}), b"b\n", request(actor, "b"), |_| json!({}))
+        .write(
+            b,
+            None,
+            "notes",
+            None,
+            json!({"title":"B"}),
+            b"b\n",
+            request(actor, "b"),
+            |_| json!({}),
+        )
         .unwrap();
     // Close C so the probe below has to open it again.
     drop(content);
@@ -376,7 +390,16 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
         STALL.store(true, Ordering::SeqCst);
         let slow = scope.spawn(|| {
             content
-                .write(a, None, "notes", None, json!({"title":"A"}), b"a\n", request(actor, "a"), |_| json!({}))
+                .write(
+                    a,
+                    None,
+                    "notes",
+                    None,
+                    json!({"title":"A"}),
+                    b"a\n",
+                    request(actor, "a"),
+                    |_| json!({}),
+                )
                 .unwrap()
         });
         while !STALLED.load(Ordering::SeqCst) {
@@ -386,8 +409,14 @@ fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
         assert_eq!(content.get(b, in_b.id).unwrap().bytes, b"b\n");
         assert!(content.list(c, "notes", 10).unwrap().is_empty());
         let waited = started.elapsed();
-        assert!(!slow.is_finished(), "the stalled write must still be running");
-        assert!(waited < Duration::from_secs(1), "other spaces waited {waited:?}");
+        assert!(
+            !slow.is_finished(),
+            "the stalled write must still be running"
+        );
+        assert!(
+            waited < Duration::from_secs(1),
+            "other spaces waited {waited:?}"
+        );
         slow.join().unwrap();
     });
 }

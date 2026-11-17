@@ -265,7 +265,10 @@ mod port_tests {
         assert!(Db::open(&path).is_err());
         let fresh = dir.path().join("fresh.db");
         drop(open_conn(&fresh).unwrap());
-        assert!(open_conn(&fresh).is_ok(), "reopening the current version works");
+        assert!(
+            open_conn(&fresh).is_ok(),
+            "reopening the current version works"
+        );
     }
 
     #[test]

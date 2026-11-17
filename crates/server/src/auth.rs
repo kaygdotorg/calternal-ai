@@ -7,7 +7,6 @@
 //! `<data>/dev-tokens/<principal>.token`, mode 0600, directory 0700. Token
 //! values are never printed or logged.
 
-
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -17,8 +16,8 @@ use calternal_core::Principal;
 use subtle::ConstantTimeEq;
 
 use calternal_auth::spaces::{SpaceChange, Spaces};
-use calternal_types::{AccountId, CapabilitySet, Error, SpaceId};
 use calternal_core::JsonObject;
+use calternal_types::{AccountId, CapabilitySet, Error, SpaceId};
 use serde_json::{Value, json};
 
 /// Verified account identity without cached authority. Copying it is free.
@@ -148,15 +147,11 @@ fn on_startup_thread<T: Send + 'static>(
 }
 fn auth_error(e: calternal_auth::Error) -> Error {
     match e.code() {
-        calternal_auth::ErrorCode::InvalidInput => {
-            Error::invalid_input("invalid space operation")
-        }
+        calternal_auth::ErrorCode::InvalidInput => Error::invalid_input("invalid space operation"),
         calternal_auth::ErrorCode::Forbidden | calternal_auth::ErrorCode::NotFound => {
             Error::forbidden("no access to this space")
         }
-        calternal_auth::ErrorCode::Conflict => {
-            Error::request_reused()
-        }
+        calternal_auth::ErrorCode::Conflict => Error::request_reused(),
         _ => Error::internal("space database operation failed"),
     }
 }

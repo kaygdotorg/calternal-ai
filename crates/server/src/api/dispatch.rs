@@ -1,7 +1,6 @@
 //! Operation admission (one capability lookup), receipts and the host handlers.
 use super::*;
 
-
 pub(super) fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.into_iter().collect()))
         .map_err(|_| Error::invalid_input("input does not match operation schema"))
@@ -17,8 +16,8 @@ pub(super) async fn blocking<D: Directory, T: Send + 'static>(
 ) -> Result<T, Error> {
     let state = state.clone();
     tokio::task::spawn_blocking(move || f(&state.store))
-    .await
-    .map_err(|_| Error::internal("storage task failed"))?
+        .await
+        .map_err(|_| Error::internal("storage task failed"))?
 }
 
 /// A `space_id` that already passed authorization. Cost: one 36-byte parse.
@@ -360,15 +359,7 @@ pub(super) async fn mutate_note<D: Directory>(
             return Ok(v);
         }
         let note = if let Some(i) = create {
-            s.create(
-                principal,
-                &rid,
-                &op,
-                &fp,
-                space,
-                &i.title,
-                &i.markdown,
-            )?
+            s.create(principal, &rid, &op, &fp, space, &i.title, &i.markdown)?
         } else {
             let i = update.expect("update input");
             s.update(
@@ -387,4 +378,3 @@ pub(super) async fn mutate_note<D: Directory>(
     })
     .await
 }
-

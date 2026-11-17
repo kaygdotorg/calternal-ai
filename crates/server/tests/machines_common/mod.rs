@@ -85,7 +85,13 @@ impl Server {
         let startup = data.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(BIN)
-            .args(["serve", "--development", "--port", &port.to_string(), "--create"])
+            .args([
+                "serve",
+                "--development",
+                "--port",
+                &port.to_string(),
+                "--create",
+            ])
             .arg("--appdata")
             .arg(data.join("appdata"))
             .arg("--userdata-ssd")

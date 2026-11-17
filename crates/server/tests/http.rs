@@ -39,7 +39,14 @@ struct Server {
 /// Space UUIDs listed by `describe` for one bearer token.
 fn described_spaces(port: u16, token: &str) -> Vec<String> {
     let auth = format!("Bearer {token}");
-    let r = raw(port, "GET", "/api/v1/describe", &[("Authorization", &auth)], None).unwrap();
+    let r = raw(
+        port,
+        "GET",
+        "/api/v1/describe",
+        &[("Authorization", &auth)],
+        None,
+    )
+    .unwrap();
     assert_eq!(r.status, 200, "{}", r.body);
     r.body["principal"]["spaces"]
         .as_array()
@@ -244,9 +251,7 @@ fn create(srv: &Server, rid: &str, space: &str, md: &str) -> Value {
 }
 
 fn note_dir(data: &Path, space: &str) -> PathBuf {
-    data.join("userdata-ssd/spaces")
-        .join(space)
-        .join("Notes")
+    data.join("userdata-ssd/spaces").join(space).join("Notes")
 }
 fn note_file(data: &Path, space: &str, id: &str) -> PathBuf {
     let conn = rusqlite::Connection::open_with_flags(
@@ -928,7 +933,12 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
         "---\ncalternal-id: {}\n---\n",
         a["id"].as_str().unwrap()
     )));
-    assert!(d.0.join("appdata/spaces").join(aid).join("index.db").is_file());
+    assert!(
+        d.0.join("appdata/spaces")
+            .join(aid)
+            .join("index.db")
+            .is_file()
+    );
 }
 
 #[test]
@@ -1045,20 +1055,46 @@ fn server_refuses_empty_swapped_or_foreign_roots() {
     for dir in [&appdata, &ssd, &hdd] {
         std::fs::create_dir_all(dir).unwrap();
     }
-    assert_eq!(serve_status(&appdata, &ssd, &hdd, false), Some(1), "empty roots");
-    assert!(!appdata.join("system").exists(), "a refused start created state");
+    assert_eq!(
+        serve_status(&appdata, &ssd, &hdd, false),
+        Some(1),
+        "empty roots"
+    );
+    assert!(
+        !appdata.join("system").exists(),
+        "a refused start created state"
+    );
     // First setup, then a normal restart, both serve.
     drop(start(&d.0, None));
-    assert_eq!(serve_status(&appdata, &ssd, &hdd, false), None, "paired restart");
+    assert_eq!(
+        serve_status(&appdata, &ssd, &hdd, false),
+        None,
+        "paired restart"
+    );
     // Swapped userdata roots carry the wrong role markers.
-    assert_eq!(serve_status(&appdata, &hdd, &ssd, false), Some(1), "swapped roots");
-    assert_eq!(serve_status(&appdata, &hdd, &ssd, true), Some(1), "--create cannot repair");
+    assert_eq!(
+        serve_status(&appdata, &hdd, &ssd, false),
+        Some(1),
+        "swapped roots"
+    );
+    assert_eq!(
+        serve_status(&appdata, &hdd, &ssd, true),
+        Some(1),
+        "--create cannot repair"
+    );
     // A userdata root of another installation carries another installation ID.
     let other = TempDir::new("roots-other");
     drop(start(&other.0, None));
     let foreign = other.0.join("userdata-ssd");
-    assert_eq!(serve_status(&appdata, &foreign, &hdd, false), Some(1), "foreign root");
+    assert_eq!(
+        serve_status(&appdata, &foreign, &hdd, false),
+        Some(1),
+        "foreign root"
+    );
     // The recovery log lives in userdata-ssd, owner-only.
     let log = ssd.join(".calternal/recovery");
-    assert!(log.join("snapshot.json").is_file(), "recovery log provisioned");
+    assert!(
+        log.join("snapshot.json").is_file(),
+        "recovery log provisioned"
+    );
 }

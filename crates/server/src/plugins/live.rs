@@ -4,7 +4,6 @@
 //! Cost: every operation takes the stream's own lock for a buffer update or copy;
 //! none performs I/O.
 
-
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

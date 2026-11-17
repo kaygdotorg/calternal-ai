@@ -11,10 +11,10 @@ use calternal_core::{ErrorCode, JsonObject};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch};
 use calternal_server::auth::StoredDirectory;
 use calternal_server::authz::{self, Constraint, Scope};
-use calternal_types::Capability;
-use calternal_types::Error;
 use calternal_server::plugins::{Plugin, Registry, WORKER_TIMEOUT, WorkerPool, resolve_node};
 use calternal_server::store::Store;
+use calternal_types::Capability;
+use calternal_types::Error;
 use serde_json::{Value, json};
 
 struct Fixture {
@@ -226,10 +226,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
         .await
         .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
-    let item = f
-        .state.store
-        .read_item(f.dev.shared, "tags", &id)
-        .unwrap();
+    let item = f.state.store.read_item(f.dev.shared, "tags", &id).unwrap();
     assert_eq!(item.bytes, b"urgent");
     assert!(find(&ssd, "tags"), "hidden kind folder missing");
     // A missing space hides existence exactly like a host operation.
@@ -262,7 +259,12 @@ async fn undeclared_host_call_is_refused_before_any_effect() {
         (ErrorCode::Unavailable, "extension request was refused")
     );
     let list = f
-        .op("owner", "l", "notes.list", json!({"space_id": f.dev.personal}))
+        .op(
+            "owner",
+            "l",
+            "notes.list",
+            json!({"space_id": f.dev.personal}),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -561,7 +563,8 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
     let item = f
-        .state.store
+        .state
+        .store
         .read_item(f.dev.shared, "shapes", &id)
         .unwrap();
     assert_eq!(
@@ -716,7 +719,10 @@ impl Fixture {
 async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
     let f = jobs_fixture("job-run").await;
     let id = f
-        .start_job(f.dev.shared, json!({"steps": 6, "delay_ms": 30, "every": 2}))
+        .start_job(
+            f.dev.shared,
+            json!({"steps": 6, "delay_ms": 30, "every": 2}),
+        )
         .await;
     // Durable before the ID was returned: the record exists in the space's job file.
     let space = f.state.jobs.route(&id).expect("job routed to its space");
@@ -751,7 +757,10 @@ async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
 async fn cancel_discards_late_output_and_needs_the_starter_or_a_manager() {
     let f = jobs_fixture("job-cancel").await;
     let id = f
-        .start_job(f.dev.shared, json!({"steps": 500, "delay_ms": 20, "every": 5}))
+        .start_job(
+            f.dev.shared,
+            json!({"steps": 500, "delay_ms": 20, "every": 5}),
+        )
         .await;
     f.until(&id, "running").await;
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -796,7 +805,10 @@ async fn a_job_outside_the_callers_spaces_is_not_found() {
     let f = jobs_fixture("job-hidden").await;
     // `personal` belongs to the owner alone; the guest is a member of `shared` only.
     let id = f
-        .start_job(f.dev.personal, json!({"steps": 1, "delay_ms": 0, "every": 1}))
+        .start_job(
+            f.dev.personal,
+            json!({"steps": 1, "delay_ms": 0, "every": 1}),
+        )
         .await;
     let hidden = f.job("guest", &id).await.unwrap_err();
     let missing = f
@@ -850,16 +862,40 @@ async fn secret_handle_requests_are_owned_by_the_space_uuid() {
         }],
         "host_calls": ["request_secret_handle"]
     }));
-    let f = fixture("secret", vec![support::plugin(manifest, Some(&worker), true)], None).await;
+    let f = fixture(
+        "secret",
+        vec![support::plugin(manifest, Some(&worker), true)],
+        None,
+    )
+    .await;
     // The secret does not exist yet: the call is refused and one request is recorded
     // for the space (by UUID), not for the content-space key or the account.
-    let r = f.op("owner", "k1", "keyed.use", json!({"space_id": f.dev.shared})).await.unwrap();
+    let r = f
+        .op(
+            "owner",
+            "k1",
+            "keyed.use",
+            json!({"space_id": f.dev.shared}),
+        )
+        .await
+        .unwrap();
     assert_eq!(r, json!({"ok": false}));
-    f.op("owner", "k2", "keyed.use", json!({"space_id": f.dev.shared})).await.unwrap();
+    f.op(
+        "owner",
+        "k2",
+        "keyed.use",
+        json!({"space_id": f.dev.shared}),
+    )
+    .await
+    .unwrap();
     let owner = Owner::Space(f.dev.shared);
     let secrets = f.state.store.secrets();
     let pending = secrets.pending(&owner).unwrap();
-    assert_eq!(pending.len(), 1, "a repeated request must not queue a second prompt");
+    assert_eq!(
+        pending.len(),
+        1,
+        "a repeated request must not queue a second prompt"
+    );
     assert_eq!(pending[0].name, "plugin:keyed:api-key");
     let _ = std::fs::remove_dir_all(dir);
 }

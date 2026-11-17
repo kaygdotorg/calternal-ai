@@ -68,10 +68,10 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)?;
-    if names.iter().any(|n| {
-        !n.starts_with("security_recovery_")
-            && !SPECS.iter().any(|(s, _, _)| s == n)
-    }) {
+    if names
+        .iter()
+        .any(|n| !n.starts_with("security_recovery_") && !SPECS.iter().any(|(s, _, _)| s == n))
+    {
         return Err(err(
             "unclassified auth table; recovery owner mapping required",
         ));

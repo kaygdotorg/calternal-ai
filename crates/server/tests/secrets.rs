@@ -40,7 +40,11 @@ impl Fixture {
         tokio::task::spawn_blocking(move || {
             let base =
                 std::env::temp_dir().join(format!("calternal-secrets-{}", uuid::Uuid::new_v4()));
-            let roots = calternal_roots::Roots { appdata: base.join("appdata"), userdata_ssd: base.join("userdata-ssd"), userdata_hdd: base.join("userdata-hdd") };
+            let roots = calternal_roots::Roots {
+                appdata: base.join("appdata"),
+                userdata_ssd: base.join("userdata-ssd"),
+                userdata_hdd: base.join("userdata-hdd"),
+            };
             let store = Store::open(&roots, true).unwrap();
             // Every later path is in appdata; `base` holds all three roots.
             let root = roots.appdata.clone();

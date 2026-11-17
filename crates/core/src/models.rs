@@ -1,10 +1,10 @@
 use crate::*;
+use calternal_types::ErrorCode;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ts_rs::TS;
-use calternal_types::ErrorCode;
 
 /// JSON object with deterministically ordered top-level keys; nested values remain arbitrary JSON.
 pub type JsonObject = BTreeMap<String, Value>;
@@ -29,7 +29,9 @@ pub(crate) fn required_nullable_string<'de, D: serde::Deserializer<'de>>(
 ) -> Result<Option<String>, D::Error> {
     Option::<String>::deserialize(d)
 }
-pub(crate) fn nullable_string_schema(g: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+pub(crate) fn nullable_string_schema(
+    g: &mut schemars::r#gen::SchemaGenerator,
+) -> schemars::schema::Schema {
     g.subschema_for::<Option<String>>()
 }
 

@@ -36,11 +36,11 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
-use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::{
     EnrolRequest, OutputPost, Owner, SessionChallenge, SessionFinish, SessionStart, SyncRequest,
     SyncResponse,
 };
+use calternal_types::{AccountId, SpaceId};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -103,7 +103,6 @@ fn bearer(headers: &HeaderMap) -> Result<String, Error> {
         .map(str::to_owned)
         .ok_or_else(|| Error::unauthorized("machine session required"))
 }
-
 
 // ------------------------------------------------------------ machine side
 
@@ -178,9 +177,7 @@ async fn code(svc: Svc, Extension(who): Extension<Identity>) -> Response {
     reply(
         async {
             let svc = service(svc)?;
-            let owner = Owner::Account {
-                id: who.id,
-            };
+            let owner = Owner::Account { id: who.id };
             let (code, expires_ms) = blocking(move || svc.issue_code(owner)).await?;
             Ok(json!({ "code": code, "expires_ms": expires_ms }))
         }
@@ -244,12 +241,10 @@ async fn authorize<D: Directory>(
     space: SpaceId,
 ) -> Result<(), Error> {
     let (state, id) = (state.clone(), who.id);
-    blocking(
-        move || match state.directory.capabilities(id, space) {
-            Some(caps) if caps.contains(Capability::PluginsUse) => Ok(()),
-            _ => Err(Error::not_found("space not found")),
-        },
-    )
+    blocking(move || match state.directory.capabilities(id, space) {
+        Some(caps) if caps.contains(Capability::PluginsUse) => Ok(()),
+        _ => Err(Error::not_found("space not found")),
+    })
     .await
 }
 
@@ -278,9 +273,7 @@ async fn create_run<D: Directory>(
                 .as_ref()
                 .is_some_and(|i| i.is_empty() || i.len() > 255)
             {
-                return Err(Error::invalid_input(
-                    "image must be 1 to 255 characters",
-                ));
+                return Err(Error::invalid_input("image must be 1 to 255 characters"));
             }
             authorize(&state, &who, input.space_id).await?;
             blocking(move || svc.request_run(input.space_id, me, input.thread_id, input.image))

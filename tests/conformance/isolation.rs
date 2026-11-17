@@ -1258,23 +1258,28 @@ async fn input_validation_and_request_id_scope() {
 async fn request_ids_are_scoped_to_account_and_space() {
     let f = Fixture::new().await;
     // Account 1 owns spaces 0 and 3; account 2 is an editor in space 3.
-    let create = |space: &str, title: &str| {
-        json!({"space_id":space,"title":title,"markdown":format!("{title}\n")})
-    };
+    let create = |space: &str, title: &str| json!({"space_id":space,"title":title,"markdown":format!("{title}\n")});
     let mut results = vec![];
     for (who, space, title) in [
         (1, &f.spaces[0], "one in A"),
         (1, &f.spaces[3], "one in B"),
         (2, &f.spaces[3], "two in B"),
     ] {
-        let first = f.op_id(who, "notes.create", create(space, title), "shared-id").await;
+        let first = f
+            .op_id(who, "notes.create", create(space, title), "shared-id")
+            .await;
         first.ok();
         let note = first.body["data"]["note"].clone();
         assert_eq!(note["title"], title);
         assert_eq!(note["space_id"], json!(space));
-        let again = f.op_id(who, "notes.create", create(space, title), "shared-id").await;
+        let again = f
+            .op_id(who, "notes.create", create(space, title), "shared-id")
+            .await;
         again.ok();
-        assert_eq!(again.body["data"]["note"], note, "a retry replays its own result");
+        assert_eq!(
+            again.body["data"]["note"], note,
+            "a retry replays its own result"
+        );
         results.push(note["id"].as_str().unwrap().to_owned());
     }
     let distinct: std::collections::BTreeSet<_> = results.iter().collect();

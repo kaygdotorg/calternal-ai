@@ -89,7 +89,10 @@ fn invalid() -> Error {
     Error::invalid_input("identifier must be a lowercase UUIDv7")
 }
 
-identifier!(AccountId, "A person's account; never interchangeable with a space ID.");
+identifier!(
+    AccountId,
+    "A person's account; never interchangeable with a space ID."
+);
 identifier!(
     SpaceId,
     "A space, allocated independently of every account ID; it selects the space's storage."

@@ -266,7 +266,12 @@ fn accounts_and_spaces_are_isolated() {
             &me,
         )
         .unwrap();
-    assert!(store.list(&Owner::Space(SpaceId::from_uuid(id).unwrap())).unwrap().is_empty());
+    assert!(
+        store
+            .list(&Owner::Space(SpaceId::from_uuid(id).unwrap()))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

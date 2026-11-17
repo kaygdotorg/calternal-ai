@@ -32,7 +32,11 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
     let dir = tempfile::tempdir().unwrap();
     let mut config = AuthConfig::new(ORIGIN).unwrap();
     tweak(&mut config);
-    let roots = calternal_roots::Roots { appdata: dir.path().join("appdata"), userdata_ssd: dir.path().join("userdata-ssd"), userdata_hdd: dir.path().join("userdata-hdd") };
+    let roots = calternal_roots::Roots {
+        appdata: dir.path().join("appdata"),
+        userdata_ssd: dir.path().join("userdata-ssd"),
+        userdata_hdd: dir.path().join("userdata-hdd"),
+    };
     let store = Store::open(&roots, true).unwrap();
     let tokens = StoredDirectory::open(&roots.appdata, config, false, None).unwrap();
     let auth = tokens.http_auth().unwrap().auth.clone();

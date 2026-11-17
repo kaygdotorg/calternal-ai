@@ -252,7 +252,8 @@ fn lookup(c: &mut rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
     .map(|(u, i, exp, seen)| {
         Ok(Live {
             user: AccountId::parse(&u).map_err(|_| Error::internal("bad user id"))?,
-            installation: InstallationId::parse(&i).map_err(|_| Error::internal("bad installation id"))?,
+            installation: InstallationId::parse(&i)
+                .map_err(|_| Error::internal("bad installation id"))?,
             expires_at: exp.unwrap_or(i64::MAX),
             touched_at: seen,
         })
@@ -290,7 +291,8 @@ pub(crate) async fn list(inner: &Inner, user: AccountId) -> Result<Vec<Installat
             for row in rows {
                 let (id, kind, name, created_at, last_seen_at) = row.map_err(sql)?;
                 out.push(Installation {
-                    id: InstallationId::parse(&id).map_err(|_| Error::internal("bad installation id"))?,
+                    id: InstallationId::parse(&id)
+                        .map_err(|_| Error::internal("bad installation id"))?,
                     kind: InstallationKind::parse(&kind)
                         .ok_or_else(|| Error::internal("bad installation kind"))?,
                     name,

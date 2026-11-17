@@ -38,10 +38,7 @@ impl HostBroker for FakeHost {
     }
 }
 fn session() -> (WorkerSession, FakeHost) {
-    (
-        new_session(manifest()).unwrap(),
-        FakeHost::default(),
-    )
+    (new_session(manifest()).unwrap(), FakeHost::default())
 }
 fn invoke(s: &mut WorkerSession, h: &mut FakeHost, id: &str) {
     s.invoke(

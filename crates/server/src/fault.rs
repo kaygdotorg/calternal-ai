@@ -1,7 +1,6 @@
 //! Crash-point fault injection for durability tests. Compiled into debug
 //! builds only; release builds ignore `CALTERNAL_FAULT` entirely.
 
-
 /// Durable write boundaries available to disposable crash tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultPoint {

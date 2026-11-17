@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
-use calternal_types::{AccountId, SpaceId};
 use calternal_core::ErrorCode;
 use calternal_machine::identity::MachineKey;
 use calternal_machine::protocol::{
@@ -13,6 +12,7 @@ use calternal_machine::protocol::{
     SandboxState, SessionFinish, Stream, SyncRequest,
 };
 use calternal_server::machines::{MachineService, Settings};
+use calternal_types::{AccountId, SpaceId};
 use uuid::Uuid;
 
 fn service(dir: &std::path::Path) -> Arc<MachineService> {

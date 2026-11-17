@@ -7,11 +7,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use calternal_types::AccountId;
 use calternal_machine::protocol::{
     Capacity, Chunk, ChunkEvent, Down, Envelope, ExitInfo, LeaseReport, Owner, SandboxSpec,
     SandboxState,
 };
+use calternal_types::AccountId;
 use tokio::sync::Notify;
 use uuid::Uuid;
 

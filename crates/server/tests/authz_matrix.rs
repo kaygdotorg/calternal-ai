@@ -15,9 +15,9 @@ use calternal_core::{Principal, SpaceGrant, SpaceRole, operation_catalog};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch, router};
 use calternal_server::auth::{Directory, Identity};
 use calternal_server::authz::POLICIES;
-use calternal_types::{AccountId, Capability, CapabilitySet, SpaceId};
 use calternal_server::plugins::{Registry, WorkerPool, resolve_node};
 use calternal_server::store::Store;
+use calternal_types::{AccountId, Capability, CapabilitySet, SpaceId};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -518,7 +518,8 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
 async fn cross_space_note_ids_are_bound_to_the_authorized_space() {
     let fixture = Fixture::new(3, false).await;
     let other = fixture
-        .state.store
+        .state
+        .store
         .create(
             AccountId::new(),
             "other",
@@ -550,8 +551,8 @@ async fn membership_revocation_during_worker_discards_delivery() {
     let fixture = Fixture::new(1, true).await;
     let state = fixture.state.clone();
     let identity = state.directory.authenticate(TOKEN.as_bytes()).unwrap();
-    let input =
-        serde_json::from_value(fixture.input("notes-insights.summarize", &fixture.space())).unwrap();
+    let input = serde_json::from_value(fixture.input("notes-insights.summarize", &fixture.space()))
+        .unwrap();
     let call = tokio::spawn(dispatch(
         state,
         identity,
@@ -677,7 +678,12 @@ async fn every_operation_checks_only_its_required_capability() {
             };
             fixture.state.directory.set_capabilities(grants);
             let response = fixture
-                .call(Some(TOKEN), "capability", op, fixture.input(op, &fixture.space()))
+                .call(
+                    Some(TOKEN),
+                    "capability",
+                    op,
+                    fixture.input(op, &fixture.space()),
+                )
                 .await;
             if allowed {
                 assert_eq!(response.0, StatusCode::OK, "{op}: {}", response.1);
