@@ -102,6 +102,10 @@ pub trait Backend: Send + Sync + 'static {
             ))
         }
     }
+    /// Discard a released account/thread workspace, preserving its account home.
+    /// The caller must exclude active work. Missing artifacts succeed; I/O or
+    /// engine failure returns an error. Cost: one recursive removal and optional container removal.
+    fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>>;
     /// Start the thread's sandbox, or adopt the one left by an earlier run of the
     /// machine role (same thread id), resuming it if it was frozen.
     fn start<'a>(&'a self, spec: &'a SandboxSpec)

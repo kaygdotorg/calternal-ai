@@ -12,8 +12,8 @@
 //! Lease states: `waiting` (no machine with capacity: a visible state with a
 //! queue position, not an error), `assigned` (sent), `running` (the machine
 //! reported its sandbox up), `ended` (with a reason). A machine that has not
-//! synced for `lease_ttl` loses its leases: they are fenced and placed again,
-//! preferring the same machine when it returns (its frozen sandbox is resumed).
+//! synced for `lease_ttl` loses its leases: they are fenced and marked interrupted.
+//! Only an explicit resume allows placement again.
 //!
 //! Machine states: `online` (a sync is held or ended within `poll_hold + 5 s`),
 //! `draining` (online, takes no new work), `offline`, `revoked` (sessions dropped
@@ -26,7 +26,7 @@
 //! Locking and cost: machines are installation-wide (not per-space), so one
 //! registry mutex guards them. Every method except [`MachineService::sync`] and
 //! [`MachineService::read_output`] takes it and may commit to SQLite while
-//! holding it (one fsync, 1–5 ms, only on enrolment, placement, lease change and
+//! holding it (one fsync, 1–5 ms, only on enrolment, placement, lease change, explicit cleanup and
 //! revocation); those methods block and must run on a blocking task, which
 //! [`http`] does. The two async methods only wait on a `Notify` and take the lock
 //! on blocking tasks. Hot paths: a `sync` with nothing new reads and writes no
@@ -45,6 +45,7 @@
 
 pub mod admin;
 pub mod db;
+mod discards;
 pub mod http;
 pub mod provider;
 mod sessions;

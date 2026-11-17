@@ -21,6 +21,9 @@ pub enum AgentMode {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(default, deny_unknown_fields)]
 pub struct AgentInput {
+    /// Explicit retry of a failed workspace discard; never implied by status polling.
+    pub retry_failed: bool,
+
     /// Owning space UUID, required for check/run, otherwise derived from the job.
     pub space_id: String,
     /// Machine UUID for owner-controlled execution settings.
@@ -81,18 +84,23 @@ pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
     ),
     (
         "agent.check",
-        "Check Claude Code installation and sign-in in your sandbox",
+        "Check the selected provider installation and sign-in in your sandbox",
         true,
     ),
     (
         "agent.run",
-        "Send a prompt to Claude Code in a machine sandbox",
+        "Send a prompt to the selected provider in a machine sandbox",
         true,
     ),
     (
         "agent.events",
         "Read ordered live turn events and the durable checkpoint",
         false,
+    ),
+    (
+        "agent.discard",
+        "Explicitly discard a stopped turn workspace, retaining its account home",
+        true,
     ),
     (
         "agent.stop",
@@ -144,9 +152,11 @@ pub fn builtin_operation_risk(id: &str, mutates: bool) -> OperationRisk {
     match id {
         "spaces.set_role" | "spaces.transfer" | "plugins.enable" | "agent.mode"
         | "access.approve" | "access.request" | "machines.set" => OperationRisk::WidensAccess,
-        "spaces.delete" | "spaces.remove_member" | "spaces.leave" | "secrets.revoke" => {
-            OperationRisk::Irreversible
-        }
+        "agent.discard"
+        | "spaces.delete"
+        | "spaces.remove_member"
+        | "spaces.leave"
+        | "secrets.revoke" => OperationRisk::Irreversible,
         _ if !mutates => OperationRisk::Read,
         _ => OperationRisk::Reversible,
     }

@@ -51,6 +51,19 @@ impl Backend for ConfiguredBackend {
         self.selected.store(value, Ordering::Release);
         Ok(())
     }
+    fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            if self.podman.engine_available().await {
+                self.podman.discard(account, thread).await
+            } else if self.selected.load(Ordering::Acquire) == 1 {
+                self.direct.discard(account, thread).await
+            } else {
+                Err(SandboxError(
+                    "Podman is unavailable for workspace deletion".into(),
+                ))
+            }
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,

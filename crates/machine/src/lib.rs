@@ -10,8 +10,8 @@
 //! - [`enroll`]: exchange a one-time code for a machine identity.
 //! - [`connection`]: the outbound session, long-poll loop and reconnect backoff.
 //! - [`runner`]: applies server messages to sandboxes and streams exec output.
-//! - [`sandbox`]: the sandbox interface with Podman and process backends.
-//! - [`cli`]: `calternal machine enroll | run | status`.
+//! - [`sandbox`]: the sandbox interface with Podman and direct backends.
+//! - [`cli`]: `calternal machine enroll | run | status | discard`.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
@@ -20,6 +20,7 @@ pub mod connection;
 pub mod enroll;
 pub mod identity;
 pub mod link;
+mod ownership;
 pub mod protocol;
 pub mod runner;
 pub mod sandbox;

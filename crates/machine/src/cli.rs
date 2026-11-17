@@ -39,6 +39,24 @@ pub enum BackendKind {
     after_help = "Examples:\n  calternal machine enroll --server https://cal.example.org --code CODE\n  calternal machine status\n\nSee also: calternal machines code, calternal machine --help."
 )]
 pub enum Command {
+    /// Discard local thread files as this machine's owner; stop its role first.
+    Discard {
+        /// Account UUID owning the persistent home, which is kept.
+        #[arg(long)]
+        account_id: uuid::Uuid,
+        /// Thread workspace UUID to discard.
+        #[arg(long)]
+        thread_id: uuid::Uuid,
+        /// Machine directory containing credentials and sandboxes.
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Backend whose artifacts to remove; auto removes Podman artifacts when available.
+        #[arg(long,value_enum,default_value_t=BackendKind::Auto)]
+        backend: BackendKind,
+        /// Podman executable for container cleanup.
+        #[arg(long, default_value = "podman")]
+        podman: PathBuf,
+    },
     /// Choose direct or sandboxed execution on a machine you own.
     Set {
         /// Machine UUID to configure.
@@ -234,6 +252,36 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 .await
                 .map_err(|e| fail("machine enroll", e))?;
             Ok(identity(&creds, &dir))
+        }
+        Command::Discard {
+            account_id,
+            thread_id,
+            dir,
+            backend,
+            podman,
+        } => {
+            let dir = dir.unwrap_or_else(connection::default_dir);
+            let _guard = crate::ownership::lock(&dir)
+                .await
+                .map_err(|e| fail("machine discard", e))?;
+            let root = dir.join("sandboxes");
+            let backend: Arc<dyn Backend> = match backend {
+                BackendKind::Direct => Arc::new(DirectBackend::new(root)),
+                BackendKind::Podman => Arc::new(PodmanBackend::new(podman, root, "unused")),
+                BackendKind::Auto => {
+                    let configured = crate::sandbox::configured::ConfiguredBackend::new(
+                        root,
+                        podman,
+                        "unused".into(),
+                    );
+                    configured
+                        .configure("direct")
+                        .map_err(|e| CliError::new("cleanup", e.to_string()))?;
+                    Arc::new(configured)
+                }
+            };
+            backend.discard(account_id,thread_id).await.map_err(|_|CliError::new("cleanup","Workspace deletion failed.").hint("Stop active work and check the selected backend, directory and engine; then retry."))?;
+            Ok(Reply::new(json!({"discarded":true,"account_id":account_id,"thread_id":thread_id,"account_home":"retained"})).fields([("workspace","discarded".to_owned()),("account home","retained".to_owned()),("account",account_id.to_string()),("thread",thread_id.to_string())]).hint("Run `calternal machine run` to accept new work."))
         }
         Command::Status { dir } => {
             let dir = dir.unwrap_or_else(connection::default_dir);

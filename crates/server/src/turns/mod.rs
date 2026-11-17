@@ -47,7 +47,7 @@ pub async fn dispatch<D: Directory>(
     if let Some(a) = &agent {
         a.check(op, &input)?;
     }
-    let i: AgentInput = serde_json::from_value(json!(input))
+    let mut i: AgentInput = serde_json::from_value(json!(input))
         .map_err(|_| HostError::invalid_input("input does not match agent schema"))?;
     if op == "agent.settings" {
         if agent.is_some() {
@@ -108,7 +108,7 @@ pub async fn dispatch<D: Directory>(
         blocking(move || machines.set_direct(account, machine, i.direct)).await?;
         return Ok(json!({"machine_id":i.machine_id,"direct":i.direct}));
     }
-    validate(&i, op)?;
+    validate(&mut i, op)?;
     if matches!(op, "agent.run" | "agent.check") {
         authorize(&state, &who, &i.space_id, Capability::PluginsUse).await?;
         let (st, account, request, scope) = (
@@ -197,6 +197,30 @@ pub async fn dispatch<D: Directory>(
                 json!({"job":job.view(),"epoch":batch.epoch,"events":events,"next":next,"reset":reset,"requests":requests}),
             )
         }
+        "agent.discard" => {
+            if !job.state.is_final() && job.state != JobState::Interrupted {
+                return Err(HostError::conflict(
+                    "stop this turn before discarding its workspace",
+                ));
+            }
+            let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
+            blocking(move || {
+                st.jobs.cancel(&sp, &id)?;
+                st.jobs.agent_revoke(&sp, &id)
+            })
+            .await?;
+            let account = AccountId::parse(&job.account)
+                .ok_or_else(|| HostError::not_found("turn not found"))?;
+            let lease = job.checkpoint["lease_id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok());
+            let status = if let Some(lease) = lease {
+                blocking(move || machines.discard_run(account, lease, i.retry_failed)).await?
+            } else {
+                "done".into()
+            };
+            Ok(json!({"job":load(&state,&job.id).await?.view(),"discard":status}))
+        }
         "agent.stop" => {
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             blocking(move || {
@@ -213,6 +237,8 @@ pub async fn dispatch<D: Directory>(
                     "only an interrupted turn can resume; inspect its checkpoint first",
                 ));
             }
+            // Fence the previous lease before readmission, including after server recovery.
+            stop_machine(&machines, &job).await?;
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             blocking(move || st.jobs.agent_resume(&sp, &id)).await?;
             run::schedule(&state, &machines, job.space.clone(), job.id.clone());
@@ -352,7 +378,7 @@ async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), H
     Ok(())
 }
 
-fn validate(i: &AgentInput, op: &str) -> Result<(), HostError> {
+fn validate(i: &mut AgentInput, op: &str) -> Result<(), HostError> {
     if i.prompt.len() > 16 * 1024
         || i.model.len() > 128
         || i.source_app.len() > 80
@@ -362,19 +388,21 @@ fn validate(i: &AgentInput, op: &str) -> Result<(), HostError> {
         return Err(HostError::invalid_input("agent input exceeds its bounds"));
     }
     if matches!(op, "agent.run" | "agent.check") {
-        if Uuid::parse_str(&i.space_id).is_err()
-            || Uuid::parse_str(&i.thread_id).is_err()
-            || !i.job_id.is_empty()
-        {
-            return Err(HostError::invalid_input(
-                "check/run needs space_id and thread_id UUIDs",
-            ));
+        let invalid = || HostError::invalid_input("check/run needs space_id and thread_id UUIDs");
+        let space = SpaceId::parse(&i.space_id).ok_or_else(invalid)?;
+        let thread = Uuid::parse_str(&i.thread_id).map_err(|_| invalid())?;
+        if !i.job_id.is_empty() {
+            return Err(invalid());
         }
+        i.space_id = space.to_string();
+        i.thread_id = thread.to_string();
         if op == "agent.run" && i.prompt.trim().is_empty() {
             return Err(HostError::invalid_input("run needs a prompt"));
         }
-    } else if Uuid::parse_str(&i.job_id).is_err() {
-        return Err(HostError::invalid_input("job_id must be a UUID"));
+    } else {
+        i.job_id = Uuid::parse_str(&i.job_id)
+            .map_err(|_| HostError::invalid_input("job_id must be a UUID"))?
+            .to_string();
     }
     Ok(())
 }

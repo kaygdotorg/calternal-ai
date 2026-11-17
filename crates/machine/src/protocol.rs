@@ -183,12 +183,25 @@ pub struct LeaseReport {
 pub struct SyncRequest {
     /// Highest [`Envelope::seq`] received in this session (0 before any).
     pub ack: u64,
+    /// Completed explicit workspace deletions, retransmitted until a successful sync.
+    /// At most 128. An absent batch means no completed deletions.
+    #[serde(default)]
+    pub discards: Vec<DiscardReport>,
     /// Current capacity.
     pub capacity: Capacity,
     /// True once the machine is shutting down: place nothing new on it.
     pub draining: bool,
     /// Every lease the machine holds.
     pub leases: Vec<LeaseReport>,
+}
+
+/// A machine's result for a durable owner-requested workspace discard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscardReport {
+    /// Unique deletion attempt UUID; its session binds the target machine.
+    pub request_id: Uuid,
+    /// True only after workspace/container removal completed; account home remains.
+    pub success: bool,
 }
 
 /// Messages for the machine, in order. Empty after the hold time elapsed.
@@ -236,6 +249,15 @@ pub struct SandboxSpec {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Down {
+    /// Explicit owner discard; never inferred from lease expiry or elapsed time.
+    Discard {
+        /// Durable request identity, scoped to this enrolled machine.
+        request_id: Uuid,
+        /// Account whose workspace is being discarded.
+        account_id: Uuid,
+        /// Thread workspace to discard; its persistent account home is retained.
+        thread_id: Uuid,
+    },
     /// Run work for (space, account, thread): start or adopt the thread's sandbox.
     Assign {
         /// The lease.

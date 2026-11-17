@@ -90,7 +90,7 @@ impl MachineService {
     }
 
     /// Verify the signed challenge and open a session, replacing any earlier one.
-    /// No file I/O; one Ed25519 verification (about 50 µs).
+    /// One Ed25519 verification plus bounded discard reads/state commits on a blocking worker.
     ///
     /// Re-queues `Assign` for every lease the machine holds and `Exec` for every
     /// unfinished exec. A new `boot_id` means the machine role restarted: execs it
@@ -152,6 +152,7 @@ impl MachineService {
             draining: false,
             notify: Arc::new(Notify::new()),
         });
+        st.replay_discards(f.machine_id)?;
         let held: Vec<Uuid> = st
             .leases
             .values()
@@ -194,7 +195,7 @@ impl MachineService {
     /// work, then return queued messages or wait up to `poll_hold`.
     ///
     /// Each pass takes the lock on a blocking task; a quiet poll writes nothing
-    /// (commits happen only when the report changes a lease or work is placed).
+    /// (commits happen when leases change, work is placed, or explicit discard results arrive).
     pub async fn sync(
         self: &Arc<Self>,
         machine_id: Uuid,
@@ -232,6 +233,8 @@ impl MachineService {
     ) -> Result<Arc<Notify>, HostError> {
         let mut st = self.lock()?;
         let st = &mut *st;
+        live_mut(st.machines.get_mut(&machine_id), session)?;
+        st.finish_discards(machine_id, &req.discards)?;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
         live.capacity = req.capacity;

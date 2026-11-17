@@ -62,6 +62,11 @@ impl PodmanBackend {
             .is_ok_and(|s| s.success())
     }
 
+    /// Whether this configured engine can answer commands; no container is started.
+    pub(super) async fn engine_available(&self) -> bool {
+        Self::available(&self.podman).await
+    }
+
     /// Account-qualified container name, so a caller reusing another account's
     /// thread UUID can never adopt its mounts or login home.
     pub fn container_name(account_id: Uuid, thread_id: Uuid) -> String {
@@ -99,6 +104,15 @@ impl Backend for PodmanBackend {
         "podman"
     }
 
+    fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            let name = Self::container_name(account, thread);
+            podman(&self.podman, &["rm", "-f", "--ignore", &name]).await?;
+            super::direct::DirectBackend::new(self.root.clone())
+                .discard(account, thread)
+                .await
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
@@ -174,8 +188,10 @@ impl Backend for PodmanBackend {
                     .iter()
                     .map(|s| s.to_string())
                     .collect();
-                    // The same operation CLI is available to an agent, read-only.
+                    // Linux hosts supply the matching operation CLI read-only. Other
+                    // host platforms must put a Linux CLI in the container image.
                     // Nix builds retain immutable store references for their libraries.
+                    #[cfg(target_os = "linux")]
                     if let Some(exe) = super::cli_program().await {
                         args.extend([
                             "--volume".into(),

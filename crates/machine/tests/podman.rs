@@ -179,7 +179,11 @@ async fn persistent_homes_are_shared_only_with_the_same_account() {
     assert_eq!(sh(&c, "test ! -e \"$HOME/login-marker\"").await.1, 0);
     assert_eq!(sh(&c, "echo account-b > \"$HOME/login-marker\"").await.1, 0);
     assert_eq!(sh(&b, "cat \"$HOME/login-marker\"").await.0, "account-a\n");
-    a.stop().await.unwrap();
+    a.release().await.unwrap();
+    backend
+        .discard(first.account_id, first.thread_id)
+        .await
+        .unwrap();
     assert_eq!(sh(&b, "cat \"$HOME/login-marker\"").await.0, "account-a\n");
     b.stop().await.unwrap();
     c.stop().await.unwrap();

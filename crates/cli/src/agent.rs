@@ -36,6 +36,9 @@ pub struct Args {
 pub enum Command {
     /// Check the official program inside a sandbox; prints its own sign-in command.
     Check {
+        /// Provider plugin ID; omitted uses the server default.
+        #[arg(long, default_value = "")]
+        provider: String,
         /// Space UUID.
         #[arg(long)]
         space_id: String,
@@ -45,6 +48,9 @@ pub enum Command {
     },
     /// Start a turn and stream its ordered text and tool steps.
     Run {
+        /// Provider plugin ID; omitted uses the server default.
+        #[arg(long, default_value = "")]
+        provider: String,
         /// Space UUID.
         #[arg(long)]
         space_id: String,
@@ -54,8 +60,8 @@ pub enum Command {
         /// Prompt preserved as typed; never treated as an instruction-layer override.
         #[arg(long)]
         prompt: String,
-        /// Installed CLI model identifier.
-        #[arg(long, default_value = "sonnet")]
+        /// Installed CLI model identifier; omitted uses the provider manifest default.
+        #[arg(long, default_value = "")]
         model: String,
         /// Permission mode: least_access, approve_for_me (default) or full_access.
         #[arg(long, default_value = "approve_for_me")]
@@ -63,6 +69,14 @@ pub enum Command {
         /// Originating app prefix, for least-access mode.
         #[arg(long, default_value = "")]
         source_app: String,
+    },
+    /// Explicitly discard a stopped workspace; account login home is preserved.
+    Discard {
+        /// Turn job UUID.
+        job_id: String,
+        /// Retry a machine-reported cleanup failure after inspecting active work.
+        #[arg(long)]
+        retry: bool,
     },
     /// Cancel your turn; Managers may also cancel another member's turn.
     Stop {
@@ -187,14 +201,17 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
     let mut input = AgentInput::default();
     let (operation, stream) = match args.command {
         Command::Check {
+            provider,
             space_id,
             thread_id,
         } => {
+            input.provider_id = provider;
             input.space_id = space_id;
             input.thread_id = thread_id;
             ("agent.check", true)
         }
         Command::Run {
+            provider,
             space_id,
             thread_id,
             prompt,
@@ -202,6 +219,7 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
             mode: m,
             source_app,
         } => {
+            input.provider_id = provider;
             input.space_id = space_id;
             input.thread_id = thread_id;
             input.prompt = prompt;
@@ -209,6 +227,11 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
             input.mode = mode(&m)?;
             input.source_app = source_app;
             ("agent.run", true)
+        }
+        Command::Discard { job_id, retry } => {
+            input.job_id = job_id;
+            input.retry_failed = retry;
+            ("agent.discard", false)
         }
         Command::Stop { job_id } => {
             input.job_id = job_id;
@@ -233,6 +256,16 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
         }
     };
     let result = call(&client, operation, json!(input), args.connection.request_id).await?;
+    if operation == "agent.discard" {
+        out.agent_event(&json!({"type":"discard","state":result["discard"],"job":result["job"]}));
+        return if result["discard"] == "failed" {
+            Err(error(
+                "Workspace deletion failed; inspect the machine, then use discard --retry.",
+            ))
+        } else {
+            Ok(())
+        };
+    }
     out.agent_event(&json!({"type":"job","job":result["job"]}));
     if !stream {
         return Ok(());

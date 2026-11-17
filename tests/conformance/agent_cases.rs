@@ -8,6 +8,7 @@ pub const OPERATIONS: &[&str] = &[
     "agent.settings",
     "agent.events",
     "agent.stop",
+    "agent.discard",
     "agent.resume",
     "agent.mode",
     "access.request",
@@ -20,8 +21,12 @@ pub const OPERATIONS: &[&str] = &[
 async fn agent_operations_hide_foreign_jobs_spaces_and_machine_settings() {
     let f = Fixture::new().await;
     let thread = uuid::Uuid::now_v7().to_string();
-    let start=f.op(1,"agent.run",json!({"space_id":f.spaces[0],"thread_id":thread,"prompt":"disposable conformance prompt"})).await;
+    let start=f.op(1,"agent.run",json!({"space_id":f.spaces[0].to_uppercase(),"thread_id":thread.to_uppercase(),"prompt":"disposable conformance prompt"})).await;
     start.ok();
+    assert_eq!(
+        start.body["data"]["job"]["space_id"], f.spaces[0],
+        "UUID casing created a different job root"
+    );
     let job = start.body["data"]["job"]["id"].as_str().unwrap();
     let missing = uuid::Uuid::now_v7().to_string();
     let code = f
@@ -75,6 +80,7 @@ async fn agent_operations_hide_foreign_jobs_spaces_and_machine_settings() {
         }
     }
     f.op(1, "agent.stop", json!({"job_id":job})).await.ok();
+    f.op(1, "agent.discard", json!({"job_id":job})).await.ok();
     evidence("provider-isolation", json!(rows));
 }
 

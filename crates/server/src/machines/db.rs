@@ -3,7 +3,7 @@
 //! SQLite through `rusqlite`, WAL, `synchronous=FULL`: a lease's fence must never
 //! go backwards after a crash, so every commit is durable (one fsync, about
 //! 1–5 ms; commits happen on enrolment, placement, revocation and lease changes,
-//! never on heartbeats). The operator CLI writes the same file while the server
+//! never on empty heartbeats; explicit discard acknowledgements commit one batch). The operator CLI writes the same file while the server
 //! runs; the server notices through `PRAGMA data_version` within a sweep tick.
 //! Exec records and output are in memory only.
 
@@ -61,6 +61,11 @@ CREATE TABLE IF NOT EXISTS leases (
     created_ms INTEGER NOT NULL,
     updated_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS workspace_discards(
+ lease TEXT NOT NULL,machine TEXT NOT NULL,request_id TEXT NOT NULL UNIQUE,account TEXT NOT NULL,thread TEXT NOT NULL,
+ state TEXT NOT NULL,updated_ms INTEGER NOT NULL,PRIMARY KEY(lease,machine)
+) STRICT;
+CREATE INDEX IF NOT EXISTS workspace_discards_pending ON workspace_discards(machine,state);
 CREATE INDEX IF NOT EXISTS leases_thread_history ON leases(account,thread,created_ms DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE state != 'ended';
 ";

@@ -40,7 +40,11 @@ pub struct Config {
 /// Run the machine role until `shutdown` completes (orderly exit, `Ok`) or the
 /// machine is revoked ([`Error::Revoked`], after stopping every sandbox).
 pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>) -> Result<()> {
-    let creds = Credentials::load(&config.dir)?;
+    let _ownership = crate::ownership::lock(&config.dir).await?;
+    let path = config.dir.clone();
+    let creds = tokio::task::spawn_blocking(move || Credentials::load(&path))
+        .await
+        .map_err(|_| Error::Protocol("cannot load machine identity".into()))??;
     let link = Arc::new(Link::new(&creds.server)?);
     let runner = Arc::new(Runner::new(
         config.backend,
@@ -93,6 +97,7 @@ async fn session_loop(
                 capacity: runner.capacity(),
                 draining: false,
                 leases: runner.reports(),
+                discards: runner.discard_reports(),
             };
             match link
                 .post::<_, SyncResponse>(
@@ -104,6 +109,7 @@ async fn session_loop(
                 .await
             {
                 Ok(resp) => {
+                    runner.ack_discards(&req.discards);
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {

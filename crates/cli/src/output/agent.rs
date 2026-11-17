@@ -14,6 +14,23 @@ impl Output {
         } else {
             let e = value.get("event").unwrap_or(value);
             match e.get("type").and_then(Value::as_str).unwrap_or("") {
+                "discard" => {
+                    let state = e["state"].as_str().unwrap_or("unknown");
+                    let _ = writeln!(out, "Workspace discard: {state}");
+                    let _ = writeln!(out, "Account login home: retained");
+                    if state == "pending" {
+                        let _ = writeln!(
+                            out,
+                            "Next: run this discard command again to check the machine confirmation."
+                        );
+                    }
+                    if state == "failed" {
+                        let _ = writeln!(
+                            out,
+                            "Next: inspect the machine and active work, then retry with --retry."
+                        );
+                    }
+                }
                 "text_delta" => {
                     let _ = write!(out, "{}", e["text"].as_str().unwrap_or(""));
                 }

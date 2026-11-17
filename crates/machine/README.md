@@ -60,3 +60,11 @@ Provider stdin and the account-qualified home mounts are described in
 [manual turns](../../docs/agent-turns.md). Provider release stops processes while
 retaining workspace files; destructive machine-stop operations still remove the
 thread workspace.
+
+Explicit disposal: `calternal agent discard <job-id>` requests machine-confirmed
+removal of a stopped turn's workspace/container. It preserves the account home.
+The machine owner can stop the role and use `calternal machine discard
+--account-id <uuid> --thread-id <uuid> --dir DIR`; a directory lock excludes a
+live role. Never-sent requests are durable; interrupted in-flight deletion asks
+for inspection/retry. Automatic cleanup of preserved work and plan disk accounting
+are follow-ups. There is no timed expiry of unpreserved work.

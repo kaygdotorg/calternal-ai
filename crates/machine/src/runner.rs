@@ -73,6 +73,7 @@ pub struct Runner {
     link: Arc<Link>,
     max_sandboxes: u32,
     slots: Mutex<HashMap<Uuid, Arc<Slot>>>,
+    discards: Mutex<HashMap<Uuid, bool>>,
 }
 
 impl Runner {
@@ -83,6 +84,27 @@ impl Runner {
             link,
             max_sandboxes,
             slots: Mutex::new(HashMap::new()),
+            discards: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Bounded deletion results retained until a successful sync acknowledges them.
+    pub fn discard_reports(&self) -> Vec<crate::protocol::DiscardReport> {
+        self.discards
+            .lock()
+            .expect("discards")
+            .iter()
+            .map(|(id, success)| crate::protocol::DiscardReport {
+                request_id: *id,
+                success: *success,
+            })
+            .collect()
+    }
+    /// A successful sync durably processed this submitted batch; release its results.
+    pub fn ack_discards(&self, reports: &[crate::protocol::DiscardReport]) {
+        let mut held = self.discards.lock().expect("discards");
+        for r in reports {
+            held.remove(&r.request_id);
         }
     }
 
@@ -205,6 +227,31 @@ impl Runner {
                     };
                     me.upload(lease_id, fence, exec_id, exec).await;
                 });
+            }
+            Down::Discard {
+                request_id,
+                account_id,
+                thread_id,
+            } => {
+                if self
+                    .discards
+                    .lock()
+                    .expect("discards")
+                    .contains_key(&request_id)
+                {
+                    return;
+                }
+                let active = self
+                    .slots
+                    .lock()
+                    .expect("slots")
+                    .values()
+                    .any(|s| s.spec.account_id == account_id && s.spec.thread_id == thread_id);
+                let success = !active && self.backend.discard(account_id, thread_id).await.is_ok();
+                self.discards
+                    .lock()
+                    .expect("discards")
+                    .insert(request_id, success);
             }
             Down::Stop {
                 lease_id,

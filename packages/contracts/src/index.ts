@@ -405,6 +405,10 @@ export type AgentMode = "least_access" | "approve_for_me" | "full_access";
 
 export type AgentInput = {
 /**
+ * Explicit retry of a failed workspace discard; never implied by status polling.
+ */
+retry_failed: boolean,
+/**
  * Owning space UUID, required for check/run, otherwise derived from the job.
  */
 space_id: string,

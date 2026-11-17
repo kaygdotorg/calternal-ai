@@ -72,6 +72,7 @@ fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
 
 async fn sync(svc: &Arc<MachineService>, m: &M, leases: Vec<LeaseReport>) -> Vec<Down> {
     let req = SyncRequest {
+        discards: vec![],
         ack: 0,
         capacity: Capacity {
             cpus: 1,
@@ -309,4 +310,135 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
         })
         .unwrap();
     assert_eq!(grant.backend, "podman");
+}
+
+#[tokio::test]
+async fn workspace_discard_is_durable_and_only_its_machine_can_acknowledge() {
+    use calternal_machine::protocol::DiscardReport;
+    let dir = tempfile::tempdir().unwrap();
+    let svc = service(dir.path());
+    let account = AccountId(Uuid::new_v4());
+    let (id, key) = enrol(&svc, account);
+    let machine = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &machine, vec![]).await;
+    let run = svc
+        .request_run(SpaceId(Uuid::new_v4()), account, Uuid::new_v4(), None)
+        .unwrap();
+    svc.release_run(account, run.lease_id).unwrap();
+    drop(svc);
+    let svc = service(dir.path()); // Offline requests must survive restart.
+    assert_eq!(
+        svc.discard_run(account, run.lease_id, false).unwrap(),
+        "pending"
+    );
+    assert_eq!(
+        svc.discard_run(AccountId(Uuid::new_v4()), run.lease_id, false)
+            .unwrap_err()
+            .code,
+        ErrorCode::NotFound
+    );
+    drop(svc);
+    let svc = service(dir.path());
+    let machine = connect(&svc, machine.id, machine.key, Uuid::new_v4());
+    let messages = sync(&svc, &machine, vec![]).await;
+    let request = messages
+        .iter()
+        .find_map(|m| {
+            if let Down::Discard { request_id, .. } = m {
+                Some(*request_id)
+            } else {
+                None
+            }
+        })
+        .expect("discard was not recovered");
+    let (other_id, key) = enrol(&svc, account);
+    let other = connect(&svc, other_id, key, Uuid::new_v4());
+    let report = |id, success| SyncRequest {
+        ack: 1000,
+        capacity: Capacity::default(),
+        draining: false,
+        leases: vec![],
+        discards: vec![DiscardReport {
+            request_id: id,
+            success,
+        }],
+    };
+    svc.sync(other.id, &other.token, report(request, true))
+        .await
+        .unwrap();
+    assert_eq!(
+        svc.discard_run(account, run.lease_id, false).unwrap(),
+        "pending"
+    );
+    svc.sync(machine.id, &machine.token, report(request, false))
+        .await
+        .unwrap();
+    assert_eq!(
+        svc.discard_run(account, run.lease_id, false).unwrap(),
+        "failed"
+    );
+    assert_eq!(
+        svc.discard_run(account, run.lease_id, true).unwrap(),
+        "pending"
+    );
+    let messages = sync(&svc, &machine, vec![]).await;
+    let next = messages
+        .iter()
+        .find_map(|m| {
+            if let Down::Discard { request_id, .. } = m {
+                Some(*request_id)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_ne!(request, next);
+    svc.sync(machine.id, &machine.token, report(request, false))
+        .await
+        .unwrap();
+    svc.sync(machine.id, &machine.token, report(next, true))
+        .await
+        .unwrap();
+    assert_eq!(
+        svc.discard_run(account, run.lease_id, false).unwrap(),
+        "done"
+    );
+}
+
+#[tokio::test]
+async fn pending_discard_never_replays_over_a_replacement_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let svc = service(dir.path());
+    let account = AccountId(Uuid::new_v4());
+    let (id, key) = enrol(&svc, account);
+    let machine = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &machine, vec![]).await;
+    let space = SpaceId(Uuid::new_v4());
+    let thread = Uuid::new_v4();
+    let old = svc.request_run(space, account, thread, None).unwrap();
+    svc.release_run(account, old.lease_id).unwrap();
+    assert_eq!(
+        svc.discard_run(account, old.lease_id, false).unwrap(),
+        "pending"
+    );
+    let replacement = svc.request_run(space, account, thread, None).unwrap();
+    let machine = connect(&svc, machine.id, machine.key, Uuid::new_v4());
+    let messages = sync(&svc, &machine, vec![]).await;
+    assert!(
+        !messages.iter().any(|m| matches!(m, Down::Discard { .. })),
+        "stale deletion could remove replacement work"
+    );
+    assert_eq!(
+        svc.discard_run(account, old.lease_id, false)
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict
+    );
+    svc.release_run(account, replacement.lease_id).unwrap();
+    assert_eq!(
+        svc.discard_run(account, old.lease_id, false)
+            .unwrap_err()
+            .code,
+        ErrorCode::Conflict
+    );
 }

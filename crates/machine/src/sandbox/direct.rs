@@ -36,6 +36,21 @@ impl Backend for DirectBackend {
         "direct"
     }
 
+    fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            let dir = self
+                .root
+                .join("accounts")
+                .join(account.to_string())
+                .join("threads")
+                .join(thread.to_string());
+            match tokio::fs::remove_dir_all(dir).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(SandboxError::new(e)),
+            }
+        })
+    }
     fn start<'a>(
         &'a self,
         spec: &'a SandboxSpec,
