@@ -371,6 +371,11 @@ async fn execute<D: Directory>(
                                 checkpoint["text_tail"] = json!(&merged[start..]);
                             }
                             ProviderEventKind::ToolStarted { id, name, summary } => {
+                                if pending_tools.len() >= 128 || pending_tools.contains(id) {
+                                    return Err(HostError::invalid_input(
+                                        "provider pending tool limit or duplicate tool id",
+                                    ));
+                                }
                                 checkpoint["last_tool"] = json!({"id":id,"name":name,"summary":summary,"state":"started"});
                                 pending_tools.insert(id.clone());
                             }

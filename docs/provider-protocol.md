@@ -34,6 +34,7 @@ and acknowledged by sequence; its server buffer is bounded. The one turn reader
 publishes to the existing bounded job stream. A slow subscriber can lose old live
 chunks and receives reset plus checkpoint; it does not expand server memory.
 The adapter bounds raw CLI lines at 1 MiB and normalizes them before forwarding.
+At most 128 tool steps may be pending; duplicate starts fail closed.
 Provider crashes without a complete outcome become outcome-unknown. No login is
 read from disk, copied to the server or included in protocol output.
 
