@@ -24,6 +24,7 @@
   });
 </script>
 
+<div class="scroller edge-fade" style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)">
 {#if !shell.narrow && route.query.get("sheet") === "1"}
   <!-- A desktop has no sheet for settings: wallpaper and fonts are a page of the Settings app (a phone keeps its bottom sheet, mounted by App). -->
   <SettingsSheet inline open onclose={() => navigate("/settings/appearance")} />
@@ -44,8 +45,11 @@
   {/if}
 </div>
 {/if}
+</div>
 
 <style>
+  /* A settings page taller than the window scrolls inside the card; the shell never grows (its sidebars and their footer stay in view). */
+  .scroller { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
   .page { box-sizing: border-box; min-width: 0; overflow-x: clip; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); }
   .blurb { margin-top: var(--s-3); color: var(--ink-2); }

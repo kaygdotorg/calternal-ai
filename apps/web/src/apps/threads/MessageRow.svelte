@@ -38,9 +38,14 @@
 </div>
 
 <style>
-  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region); display: flex; }
+  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
   .user { justify-content: flex-end; }
-  .bubble { max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
+  .bubble { position: relative; max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
+  /* Your messages get an iMessage tail in the bubble's own fill (ported from the calternal-ui plugin): the bottom-right corner is square and a rounded point flares from that edge a little below the bubble. */
+  .user .bubble { border-bottom-right-radius: 0; }
+  .user .bubble::after { content: ""; position: absolute; right: -0.5rem; bottom: -0.125rem; width: 0.875rem; height: 1.25rem; background: rgb(var(--ink-rgb) / 0.07); pointer-events: none;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M6 0C6.2 8 8.4 14 12.2 17.6C13.3 18.3 13.5 19 12.6 19.4C10 20.1 7.5 19.9 5 19C3.4 18.5 1.8 18 0 18L6 18Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 20'%3E%3Cpath d='M6 0C6.2 8 8.4 14 12.2 17.6C13.3 18.3 13.5 19 12.6 19.4C10 20.1 7.5 19.9 5 19C3.4 18.5 1.8 18 0 18L6 18Z'/%3E%3C/svg%3E") center / 100% 100% no-repeat; }
   .agent > :global(.meta) { margin-top: calc(var(--s-4) * -1); }
   .col { display: grid; gap: var(--s-1); max-width: 82%; }
   .col.end { justify-items: end; }

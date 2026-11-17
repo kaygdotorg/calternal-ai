@@ -1,8 +1,11 @@
 # Plugin workers through machine sandboxes — 2026-11-17
 
 Thread: `thr_4ien3sf6rv`; branch `lane/plugin-workers`; [issue #29](https://git.kayg.org/kayg/calternal-ai/issues/29).
-Integrated `origin/dev` at `25878bd` before qualification; a final fetch found
-no newer dev commit. Implementation commits: `37372b8` (shared frame bound),
+Integrated `origin/dev` at `25878bd` before qualification. After qualification,
+merged `origin/dev` at `aeb7043`: that update contains only the UI lane’s browser
+code/tests and UI documentation; no worker, machine or backend source changed.
+The backend gates below cover this lane’s final runtime implementation.
+Implementation commits: `37372b8` (shared frame bound),
 `1abe29a` (machine workers). Only disposable data was used.
 
 ## Implementation
