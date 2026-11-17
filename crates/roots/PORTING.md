@@ -12,7 +12,7 @@ entries; wildcard membership already includes both crates.
 | `crates/calternal/src/storage.rs:29–48` | Omit Notes shutdown helpers: library guard docs require lifetime retention through completion of all writers. No Notes/server dependency. |
 | `crates/calternal/src/storage.rs:83–131,133–176` | Extend D/S to three separate roles, per ADR 0062 amendment :159–166 and :433–442. Explicit setup is allowed only when all markers are absent and every existing root contains only empty directories/regular lock sentinels. Nonempty unpaired roots are refused before creating missing peers. No legacy single-root adoption: three-role migration is a separate step. |
 | `crates/calternal/src/storage.rs:167–176` (`require_root`) | Replace path `is_dir` checks with component-by-component `openat(DIRECTORY, NOFOLLOW, CLOEXEC)` from `/`, retaining descriptors. Refuse parent components, lexical overlaps, symlink ancestors, duplicate device/inode roots. Read every marker/auth/legacy requirement and validate lock entry types before any CREATE operation. Setup creates missing components descriptor-relatively and fsyncs each parent. |
-| `crates/calternal/src/storage.rs:178–219` | Preserve nonempty regular `system/auth.db` requirement, strengthened with no-follow opens including `system`. UUID comes explicitly from caller configuration outside lost state rather than old core's ID type. Marker encoding is exactly `UUID\nrole\n`, roles `ssd-home`, `hdd-home`, `app-state`; malformed or legacy untyped markers are not silently adopted. New markers use private adjacent exclusive temp images, fsync, exclusive rename, directory fsync relative to pinned descriptors. |
+| `crates/calternal/src/storage.rs:178–219` | Preserve nonempty regular `system/auth.db` requirement, strengthened with no-follow opens including `system`. UUID comes explicitly from caller configuration outside lost state rather than old core's ID type. Marker encoding is exactly `UUID\nrole\n`, roles `userdata-ssd`, `userdata-hdd`, `appdata`; malformed or legacy untyped markers are not silently adopted. New markers use private adjacent exclusive temp images, fsync, exclusive rename, directory fsync relative to pinned descriptors. |
 | `crates/calternal/src/storage.rs:222–235` | Port explicit offline `re_pair`; confirmation is a required library boolean instead of CLI flag parsing. It never creates directories/databases, requires auth/history presence and all locks, replaces markers durably, refuses known swapped roles. This is presence checking, not verified inventory/provenance or a migration tool. Interrupted partial marker publication remains refused, as in source. |
 | `crates/calternal/src/storage.rs:237–261` | Retain legacy auth/history presence fence for both Home trees. Descriptor-relative no-follow traversal replaces path existence checks; missing state copy refuses before lock creation and checks repeat under locks. No space registry or changed Home identity mapping is invented. |
 | `crates/calternal/src/storage.rs:263–end` | Omit rotational-disk warning task, a binary diagnostic unrelated to opening roots. |
@@ -32,7 +32,7 @@ this is contention after validation, not invalid-root adoption.
 This does **not** check physical device separation, mount IDs/table continuity,
 rotational hardware, cryptographic marker provenance, SQLite integrity, recovery
 snapshot completeness, migration inventory equivalence, or bind-mount ancestry
-under different path names. SSD Home and state may share a filesystem. A missing
+under different path names. userdata-ssd and appdata may share a filesystem. A missing
 mount is detected by absent roots/markers/identity, not a device probe. Copied
 valid markers are not a mount identity proof. The caller must pin the UUID outside
 app state. Cooperative locks do not prevent a hostile process from mutating real
@@ -146,3 +146,7 @@ terminology and the new layout, retaining every test assertion and refusal:
   fence; it does not establish migration provenance or a complete registry.
 - Every startup fixture uses the new field names, roles and directory prefix.
   All 15 existing startup tests pass unchanged in meaning.
+
+- 2026-11-17 rename: the roots are appdata, userdata-ssd and userdata-hdd.
+  `Roots::{appdata,userdata_ssd,userdata_hdd}` replace `{state,ssd_space,hdd_space}`;
+  marker roles are `userdata-ssd`, `userdata-hdd`, `appdata`. No aliases accepted.

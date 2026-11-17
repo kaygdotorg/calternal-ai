@@ -594,10 +594,10 @@ pub fn configure_recovery(
         .to_string_lossy()
         .into_owned();
     let mut sinks = sinks().lock().map_err(Error::internal)?;
-    if let Some(existing) = sinks.get(&path) {
-        if !std::sync::Arc::ptr_eq(existing, &sink) {
-            return Err(Error::internal("recovery already configured"));
-        }
+    if let Some(existing) = sinks.get(&path)
+        && !std::sync::Arc::ptr_eq(existing, &sink)
+    {
+        return Err(Error::internal("recovery already configured"));
     }
     sink.reconcile(connection)?;
     sinks.insert(path, sink);

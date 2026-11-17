@@ -85,8 +85,8 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         // Preserve the submitted text as the version body, including its properties.
         let text = std::str::from_utf8(&item.bytes).map_err(Error::internal)?;
         let mut out = format!("---\ncalternal-id: {}\n", item.id);
-        if let Some(rest) = text.strip_prefix("---\n") {
-            if let Some((front, body)) = rest.split_once("\n---\n") {
+        if let Some(rest) = text.strip_prefix("---\n")
+            && let Some((front, body)) = rest.split_once("\n---\n") {
                 for line in front.lines() {
                     if !line.trim_start().starts_with("calternal-id:") {
                         out.push_str(line);
@@ -97,7 +97,6 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
                 out.push_str(body);
                 return Ok(out.into_bytes());
             }
-        }
         out.push_str("---\n");
         out.push_str(text);
         Ok(out.into_bytes())
@@ -352,8 +351,8 @@ impl Space {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
                 // fsio atomic-write temps include nonce + the known item's final name.
-                if let Some(rest) = name.strip_prefix(calternal_fsio::TEMP_PREFIX) {
-                    if let Some((nonce, final_name)) = rest.split_once('-') {
+                if let Some(rest) = name.strip_prefix(calternal_fsio::TEMP_PREFIX)
+                    && let Some((nonce, final_name)) = rest.split_once('-') {
                         let known: bool = self
                             .conn
                             .query_row(
@@ -373,7 +372,6 @@ impl Space {
                             fs::remove_file(entry.path()).map_err(Error::internal)?;
                         }
                     }
-                }
             }
         }
         Ok(())

@@ -22,11 +22,11 @@ struct State {
     changes: HashMap<PathBuf, u64>,
 }
 /// A counter for the spaces beneath a data root. With a separate
-/// state root, what plugins report for a space's app data there (see
+/// appdata root, what plugins report for a space's app data there (see
 /// [`provide`]) counts too.
 pub struct Usage {
     root: PathBuf,
-    /// `<state>/spaces`, when it is not the data root.
+    /// `<appdata>/spaces`, when it is not the data root.
     state_spaces: Option<PathBuf>,
     state: Mutex<State>,
     totals: arc_swap::ArcSwap<HashMap<String, u64>>,
@@ -34,8 +34,8 @@ pub struct Usage {
     ready: std::sync::atomic::AtomicBool,
 }
 
-/// What a plugin keeps for one space on the state root, in bytes, given
-/// that space's folder there (`<state>/spaces/<id>`).
+/// What a plugin keeps for one space on the appdata root, in bytes, given
+/// that space's folder there (`<appdata>/spaces/<id>`).
 pub type Provider = Arc<dyn Fn(&Path) -> u64 + Send + Sync>;
 
 fn providers() -> &'static Mutex<Vec<(String, Provider)>> {
@@ -43,7 +43,7 @@ fn providers() -> &'static Mutex<Vec<(String, Provider)>> {
     PROVIDERS.get_or_init(Default::default)
 }
 
-/// Lets plugin `name` report what it keeps for a space on the state root
+/// Lets plugin `name` report what it keeps for a space on the appdata root
 /// (the contacts plugin: every version of their cards, photos included),
 /// so storage limits count it although no file there has that size. A
 /// second call with the same name replaces the first.
@@ -60,7 +60,7 @@ impl Usage {
     }
 
     /// A counter for the spaces under `data` that also counts what plugins
-    /// report (see [`provide`]) for each space's app data under `state`.
+    /// report (see [`provide`]) for each space's app data under `appdata`.
     /// On a single root the files themselves are counted instead.
     pub fn with_state(data: &Path, state: &Path) -> Arc<Self> {
         let root = data.join("spaces");
@@ -114,7 +114,7 @@ impl Usage {
     }
     /// The space's files, from the maintained snapshot without locking or
     /// touching the disk, plus what plugins report for their app data on a
-    /// separate state root (a small read each).
+    /// separate appdata root (a small read each).
     pub fn bytes(&self, space: &str) -> u64 {
         let files = self.totals.load().get(space).copied().unwrap_or(0);
         let Some(spaces) = &self.state_spaces else {

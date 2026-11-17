@@ -233,10 +233,10 @@ pub(crate) fn capture_record(
                     ValueRef::Blob(v) => Cell::Blob(v.to_vec()),
                 });
             }
-            if *name == "passkeys" {
-                if let Some(i) = columns.iter().position(|n| n == "last_used_at") {
-                    cells[i] = Cell::Null
-                }
+            if *name == "passkeys"
+                && let Some(i) = columns.iter().position(|n| n == "last_used_at")
+            {
+                cells[i] = Cell::Null
             }
             if *name == "installations" {
                 let created = columns

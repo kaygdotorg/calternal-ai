@@ -1,6 +1,6 @@
 //! Three-role storage startup guard, ported from Calternal's storage startup.
 //!
-//! The caller pins an installation UUID in configuration outside app state and
+//! The caller pins an installation UUID in configuration outside appdata and
 //! explicitly opts into first setup. All roles and identities are checked before
 //! any lock sentinel or store is created. Existing installations require a
 //! nonempty regular `system/auth.db`; this is not SQLite integrity validation or
@@ -13,7 +13,7 @@
 //! Bind-mount ancestry under different path spellings is not detected. These checks do not
 //! prove separate devices, mount IDs, SSD/HDD hardware, mount continuity, or
 //! provenance of copied markers/auth files. No device separation is enforced:
-//! SSD space and app state are allowed on the same filesystem. An unavailable
+//! userdata-ssd and appdata are allowed on the same filesystem. An unavailable
 //! mount is detected through missing roots/markers/identity, not a mount-table
 //! check. Hostile concurrent mutation of real directories or marker bytes is
 //! outside the cooperative root-lock contract; this is not a tenant sandbox.
@@ -28,12 +28,12 @@ use std::path::PathBuf;
 /// The installation's three separate role directories.
 #[derive(Clone, Debug)]
 pub struct Roots {
-    /// Claim-validated text space tree, normally on SSD.
-    pub ssd_space: PathBuf,
-    /// Other original files space tree, normally on HDD.
-    pub hdd_space: PathBuf,
-    /// Protected app state, normally on SSD; never a space directory.
-    pub state: PathBuf,
+    /// Claim-validated text space tree (userdata-ssd), normally on SSD.
+    pub userdata_ssd: PathBuf,
+    /// Other original files space tree (userdata-hdd), normally on HDD.
+    pub userdata_hdd: PathBuf,
+    /// Protected databases and state (appdata), normally on SSD; never a space directory.
+    pub appdata: PathBuf,
 }
 
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]

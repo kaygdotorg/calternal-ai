@@ -193,10 +193,10 @@ impl Coordinator {
         ))
     }
     fn load_cached(&self, cache: &mut Option<Loaded>) -> Result<Loaded> {
-        if let Some(s) = cache.take() {
-            if self.stamps(&s.image.segment)? == s.stamps {
-                return Ok(s);
-            }
+        if let Some(s) = cache.take()
+            && self.stamps(&s.image.segment)? == s.stamps
+        {
+            return Ok(s);
         }
         self.load()
     }
