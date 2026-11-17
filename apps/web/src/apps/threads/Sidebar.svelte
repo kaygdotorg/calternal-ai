@@ -15,10 +15,11 @@
   import { swipeRows } from "../../lib/swipe/rows";
   import type { ThreadSummary } from "./model";
   import { client, store } from "./store.svelte";
+  import { spaces } from "../../shell/spaces.svelte";
 
   const current = $derived(segments()[0] === "threads" ? segments()[1] : undefined);
   const hidden = $derived(new Set(store.attention.slice(0, 3).map((a) => a.thread.id)));
-  const shown = $derived(store.threads.filter((t) => !hidden.has(t.id)));
+  const shown = $derived(store.threads.filter((t) => !hidden.has(t.id) && t.spaceId === spaces.current.id)); // only the current space's threads
   const byId = $derived(new Map(shown.map((t) => [t.id, t])));
   const top = $derived(shown.filter((t) => !t.parentId || !byId.has(t.parentId)).sort((a, b) => b.updatedAt - a.updatedAt).map((t) => t.id));
   const idsIn = (c: Container) => layout.idsOf(c, top);

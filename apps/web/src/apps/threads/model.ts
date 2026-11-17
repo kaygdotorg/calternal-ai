@@ -24,6 +24,8 @@ export type ProviderId = "claude" | "codex";
 /** What the sidebar and the header need to know about a thread. A child thread has a `parentId`. */
 export interface ThreadSummary {
   id: string;
+  /** The space the thread is in (a UUID). The sidebar lists only the current space's threads. */
+  spaceId: string;
   title: string;
   parentId: string | null;
   state: ThreadState;

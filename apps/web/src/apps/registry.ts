@@ -63,11 +63,12 @@ export const APPS: AppDef[] = [
     icon: "threads",
     Sidebar: ThreadsSidebar,
     Main: ThreadsMain,
+    // AI chat is the right sidebar's default tab in every app (docs/ui-shell.md); the app's own panels follow it.
     panels: [
+      { id: "chat", label: "Side chat", tab: "Chat", icon: "threads", component: SideChat, props: { about: "thread" } },
       { id: "changes", label: "Changes", icon: "changes", component: ThreadsPanels, props: { kind: "changes" } },
       { id: "run", label: "Run", icon: "pulse", component: ThreadsPanels, props: { kind: "run" } },
       { id: "files", label: "Files", icon: "files", component: ThreadsPanels, props: { kind: "files" } },
-      { id: "chat", label: "Side chat", tab: "Chat", icon: "threads", component: SideChat },
     ],
     attention: () =>
       threads.attention.map(({ thread, kinds }) => ({
@@ -87,6 +88,7 @@ export const APPS: AppDef[] = [
     Sidebar: NotesSidebar,
     Main: Notes,
     panels: [
+      { id: "chat", label: "Side chat", tab: "Chat", icon: "threads", component: SideChat, props: { about: "note" } },
       { id: "inspector", label: "Inspector", icon: "info", component: NotesPanels, props: { kind: "inspector" } },
       { id: "style", label: "Style", icon: "settings", component: NotesPanels, props: { kind: "style" } },
     ],

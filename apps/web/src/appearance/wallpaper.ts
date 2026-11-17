@@ -198,7 +198,7 @@ export function updateVeil(want: Flags): void {
   const jobs: [string, Role, RGB[]][] = [["l", "side", px(copies?.side, r.left)], ["r", "side", px(copies?.side, r.right)], ["c", "card", px(copies?.card, r.card)]];
   const out: Record<string, Veil> = {};
   for (const [k, role, pixels] of jobs) {
-    const v = solve(scheme, role, flags, pixels, T, other);
+    const v: Veil = craftLight && scheme === "light" ? { scheme: "light", tint: { a: 0.92, rgb: [255, 255, 255] }, dim: { a: 0, rgb: [0, 0, 0] }, ink2: T.ink2, ink3: T.ink3, total: 0.92, ratio: 99 } : solve(scheme, role, flags, pixels, T, other);
     out[k] = v;
     const ink2 = v.scheme === scheme ? v.ink2 : v.ink2, ink3 = v.ink3;
     root().setProperty(`--${k}-tint`, rgbCss(v.tint.rgb));
@@ -266,6 +266,9 @@ function schedule(ms = 60): void {
 /** Shows a wallpaper (an image URL: a blob, a data URL or a same-origin file) or none. The blur is done here, once. */
 let flagsNow: Flags = { blur: true, dim: true, tint: true };
 /** The three boxes as currently chosen; the veil is solved with them whenever the pictures are re-read. */
+/** The comparison of the owner's: in the light scheme, every surface is Craft's nearly opaque white (0.92) over the blurred, unchanged picture instead of the solved veil. Temporary. */
+let craftLight = false;
+export function setCraftLight(b: boolean): void { craftLight = b; }
 export function setFlags(f: Flags): void {
   flagsNow = f;
 }

@@ -15,6 +15,6 @@
 </div>
 
 <style>
-  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region); }
+  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); }
   .agent { display: grid; gap: var(--s-5); }
 </style>
