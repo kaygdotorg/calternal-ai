@@ -1,7 +1,8 @@
 # People over HTTP
 
 Forgejo #37, thread `thr_v5xgiyrgrd`, branch `lane/people`. Started at
-`f56c786` and merged `origin/dev` at `a7a5275` in `e42f3a3`.
+`f56c786`. The requests merge brought in `origin/dev` at `af4830f`
+through `61f0d6c`, advancing its auth schema from version 7 to version 8.
 
 The port follows the reference auth crate and ADRs 0058, 0059 and 0060 for
 capability-based authority, encrypted single-use enrollment links and
@@ -23,9 +24,9 @@ to the space.
 | --- | --- |
 | 1. Shared types | Reuses `AccountId`, `SpaceId`, the common capability set and caller-safe errors. Group and invite UUIDs use the existing shared identifier macro. |
 | 2. Dependencies | Auth uses pure core wire metadata and existing types, filesystem and rusqlite dependencies. OpenSSL is the same AES-256-GCM dependency already used for protected secrets. No new crate. |
-| 3. Request locks | One owned SQLite connection and bounded auth mailbox order authority reads, writes and recovery publication for an installation. The redundant connection mutex was removed. The recovery lock covers the protected commit only. The existing per-space content admission lock spans the receipt lookup, the cross-thread wait for the protected auth commit, and the journal receipt commit to keep one request ID exclusive across content and directory writes. Moving reads off the auth worker would need a publication fence to keep them from seeing a SQLite grant before recovery publication. |
+| 3. Request locks | One owned SQLite connection and bounded auth mailbox order authority reads, writes and recovery publication for an installation. The connection has no mutex. The recovery lock covers the protected commit. The existing per-space content admission lock spans the receipt lookup, the cross-thread wait for the protected auth commit, and the journal receipt commit to keep one request ID exclusive across content and directory writes. Role batches share one protected commit. Access checks deferred by a batch run after its recovery publication attempt. |
 | 4. Async safety | HTTP people handlers use blocking tasks with the existing bounded auth worker. The development-token status check awaits an indexed read on that worker. Enrollment verifies passkeys through the existing ceremony and stores results through the shared database worker. |
-| 5. Read and flush counts | One cached SQL query expands and deduplicates capability grants during ordinary space admission. Member listing adds up to three queries in one snapshot for authority, the account seek and the group seek. The group query counts current active users through indexed membership joins. Writes recheck authority in their immediate transaction before using auth receipts. Space-scoped writes check one content-journal receipt and publish one journal commit, in addition to the auth write and its recovery publication. The recovery protocol has two file fsyncs per nonempty delta before compaction. The host admission and transaction boundary both read current scope for scoped writes. The existing adapter checks the scope before replay and verifies the typed UUID again when it selects the receipt store. |
+| 5. Read and flush counts | One cached SQL query expands and deduplicates capability grants during ordinary space admission. Member listing adds up to three queries in one snapshot for authority, the account seek and the group seek. The group query counts current active users through indexed membership joins. A scoped write checks current scope at host admission and again inside the authority transaction. A new role write has one content-journal receipt check, one journal commit, and a savepoint with the authority write and its atomic auth receipt. The whole batch shares one FULL auth commit and the recovery protocol's two file fsyncs per nonempty delta before compaction. |
 | 6. Constant work | Discovery caches schemas and the host caches policies derived from the same operation table. Capability reads use a cached statement. The invite lookup subkey is derived once at startup. |
 | 7. Bounds and retention | At most 100 live invites per space. Terminal invite rows are kept for seven days by default from expiry, redemption or revocation. The operator sets `CALTERNAL_INVITE_RETENTION_DAYS`. Startup and minute sweeps delete protected batches of at most 256, including idle spaces. People, groups, group members, space grants, and invite lists use 50-row UUID cursor pages. Accounts retain the source ADR's no-account-removal rule. |
 | 8. Format | One disposable-preview schema, with no migration chain or old reader. The recovery inventory maps group grants to their owning space. |
@@ -115,12 +116,60 @@ nix develop -c python3 perf/people-development.py target/debug/calternal
 | Role change | 1 | 18.349 / 22.038 | 14.866 / 16.873 |
 | Role change | 32 | 1668.231 / 2766.419 | 1307.991 / 2085.439 |
 
-The 32-client run added 5.337 ms p50 and 6.265 ms p95 to a member list,
-and 1293.125 ms p50 and 2068.566 ms p95 to a role write, compared with the
-one-client follow-up sample. The auth worker holds the full protected
-authority transition in order. Recovery captures the actor-owned receipt rows
-alongside each change. Changing that capture boundary or separating readers
-would need a recovery design change with fresh crash verification.
+## Protected role-write batching
+
+Before grouping, each role change independently acquired the shared auth worker
+and ran an IMMEDIATE transaction, a recovery proposal file sync, the FULL SQLite
+commit, and a resolution file sync. Recovery recaptured the actor's retained
+receipts on each commit. Each caller then waited for its space-local journal
+receipt commit, which maintains request-ID exclusivity with content writes.
+
+The worker now takes role writes from up to 32 queued jobs without pausing for
+arrivals. It retains the order of writes and stops at another kind of write.
+Pure session and capability reads between role jobs wait behind that batch.
+Each request has its own authorization check, receipt and savepoint. One
+proposal, one FULL SQLite commit and one resolution publish the successful
+changes together. Every success waits for publication. If publication fails,
+the worker returns a failure for each otherwise successful request. The
+space-local journal receipt remains part of each successful HTTP write.
+
+The same development-host command after the requests merge and batching ran on
+dev-02 with the same fixture and sample count.
+
+| Operation | Clients | Before batching p50 / p95 (ms) | After batching p50 / p95 (ms) |
+| --- | ---: | ---: | ---: |
+| Member list | 1 | 0.836 / 1.047 | 0.492 / 0.562 |
+| Member list | 32 | 6.173 / 7.312 | 4.851 / 5.419 |
+| Role change | 1 | 14.866 / 16.873 | 13.501 / 14.585 |
+| Role change | 32 | 1307.991 / 2085.439 | 512.211 / 850.647 |
+
+At 32 clients, role-change p95 fell by 59%. Compared with the one-client sample,
+the final 32-client run added 4.857 ms p95 to a member list and 836.062 ms p95 to
+a role change. That increase includes journal commits, queueing, and the cost of
+recapturing the growing receipt history. The earlier and final runs used
+different source revisions of the server around the requests merge. The
+unoptimized builds had the same optimization level.
+
+### Requests merge and batching verification
+
+The dev-02 rebuild used `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`,
+and `CARGO_PROFILE_TEST_DEBUG=0`. The post-merge Cargo runs were scoped to
+the affected packages. The broad workspace and docs script runs above are
+earlier lane evidence. Dev-01 owns the final workspace gate with Podman.
+
+| Command inside `nix develop -c` | Result |
+| --- | --- |
+| `npm run build:plugins` | Passed before Cargo tests. |
+| `cargo test --locked -j6 -p calternal-auth -p calternal-recovery` | 124 passed. Covered grouping queued writes, savepoint isolation of a refused change, withholding success on a publication failure, and erasure of request authority when the last group grant disappears. |
+| `cargo build --locked -j6 -p calternal-server --features test-plugins` | Passed. |
+| `CARGO_TARGET_DIR="$PWD/target" CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1` | 68 passed. |
+| `cargo test --locked -j6 -p calternal-cli --test people --test requests` | Both passed. |
+| `cargo test --locked -j6 -p calternal-server --features test-plugins --test spaces_matrix --test requests_review` | 8 passed. |
+| `npm run test:integration` and `npm run test:plugins` | Passed. One opt-in provider case skipped. |
+| `cargo run --locked -j6 -p calternal-core --bin export-contract -- --check` | Passed. |
+| `cargo doc --locked -j6 --no-deps -p calternal-auth -p calternal-core -p calternal-cli -p calternal-server --all-features`, `npm run check --prefix scripts/docs-tools`, and `node packages/genui/scripts/check-docs.mjs` | Passed. |
+| `cargo fmt --all --check` and `cargo fmt --manifest-path tests/conformance/Cargo.toml --check` | Passed. |
+| `node scripts/docs-site/generate.mjs` | Generated 271 pages. The checked-in CLI reference includes the merged command text. |
 
 ## Remaining decisions
 
@@ -151,3 +200,6 @@ would need a recovery design change with fresh crash verification.
   transaction boundary and journal receipts can still replay safely.
 - Move existing CLI HTTP transport out of the account-input module. The people
   commands use the same credentials, retries and output rendering now.
+- Recovery could capture directory receipts by scope, keeping a busy account
+  from recopying its receipt history across all spaces in each protected batch.
+  That would change the recovery record boundary and need fresh crash tests.
