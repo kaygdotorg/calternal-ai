@@ -8,9 +8,12 @@
 
 use crate::{Error, Result};
 use rusqlite::Connection;
+use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
+
+mod role_batch;
 
 /// The one schema version this build reads; [`migrate`] creates it on an empty file.
 const VERSION: i64 = 8;
@@ -18,11 +21,13 @@ const VERSION: i64 = 8;
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
 /// authority reads, authentication writes and recovery publication for this
 /// installation. A read sees the state before or after the worker's protected
-/// commit. The worker owns its connection directly. The recovery sink lock
-/// spans only the recoverable commit itself (proposal, SQLite commit, in-memory
-/// revoke fence and publication). This worker holds no mutex while waiting on
-/// its mailbox or delivering a result to another thread. Separate space stores
-/// own their own content and journal connections.
+/// commit. The worker owns its connection directly. A batch takes role writes
+/// from at most 32 queued jobs and uses one savepoint per request. Pure access
+/// checks queued between those writes run immediately after publication. The
+/// recovery sink lock covers the proposal, SQLite commit, in-memory revoke
+/// fence and publication. The worker holds no lock during fsync outside that
+/// commit or while waiting for or replying to another thread. Space stores
+/// own their content and journal connections.
 #[derive(Clone)]
 pub struct Db {
     worker: tokio::sync::mpsc::Sender<Job>,
@@ -44,7 +49,11 @@ pub(crate) fn active_sink() -> Option<Sink> {
     ACTIVE_SINK.with(|s| s.borrow().clone())
 }
 
-type Job = Box<dyn FnOnce(&mut Connection) + Send>;
+enum Job {
+    Single(Box<dyn FnOnce(&mut Connection) + Send>),
+    Read(Box<dyn FnOnce(&Connection) + Send>),
+    Role(role_batch::RoleWrite),
+}
 
 impl Db {
     /// Opens or creates the database and brings its schema up to date.
@@ -69,10 +78,29 @@ impl Db {
         std::thread::Builder::new()
             .name("auth-db".into())
             .spawn(move || {
-                while let Some(job) = inbox.blocking_recv() {
+                let mut pending = VecDeque::new();
+                while let Some(job) = pending.pop_front().or_else(|| inbox.blocking_recv()) {
                     ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
                     let before = connection.total_changes();
-                    job(&mut connection);
+                    match job {
+                        Job::Single(job) => job(&mut connection),
+                        Job::Read(read) => read(&connection),
+                        Job::Role(first) => {
+                            let mut batch = vec![first];
+                            for _ in 1..role_batch::MAX_BATCH {
+                                match inbox.try_recv() {
+                                    Ok(Job::Role(write)) => batch.push(write),
+                                    Ok(read @ Job::Read(_)) => pending.push_back(read),
+                                    Ok(single @ Job::Single(_)) => {
+                                        pending.push_back(single);
+                                        break;
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+                            role_batch::execute(&mut connection, batch);
+                        }
+                    }
                     if connection.total_changes() != before {
                         changes.send_modify(|n| *n = n.wrapping_add(1));
                     }
@@ -120,8 +148,9 @@ impl Db {
     /// Admission is O(1); latency includes waiting for capacity, earlier jobs,
     /// and `f` itself (including SQLite's 5 s busy timeout).
     /// The already-open worker is shared by all handle clones.
-    /// At most 64 jobs are queued, plus one executing; waiting caller futures
-    /// retain their own closures outside the queue. No general Tokio blocking
+    /// At most 64 jobs are queued, plus one executing job or role batch.
+    /// Waiting caller futures retain their own closures outside the queue.
+    /// No general Tokio blocking
     /// pool slot is used. Use [`Self::try_run`] for immediate overload refusal.
     /// Dropping the future after admission does not cancel `f`.
     ///
@@ -134,12 +163,30 @@ impl Db {
         let worker = &self.worker;
         let (tx, rx) = tokio::sync::oneshot::channel();
         worker
-            .send(Box::new(move |c| {
+            .send(Job::Single(Box::new(move |c| {
                 let _ = tx.send(f(c));
-            }))
+            })))
             .await
             .map_err(|_| Error::internal("auth database worker stopped"))?;
         rx.await.map_err(Error::internal)?
+    }
+
+    /// Read current authority asynchronously on the same worker as its writes.
+    /// The callback must be read-only. Concurrent role writes can pass a queued
+    /// read within one bounded batch. The read runs after the commit and
+    /// recovery publication attempt, including the existing failure handling.
+    pub(crate) async fn read<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        self.worker
+            .send(Job::Read(Box::new(move |c| {
+                let _ = reply.send(f(c));
+            })))
+            .await
+            .map_err(|_| Error::internal("auth database worker stopped"))?;
+        result.await.map_err(Error::internal)?
     }
 
     /// Runs `f` on the same worker, refusing admission immediately if all 64
@@ -155,9 +202,9 @@ impl Db {
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.worker
-            .try_send(Box::new(move |c| {
+            .try_send(Job::Single(Box::new(move |c| {
                 let _ = tx.send(f(c));
-            }))
+            })))
             .map_err(|e| match e {
                 tokio::sync::mpsc::error::TrySendError::Full(_) => Error::QueueFull,
                 tokio::sync::mpsc::error::TrySendError::Closed(_) => {
@@ -179,11 +226,42 @@ impl Db {
     {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.worker
-            .blocking_send(Box::new(move |c| {
+            .blocking_send(Job::Single(Box::new(move |c| {
                 let _ = tx.send(f(c));
-            }))
+            })))
             .map_err(|_| Error::internal("auth database worker stopped"))?;
         rx.blocking_recv().map_err(Error::internal)?
+    }
+
+    /// Blocking counterpart of [`Self::read`], for the synchronous directory.
+    pub(crate) fn read_blocking<T: Send + 'static>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        self.worker
+            .blocking_send(Job::Read(Box::new(move |c| {
+                let _ = reply.send(f(c));
+            })))
+            .map_err(|_| Error::internal("auth database worker stopped"))?;
+        result.blocking_recv().map_err(Error::internal)?
+    }
+
+    /// Enqueue a role mutation that can run inside another transaction's savepoint.
+    /// The callback must perform no cross-thread work, independent commits, or
+    /// external side effects. Reports success only after the shared commit publishes.
+    pub(crate) fn run_role_write_blocking(
+        &self,
+        apply: impl FnOnce(&Connection) -> Result<serde_json::Value> + Send + 'static,
+    ) -> Result<serde_json::Value> {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        self.worker
+            .blocking_send(Job::Role(role_batch::RoleWrite {
+                apply: Box::new(apply),
+                reply,
+            }))
+            .map_err(|_| Error::internal("auth database worker stopped"))?;
+        result.blocking_recv().map_err(Error::internal)?
     }
 
     /// Watches worker mutations, conservatively including rolled-back writes.
@@ -402,3 +480,6 @@ pub(crate) use calternal_types::now_ms;
 pub(crate) fn sql(e: rusqlite::Error) -> crate::Error {
     crate::Error::internal(e)
 }
+
+#[cfg(test)]
+mod role_batch_tests;

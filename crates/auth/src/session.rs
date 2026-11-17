@@ -189,7 +189,7 @@ pub(crate) async fn identify(
         Some(l) => l,
         None => {
             let k = key.clone();
-            let found = inner.db.run(move |c| lookup(c, &k)).await.ok().flatten()?;
+            let found = inner.db.read(move |c| lookup(c, &k)).await.ok().flatten()?;
             inner.sessions.remember(key.clone(), found, now);
             found
         }
@@ -243,7 +243,7 @@ fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) 
     });
 }
 
-fn lookup(c: &mut rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
+fn lookup(c: &rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
     c.query_row(
         "SELECT user_id, id, expires_at, last_seen_at FROM installations
          WHERE token_hash = ?1 AND revoked_at IS NULL AND kind <> 'dav'",

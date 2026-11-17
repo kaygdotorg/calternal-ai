@@ -373,7 +373,7 @@ impl Auth {
     pub async fn development_account_active(&self, account: AccountId) -> bool {
         self.inner
             .db
-            .run(move |c| require_active(c, account))
+            .read(move |c| require_active(c, account))
             .await
             .is_ok()
     }

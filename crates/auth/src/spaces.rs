@@ -8,11 +8,13 @@ use calternal_core::PeopleOperation;
 use calternal_types::{Capability, CapabilitySet, GroupId};
 mod development;
 mod membership;
+mod receipt;
 mod recovery;
 pub use development::DevelopmentIds;
 use membership::*;
 pub use membership::{GroupMember, MemberPage, MemberTarget};
 pub(crate) use membership::{assignable_role, privileged};
+use receipt::{Receipt, apply_receipted};
 pub use recovery::RecoverySink;
 pub(crate) use recovery::{commit, commit_with};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -76,7 +78,7 @@ pub(crate) fn is_owner(c: &Connection, actor: AccountId, space: SpaceId) -> Resu
     )
     .map_err(sql)
 }
-/// Tests an enabled account’s effective direct or group capability in this space.
+/// Tests an active account's effective direct or group capability in this space.
 pub(crate) fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
     c.query_row(
         "SELECT EXISTS(SELECT 1 FROM space_account_roles m
@@ -467,7 +469,7 @@ impl Spaces {
     /// or disabled account and a missing membership all return `None`.
     /// Cost: one worker round trip and one indexed query on a cached statement.
     pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<CapabilitySet>> {
-        self.run(move |c| {
+        self.db.read_blocking(move |c| {
             let mut st = c
                 .prepare_cached(
                     "SELECT DISTINCT rc.capability FROM space_account_roles m
@@ -510,6 +512,7 @@ impl Spaces {
     /// are acknowledged; a barrier error can follow an unacknowledged DB commit.
     /// Cost: one IMMEDIATE transaction on the auth worker: authority checks, one
     /// bounded indexed prune, one receipt read and, when new, the change and insert.
+    /// Queued role writes share a commit while keeping separate savepoints.
     pub fn change_with_receipt(
         &self,
         actor: AccountId,
@@ -517,6 +520,19 @@ impl Spaces {
         change: SpaceChange,
         receipt: Option<(&str, &str, &str)>,
     ) -> Result<serde_json::Value> {
+        if matches!(
+            &change,
+            SpaceChange::SetRole { .. } | SpaceChange::SetGroupRole { .. }
+        ) {
+            let receipt = receipt.map(|r| Receipt::new(actor, space, self.receipt_retention, r));
+            return self.db.run_role_write_blocking(move |connection| {
+                check(connection, actor, space, &change)?;
+                let (value, _) = apply_receipted(connection, receipt.as_ref(), || {
+                    Ok((apply(connection, actor, space, &change)?, ()))
+                })?;
+                Ok(value)
+            });
+        }
         self.mutate(actor, space, receipt, move |tx| {
             check(tx, actor, space, &change)?;
             Ok(move |tx: &rusqlite::Transaction<'_>| apply(tx, actor, space, &change))
@@ -563,47 +579,18 @@ impl Spaces {
         A: FnOnce(&rusqlite::Transaction<'_>) -> Result<(serde_json::Value, E)>,
         C: FnOnce(E) + Send + 'static,
     {
-        let receipt = receipt.map(|(rid, op, fp)| (rid.to_owned(), op.to_owned(), fp.to_owned()));
-        let scope = space.map_or_else(|| actor.to_string(), |s| s.to_string());
-        let retention = self.receipt_retention.as_millis() as i64;
+        let receipt = receipt.map(|r| Receipt::new(actor, space, self.receipt_retention, r));
         self.run(move |c| {
             let tx = c
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(sql)?;
             let apply = admit(&tx)?;
-            let now = crate::db::now_ms();
-            if let Some((rid, op, fp)) = &receipt {
-                tx.execute(
-                    "DELETE FROM space_receipts WHERE actor=?1 AND at_ms<?2",
-                    params![actor.to_string(), now.saturating_sub(retention)],
-                )
-                .map_err(sql)?;
-                let saved: Option<(String, String, String)> = tx
-                    .query_row(
-                        "SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND scope=?2 AND request_id=?3",
-                        params![actor.to_string(), scope, rid],
-                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                    )
-                    .optional()
-                    .map_err(sql)?;
-                if let Some((saved_op, saved_fp, result)) = saved {
-                    if saved_op != *op || saved_fp != *fp {
-                        return Err(Error::new(ErrorCode::Conflict, "request_id reused"));
-                    }
-                    let value = serde_json::from_str(&result).map_err(sql)?;
-                    commit(tx)?;
-                    return Ok(value);
+            let (value, effect) = apply_receipted(&tx, receipt.as_ref(), || apply(&tx))?;
+            commit_with(tx, || {
+                if let Some(effect) = effect {
+                    committed(effect);
                 }
-            }
-            let (value, effect) = apply(&tx)?;
-            if let Some((rid, op, fp)) = &receipt {
-                tx.execute(
-                    "INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5,?6,?7)",
-                    params![actor.to_string(), scope, rid, op, fp, value.to_string(), now],
-                )
-                .map_err(sql)?;
-            }
-            commit_with(tx, || committed(effect))?;
+            })?;
             Ok(value)
         })
     }
