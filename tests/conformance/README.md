@@ -58,3 +58,8 @@ SIGKILL tests cover scheduled interruption and acknowledged/uncertain outcomes,
 not deterministic cuts inside every transaction or physical power loss. The
 worker race uses a disposable runtime wrapper and a readiness/release barrier,
 then invokes the unchanged, digest-pinned shipped bundle.
+
+`live_cases.rs` exercises the journal SSE route with real passkey sessions:
+unknown/foreign spaces match, foreign bookmarks reset without content, missing
+credentials refuse, reconnect after server/client restart replays backlog, and
+logging out closes an idle subscription.

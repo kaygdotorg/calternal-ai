@@ -324,6 +324,12 @@ impl Error {
     }
 }
 impl Spaces {
+    /// Watches this directory's worker mutations; subscribers must recheck current
+    /// capability rows after a hint. Clones bounded watch state without I/O.
+    pub fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.db.changes()
+    }
+
     /// Opens a configured migrated database. The host must validate roots first.
     pub fn open(path: &Path) -> Result<Self> {
         Ok(Self {

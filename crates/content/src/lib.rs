@@ -94,7 +94,12 @@ impl Content {
         idle_after: Duration,
         fault: fn(FaultPoint),
     ) -> Result<Self> {
-        for path in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd, &secrets] {
+        for path in [
+            &roots.appdata,
+            &roots.userdata_ssd,
+            &roots.userdata_hdd,
+            &secrets,
+        ] {
             calternal_auth::private_fs::directory(path).map_err(Error::internal)?;
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
@@ -147,9 +152,10 @@ impl Content {
                         for id in ids {
                             if let Err(e) =
                                 space.place(Uuid::parse_str(&id).map_err(Error::internal)?, fault)
-                                && e.code != ErrorCode::Conflict {
-                                    return Err(e);
-                                }
+                                && e.code != ErrorCode::Conflict
+                            {
+                                return Err(e);
+                            }
                         }
                         Ok(())
                     })?;
@@ -172,18 +178,42 @@ impl Content {
         } else {
             // Bound cold admissions before opening SQLite/writer handles. Never
             // hold the map mutex across journal round trips or database I/O.
-            let _admission=lock(&self.admission);
-            let again={lock(&self.spaces).get(&id).map(|e|e.space.clone())};
-            if let Some(held)=again {held} else {
+            let _admission = lock(&self.admission);
+            let again = { lock(&self.spaces).get(&id).map(|e| e.space.clone()) };
+            if let Some(held) = again {
+                held
+            } else {
                 {
-                    let mut map=lock(&self.spaces);
-                    if map.len()>=64 {
-                        if let Some(old)=map.iter().filter(|(_,e)|Arc::strong_count(&e.space)==1).min_by_key(|(_,e)|e.last_used).map(|(k,_)|*k){map.remove(&old);}
-                        else {return Err(Error::new(ErrorCode::Unavailable,"content cache is busy"));}
+                    let mut map = lock(&self.spaces);
+                    if map.len() >= 64 {
+                        if let Some(old) = map
+                            .iter()
+                            .filter(|(_, e)| Arc::strong_count(&e.space) == 1)
+                            .min_by_key(|(_, e)| e.last_used)
+                            .map(|(k, _)| *k)
+                        {
+                            map.remove(&old);
+                        } else {
+                            return Err(Error::new(
+                                ErrorCode::Unavailable,
+                                "content cache is busy",
+                            ));
+                        }
                     }
                 }
-                let opened=Arc::new(Mutex::new(Space::open(&self.roots.appdata,&self.roots.userdata_ssd,id,self.journals.handle(id)?)?));
-                lock(&self.spaces).insert(id,Entry {space:opened.clone(),last_used:Instant::now()});
+                let opened = Arc::new(Mutex::new(Space::open(
+                    &self.roots.appdata,
+                    &self.roots.userdata_ssd,
+                    id,
+                    self.journals.handle(id)?,
+                )?));
+                lock(&self.spaces).insert(
+                    id,
+                    Entry {
+                        space: opened.clone(),
+                        last_used: Instant::now(),
+                    },
+                );
                 opened
             }
         };
@@ -331,6 +361,29 @@ impl Content {
             self.journals.publish(space,request.account,request.id.into(),request.operation.into(),request.fingerprint.into(),None,"control".into(),result)
         })
     }
+    /// Checks one item's current kind and existence inside an authorized space.
+    /// Cost: bounded cache lookup and one indexed per-space SQLite read; no global
+    /// catalog access, content body allocation, journal bridge or fsync.
+    pub fn contains(&self, space: SpaceId, kind: &str, item: uuid::Uuid) -> Result<bool> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind=?2)",
+                    rusqlite::params![item.to_string(), kind],
+                    |r| r.get(0),
+                )
+                .map_err(Error::internal)
+        })
+    }
+
+    /// Pins the existing per-space journal for asynchronous following. The host must
+    /// authorize the space first and invoke this method on a blocking thread.
+    /// Cost: one bounded bridge round trip, lazy database/key opens on first use;
+    /// cloning the returned handle needs no further bridge or content lock.
+    pub fn live_journal(&self, space: SpaceId) -> Result<calternal_store::SpaceStore> {
+        self.journals.handle(space)
+    }
+
     /// Returns a bounded journal page for host diagnostics and conformance tests.
     /// Cost: one bridge round trip and indexed read allocating at most 10,000 events;
     /// a cold journal opens its database/witness. No content reads or normal fsync.
