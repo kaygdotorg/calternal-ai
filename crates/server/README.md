@@ -57,11 +57,16 @@ grants no content access.
 bearer files; this flag is **off by default**, including after restart. Existing
 token files do not grant authority without this flag. Development `base_url`
 retains the preview's numeric loopback URL for existing bearer clients; use
-`passkey_origin` for browser passkey sign-in. The `owner` fixture owns
-two spaces named `personal` and `shared`; `guest` reads only `shared`. Each account
-and each space has an independent UUIDv7, and requests name spaces only by UUID:
-clients read them from `describe`. Token files are 0600 under a 0700 `dev-tokens`
-directory.
+`passkey_origin` for browser passkey sign-in. Each fixture account owns its
+personal space. The `owner` also owns `shared`, where `guest` is a Reader. All
+account and space UUIDv7s are independent. Clients identify the personal space
+by the caller-relative `personal` flag on a `spaces.list` row. Token files are
+0600 under a 0700 `dev-tokens` directory.
+
+First-owner enrollment and privileged account creation insert the account,
+personal space and Owner membership in one protected authority transaction.
+Passkey recovery attaches a credential to the existing account and space.
+The preview has no invite-redemption route.
 
 ## HTTP
 
@@ -111,8 +116,10 @@ match the resolved owner. Collections and creation still require a space.
 The CLI's get/update/history commands omit the hint by default.
 
 Every response retains CSP, nosniff, no-referrer, DENY framing and API no-store.
-There are no CORS headers. `--web-dir` serves a plain static directory with no
-SPA fallback; unknown paths and API routes return 404.
+There are no CORS headers. `--web-dir` serves existing static files first.
+A missing GET or HEAD on a
+[Calternal address](../../docs/addresses.md) serves the app shell. Missing
+assets and API routes still return 404.
 Core operation bodies remain capped at 2 MiB, Markdown at 1 MiB. The server
 supports the settled addresses; the current web router still needs Claude-owned
 changes listed in docs/reviews/server-http-validation-2026-11-17.md.

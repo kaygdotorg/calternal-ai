@@ -33,8 +33,8 @@ Recorded test fixture:
 ```text
 exit: 0
 --- stdout ---
-PLUGIN          WORKER                         SHA-256  STATE
-notes-insights  notes-insights/dist/worker.js  -        unreadable: worker: No such file or directory (os error 2)
+PLUGIN                    WORKER                                   SHA-256  STATE
+calternal-notes-insights  calternal-notes-insights/dist/worker.js  -        unreadable: worker: No such file or directory (os error 2)
 --- stderr ---
 ```
 
@@ -49,11 +49,11 @@ exit: 0
   "data": {
     "workers": [
       {
-        "id": "notes-insights",
+        "id": "calternal-notes-insights",
         "pinned": false,
         "sha256": null,
         "state": "unreadable: worker: No such file or directory (os error 2)",
-        "worker": "notes-insights/dist/worker.js"
+        "worker": "calternal-notes-insights/dist/worker.js"
       }
     ]
   },

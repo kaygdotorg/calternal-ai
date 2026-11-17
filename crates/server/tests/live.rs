@@ -242,9 +242,16 @@ async fn nonmember_and_missing_space_have_identical_http_refusals() {
 async fn idle_membership_revocation_closes_without_delivering_queued_entries() {
     let f = Fixture::new().await;
     let guest = Client::new(&f.url, &f.guest_token).unwrap();
-    let shared = guest.describe().await.unwrap().principal.spaces[0]
-        .id
-        .clone();
+    let shared = guest
+        .describe()
+        .await
+        .unwrap()
+        .principal
+        .spaces
+        .into_iter()
+        .find(|grant| grant.role == calternal_core::SpaceRole::Reader)
+        .unwrap()
+        .id;
     let account = guest.describe().await.unwrap().principal.id;
     let mut live = guest
         .subscribe(
@@ -401,9 +408,16 @@ async fn offline_input_drains_after_authorized_connect() {
 async fn foreign_item_entries_are_filtered_without_advancing_over_unread_visible_items() {
     let f = Fixture::new().await;
     let guest = Client::new(&f.url, &f.guest_token).unwrap();
-    let shared = guest.describe().await.unwrap().principal.spaces[0]
-        .id
-        .clone();
+    let shared = guest
+        .describe()
+        .await
+        .unwrap()
+        .principal
+        .spaces
+        .into_iter()
+        .find(|grant| grant.role == calternal_core::SpaceRole::Reader)
+        .unwrap()
+        .id;
     let private = f.spaces.iter().find(|s| **s != shared).unwrap();
     let private_note = f.create(private, 0).await;
     let mut live = guest

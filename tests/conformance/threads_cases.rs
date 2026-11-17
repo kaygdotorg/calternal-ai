@@ -609,3 +609,37 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
     .await;
     assert_eq!(foreign.err().unwrap(), absent.err().unwrap());
 }
+
+#[tokio::test]
+async fn fresh_personal_and_owned_spaces_list_empty_from_an_unrelated_working_directory() {
+    let mut f = Fixture::new().await;
+    let signup = f.op(0, "spaces.list", json!({})).await;
+    signup.ok();
+    let personal = signup.body["data"]["spaces"][0]["id"].clone();
+    f.stop();
+    f.start_with_plugin_root(false).await;
+
+    // A duplicate display name must never mark a second space as personal.
+    let created = f.op(0, "spaces.create", json!({"name":"Personal"})).await;
+    created.ok();
+    let new_space = &created.body["data"]["space"];
+    assert_eq!(new_space["personal"], false);
+    let spaces = f.op(0, "spaces.list", json!({})).await;
+    spaces.ok();
+    let spaces = spaces.body["data"]["spaces"].as_array().unwrap();
+    let personal_rows: Vec<_> = spaces.iter().filter(|s| s["personal"] == true).collect();
+    assert_eq!(personal_rows.len(), 1);
+    assert_eq!(personal_rows[0]["id"], personal);
+
+    for space in [&personal, &new_space["id"]] {
+        let list = f.op(0, "threads.list", json!({"space_id":space})).await;
+        list.ok();
+        assert_eq!(list.body["data"]["threads"], json!([]));
+        let foreign = f.op(1, "threads.list", json!({"space_id":space})).await;
+        let absent = f
+            .op(1, "threads.list", json!({"space_id":uuid::Uuid::now_v7()}))
+            .await;
+        assert_eq!(foreign.status, 404);
+        assert_eq!(foreign.signature(), absent.signature());
+    }
+}

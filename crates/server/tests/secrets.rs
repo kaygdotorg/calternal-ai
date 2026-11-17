@@ -79,16 +79,16 @@ impl Fixture {
             let c = rusqlite::Connection::open(root.join("system/auth.db")).unwrap();
             match role {
                 None => c.execute(
-                    "DELETE FROM space_memberships WHERE account_id=?1",
-                    [&guest_id],
+                    "DELETE FROM space_memberships WHERE account_id=?1 AND space_id=?2",
+                    [&guest_id, &shared],
                 ),
                 Some("owner") => c.execute(
                     "UPDATE spaces SET owner_account=?1 WHERE id=?2",
                     [&guest_id, &shared],
                 ),
                 Some(role) => c.execute(
-                    "UPDATE space_memberships SET role=?1 WHERE account_id=?2",
-                    [role, &guest_id],
+                    "UPDATE space_memberships SET role=?1 WHERE account_id=?2 AND space_id=?3",
+                    [role, &guest_id, &shared],
                 ),
             }
             .unwrap();
