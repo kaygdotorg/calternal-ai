@@ -50,6 +50,7 @@
   ]);
   onMount(() => {
     shortcuts.start();
+    void spaces.load().catch(() => {}); // the real server's spaces (dots, current, personal); a no-op on fixtures
     if (route.path === "/") navigate("/threads", true);
 
     const p = route.query.get("panel");

@@ -12,6 +12,7 @@ import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
+import { devToken, serverMode } from "../../server/client";
 import { caps } from "../../shell/capabilities";
 
 export type Control =
@@ -46,6 +47,11 @@ export interface Section { id: "user" | "space" | "server"; name: string; pages:
 const fx = <T,>(id: string, def: T): Pick<Setting, "get" | "set"> => ({ get: () => values.get<T>(id, def), set: (v) => values.set(id, v) });
 const A = appearance;
 const ap = (f: (p: typeof A.prefs) => void) => A.change(f);
+/** Server mode with a cookie session: ends it on the server and reloads into the sign-in screen. Fixtures only explain. */
+const signOutAction = (): void => {
+  if (!serverMode() || devToken()) return confirmLater("Sign out")();
+  void import("../../server/auth").then((a) => a.signOut()).then(() => location.replace(import.meta.env.BASE_URL), () => alert("Could not sign out. Check the connection and try again."));
+};
 const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
 
 const appearancePage: Page = {
@@ -132,7 +138,7 @@ const accountPage: Page = {
       { id: "account.passkeys", label: "Passkeys", help: "How you prove it is you.", control: { type: "drill", summary: () => "2 passkeys", run: confirmLater("Passkeys") } },
       { id: "account.providers", label: "Connected provider accounts", help: "What you sign in to. The server never stores them.", control: { type: "drill", summary: () => "Claude Code, Codex", run: confirmLater("Connected provider accounts") } },
     ] },
-    { settings: [{ id: "account.sign-out", label: "Sign out", control: { type: "button", text: "Sign out…", run: confirmLater("Sign out") } }] },
+    { settings: [{ id: "account.sign-out", label: "Sign out", control: { type: "button", text: "Sign out…", run: signOutAction } }] },
   ],
 };
 

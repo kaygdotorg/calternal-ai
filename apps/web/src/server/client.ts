@@ -30,6 +30,8 @@ export class ServerClient {
     this.token = o.token;
     this.f = o.fetch ?? ((...a) => fetch(...a));
   }
+  /** The headers a plain `fetch` of an API path needs (the bearer in development token mode; nothing for a cookie session). */
+  authHeaders(): Record<string, string> { return this.headers(); }
   private headers(extra: Record<string, string> = {}): Record<string, string> {
     const t = this.token();
     return { ...(t ? { authorization: `Bearer ${t}` } : {}), ...extra };

@@ -4,6 +4,8 @@
  * the middle card stays open until the person goes elsewhere, and opening an item of another space (from the palette, a link) makes that space current.
  * Fixtures: two spaces. The real list comes from the server (`spaces.list`); `setList` takes it.
  */
+import { server, serverMode } from "../server/client";
+
 const KEY = "cal.space";
 
 /** A space: a UUID and a name the person sees. */
@@ -30,6 +32,24 @@ class Spaces {
   }
   /** Replaces the list (the server's), keeping the current space when it is still there. */
   setList(l: SpaceInfo[]): void { if (l.length) this.list = l; }
+  private loading: Promise<void> | null = null;
+  /**
+   * Reads the signed-in person's spaces from the real server (`spaces.list`; fixtures stay when it is not selected). The personal space is the one this account owns that was
+   * created first, and comes first in the list. A failure keeps what is shown and is tried again on the next call. One request; later callers share it.
+   */
+  load(): Promise<void> {
+    if (!serverMode()) return Promise.resolve();
+    this.loading ??= (async () => {
+      let [{ spaces: all }, me] = await Promise.all([server.spaces.list(), fetch("/api/v1/auth/me", { headers: server.authHeaders() }).then((r) => (r.ok ? r.json() : null)).catch(() => null) as Promise<{ user?: { id?: string } } | null>]);
+      const mine = me?.user?.id;
+      // A new account has no space yet, and everyone has a personal one from sign-up: make it (one request, once; the server names no space for us).
+      if (!all.length) all = [(await server.operate<{ space: (typeof all)[number] }>("spaces.create", { name: "Personal" })).space];
+      const byAge = [...all].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : 0));
+      const personal = byAge.find((s) => s.owner === mine);
+      this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name })));
+    })().catch((e) => { this.loading = null; throw e; });
+    return this.loading;
+  }
 }
 
 function read(): string {
