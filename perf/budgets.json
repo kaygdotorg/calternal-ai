@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "policy": "Never raise budgets silently. Null means unmeasured, never a pass. Inherited ceilings remain breaches even when comparisons are imperfect.",
+  "policy": "Never raise budgets silently. Null means no accepted limit and incomplete qualification, never a pass. Separate measured proposals are unaccepted. Inherited ceilings remain breaches even when comparisons are imperfect.",
   "entries": [
     {
       "metric": "notes.get",
@@ -10,7 +10,9 @@
       "fixture": "1k,10k,100k notes",
       "measurement": "authenticated HTTP notes.get through full response body",
       "reference": "open.api_get p95 50",
-      "p50_budget": null
+      "p50_budget": null,
+      "proposed_p50_budget": 0.39186499999999996,
+      "p50_proposal_status": "unaccepted; maximum group median p50; observations, not an accepted ceiling"
     },
     {
       "metric": "notes.update",
@@ -20,7 +22,9 @@
       "fixture": "1k,10k,100k notes",
       "measurement": "HTTP notes.update through durable acknowledgement",
       "reference": "sync.save_ack p95 40; different API, inherited ceiling",
-      "p50_budget": null
+      "p50_budget": null,
+      "proposed_p50_budget": 43.695687,
+      "p50_proposal_status": "unaccepted; maximum group median p50; observations, not an accepted ceiling"
     },
     {
       "metric": "notes.list.first100",
@@ -30,7 +34,9 @@
       "fixture": "1k,10k,100k notes",
       "measurement": "HTTP notes.list; current API returns up to 100 rows with no cursor; reference returns 50",
       "reference": "home.page p95 50; reference page is bounded to 50",
-      "p50_budget": null
+      "p50_budget": null,
+      "proposed_p50_budget": 0.607729,
+      "p50_proposal_status": "unaccepted; maximum group median p50; observations, not an accepted ceiling"
     },
     {
       "metric": "space.process_cold_open",
@@ -57,7 +63,9 @@
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
       "measurement": "replay exact authenticated notes.update request; includes guard and admission",
-      "reference": null
+      "reference": null,
+      "proposed_budget": 1.0185199999999999,
+      "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
     },
     {
       "metric": "live.commit_to_client",
@@ -84,7 +92,10 @@
       "unit": "ms",
       "fixture": "one space with 100 notes; existing jobs-demo worker",
       "measurement": "start job to buffered or live first SSE chunk, zero artificial delay; first-cold separated from subsequent warm jobs; not provider startup",
-      "reference": null
+      "reference": null,
+      "proposed_budget": 75.958535,
+      "proposed_first_cold_budget": 291.964359,
+      "proposal_status": "unaccepted; median warm per-run p95 and nearest-rank first-cold p95 respectively; fixture only"
     },
     {
       "metric": "resolve",
@@ -93,7 +104,9 @@
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
       "measurement": "HTTP resolve operation for /notes/<UUID>",
-      "reference": null
+      "reference": null,
+      "proposed_budget": 0.349877,
+      "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
     },
     {
       "metric": "auth.session",
@@ -102,7 +115,9 @@
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
       "measurement": "GET auth/me with real software-passkey session",
-      "reference": null
+      "reference": null,
+      "proposed_budget": 0.310081,
+      "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
     },
     {
       "metric": "memory.1_spaces.after_2s",
@@ -118,7 +133,7 @@
       "percentile": "p95",
       "budget": 300,
       "unit": "ms",
-      "fixture": "1 spaces, 100 notes each",
+      "fixture": "one space at 1k, 10k and 100k notes",
       "measurement": "spawn populated installation through auth/status readiness",
       "reference": "startup.healthz p95 300"
     },
@@ -174,7 +189,9 @@
       "unit": "ms",
       "fixture": "all",
       "reference": null,
-      "measurement": "from before HTTP draft save until account SSE event"
+      "measurement": "from before HTTP draft save until account SSE event",
+      "proposed_budget": 253.46744700000002,
+      "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
     },
     {
       "metric": "memory.1_spaces.idle_released",
@@ -203,5 +220,6 @@
       "reference": "mem.idle p95 64 MiB",
       "measurement": "RSS after at least 632 seconds; require all store writer threads retired; three independent replicas"
     }
-  ]
+  ],
+  "proposal_evidence": "perf/results/2026-11-17.json; new limits are proposals only, inherited limits unchanged"
 }

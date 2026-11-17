@@ -11,20 +11,22 @@ All commands ran in `~/Developer/lanes/perf-budgets` on
 
 | Command | Result |
 | --- | --- |
-| `cargo test --locked --workspace -j6` | 489 passed, 0 failed; one opt-in fixture skipped |
+| `cargo test --locked --workspace -j6` | 526 passed, 0 failed across 73 suites; one opt-in fixture skipped |
 | `CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --locked -j6 -p calternal-client --test real_server -- --ignored --test-threads=1` | The opt-in fixture passed explicitly |
 | `cargo build -j6 -p calternal-server --features test-plugins` | Passed |
-| `CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --manifest-path tests/conformance/Cargo.toml -j6 -- --test-threads=1` | 43 passed |
+| `CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --manifest-path tests/conformance/Cargo.toml -j6 -- --test-threads=1` | 48 passed |
 | `npm run test:integration` | 1 passed |
-| `npm run test:plugins` | 13 passed |
+| `npm run test:plugins` | Passed: SDK, Notes insights and Claude provider suites |
 | `cargo run -j6 -p calternal-core --bin export-contract -- --check` | Contract artifacts match |
 | `./scripts/check-docs.sh` | Passed, including workspace all-feature checks, standalone conformance, Rust and TypeScript reference gates |
 | `cargo fmt -p calternal-perf -- --check` | Passed |
 | `bash -n scripts/perf-check.sh perf/profile.sh perf/startup-profile.sh` | Passed |
+| `python3 -m py_compile perf/repeat-plan.py perf/startup-boundary.py perf/summarize-evidence.py` | Passed |
 
 Product crates, routes and operations were not edited, so no new isolation case
 was introduced. Existing authenticated HTTP/SSE and worker cases cover the product
-surface the harness drives. Formatting and documentation checks were repeated as
+surface the harness drives. The final gate set ran after merging `origin/dev` (`f8c4ac3`) into this lane
+(`e712ff4`); the explicit real-server fixture passed again. Formatting and documentation checks were repeated as
 tooling changed. No timing from this development host is presented as perf evidence.
 
 ## Review gate
@@ -44,7 +46,7 @@ tooling changed. No timing from this development host is presented as perf evide
 | 11. Wired callers | Tool modules are called from the executable. The coordinator gate invokes normal and idle modes; the profiler drives a separate control. Unavailable measurements are listed as gaps rather than dead APIs. |
 | 12. Reuse | Considered/ported reference `stats.rs`, `server.rs`, `run-vm.sh`, ADR 0062; reused this project's software passkey fixture and the host's perf/cache-drop helpers. Product durability is exercised through the real server, not reimplemented in the driver. Tool evidence files do not claim userdata durability. |
 | 13. Reference docs | Workspace wildcard includes the new crate in `check-docs.sh`. Modules state purpose and costs/failures where relevant; no new public product API. |
-| 14. Documentation | Crate README, perf README, fixture specification, this dated review and `docs/performance.md` accompany the code. Raw samples and profiles remain on perf-01. |
+| 14. Documentation | Crate README, perf README, fixture specification, this dated review and `docs/performance.md` accompany the code. Raw samples and profiles remain on perf-01; failed disposable roots were removed after preserving summaries and profiles. |
 | 15. Size/format | Rust formatting checked on dev-01; each source module is below 600 lines. |
 
 Numeric breaches and missing mandatory measurements block performance acceptance;

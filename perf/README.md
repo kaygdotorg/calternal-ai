@@ -34,10 +34,10 @@ The three cold pairs invoke the host-provided `sudo -n
 /usr/local/sbin/perf-drop-caches` helper before each server start, while holding
 the perf lock. Five warm pairs sync each stopped-root copy before timing and retain the OS
 page cache. This excludes fixture-copy writeback from the measured fsync path.
-Reported noise is the range of per-arm p50s divided by their median; all eight
-pairs repeat potential noisy breaches rather than waiving them.
+Reported noise is the range of per-arm p50s divided by their median; the gate
+adds a bounded repeat for noisy breached groups rather than waiving them.
 
-Null budgets mean no inherited limit and no measured proposal yet. They are
+Null budgets mean no accepted limit; a separate measured proposal may exist. They are
 unqualified, never passes. Inherited limits are copied without comfortable
 headroom, with semantic differences named in `budgets.json`. `notes.list` is
 currently capped at 100 rows without pagination; its inherited page budget exposes that cost without pretending
@@ -90,3 +90,7 @@ The initial run found a product startup stall at 129 spaces. To collect only
 the releasable memory cases while that is fixed, select
 `--idle-only --spaces 1,100`; the default gate still requests all three sizes.
 `startup-boundary.py` independently probes 128 versus 129 one-note spaces.
+
+`perf/summarize-evidence.py <suite>` reproduces the dated summary without exporting
+raw vectors. Its source selections intentionally exclude the first run's
+unsynced warm copies. See `docs/performance.md` for conditioning and qualifications.

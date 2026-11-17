@@ -1,0 +1,2028 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-17",
+  "qualification": "blocked: reproduced breaches and missing mandatory instrumentation",
+  "product_commit": "e7f94dec65aaede2c08410bc4798c442b5f72d21",
+  "reference_commit": "ea57b84b9c9e40e8b67b7d1e1f1805915123b040",
+  "reference_budgets_blob": "aaf25a669ca2b362ed9d0cb1921bc702cfb8cd12",
+  "control": "identical baseline/head binaries; not an old-app comparison or regression estimate",
+  "binary_sha256": "6ae339d3111b11a2fe65d371b5f340140f70a054559967810e33fe2e5b49a0b0  /home/kayg/calternal-ai-perf/20261117-control/bin/calternal\n6ae339d3111b11a2fe65d371b5f340140f70a054559967810e33fe2e5b49a0b0  /home/kayg/calternal-ai-perf/20261117-control/bin/calternal\n9236c2886185d2aeb273a02d028d93e1002454969ef8098ffe29a018a60bbd39  /home/kayg/calternal-ai-perf/20261117-control/bin/calternal-perf-clean\n",
+  "machine": "Linux calternal-perf-01-backup01 6.12.115+deb13.1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01) x86_64 GNU/Linux\nArchitecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 7 3700X 8-Core Processor\nCPU family:                              23\nModel:                                   113\nThread(s) per core:                      1\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                0\nBogoMIPS:                                7186.49\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl xtopology cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy svm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw perfctr_core ssbd ibpb stibp vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 clzero xsaveerptr wbnoinvd arat npt lbrv nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload vgif umip rdpid overflow_recov succor\nVirtualization:                          AMD-V\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               256 KiB (4 instances)\nL1i cache:                               256 KiB (4 instances)\nL2 cache:                                2 MiB (4 instances)\nL3 cache:                                64 MiB (4 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-3\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; untrained return thunk; SMT disabled\nVulnerability Spec rstack overflow:      Mitigation; SMT disabled\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n               total        used        free      shared  buff/cache   available\nMem:      8262774784  1288499200  6879236096   600051712   954032128  6974275584\nSwap:              0           0           0\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/sda1 ext4   rw,relatime,discard,errors=remount-ro\nNAME      SIZE ROTA FSTYPE  MOUNTPOINTS\nsda       400G    0         \n\u251c\u2500sda1  399.9G    0 ext4    /\n\u251c\u2500sda14     3M    0         \n\u2514\u2500sda15   124M    0 vfat    /boot/efi\nsdb       100G    1         \n\u2514\u2500sdb1    100G    1 xfs     /srv/homes\nsr0         4M    1 iso9660 \n",
+  "seed": 20261117,
+  "operation_concurrency": 1,
+  "subscriptions": 2,
+  "valid_arms": 64,
+  "sources": [
+    "full: cold pairs 0..2 only",
+    "verified-warm: all five warm pairs"
+  ],
+  "exclusions": [
+    "original full warm arms and unsynced repeat warm arms: copy writeback",
+    "smoke: preliminary/mislabelled metadata",
+    "instrumented timings",
+    "failed or cancelled idle attempts",
+    "jobs before per-client request nonce fix"
+  ],
+  "groups": [
+    {
+      "spaces": 1,
+      "notes_per_space": 1000,
+      "cache": "cold",
+      "arm": "baseline",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.396894,
+          "p95": 253.257183,
+          "p99": 253.560138,
+          "max": 254.198031,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.402273,
+          "samples": 300,
+          "p50_noise_pct": 1.3672948149010535
+        },
+        "auth.session": {
+          "p50": 0.189896,
+          "p95": 0.263394,
+          "p99": 0.380393,
+          "max": 1.478783,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.317466,
+          "samples": 300,
+          "p50_noise_pct": 5.7510426759910755
+        },
+        "live.update_to_client": {
+          "p50": 41.947469,
+          "p95": 49.057747,
+          "p99": 58.06134,
+          "max": 66.538749,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 52.677342,
+          "samples": 300,
+          "p50_noise_pct": 3.960865910646473
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 23.5390625,
+          "p95": 23.56640625,
+          "p99": 23.56640625,
+          "max": 23.56640625,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 23.56640625,
+          "samples": 3,
+          "p50_noise_pct": 0.14935280451377364
+        },
+        "notes.get": {
+          "p50": 0.37682699999999997,
+          "p95": 0.5149659999999999,
+          "p99": 0.67669,
+          "max": 0.8541519999999999,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.5175,
+          "samples": 300,
+          "p50_noise_pct": 3.9134669224869647
+        },
+        "notes.list.first100": {
+          "p50": 0.579296,
+          "p95": 0.716935,
+          "p99": 0.7723190000000001,
+          "max": 2.288021,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.717987,
+          "samples": 300,
+          "p50_noise_pct": 2.0631939457548407
+        },
+        "notes.update": {
+          "p50": 41.959872000000004,
+          "p95": 49.005038,
+          "p99": 58.078813,
+          "max": 66.55595100000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 52.687781,
+          "samples": 300,
+          "p50_noise_pct": 3.8773640682221284
+        },
+        "receipt.round_trip": {
+          "p50": 0.746831,
+          "p95": 0.961653,
+          "p99": 1.342067,
+          "max": 9.907162000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.962025,
+          "samples": 300,
+          "p50_noise_pct": 5.21054964242245
+        },
+        "resolve": {
+          "p50": 0.251632,
+          "p95": 0.32554,
+          "p99": 0.368832,
+          "max": 0.6309640000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.339736,
+          "samples": 300,
+          "p50_noise_pct": 2.516373116296827
+        },
+        "space.process_cold_open": {
+          "p50": 3.225578,
+          "p95": 3.502238,
+          "p99": 3.502238,
+          "max": 3.502238,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 3.502238,
+          "samples": 3,
+          "p50_noise_pct": 10.290620781763767
+        },
+        "startup.1_spaces": {
+          "p50": 284.971238,
+          "p95": 295.256515,
+          "p99": 295.256515,
+          "max": 295.256515,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 295.256515,
+          "samples": 3,
+          "p50_noise_pct": 5.020899337216613
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 1000,
+      "cache": "cold",
+      "arm": "head",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.436378000000005,
+          "p95": 253.05684699999998,
+          "p99": 253.36524599999998,
+          "max": 253.722976,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.30576,
+          "samples": 300,
+          "p50_noise_pct": 3.942625005615128
+        },
+        "auth.session": {
+          "p50": 0.193853,
+          "p95": 0.252894,
+          "p99": 0.33736299999999997,
+          "max": 0.620815,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.26195199999999996,
+          "samples": 300,
+          "p50_noise_pct": 3.4061892258566906
+        },
+        "live.update_to_client": {
+          "p50": 42.481653,
+          "p95": 49.508642,
+          "p99": 56.048928,
+          "max": 67.63633700000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 50.434898,
+          "samples": 300,
+          "p50_noise_pct": 3.378272498012267
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 23.640625,
+          "p95": 23.73828125,
+          "p99": 23.73828125,
+          "max": 23.73828125,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 23.73828125,
+          "samples": 3,
+          "p50_noise_pct": 0.9583608724388631
+        },
+        "notes.get": {
+          "p50": 0.37752800000000003,
+          "p95": 0.473348,
+          "p99": 0.542477,
+          "max": 0.876663,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.496521,
+          "samples": 300,
+          "p50_noise_pct": 3.787003877858082
+        },
+        "notes.list.first100": {
+          "p50": 0.587582,
+          "p95": 0.702988,
+          "p99": 0.9790960000000001,
+          "max": 1.4997630000000002,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.707477,
+          "samples": 300,
+          "p50_noise_pct": 5.466471062762291
+        },
+        "notes.update": {
+          "p50": 42.497541999999996,
+          "p95": 49.524012,
+          "p99": 56.022799,
+          "max": 67.612503,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 50.419689,
+          "samples": 300,
+          "p50_noise_pct": 3.459844807024383
+        },
+        "receipt.round_trip": {
+          "p50": 0.742703,
+          "p95": 0.895059,
+          "p99": 0.967665,
+          "max": 1.263029,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.8963909999999999,
+          "samples": 300,
+          "p50_noise_pct": 3.6543544323908708
+        },
+        "resolve": {
+          "p50": 0.251522,
+          "p95": 0.30843899999999996,
+          "p99": 0.358953,
+          "max": 1.257819,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.345098,
+          "samples": 300,
+          "p50_noise_pct": 6.281756665420931
+        },
+        "space.process_cold_open": {
+          "p50": 3.539619,
+          "p95": 5.633876000000001,
+          "p99": 5.633876000000001,
+          "max": 5.633876000000001,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 5.633876000000001,
+          "samples": 3,
+          "p50_noise_pct": 71.08982633441624
+        },
+        "startup.1_spaces": {
+          "p50": 291.310866,
+          "p95": 293.6897,
+          "p99": 293.6897,
+          "max": 293.6897,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 293.6897,
+          "samples": 3,
+          "p50_noise_pct": 3.099775207149334
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 1000,
+      "cache": "warm",
+      "arm": "baseline",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 32.888093,
+          "p95": 253.233557,
+          "p99": 253.47056099999998,
+          "max": 253.74168200000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.3032,
+          "samples": 500,
+          "p50_noise_pct": 1.9056380070440688
+        },
+        "auth.session": {
+          "p50": 0.193843,
+          "p95": 0.24681300000000003,
+          "p99": 0.300793,
+          "max": 0.67687,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.26517799999999997,
+          "samples": 500,
+          "p50_noise_pct": 6.724514168682899
+        },
+        "live.update_to_client": {
+          "p50": 41.564745,
+          "p95": 47.259756,
+          "p99": 55.419467,
+          "max": 63.572451,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 48.710209,
+          "samples": 500,
+          "p50_noise_pct": 2.8252164183853483
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 24.0,
+          "p95": 24.328125,
+          "p99": 24.328125,
+          "max": 24.328125,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 24.328125,
+          "samples": 5,
+          "p50_noise_pct": 1.3834635416666665
+        },
+        "notes.get": {
+          "p50": 0.380272,
+          "p95": 0.493836,
+          "p99": 0.591339,
+          "max": 0.929583,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.518523,
+          "samples": 500,
+          "p50_noise_pct": 4.724250010518789
+        },
+        "notes.list.first100": {
+          "p50": 0.586681,
+          "p95": 0.749305,
+          "p99": 0.8692300000000001,
+          "max": 2.1645380000000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.770113,
+          "samples": 500,
+          "p50_noise_pct": 3.5198003685137147
+        },
+        "notes.update": {
+          "p50": 41.656467,
+          "p95": 47.341469999999994,
+          "p99": 55.427201000000004,
+          "max": 63.58908100000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 48.687757,
+          "samples": 500,
+          "p50_noise_pct": 2.6918413412256097
+        },
+        "receipt.round_trip": {
+          "p50": 0.741129,
+          "p95": 0.9453429999999999,
+          "p99": 1.080606,
+          "max": 2.421239,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.950682,
+          "samples": 500,
+          "p50_noise_pct": 2.4683961901369287
+        },
+        "resolve": {
+          "p50": 0.249889,
+          "p95": 0.32368600000000003,
+          "p99": 0.39981,
+          "max": 1.418979,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.337652,
+          "samples": 500,
+          "p50_noise_pct": 5.079055100464599
+        },
+        "space.process_cold_open": {
+          "p50": 0.8817929999999999,
+          "p95": 0.930033,
+          "p99": 0.930033,
+          "max": 0.930033,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 0.930033,
+          "samples": 5,
+          "p50_noise_pct": 15.252105652914013
+        },
+        "startup.1_spaces": {
+          "p50": 53.804589,
+          "p95": 56.134621,
+          "p99": 56.134621,
+          "max": 56.134621,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 56.134621,
+          "samples": 5,
+          "p50_noise_pct": 7.560589302150425
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 1000,
+      "cache": "warm",
+      "arm": "head",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.430802,
+          "p95": 253.173594,
+          "p99": 253.65838200000002,
+          "max": 253.93200700000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.379864,
+          "samples": 500,
+          "p50_noise_pct": 2.328182255394282
+        },
+        "auth.session": {
+          "p50": 0.19243,
+          "p95": 0.24029,
+          "p99": 0.35374300000000003,
+          "max": 0.503664,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.30911900000000003,
+          "samples": 500,
+          "p50_noise_pct": 5.679987527932233
+        },
+        "live.update_to_client": {
+          "p50": 42.123631,
+          "p95": 47.727479,
+          "p99": 56.382239,
+          "max": 65.722667,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 51.269906,
+          "samples": 500,
+          "p50_noise_pct": 4.595078710095039
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 24.08984375,
+          "p95": 24.1953125,
+          "p99": 24.1953125,
+          "max": 24.1953125,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 24.1953125,
+          "samples": 5,
+          "p50_noise_pct": 0.8918436841251823
+        },
+        "notes.get": {
+          "p50": 0.37941199999999997,
+          "p95": 0.47888800000000004,
+          "p99": 0.58136,
+          "max": 3.438136,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.527338,
+          "samples": 500,
+          "p50_noise_pct": 3.1290523230683105
+        },
+        "notes.list.first100": {
+          "p50": 0.5823119999999999,
+          "p95": 0.705252,
+          "p99": 0.831238,
+          "max": 2.089547,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.7876479999999999,
+          "samples": 500,
+          "p50_noise_pct": 2.897244089079389
+        },
+        "notes.update": {
+          "p50": 42.13165600000001,
+          "p95": 47.787362,
+          "p99": 56.364796,
+          "max": 65.783121,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 51.298558,
+          "samples": 500,
+          "p50_noise_pct": 4.721943519143907
+        },
+        "receipt.round_trip": {
+          "p50": 0.743964,
+          "p95": 0.909265,
+          "p99": 1.146309,
+          "max": 1.917645,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.950682,
+          "samples": 500,
+          "p50_noise_pct": 3.43538128188998
+        },
+        "resolve": {
+          "p50": 0.252042,
+          "p95": 0.323487,
+          "p99": 0.36100699999999997,
+          "max": 0.7417009999999999,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.335268,
+          "samples": 500,
+          "p50_noise_pct": 2.9852167495893664
+        },
+        "space.process_cold_open": {
+          "p50": 0.91232,
+          "p95": 0.950482,
+          "p99": 0.950482,
+          "max": 0.950482,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 0.950482,
+          "samples": 5,
+          "p50_noise_pct": 12.773917046650304
+        },
+        "startup.1_spaces": {
+          "p50": 59.580423,
+          "p95": 60.554215,
+          "p99": 60.554215,
+          "max": 60.554215,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 60.554215,
+          "samples": 5,
+          "p50_noise_pct": 11.504010302175931
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 10000,
+      "cache": "cold",
+      "arm": "baseline",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.098625999999996,
+          "p95": 253.23237500000002,
+          "p99": 253.740409,
+          "max": 260.56698900000004,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.31362600000003,
+          "samples": 300,
+          "p50_noise_pct": 1.125149424631698
+        },
+        "auth.session": {
+          "p50": 0.19208,
+          "p95": 0.237335,
+          "p99": 0.323587,
+          "max": 1.4529949999999998,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.252985,
+          "samples": 300,
+          "p50_noise_pct": 3.765097875885042
+        },
+        "live.update_to_client": {
+          "p50": 42.366125999999994,
+          "p95": 50.97901400000001,
+          "p99": 58.652113,
+          "max": 67.200614,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 51.460931,
+          "samples": 300,
+          "p50_noise_pct": 1.1758592230028249
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 26.484375,
+          "p95": 26.92578125,
+          "p99": 26.92578125,
+          "max": 26.92578125,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 26.92578125,
+          "samples": 3,
+          "p50_noise_pct": 1.9026548672566372
+        },
+        "notes.get": {
+          "p50": 0.37282899999999997,
+          "p95": 0.49071,
+          "p99": 0.588404,
+          "max": 1.094963,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.49864600000000003,
+          "samples": 300,
+          "p50_noise_pct": 1.2818208883965514
+        },
+        "notes.list.first100": {
+          "p50": 0.572484,
+          "p95": 0.686588,
+          "p99": 0.838353,
+          "max": 1.267026,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.7135079999999999,
+          "samples": 300,
+          "p50_noise_pct": 2.17700407347627
+        },
+        "notes.update": {
+          "p50": 42.425236999999996,
+          "p95": 51.031862999999994,
+          "p99": 58.561271999999995,
+          "max": 67.24233100000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 51.479826,
+          "samples": 300,
+          "p50_noise_pct": 1.188031076880015
+        },
+        "receipt.round_trip": {
+          "p50": 0.698871,
+          "p95": 0.837881,
+          "p99": 0.939041,
+          "max": 1.879645,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.851898,
+          "samples": 300,
+          "p50_noise_pct": 2.1115484831964726
+        },
+        "resolve": {
+          "p50": 0.245951,
+          "p95": 0.327304,
+          "p99": 0.35703,
+          "max": 0.763111,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.33629,
+          "samples": 300,
+          "p50_noise_pct": 1.9674650641794431
+        },
+        "space.process_cold_open": {
+          "p50": 3.423699,
+          "p95": 3.525661,
+          "p99": 3.525661,
+          "max": 3.525661,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 3.525661,
+          "samples": 3,
+          "p50_noise_pct": 10.8021470345378
+        },
+        "startup.1_spaces": {
+          "p50": 310.59076699999997,
+          "p95": 316.25701499999997,
+          "p99": 316.25701499999997,
+          "max": 316.25701499999997,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 316.25701499999997,
+          "samples": 3,
+          "p50_noise_pct": 3.63443289349293
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 10000,
+      "cache": "cold",
+      "arm": "head",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.007866,
+          "p95": 253.05296199999998,
+          "p99": 253.52264200000002,
+          "max": 253.87796200000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.20779199999998,
+          "samples": 300,
+          "p50_noise_pct": 1.927228497595082
+        },
+        "auth.session": {
+          "p50": 0.195377,
+          "p95": 0.255629,
+          "p99": 0.395141,
+          "max": 0.595777,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.259737,
+          "samples": 300,
+          "p50_noise_pct": 0.8870030761041536
+        },
+        "live.update_to_client": {
+          "p50": 42.667911000000004,
+          "p95": 52.178615,
+          "p99": 64.001222,
+          "max": 77.53299,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 53.005035,
+          "samples": 300,
+          "p50_noise_pct": 2.5894237006353684
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 26.45703125,
+          "p95": 26.859375,
+          "p99": 26.859375,
+          "max": 26.859375,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 26.859375,
+          "samples": 3,
+          "p50_noise_pct": 1.683153698508785
+        },
+        "notes.get": {
+          "p50": 0.383129,
+          "p95": 0.523532,
+          "p99": 0.680966,
+          "max": 1.45063,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.618851,
+          "samples": 300,
+          "p50_noise_pct": 3.5016926413818803
+        },
+        "notes.list.first100": {
+          "p50": 0.595567,
+          "p95": 0.761769,
+          "p99": 0.8907,
+          "max": 3.647771,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.777739,
+          "samples": 300,
+          "p50_noise_pct": 1.051267111844654
+        },
+        "notes.update": {
+          "p50": 42.704349,
+          "p95": 52.212949,
+          "p99": 63.953472999999995,
+          "max": 77.533891,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 52.987352,
+          "samples": 300,
+          "p50_noise_pct": 2.652835194841638
+        },
+        "receipt.round_trip": {
+          "p50": 0.720211,
+          "p95": 0.862568,
+          "p99": 1.366221,
+          "max": 2.681128,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 1.0185199999999999,
+          "samples": 300,
+          "p50_noise_pct": 2.7583583144383987
+        },
+        "resolve": {
+          "p50": 0.25117100000000003,
+          "p95": 0.340148,
+          "p99": 0.36669799999999997,
+          "max": 0.478348,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.344476,
+          "samples": 300,
+          "p50_noise_pct": 2.1618737831994896
+        },
+        "space.process_cold_open": {
+          "p50": 3.553985,
+          "p95": 3.653692,
+          "p99": 3.653692,
+          "max": 3.653692,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 3.653692,
+          "samples": 3,
+          "p50_noise_pct": 11.287413987397242
+        },
+        "startup.1_spaces": {
+          "p50": 306.761275,
+          "p95": 313.26826800000003,
+          "p99": 313.26826800000003,
+          "max": 313.26826800000003,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 313.26826800000003,
+          "samples": 3,
+          "p50_noise_pct": 3.9014728961470317
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 10000,
+      "cache": "warm",
+      "arm": "baseline",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.776555,
+          "p95": 253.28723300000001,
+          "p99": 253.52677,
+          "max": 253.94063700000004,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.38397899999998,
+          "samples": 500,
+          "p50_noise_pct": 3.854466507907616
+        },
+        "auth.session": {
+          "p50": 0.193322,
+          "p95": 0.243637,
+          "p99": 0.315732,
+          "max": 0.684643,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.287538,
+          "samples": 500,
+          "p50_noise_pct": 3.5914174279181768
+        },
+        "live.update_to_client": {
+          "p50": 41.963129,
+          "p95": 49.742894,
+          "p99": 57.060063,
+          "max": 64.52918700000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 56.166206,
+          "samples": 500,
+          "p50_noise_pct": 3.0961061078166927
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 26.921875,
+          "p95": 27.3515625,
+          "p99": 27.3515625,
+          "max": 27.3515625,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 27.3515625,
+          "samples": 5,
+          "p50_noise_pct": 2.0023215322112593
+        },
+        "notes.get": {
+          "p50": 0.378731,
+          "p95": 0.481653,
+          "p99": 0.575067,
+          "max": 0.7744819999999999,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.494917,
+          "samples": 500,
+          "p50_noise_pct": 4.851464495908692
+        },
+        "notes.list.first100": {
+          "p50": 0.5872409999999999,
+          "p95": 0.715873,
+          "p99": 0.799719,
+          "max": 1.0518319999999999,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.742221,
+          "samples": 500,
+          "p50_noise_pct": 3.881370680861853
+        },
+        "notes.update": {
+          "p50": 41.978026,
+          "p95": 49.752231,
+          "p99": 57.048662,
+          "max": 64.524288,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 56.157299,
+          "samples": 500,
+          "p50_noise_pct": 3.0844327934810463
+        },
+        "receipt.round_trip": {
+          "p50": 0.718627,
+          "p95": 0.874159,
+          "p99": 0.941164,
+          "max": 1.4989000000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.900558,
+          "samples": 500,
+          "p50_noise_pct": 5.424789216102376
+        },
+        "resolve": {
+          "p50": 0.242996,
+          "p95": 0.316022,
+          "p99": 0.377747,
+          "max": 0.689622,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.34032799999999996,
+          "samples": 500,
+          "p50_noise_pct": 3.9292827865479385
+        },
+        "space.process_cold_open": {
+          "p50": 0.880641,
+          "p95": 0.960942,
+          "p99": 0.960942,
+          "max": 0.960942,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 0.960942,
+          "samples": 5,
+          "p50_noise_pct": 14.032051653284357
+        },
+        "startup.1_spaces": {
+          "p50": 69.855529,
+          "p95": 113.943245,
+          "p99": 113.943245,
+          "max": 113.943245,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 113.943245,
+          "samples": 5,
+          "p50_noise_pct": 65.2991433219266
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 10000,
+      "cache": "warm",
+      "arm": "head",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.271139,
+          "p95": 253.22653499999998,
+          "p99": 253.67861600000003,
+          "max": 254.17231,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.356386,
+          "samples": 500,
+          "p50_noise_pct": 3.3221706055809994
+        },
+        "auth.session": {
+          "p50": 0.193471,
+          "p95": 0.24579,
+          "p99": 0.329588,
+          "max": 1.349579,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.258334,
+          "samples": 500,
+          "p50_noise_pct": 3.8315819942006684
+        },
+        "live.update_to_client": {
+          "p50": 42.0202,
+          "p95": 50.158439,
+          "p99": 58.410151,
+          "max": 141.920434,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 52.921853999999996,
+          "samples": 500,
+          "p50_noise_pct": 1.5774127681448318
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 27.05859375,
+          "p95": 27.578125,
+          "p99": 27.578125,
+          "max": 27.578125,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 27.578125,
+          "samples": 5,
+          "p50_noise_pct": 2.9449978345604158
+        },
+        "notes.get": {
+          "p50": 0.377799,
+          "p95": 0.473968,
+          "p99": 0.5809190000000001,
+          "max": 2.036928,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.492052,
+          "samples": 500,
+          "p50_noise_pct": 1.8115452926026847
+        },
+        "notes.list.first100": {
+          "p50": 0.581249,
+          "p95": 0.7062839999999999,
+          "p99": 0.764824,
+          "max": 1.727969,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.728555,
+          "samples": 500,
+          "p50_noise_pct": 3.3269734657607954
+        },
+        "notes.update": {
+          "p50": 42.080413,
+          "p95": 50.177274000000004,
+          "p99": 58.403589,
+          "max": 141.97672,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 52.917266,
+          "samples": 500,
+          "p50_noise_pct": 1.5434639389114342
+        },
+        "receipt.round_trip": {
+          "p50": 0.713778,
+          "p95": 0.8679169999999999,
+          "p99": 1.075065,
+          "max": 2.156191,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.9897549999999999,
+          "samples": 500,
+          "p50_noise_pct": 2.882969214517677
+        },
+        "resolve": {
+          "p50": 0.243476,
+          "p95": 0.312025,
+          "p99": 0.351009,
+          "max": 1.650894,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.321703,
+          "samples": 500,
+          "p50_noise_pct": 3.83939279436166
+        },
+        "space.process_cold_open": {
+          "p50": 0.960129,
+          "p95": 1.037775,
+          "p99": 1.037775,
+          "max": 1.037775,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 1.037775,
+          "samples": 5,
+          "p50_noise_pct": 16.830342589381207
+        },
+        "startup.1_spaces": {
+          "p50": 70.931542,
+          "p95": 82.668778,
+          "p99": 82.668778,
+          "max": 82.668778,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 82.668778,
+          "samples": 5,
+          "p50_noise_pct": 21.971803460863708
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 100000,
+      "cache": "cold",
+      "arm": "baseline",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 32.807014,
+          "p95": 253.11179299999998,
+          "p99": 253.44756099999998,
+          "max": 253.686973,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.146196,
+          "samples": 300,
+          "p50_noise_pct": 2.6231677165133203
+        },
+        "auth.session": {
+          "p50": 0.195276,
+          "p95": 0.268904,
+          "p99": 0.326813,
+          "max": 0.503765,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.284864,
+          "samples": 300,
+          "p50_noise_pct": 3.765951781068846
+        },
+        "live.update_to_client": {
+          "p50": 43.614185,
+          "p95": 57.971083,
+          "p99": 89.59103999999999,
+          "max": 128.677174,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 62.62683199999999,
+          "samples": 300,
+          "p50_noise_pct": 0.824623915361469
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 38.7265625,
+          "p95": 38.765625,
+          "p99": 38.765625,
+          "max": 38.765625,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 38.765625,
+          "samples": 3,
+          "p50_noise_pct": 0.5648577768811782
+        },
+        "notes.get": {
+          "p50": 0.382367,
+          "p95": 0.47483,
+          "p99": 0.578956,
+          "max": 2.6744939999999997,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.535463,
+          "samples": 300,
+          "p50_noise_pct": 1.7838882539549756
+        },
+        "notes.list.first100": {
+          "p50": 0.592059,
+          "p95": 0.7327549999999999,
+          "p99": 0.811471,
+          "max": 1.147392,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.755918,
+          "samples": 300,
+          "p50_noise_pct": 3.8935308812128646
+        },
+        "notes.update": {
+          "p50": 43.603835000000004,
+          "p95": 58.003924,
+          "p99": 89.55985199999999,
+          "max": 128.738358,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 62.625629,
+          "samples": 300,
+          "p50_noise_pct": 0.7396642978765499
+        },
+        "receipt.round_trip": {
+          "p50": 0.722365,
+          "p95": 0.9141940000000001,
+          "p99": 1.04053,
+          "max": 1.658559,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.923061,
+          "samples": 300,
+          "p50_noise_pct": 7.685034573934223
+        },
+        "resolve": {
+          "p50": 0.24988799999999997,
+          "p95": 0.315581,
+          "p99": 0.358181,
+          "max": 1.4279169999999999,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.329839,
+          "samples": 300,
+          "p50_noise_pct": 5.90184402612372
+        },
+        "space.process_cold_open": {
+          "p50": 4.353794000000001,
+          "p95": 5.545488000000001,
+          "p99": 5.545488000000001,
+          "max": 5.545488000000001,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 5.545488000000001,
+          "samples": 3,
+          "p50_noise_pct": 36.52956478877963
+        },
+        "startup.1_spaces": {
+          "p50": 873.31872,
+          "p95": 896.325656,
+          "p99": 896.325656,
+          "max": 896.325656,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 896.325656,
+          "samples": 3,
+          "p50_noise_pct": 45.33737316428989
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 100000,
+      "cache": "cold",
+      "arm": "head",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.681111,
+          "p95": 253.22498,
+          "p99": 253.45509199999998,
+          "max": 254.62718,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.46744700000002,
+          "samples": 300,
+          "p50_noise_pct": 42.47428477047565
+        },
+        "auth.session": {
+          "p50": 0.200907,
+          "p95": 0.278322,
+          "p99": 0.3793,
+          "max": 1.102056,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.28797,
+          "samples": 300,
+          "p50_noise_pct": 4.583712862170071
+        },
+        "live.update_to_client": {
+          "p50": 43.699907,
+          "p95": 57.390756,
+          "p99": 67.58626199999999,
+          "max": 100.12313,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 60.23118,
+          "samples": 300,
+          "p50_noise_pct": 0.3515041805466564
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 38.84375,
+          "p95": 38.98046875,
+          "p99": 38.98046875,
+          "max": 38.98046875,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 38.98046875,
+          "samples": 3,
+          "p50_noise_pct": 0.36202735317779566
+        },
+        "notes.get": {
+          "p50": 0.39186499999999996,
+          "p95": 0.513513,
+          "p99": 0.6427660000000001,
+          "max": 1.093691,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.531507,
+          "samples": 300,
+          "p50_noise_pct": 3.6946397356232357
+        },
+        "notes.list.first100": {
+          "p50": 0.6032019999999999,
+          "p95": 0.754745,
+          "p99": 1.00746,
+          "max": 1.284418,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.778951,
+          "samples": 300,
+          "p50_noise_pct": 4.8267412906455895
+        },
+        "notes.update": {
+          "p50": 43.695687,
+          "p95": 57.371189,
+          "p99": 67.61767,
+          "max": 100.102441,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 60.207326,
+          "samples": 300,
+          "p50_noise_pct": 0.39565003291972806
+        },
+        "receipt.round_trip": {
+          "p50": 0.72509,
+          "p95": 0.8832650000000001,
+          "p99": 0.9749580000000001,
+          "max": 1.172439,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.894997,
+          "samples": 300,
+          "p50_noise_pct": 3.2800066198678786
+        },
+        "resolve": {
+          "p50": 0.252434,
+          "p95": 0.33047000000000004,
+          "p99": 0.39083199999999996,
+          "max": 0.882995,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.343985,
+          "samples": 300,
+          "p50_noise_pct": 7.63169779031352
+        },
+        "space.process_cold_open": {
+          "p50": 3.340133,
+          "p95": 3.6457260000000002,
+          "p99": 3.6457260000000002,
+          "max": 3.6457260000000002,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 3.6457260000000002,
+          "samples": 3,
+          "p50_noise_pct": 13.037714366463854
+        },
+        "startup.1_spaces": {
+          "p50": 464.107886,
+          "p95": 481.256934,
+          "p99": 481.256934,
+          "max": 481.256934,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 481.256934,
+          "samples": 3,
+          "p50_noise_pct": 6.349870555744019
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 100000,
+      "cache": "warm",
+      "arm": "baseline",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 32.930279999999996,
+          "p95": 253.099978,
+          "p99": 253.485295,
+          "max": 253.801838,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.31347300000002,
+          "samples": 500,
+          "p50_noise_pct": 2.0529767739600184
+        },
+        "auth.session": {
+          "p50": 0.19154,
+          "p95": 0.248615,
+          "p99": 0.282128,
+          "max": 0.6790630000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.28481300000000004,
+          "samples": 500,
+          "p50_noise_pct": 3.0541923358045144
+        },
+        "live.update_to_client": {
+          "p50": 42.643356,
+          "p95": 56.127851,
+          "p99": 63.59437499999999,
+          "max": 124.272047,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 57.150583999999995,
+          "samples": 500,
+          "p50_noise_pct": 4.120606736486689
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 39.4375,
+          "p95": 39.73046875,
+          "p99": 39.73046875,
+          "max": 39.73046875,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 39.73046875,
+          "samples": 5,
+          "p50_noise_pct": 2.089936608557845
+        },
+        "notes.get": {
+          "p50": 0.380854,
+          "p95": 0.463599,
+          "p99": 0.5720019999999999,
+          "max": 1.129557,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.541464,
+          "samples": 500,
+          "p50_noise_pct": 2.8751174990941446
+        },
+        "notes.list.first100": {
+          "p50": 0.58719,
+          "p95": 0.7197790000000001,
+          "p99": 0.841317,
+          "max": 2.668691,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.760335,
+          "samples": 500,
+          "p50_noise_pct": 1.7420255794546984
+        },
+        "notes.update": {
+          "p50": 42.660287999999994,
+          "p95": 56.085058000000004,
+          "p99": 63.617976000000006,
+          "max": 124.297613,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 57.120697,
+          "samples": 500,
+          "p50_noise_pct": 4.148047476847783
+        },
+        "receipt.round_trip": {
+          "p50": 0.711604,
+          "p95": 0.875541,
+          "p99": 1.0380859999999998,
+          "max": 1.379705,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.968155,
+          "samples": 500,
+          "p50_noise_pct": 5.255732120673856
+        },
+        "resolve": {
+          "p50": 0.24552899999999997,
+          "p95": 0.329457,
+          "p99": 0.36340199999999995,
+          "max": 1.170794,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.376916,
+          "samples": 500,
+          "p50_noise_pct": 3.6887699620004426
+        },
+        "space.process_cold_open": {
+          "p50": 0.8864399999999999,
+          "p95": 0.917959,
+          "p99": 0.917959,
+          "max": 0.917959,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 0.917959,
+          "samples": 5,
+          "p50_noise_pct": 4.53668607012319
+        },
+        "startup.1_spaces": {
+          "p50": 111.57377100000001,
+          "p95": 116.049318,
+          "p99": 116.049318,
+          "max": 116.049318,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 116.049318,
+          "samples": 5,
+          "p50_noise_pct": 18.965020909797886
+        }
+      }
+    },
+    {
+      "spaces": 1,
+      "notes_per_space": 100000,
+      "cache": "warm",
+      "arm": "head",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.832963,
+          "p95": 253.267782,
+          "p99": 253.51524199999997,
+          "max": 253.89850600000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.400703,
+          "samples": 500,
+          "p50_noise_pct": 43.85114008489297
+        },
+        "auth.session": {
+          "p50": 0.19732,
+          "p95": 0.26656,
+          "p99": 0.348344,
+          "max": 1.323951,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.310081,
+          "samples": 500,
+          "p50_noise_pct": 5.194100952767084
+        },
+        "live.update_to_client": {
+          "p50": 42.68591,
+          "p95": 57.276712,
+          "p99": 74.95935800000001,
+          "max": 146.67711,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 69.27420099999999,
+          "samples": 500,
+          "p50_noise_pct": 20.979810433934748
+        },
+        "memory.1_spaces.after_2s": {
+          "p50": 39.1875,
+          "p95": 39.2109375,
+          "p99": 39.2109375,
+          "max": 39.2109375,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 39.2109375,
+          "samples": 5,
+          "p50_noise_pct": 0.8373205741626795
+        },
+        "notes.get": {
+          "p50": 0.38948900000000003,
+          "p95": 0.50173,
+          "p99": 0.63486,
+          "max": 2.0522750000000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.530424,
+          "samples": 500,
+          "p50_noise_pct": 6.494663520664251
+        },
+        "notes.list.first100": {
+          "p50": 0.607729,
+          "p95": 0.743162,
+          "p99": 0.836047,
+          "max": 1.228011,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.777257,
+          "samples": 500,
+          "p50_noise_pct": 4.3257767853763776
+        },
+        "notes.update": {
+          "p50": 42.690478,
+          "p95": 57.276481,
+          "p99": 74.979054,
+          "max": 146.728475,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 69.405467,
+          "samples": 500,
+          "p50_noise_pct": 20.925886564212277
+        },
+        "receipt.round_trip": {
+          "p50": 0.728816,
+          "p95": 0.900517,
+          "p99": 1.032134,
+          "max": 2.5404120000000003,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.918902,
+          "samples": 500,
+          "p50_noise_pct": 3.964512304889022
+        },
+        "resolve": {
+          "p50": 0.262432,
+          "p95": 0.332333,
+          "p99": 0.40523000000000003,
+          "max": 0.547827,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.349877,
+          "samples": 500,
+          "p50_noise_pct": 9.837977075966348
+        },
+        "space.process_cold_open": {
+          "p50": 0.9441299999999999,
+          "p95": 1.0192510000000001,
+          "p99": 1.0192510000000001,
+          "max": 1.0192510000000001,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 1.0192510000000001,
+          "samples": 5,
+          "p50_noise_pct": 15.797718534523863
+        },
+        "startup.1_spaces": {
+          "p50": 113.60569299999999,
+          "p95": 120.682922,
+          "p99": 120.682922,
+          "max": 120.682922,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 120.682922,
+          "samples": 5,
+          "p50_noise_pct": 13.305552389878914
+        }
+      }
+    },
+    {
+      "spaces": 100,
+      "notes_per_space": 100,
+      "cache": "cold",
+      "arm": "baseline",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 33.372318,
+          "p95": 253.26947700000002,
+          "p99": 253.46327000000002,
+          "max": 253.57581899999997,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.35013699999996,
+          "samples": 300,
+          "p50_noise_pct": 43.35961319798042
+        },
+        "auth.session": {
+          "p50": 0.195967,
+          "p95": 0.250039,
+          "p99": 0.359455,
+          "max": 1.206602,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.27500600000000003,
+          "samples": 300,
+          "p50_noise_pct": 3.5740711446314846
+        },
+        "live.update_to_client": {
+          "p50": 42.004303,
+          "p95": 48.535768,
+          "p99": 56.614486,
+          "max": 68.632368,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 58.207952999999996,
+          "samples": 300,
+          "p50_noise_pct": 1.7033302516649265
+        },
+        "memory.100_spaces.after_2s": {
+          "p50": 67.7109375,
+          "p95": 73.1015625,
+          "p99": 73.1015625,
+          "max": 73.1015625,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 73.1015625,
+          "samples": 3,
+          "p50_noise_pct": 7.984308295834776
+        },
+        "notes.get": {
+          "p50": 0.388579,
+          "p95": 0.503274,
+          "p99": 0.7524310000000001,
+          "max": 1.12013,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.551924,
+          "samples": 300,
+          "p50_noise_pct": 6.909534483335452
+        },
+        "notes.list.first100": {
+          "p50": 0.591588,
+          "p95": 0.726101,
+          "p99": 0.814959,
+          "max": 1.845541,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.731731,
+          "samples": 300,
+          "p50_noise_pct": 3.0232188617754128
+        },
+        "notes.update": {
+          "p50": 42.063373,
+          "p95": 48.527362999999994,
+          "p99": 56.580682,
+          "max": 68.57546,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 58.201932,
+          "samples": 300,
+          "p50_noise_pct": 1.8967261612614805
+        },
+        "receipt.round_trip": {
+          "p50": 0.716053,
+          "p95": 0.862838,
+          "p99": 1.117264,
+          "max": 1.986505,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.865682,
+          "samples": 300,
+          "p50_noise_pct": 1.2732297748909551
+        },
+        "resolve": {
+          "p50": 0.254286,
+          "p95": 0.327494,
+          "p99": 0.360657,
+          "max": 1.624435,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.345729,
+          "samples": 300,
+          "p50_noise_pct": 3.9282540131977477
+        },
+        "space.process_cold_open": {
+          "p50": 28.380871,
+          "p95": 28.605742,
+          "p99": 28.605742,
+          "max": 28.605742,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 28.605742,
+          "samples": 3,
+          "p50_noise_pct": 2.1506915696843865
+        },
+        "startup.100_spaces": {
+          "p50": 2666.9292699999996,
+          "p95": 3275.7588069999997,
+          "p99": 3275.7588069999997,
+          "max": 3275.7588069999997,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 3275.7588069999997,
+          "samples": 3,
+          "p50_noise_pct": 29.762562619442832
+        }
+      }
+    },
+    {
+      "spaces": 100,
+      "notes_per_space": 100,
+      "cache": "cold",
+      "arm": "head",
+      "arms": 3,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 36.802609,
+          "p95": 253.3666,
+          "p99": 253.63550299999997,
+          "max": 253.69492599999998,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.411675,
+          "samples": 300,
+          "p50_noise_pct": 37.39476731119799
+        },
+        "auth.session": {
+          "p50": 0.196909,
+          "p95": 0.253977,
+          "p99": 0.37888,
+          "max": 18.318335,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.25403600000000004,
+          "samples": 300,
+          "p50_noise_pct": 2.1116353239313708
+        },
+        "live.update_to_client": {
+          "p50": 42.34375,
+          "p95": 50.692733,
+          "p99": 57.832438,
+          "max": 185.486173,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 51.962103,
+          "samples": 300,
+          "p50_noise_pct": 4.999321033210335
+        },
+        "memory.100_spaces.after_2s": {
+          "p50": 67.8046875,
+          "p95": 67.94921875,
+          "p99": 67.94921875,
+          "max": 67.94921875,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 67.94921875,
+          "samples": 3,
+          "p50_noise_pct": 1.4978684180205093
+        },
+        "notes.get": {
+          "p50": 0.384151,
+          "p95": 0.47726399999999997,
+          "p99": 0.962193,
+          "max": 22.099522,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.487263,
+          "samples": 300,
+          "p50_noise_pct": 0.9308839492803528
+        },
+        "notes.list.first100": {
+          "p50": 0.59167,
+          "p95": 0.742251,
+          "p99": 0.944871,
+          "max": 1.355872,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.787607,
+          "samples": 300,
+          "p50_noise_pct": 0.8212348099447236
+        },
+        "notes.update": {
+          "p50": 42.324534,
+          "p95": 50.756181,
+          "p99": 57.921315,
+          "max": 185.461938,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 52.35572,
+          "samples": 300,
+          "p50_noise_pct": 4.9921943617855185
+        },
+        "receipt.round_trip": {
+          "p50": 0.710782,
+          "p95": 0.88039,
+          "p99": 1.061329,
+          "max": 5.25835,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.928991,
+          "samples": 300,
+          "p50_noise_pct": 1.2712758623600546
+        },
+        "resolve": {
+          "p50": 0.25586000000000003,
+          "p95": 0.318587,
+          "p99": 0.365315,
+          "max": 0.658135,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.342763,
+          "samples": 300,
+          "p50_noise_pct": 2.7882435707027393
+        },
+        "space.process_cold_open": {
+          "p50": 29.290698,
+          "p95": 30.022949,
+          "p99": 30.022949,
+          "max": 30.022949,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 30.022949,
+          "samples": 3,
+          "p50_noise_pct": 6.034458448207695
+        },
+        "startup.100_spaces": {
+          "p50": 3155.5648380000002,
+          "p95": 4377.725155,
+          "p99": 4377.725155,
+          "max": 4377.725155,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 4377.725155,
+          "samples": 3,
+          "p50_noise_pct": 53.781479136889786
+        }
+      }
+    },
+    {
+      "spaces": 100,
+      "notes_per_space": 100,
+      "cache": "warm",
+      "arm": "baseline",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 34.962294,
+          "p95": 253.378936,
+          "p99": 253.686485,
+          "max": 253.90426100000002,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.59927900000002,
+          "samples": 500,
+          "p50_noise_pct": 41.83728905202846
+        },
+        "auth.session": {
+          "p50": 0.195238,
+          "p95": 0.24731299999999998,
+          "p99": 0.34511600000000003,
+          "max": 2.490236,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.274575,
+          "samples": 500,
+          "p50_noise_pct": 2.822708694004235
+        },
+        "live.update_to_client": {
+          "p50": 42.449114,
+          "p95": 54.928259,
+          "p99": 61.979161,
+          "max": 151.099381,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 55.446878999999996,
+          "samples": 500,
+          "p50_noise_pct": 4.6118748202848305
+        },
+        "memory.100_spaces.after_2s": {
+          "p50": 66.90625,
+          "p95": 72.25,
+          "p99": 72.25,
+          "max": 72.25,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 72.25,
+          "samples": 5,
+          "p50_noise_pct": 9.253853339560953
+        },
+        "notes.get": {
+          "p50": 0.387105,
+          "p95": 0.48630100000000004,
+          "p99": 0.547326,
+          "max": 1.6848670000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.532534,
+          "samples": 500,
+          "p50_noise_pct": 3.1417832371061984
+        },
+        "notes.list.first100": {
+          "p50": 0.582512,
+          "p95": 0.705881,
+          "p99": 0.803836,
+          "max": 3.574949,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.7324729999999999,
+          "samples": 500,
+          "p50_noise_pct": 2.3127420550993008
+        },
+        "notes.update": {
+          "p50": 42.460814,
+          "p95": 54.880779,
+          "p99": 61.946741,
+          "max": 151.057152,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 55.48953,
+          "samples": 500,
+          "p50_noise_pct": 4.683393493115781
+        },
+        "receipt.round_trip": {
+          "p50": 0.717913,
+          "p95": 0.9187219999999999,
+          "p99": 1.092618,
+          "max": 2.1826,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.9680030000000001,
+          "samples": 500,
+          "p50_noise_pct": 1.182315963076313
+        },
+        "resolve": {
+          "p50": 0.24894000000000002,
+          "p95": 0.32226699999999997,
+          "p99": 0.357315,
+          "max": 1.0595780000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.3289,
+          "samples": 500,
+          "p50_noise_pct": 3.75190809030289
+        },
+        "space.process_cold_open": {
+          "p50": 0.8937660000000001,
+          "p95": 0.95006,
+          "p99": 0.95006,
+          "max": 0.95006,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 0.95006,
+          "samples": 5,
+          "p50_noise_pct": 14.649807667778816
+        },
+        "startup.100_spaces": {
+          "p50": 2097.834644,
+          "p95": 2185.8024560000003,
+          "p99": 2185.8024560000003,
+          "max": 2185.8024560000003,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 2185.8024560000003,
+          "samples": 5,
+          "p50_noise_pct": 5.560341103795801
+        }
+      }
+    },
+    {
+      "spaces": 100,
+      "notes_per_space": 100,
+      "cache": "warm",
+      "arm": "head",
+      "arms": 5,
+      "metrics": {
+        "account.draft_write_to_feed": {
+          "p50": 35.367064,
+          "p95": 253.389333,
+          "p99": 253.676191,
+          "max": 254.252869,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 253.458103,
+          "samples": 500,
+          "p50_noise_pct": 36.71647440115469
+        },
+        "auth.session": {
+          "p50": 0.199333,
+          "p95": 0.24989899999999998,
+          "p99": 0.36724799999999996,
+          "max": 0.6756960000000001,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.26356799999999997,
+          "samples": 500,
+          "p50_noise_pct": 5.122082143950071
+        },
+        "live.update_to_client": {
+          "p50": 42.328745,
+          "p95": 51.354813,
+          "p99": 59.783988,
+          "max": 69.036226,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 56.442987,
+          "samples": 500,
+          "p50_noise_pct": 15.018971150692048
+        },
+        "memory.100_spaces.after_2s": {
+          "p50": 67.703125,
+          "p95": 76.04296875,
+          "p99": 76.04296875,
+          "max": 76.04296875,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 76.04296875,
+          "samples": 5,
+          "p50_noise_pct": 14.187629817678282
+        },
+        "notes.get": {
+          "p50": 0.382391,
+          "p95": 0.495424,
+          "p99": 0.6294500000000001,
+          "max": 0.9649679999999999,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.503825,
+          "samples": 500,
+          "p50_noise_pct": 6.249885588311456
+        },
+        "notes.list.first100": {
+          "p50": 0.5825210000000001,
+          "p95": 0.687178,
+          "p99": 0.817903,
+          "max": 1.364547,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.7238249999999999,
+          "samples": 500,
+          "p50_noise_pct": 3.569828383869443
+        },
+        "notes.update": {
+          "p50": 42.334005,
+          "p95": 51.334887,
+          "p99": 59.859258,
+          "max": 69.023192,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 56.421727999999995,
+          "samples": 500,
+          "p50_noise_pct": 15.162983044009195
+        },
+        "receipt.round_trip": {
+          "p50": 0.723126,
+          "p95": 0.887143,
+          "p99": 0.971511,
+          "max": 1.483245,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.930915,
+          "samples": 500,
+          "p50_noise_pct": 4.879509241819545
+        },
+        "resolve": {
+          "p50": 0.24977799999999997,
+          "p95": 0.327625,
+          "p99": 0.39676300000000003,
+          "max": 2.498362,
+          "aggregation": "median of per-arm quantiles; maximum of arm maxima",
+          "max_arm_p95": 0.33621,
+          "samples": 500,
+          "p50_noise_pct": 6.414896428028105
+        },
+        "space.process_cold_open": {
+          "p50": 0.905446,
+          "p95": 0.985016,
+          "p99": 0.985016,
+          "max": 0.985016,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 0.985016,
+          "samples": 5,
+          "p50_noise_pct": 21.1121370020962
+        },
+        "startup.100_spaces": {
+          "p50": 2083.557867,
+          "p95": 2300.365139,
+          "p99": 2300.365139,
+          "max": 2300.365139,
+          "aggregation": "nearest rank across singleton arms",
+          "max_arm_p95": 2300.365139,
+          "samples": 5,
+          "p50_noise_pct": 13.257675746617517
+        }
+      }
+    }
+  ],
+  "idle_released_memory": [
+    {
+      "spaces": 1,
+      "replicas": 3,
+      "unit": "MiB",
+      "p50": 21.66796875,
+      "p95": 21.6796875,
+      "p99": 21.6796875,
+      "max": 21.6796875,
+      "all_writers_retired": true,
+      "minimum_idle_seconds": 632.000199979,
+      "budget": 64
+    },
+    {
+      "spaces": 100,
+      "replicas": 3,
+      "unit": "MiB",
+      "p50": 61.21484375,
+      "p95": 62.375,
+      "p99": 62.375,
+      "max": 62.375,
+      "all_writers_retired": true,
+      "minimum_idle_seconds": 632.007046492,
+      "budget": 64
+    }
+  ],
+  "jobs": {
+    "provider": "none; existing jobs-demo fixture",
+    "replicas": 3,
+    "cold_first": {
+      "p50": 139.349671,
+      "p95": 291.964359,
+      "p99": 291.964359,
+      "max": 291.964359
+    },
+    "warm_median_quantiles": {
+      "p50": 68.005811,
+      "p95": 75.958535,
+      "p99": 83.98244000000001
+    },
+    "warm_max": 87.97774,
+    "warm_samples": 297
+  },
+  "startup_boundary": {
+    "commit": "e7f94dec65aaede2c08410bc4798c442b5f72d21",
+    "diagnostic": "startup cooperative-budget boundary",
+    "observations": [
+      {
+        "spaces": 128,
+        "notes_per_space": 1,
+        "ready": true,
+        "elapsed_seconds": 2.981610939023085,
+        "cpu_seconds": 0.32
+      },
+      {
+        "spaces": 129,
+        "notes_per_space": 1,
+        "ready": false,
+        "elapsed_seconds": 10.006471614004113,
+        "cpu_seconds": 7.36
+      }
+    ]
+  },
+  "startup_1000": {
+    "ready": false,
+    "observation_windows_seconds": [
+      30,
+      300
+    ],
+    "idle_memory": "blocked; no value"
+  },
+  "noise_rule": "range of arm p50 / median >25% triggers bounded repeat; two breached head arms fail regardless",
+  "cold_100spaces_repeat_noise": {
+    "100x100/baseline/cold/startup.100_spaces": 18.365337231775207,
+    "100x100/head/cold/startup.100_spaces": 34.85571064167118
+  },
+  "profiles": {
+    "startup": "startup-profile-20261117T165246Z",
+    "startup_wake_park_cpu_pct": 88.36,
+    "writes": "profile-20261117T175337Z",
+    "selected_fsync_calls": 1207,
+    "selected_fsync_wall_seconds": 7.027989,
+    "selected_fsync_wall_fraction_pct": 95.22,
+    "qualification": "syscall fraction is selected syscall wall time, not total CPU or wall time"
+  },
+  "raw_location": "/home/kayg/calternal-ai-perf/20261117-control",
+  "raw_retention_days": 30,
+  "limitations": [
+    "not genuine cold-space isolation: eager startup may populate caches",
+    "no admission-only or receipt-only timing",
+    "no exact post-commit-to-client marker",
+    "no three-host-call fixture",
+    "1000-space startup and released memory blocked",
+    "logical roots share SSD; no attachment or tier workload",
+    "allocator tuning differs from reference"
+  ]
+}
