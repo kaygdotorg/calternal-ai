@@ -140,32 +140,23 @@ export class ServerClient {
   }
 
   /**
-   * Follows the signed-in account's feed (`GET /api/v1/account/live`, SSE): `Changed` says the private snapshot (drafts, pending) is stale (reload `drafts.list` and
-   * `pending.list`, then keep the bookmark), `Ready` carries the bookmark, `Reset` says to reload and subscribe again without one.
+   * Follows the signed-in account's feed (`GET /api/v1/account/live`, SSE) and hands each frame to `onFrame` as the contract's `AccountFrame`: `Changed` says the private snapshot (drafts, pending) is stale (reload
+   * `drafts.list` and `pending.list`, then keep the bookmark), `Ready` carries the bookmark, `Reset` says to reload and subscribe again without one, and `ReadinessChanged` (only when `readiness` is asked for) says to read
+   * `agent.readiness` again. This is the one place that reads the wire form of the feed (internally tagged, `{"type":"changed",…}`, against the generated externally tagged type); every reader gets the same frames.
    */
   async accountLive(onFrame: (f: AccountFrame) => void, o: { bookmark?: string; readiness?: boolean; signal?: AbortSignal } = {}): Promise<void> {
     const q = [o.bookmark ? `bookmark=${encodeURIComponent(o.bookmark)}` : "", o.readiness ? "readiness=true" : ""].filter(Boolean).join("&");
     for await (const ev of events(await this.stream(`/api/v1/account/live${q ? `?${q}` : ""}`, o.signal))) {
       const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
-      // Internally tagged on the wire (`{"type":"changed","bookmark":...}`), externally in the generated type: accept both.
-      const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
+      const type = (typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0] ?? "").toLowerCase().replace(/_/g, "");
       const body = typeof raw === "object" && typeof raw.type !== "string" ? (Object.values(raw)[0] as Record<string, unknown>) : (raw as Record<string, unknown>);
-      if (type === "readiness_changed") { onFrame("ReadinessChanged"); continue; } // private: asks the account to read readiness again (no bookmark)
-      onFrame(type === "reset" ? "Reset" : ({ [type === "ready" ? "Ready" : "Changed"]: { bookmark: String(body.bookmark ?? "") } } as unknown as AccountFrame));
+      if (type === "readinesschanged") onFrame("ReadinessChanged");
+      else if (type === "reset") onFrame("Reset");
+      else onFrame(({ [type === "ready" ? "Ready" : "Changed"]: { bookmark: String((typeof body === "object" ? body?.bookmark : "") ?? "") } }) as AccountFrame);
     }
   }
-
-  /**
-   * The account's readiness feed (`GET /api/v1/account/live?readiness=true`, docs/agent-turns.md): `readiness_changed` has no payload and says "read `agent.readiness` again" (machines connected or dropped,
-   * capacity or a provider observation changed or expired); a reset says the same. Resolves when the stream ends or `signal` aborts.
-   */
-  async readinessLive(onChange: () => void, signal?: AbortSignal): Promise<void> {
-    for await (const ev of events(await this.stream("/api/v1/account/live?readiness=true", signal))) {
-      const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
-      const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
-      if (type === "readiness_changed" || type === "readinesschanged" || type === "reset") onChange();
-    }
-  }
+  /** The readiness feed: calls `onChange` whenever `agent.readiness` should be read again (readiness changed, or a reset). Resolves when the stream ends or `signal` aborts. */
+  readinessLive = (onChange: () => void, signal?: AbortSignal): Promise<void> => this.accountLive((f) => { if (f === "ReadinessChanged" || f === "Reset") onChange(); }, { readiness: true, signal });
 
   /** Follows a plugin job's events (`GET /api/v1/jobs/<id>/events`, SSE): `snapshot` first, then `chunk`s, possibly a `reset`, and `end`. `after` resumes (`<epoch>:<seq>`). */
   async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "state" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {

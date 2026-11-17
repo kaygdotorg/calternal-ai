@@ -29,7 +29,7 @@ export function watchReadiness(onChange: () => void): () => void {
   void (async () => {
     onChange();
     while (!ac.signal.aborted) {
-      try { await server.accountLive((f) => { if (f === "ReadinessChanged") onChange(); }, { readiness: true, signal: ac.signal }); } catch { /* the feed dropped */ }
+      try { await server.readinessLive(onChange, ac.signal); } catch { /* the feed dropped */ }
       if (ac.signal.aborted) break;
       await new Promise((r) => setTimeout(r, 3000));
       onChange(); // a snapshot after a reconnect: frames in between are not replayed
