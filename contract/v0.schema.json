@@ -2636,6 +2636,7 @@
         "id",
         "name",
         "owner",
+        "personal",
         "role"
       ],
       "properties": {
@@ -2655,6 +2656,10 @@
         "owner": {
           "description": "Account UUID of the sole owner.",
           "type": "string"
+        },
+        "personal": {
+          "description": "Whether this is the personal space provisioned for the caller.",
+          "type": "boolean"
         },
         "role": {
           "description": "Caller role, including the effective Owner role.",

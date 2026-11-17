@@ -43,17 +43,17 @@ async fn until(f: &Fixture, who: usize, id: &str, done: impl Fn(&Value) -> bool)
 }
 
 /// One server-sent event: name, id and JSON data.
-type Event = (String, Option<String>, Value);
+pub(super) type Event = (String, Option<String>, Value);
 
 /// A job event stream read incrementally over HTTP.
-struct Sse {
+pub(super) struct Sse {
     response: reqwest::Response,
     buffer: String,
 }
 
 impl Sse {
     /// Open `/api/v1/jobs/<id>/events`; a refusal returns its status and JSON body.
-    async fn open(
+    pub(super) async fn open(
         f: &Fixture,
         cookie: &str,
         id: &str,
@@ -80,7 +80,7 @@ impl Sse {
     }
 
     /// The next event, or `None` when the stream closes or stays silent for 10 s.
-    async fn next(&mut self) -> Option<Event> {
+    pub(super) async fn next(&mut self) -> Option<Event> {
         loop {
             if let Some(i) = self.buffer.find("\n\n") {
                 let block: String = self.buffer.drain(..i + 2).collect();

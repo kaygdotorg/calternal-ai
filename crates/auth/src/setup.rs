@@ -133,12 +133,8 @@ pub(crate) fn create_in(c: &mut Connection, name: &str, ttl: i64) -> Result<Crea
         )));
     }
     ensure_person_name_available(&tx, &name, None, false)?;
-    let id = AccountId::new().to_string();
-    tx.execute(
-        "INSERT INTO users (id, name, username, created_at) VALUES (?1, ?2, ?3, ?4)",
-        params![id, name, username, now_ms()],
-    )
-    .map_err(sql)?;
+    let id = AccountId::new();
+    insert_account(&tx, id, &name, &username, now_ms())?;
     // Someone exists now: an unused first-owner token must not make a
     // second, unrelated owner.
     tx.execute(
@@ -149,14 +145,31 @@ pub(crate) fn create_in(c: &mut Connection, name: &str, ttl: i64) -> Result<Crea
     // Enrolling a first passkey for an existing person is exactly what a
     // recovery token does, so it is one (no new kind of token to secure).
     let token = new_setup_token()?;
-    insert_token(&tx, &token, "recover", Some(&id), ttl)?;
+    insert_token(&tx, &token, "recover", Some(&id.to_string()), ttl)?;
     crate::spaces::commit(tx)?;
     Ok(Created {
-        id: AccountId::parse(&id).map_err(|_| Error::internal("bad account id"))?,
+        id,
         name,
         username,
         token,
     })
+}
+
+/// Insert a new account and its personal space in an open authority transaction.
+/// Cost: three row inserts. Callers commit through the protected recovery barrier.
+pub(crate) fn insert_account(
+    tx: &rusqlite::Transaction<'_>,
+    id: AccountId,
+    name: &str,
+    username: &str,
+    created: i64,
+) -> Result<crate::SpaceId> {
+    tx.execute(
+        "INSERT INTO users (id, name, username, created_at) VALUES (?1, ?2, ?3, ?4)",
+        params![id.to_string(), name, username, created],
+    )
+    .map_err(sql)?;
+    Ok(crate::spaces::insert_owned(tx, id, "Personal", created, true)?.id)
 }
 
 fn insert_token(
@@ -271,11 +284,7 @@ pub(crate) async fn redeem(
                         return Err(invalid("the server already has an owner"));
                     }
                     let username = username_for(&r.name);
-                    tx.execute(
-                    "INSERT INTO users (id, name, username, created_at) VALUES (?1, ?2, ?3, ?4)",
-                    params![r.user.to_string(), r.name, username, now],
-                )
-                .map_err(sql)?;
+                    insert_account(&tx, r.user, &r.name, &username, now)?;
                 }
             let added = tx
                 .execute(

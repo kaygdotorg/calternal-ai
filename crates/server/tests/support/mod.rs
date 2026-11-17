@@ -82,7 +82,7 @@ pub const COMPLETE_AFTER_GO: &str = "const t=setInterval(()=>{if(fs.existsSync(_
 
 /// The development fixture accounts and spaces, found the way a client finds them:
 /// each dev token authenticates, then `describe` lists the account's spaces. The
-/// guest belongs only to the shared space; the owner's other space is personal.
+/// guest reads the shared fixture and owns a separate personal space.
 #[derive(Debug, Clone, Copy)]
 pub struct Dev {
     pub owner: calternal_server::auth::Identity,
@@ -122,8 +122,12 @@ pub fn dev(table: &calternal_server::auth::StoredDirectory) -> Dev {
                         .map(|g| calternal_types::SpaceId::parse(&g.id).unwrap())
                         .collect::<Vec<_>>()
                 };
-                let shared = spaces(guest)[0];
-                let personal = spaces(owner).into_iter().find(|s| *s != shared).unwrap();
+                let owner_spaces = spaces(owner);
+                let shared = spaces(guest)
+                    .into_iter()
+                    .find(|space| owner_spaces.contains(space))
+                    .unwrap();
+                let personal = owner_spaces.into_iter().find(|s| *s != shared).unwrap();
                 Dev {
                     owner,
                     guest,

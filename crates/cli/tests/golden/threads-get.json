@@ -9,7 +9,8 @@
         "deleted": false,
         "title": "Plan"
       },
-      "revision": "v1.fixture"
+      "revision": "v1.fixture",
+      "turn_state": "running"
     }
   },
   "ok": true
