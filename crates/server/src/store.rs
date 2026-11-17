@@ -27,6 +27,7 @@ pub struct Store {
     conn: Connection,
     root: PathBuf,
     content: Content,
+    secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     _lock: File,
 }
 /// Replayable account-qualified result; note responses live in their space journal.
@@ -94,6 +95,11 @@ fn note(item: &Item, space: &str) -> Note {
     }
 }
 impl Store {
+    /// Shared secret store under this appdata root. Cost: one reference-count
+    /// increment, so callers can release the store lock before secret I/O.
+    pub fn secrets(&self) -> std::sync::Arc<calternal_secrets::LocalStore> {
+        self.secrets.clone()
+    }
     /// Opens disposable preview roots under one data directory and takes its lock.
     /// Cost: directory/lock/plugin SQLite I/O, generic catalog startup and replay;
     /// recovered writes fsync their database, journal, current file and directory.
@@ -151,10 +157,15 @@ impl Store {
             PRAGMA user_version=2;COMMIT;").map_err(db_err)?;
         let content = Content::open(roots, secrets, Duration::from_secs(600), content_fault)
             .map_err(content_error)?;
+        // Fails closed: a missing or wrong secret key stops startup instead of
+        // minting a key that cannot read the stored secrets.
+        let secrets = calternal_secrets::LocalStore::open(&root)
+            .map_err(|e| HostError::unavailable(e.to_string()))?;
         let store = Self {
             conn,
             root,
             content,
+            secrets: std::sync::Arc::new(secrets),
             _lock: lock,
         };
         let mut statement = store

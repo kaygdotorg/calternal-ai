@@ -13,4 +13,5 @@ pub mod error;
 pub mod fault;
 pub mod plugins;
 pub mod resolve;
+pub mod secrets;
 pub mod store;

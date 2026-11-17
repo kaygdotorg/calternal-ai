@@ -87,6 +87,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let mut app = Router::new().merge(api);
     if let Some(service) = &http_auth {
         app = app.merge(crate::account_http::routes(service.clone()));
+        app = app.merge(crate::secrets::routes::<D>());
     }
 
     app = match web_dir {
@@ -574,6 +575,9 @@ pub async fn dispatch<D: Directory>(
             _ => return Err(HostError::not_found("job not found")),
         };
         return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
+    }
+    if op.starts_with("secrets.") {
+        return crate::secrets::dispatch(state, p, policy, input).await;
     }
     if op.starts_with("spaces.") {
         let st = state.clone();

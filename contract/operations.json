@@ -3148,306 +3148,211 @@
     }
   },
   {
-    "id": "jobs.get",
-    "description": "Read a plugin job's durable record",
-    "mutates": false,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "Input for `jobs.get` and `jobs.cancel`. Possessing a job ID grants nothing: a job in a space the caller cannot read answers exactly like a missing one.",
-      "properties": {
-        "job_id": {
-          "description": "Host-issued job UUID.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "job_id"
-      ],
-      "title": "JobInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "JobState": {
-          "description": "Lifecycle of a job. `admitted`, `running` and `waiting` are active; the rest are final and never change again.",
-          "oneOf": [
-            {
-              "description": "Durably recorded and queued for a run.",
-              "enum": [
-                "admitted"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "A run invocation is executing in the plugin's worker.",
-              "enum": [
-                "running"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Parked until its child jobs report; it runs again when they all have.",
-              "enum": [
-                "waiting"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Finished with a result.",
-              "enum": [
-                "done"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Finished without a result.",
-              "enum": [
-                "failed"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Cancelled; later output from its run is discarded.",
-              "enum": [
-                "cancelled"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Interrupted by a server restart while its effects could not be safely repeated.",
-              "enum": [
-                "outcome_unknown"
-              ],
-              "type": "string"
-            }
-          ]
-        },
-        "JobView": {
-          "additionalProperties": false,
-          "description": "What a client may see of a job: its durable record, never its stream.",
-          "properties": {
-            "checkpoint": {
-              "description": "Last durable checkpoint written by the plugin, or null."
-            },
-            "checkpoint_seq": {
-              "description": "Stream sequence number of the first chunk after that checkpoint.",
-              "format": "uint64",
-              "minimum": 0.0,
-              "type": "integer"
-            },
-            "id": {
-              "description": "Host-issued job UUID.",
-              "type": "string"
-            },
-            "parent_id": {
-              "description": "Parent job UUID for a child job.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "plugin_id": {
-              "description": "Plugin that runs the job.",
-              "type": "string"
-            },
-            "result": {
-              "description": "Final result of a `done` job, or null."
-            },
-            "space_id": {
-              "description": "Space UUID that owns the job.",
-              "type": "string"
-            },
-            "state": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/JobState"
-                }
-              ],
-              "description": "Current lifecycle state."
-            }
-          },
-          "required": [
-            "checkpoint",
-            "checkpoint_seq",
-            "id",
-            "plugin_id",
-            "result",
-            "space_id",
-            "state"
-          ],
-          "type": "object"
-        }
-      },
-      "description": "Result for `jobs.get` and `jobs.cancel`.",
-      "properties": {
-        "job": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/JobView"
-            }
-          ],
-          "description": "The job after the operation."
-        }
-      },
-      "required": [
-        "job"
-      ],
-      "title": "JobResult",
-      "type": "object"
-    }
-  },
-  {
-    "id": "jobs.cancel",
-    "description": "Cancel a plugin job and its active child jobs",
+    "id": "secrets.request",
+    "description": "Ask for a secret; a person supplies the value through the trusted prompt",
     "mutates": true,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "Input for `jobs.get` and `jobs.cancel`. Possessing a job ID grants nothing: a job in a space the caller cannot read answers exactly like a missing one.",
+      "description": "Ask for a secret; the value is supplied later through the trusted surface.",
       "properties": {
-        "job_id": {
-          "description": "Host-issued job UUID.",
+        "label": {
+          "description": "Short label shown in the prompt, at most 120 characters.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Secret name: 1–96 bytes of `a-z 0-9 . _ - :`, starting with a letter or digit.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why it is needed, shown in the prompt, at most 500 characters.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal (account-owned) secret.",
           "type": "string"
         }
       },
       "required": [
-        "job_id"
+        "label",
+        "name",
+        "reason"
       ],
-      "title": "JobInput",
+      "title": "SecretsRequestInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Pending request identifier returned by `secrets.request`.",
+      "properties": {
+        "request_id": {
+          "description": "UUID of the pending request, answered by the provide endpoint.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "title": "SecretsRequestResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "secrets.list",
+    "description": "List secret metadata and pending requests, never values",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List secret metadata and pending requests of one owner.",
+      "properties": {
+        "space_id": {
+          "description": "Owning space UUID; omit for the caller's personal secrets.",
+          "type": "string"
+        }
+      },
+      "title": "SecretsListInput",
       "type": "object"
     },
     "output_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
-        "JobState": {
-          "description": "Lifecycle of a job. `admitted`, `running` and `waiting` are active; the rest are final and never change again.",
-          "oneOf": [
-            {
-              "description": "Durably recorded and queued for a run.",
-              "enum": [
-                "admitted"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "A run invocation is executing in the plugin's worker.",
-              "enum": [
-                "running"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Parked until its child jobs report; it runs again when they all have.",
-              "enum": [
-                "waiting"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Finished with a result.",
-              "enum": [
-                "done"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Finished without a result.",
-              "enum": [
-                "failed"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Cancelled; later output from its run is discarded.",
-              "enum": [
-                "cancelled"
-              ],
-              "type": "string"
-            },
-            {
-              "description": "Interrupted by a server restart while its effects could not be safely repeated.",
-              "enum": [
-                "outcome_unknown"
-              ],
-              "type": "string"
-            }
-          ]
-        },
-        "JobView": {
+        "SecretMetadata": {
           "additionalProperties": false,
-          "description": "What a client may see of a job: its durable record, never its stream.",
+          "description": "Everything about a stored secret except its value.",
           "properties": {
-            "checkpoint": {
-              "description": "Last durable checkpoint written by the plugin, or null."
+            "created_at": {
+              "description": "Creation time in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
             },
-            "checkpoint_seq": {
-              "description": "Stream sequence number of the first chunk after that checkpoint.",
+            "label": {
+              "description": "Human label.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Secret name.",
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Last change in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "version": {
+              "description": "Current version, increased by each rotation.",
               "format": "uint64",
               "minimum": 0.0,
               "type": "integer"
-            },
-            "id": {
-              "description": "Host-issued job UUID.",
-              "type": "string"
-            },
-            "parent_id": {
-              "description": "Parent job UUID for a child job.",
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "plugin_id": {
-              "description": "Plugin that runs the job.",
-              "type": "string"
-            },
-            "result": {
-              "description": "Final result of a `done` job, or null."
-            },
-            "space_id": {
-              "description": "Space UUID that owns the job.",
-              "type": "string"
-            },
-            "state": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/JobState"
-                }
-              ],
-              "description": "Current lifecycle state."
             }
           },
           "required": [
-            "checkpoint",
-            "checkpoint_seq",
+            "created_at",
+            "label",
+            "name",
+            "updated_at",
+            "version"
+          ],
+          "type": "object"
+        },
+        "SecretPendingRequest": {
+          "additionalProperties": false,
+          "description": "A request waiting for a value.",
+          "properties": {
+            "created_at": {
+              "description": "Request time in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "id": {
+              "description": "Request UUID.",
+              "type": "string"
+            },
+            "label": {
+              "description": "Label shown in the prompt.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Name the value will be stored under.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Reason shown in the prompt.",
+              "type": "string"
+            },
+            "requested_by": {
+              "description": "Who asked: account and route (session, plugin or agent thread).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "created_at",
             "id",
-            "plugin_id",
-            "result",
-            "space_id",
-            "state"
+            "label",
+            "name",
+            "reason",
+            "requested_by"
           ],
           "type": "object"
         }
       },
-      "description": "Result for `jobs.get` and `jobs.cancel`.",
+      "description": "Metadata and pending requests of one owner; never values.",
       "properties": {
-        "job": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/JobView"
-            }
-          ],
-          "description": "The job after the operation."
+        "requests": {
+          "description": "Pending requests, oldest first.",
+          "items": {
+            "$ref": "#/definitions/SecretPendingRequest"
+          },
+          "type": "array"
+        },
+        "secrets": {
+          "description": "Stored secrets ordered by name.",
+          "items": {
+            "$ref": "#/definitions/SecretMetadata"
+          },
+          "type": "array"
         }
       },
       "required": [
-        "job"
+        "requests",
+        "secrets"
       ],
-      "title": "JobResult",
+      "title": "SecretsListResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "secrets.revoke",
+    "description": "Destroy a secret or withdraw a pending request",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Destroy a secret (`name`) or withdraw a pending request (`request_id`); exactly one.",
+      "properties": {
+        "name": {
+          "description": "Secret to destroy, with every version.",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Pending request to withdraw.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal secret.",
+          "type": "string"
+        }
+      },
+      "title": "SecretsRevokeInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Empty success for `secrets.revoke`.",
+      "title": "SecretsRevokeResult",
       "type": "object"
     }
   }

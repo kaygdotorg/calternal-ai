@@ -85,6 +85,14 @@ fn decode<T: DeserializeOwned>(input: &JsonObject) -> Result<T, ValidationError>
 fn space(value: &str) -> Result<(), ValidationError> {
     validate_id(value)
 }
+/// An omitted space (empty) selects the caller's account as owner.
+fn optional_space(value: &str) -> Result<(), ValidationError> {
+    if value.is_empty() {
+        Ok(())
+    } else {
+        space(value)
+    }
+}
 fn resource(space_id: &str, id: &str) -> Result<(), ValidationError> {
     if !space_id.is_empty() {
         space(space_id)?;
@@ -147,6 +155,9 @@ pub fn is_known_operation(operation: &str) -> bool {
             | "notes-insights.summarize"
             | "jobs.get"
             | "jobs.cancel"
+            | "secrets.request"
+            | "secrets.list"
+            | "secrets.revoke"
     )
 }
 /// Validate the envelope and known operation inputs; leave unknown operation schemas to server discovery for forward compatibility. Cost is proportional to serialized input.
@@ -278,6 +289,23 @@ pub fn validate_operation_input(
             let i: PluginInput = decode(input)?;
             space(&i.space_id)?;
             validate_id(&i.plugin_id)
+        }
+        // Names, labels and values get their semantic checks in the secrets store.
+        "secrets.request" => {
+            let i: SecretsRequestInput = decode(input)?;
+            optional_space(&i.space_id)
+        }
+        "secrets.list" => {
+            let i: SecretsListInput = decode(input)?;
+            optional_space(&i.space_id)
+        }
+        "secrets.revoke" => {
+            let i: SecretsRevokeInput = decode(input)?;
+            optional_space(&i.space_id)?;
+            require(
+                i.name.is_empty() != i.request_id.is_empty(),
+                "give exactly one of name or request_id",
+            )
         }
         _ => Err(ValidationError {
             code: ErrorCode::NotFound,
@@ -636,6 +664,21 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         entry::<JobInput, JobResult>(
             "jobs.cancel",
             "Cancel a plugin job and its active child jobs",
+            true,
+        ),
+        entry::<SecretsRequestInput, SecretsRequestResult>(
+            "secrets.request",
+            "Ask for a secret; a person supplies the value through the trusted prompt",
+            true,
+        ),
+        entry::<SecretsListInput, SecretsListResult>(
+            "secrets.list",
+            "List secret metadata and pending requests, never values",
+            false,
+        ),
+        entry::<SecretsRevokeInput, SecretsRevokeResult>(
+            "secrets.revoke",
+            "Destroy a secret or withdraw a pending request",
             true,
         ),
     ]

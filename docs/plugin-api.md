@@ -73,6 +73,15 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   id, `schedule` (a systemd timer calendar expression, for example `Mon *-*-* 09:00:00`),
   `timezone` (IANA) and agent settings; the body is the prompt. The app shows the schedule
   in plain words.
+- Capabilities adopted from bb, bb-lite and pi-durable (2026-11-17): all 24 recommended
+  items in `docs/reviews/extensibility-research-2026-11-17.md`, in their safe forms, built
+  in priority order (durable waits, run-end work and sandboxed machine operations first).
+  The 12 not-recommended items there are out. Themes are design tokens that every client
+  applies, with CSS as a web-only extra.
+- Secrets (2026-11-17): rotation is immediate (old handles stop working); a member's
+  personal secrets are invisible to everyone else, managers included; a space's secrets
+  are managed under a separate `secrets.manage` capability. How secrets are keyed (a
+  server key, or keys derived from each person's passkey) is still open.
 
 ## Open
 
