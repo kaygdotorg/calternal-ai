@@ -247,6 +247,8 @@ early.
   3 hours whether the provider is back; on a subscription it snoozes the thread until the
   limit's reset time and resumes by itself. Both are on by default and configurable.
 - The right side is a flat sidebar like the left, not a card.
+- Message text is not streamed to the screen by default; the finished message appears at
+  once while steps and a working state show progress. Streaming is a setting.
 
 ## Requirements from kayg's use of bb
 
