@@ -15,7 +15,7 @@ for (let i = 1; i <= 8; i++) await fire("pointermove", box.x + box.width - 20 - 
 await fire("pointerup", box.x + box.width - 20 - 8 * 18, box.y + 20);
 await page.waitForTimeout(500);
 ok("a swipe leaves the row open", (await slide.getAttribute("data-open")) === "true");
-const tx = await slide.evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).m41);
+const tx = await slide.evaluate((e) => parseFloat(getComputedStyle(e).translate));
 ok("the row slid left by 130", Math.abs(tx + 130) < 2, `translate ${tx.toFixed(0)}`);
 const sizes = await page.locator(".sb").first().evaluate((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; });
 ok("the actions are 50 px round", sizes[0] === 50 && sizes[1] === 50, sizes.join("x"));
@@ -27,5 +27,6 @@ const row = page.locator(".slide").nth(1);
 const rb = await row.boundingBox();
 await page.evaluate(([x, y]) => { const el = document.querySelectorAll(".slide")[1]; el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", pointerId: 8, clientX: x, clientY: y })); }, [rb.x + 50, rb.y + 20]);
 await page.waitForTimeout(650);
+await page.screenshot({ path: "/tmp/swipe-long.png" });
 ok("a long press opens the context menu as a sheet of 42 px rows", (await page.getByRole("menu").count()) > 0 && (await page.getByRole("menuitem").first().evaluate((e) => e.getBoundingClientRect().height)) >= 42);
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);
