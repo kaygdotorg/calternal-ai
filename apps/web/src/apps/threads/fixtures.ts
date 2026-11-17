@@ -91,6 +91,20 @@ export class FixtureClient implements ThreadsClient {
     if (o) for (const e of o.events) e.onSummary(this.summary(id));
   }
 
+  async getThread(threadId: string): Promise<ThreadSummary | undefined> {
+    return this.threadList.find((t) => t.id === threadId);
+  }
+  async createThread(title: string, o: { provider?: ThreadSummary["provider"]; parentId?: string } = {}): Promise<ThreadSummary> {
+    const t: ThreadSummary = { id: `t-new-${this.threadList.length}`, spaceId: FIXTURE_SPACES[0]!.id, title, parentId: o.parentId ?? null, state: "idle", workspace: "calternal-ai", updatedAt: Date.now(), provider: o.provider ?? "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "calternal-dev-02-std", mode: "sandboxed" }, messageCount: 0 };
+    this.threadList = [t, ...this.threadList];
+    for (const w of this.threadWatchers) w(this.threadList);
+    return t;
+  }
+  async deleteThread(threadId: string): Promise<void> {
+    this.threadList = this.threadList.filter((t) => t.id !== threadId);
+    for (const w of this.threadWatchers) w(this.threadList);
+  }
+
   async messages(threadId: string, from: number, to: number): Promise<Message[]> {
     const t = this.summary(threadId);
     const seed = [...threadId].reduce((a, c) => a + c.charCodeAt(0), 0);

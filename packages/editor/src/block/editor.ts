@@ -4,7 +4,7 @@
  * while an input method composes. Simplified from the existing editor: no Yjs (the state lives on the server), no vim or embeds yet. Frontmatter, block IDs, tables and code grammars are lazy
  * pieces (`features.ts`): call `prepare(text)` before creating an editor or replacing its text so the first draw is already right; the editor also loads one the first time its text needs it.
  */
-import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
+import { history, redo, undo } from "@codemirror/commands";
 import { markdownLanguage } from "@codemirror/lang-markdown";
 import { LanguageSupport } from "@codemirror/language";
 import { Compartment, EditorState, Prec, type ChangeSpec, type Extension, type Transaction } from "@codemirror/state";
@@ -13,6 +13,9 @@ import type { Origin } from "../origins";
 import { ImeGate } from "../ime";
 import { probeOn, startProbe } from "../probe";
 import { blockAt, blocksIn, deleteBlock, duplicateBlock, moveBlock, type Block, type Kinds } from "./blocks";
+import { textAttrs } from "../text/attrs";
+import { grouping } from "./grouping";
+import { textKeymap } from "./keys";
 import { blockChrome } from "./chrome";
 import { allLoaded, loadedExtensions, missing, prepare } from "./features";
 import { ensureId } from "./ids";
@@ -71,9 +74,10 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
     new LanguageSupport(markdownLanguage),
     lazy.of(loadedExtensions()),
     history({ newGroupDelay: 600 }),
+    grouping,
     drawSelection(),
     EditorView.lineWrapping,
-    EditorView.contentAttributes.of({ "aria-label": o.label ?? "Note", "aria-multiline": "true", spellcheck: "true", autocapitalize: "sentences" }),
+    EditorView.contentAttributes.of({ "aria-label": o.label ?? "Note", "aria-multiline": "true", ...textAttrs("prose") }),
     EditorState.readOnly.of(!!o.readOnly),
     EditorView.editable.of(!o.readOnly),
     parseAhead,
@@ -84,7 +88,7 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
     // The host's picker keys first, then lists, then the defaults.
     Prec.highest(EditorView.domEventHandlers({ keydown: (e) => (o.pickerKey ? o.pickerKey(e) : false) })),
     Prec.high(keymap.of([{ key: "Enter", run: continueList }, { key: "Tab", run: indentItem(1) }, { key: "Shift-Tab", run: indentItem(-1) }])),
-    keymap.of([...defaultKeymap, ...historyKeymap]),
+    ...textKeymap,
     EditorView.updateListener.of((u) => {
       if (!u.docChanged) return;
       const tr = u.transactions.find((t) => t.docChanged)!;
