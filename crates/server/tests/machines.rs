@@ -221,7 +221,11 @@ async fn other_accounts_cannot_use_see_or_touch_a_machine() {
 #[tokio::test(flavor = "multi_thread")]
 async fn pool_machines_serve_only_granted_accounts() {
     let data = TempDir::new("pool-data");
-    let server = Server::start(&data.0, free_port());
+    let server = Server::start_with_standard_timing(
+        &data.0,
+        free_port(),
+        std::path::Path::new("/nonexistent-test-plugins"),
+    );
     let out = std::process::Command::new(BIN)
         .args(["machines", "code", "--pool", "--json"])
         .args(installation(&data.0))
@@ -270,21 +274,14 @@ async fn pool_machines_serve_only_granted_accounts() {
         .status()
         .unwrap();
     assert!(st.success());
-    server
-        .wait_run(&server.owner, &lease, T, |v| v["state"] == "running")
+    let exec = server
+        .exec(&server.owner, &lease, &["echo", "granted"])
         .await;
-    let account = Uuid::parse_str(&owner_id).unwrap();
-    let write = server
-        .exec(
-            &server.owner,
-            &lease,
-            &["sh", "-c", "echo survives > marker"],
-        )
+    let (text, _, exit) = server
+        .output(&server.owner, &exec, Duration::from_secs(35))
         .await;
-    server.output(&server.owner, &write, T).await;
-    wait_container_removed(account, thread, T).await;
-    let read = server.exec(&server.owner, &lease, &["cat", "marker"]).await;
-    assert_eq!(server.output(&server.owner, &read, T).await.0, "survives\n");
+    assert_eq!(exit["code"], 0, "{exit}");
+    assert_eq!(text, "granted\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]
