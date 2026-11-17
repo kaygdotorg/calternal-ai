@@ -49,7 +49,8 @@ fn extension(claimed_text: bool, extension: Option<&str>) -> bool {
         Some(e) => {
             !e.is_empty()
                 && e.len() <= 16
-                && e.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                && e.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
                 && (!claimed_text || e == "md")
         }
     }
@@ -201,13 +202,24 @@ impl Registry {
         if self.manifests.contains_key(&manifest.id)
             || folders.iter().any(|f| self.folders.contains(f))
             || manifest.kinds.iter().any(|k| self.kinds.contains(&k.id))
-            || manifest.operations.iter().any(|op| self.operations.contains(&op.id))
-            || manifest.collections.iter().any(|c| self.collections.contains(&c.id))
-        { return Err(Error::Collision); }
+            || manifest
+                .operations
+                .iter()
+                .any(|op| self.operations.contains(&op.id))
+            || manifest
+                .collections
+                .iter()
+                .any(|c| self.collections.contains(&c.id))
+        {
+            return Err(Error::Collision);
+        }
         self.folders.extend(folders);
-        self.kinds.extend(manifest.kinds.iter().map(|k| k.id.clone()));
-        self.operations.extend(manifest.operations.iter().map(|op| op.id.clone()));
-        self.collections.extend(manifest.collections.iter().map(|c| c.id.clone()));
+        self.kinds
+            .extend(manifest.kinds.iter().map(|k| k.id.clone()));
+        self.operations
+            .extend(manifest.operations.iter().map(|op| op.id.clone()));
+        self.collections
+            .extend(manifest.collections.iter().map(|c| c.id.clone()));
         self.manifests.insert(manifest.id.clone(), manifest);
         Ok(())
     }

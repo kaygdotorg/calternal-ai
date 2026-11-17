@@ -18,6 +18,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod broker;
+pub mod session;
 pub mod worker;
 
 use std::borrow::Cow;
@@ -38,6 +39,7 @@ use crate::error::HostError;
 use crate::store::{PluginRow, Store, sha256_hex};
 
 pub use broker::{InvocationHost, PREVIEW_FIXTURE, PREVIEW_ITEM_ID, PreviewHost};
+pub use session::Session;
 pub use worker::{
     Call, MAX_WORKERS, NodeRuntime, WORKER_IDLE, WORKER_TIMEOUT, WorkerPool, resolve_node,
 };
@@ -229,8 +231,12 @@ impl Registry {
                 continue;
             }
             match &plugin.unavailable {
-                Some(why) => tracing::warn!(plugin = %id, reason = %why, "trusted plugin unavailable"),
-                None => tracing::info!(plugin = %id, version = %plugin.manifest.version, "trusted plugin registered"),
+                Some(why) => {
+                    tracing::warn!(plugin = %id, reason = %why, "trusted plugin unavailable")
+                }
+                None => {
+                    tracing::info!(plugin = %id, version = %plugin.manifest.version, "trusted plugin registered")
+                }
             }
             out.plugins.push(Arc::new(plugin));
         }

@@ -33,13 +33,13 @@ use crate::error::HostError;
 use crate::fault::{self, FaultPoint};
 use crate::plugins::worker::Outcome;
 use crate::plugins::{
-    Call, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, WorkerPool, activation, broker::SpaceHost,
+    Call, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, Session, WorkerPool, activation,
+    broker::SpaceHost,
 };
 use crate::store::{PluginRow, Store, sha256_hex};
 
 /// Same-origin development content security policy applied to every response.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
-
 
 /// Shared host services; `D` is the protected source of current identity and grants.
 /// The default preserves fixture integrations; stored directories plug in without
@@ -216,9 +216,9 @@ async fn guard<D: Directory>(
                 .headers()
                 .get(header::ORIGIN)
                 .is_some_and(|v| v.as_bytes() != service.config.origin_header().as_bytes())
-            {
-                break 'resp deny(HostError::unauthorized("missing or invalid session"));
-            }
+        {
+            break 'resp deny(HostError::unauthorized("missing or invalid session"));
+        }
 
         if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
             let expected = if bearer(req.headers())
@@ -246,20 +246,30 @@ async fn guard<D: Directory>(
             break 'resp deny(HostError::forbidden("cross-site request denied"));
         }
         if api && !account_route {
+            // The installation travels with the request so plugin work can recheck it.
             let session = if let Some(service) = state.tokens.http_auth() {
                 crate::account_http::identify(service, req.headers())
                     .await
-                    .map(|(id, _)| Identity {
-                        id: Arc::from(id.to_string()),
+                    .map(|(id, installation)| {
+                        let session = Session::installation(id, installation);
+                        (
+                            Identity {
+                                id: Arc::from(id.to_string()),
+                            },
+                            session,
+                        )
                     })
             } else {
                 None
             };
-            match session
-                .or_else(|| bearer(req.headers()).and_then(|t| state.tokens.authenticate(t)))
-            {
-                Some(p) => {
+            match session.or_else(|| {
+                bearer(req.headers())
+                    .and_then(|t| state.tokens.authenticate(t))
+                    .map(|p| (p, Session::Static))
+            }) {
+                Some((p, session)) => {
                     req.extensions_mut().insert(p);
+                    req.extensions_mut().insert(session);
                 }
                 None => {
                     break 'resp deny(HostError::unauthorized("missing or invalid session"));
@@ -344,6 +354,11 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         .get::<Identity>()
         .cloned()
         .expect("guard inserts principal");
+    let session = req
+        .extensions()
+        .get::<Session>()
+        .cloned()
+        .expect("guard inserts session");
     let ct_ok = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -382,6 +397,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let result = dispatch(
         state,
         p,
+        session,
         &request.request_id,
         &request.operation,
         request.input,
@@ -440,11 +456,14 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
 /// Dispatch through the mandatory policy gate before any handler or receipt replay.
 /// The caller supplies a verified identity; supplied fixture grants are discarded
 /// by conversion for legacy development callers. Each attempt reads current capability sets.
+/// Plugin operations carry `session` into every worker host call, which rechecks it;
+/// in-process callers without a revocable sign-in pass [`Session::Static`].
 /// Summarize additionally rechecks membership after the worker before delivery.
 /// Stored directory lookups run on blocking tasks; identities contain no grants.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
     p: impl Into<Identity>,
+    session: Session,
     request_id: &str,
     op: &str,
     input: JsonObject,
@@ -502,9 +521,10 @@ pub async fn dispatch<D: Directory>(
             .get("space_id")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            && state.tokens.wire_space(hint) != resolved.space_id {
-                return Err(HostError::not_found("item not found"));
-            }
+            && state.tokens.wire_space(hint) != resolved.space_id
+        {
+            return Err(HostError::not_found("item not found"));
+        }
         input.insert("space_id".into(), Value::String(resolved.space_id));
     }
     // One authorization path: a host row or a row derived from a plugin manifest.
@@ -554,7 +574,7 @@ pub async fn dispatch<D: Directory>(
         *space = state.tokens.content_space(space);
     }
     if policy.constraint == Constraint::PluginInvocation {
-        return invoke_plugin(state, p, request_id, op, policy, input).await;
+        return invoke_plugin(state, p, session, request_id, op, policy, input).await;
     }
     let delivery_space = input
         .get("space_id")
@@ -832,6 +852,7 @@ fn check_view(plugin: &Plugin, value: &Value) -> Result<(), HostError> {
 async fn invoke_plugin<D: Directory>(
     state: Shared<D>,
     p: Identity,
+    session: Session,
     request_id: &str,
     op: &str,
     policy: authz::Policy,
@@ -844,7 +865,11 @@ async fn invoke_plugin<D: Directory>(
         .clone();
     let space = match input.remove("space_id") {
         Some(Value::String(space)) => space,
-        _ => return Err(HostError::invalid_input("input does not match operation schema")),
+        _ => {
+            return Err(HostError::invalid_input(
+                "input does not match operation schema",
+            ));
+        }
     };
     // The resolved space travels separately; the plugin sees only its declared input.
     let plugin_input = Value::Object(input.into_iter().collect());
@@ -867,6 +892,7 @@ async fn invoke_plugin<D: Directory>(
     let host = SpaceHost::new(
         state.clone(),
         p.clone(),
+        session,
         space.clone(),
         plugin.clone(),
         generation,

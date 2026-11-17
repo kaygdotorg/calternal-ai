@@ -33,11 +33,7 @@ async fn disable_during_invocation_discards_result() {
     let wdir = root.0.join("worker");
     // The worker reads the note through the broker, then blocks until `go` exists.
     let worker = support::worker(&wdir, support::READ_NOTE, support::COMPLETE_AFTER_GO);
-    let plugin = support::plugin(
-        support::insights_manifest(),
-        Some(&worker),
-        false
-    );
+    let plugin = support::plugin(support::insights_manifest(), Some(&worker), false);
     let data = root.0.join("data");
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
@@ -55,6 +51,7 @@ async fn disable_during_invocation_discards_result() {
     let note = dispatch(
         state.clone(),
         owner.clone(),
+        calternal_server::plugins::Session::Static,
         "c",
         "notes.create",
         obj(json!({"space_id": "personal", "title": "T", "markdown": "x"})),
@@ -66,6 +63,7 @@ async fn disable_during_invocation_discards_result() {
         dispatch(
             state.clone(),
             owner.clone(),
+            calternal_server::plugins::Session::Static,
             rid,
             op,
             obj(json!({"space_id": "personal", "plugin_id": "notes-insights"})),
@@ -78,6 +76,7 @@ async fn disable_during_invocation_discards_result() {
         dispatch(
             s2,
             o2,
+            calternal_server::plugins::Session::Static,
             "s",
             "notes-insights.summarize",
             obj(json!({"space_id": "personal", "id": id2})),
@@ -104,6 +103,7 @@ async fn disable_during_invocation_discards_result() {
     let err = dispatch(
         state.clone(),
         owner.clone(),
+        calternal_server::plugins::Session::Static,
         "s2",
         "notes-insights.summarize",
         obj(json!({"space_id": "personal", "id": id})),

@@ -1,10 +1,11 @@
 //! Trusted host-call brokers: the only way a worker reaches host state.
 //!
 //! One broker value exists per invocation and carries that invocation's authority
-//! (acting account, content space, plugin and the activation generation captured at
-//! admission). [`calternal_plugin_host::WorkerSession`] calls [`InvocationHost::authorize`]
-//! before and after every effect and before every delivery; each call reads the
-//! current directory grants and activation row, so a revoked membership or a
+//! (acting account and its sign-in, content space, plugin and the activation
+//! generation captured at admission). [`calternal_plugin_host::WorkerSession`] calls
+//! [`InvocationHost::authorize`] before and after every effect and before every
+//! delivery; each call rechecks the sign-in and reads the current directory grants
+//! and activation row, so sign-out, a revoked installation or membership, or a
 //! disabled/re-enabled plugin stops the invocation at its next boundary.
 //!
 //! Implemented host calls: `read_item` and `write_item`, both through
@@ -20,9 +21,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use calternal_core::{HostCallKind, ManifestCapability};
 use calternal_plugin_host::Error;
 use serde_json::{Map, Value, json};
+use tokio::runtime::Handle;
 use uuid::Uuid;
 
-use super::{Plugin, activation, host_capability};
+use super::{Plugin, Session, activation, host_capability};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
 use crate::authz::Capability;
@@ -47,6 +49,8 @@ pub trait InvocationHost: Send + Sync {
 pub struct SpaceHost<D: Directory> {
     state: Shared<D>,
     identity: Identity,
+    session: Session,
+    runtime: Handle,
     space: String,
     plugin: Arc<Plugin>,
     generation: u32,
@@ -55,12 +59,15 @@ pub struct SpaceHost<D: Directory> {
 }
 
 impl<D: Directory> SpaceHost<D> {
-    /// Capture an invocation's authority. `space` is the content-space key used by
-    /// the store and directory; `generation` is the activation generation read when
-    /// the invocation was admitted; `request_id` scopes write receipts.
+    /// Capture an invocation's authority. `session` is the caller's sign-in, rechecked
+    /// at every boundary; `space` is the content-space key used by the store and
+    /// directory; `generation` is the activation generation read when the invocation
+    /// was admitted; `request_id` scopes write receipts. Must be called inside the
+    /// async runtime, whose handle the blocking session checks use.
     pub fn new(
         state: Shared<D>,
         identity: Identity,
+        session: Session,
         space: String,
         plugin: Arc<Plugin>,
         generation: u32,
@@ -69,6 +76,8 @@ impl<D: Directory> SpaceHost<D> {
         Self {
             state,
             identity,
+            session,
+            runtime: Handle::current(),
             space,
             plugin,
             generation,
@@ -119,10 +128,7 @@ impl<D: Directory> SpaceHost<D> {
         // Deterministic per-invocation receipt IDs make a retried request replay
         // its earlier writes instead of duplicating them.
         let n = self.writes.fetch_add(1, Ordering::Relaxed);
-        let receipt = format!(
-            "plugin/{}/{}/{n}",
-            self.plugin.manifest.id, self.request_id
-        );
+        let receipt = format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.request_id);
         let fingerprint = sha256_hex(input.to_string().as_bytes());
         let store = self.state.store.lock().map_err(|_| Error::Refused)?;
         let item = store
@@ -143,13 +149,18 @@ impl<D: Directory> SpaceHost<D> {
 }
 
 impl<D: Directory> InvocationHost for SpaceHost<D> {
-    /// Cost: one directory capability read plus one store lock and indexed
-    /// activation read; no content I/O.
+    /// Cost: one session check (see [`Session::is_live`]), one directory capability
+    /// read, one store lock and indexed activation read; no content I/O. The worker
+    /// session calls this up to four times per host call.
     fn authorize(&self, required: ManifestCapability) -> bool {
         let Some(required) = host_capability(required) else {
             return false;
         };
-        if !self.has(required) {
+        if !self
+            .session
+            .is_live_blocking(&self.state.tokens, &self.runtime)
+            || !self.has(required)
+        {
             return false;
         }
         let Ok(store) = self.state.store.lock() else {

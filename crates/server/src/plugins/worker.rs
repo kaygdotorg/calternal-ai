@@ -224,9 +224,7 @@ impl WorkerPool {
             return Outcome::Failed(HostError::unavailable("Node runtime unavailable"));
         };
         if let Some(why) = &plugin.unavailable {
-            return Outcome::Failed(HostError::unavailable(format!(
-                "plugin unavailable: {why}"
-            )));
+            return Outcome::Failed(HostError::unavailable(format!("plugin unavailable: {why}")));
         }
         let Some(bundle) = &plugin.worker else {
             return Outcome::Failed(HostError::unavailable("plugin has no worker"));
@@ -299,8 +297,10 @@ impl WorkerPool {
                 }
                 Ok(())
             }
-            None => Err(HostError::unavailable("extension workers are busy; retry shortly")
-                .with_details(serde_json::json!({ "reason": "worker_capacity" }))),
+            None => Err(
+                HostError::unavailable("extension workers are busy; retry shortly")
+                    .with_details(serde_json::json!({ "reason": "worker_capacity" })),
+            ),
         }
     }
 }
@@ -352,7 +352,11 @@ fn spawn(
         .spawn(move || {
             let mut stdin = stdin;
             for frame in frames_rx {
-                if stdin.write_all(&frame).and_then(|()| stdin.flush()).is_err() {
+                if stdin
+                    .write_all(&frame)
+                    .and_then(|()| stdin.flush())
+                    .is_err()
+                {
                     return;
                 }
             }

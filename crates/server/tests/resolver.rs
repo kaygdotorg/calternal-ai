@@ -49,6 +49,7 @@ impl Fixture {
         dispatch(
             self.state.clone(),
             account.clone(),
+            calternal_server::plugins::Session::Static,
             key,
             op,
             serde_json::from_value(input).unwrap(),

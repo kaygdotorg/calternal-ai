@@ -96,17 +96,41 @@ fn manifest_validation_vectors() {
         ("/operations/0/idempotency", json!("never")),
         ("/operations/0/id", json!("")),
         // A target must name a required string property of the input schema.
-        ("/operations/0/target", json!({"kind":"notes","field":"missing"})),
-        ("/operations/0/target", json!({"kind":"notes","field":"space_id"})),
-        ("/operations/0/target", json!({"kind":"Notes!","field":"id"})),
-        ("/operations/0/target", json!({"kind":"notes","field":"id","extra":1})),
+        (
+            "/operations/0/target",
+            json!({"kind":"notes","field":"missing"}),
+        ),
+        (
+            "/operations/0/target",
+            json!({"kind":"notes","field":"space_id"}),
+        ),
+        (
+            "/operations/0/target",
+            json!({"kind":"Notes!","field":"id"}),
+        ),
+        (
+            "/operations/0/target",
+            json!({"kind":"notes","field":"id","extra":1}),
+        ),
         ("/operations/0/target/field", json!("Id")),
         ("/kinds", json!([{"id":"notes","schema":null}])),
         // Non-text kinds must name a safe extension; text kinds are Markdown.
-        ("/kinds", json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false}])),
-        ("/kinds", json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"../x"}])),
-        ("/kinds", json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"PNG"}])),
-        ("/kinds", json!([{"id":"t","schema":{},"storage":{"hidden":true},"claimed_text":true,"extension":"txt"}])),
+        (
+            "/kinds",
+            json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false}]),
+        ),
+        (
+            "/kinds",
+            json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"../x"}]),
+        ),
+        (
+            "/kinds",
+            json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"PNG"}]),
+        ),
+        (
+            "/kinds",
+            json!([{"id":"t","schema":{},"storage":{"hidden":true},"claimed_text":true,"extension":"txt"}]),
+        ),
         (
             "/collections",
             json!([{"id":"all","kind":"bad/kind","name":"All"}]),

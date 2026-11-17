@@ -10,7 +10,8 @@ use serde_json::json;
 
 /// The shipped notes-insights manifest, parsed by the real host library.
 pub fn insights_manifest() -> ManifestV1 {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/notes-insights/manifest.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins/notes-insights/manifest.json");
     calternal_plugin_host::parse_manifest(&std::fs::read(path).unwrap()).unwrap()
 }
 
@@ -38,7 +39,12 @@ pub fn plugin(manifest: ManifestV1, worker: Option<&Path>, default_enabled: bool
         worker_sha256: worker.map(|w| file_sha256(w).unwrap()),
         default_enabled,
     };
-    Plugin::new(entry, manifest, worker.map(|w| std::fs::canonicalize(w).unwrap())).unwrap()
+    Plugin::new(
+        entry,
+        manifest,
+        worker.map(|w| std::fs::canonicalize(w).unwrap()),
+    )
+    .unwrap()
 }
 
 /// Write a v2 test worker to `dir/worker.js`.

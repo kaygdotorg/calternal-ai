@@ -36,7 +36,10 @@ fn principal(id: &str) -> DevPrincipal {
 }
 
 fn tmp(tag: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("calternal-plugin-host-{tag}-{}", uuid::Uuid::new_v4()))
+    std::env::temp_dir().join(format!(
+        "calternal-plugin-host-{tag}-{}",
+        uuid::Uuid::new_v4()
+    ))
 }
 
 /// Insights plugin (enabled by default) whose worker runs `on_invoke`/`on_reply`.
@@ -91,12 +94,25 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
 
 impl Fixture {
     async fn op(&self, who: &str, rid: &str, op: &str, input: Value) -> Result<Value, HostError> {
-        dispatch(self.state.clone(), principal(who), rid, op, obj(input)).await
+        dispatch(
+            self.state.clone(),
+            principal(who),
+            calternal_server::plugins::Session::Static,
+            rid,
+            op,
+            obj(input),
+        )
+        .await
     }
     async fn note(&self, space: &str, text: &str) -> String {
         let rid = uuid::Uuid::new_v4().to_string();
         let r = self
-            .op("owner", &rid, "notes.create", json!({"space_id": space, "title": "T", "markdown": text}))
+            .op(
+                "owner",
+                &rid,
+                "notes.create",
+                json!({"space_id": space, "title": "T", "markdown": text}),
+            )
             .await
             .unwrap();
         r["note"]["id"].as_str().unwrap().to_owned()
@@ -109,10 +125,14 @@ impl Fixture {
 }
 
 fn find(root: &Path, name: &str) -> bool {
-    std::fs::read_dir(root).into_iter().flatten().flatten().any(|e| {
-        let p = e.path();
-        p.file_name().is_some_and(|n| n == name) || (p.is_dir() && find(&p, name))
-    })
+    std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|e| {
+            let p = e.path();
+            p.file_name().is_some_and(|n| n == name) || (p.is_dir() && find(&p, name))
+        })
 }
 
 #[test]
@@ -121,7 +141,11 @@ fn policy_rows_are_derived_from_manifests() {
     let registry = Registry::from_plugins(vec![insights(&dir, "", ""), tagger(&dir.join("t"))]);
     // No plugin row is written into the host table.
     assert!(authz::policy("notes-insights.summarize").is_none());
-    assert!(authz::POLICIES.iter().all(|p| !p.operation.contains("insights")));
+    assert!(
+        authz::POLICIES
+            .iter()
+            .all(|p| !p.operation.contains("insights"))
+    );
 
     let summarize = registry.policy("notes-insights.summarize").unwrap();
     assert_eq!(summarize.required, Capability::SpaceRead);
@@ -148,7 +172,9 @@ fn policy_rows_are_derived_from_manifests() {
         false,
     );
     let account = support::plugin(
-        support::manifest(json!({"id": "account", "operations": op("account.make", "spaces.create")})),
+        support::manifest(
+            json!({"id": "account", "operations": op("account.make", "spaces.create")}),
+        ),
         None,
         false,
     );
@@ -164,27 +190,58 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
     let f = fixture("tagger", vec![tagger(&tmp("tagger-worker"))], None).await;
     let input = json!({"space_id": "shared", "label": "urgent"});
     // Disabled by default: admitted by policy, then refused as disabled.
-    let e = f.op("owner", "t0", "tagger.tag", input.clone()).await.unwrap_err();
-    assert_eq!(e.code, ErrorCode::Forbidden);
-    f.op("owner", "e", "plugins.enable", json!({"space_id": "shared", "plugin_id": "tagger"}))
+    let e = f
+        .op("owner", "t0", "tagger.tag", input.clone())
         .await
-        .unwrap();
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Forbidden);
+    f.op(
+        "owner",
+        "e",
+        "plugins.enable",
+        json!({"space_id": "shared", "plugin_id": "tagger"}),
+    )
+    .await
+    .unwrap();
     // Enable registered the hidden kind and created the standard collection file.
     let ssd = f.root.join("data/userdata-ssd");
-    assert!(find(&ssd, "All tags.json"), "standard collection not provisioned");
+    assert!(
+        find(&ssd, "All tags.json"),
+        "standard collection not provisioned"
+    );
 
     // The guest is a Reader in `shared`: the manifest requires content.write.
-    let e = f.op("guest", "g", "tagger.tag", input.clone()).await.unwrap_err();
-    assert_eq!((e.code, e.message.as_str()), (ErrorCode::Forbidden, "insufficient role for this space"));
+    let e = f
+        .op("guest", "g", "tagger.tag", input.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        (e.code, e.message.as_str()),
+        (ErrorCode::Forbidden, "insufficient role for this space")
+    );
     // The owner's call writes through the broker into the registered kind.
-    let r = f.op("owner", "t1", "tagger.tag", input.clone()).await.unwrap();
+    let r = f
+        .op("owner", "t1", "tagger.tag", input.clone())
+        .await
+        .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
-    let item = f.state.store.lock().unwrap().read_item("shared", "tags", &id).unwrap();
+    let item = f
+        .state
+        .store
+        .lock()
+        .unwrap()
+        .read_item("shared", "tags", &id)
+        .unwrap();
     assert_eq!(item.bytes, b"urgent");
     assert!(find(&ssd, "tags"), "hidden kind folder missing");
     // A missing space hides existence exactly like a host operation.
     let e = f
-        .op("owner", "t2", "tagger.tag", json!({"space_id": uuid::Uuid::now_v7().to_string(), "label": "x"}))
+        .op(
+            "owner",
+            "t2",
+            "tagger.tag",
+            json!({"space_id": uuid::Uuid::now_v7().to_string(), "label": "x"}),
+        )
         .await
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::NotFound);
@@ -202,12 +259,19 @@ async fn undeclared_host_call_is_refused_before_any_effect() {
     let f = fixture("undeclared", vec![plugin], None).await;
     let id = f.note("personal", "hello world\n").await;
     let e = f.summarize(&id).await.unwrap_err();
-    assert_eq!((e.code, e.message.as_str()), (ErrorCode::Unavailable, "extension request was refused"));
+    assert_eq!(
+        (e.code, e.message.as_str()),
+        (ErrorCode::Unavailable, "extension request was refused")
+    );
     let list = f
         .op("owner", "l", "notes.list", json!({"space_id": "personal"}))
         .await
         .unwrap();
-    assert_eq!(list["notes"].as_array().unwrap().len(), 1, "a refused call wrote");
+    assert_eq!(
+        list["notes"].as_array().unwrap().len(),
+        1,
+        "a refused call wrote"
+    );
     // The same worker keeps serving well-behaved invocations of other kinds of call.
     assert_eq!(f.state.workers.live(), 1);
     let _ = std::fs::remove_dir_all(dir);
@@ -250,17 +314,40 @@ async fn worker_reads_only_its_own_space_and_has_no_ambient_access() {
     std::fs::write(dir.join("foreign"), &foreign).unwrap();
     let r = f.summarize(&own).await.unwrap();
     assert_eq!(r["stats"]["words"], 0, "foreign text reached the worker");
-    assert_eq!(r["view"]["root"]["children"][0]["value"], "LANG|ERR_ACCESS_DENIED|false");
+    assert_eq!(
+        r["view"]["root"]["children"][0]["value"],
+        "LANG|ERR_ACCESS_DENIED|false"
+    );
     let _ = std::fs::remove_dir_all(dir);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deadline_overflow_and_malformed_output_stop_the_worker() {
     let cases = [
-        ("hang", "", "extension timed out", WORKER_TIMEOUT + Duration::from_secs(2)),
-        ("flood", "process.stdout.write('x'.repeat(300*1024))", "extension output exceeded limit", Duration::from_secs(2)),
-        ("garbage", "process.stdout.write('not json\\n')", "extension returned invalid output", Duration::from_secs(2)),
-        ("schema", "done(f,{stats:{words:-1}})", "extension returned invalid output", Duration::from_secs(2)),
+        (
+            "hang",
+            "",
+            "extension timed out",
+            WORKER_TIMEOUT + Duration::from_secs(2),
+        ),
+        (
+            "flood",
+            "process.stdout.write('x'.repeat(300*1024))",
+            "extension output exceeded limit",
+            Duration::from_secs(2),
+        ),
+        (
+            "garbage",
+            "process.stdout.write('not json\\n')",
+            "extension returned invalid output",
+            Duration::from_secs(2),
+        ),
+        (
+            "schema",
+            "done(f,{stats:{words:-1}})",
+            "extension returned invalid output",
+            Duration::from_secs(2),
+        ),
     ];
     for (tag, on_invoke, message, bound) in cases {
         let dir = tmp(tag);
@@ -268,7 +355,11 @@ async fn deadline_overflow_and_malformed_output_stop_the_worker() {
         let id = f.note("personal", "x\n").await;
         let t0 = Instant::now();
         let e = f.summarize(&id).await.unwrap_err();
-        assert_eq!((e.code, e.message.as_str()), (ErrorCode::Unavailable, message), "{tag}");
+        assert_eq!(
+            (e.code, e.message.as_str()),
+            (ErrorCode::Unavailable, message),
+            "{tag}"
+        );
         assert!(t0.elapsed() < bound, "{tag} took {:?}", t0.elapsed());
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -277,13 +368,30 @@ async fn deadline_overflow_and_malformed_output_stop_the_worker() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pool_capacity_is_bounded_and_released() {
     let dir = tmp("cap-worker");
-    let f = fixture("cap", vec![insights(&dir, support::READ_NOTE, support::COMPLETE_AFTER_GO)], Some(1)).await;
+    let f = fixture(
+        "cap",
+        vec![insights(
+            &dir,
+            support::READ_NOTE,
+            support::COMPLETE_AFTER_GO,
+        )],
+        Some(1),
+    )
+    .await;
     let personal = f.note("personal", "a\n").await;
     let shared = f.note("shared", "b\n").await;
     let state = f.state.clone();
     let p2 = personal.clone();
     let first = tokio::spawn(async move {
-        dispatch(state, principal("owner"), "c1", "notes-insights.summarize", obj(json!({"id": p2}))).await
+        dispatch(
+            state,
+            principal("owner"),
+            calternal_server::plugins::Session::Static,
+            "c1",
+            "notes-insights.summarize",
+            obj(json!({"id": p2})),
+        )
+        .await
     });
     let t0 = Instant::now();
     while f.state.workers.in_flight() == 0 {
@@ -308,7 +416,10 @@ async fn tampered_bundle_is_refused_before_start() {
     let f = fixture("digest", vec![plugin], None).await;
     let id = f.note("personal", "x\n").await;
     let e = f.summarize(&id).await.unwrap_err();
-    assert_eq!((e.code, e.message.as_str()), (ErrorCode::Unavailable, "plugin bundle failed verification"));
+    assert_eq!(
+        (e.code, e.message.as_str()),
+        (ErrorCode::Unavailable, "plugin bundle failed verification")
+    );
     assert_eq!(f.state.workers.live(), 0);
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -329,13 +440,24 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     op.id = "targeted.count".into();
     op.input_schema = json!({"type": "object", "required": ["note", "mode"], "additionalProperties": false,
         "properties": {"note": {"type": "string"}, "mode": {"type": "string"}}});
-    op.target = Some(calternal_core::ManifestTarget { kind: "notes".into(), field: "note".into() });
+    op.target = Some(calternal_core::ManifestTarget {
+        kind: "notes".into(),
+        field: "note".into(),
+    });
     let plugin = support::plugin(manifest, Some(&worker), true);
     let f = fixture("target", vec![plugin], None).await;
-    assert_eq!(f.state.registry.policy("targeted.count").unwrap().scope, Scope::Note);
+    assert_eq!(
+        f.state.registry.policy("targeted.count").unwrap().scope,
+        Scope::Note
+    );
     let own = f.note("personal", "one two three\n").await;
     let r = f
-        .op("owner", "t1", "targeted.count", json!({"note": own, "mode": "fast"}))
+        .op(
+            "owner",
+            "t1",
+            "targeted.count",
+            json!({"note": own, "mode": "fast"}),
+        )
         .await
         .unwrap();
     assert_eq!(r["stats"]["words"], 3);
@@ -346,18 +468,36 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     // A note in a space the caller cannot read answers exactly like a missing one.
     let missing = uuid::Uuid::now_v7().to_string();
     let absent = f
-        .op("guest", "t2", "targeted.count", json!({"note": missing, "mode": "fast"}))
+        .op(
+            "guest",
+            "t2",
+            "targeted.count",
+            json!({"note": missing, "mode": "fast"}),
+        )
         .await
         .unwrap_err();
     let foreign = f
-        .op("guest", "t3", "targeted.count", json!({"note": own, "mode": "fast"}))
+        .op(
+            "guest",
+            "t3",
+            "targeted.count",
+            json!({"note": own, "mode": "fast"}),
+        )
         .await
         .unwrap_err();
     assert_eq!(absent.code, ErrorCode::NotFound);
-    assert_eq!((foreign.code, foreign.message), (absent.code, absent.message));
+    assert_eq!(
+        (foreign.code, foreign.message),
+        (absent.code, absent.message)
+    );
     // The ID must be in the declared field; `id` is not a fallback.
     let wrong = f
-        .op("owner", "t4", "targeted.count", json!({"id": own, "mode": "fast"}))
+        .op(
+            "owner",
+            "t4",
+            "targeted.count",
+            json!({"id": own, "mode": "fast"}),
+        )
         .await
         .unwrap_err();
     assert_eq!(wrong.code, ErrorCode::InvalidInput);
@@ -366,10 +506,14 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
 
 /// Whether any file under `root` has extension `ext`.
 fn has_extension(root: &Path, ext: &str) -> bool {
-    std::fs::read_dir(root).into_iter().flatten().flatten().any(|e| {
-        let p = e.path();
-        p.extension().is_some_and(|x| x == ext) || (p.is_dir() && has_extension(&p, ext))
-    })
+    std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|e| {
+            let p = e.path();
+            p.extension().is_some_and(|x| x == ext) || (p.is_dir() && has_extension(&p, ext))
+        })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -392,18 +536,90 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         }],
         "host_calls": ["write_item"]
     }));
-    let f = fixture("shapes", vec![support::plugin(manifest, Some(&worker), false)], None).await;
-    f.op("owner", "e", "plugins.enable", json!({"space_id": "shared", "plugin_id": "shapes"}))
-        .await
-        .unwrap();
+    let f = fixture(
+        "shapes",
+        vec![support::plugin(manifest, Some(&worker), false)],
+        None,
+    )
+    .await;
+    f.op(
+        "owner",
+        "e",
+        "plugins.enable",
+        json!({"space_id": "shared", "plugin_id": "shapes"}),
+    )
+    .await
+    .unwrap();
     let body = r#"{"type":"Point","coordinates":[0,0]}"#;
     let r = f
-        .op("owner", "s1", "shapes.save", json!({"space_id": "shared", "body": body}))
+        .op(
+            "owner",
+            "s1",
+            "shapes.save",
+            json!({"space_id": "shared", "body": body}),
+        )
         .await
         .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
-    let item = f.state.store.lock().unwrap().read_item("shared", "shapes", &id).unwrap();
-    assert_eq!(item.bytes, body.as_bytes(), "opaque bytes are stored unchanged");
-    assert!(has_extension(&f.root.join("data"), "geojson"), "file not stored under its extension");
+    let item = f
+        .state
+        .store
+        .lock()
+        .unwrap()
+        .read_item("shared", "shapes", &id)
+        .unwrap();
+    assert_eq!(
+        item.bytes,
+        body.as_bytes(),
+        "opaque bytes are stored unchanged"
+    );
+    assert!(
+        has_extension(&f.root.join("data"), "geojson"),
+        "file not stored under its extension"
+    );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn host_calls_recheck_the_callers_sign_in() {
+    // An installation session that is no longer live (here: unknown to the directory)
+    // is admitted by the policy gate but refused at the worker's first host call, so
+    // the write never lands.
+    let f = fixture("session", vec![tagger(&tmp("session-worker"))], None).await;
+    f.op(
+        "owner",
+        "e",
+        "plugins.enable",
+        json!({"space_id": "shared", "plugin_id": "tagger"}),
+    )
+    .await
+    .unwrap();
+    let gone = calternal_server::plugins::Session::Installation {
+        account: uuid::Uuid::now_v7().to_string(),
+        installation: uuid::Uuid::now_v7().to_string(),
+    };
+    let e = calternal_server::api::dispatch(
+        f.state.clone(),
+        principal("owner"),
+        gone,
+        "s1",
+        "tagger.tag",
+        obj(json!({"space_id": "shared", "label": "late"})),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Unavailable);
+    assert!(
+        !find(&f.root.join("data/userdata-ssd"), "late.md"),
+        "write landed without a live sign-in"
+    );
+    // The same call with a live (static) credential writes.
+    f.op(
+        "owner",
+        "s2",
+        "tagger.tag",
+        json!({"space_id": "shared", "label": "now"}),
+    )
+    .await
+    .unwrap();
 }

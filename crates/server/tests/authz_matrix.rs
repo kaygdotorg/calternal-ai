@@ -150,13 +150,13 @@ impl Fixture {
         let worker = support::worker(
             &root,
             support::READ_NOTE,
-            if block { support::COMPLETE_AFTER_GO } else { support::COMPLETE },
+            if block {
+                support::COMPLETE_AFTER_GO
+            } else {
+                support::COMPLETE
+            },
         );
-        let plugin = support::plugin(
-            support::insights_manifest(),
-            Some(&worker),
-            true
-        );
+        let plugin = support::plugin(support::insights_manifest(), Some(&worker), true);
         let mut store = Store::open(&root.join("data")).unwrap();
         let note = serde_json::to_value(
             store
@@ -510,6 +510,7 @@ async fn membership_revocation_during_worker_discards_delivery() {
     let call = tokio::spawn(dispatch(
         state,
         identity,
+        calternal_server::plugins::Session::Static,
         "in-flight",
         "notes-insights.summarize",
         input,
@@ -546,6 +547,7 @@ async fn fixture_grants_cannot_override_directory_and_plugin_retries_recheck_rol
     let error = dispatch(
         fixture.state.clone(),
         claimed,
+        calternal_server::plugins::Session::Static,
         "forged",
         "plugins.disable",
         input,
