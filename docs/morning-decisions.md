@@ -20,3 +20,17 @@
 ## Explicit preview limits
 
 No AI conversations, voice, Honcho memory, bb import, remote machine enrollment, PR lifecycle, full offline sync or production migration are simulated. Activity is browser-session-local, and the Notes editor is a textarea. An externally changed Markdown copy blocks further writes; there is no import/unblock flow yet. Ordinary users should not treat this preview as their primary store.
+
+## Account input retention (lane/live, issue #17, 2026-11-17)
+
+The live-space/client transport slice is implemented; server drafts, account
+pending submissions and the account feed await this policy. The contracts do not
+set expiry or approve indefinite retention for unfinished personal input.
+
+- Configurable expiry: bounds storage and deletion time; can expire unfinished input.
+- Retain until explicit deletion: preserves input; requires owner sign-off for indefinite retention (Review gate 7).
+- Offline input after sign-out/revocation also needs a retention/export policy;
+  keeping it requires account-private storage, while deletion can lose unsent input.
+
+No expiry or indefinite retention was selected by the lane. Account-state
+operations remain unbuilt until this is settled; no placeholder operations ship.

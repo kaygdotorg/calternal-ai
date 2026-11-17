@@ -1,0 +1,5 @@
+ID: 12345678-1234-4abc-8def-123456789012
+TITLE: 東京 groceries and a very long s…
+UPDATED: 2026-11-17 07:12:03 +01:00
+REVISION: revision-2026-11-17
+Next: run `cl notes get ID`.

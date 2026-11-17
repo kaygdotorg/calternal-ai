@@ -1,0 +1,5 @@
+ID: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+OWNER: pool
+NAME: build-machine-with-a-long-name
+PLATFORM: linux/x86_64
+STATE: enrolled

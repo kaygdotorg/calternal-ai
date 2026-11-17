@@ -26,7 +26,7 @@ use uuid::Uuid;
 pub struct Store {
     conn: Connection,
     root: PathBuf,
-    content: Content,
+    content: std::sync::Arc<Content>,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     _lock: File,
 }
@@ -164,7 +164,7 @@ impl Store {
         let store = Self {
             conn,
             root,
-            content,
+            content: std::sync::Arc::new(content),
             secrets: std::sync::Arc::new(secrets),
             _lock: lock,
         };
@@ -519,7 +519,11 @@ impl Store {
     /// UUID forms of an acting account and a content space, for worker authority
     /// correlation only (they grant nothing). Cost: at most two indexed binding
     /// lookups; a first-seen fixture name inserts one binding row.
-    pub fn worker_ids(&self, principal: &str, space_id: &str) -> Result<(String, String), HostError> {
+    pub fn worker_ids(
+        &self,
+        principal: &str,
+        space_id: &str,
+    ) -> Result<(String, String), HostError> {
         Ok((
             self.account(principal)?.to_string(),
             self.space(space_id)?.to_string(),
@@ -589,7 +593,11 @@ impl Store {
         &self,
         space_id: &str,
         principal: &str,
-        kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
+        kinds: &[(
+            String,
+            calternal_content::Placement,
+            calternal_content::FileFormat,
+        )],
         collections: &[(String, String, String)],
     ) -> Result<(), HostError> {
         let space = self.space(space_id)?;
@@ -703,3 +711,6 @@ pub fn blocked_error() -> HostError {
     HostError::conflict("note file was changed outside Calternal; writes are blocked")
         .with_details(serde_json::json!({"reason":"external_change"}))
 }
+
+#[path = "store_live.rs"]
+mod live_follow;

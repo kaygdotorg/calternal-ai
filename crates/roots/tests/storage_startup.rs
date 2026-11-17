@@ -132,7 +132,10 @@ fn roots_must_keep_their_persistent_partner() {
     for create in [false, true] {
         assert!(prepare(&roots, a.id, create).is_err());
     }
-    assert_eq!(original, std::fs::read(a.roots.appdata.join(MARKER)).unwrap());
+    assert_eq!(
+        original,
+        std::fs::read(a.roots.appdata.join(MARKER)).unwrap()
+    );
     a.no_locks();
     b.no_locks();
     for root in a.paths() {

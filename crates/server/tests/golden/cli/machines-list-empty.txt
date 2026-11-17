@@ -1,4 +1,4 @@
 exit: 0
 --- stdout ---
-No machines are enrolled. Create a code with `calternal machines code`.
+No machines are enrolled yet. Run `calternal machines code` to add one.
 --- stderr ---

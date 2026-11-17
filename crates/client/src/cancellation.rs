@@ -23,7 +23,9 @@ impl CancellationToken {
     pub fn cancel(&self) {
         self.signal.send_replace(true);
     }
-    pub(crate) async fn cancelled(&self) {
+    /// Wait until cancellation, without blocking a worker or performing I/O.
+    /// One watch receiver per waiter; wakes immediately if already cancelled.
+    pub async fn cancelled(&self) {
         let mut receiver = self.signal.subscribe();
         loop {
             if *receiver.borrow_and_update() {

@@ -32,3 +32,11 @@ The Swift library/test target and disposable real-server harness are under
 [CalternalCore](../../apps/apple/CalternalCore/README.md). Generated code must
 match its linked library. A successful Linux generation alone is not Apple
 execution or native rendering qualification.
+
+`NativeClient.subscribe` restores an account-scoped map of space bookmarks and
+returns `NativeLive`. Its async `next`/`accept` pair lets Apple apply state and
+persist its bookmark before advancing the Rust reconnect cursor. The shared
+`NativeCancellation` stops socket waits and reconnect backoff. `NativeLive.frames`
+in the Swift package adapts this pull stream to `AsyncThrowingStream`; a slow
+consumer closes with an explicit error and replays on reconnect rather than
+silently dropping entries. There is no client merge engine or account draft API.

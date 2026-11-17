@@ -8,14 +8,14 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 mod account;
-mod http_facing;
 mod ceremony;
 mod config;
 pub mod db;
+mod http_facing;
 pub mod limit;
-pub mod private_fs;
 mod passkey;
 mod passkeys;
+pub mod private_fs;
 mod session;
 mod setup;
 pub mod spaces;

@@ -30,7 +30,8 @@ pub struct RootLocks {
 /// create neither directories nor lock files; I/O failures during explicit setup
 /// may leave partial setup which requires deliberate offline recovery.
 pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<RootLocks> {
-    let paths = [&roots.userdata_ssd, &roots.userdata_hdd, &roots.appdata].map(|p| absolute_plain(p));
+    let paths =
+        [&roots.userdata_ssd, &roots.userdata_hdd, &roots.appdata].map(|p| absolute_plain(p));
     let [a, b, c] = paths;
     let paths = [a?, b?, c?];
     for (i, a) in paths.iter().enumerate() {
@@ -133,7 +134,9 @@ pub fn prepare(roots: &Roots, installation: Uuid, create: bool) -> io::Result<Ro
         check_legacy(&probes[1].fd, &probes[2].fd)?;
     }
     Ok(RootLocks {
-        _locks: locks.try_into().unwrap_or_else(|_| unreachable!("three locks")),
+        _locks: locks
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("three locks")),
         _directories: probes
             .into_iter()
             .map(|p| p.fd)

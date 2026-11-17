@@ -1,0 +1,2 @@
+This space has no notes yet; run `cl notes create` to add one.
+Next: run `cl notes create --help`.
