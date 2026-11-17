@@ -16,6 +16,7 @@
   import { pickerKey } from "../../../../../packages/editor/src/text/picker";
   import { store } from "./store.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
+  import ActiveChildren from "./ActiveChildren.svelte";
   import MentionPicker from "../../palette/MentionPicker.svelte";
   import { bridge } from "./compose.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -137,7 +138,8 @@
 
 <Panel class="composer" radius="pane" data-ring-host>
   <div class="ctx" aria-label="Context">
-    <span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>
+    {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
+    <ActiveChildren id={thread.id} />
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
   </div>
   <div class="field" bind:this={fieldBox}>
@@ -153,7 +155,7 @@
       <Pill label="{provider?.name ?? ''} · {modelName}" icon={providerIcon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)}>
         <span class="pl">{provider?.name} · {modelName}</span><span class="pm">{modelName}</span>
       </Pill>
-      <Menu open={menuOpen} {items} search morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
+      <Menu open={menuOpen} {items} search compact morph label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
     </span>
     <span class="chip permc">
       <Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>

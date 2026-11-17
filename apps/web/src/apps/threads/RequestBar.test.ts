@@ -95,7 +95,7 @@ describe("request bar", () => {
   it("a thread-less region lookup finds the bar by name", () => {
     render(RequestBar, { requests: [A], onanswer() {}, now });
     const bar = screen.getByRole("region", { name: "Waiting on you" });
-    expect(within(bar).getByRole("heading", { name: "Run a command outside the workspace" })).toBeTruthy();
+    expect(within(bar).getByRole("heading", { name: "Push the branch" })).toBeTruthy();
   });
 });
 
