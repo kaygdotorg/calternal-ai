@@ -4,6 +4,7 @@
   import { Button } from "@calternal/ui";
   import { account, signOut, type InstallationRow, type Me, type Passkey } from "../../server/auth";
   import { say } from "../../server/say";
+  import { setName } from "../../server/people";
   import "./panel.css";
   let me = $state<Me | null>(null), keys = $state<Passkey[]>([]), places = $state<InstallationRow[]>([]);
   let error = $state(""), busy = $state(false), renaming = $state<string | null>(null), draft = $state("");
@@ -18,12 +19,16 @@
     busy = false;
   }
   const everywhere = () => act(async () => { for (const p of places.filter((x) => !x.current)) await account.revokeInstallation(p.id); await signOut(); location.replace(import.meta.env.BASE_URL); });
+  let name = $state("");
+  $effect(() => { if (me && !name) name = me.user.name; });
+  const saveName = () => act(() => setName(name.trim()));
   void load();
 </script>
 
 <div class="sp">
   <h2>You</h2>
-  <div class="r"><span class="n"><span class="t">{me?.user.name ?? "…"}</span><span class="h">{me ? `${me.user.username} · ${me.user.role}` : ""}</span></span></div>
+  <div class="r"><span class="n"><label class="t" for="acc-name">Name</label><input id="acc-name" class="field" bind:value={name} onkeydown={(e) => e.key === "Enter" && saveName()} autocomplete="name" /><span class="h">{me ? `${me.user.username} · ${me.user.role === "admin" ? "operator" : "member"}` : ""}</span></span>
+    <Button text="Save" variant="secondary" disabled={busy || !name.trim() || name.trim() === me?.user.name} onclick={saveName} /></div>
   <h2>Passkeys</h2>
   {#each keys as k (k.id)}
     <div class="r" data-setting="account.passkey.{k.id}">

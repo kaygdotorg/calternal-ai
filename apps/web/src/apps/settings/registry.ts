@@ -13,7 +13,7 @@ import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
 import { devToken, serverMode } from "../../server/client";
-import { caps } from "../../shell/capabilities";
+import { caps } from "../../shell/capabilities.svelte";
 
 export type Control =
   | { type: "switch" }
@@ -234,10 +234,17 @@ function serverSections(): Section[] {
   const secrets: Page = { ...secretsPage, groups: [lazy("space.secrets", "Secrets", () => import("./SecretsPanel.svelte"))] };
   const plugins: Page = { ...spacePluginsPage, groups: [lazy("space.plugins", "Plugins", () => import("./ServerPluginsPanel.svelte"))] };
   const manage: Page = { id: "manage", name: "Delete this space", icon: "folder", blurb: "Removes the space for everyone in it.", groups: [{ title: "Danger area", danger: true, settings: [{ id: "space.delete", label: "Delete this space", help: "Only the owner may.", control: { type: "button", text: "Delete space…", danger: true, run: deleteSpace } }] }] };
-  // Admin has no page backed by an operation yet, so it has no section even with the capability (the table in docs/ui-shell-status.md).
+  const roles: Page = { id: "roles", name: "Roles", icon: "list", blurb: "What each role may do in a space.", groups: [lazy("space.roles", "Roles", () => import("./RolesPanel.svelte"))] };
+  const invites: Page = { ...invitesPage, groups: [lazy("space.invites", "Invitations", () => import("./InvitesPanel.svelte"))] };
+  const mayManage = spaces.current.role === "owner" || spaces.current.role === "manager";
+  const admin: Page[] = [
+    ...(caps.peopleManage ? [{ id: "people", name: "People", icon: "user" as IconName, blurb: "Everyone with an account on this server.", groups: [lazy("server.people", "People", () => import("./PeoplePanel.svelte"))] }] : []),
+    ...(caps.groupsManage ? [{ id: "groups", name: "Groups", icon: "user" as IconName, blurb: "Groups give a role in a space to everyone in them.", groups: [lazy("server.groups", "Groups", () => import("./GroupsPanel.svelte"))] }] : []),
+  ];
   return [
     { id: "user", name: "User", pages: [appearancePage, keyboardPage, machines, account] },
-    { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, secrets, plugins, manage] },
+    ...(admin.length ? [{ id: "server" as const, name: "Admin", pages: admin }] : []),
+    { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, roles, ...(mayManage ? [invites] : []), secrets, plugins, manage] },
   ];
 }
 

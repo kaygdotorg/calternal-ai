@@ -4,17 +4,19 @@
   import { Button, Card, Spinner } from "@calternal/ui";
   import { setup, signIn } from "../server/auth";
   import { say } from "../server/say";
-  let { needsSetup = false, version, offline = false }: { needsSetup?: boolean; version?: { server: number; expected: number }; offline?: boolean } = $props();
+  let { needsSetup = false, invite, version, offline = false }: { needsSetup?: boolean; invite?: string; version?: { server: number; expected: number }; offline?: boolean } = $props();
+  const joining = $derived(!!invite && !needsSetup);
   const fromLink = new URLSearchParams(location.hash.slice(1)).get("setup") ?? new URLSearchParams(location.search).get("setup") ?? "";
   let token = $state(fromLink);
+  $effect(() => { if (invite) token = invite; });
   let name = $state("");
   let busy = $state(false);
   let error = $state("");
-  const done = () => { const u = new URL(location.href); u.searchParams.delete("setup"); u.hash = ""; location.replace(u.pathname + u.search); };
+  const done = () => { const u = new URL(location.href); u.searchParams.delete("setup"); u.hash = ""; location.replace(joining ? import.meta.env.BASE_URL : u.pathname + u.search); };
   async function run(f: () => Promise<void>) {
     busy = true; error = "";
     try { await f(); done(); }
-    catch (e) { error = say(e, needsSetup ? "set up" : "sign in"); }
+    catch (e) { error = say(e, needsSetup ? "set up" : joining ? "join" : "sign in"); }
     finally { busy = false; }
   }
 </script>
@@ -38,10 +40,14 @@
     </div>
   </Card>
 {:else}
-  <Card label={needsSetup ? "Set up Calternal" : "Sign in"} variant="solid" class="card">
-    <form class="in" onsubmit={(e) => { e.preventDefault(); void run(needsSetup ? () => setup(token, name) : signIn); }}>
-      <h1>{needsSetup ? "Set up Calternal" : "Sign in"}</h1>
-      {#if needsSetup}
+  <Card label={needsSetup ? "Set up Calternal" : joining ? "Join Calternal" : "Sign in"} variant="solid" class="card">
+    <form class="in" onsubmit={(e) => { e.preventDefault(); void run(needsSetup || joining ? () => setup(token, name) : signIn); }}>
+      <h1>{needsSetup ? "Set up Calternal" : joining ? "Join Calternal" : "Sign in"}</h1>
+      {#if joining}
+        <p class="note">You were invited. Say who you are and create a passkey on this device; that makes your account. If you already have one, sign in first, then open the link again.</p>
+        <label>Your name<input name="name" bind:value={name} autocomplete="name" required /></label>
+        <p class="note"><button type="button" class="link" onclick={() => (location.href = import.meta.env.BASE_URL)}>I already have an account</button></p>
+      {:else if needsSetup}
         <p class="note">This installation has no owner yet. Paste the setup link's code, say who you are, and create a passkey on this device.</p>
         <label>Setup code<input name="token" bind:value={token} autocomplete="off" spellcheck="false" required /></label>
         <label>Your name<input name="name" bind:value={name} autocomplete="name" required /></label>
@@ -50,7 +56,7 @@
       {/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="go">
-        <Button type="submit" variant="primary" text={needsSetup ? "Create passkey" : "Sign in with a passkey"} disabled={busy || (needsSetup && (!token.trim() || !name.trim()))} />
+        <Button type="submit" variant="primary" text={needsSetup ? "Create passkey" : joining ? "Create passkey and join" : "Sign in with a passkey"} disabled={busy || ((needsSetup || joining) && (!token.trim() || !name.trim()))} />
         {#if busy}<Spinner />{/if}
       </div>
     </form>
@@ -67,6 +73,7 @@
   .note { font-size: var(--text-label); color: var(--ink-3); }
   label { display: grid; gap: var(--s-2); font-size: var(--text-label); color: var(--ink-3); }
   input { border: 0; min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
+  .link { text-decoration: underline; color: var(--ink-2); font-size: var(--text-label); }
   .error { font-size: var(--text-label); color: var(--danger, #c0392b); }
   .go { display: flex; align-items: center; gap: var(--s-4); }
 </style>

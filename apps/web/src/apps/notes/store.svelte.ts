@@ -4,10 +4,12 @@
  */
 import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";
-import { FixtureNotes, ServerNotes, type Note, type NoteSummary, type NotesClient, type Space } from "./client";
+import { FixtureNotes, ServerNotes, type Note, type NoteSummary, type NotesClient, type Space, type TagInfo } from "./client";
 import { FixtureInput, ServerInput, type Draft, type InputClient, type PendingWrite } from "./input";
 import { ServerError } from "../../server/client";
 import { say } from "../../server/say";
+import { failed, undoable } from "@calternal/ui";
+import { navigate, segments } from "../../lib/route.svelte";
 
 class NotesStore {
   client: NotesClient = serverMode() ? new ServerNotes(server) : new FixtureNotes();
@@ -21,6 +23,11 @@ class NotesStore {
   spaces = $state<Space[]>([]);
   space = $state<Space | null>(null);
   list = $state<NoteSummary[]>([]);
+  /** The tags in use in the space, and the one the list is filtered by (null: all notes). */
+  tags = $state<TagInfo[]>([]);
+  tag = $state<string | null>(null);
+  /** The space's Trash (loaded when the Trash view opens, and after a delete or restore). */
+  trashed = $state<NoteSummary[]>([]);
   /** The saved note: the revision the next save is checked against. What the editor shows is `view`, which a save never touches (so typing during a save is never overwritten). */
   note = $state<Note | null>(null);
   /** What the editor shows: set when a note is opened, replaced from elsewhere, or when the person takes the other version; `seq` says it is new. */
@@ -83,7 +90,42 @@ class NotesStore {
     this.typing = true; if (this.saveState === "saved" || this.saveState === "failed" || this.saveState === "waiting") this.saveState = "dirty"; }
   async refresh(): Promise<void> {
     if (!this.space) return;
-    this.list = await this.client.list(this.space.id);
+    this.list = await this.client.list(this.space.id, this.tag ?? undefined);
+    void this.client.tags(this.space.id).then((t) => (this.tags = t), () => {});
+  }
+  /** Filters the list by a tag (null: all notes). */
+  async filter(tag: string | null): Promise<void> { this.tag = tag; await this.refresh(); }
+  /** Reads the Trash. */
+  async loadTrash(): Promise<void> {
+    if (!this.space) return;
+    try { this.trashed = await this.client.trash(this.space.id); this.error = ""; } catch (e) { this.error = say(e, "load the Trash"); }
+  }
+  /** Moves a note to the Trash with an Undo; if it is the open note the card goes back to the list. */
+  async remove(id: string, title: string): Promise<void> {
+    try {
+      await this.client.remove(id);
+      await this.refresh();
+      if (segments()[0] === "notes" && segments()[1] === id) navigate("/notes");
+      undoable("note.trash", id, `Moved \u201c${title}\u201d to the Trash`, async () => { try { await this.client.restore(id); await this.refresh(); return true; } catch { return false; } });
+    } catch (e) { failed(say(e, "move the note to the Trash"), () => void this.remove(id, title)); }
+  }
+  /** Brings a note back from the Trash. */
+  async restore(id: string): Promise<void> {
+    try { await this.client.restore(id); await Promise.all([this.refresh(), this.loadTrash()]); } catch (e) { failed(say(e, "restore the note"), () => void this.restore(id)); }
+  }
+  /** Deletes a trashed note for good. */
+  async purge(id: string): Promise<void> {
+    try { await this.client.purge(id); await this.loadTrash(); } catch (e) { failed(say(e, "delete the note"), () => void this.purge(id)); }
+  }
+  /** Renames a note from the list (the revision is the list's: a stale one is a conflict, said in words). */
+  async rename(n: NoteSummary, title: string): Promise<void> {
+    const t = title.trim();
+    if (!t || t === n.title) return;
+    try {
+      const renamed = await this.client.rename(n.id, n.revision ?? "", t);
+      if (this.note?.id === n.id) { this.note = renamed; this.show(renamed); this.saveState = "saved"; }
+      await this.refresh();
+    } catch (e) { failed(say(e, "rename the note"), () => void this.rename(n, title)); }
   }
   /** Tries again after a failed load (the start-up, or the open note). */
   async retry(id?: string): Promise<void> {
