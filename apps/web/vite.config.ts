@@ -13,7 +13,8 @@ export default defineConfig({
   plugins: [svelte()],
   server: { port: 5174, strictPort: true, proxy: api },
   preview: { port: 4174, strictPort: true, proxy: api },
-  build: { target: "es2022" },
+  // CAL_OUT builds somewhere other than dist, so a build for the preview host (base /ai/) never replaces the one the e2e scripts serve (base /).
+  build: { target: "es2022", outDir: process.env.CAL_OUT ?? "dist" },
   resolve: { conditions: ["browser"] },
   test: { environment: "jsdom", include: ["src/**/*.test.ts"], setupFiles: ["./src/test-setup.ts"], css: false },
 });

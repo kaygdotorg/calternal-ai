@@ -27,6 +27,15 @@ describe("composer", () => {
     expect(onpermission).toHaveBeenCalledWith("full");
     expect(onrunson).not.toHaveBeenCalled();
   });
+  it("a mode picked applies at once, wider or narrower, with no confirmation, and says it is for the next turn while one runs", async () => {
+    const onpermission = vi.fn();
+    render(Composer, props({ onpermission, thread: { ...thread, state: "running", permission: "least" } }));
+    await userEvent.click(screen.getByRole("button", { name: "Least access, applies to the next turn" }));
+    expect(screen.getByRole("menu", { name: "Permission mode for the next turn" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
+    expect(onpermission).toHaveBeenCalledWith("full");
+    expect(screen.queryByRole("dialog")).toBeNull(); // no "are you sure"
+  });
   it("where it runs is two choices, a machine then Sandboxed or Direct, in one picker", async () => {
     const onrunson = vi.fn();
     render(Composer, props({ onrunson }));

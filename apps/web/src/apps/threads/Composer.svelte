@@ -111,6 +111,7 @@
   const modelName = $derived(provider?.models.find((m) => m.id === thread.model)?.name ?? thread.model);
   const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.name, icon: p.id === "codex" ? "codex" : "spark", checked: p.id === thread.provider && m.id === thread.model }))));
   const providerIcon = $derived(thread.provider === "codex" ? "codex" : "spark");
+  // A mode picked here applies to the next turn at once, wider or narrower, with no confirmation (owner decision 2026-11-18); a turn that is running keeps the mode it started with, which the chip and menu say.
   const permItems = $derived<MenuItem[]>(PERMISSIONS.map((p) => ({ id: p.id, label: p.label, sub: p.sub, icon: p.icon, checked: p.id === thread.permission })));
   const sheet = $derived(shell.narrow || currentForm() === "touch");
   const PERM_ICON = $derived(PERMISSIONS.find((p) => p.id === thread.permission)!.icon);
@@ -145,10 +146,10 @@
       <Menu open={menuOpen} {items} search label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
     </span>
     <span class="chip permc">
-      <Pill label={permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>
+      <Pill label={running ? `${permissionLabel(thread.permission)}, applies to the next turn` : permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)}>
         <span class="perm">{permissionLabel(thread.permission)}</span>
       </Pill>
-      <Menu open={permOpen} items={permItems} label="Permission mode" trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
+      <Menu open={permOpen} items={permItems} label={running ? "Permission mode for the next turn" : "Permission mode"} trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
     </span>
     <span class="chip where">
       <Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel glass={false} aria-haspopup="dialog" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => (whereOpen = !whereOpen)}>
