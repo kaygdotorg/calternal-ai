@@ -262,7 +262,7 @@ and [job stream implementation](../crates/server/src/plugins/job_api.rs).
 See [Forgejo #34](https://git.kayg.org/kayg/calternal-ai/issues/34) for the
 active qualification status.
 
-On dev-01, prefix Rust test commands with `./scripts/dev-e2e/check-podman-tests.sh`
+On dev-01, prefix Rust test commands with `./scripts/check-podman-tests.sh`
 inside the Nix shell. It gives the run a private temporary directory and fails
 if a container owned by that run remains after the test process returns, then
 attempts to remove those containers. Test fixtures also remove their own
