@@ -1,0 +1,119 @@
+---
+title: "plugin-sdk: index/README"
+---
+
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+
+> **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
+
+[**@calternal/plugin-sdk**](/docs/dev/typescript/plugin-sdk/)
+
+***
+
+[@calternal/plugin-sdk](/docs/dev/typescript/plugin-sdk/) / index
+
+# index
+
+## Classes
+
+- [ContractValidationError](/docs/dev/typescript/plugin-sdk/module-index/classes/contractvalidationerror/)
+
+## Variables
+
+- [GENUI\_VERSION](/docs/dev/typescript/plugin-sdk/module-index/variables/genui_version/)
+- [MAX\_BODY\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_body_bytes/)
+- [MAX\_DOCUMENT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_document_bytes/)
+- [MAX\_GENUI\_DEPTH](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_depth/)
+- [MAX\_GENUI\_NODES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_nodes/)
+- [MAX\_GENUI\_SERIALIZED\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_serialized_bytes/)
+- [MAX\_GENUI\_STRING\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_string_bytes/)
+- [MAX\_GENUI\_TEXT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_text_bytes/)
+- [MAX\_WORKER\_INPUT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_worker_input_bytes/)
+- [MAX\_WORKER\_OUTPUT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_worker_output_bytes/)
+- [MAX\_WORKER\_STDERR\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_worker_stderr_bytes/)
+- [PROTOCOL\_VERSION](/docs/dev/typescript/plugin-sdk/module-index/variables/protocol_version/)
+- [WORKER\_TIMEOUT\_MS](/docs/dev/typescript/plugin-sdk/module-index/variables/worker_timeout_ms/)
+
+## Functions
+
+- [parseOperationRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/parseoperationrequest/)
+- [parseWorkerRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/parseworkerrequest/)
+- [parseWorkerResponse](/docs/dev/typescript/plugin-sdk/module-index/functions/parseworkerresponse/)
+- [validateExtensionView](/docs/dev/typescript/plugin-sdk/module-index/functions/validateextensionview/)
+- [validateGenUiView](/docs/dev/typescript/plugin-sdk/module-index/functions/validategenuiview/)
+- [validateOperationRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/validateoperationrequest/)
+- [~~validatePluginManifest~~](/docs/dev/typescript/plugin-sdk/module-index/functions/validatepluginmanifest/)
+- [validateWorkerRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/validateworkerrequest/)
+- [validateWorkerResponse](/docs/dev/typescript/plugin-sdk/module-index/functions/validateworkerresponse/)
+
+## References
+
+### encodeWorkerFrameV2
+
+Re-exports [encodeWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/encodeworkerframev2/)
+
+***
+
+### HostCallKind
+
+Re-exports [HostCallKind](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/)
+
+***
+
+### InvocationAuthority
+
+Re-exports [InvocationAuthority](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/invocationauthority/)
+
+***
+
+### MAX\_V2\_FRAME\_BYTES
+
+Re-exports [MAX_V2_FRAME_BYTES](/docs/dev/typescript/plugin-sdk/worker-v2/variables/max_v2_frame_bytes/)
+
+***
+
+### MAX\_V2\_PENDING
+
+Re-exports [MAX_V2_PENDING](/docs/dev/typescript/plugin-sdk/worker-v2/variables/max_v2_pending/)
+
+***
+
+### parseWorkerFrameV2
+
+Re-exports [parseWorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/functions/parseworkerframev2/)
+
+***
+
+### validateManifestV1
+
+Re-exports [validateManifestV1](/docs/dev/typescript/plugin-sdk/manifest-v1/functions/validatemanifestv1/)
+
+***
+
+### WorkerContextV2
+
+Re-exports [WorkerContextV2](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/workercontextv2/)
+
+***
+
+### WorkerFrameV2
+
+Re-exports [WorkerFrameV2](/docs/dev/typescript/plugin-sdk/worker-v2/interfaces/workerframev2/)
+
+***
+
+### WorkerHandlerV2
+
+Re-exports [WorkerHandlerV2](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/workerhandlerv2/)
+
+***
+
+### WorkerMessageV2
+
+Re-exports [WorkerMessageV2](/docs/dev/typescript/plugin-sdk/worker-v2/type-aliases/workermessagev2/)
+
+***
+
+### WorkerRuntimeV2
+
+Re-exports [WorkerRuntimeV2](/docs/dev/typescript/plugin-sdk/worker-v2/classes/workerruntimev2/)

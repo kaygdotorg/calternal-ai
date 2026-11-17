@@ -11,3 +11,4 @@ artifacts/
 
 # Generated Rust and TypeScript reference documentation.
 /reference-docs/
+apps/web/public/wallpapers/
