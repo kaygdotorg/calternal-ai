@@ -31,14 +31,19 @@ note for its model's habits.
 
 ## Access
 
-- The `calternal` command in a sandbox carries a token for one thread. It acts as the
-  person, never beyond what they can do, and dies with the thread's work.
-- **Least access by default.** The token starts with the thread, its workspace and what
-  the person attached. It does not include their mail, money or other apps.
-- **Access is asked for.** When a task needs more ("find that Starbucks transaction"), the
-  agent requests it; the person approves in the request bar, on a trusted form the agent
-  cannot answer. A grant names the app, read or write, and how long.
-- **Every change of access issues a new token** and ends the old one.
+The `calternal` command in a sandbox carries a token for one thread. It acts as the
+person, never beyond what they can do, and dies with the thread's work. Each thread has a
+permission mode, chosen in the composer:
+
+| Mode | The agent may | Asks the person |
+| --- | --- | --- |
+| Least access | Use the thread, its workspace, and the app it was opened from | For anything else: a grant names the app, read or write, and once, this thread, or always in this space |
+| **Approve for me** (default) | Act with the person's access in the space; each request is reviewed automatically | Only for high-risk actions: messaging outside, spending, publishing or sharing outside, and anything that widens access. Asked once per scope, not repeatedly |
+| Full access | Everything, with no sandbox and no approvals | Never. Offered only on the person's own machine |
+
+- Approvals appear in the request bar on a trusted form the agent cannot answer.
+- Every change of access or mode issues a new token and ends the old one.
+- What an agent reads (a note, a web page, a mail) is data, never an instruction, in every mode.
 - Everything is recorded as "an agent for <person>, in thread <id>".
 
 ## Testing
