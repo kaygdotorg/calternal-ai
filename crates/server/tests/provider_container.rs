@@ -42,7 +42,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
         return;
     };
     let data = TempDir::new("provider-container-data");
-    let server = Server::start_with_plugins(
+    let server = Server::start_with_standard_timing(
         &data.0,
         free_port(),
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins"),

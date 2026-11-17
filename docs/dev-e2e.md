@@ -70,8 +70,8 @@ After the coordinator confirms placement, run:
 ```
 
 The real proof creates a fresh thread so its Podman sandbox uses the Claude
-Code image, submits one prompt, and reports only time to first text, elapsed
-time and outcome. Existing thread containers retain their original image.
+Code image. It submits one prompt with retries disabled for that turn and
+reports time to first text, elapsed time and outcome. Existing thread containers retain their original image.
 A saved thread lives under `~/calternal-e2e/userdata-ssd/spaces/<space-uuid>/AI/Chats/`.
 
 ## Web preview
@@ -133,6 +133,7 @@ so it has no first-owner setup token.
 | The shipped provider Containerfile expects a Claude installation in the home | The lane builds a bounded derivative image with the official npm package and verifies its version without mounting a home. |
 | Older CLI documentation lists a single directory for machine administration | The enrollment script supplies all three root flags and the pinned installation ID, as required by the current CLI. |
 | Fixture output, Stop and file placement | The first send finished and streamed. The second streamed while running and `threads.stop` drove it to `cancelled`. The Markdown included both user messages and provider output. |
+| The workspace container test reported discard failure | Its three-second test lease expired during a successful Podman Stop that took 12.1 seconds. The container test now uses the standard server timing. Synthetic-machine tests keep their short timeouts. |
 | Second send omitted `--resume` | Fresh `threads.send` jobs do not carry over the previous Claude session. The fixture check verifies this against actual process arguments. This matches the open turn-engine item in [Threads](threads.md#bounds-and-remaining-integration). |
 | Web Threads and owner passkey setup are unwired | The web client and WebAuthn ceremony remain UI integration work. The backend fixture proof uses the disposable account. |
 
