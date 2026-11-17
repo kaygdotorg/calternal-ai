@@ -397,7 +397,7 @@ Everything that needs touches: push and sheet timing, detents, swipe actions, co
 
 ## 12. Sources for "(doc)" values
 
-Fetched from memory of Apple's published pages, **not re-fetched in this pass**; treat as pointers.
+Pointers recalled from memory, **not re-fetched or re-verified in this pass**; treat the values marked (doc) as unconfirmed until checked against these pages.
 
 - iOS and macOS text styles, Dynamic Type size tables: https://developer.apple.com/design/human-interface-guidelines/typography
 - Layout, safe areas, device sizes: https://developer.apple.com/design/human-interface-guidelines/layout
