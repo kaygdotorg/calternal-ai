@@ -27,12 +27,24 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Accessibility is part of the component contract: built-in primitives are accessible by
   default, labels are required by the schema, and a component that fails the checks is
   not enabled.
+- An HTML component may run its own scripts, inside a sealed frame.
+- An agent backend (Codex, Claude Code, others) is a plugin that implements the provider
+  contract.
+- Must-have manifest entries, by kayg's priority: themes (most important: the app must feel
+  like the user's own), machine and workspace types, schedules (automations), webhooks and
+  HTTP routes, skills and instructions, plugin-private storage, secrets requested through a
+  trusted host prompt (the plugin gets a handle, never the value; OpenBao can back it
+  later), asking the user a question mid-run and similar quality-of-life features.
+- A component can be registered as the renderer for a file type, a code block or a message
+  action; that is the same dynamic-component mechanism, not a separate one.
+- The app has management screens for plugins, skills and automations.
+- Machines: cloud users never see machines. People who bring their own can add one from the
+  UI by giving SSH access; installation and enrolment are then automatic.
 
 ## Open
 
-- Which bb concepts become manifest entries: skills and instructions, agent providers,
-  machine and workspace providers, schedules, webhooks, renderers per file type, mentions,
-  themes, plugin-private storage, hooks.
-- Whether custom components may run scripts, and how they are confined.
+- Hooks before an operation, and page-wide scripts: undecided.
+- Composer and chat experience (mentions, commands): needs its own design round.
+- Skills and automations management: needs fleshing out.
 - What a sandbox is on a cloud machine (being measured:
   `docs/measurements/sandbox-containers-vs-microvms.md`).
