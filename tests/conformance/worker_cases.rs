@@ -37,7 +37,7 @@ impl Fixture {
         assert!(result.status.success(), "worker administration failed");
         serde_json::from_slice(&result.stdout).unwrap()
     }
-    async fn worker_machine(&mut self) -> Machine {
+    async fn worker_machine(&mut self, delay_first_launch: bool) -> Machine {
         self.stop();
         self.remote_workers = true;
         self.start().await;
@@ -59,15 +59,36 @@ impl Fixture {
             .unwrap();
         assert!(enroll.success());
         let containers = podman_guard::PodmanGuard::new(dir.join("sandboxes"));
-        let child = Command::new(binary)
-            .args([
-                "machine",
-                "run",
-                "--backend",
-                "podman",
-                "--max-sandboxes",
-                "8",
-            ])
+        let mut command = Command::new(binary);
+        command.args([
+            "machine",
+            "run",
+            "--backend",
+            "podman",
+            "--max-sandboxes",
+            "8",
+        ]);
+        if delay_first_launch {
+            use std::os::unix::fs::PermissionsExt;
+            let podman = dir.join("podman");
+            // Delay exactly one worker bootstrap past the normal warm deadline.
+            std::fs::write(dir.join("first-launch"), "").unwrap();
+            std::fs::write(
+                &podman,
+                r#"#!/bin/sh
+if [ "$1" = run ] && rm "${0%/*}/first-launch" 2>/dev/null; then
+    machine=$PPID
+    sleep 3.2
+    kill -0 "$machine" 2>/dev/null || exit 1
+fi
+exec podman "$@"
+"#,
+            )
+            .unwrap();
+            std::fs::set_permissions(&podman, std::fs::Permissions::from_mode(0o700)).unwrap();
+            command.arg("--podman").arg(podman);
+        }
+        let child = command
             .arg("--dir")
             .arg(&dir)
             .stdout(Stdio::null())
@@ -91,7 +112,8 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
         return;
     }
     let mut f = Fixture::new().await;
-    let machine = f.worker_machine().await;
+    let measure = std::env::var_os("CALTERNAL_MEASURE_WORKERS").is_some();
+    let machine = f.worker_machine(!measure).await;
     jobs_cases::enable(&f, 1, &f.spaces[0]).await;
     let write = || json!({"space_id":f.spaces[0],"text":"worker-private-space-one"});
     let end = Instant::now() + Duration::from_secs(10);
@@ -103,6 +125,13 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
             cold_ms = started.elapsed().as_secs_f64() * 1000.0;
             break;
         }
+        if !measure {
+            assert!(
+                machine.dir.join("first-launch").is_file(),
+                "first invocation timed out during a cold launch: {}",
+                first.body
+            );
+        }
         assert!(
             Instant::now() < end,
             "worker machine never admitted the call: {}",
@@ -111,7 +140,9 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
         assert_eq!(first.body["error"]["code"], "unavailable");
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    if std::env::var_os("CALTERNAL_MEASURE_WORKERS").is_some() {
+    if !measure {
+        assert!(cold_ms >= 3200.0, "first launch was not delayed");
+    } else {
         let mut samples = Vec::new();
         for _ in 0..10 {
             let started = Instant::now();
