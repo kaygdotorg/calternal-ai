@@ -89,7 +89,7 @@
 {/if}
 
 <style>
-  .bar { position: relative; isolation: isolate; border-radius: var(--r-panel); color: var(--ink); max-height: 55%; overflow: auto; }
+  .bar { position: relative; isolation: isolate; border-radius: var(--r-panel); color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
   .bar[data-kind="approval"], .bar[data-kind="secret"] { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
   header { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }

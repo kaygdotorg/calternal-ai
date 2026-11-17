@@ -131,7 +131,7 @@
 </div>
 
 <style>
-  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; }
+  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; mask-image: linear-gradient(to bottom, transparent 0, #000 var(--s-5), #000 calc(100% - var(--s-5)), transparent 100%); }
   .sizer { position: relative; width: 100%; }
   .window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .row { contain: layout style; }

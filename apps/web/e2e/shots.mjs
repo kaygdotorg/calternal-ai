@@ -20,7 +20,7 @@ try {
   await shot("desktop-light-request-approval", "desktop", "light", "/threads/t-wait?panel=run", async (p) => { await p.getByRole("button", { name: "Next request" }).click(); await p.waitForTimeout(300); });
   await shot("desktop-dark-request-secret", "desktop", "dark", "/threads/t-secret?panel=files");
   await shot("desktop-light-long-thread", "desktop", "light", "/threads/t-long?panel=run");
-  await shot("desktop-light-notes", "desktop", "light", "/notes/n-1?panel=inspector", async (p) => { await p.getByRole("button", { name: "Table of contents" }).hover(); await p.waitForTimeout(300); });
+  await shot("desktop-light-notes", "desktop", "light", "/notes/n-1?panel=inspector", async (p) => { await p.getByRole("button", { name: "Table of contents" }).focus(); await p.waitForTimeout(300); });
   await shot("desktop-light-switcher", "desktop", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Threads", exact: true }).last().click(); await p.waitForTimeout(300); });
   await shot("phone-light-thread", "phone", "light", "/threads/t-run");
   await shot("phone-dark-thread", "phone", "dark", "/threads/t-run");

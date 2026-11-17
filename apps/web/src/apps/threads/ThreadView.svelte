@@ -83,5 +83,5 @@
   .list { position: relative; flex: 1; min-height: 0; }
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region); }
   .skeleton { height: 96px; margin: var(--s-4) var(--pad-region); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
-  .bottom { flex: none; display: grid; gap: var(--s-4); width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)); max-height: 70%; }
+  .bottom { flex: 0 1 auto; display: flex; flex-direction: column; gap: var(--s-4); min-height: 0; width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)); }
 </style>

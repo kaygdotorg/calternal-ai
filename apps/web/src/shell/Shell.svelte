@@ -40,7 +40,7 @@
   .side > :global(.side) { width: var(--side-w); }
   /* The middle card's top and bottom edges touch the viewport; it keeps one gap on each side. */
   .mid { min-width: 0; padding: 0 var(--card-gap) 0 0; }
-  .shell[data-sidebar="false"] .mid { padding-left: var(--card-gap); }
+  .shell:not(.narrow)[data-sidebar="false"] .mid { padding-left: var(--card-gap); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   .right { min-width: 0; overflow: hidden; padding-right: var(--card-gap); }
   .right > :global(.right) { height: 100%; width: calc(var(--right-w) - var(--card-gap)); overflow: clip; }
@@ -48,12 +48,13 @@
   /* Narrow: layers. */
   .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(max(var(--pill-h), var(--hit-min)) + 2 * var(--s-4) + var(--s-5) + var(--safe-bottom)); }
   .narrow .side { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
-  .narrow .side > :global(.side) { width: 100%; }
+  .narrow .side > :global(.side) { width: calc(100% - var(--peek)); }
   .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--spring-sheet-ms); }
   .narrow .mid { position: fixed; inset: 0; z-index: 2; padding: 0; transition: transform var(--spring-sheet-ms) var(--spring-sheet), scale var(--spring-sheet-ms) var(--spring-sheet); transform-origin: left center; }
   .narrow[data-sidebar="true"] .mid { transform: translateX(calc(100% - var(--peek))); }
   .narrow[data-right="true"] .mid { scale: 0.96; }
-  .narrow .mid :global(.mid-card) { border-radius: var(--r-frame); }
+  .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--spring-sheet-ms) var(--spring-sheet); }
+  .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-frame); }
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); }
   .scrim { position: fixed; inset: 0; z-index: 3; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
   .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); padding: 0 var(--card-gap) 0 0; transform: translateX(110%); transition: transform var(--spring-sheet-ms) var(--spring-sheet); overflow: visible; }

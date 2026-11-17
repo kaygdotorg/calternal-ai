@@ -40,7 +40,7 @@
   .steps { display: grid; border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); overflow: clip; }
   .head { display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: calc(var(--row-h) + var(--s-3)); padding: 0 var(--s-5) 0 var(--s-4); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); text-align: start; }
   .chips { display: flex; }
-  .chip { width: var(--s-7); height: var(--s-7); margin-left: calc(var(--s-1) * -3); display: grid; place-items: center; border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 var(--s-1) rgb(var(--tint) / 0.9), inset 0 0 0 1px var(--line); color: var(--ink-3); z-index: calc(3 - var(--i)); position: relative; }
+  .chip { width: var(--s-7); height: var(--s-7); margin-left: calc(var(--s-2) * -1); display: grid; place-items: center; border-radius: 50%; background: var(--paper); box-shadow: 0 0 0 var(--s-1) rgb(var(--tint) / 0.9), inset 0 0 0 1px var(--line); color: var(--ink-3); z-index: calc(3 - var(--i)); position: relative; }
   .chip:first-child { margin-left: 0; }
   .sum { flex: 1; font-variant-numeric: tabular-nums; }
   .shimmer { background: linear-gradient(100deg, var(--ink-3) 40%, var(--ink) 50%, var(--ink-3) 60%) 0 0 / 250% 100% no-repeat; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: sweep 1.9s linear infinite; }

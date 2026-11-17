@@ -2,7 +2,7 @@
    surface's contents, so a hover tint never repaints the blur. The surface must not set filter, opacity below 1, a mask or will-change
    (that makes it a backdrop root and the glass blurs nothing).
    Adaptive: lib/material.ts writes --mat-a (tint alpha) and --mat-blur (px) on a surface from the backdrop mesh behind it, once per
-   layout change. Without them the scheme's defaults apply. Touch forms scale the blur down by --blur-scale (cheaper on a phone). */
+   layout change. Without them the scheme's defaults apply. The blur stays at or under 24 px: it is the mockup's floating-glass value, and software compositors (the headless Chromium used for screenshots) stop blurring beyond about that. Touch forms scale the blur down by --blur-scale (cheaper on a phone). */
 .glass {
   position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
   background: rgb(var(--tint) / var(--mat-a, var(--glass-a)));

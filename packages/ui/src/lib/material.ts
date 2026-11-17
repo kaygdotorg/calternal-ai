@@ -77,13 +77,13 @@ const BLUR = num(tokens.light["glass-blur"]);
 /**
  * The material for a surface whose background has brightness `behind`. How much the background fights the ink (`need`, 0..1):
  * a light scheme has dark ink, so it is the dark parts behind that hurt; a dark scheme is the other way round. The tint grows
- * by up to 0.45 and the blur by up to half as `need` does; with `need` 0 the approved values are returned unchanged.
+ * by up to 0.45 and the blur by up to a fifth as `need` does; with `need` 0 the approved values are returned unchanged.
  * `form` is accepted so the touch tuning can differ later; the touch blur scale itself is a CSS token.
  */
 export function material(scheme: Scheme, behind: number, role: Role = "glass", _form: Form = "desktop"): Material {
   const need = scheme === "light" ? Math.max(0, 0.6 - behind) / 0.6 : Math.min(1, Math.max(0, behind - 0.12) / 0.5);
   const base = BASE[scheme][role];
-  return { alpha: Math.min(0.92, base + 0.45 * need), blur: Math.round(BLUR * (1 + 0.5 * need)) };
+  return { alpha: Math.min(0.92, base + 0.45 * need), blur: Math.round(BLUR * (1 + 0.2 * need)) };
 }
 
 // ---- registry: surfaces ask to be adapted; one frame does all the reads, then all the writes ----
