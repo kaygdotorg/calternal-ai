@@ -161,11 +161,17 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         }
     }
     #[cfg(all(feature = "test-plugins", debug_assertions))]
-    calternal_store::timings::emit(
-        "admission",
-        request_id,
-        Some(admission_started.elapsed().as_micros()),
-    );
+    {
+        let elapsed = admission_started.elapsed().as_micros();
+        let request = request_id.to_owned();
+        // Debug diagnostics may write stderr; keep that I/O off the async task.
+        // Awaiting bounds diagnostic work by the existing admitted requests.
+        tokio::task::spawn_blocking(move || {
+            calternal_store::timings::emit("admission", &request, Some(elapsed));
+        })
+        .await
+        .map_err(|_| Error::internal("admission diagnostic failed"))?;
+    }
     if let Some(a) = &agent {
         let declared = state
             .registry
