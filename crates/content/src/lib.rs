@@ -81,6 +81,13 @@ pub fn now_rfc3339() -> String {
         .expect("timestamp format")
 }
 impl Content {
+    /// Return the validated SSD userdata root for descriptor-relative, authorized
+    /// metadata reads. The caller must retain root guards and check space access.
+    /// Cost: one path clone, no I/O or content/space locks.
+    pub fn userdata_root(&self) -> PathBuf {
+        self.roots.userdata_ssd.clone()
+    }
+
     /// Opens the identifier-only catalog and replays unfinished space intents.
     /// Roots must have been validated/locked by the host. `secrets` is the journal
     /// witness root, outside production state backups. Fault callbacks are trusted
@@ -94,7 +101,12 @@ impl Content {
         idle_after: Duration,
         fault: fn(FaultPoint),
     ) -> Result<Self> {
-        for path in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd, &secrets] {
+        for path in [
+            &roots.appdata,
+            &roots.userdata_ssd,
+            &roots.userdata_hdd,
+            &secrets,
+        ] {
             calternal_auth::private_fs::directory(path).map_err(Error::internal)?;
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
@@ -147,9 +159,10 @@ impl Content {
                         for id in ids {
                             if let Err(e) =
                                 space.place(Uuid::parse_str(&id).map_err(Error::internal)?, fault)
-                                && e.code != ErrorCode::Conflict {
-                                    return Err(e);
-                                }
+                                && e.code != ErrorCode::Conflict
+                            {
+                                return Err(e);
+                            }
                         }
                         Ok(())
                     })?;
@@ -172,18 +185,42 @@ impl Content {
         } else {
             // Bound cold admissions before opening SQLite/writer handles. Never
             // hold the map mutex across journal round trips or database I/O.
-            let _admission=lock(&self.admission);
-            let again={lock(&self.spaces).get(&id).map(|e|e.space.clone())};
-            if let Some(held)=again {held} else {
+            let _admission = lock(&self.admission);
+            let again = { lock(&self.spaces).get(&id).map(|e| e.space.clone()) };
+            if let Some(held) = again {
+                held
+            } else {
                 {
-                    let mut map=lock(&self.spaces);
-                    if map.len()>=64 {
-                        if let Some(old)=map.iter().filter(|(_,e)|Arc::strong_count(&e.space)==1).min_by_key(|(_,e)|e.last_used).map(|(k,_)|*k){map.remove(&old);}
-                        else {return Err(Error::new(ErrorCode::Unavailable,"content cache is busy"));}
+                    let mut map = lock(&self.spaces);
+                    if map.len() >= 64 {
+                        if let Some(old) = map
+                            .iter()
+                            .filter(|(_, e)| Arc::strong_count(&e.space) == 1)
+                            .min_by_key(|(_, e)| e.last_used)
+                            .map(|(k, _)| *k)
+                        {
+                            map.remove(&old);
+                        } else {
+                            return Err(Error::new(
+                                ErrorCode::Unavailable,
+                                "content cache is busy",
+                            ));
+                        }
                     }
                 }
-                let opened=Arc::new(Mutex::new(Space::open(&self.roots.appdata,&self.roots.userdata_ssd,id,self.journals.handle(id)?)?));
-                lock(&self.spaces).insert(id,Entry {space:opened.clone(),last_used:Instant::now()});
+                let opened = Arc::new(Mutex::new(Space::open(
+                    &self.roots.appdata,
+                    &self.roots.userdata_ssd,
+                    id,
+                    self.journals.handle(id)?,
+                )?));
+                lock(&self.spaces).insert(
+                    id,
+                    Entry {
+                        space: opened.clone(),
+                        last_used: Instant::now(),
+                    },
+                );
                 opened
             }
         };

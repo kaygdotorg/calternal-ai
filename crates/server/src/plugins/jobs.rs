@@ -174,6 +174,12 @@ pub enum RunEnd {
     Done(Value),
     /// The plugin parked the job until its children report.
     Waiting,
+    /// Turn lost its machine; explicit resume is required.
+    Interrupted,
+    /// Provider error is durably waiting for its scheduled retry.
+    RetryWaiting,
+    /// Provider exited without a definite outcome.
+    OutcomeUnknown,
     /// The run failed, was refused or broke protocol.
     Failed,
 }
@@ -194,7 +200,7 @@ type OpenSpace = (Arc<Mutex<Connection>>, u64);
 
 /// Durable job records plus live streams. Cheap to share behind the app state.
 pub struct Jobs {
-    root: Option<PathBuf>,
+    pub(super) root: Option<PathBuf>,
     spaces: Mutex<HashMap<String, OpenSpace>>,
     tick: AtomicUsize,
     pub(super) routes: RwLock<HashMap<String, String>>,
@@ -255,7 +261,7 @@ impl Jobs {
 
     /// The space's job connection, opening (and applying retention to) it on first
     /// use and closing the least recently used beyond [`MAX_OPEN_SPACES`].
-    fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, HostError> {
+    pub(super) fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, HostError> {
         let root = self
             .root
             .as_ref()
@@ -355,6 +361,11 @@ impl Jobs {
             {
                 return Ok(id);
             }
+            if a.operation=="agent.turn" {
+                let thread=a.input["request"]["thread_id"].as_str().ok_or_else(||HostError::invalid_input("turn needs a thread UUID"))?;
+                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
+                if active{return Err(HostError::conflict("this thread already has active or interrupted work"));}
+            }
             let active: i64 = tx
                 .query_row(&format!("SELECT count(*) FROM jobs WHERE state IN {ACTIVE}"), [], |r| r.get(0))
                 .map_err(db_err)?;
@@ -434,10 +445,25 @@ impl Jobs {
 
     /// The live stream of a job, created on demand. Cost: one map lock.
     pub fn live(&self, id: &str) -> Arc<Live> {
-        self.live
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .entry(id.to_owned())
+        let mut map = self.live.lock().unwrap_or_else(|p| p.into_inner());
+        let now = std::time::Instant::now();
+        map.retain(|_, l| {
+            let b = l.lock();
+            b.running || b.subscribers > 0 || b.retain_until.is_none_or(|t| t > now)
+        });
+        let mut stopped: Vec<_> = map
+            .iter()
+            .filter_map(|(id, l)| {
+                let b = l.lock();
+                (!b.running && b.subscribers == 0).then_some((id.clone(), b.retain_until))
+            })
+            .collect();
+        stopped.sort_by_key(|(_, t)| *t);
+        let excess = stopped.len().saturating_sub(63);
+        for (old, _) in stopped.into_iter().take(excess) {
+            map.remove(&old);
+        }
+        map.entry(id.to_owned())
             .or_insert_with(|| Arc::new(Live::new()))
             .clone()
     }
@@ -485,6 +511,9 @@ impl Jobs {
                 Err(_) => (JobState::Failed, "null".into()),
             },
             RunEnd::Waiting => (JobState::Waiting, "null".into()),
+            RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
+            RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
+            RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
             RunEnd::Failed => (JobState::Failed, "null".into()),
         };
         let wake = self.tx(space, |tx| {
@@ -527,7 +556,7 @@ impl Jobs {
             }
             Ok(wake)
         })?;
-        self.settle(id);
+        self.settle_run(id, run);
         Ok(wake)
     }
 
@@ -584,14 +613,29 @@ impl Jobs {
 
     /// Stop a job's stream after its run ended: wake subscribers and drop the buffer
     /// once nobody is subscribed. Cost: two map/stream locks.
-    fn settle(&self, id: &str) {
+    pub(super) fn settle(&self, id: &str) {
+        self.settle_inner(id, None)
+    }
+
+    /// Settle only a matching live run; late completion cannot stop its successor.
+    pub(super) fn settle_run(&self, id: &str, run: u32) {
+        self.settle_inner(id, Some(run))
+    }
+
+    fn settle_inner(&self, id: &str, expected: Option<u32>) {
         let mut live = self.live.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(l) = live.get(id).cloned() {
             let idle = {
                 let mut b = l.lock();
+                if expected.is_some_and(|run| b.run != run) {
+                    return;
+                }
                 b.running = false;
                 b.cancel = None;
-                b.subscribers == 0
+                if b.retain_until.is_some() {
+                    b.retain_until = Some(std::time::Instant::now() + Duration::from_secs(30));
+                }
+                b.subscribers == 0 && b.retain_until.is_none()
             };
             l.bump();
             if idle {

@@ -214,7 +214,10 @@ pub const POLICIES: &[Policy] = &[
 /// Find an explicit host policy using a bounded, allocation-free scan.
 /// Plugin rows are looked up through [`crate::plugins::Registry::policy`].
 pub fn policy(operation: &str) -> Option<&'static Policy> {
-    POLICIES.iter().find(|p| p.operation == operation)
+    POLICIES
+        .iter()
+        .chain(agent_policies())
+        .find(|p| p.operation == operation)
 }
 
 impl Policy {
@@ -267,4 +270,30 @@ impl Policy {
             Some(_) => Ok(()),
         }
     }
+}
+
+/// Policies for the manual-provider seam, derived from its operation declarations.
+/// The turn dispatcher additionally checks the actual job owner, current space
+/// and fresh-person proof. Built once, then borrowed without allocation.
+pub fn agent_policies() -> &'static [Policy] {
+    static ROWS: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    ROWS.get_or_init(|| {
+        calternal_core::AGENT_OPERATIONS
+            .iter()
+            .map(|(id, _, _)| Policy {
+                operation: Cow::Borrowed(*id),
+                required: if *id == "agent.events" {
+                    Capability::SpaceRead
+                } else {
+                    Capability::PluginsUse
+                },
+                scope: if matches!(*id, "agent.run" | "agent.check") {
+                    Scope::Space
+                } else {
+                    Scope::Account
+                },
+                constraint: Constraint::None,
+            })
+            .collect()
+    })
 }

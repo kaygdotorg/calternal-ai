@@ -36,6 +36,7 @@ pub(super) struct Buffer {
     pub(super) subscribers: usize,
     pub(super) cancel: Option<Arc<CancelFlag>>,
     pub(super) running: bool,
+    pub(super) retain_until: Option<std::time::Instant>,
 }
 
 /// In-memory stream of one job: bounded chunk buffer, run epoch and change signal.
@@ -66,6 +67,7 @@ impl Live {
                 subscribers: 0,
                 cancel: None,
                 running: false,
+                retain_until: None,
             }),
             changed: watch::channel(0).0,
         }
@@ -77,6 +79,13 @@ impl Live {
 
     pub(super) fn bump(&self) {
         self.changed.send_modify(|v| *v = v.wrapping_add(1));
+    }
+
+    /// Keep a completed manual-turn stream for polling for thirty seconds (the
+    /// job service also caps completed retained streams at 64). No I/O.
+    pub fn retain_for_polling(&self) {
+        self.lock().retain_until =
+            Some(std::time::Instant::now() + std::time::Duration::from_secs(630));
     }
 
     /// Whether run `run` is still the current, uncancelled run. Cost: one lock.

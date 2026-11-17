@@ -95,6 +95,13 @@ fn note(item: &Item, space: &str) -> Note {
     }
 }
 impl Store {
+    /// Clone the validated userdata root for bounded instruction reads outside
+    /// the global preview lock. The caller must authorize the UUID-selected space.
+    /// Cost: one path clone; no file I/O or SQLite.
+    pub fn instruction_root(&self) -> PathBuf {
+        self.content.userdata_root()
+    }
+
     /// Shared secret store under this appdata root. Cost: one reference-count
     /// increment, so callers can release the store lock before secret I/O.
     pub fn secrets(&self) -> std::sync::Arc<calternal_secrets::LocalStore> {
@@ -519,7 +526,11 @@ impl Store {
     /// UUID forms of an acting account and a content space, for worker authority
     /// correlation only (they grant nothing). Cost: at most two indexed binding
     /// lookups; a first-seen fixture name inserts one binding row.
-    pub fn worker_ids(&self, principal: &str, space_id: &str) -> Result<(String, String), HostError> {
+    pub fn worker_ids(
+        &self,
+        principal: &str,
+        space_id: &str,
+    ) -> Result<(String, String), HostError> {
         Ok((
             self.account(principal)?.to_string(),
             self.space(space_id)?.to_string(),
@@ -589,7 +600,11 @@ impl Store {
         &self,
         space_id: &str,
         principal: &str,
-        kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
+        kinds: &[(
+            String,
+            calternal_content::Placement,
+            calternal_content::FileFormat,
+        )],
         collections: &[(String, String, String)],
     ) -> Result<(), HostError> {
         let space = self.space(space_id)?;

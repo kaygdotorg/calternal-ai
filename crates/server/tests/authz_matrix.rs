@@ -261,7 +261,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     assert_eq!(rows.len(), MATRIX.len(), "duplicate matrix row");
     // The real stored-directory matrix lives in spaces_matrix.rs, where every
     // directory handler and its target invariants are exercised against SQLite.
-    let stored_rows: BTreeSet<_> = [
+    let mut stored_rows: BTreeSet<_> = [
         "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
         "spaces.create",
@@ -281,6 +281,12 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     ]
     .into_iter()
     .collect();
+    // Manual-turn controls are covered by provider_turns.rs and agent_cases conformance.
+    stored_rows.extend(
+        calternal_core::AGENT_OPERATIONS
+            .iter()
+            .map(|(id, _, _)| *id),
+    );
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
@@ -304,12 +310,13 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     );
     let all: BTreeSet<&str> = POLICIES
         .iter()
+        .chain(calternal_server::authz::agent_policies())
         .map(|p| p.operation.as_ref())
         .chain(plugin_rows.iter().copied())
         .collect();
     assert_eq!(rows, all);
     assert_eq!(
-        POLICIES.len() + plugin_rows.len(),
+        POLICIES.len() + calternal_server::authz::agent_policies().len() + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );

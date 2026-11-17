@@ -136,7 +136,7 @@ async fn execute<D: Directory>(
     let identity = Identity {
         id: Arc::from(job.account.as_str()),
     };
-    if !job.session.is_live(&state.tokens).await {
+    if !job.session.is_live_in(state).await {
         return Err(refused());
     }
     let (st, k, account, p2, jid, sp) = (

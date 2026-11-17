@@ -26,6 +26,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Run, watch and control official provider sessions in machine sandboxes.
+    Agent {
+        #[command(flatten)]
+        args: calternal_cli::agent::Args,
+    },
+    /// Invoke a discovered operation with structured JSON input.
+    Invoke {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        operation: String,
+        #[arg(long, default_value = "{}")]
+        input: String,
+    },
+    /// Discover available operations using the current person or thread credential.
+    Describe {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+    },
     /// Serve the development preview on 127.0.0.1.
     Serve {
         /// Disposable data directory (created if missing, mode 0700).
@@ -95,6 +113,15 @@ fn main() {
     // Reads the local time zone, which is only safe before any thread starts.
     let out = Output::detect(cli.json);
     let code = match cli.cmd {
+        Cmd::Agent { args } => calternal_cli::agent::main(args, &out),
+        Cmd::Invoke {
+            connection,
+            operation,
+            input,
+        } => calternal_cli::agent::invoke(connection, Some(operation), input, &out),
+        Cmd::Describe { connection } => {
+            calternal_cli::agent::invoke(connection, None, "{}".into(), &out)
+        }
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
@@ -326,6 +353,9 @@ async fn serve(
             ));
         }
     }
+    calternal_server::turns::retry::recover(&state, &machines)
+        .await
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
 
     let base_url = if development {

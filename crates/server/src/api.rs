@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Request, State};
-use axum::handler::HandlerWithoutStateExt;
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -21,7 +20,7 @@ use calternal_core::{
     NotesCreateInput, NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
     NotesListResult, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
     PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
-    canonical_request_input, operation_catalog, parse_request,
+    canonical_request_input, parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -235,11 +234,50 @@ async fn guard<D: Directory>(
             } else {
                 None
             };
-            match session.or_else(|| {
-                bearer(req.headers())
-                    .and_then(|t| state.tokens.authenticate(t))
-                    .map(|p| (p, Session::Static))
-            }) {
+            let thread_token = if let Some(raw) = bearer(req.headers())
+                .and_then(|b| std::str::from_utf8(b).ok())
+                .filter(|t| t.starts_with("ct1_"))
+            {
+                if path != "/api/v1/operations" && path != "/api/v1/describe" {
+                    break 'resp deny(HostError::forbidden(
+                        "thread tokens may only call operations or discovery",
+                    ));
+                }
+                let (st, token) = (state.clone(), raw.to_owned());
+                tokio::task::spawn_blocking(move || {
+                    st.jobs
+                        .agent_authenticate(&token)
+                        .map(|a| a.map(|a| (a, calternal_auth::token::hash32(&token).to_vec())))
+                })
+                .await
+                .ok()
+                .and_then(Result::ok)
+                .flatten()
+            } else {
+                None
+            };
+            if let Some((a, _)) = &thread_token {
+                req.extensions_mut().insert(a.clone());
+            }
+            match thread_token
+                .map(|(a, hash)| {
+                    (
+                        Identity {
+                            id: Arc::from(a.account),
+                        },
+                        Session::Agent {
+                            space: a.space,
+                            job: a.job,
+                            token_hash: hash,
+                        },
+                    )
+                })
+                .or(session)
+                .or_else(|| {
+                    bearer(req.headers())
+                        .and_then(|t| state.tokens.authenticate(t))
+                        .map(|p| (p, Session::Static))
+                }) {
                 Some((p, session)) => {
                     req.extensions_mut().insert(p);
                     req.extensions_mut().insert(session);
@@ -251,6 +289,10 @@ async fn guard<D: Directory>(
         }
         let credentials = req.headers().clone();
         let admitted = req.extensions().get::<Identity>().cloned();
+        let agent_admitted = req
+            .extensions()
+            .get::<crate::turns::access::Authority>()
+            .cloned();
         let response = next.run(req).await;
         if api && !account_route && response.status().is_success() {
             let session = if let Some(service) = state.tokens.http_auth() {
@@ -262,8 +304,26 @@ async fn guard<D: Directory>(
             } else {
                 None
             };
-            let current =
-                session.or_else(|| bearer(&credentials).and_then(|t| state.tokens.authenticate(t)));
+            let agent_current = if agent_admitted.is_some() {
+                let token = bearer(&credentials)
+                    .and_then(|b| std::str::from_utf8(b).ok())
+                    .unwrap_or("")
+                    .to_owned();
+                let st = state.clone();
+                tokio::task::spawn_blocking(move || st.jobs.agent_authenticate(&token))
+                    .await
+                    .ok()
+                    .and_then(Result::ok)
+                    .flatten()
+                    .map(|a| Identity {
+                        id: Arc::from(a.account),
+                    })
+            } else {
+                None
+            };
+            let current = agent_current
+                .or(session)
+                .or_else(|| bearer(&credentials).and_then(|t| state.tokens.authenticate(t)));
             if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
                 || current.is_none()
             {
@@ -308,20 +368,45 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
         .cloned()
         .expect("guard inserts principal");
     let st = state.clone();
-    let principal = match tokio::task::spawn_blocking(move || st.tokens.describe(&p)).await {
-        Ok(p) => p,
+    let agent = req
+        .extensions()
+        .get::<crate::turns::access::Authority>()
+        .cloned();
+    let (principal, operations) = match tokio::task::spawn_blocking(move || {
+        let mut principal = st.tokens.describe(&p);
+        let mut operations = calternal_core::cached_operation_catalog().to_vec();
+        if let Some(a) = agent {
+            principal.spaces.retain(|s| s.id == a.space);
+            let sample =
+                serde_json::from_value(serde_json::json!({"space_id":a.space,"job_id":a.job}))
+                    .unwrap_or_default();
+            operations.retain(|o| a.check(&o.id, &sample).is_ok());
+        }
+        (principal, operations)
+    })
+    .await
+    {
+        Ok(v) => v,
         Err(_) => return failure(None, HostError::internal("directory task failed")),
     };
     let result = DescribeResult {
         protocol_version: PROTOCOL_VERSION,
         genui_version: GENUI_VERSION,
         principal,
-        operations: operation_catalog(),
+        operations,
     };
     json_response(StatusCode::OK, &result)
 }
 
 async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
+    let machines = req
+        .extensions()
+        .get::<Arc<crate::machines::MachineService>>()
+        .cloned();
+    let agent = req
+        .extensions()
+        .get::<crate::turns::access::Authority>()
+        .cloned();
     let p = req
         .extensions()
         .get::<Identity>()
@@ -367,15 +452,38 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         Err(e) => return failure(salvage_request_id(&bytes), e.into()),
     };
     let rid = request.request_id.clone();
-    let result = dispatch(
-        state,
-        p,
-        session,
-        &request.request_id,
-        &request.operation,
-        request.input,
-    )
-    .await;
+    let result = if calternal_core::AGENT_OPERATIONS
+        .iter()
+        .any(|(id, _, _)| *id == request.operation)
+    {
+        match machines {
+            Some(m) => {
+                crate::turns::dispatch(
+                    state,
+                    m,
+                    p,
+                    session,
+                    agent,
+                    &request.request_id,
+                    &request.operation,
+                    request.input,
+                )
+                .await
+            }
+            None => Err(HostError::unavailable("machines are not enabled")),
+        }
+    } else {
+        dispatch_scoped(
+            state,
+            p,
+            session,
+            &request.request_id,
+            &request.operation,
+            request.input,
+            agent,
+        )
+        .await
+    };
     fault::hit(FaultPoint::BeforeReply);
     match result {
         Ok(data) => json_response(StatusCode::OK, &OperationResponse::success(rid, data)),
@@ -441,7 +549,18 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, HostError> {
-    let p = p.into();
+    dispatch_scoped(state, p.into(), session, request_id, op, input, None).await
+}
+
+async fn dispatch_scoped<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    session: Session,
+    request_id: &str,
+    op: &str,
+    input: JsonObject,
+    agent: Option<crate::turns::access::Authority>,
+) -> Result<Value, HostError> {
     let mut input = input;
     let item_scoped = state
         .registry
@@ -529,6 +648,47 @@ pub async fn dispatch<D: Directory>(
     tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &identity, &checked))
         .await
         .map_err(|_| HostError::internal("directory task failed"))??;
+    if let Some(a) = &agent {
+        let declared = state
+            .registry
+            .owner_of_operation(op)
+            .and_then(|p| p.operation(op))
+            .map(|d| (d.mutates, d.risk))
+            .or_else(|| calternal_core::cached_operation(op).map(|d| (d.mutates, d.risk)));
+        let Some((mutates, risk)) = declared else {
+            return Err(HostError::forbidden("operation has no declared risk"));
+        };
+        let (scope, checked, operation, retry_id) = (
+            a.clone(),
+            input.clone(),
+            op.to_owned(),
+            request_id.to_owned(),
+        );
+        let verdict = tokio::task::spawn_blocking(move || {
+            scope.check_operation(&operation, &checked, &retry_id, mutates, risk)
+        })
+        .await
+        .map_err(|_| HostError::internal("scope check task failed"))?;
+        if let Err(e) = verdict {
+            if e.code != ErrorCode::Forbidden {
+                return Err(e);
+            }
+            let (st, a, op, input, rid) = (
+                state.clone(),
+                a.clone(),
+                op.to_owned(),
+                input.clone(),
+                request_id.to_owned(),
+            );
+            let approval = tokio::task::spawn_blocking(move || {
+                st.jobs
+                    .agent_action_request(&a, &op, &input, &rid, risk, mutates)
+            })
+            .await
+            .map_err(|_| HostError::internal("approval task failed"))??;
+            return Err(e.with_details(serde_json::json!({"status":"approval_required","approval_id":approval,"job_id":agent.as_ref().map(|a|a.job.as_str()),"request_id":request_id})));
+        }
+    }
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,
@@ -946,7 +1106,7 @@ async fn invoke_plugin<D: Directory>(
         .await;
     // Delivery checks run whatever the worker answered, so a refusal caused by a
     // revocation reports the same error the revocation itself would.
-    if !session.is_live(&state.tokens).await {
+    if !session.is_live_in(&state).await {
         return Err(HostError::unauthorized("missing or invalid session"));
     }
     let (space_key, plugin2) = (space.clone(), plugin.clone());

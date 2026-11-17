@@ -20,6 +20,10 @@ CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;
 CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;
+CREATE TABLE IF NOT EXISTS agent_access(thread TEXT PRIMARY KEY,job TEXT NOT NULL,account TEXT NOT NULL,hash BLOB UNIQUE,scope TEXT NOT NULL,expires_ms INTEGER NOT NULL,run INTEGER NOT NULL) STRICT;
+CREATE INDEX IF NOT EXISTS agent_access_job ON agent_access(job);
+CREATE TABLE IF NOT EXISTS agent_approvals(id TEXT PRIMARY KEY,job TEXT NOT NULL,app TEXT NOT NULL,write_access INTEGER NOT NULL,approved INTEGER NOT NULL,action TEXT NOT NULL) STRICT;
+CREATE INDEX IF NOT EXISTS agent_approvals_job ON agent_approvals(job);
 PRAGMA user_version=1;COMMIT;";
 
 pub(super) fn db_err(e: rusqlite::Error) -> HostError {
@@ -31,6 +35,8 @@ pub(super) fn state_name(state: JobState) -> &'static str {
     match state {
         JobState::Admitted => "admitted",
         JobState::Running => "running",
+        JobState::RetryWaiting => "retry_waiting",
+        JobState::Interrupted => "interrupted",
         JobState::Waiting => "waiting",
         JobState::Done => "done",
         JobState::Failed => "failed",
@@ -43,6 +49,8 @@ pub(super) fn parse_state(name: &str) -> JobState {
     match name {
         "admitted" => JobState::Admitted,
         "running" => JobState::Running,
+        "retry_waiting" => JobState::RetryWaiting,
+        "interrupted" => JobState::Interrupted,
         "waiting" => JobState::Waiting,
         "done" => JobState::Done,
         "cancelled" => JobState::Cancelled,
@@ -51,9 +59,10 @@ pub(super) fn parse_state(name: &str) -> JobState {
     }
 }
 
-pub(super) const ACTIVE: &str = "('admitted','running','waiting')";
+pub(super) const ACTIVE: &str = "('admitted','running','waiting','interrupted','retry_waiting')";
 
-pub(super) fn now_ms() -> i64 {
+/// Current wall-clock Unix milliseconds, shared by job retention and retry scheduling.
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)
@@ -153,6 +162,8 @@ pub(super) fn retain(c: &Connection) -> Result<(), HostError> {
         "BEGIN IMMEDIATE;
          DELETE FROM jobs WHERE finished_ms IS NOT NULL AND (finished_ms < {cutoff} OR id NOT IN
            (SELECT id FROM jobs WHERE finished_ms IS NOT NULL ORDER BY finished_ms DESC LIMIT {MAX_FINAL_PER_SPACE}));
+         DELETE FROM agent_access WHERE job NOT IN (SELECT id FROM jobs);
+         DELETE FROM agent_approvals WHERE job NOT IN (SELECT id FROM jobs);
          DELETE FROM child_results WHERE parent NOT IN (SELECT id FROM jobs);
          COMMIT;"
     ))
@@ -210,6 +221,10 @@ impl Jobs {
                 drop(st);
                 let mut wake = vec![];
                 for Active { id, state, plugin, operation, runs, parent } in rows {
+                    if operation == "agent.turn" {
+                        if state!="retry_waiting" {set_state(tx, &id, JobState::Interrupted, "null")?;}
+                        continue;
+                    }
                     match state.as_str() {
                         "running" if resumable(&plugin, &operation) && runs < MAX_RUNS => {
                             tx.execute("UPDATE jobs SET state='admitted' WHERE id=?1", [&id]).map_err(db_err)?;

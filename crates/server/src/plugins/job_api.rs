@@ -74,7 +74,7 @@ async fn visible<D: Directory>(
     job: &Job,
     required: Capability,
 ) -> bool {
-    if !session.is_live(&state.tokens).await {
+    if !session.is_live_in(state).await {
         return false;
     }
     let (st, account, space, plugin, generation) = (

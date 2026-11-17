@@ -222,6 +222,23 @@ impl<D: Directory> SpaceHost<D> {
         Ok(json!({ "checkpoint_seq": run.live.next_seq() }))
     }
 
+    fn agent_kind_allowed(&self, kind: &str, write: bool) -> bool {
+        let Session::Agent {
+            space,
+            job,
+            token_hash,
+        } = &self.session
+        else {
+            return true;
+        };
+        let Ok(Some(a)) = self.state.jobs.agent_current(space, job, token_hash) else {
+            return false;
+        };
+        a.mode != calternal_core::AgentMode::LeastAccess
+            || a.source_app == kind
+            || a.grants.iter().any(|(p, w)| p == kind && (!write || *w))
+    }
+
     fn has(&self, capability: Capability) -> bool {
         self.state
             .tokens
@@ -231,6 +248,9 @@ impl<D: Directory> SpaceHost<D> {
 
     fn read_item(&self, input: &Value) -> Result<Value, Error> {
         let (kind, id) = item_target(input, &["kind", "item_id"])?;
+        if !self.agent_kind_allowed(kind, false) {
+            return Err(Error::Refused);
+        }
         let store = self.state.store.lock().map_err(|_| Error::Refused)?;
         let item = store
             .read_item(&self.space, kind, id)
@@ -244,6 +264,9 @@ impl<D: Directory> SpaceHost<D> {
             &["kind", "item_id", "base_revision", "metadata", "text"],
         )?;
         let kind = str_field(object, "kind")?.ok_or(Error::Invalid)?;
+        if !self.agent_kind_allowed(kind, true) {
+            return Err(Error::Refused);
+        }
         let text = object
             .get("text")
             .and_then(Value::as_str)
@@ -293,9 +316,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
             return false;
         };
         if self.run.as_ref().is_some_and(|r| !r.live.is_current(r.run))
-            || !self
-                .session
-                .is_live_blocking(&self.state.tokens, &self.runtime)
+            || !self.session.is_live_in_blocking(&self.state, &self.runtime)
             || !self.has(required)
         {
             return false;
