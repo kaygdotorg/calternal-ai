@@ -20,36 +20,81 @@
     const q = route.query.get("switcher");
     if ((q === "card" || q === "sidebar") && appearance.prefs.switcher !== q) appearance.change((x) => (x.switcher = q));
   });
-  // Phone gestures: swipe right from the left edge opens the sidebar, swipe left closes it; swipe left from the right edge opens the side panel, swipe right closes it.
-  // Touch only, horizontal intent (more across than down), at least 56 px; the page itself keeps its vertical scroll.
-  let gx = 0, gy = 0, gedge: "l" | "r" | null = null, gskip = false;
-  /** While a swipe from the left edge is under the finger the middle card follows it (swipe back: the list is revealed under the card). */
+  // Phone gestures (docs/ui-motion.md "Panels over the card"). The middle card and the side panel follow the finger one to one; on release they settle by the sheet motion tokens
+  // (`--dur-sheet` 340 ms on `--ease-sheet`), toward whichever rest state the position and the release speed point at. What a gesture decides goes through `shell.over`/`shell.dismiss`,
+  // so it is a history entry: Back, Forward and the platform's own back gesture do the same thing. Touch only; horizontal intent (more across than down); a row swipe, a sheet drag or a
+  // text selection is not a panel gesture. Interruptible: a touch while either is still settling takes hold of it where it is (its current transform) and carries on from there.
+  type Mode = "card" | "panel";
+  let mode: Mode | null = null, gx = 0, gy = 0, g0 = 0, gskip = false, gtouch = false, gmoved = false;
+  let samples: { t: number; x: number }[] = [];
+  /** The middle card's offset from rest, and the side panel's offset from open, while a finger holds them (px); null when nothing is held. */
   let drag = $state<number | null>(null);
+  let dragMode = $state<Mode | null>(null);
+  let midEl = $state<HTMLElement>(), rightEl = $state<HTMLElement>(), sideEl = $state<HTMLElement>();
+  const matrixX = (el: Element | undefined) => (el ? new DOMMatrixReadOnly(getComputedStyle(el).transform).m41 : 0);
+  /** How far the card travels to show the list, and how wide the side panel is. */
+  const travel = () => sideEl?.firstElementChild?.getBoundingClientRect().width ?? innerWidth * 0.8;
+  const panelWidth = () => rightEl?.getBoundingClientRect().width ?? innerWidth * 0.9;
+  const settling = (el: Element | undefined) => !!el?.getAnimations().some((a) => (a as CSSTransition).transitionProperty === "transform" && a.playState === "running");
   function gdown(e: PointerEvent) {
     if (!shell.narrow || e.pointerType !== "touch") return;
-    gx = e.clientX; gy = e.clientY;
-    gskip = !!(e.target as Element).closest(".slide, [role=dialog], input, textarea, pre"); // a row swipe, a sheet drag or a text selection is not a panel gesture
-    gedge = e.clientX < 24 ? "l" : e.clientX > innerWidth - 24 ? "r" : null;
+    gtouch = true; gx = e.clientX; gy = e.clientY; gmoved = false; samples = [{ t: e.timeStamp, x: e.clientX }];
+    gskip = !!(e.target as Element).closest(".slide, [role=dialog], input, textarea, pre");
+    mode = null;
+    // Taking hold of a card or panel that is still settling: freeze it where it is.
+    if (settling(midEl)) { mode = "card"; g0 = matrixX(midEl); dragMode = "card"; drag = g0; return; }
+    if (settling(rightEl)) { mode = "panel"; g0 = Math.min(matrixX(rightEl), panelWidth()); dragMode = "panel"; drag = g0; return; }
+    if (gskip) return;
+    const edgeL = e.clientX < 24, edgeR = e.clientX > innerWidth - 24;
+    const target = e.target as Element;
+    if (!shell.sidebarOpen && !rightOpen && edgeL) mode = "card", g0 = 0;
+    else if (shell.sidebarOpen && (target.closest(".peek") || target.closest(".side"))) mode = "card", g0 = travel(); // the strip of card that stays visible, or the list itself
+    else if (!rightOpen && !shell.sidebarOpen && edgeR && hasRight) mode = "panel", g0 = panelWidth();
+    else if (rightOpen && (target.closest(".scrim") || target.closest(".right"))) mode = "panel", g0 = 0;
   }
   function gmove(e: PointerEvent) {
-    if (!shell.narrow || e.pointerType !== "touch" || gskip || gedge !== "l" || shell.sidebarOpen || rightOpen || (!gx && !gy)) return;
+    if (!gtouch || !mode || e.pointerType !== "touch") return;
     const dx = e.clientX - gx, dy = e.clientY - gy;
-    if (drag === null && !(dx > 12 && dx > Math.abs(dy) * 1.5)) return;
-    drag = Math.max(0, Math.min(dx, innerWidth));
+    if (drag === null) {
+      if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return; // not yet a horizontal gesture
+      dragMode = mode;
+    }
+    gmoved = true;
+    samples.push({ t: e.timeStamp, x: e.clientX });
+    if (samples.length > 6) samples.shift();
+    const max = mode === "card" ? travel() : panelWidth();
+    drag = Math.max(0, Math.min(g0 + dx, max));
   }
   function gup(e: PointerEvent) {
-    const was = drag;
-    drag = null;
-    if (was !== null && shell.narrow) { gx = gy = 0; if (was > 96 && !shell.sidebarOpen) shell.toggleSidebar(); return; }
-    if (!shell.narrow || e.pointerType !== "touch" || (!gx && !gy) || gskip) { gx = gy = 0; return; }
-    const dx = e.clientX - gx, dy = e.clientY - gy;
-    gx = gy = 0;
-    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-    if (dx > 0 && gedge === "l" && !shell.sidebarOpen && !rightOpen) shell.toggleSidebar();
-    else if (dx < 0 && shell.sidebarOpen) shell.toggleSidebar();
-    else if (dx < 0 && gedge === "r" && !rightOpen && !shell.sidebarOpen && hasRight) shell.toggleRight();
-    else if (dx > 0 && rightOpen) shell.toggleRight();
+    const m = mode;
+    let d = drag;
+    gtouch = false; mode = null; drag = null; dragMode = null;
+    if (m === null) return;
+    if (d === null && e.pointerType === "touch") {
+      // A swipe that arrived as a press and a release with no moves between (a quick flick the browser coalesced): judge it by where it ended.
+      const dx = e.clientX - gx, dy = e.clientY - gy;
+      if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      d = Math.max(0, Math.min(g0 + dx, m === "card" ? travel() : panelWidth()));
+      samples.push({ t: e.timeStamp, x: e.clientX });
+    }
+    if (d === null) return;
+    // Release speed over the last ~80 ms (px per ms, positive is rightward).
+    const last = samples.at(-1)!, first = samples.find((p) => last.t - p.t <= 80) ?? last;
+    const v = last.t > first.t ? (last.x - first.x) / (last.t - first.t) : 0;
+    const max = m === "card" ? travel() : panelWidth();
+    const FLICK = 0.4;
+    if (m === "card") {
+      const open = v > FLICK ? true : v < -FLICK ? false : d > max / 2;
+      shell.over(open ? "list" : null);
+    } else {
+      const open = v > FLICK ? false : v < -FLICK ? true : d < max / 2;
+      if (open) shell.over("panel"); else shell.dismiss();
+    }
   }
+  /** A tap on the strip of card that stays visible, or on the scrim, closes what is over the card; the end of a drag that started there is not a tap. */
+  const tap = () => { if (gmoved) { gmoved = false; return; } shell.dismiss(); };
+  // Choosing something in the sidebar shows it: the list goes away without a history step, so Back brings the list back over what you came from.
+  const choose = (e: MouseEvent) => { if (shell.narrow && (e.target as Element).closest("a[href]")) shell.closeOver(); };
   const hasRight = $derived(app.panels.length > 0);
   const rightOpen = $derived(shell.rightOpen && hasRight);
   const cardSwitcher = $derived(!shell.narrow && appearance.prefs.switcher === "card");
@@ -58,9 +103,10 @@
 <Backdrop />
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="shell" class:narrow={shell.narrow} onpointerdown={gdown} onpointermove={gmove} onpointerup={gup} onpointercancel={gup} data-sidebar={shell.sidebarOpen} data-right={rightOpen}>
-  <aside class="side" data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+  <aside class="side" bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" class:dragging={drag !== null} style:transform={drag !== null ? `translateX(${drag}px)` : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" bind:this={midEl} class:dragging={drag !== null} style:transform={dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     <Card label={app.name} class="mid-card">
       <div class="col">
         <div class="app"><app.Main {id} /></div>
@@ -69,10 +115,10 @@
     </Card>
   </main>
 
-  {#if shell.narrow && shell.sidebarOpen}<button type="button" class="peek" aria-label="Close the sidebar" onclick={() => shell.closeOver()}></button>{/if}
-  {#if shell.narrow && rightOpen}<button type="button" class="scrim" aria-label="Close the side panel" onclick={() => shell.closeOver()}></button>{/if}
+  {#if shell.narrow && shell.sidebarOpen}<button type="button" class="peek" aria-label="Close the sidebar" onclick={tap}></button>{/if}
+  {#if shell.narrow && (rightOpen || dragMode === "panel")}<button type="button" class="scrim" aria-label="Close the side panel" style:opacity={dragMode === "panel" && drag !== null ? 1 - drag / panelWidth() : undefined} style:animation={dragMode === "panel" && drag !== null ? "none" : undefined} onclick={tap}></button>{/if}
 
-  {#if hasRight}<aside class="right" data-ink={surfaces.right ?? undefined} aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
+  {#if hasRight}<aside class="right" bind:this={rightEl} class:dragging={dragMode === "panel" && drag !== null} style:transform={dragMode === "panel" && drag !== null ? `translateX(${drag}px)` : undefined} data-ink={surfaces.right ?? undefined} aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
 </div>
 {#if shell.narrow && !shell.sidebarOpen}<PhoneTabs {app} />{/if}
 
@@ -121,8 +167,10 @@
   .narrow[data-right="true"] .mid { scale: 0.96; }
   .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-sheet) var(--ease-sheet); }
   .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-pane); }
-  .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); }
-  .scrim { position: fixed; inset: 0; z-index: 3; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
+  .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); touch-action: pan-y; }
+  .scrim { position: fixed; inset: 0; z-index: 3; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); touch-action: pan-y; }
+  .narrow .right.dragging { transition: none; }
+  .narrow .right { touch-action: pan-y; }
   /* Slid over the app, the flat sidebar needs a ground of its own: the same wallpaper copy and wash, aligned to the viewport. */
   .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); transform: translateX(110%); transition: transform var(--dur-sheet) var(--ease-sheet); border-radius: var(--r-pane) 0 0 var(--r-pane); box-shadow: var(--shadow-card); background: var(--veil-l, linear-gradient(rgb(var(--tint) / 0.5) 0 0)), var(--wall-side, var(--backdrop)) center / cover no-repeat fixed; }
   .narrow[data-right="true"] .right { transform: none; }

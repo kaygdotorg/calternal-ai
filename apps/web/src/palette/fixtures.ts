@@ -2,7 +2,7 @@
 // The real search runs on the server per space the person can reach (docs/composer.md); this is the stand-in.
 import type { Item } from "./search";
 
-export const THIS_SPACE = "Home";
+export const THIS_SPACE = "Personal";
 const NOTES: [string, string][] = [["n-1", "Journal replay notes"], ["n-2", "Storage layout"], ["n-3", "Invite flow"], ["n-4", "Release checklist"], ["n-5", "Reading list"]];
 const OTHER: Item[] = [
   { id: "x-1", kind: "thread", title: "Rotate the mesh keys", space: "Infra", go: "/threads" },
