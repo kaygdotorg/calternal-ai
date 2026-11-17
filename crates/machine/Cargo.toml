@@ -1,0 +1,24 @@
+[package]
+name = "calternal-machine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Calternal-AI machine role: enrolment, the outbound connection to the server, and per-thread sandboxes"
+
+[dependencies]
+calternal-fsio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+reqwest.workspace = true
+clap.workspace = true
+tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }
+ring = "0.17"
+base64 = "0.22"
+tracing = "0.1"
+rustix = { version = "1.1", features = ["process"] }
+
+[dev-dependencies]
+tempfile = "3.27"

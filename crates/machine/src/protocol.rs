@@ -1,0 +1,334 @@
+//! Wire protocol between the server role and the machine role, version 1.
+//!
+//! The machine always connects out; the server never opens a connection to a
+//! machine. Everything is plain JSON over HTTP(S) requests the machine makes:
+//!
+//! | Request (machine → server) | Purpose |
+//! | --- | --- |
+//! | `POST /api/v1/machine/enrol` | Exchange a one-time code for a machine identity ([`EnrolRequest`]). |
+//! | `POST /api/v1/machine/session/start` | Ask for a challenge ([`SessionStart`] → [`SessionChallenge`]). |
+//! | `POST /api/v1/machine/session/finish` | Sign it with the machine key ([`SessionFinish`] → [`SessionGranted`]). |
+//! | `POST /api/v1/machine/sync` | Long-poll: report state, receive work ([`SyncRequest`] → [`SyncResponse`]). |
+//! | `POST /api/v1/machine/output` | Upload exec output ([`OutputPost`] → [`OutputAck`]). |
+//!
+//! Why long-poll rather than a websocket or SSE: it needs no new dependency on
+//! either side, passes any HTTP proxy that already fronts the server, reuses the
+//! server's existing request guard, and a cancelled request loses nothing because
+//! both directions carry sequence numbers and acknowledgements. The cost is one
+//! held request per machine (one socket, about 10 KiB of server memory) and up to
+//! one extra round trip of latency when output and work cross.
+//!
+//! Failures use the operation error envelope (`{"ok":false,"error":{code,message}}`).
+//! The machine branches only on the HTTP status: 401 means the session is unknown
+//! (start a new one), 403 means the machine is revoked (stop everything and exit),
+//! 409 means a lease is fenced (stop that sandbox), 404 an unknown code or lease.
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+/// Protocol version spoken by this build; the server refuses other versions.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// Path prefix of every machine-facing endpoint. The server's account guard
+/// skips it: these endpoints authenticate the machine themselves.
+pub const PATH_PREFIX: &str = "/api/v1/machine/";
+
+/// Domain separation prefix of the signed session challenge.
+pub const SESSION_CONTEXT: &[u8] = b"calternal-machine-session-v1\n";
+
+/// Bytes a machine signs to open a session: context, machine id, challenge.
+/// Binding the machine id stops a signature for one machine opening another's session.
+pub fn session_message(machine_id: Uuid, challenge: &str) -> Vec<u8> {
+    let mut m = Vec::with_capacity(SESSION_CONTEXT.len() + 37 + challenge.len());
+    m.extend_from_slice(SESSION_CONTEXT);
+    m.extend_from_slice(machine_id.to_string().as_bytes());
+    m.push(b'\n');
+    m.extend_from_slice(challenge.as_bytes());
+    m
+}
+
+/// Who a machine belongs to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Owner {
+    /// The user's own machine; only that account's work is placed on it.
+    Account {
+        /// The owning account.
+        id: Uuid,
+    },
+    /// An operator-enrolled machine in the shared pool.
+    Pool,
+}
+
+/// First request of a new machine: a one-time code plus its public key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnrolRequest {
+    /// The one-time enrolment code exactly as issued (dashes and case ignored).
+    pub code: String,
+    /// Raw 32-byte Ed25519 public key, base64 (standard alphabet, padded).
+    pub public_key: String,
+    /// Human label, for example the host name; at most 64 characters.
+    pub name: String,
+    /// `std::env::consts::OS` of the machine.
+    pub os: String,
+    /// `std::env::consts::ARCH` of the machine.
+    pub arch: String,
+}
+
+/// Answer to a successful enrolment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnrolResponse {
+    /// The new machine identity; the private key never leaves the machine.
+    pub machine_id: Uuid,
+    /// Whose machine this is.
+    pub owner: Owner,
+}
+
+/// Ask for a session challenge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionStart {
+    /// The enrolled machine.
+    pub machine_id: Uuid,
+}
+
+/// A single-use challenge that expires after 60 seconds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionChallenge {
+    /// Random challenge to sign with [`session_message`].
+    pub challenge: String,
+}
+
+/// Proof of the machine key, opening a session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionFinish {
+    /// The enrolled machine.
+    pub machine_id: Uuid,
+    /// The challenge from [`SessionChallenge`].
+    pub challenge: String,
+    /// Ed25519 signature of [`session_message`], base64.
+    pub signature: String,
+    /// Random id chosen when the machine role process starts. A new value tells
+    /// the server that every exec that was running before is gone.
+    pub boot_id: Uuid,
+    /// Must equal [`PROTOCOL_VERSION`].
+    pub protocol: u32,
+}
+
+/// An open session. Opening another session for the same machine ends this one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionGranted {
+    /// Bearer token for `sync` and `output`; held in memory only, on both sides.
+    pub token: String,
+    /// How long the server keeps this machine's leases without a sync. The machine
+    /// freezes its sandboxes when it has not synced for this long.
+    pub lease_ttl_ms: u64,
+    /// The longest the server holds a `sync` request open.
+    pub poll_hold_ms: u64,
+}
+
+/// What a machine can take on. The server places by its own lease count;
+/// these numbers are informational except `max_sandboxes`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Capacity {
+    /// Logical CPUs.
+    pub cpus: u32,
+    /// Physical memory in bytes; 0 when unknown.
+    pub memory_bytes: u64,
+    /// Most sandboxes (threads) this machine runs at once.
+    pub max_sandboxes: u32,
+    /// Sandboxes it currently holds, frozen ones included.
+    pub running_sandboxes: u32,
+}
+
+/// State of one lease's sandbox as the machine sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum SandboxState {
+    /// Being created or adopted.
+    Starting,
+    /// Ready for execs.
+    Running,
+    /// Paused because the machine lost contact with the server for a lease TTL.
+    Frozen,
+    /// Could not be started; the lease ends with this reason.
+    Failed {
+        /// Short, path-free description.
+        reason: String,
+    },
+}
+
+/// One lease the machine holds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeaseReport {
+    /// The lease.
+    pub lease_id: Uuid,
+    /// The fence the machine was given with it.
+    pub fence: u64,
+    /// Its sandbox.
+    pub sandbox: SandboxState,
+}
+
+/// Long-poll request: acknowledge received messages and report state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SyncRequest {
+    /// Highest [`Envelope::seq`] received in this session (0 before any).
+    pub ack: u64,
+    /// Current capacity.
+    pub capacity: Capacity,
+    /// True once the machine is shutting down: place nothing new on it.
+    pub draining: bool,
+    /// Every lease the machine holds.
+    pub leases: Vec<LeaseReport>,
+}
+
+/// Messages for the machine, in order. Empty after the hold time elapsed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SyncResponse {
+    /// Unacknowledged messages; the same message may arrive twice after a
+    /// cancelled request, so the machine applies each `seq` at most once.
+    pub messages: Vec<Envelope>,
+}
+
+/// A numbered message. Numbers restart at 1 in every session.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Envelope {
+    /// Position in this session's stream.
+    pub seq: u64,
+    /// The message.
+    pub message: Down,
+}
+
+/// Resource limits for one sandbox. `None` means the backend's default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Limits {
+    /// Memory ceiling in bytes.
+    pub memory_bytes: Option<u64>,
+    /// CPU ceiling in thousandths of a CPU.
+    pub cpu_millis: Option<u32>,
+    /// Process count ceiling.
+    pub pids: Option<u32>,
+}
+
+/// What to start for a thread.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxSpec {
+    /// The thread; one sandbox per thread, reused across leases.
+    pub thread_id: Uuid,
+    /// Base image by reference; `None` uses the machine's configured default.
+    pub image: Option<String>,
+    /// Resource limits.
+    pub limits: Limits,
+}
+
+/// A message from the server to a machine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Down {
+    /// Run work for (space, account, thread): start or adopt the thread's sandbox.
+    Assign {
+        /// The lease.
+        lease_id: Uuid,
+        /// Fencing token; output with an older fence is refused.
+        fence: u64,
+        /// Space the work belongs to.
+        space_id: String,
+        /// Account the work runs for.
+        account_id: String,
+        /// Sandbox to start.
+        spec: SandboxSpec,
+    },
+    /// Run a command in the lease's sandbox and stream its output.
+    Exec {
+        /// The lease.
+        lease_id: Uuid,
+        /// Its current fence.
+        fence: u64,
+        /// Identifies the output stream.
+        exec_id: Uuid,
+        /// Program and arguments; no shell is implied.
+        argv: Vec<String>,
+        /// Extra environment; the sandbox starts from an empty environment.
+        env: Vec<(String, String)>,
+    },
+    /// Stop and remove the lease's sandbox (the lease ended or was fenced).
+    Stop {
+        /// The lease.
+        lease_id: Uuid,
+        /// Short reason for logs.
+        reason: String,
+    },
+}
+
+/// Which pipe a chunk came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stream {
+    /// Standard output.
+    Stdout,
+    /// Standard error.
+    Stderr,
+}
+
+/// How an exec ended.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct ExitInfo {
+    /// Exit code, when the process exited normally.
+    pub code: Option<i32>,
+    /// Terminating signal, when it was killed.
+    pub signal: Option<i32>,
+    /// Why it could not run or was lost; path-free.
+    pub error: Option<String>,
+}
+
+/// One numbered output event. Sequence numbers start at 1 per exec and the
+/// exit event is always last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Chunk {
+    /// Position in this exec's stream.
+    pub seq: u64,
+    /// The event.
+    #[serde(flatten)]
+    pub event: ChunkEvent,
+}
+
+/// Content of a [`Chunk`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ChunkEvent {
+    /// Bytes from one pipe, base64 (a third larger on the wire than raw).
+    Data {
+        /// Source pipe.
+        stream: Stream,
+        /// Base64 bytes.
+        data: String,
+    },
+    /// The process ended.
+    Exit(ExitInfo),
+}
+
+/// Upload of exec output. The server accepts a prefix that fits its buffer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutputPost {
+    /// The lease.
+    pub lease_id: Uuid,
+    /// The fence the machine holds; a stale fence gets 409.
+    pub fence: u64,
+    /// The exec.
+    pub exec_id: Uuid,
+    /// Consecutive chunks, oldest first.
+    pub chunks: Vec<Chunk>,
+}
+
+/// Back-pressure answer to an [`OutputPost`].
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct OutputAck {
+    /// Highest sequence number the server holds; resend everything after it.
+    pub acked: u64,
+    /// Set when the server's buffer is full: wait this long before resending.
+    pub retry_after_ms: Option<u64>,
+}
