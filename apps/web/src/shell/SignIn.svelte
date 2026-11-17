@@ -55,7 +55,7 @@
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   label { display: grid; gap: var(--s-2); font-size: var(--text-label); color: var(--ink-3); }
-  input { min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
+  input { border: 0; min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
   .error { font-size: var(--text-label); color: var(--danger, #c0392b); }
   .go { display: flex; align-items: center; gap: var(--s-4); }
 </style>

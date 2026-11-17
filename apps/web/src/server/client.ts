@@ -47,7 +47,7 @@ export class ServerClient {
     try {
       res = await this.f(`${this.base}/api/v1/operations`, { method: "POST", headers: this.headers({ "content-type": "application/json" }), body: JSON.stringify({ request_id: requestId, operation, input }) });
     } catch (e) {
-      throw new ServerError("unavailable", (e as Error).message);
+      throw new ServerError("unavailable", "Can't reach the server.");
     }
     let body: OperationResponse<T>;
     try { body = (await res.json()) as OperationResponse<T>; } catch { throw new ServerError("internal", `unreadable answer (${res.status})`, res.status); }

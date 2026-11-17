@@ -13,8 +13,8 @@
     if (!res.ok) throw new ServerError("internal", j.error?.message ?? `The server refused (${res.status}).`, res.status);
     return j;
   }
-  async function load() { try { machines = (await call<{ machines: Machine[] }>("")).machines.filter((m) => m.state !== "revoked"); error = ""; } catch (e) { error = (e as Error).message; } }
-  async function act(f: () => Promise<unknown>) { busy = true; try { await f(); error = ""; } catch (e) { error = (e as Error).message; } await load(); busy = false; }
+  async function load() { try { machines = (await call<{ machines: Machine[] }>("")).machines.filter((m) => m.state !== "revoked"); error = ""; } catch (e) { error = (e as Error).message === "Failed to fetch" ? "Can't reach the server." : (e as Error).message; } }
+  async function act(f: () => Promise<unknown>) { busy = true; try { await f(); error = ""; } catch (e) { error = (e as Error).message === "Failed to fetch" ? "Can't reach the server." : (e as Error).message; } await load(); busy = false; }
   void load();
 </script>
 
