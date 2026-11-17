@@ -60,6 +60,9 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   themes, command and shortcut contributions, and the shell regions.
 - Themes can be full CSS, with no network access. Trusted screens (sign-in, permission
   approval, secret entry) render in a protected layer that themes cannot restyle or cover.
+- Userdata layout: each space has a hidden `.trash/` folder of its own. Collections, space
+  and plugin settings, skills, automations, themes and custom components are files in the
+  space's userdata (shape in `docs/storage-layout.md` once agreed), not database-only.
 
 ## Open
 
