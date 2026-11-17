@@ -201,5 +201,3 @@ export function adaptive(node: HTMLElement, role: Role = "glass") {
   };
 }
 
-/** How many surfaces are registered (tests and the performance script read it). */
-export const adaptiveCount = (): number => surfaces.size;

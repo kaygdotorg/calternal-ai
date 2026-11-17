@@ -34,7 +34,7 @@
 <h3 class="gh">Available</h3>
 <ul>
   {#each CATALOGUE.filter((p) => !installed.includes(p.id)) as p (p.id)}
-    <li data-setting="plugins.{p.id}"><div class="r"><span class="n"><span class="t">{p.name}</span><span class="h">Would be able to: {p.access.charAt(0).toLowerCase() + p.access.slice(1)}</span></span><Button text="Install" variant="secondary" onclick={() => { installed = [...installed, p.id]; save(); }} /></div></li>
+    <li data-setting="plugins.{p.id}"><div class="r"><span class="n"><span class="t">{p.name}</span><span class="h">Once installed, it may: {p.access.charAt(0).toLowerCase() + p.access.slice(1)}</span></span><Button text="Install" variant="secondary" onclick={() => { installed = [...installed, p.id]; save(); }} /></div></li>
   {:else}
     <li><div class="r"><span class="h">Everything available is installed.</span></div></li>
   {/each}

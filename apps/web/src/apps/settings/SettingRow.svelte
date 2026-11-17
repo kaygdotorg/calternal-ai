@@ -15,7 +15,7 @@
 </script>
 
 {#if c.type === "custom"}
-  <div class="row col" class:hl={highlighted} data-setting={s.id}><c.component /></div>
+  <div class="row col" class:hl={highlighted} data-setting={s.id}>{#await c.load() then m}{@const C = m.default}<C />{/await}</div>
 {:else if c.type === "switch"}
   <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
 {:else if c.type === "presets"}

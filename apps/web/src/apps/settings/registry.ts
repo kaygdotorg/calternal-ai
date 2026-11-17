@@ -6,9 +6,6 @@
  */
 import type { Component } from "svelte";
 import type { IconName } from "@calternal/ui";
-import MachinesPanel from "./MachinesPanel.svelte";
-import PluginsPanel from "./PluginsPanel.svelte";
-import ShortcutsPanel from "./ShortcutsPanel.svelte";
 import { appearance } from "../../appearance/prefs.svelte";
 import { registerManifest } from "../../palette/manifest";
 import { values } from "./store.svelte";
@@ -30,8 +27,8 @@ export type Control =
   | { type: "button"; text: string; danger?: boolean; run: () => void }
   | { type: "drill"; summary: () => string; run: () => void }
   | { type: "info"; text: () => string }
-  /** A whole control of its own, full width (a list, a flow): the page component draws it. */
-  | { type: "custom"; component: Component<any> };
+  /** A whole control of its own, full width (a list, a flow): its code loads when the page is opened, so it is not in the first load. */
+  | { type: "custom"; load: () => Promise<{ default: Component<any> }> };
 
 /** One setting. `id` is `<plugin>.<setting>` and never changes. */
 export interface Setting {
@@ -108,14 +105,14 @@ const agentsPage: Page = {
 const keyboardPage: Page = {
   id: "keyboard", name: "Keyboard", icon: "terminal", blurb: "Shortcuts follow your account. Remap them in place.",
   groups: [
-    { settings: [{ id: "keyboard.shortcuts", label: "Keyboard shortcuts", help: "Cmd-/ or ? opens a quick list anywhere.", control: { type: "custom", component: ShortcutsPanel } }] },
+    { settings: [{ id: "keyboard.shortcuts", label: "Keyboard shortcuts", help: "Cmd-/ or ? opens a quick list anywhere.", control: { type: "custom", load: () => import("./ShortcutsPanel.svelte") } }] },
     { settings: [{ id: "keyboard.hardware-help", label: "Show the shortcut sheet with a hardware keyboard", control: { type: "switch" }, ...fx("keyboard.hardware-help", true) }] },
   ],
 };
 
 const machinesPage: Page = {
   id: "machines", name: "Machines", icon: "terminal", blurb: "The machines your threads can run on, and whether each runs them sandboxed or direct.",
-  groups: [{ settings: [{ id: "machines.list", label: "Machines", control: { type: "custom", component: MachinesPanel } }] }],
+  groups: [{ settings: [{ id: "machines.list", label: "Machines", control: { type: "custom", load: () => import("./MachinesPanel.svelte") } }] }],
 };
 const listPage = (id: string, name: string, icon: IconName, blurb: string, plugin: string, items: [string, string][], empty: string): Page => ({
   id, name, icon, blurb,
@@ -123,7 +120,7 @@ const listPage = (id: string, name: string, icon: IconName, blurb: string, plugi
 });
 const pluginsPage: Page = {
   id: "plugins", name: "Plugins", icon: "apps", blurb: "Installed and available plugins, what each may reach, and each one's own options.",
-  groups: [{ settings: [{ id: "plugins.list", label: "Plugins", control: { type: "custom", component: PluginsPanel } }] }],
+  groups: [{ settings: [{ id: "plugins.list", label: "Plugins", control: { type: "custom", load: () => import("./PluginsPanel.svelte") } }] }],
 };
 // Skills and automations wait for a design round (docs/open-questions.md) and are not in Settings yet.
 
@@ -216,7 +213,6 @@ export const visibleSections = (): Section[] => SECTIONS.filter((s) => s.id !== 
 export const pageById = (id: string | undefined): Page | undefined => visibleSections().flatMap((s) => s.pages).find((p) => p.id === id);
 /** Every setting with the page it lives on. */
 export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));
-export const settingById = (id: string | undefined) => allSettings().find((x) => x.setting.id === id);
 
 // The palette finds every setting by its label, help and section, and opens its address (decided: Settings has no search box of its own).
 registerManifest({
