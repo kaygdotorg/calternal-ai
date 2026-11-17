@@ -1,26 +1,21 @@
 #!/usr/bin/env python3
 """Exercise saved threads over the disposable server's authenticated HTTP API."""
 import json
-import shlex
 import subprocess
 import sys
 import time
 import uuid
 from contextlib import contextmanager
-from getpass import getpass
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
 
 ROOT = Path.home() / "calternal-e2e"
 PORT = 34135
-BROWSER_SESSION = None
 
 
 @contextmanager
 def request(path, body=None):
-    token = BROWSER_SESSION
-    if token is None:
-        token = (ROOT / "appdata/dev-tokens/owner.token").read_text().strip()
+    token = (ROOT / "appdata/dev-tokens/owner.token").read_text().strip()
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     data = None if body is None else json.dumps(body).encode()
     connection = HTTPConnection("127.0.0.1", PORT, timeout=25)
@@ -90,50 +85,6 @@ def create(title):
     space = personal[0]
     thread = op("threads.create", space_id=space, title=title)["thread"]["id"]
     return space, thread
-
-
-def browser_machine(account, mode):
-    service = Path(__file__).with_name("service.sh")
-    machine = subprocess.check_output([service, "browser-machine", account, mode], text=True).strip()
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        if any(m["id"] == machine and m["state"] == "online" for m in call("machines")["machines"]):
-            return
-        time.sleep(0.25)
-    raise TimeoutError("Browser machine did not come online")
-
-
-def after_owner_setup():
-    global PORT, BROWSER_SESSION
-    PORT = 34136
-    BROWSER_SESSION = (getpass("Preview session cookie value: ") if sys.stdin.isatty()
-                       else sys.stdin.readline()).strip()
-    verify(BROWSER_SESSION and BROWSER_SESSION.isascii(), "Enter the browser's session cookie value")
-    account = str(uuid.UUID(call("auth/me")["user"]["id"]))
-    home = ROOT / "browser/machine/sandboxes/accounts" / account / "home"
-    proof = home.parent / "fixture-verified"
-    if not proof.is_file():
-        verify(not any(home.iterdir()) if home.is_dir() else True,
-               "Finish the fixture proof before placing provider sign-in files")
-        browser_machine(account, "fixture")
-        _, thread = create("Morning machine fixture")
-        job = op("threads.send", id=thread, message="Verify the fixture machine")["job"]["id"]
-        text = ""
-        for event, payload in stream(job):
-            text += output(event, payload) or ""
-            if event == "end":
-                verify(payload["job"]["state"] == "done", "Browser fixture turn did not finish")
-        verify(text == "Hello 🌏\n", "Browser fixture turn emitted unexpected text")
-        op("threads.archive", id=thread)
-        proof.touch()
-        print("Browser fixture turn streamed and completed", flush=True)
-    browser_machine(account, "claude")
-    print(f"Sandbox home  {home}")
-    login = shlex.join([
-        "podman", "run", "--rm", "-it", "-e", "HOME=/home/agent",
-        "-v", f"{home}:/home/agent", "localhost/calternal-e2e-claude:dev", "claude", "auth", "login",
-    ])
-    print(shlex.join(["ssh", "-t", "claude@calternal-dev-01-compute02", login]))
 
 
 def run_fixture():
@@ -258,15 +209,12 @@ def run_real(continuation=False):
 
 
 if __name__ == "__main__":
-    if sys.argv[1:] in (["fixture"], ["after-owner-setup"]):
+    if sys.argv[1:] == ["fixture"]:
         try:
-            if sys.argv[1] == "fixture":
-                run_fixture()
-            else:
-                after_owner_setup()
+            run_fixture()
         except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError) as error:
             sys.exit(str(error))
     elif sys.argv[1:] in (["claude"], ["claude-continuation"]):
         sys.exit(0 if run_real(continuation=sys.argv[1] == "claude-continuation") else 1)
     else:
-        sys.exit("Usage: prove.py fixture|claude|claude-continuation|after-owner-setup")
+        sys.exit("Usage: prove.py fixture|claude|claude-continuation")
