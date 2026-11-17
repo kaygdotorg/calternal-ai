@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 02:25 IST.
+[glossary](glossary.md). Updated 2026-11-18 05:10 IST.
 
 ## Waiting now
 
@@ -15,6 +15,19 @@ move to the decision record they belong to and leave this list. Terms: see
 | 25 | Composer chips: show more icons, or icons with text, when the composer is wide (kayg wants to discuss, 2026-11-18) | To grill | Composer |
 
 | 19 | Which Manager-only operation writes reserved `AI/AGENTS.md`? Generic kinds cannot claim or write it | Narrow space-settings operation, or a general protected space-file writer; costs in morning-decisions.md | Agents |
+| 26 | Composer speed budget (8 ms at the 95th percentile, 4x CPU slowdown): which measure it applies to. Work per key is 7.3 ms on a real GPU and 8.7 ms on the noisy dev VM, and no key missed its next frame there. "Key to next frame" includes waiting for the display refresh (up to 16.7 ms at 60 Hz), so it can never be under 8 ms | Apply the budget to work per key, and require zero missed frames | Performance gate |
+| 27 | An approval for an action that cannot be undone, or that widens access, is always single-use, whatever lifetime is asked for; "this thread" is offered only for reads, undoable changes and outside effects. Built this way after the independent review; it is my reading of "changes that cannot be undone ask" | Confirm | Requests |
+| 28 | The first-visit "Choose a look" chooser: now a centred dialog. The record only says "a short gallery, then straight in" | Keep the centred dialog | Onboarding |
+| 29 | On a phone, switching apps takes three taps and the app name does not look tappable: a capsule under the card as on desktop, or the pill in the sidebar footer | See both on a phone first | Phone shell |
+| 30 | Should the composer double as the command palette, or stay separate from Cmd-K | Stay separate | Composer |
+| 31 | Thread rows: on hover the time and state mark give way to the three actions; swipe right shows only Copy link; on touch the long-press menu is dropped for "More" in the swipe tray (iOS starts a drag on a long press) | Keep all three; try on a phone | Threads |
+| 32 | The page waits for its font before painting. Painting first would be earlier but the text would visibly swap | Keep waiting for the font | First paint |
+| 33 | Plugin workers in containers: where a space's workers run and how capacity is shared (at most eight workers per machine today), what happens on a server with no container runtime, brokered network fetch, and proof of teardown when a machine is lost | To grill | Plugins |
+| 34 | Requests, left open by the lane: how a rotated token reaches the agent when a single-use approval is spent; whether an unused single-use approval belongs to the turn or the thread; how the limits (32 per thread, 256 per account) are divided; who may read `AI/AGENTS.md` directly | To grill | Requests |
+| 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer where it has one | People |
+| 36 | Notes: paging of long lists, purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
+| 37 | Readiness: should one refresh probe every machine in the pool, and should provider sign-in be re-checked while a machine sits idle (today: cached five minutes, refreshed on demand) | On demand only | Agents |
+| 38 | The bottom band and edge kayg saw beside the right sidebar could not be reproduced in a real GPU Chrome at 1500x970: which window size and zoom, and does it still show on the current preview | kayg to look again | Shell |
 
 ## Design rounds
 
