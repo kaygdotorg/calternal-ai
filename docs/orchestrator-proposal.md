@@ -213,7 +213,9 @@ early.
 
 - The plugin's ID is `calternal-orchestrator`. Every official plugin is `calternal-<name>`.
 - Child threads are visible in the sidebar under their parent and archive automatically
-  when they finish.
+  when they finish. A child's file records the thread and the message that spawned it
+  (`spawned-by:` in frontmatter), permanently, so an archived child can always be traced
+  to its origin and a parent can list every child it ever started.
 - A request can carry a list of questions: it is a form described with the generated-UI
   components and drawn by the app. Approvals and secret entry stay fixed, trusted forms.
 - The CLI is non-interactive; there is no TUI. The web UI is built at the same time as the
@@ -230,7 +232,10 @@ early.
 - Cals come after plain threads.
 - One file per thread; long tool output is kept outside the file and linked. Long threads
   are the UI's speed test.
-- On a person's own machine they choose per machine: sandboxed, or direct access.
+- On a person's own machine they choose per machine: sandboxed, or direct access. On
+  macOS the sandbox is the system's own process sandbox, the one Claude Code and Codex
+  already use. The app offers, in a friendly way, to add the person's machine so agents
+  can work on it.
 - A space's permissions apply to every plugin in it, the orchestrator included. A thread
   in a shared space is visible to members who can read the space.
 - A coding subagent gets its own worktree.
