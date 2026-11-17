@@ -101,7 +101,7 @@
   const rightOpen = $derived(shell.rightOpen && hasRight);
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
   // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
-  const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && app.kind === "settings" && !shell.sidebarOpen));
+  const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && (app.kind === "settings" || !id) && !shell.sidebarOpen)); // a phone card with no header of its own (Settings, or an app with nothing open) still has a way to the list
   const showRight = $derived(!shell.narrow && hasRight && !rightOpen);
   const cardSwitcher = $derived(!shell.narrow && appearance.prefs.switcher === "card");
 </script>

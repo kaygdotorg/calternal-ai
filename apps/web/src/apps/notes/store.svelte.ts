@@ -130,8 +130,8 @@ class NotesStore {
       this.lastSaveMs = performance.now() - t0;
       this.note = saved;
       this.saveState = "saved"; this.conflict = null; this.error = "";
-      void this.input.dropDraft(saved.spaceId, saved.id).catch(() => {});
-      void this.refresh().then(() => this.reloadInput());
+      // The draft goes first, then the snapshot is read: otherwise the stale draft is read back and offered as "unsent" right after a save.
+      void this.input.dropDraft(saved.spaceId, saved.id).catch(() => {}).then(() => this.refresh()).then(() => this.reloadInput());
       return true;
     } catch (e) {
       if (e instanceof ServerError && e.code === "unavailable") {
