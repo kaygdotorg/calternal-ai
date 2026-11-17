@@ -1,0 +1,11 @@
+exit: 1
+--- stdout ---
+{
+  "error": {
+    "code": "not_found",
+    "hint": "`calternal machines list --data-dir DIR` shows the machines and their ids.",
+    "message": "no machine dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+  },
+  "ok": false
+}
+--- stderr ---

@@ -1,6 +1,9 @@
 //! Command-line adapter for the disposable loopback preview; uses shared client validation and retry identities.
+//! Output (tables, `--json`, errors, exit codes) comes from `calternal_cli::output`; see `docs/cli.md`.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
+mod render;
+use calternal_cli::output::{CliError, Output, Reply};
 use calternal_client::{CancellationToken, Client, ClientError};
 use calternal_core::*;
 use clap::{Args, Parser, Subcommand};
@@ -34,6 +37,12 @@ struct Cli {
         help = "Stable request identity; reuse only with exactly the same operation and input"
     )]
     request_id: Option<String>,
+    #[arg(
+        long,
+        global = true,
+        help = "Print one JSON document ({\"ok\":...}) instead of text; errors too, on stdout"
+    )]
+    json: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -173,28 +182,42 @@ enum PluginsCommand {
         scope: Space,
     },
 }
-fn load_token(file: Option<PathBuf>) -> Result<String, String> {
+fn token_error(message: &str) -> CliError {
+    CliError::new("unauthorized", message)
+        .hint("Put the credential in a file readable only by you (chmod 600) and pass --token-file, or set CALTERNAL_TOKEN_FILE.")
+}
+fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
     if let Ok(token) = std::env::var("CALTERNAL_TOKEN")
         && !token.is_empty()
     {
         return Ok(token);
     }
-    let file = file.ok_or("set CALTERNAL_TOKEN or CALTERNAL_TOKEN_FILE (or --token-file)")?;
-    let metadata = std::fs::symlink_metadata(&file).map_err(|_| "cannot inspect token file")?;
+    let file = file.ok_or_else(|| {
+        token_error(
+            "no credential given: set CALTERNAL_TOKEN or CALTERNAL_TOKEN_FILE (or --token-file)",
+        )
+    })?;
+    let metadata = std::fs::symlink_metadata(&file)
+        .map_err(|_| token_error("cannot inspect the token file"))?;
     if !metadata.is_file() {
-        return Err("token file must be a regular file, not a symlink".into());
+        return Err(token_error(
+            "the token file must be a regular file, not a symlink",
+        ));
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         if metadata.mode() & 0o077 != 0 || metadata.nlink() != 1 {
-            return Err("token file must be owner-only with one link (chmod 600)".into());
+            return Err(token_error(
+                "the token file must be owner-only with one link (chmod 600)",
+            ));
         }
     }
     if metadata.len() > 4096 {
-        return Err("token file is too large".into());
+        return Err(token_error("the token file is too large"));
     }
-    let token = std::fs::read_to_string(file).map_err(|_| "cannot read token file")?;
+    let token =
+        std::fs::read_to_string(file).map_err(|_| token_error("cannot read the token file"))?;
     Ok(token.trim_end_matches(['\n', '\r']).to_string())
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
@@ -273,80 +296,53 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
     }
     Client::pending(&operation, &input, request_id).map_err(|e| e.to_string())
 }
-fn report(request_id: Option<String>, error: ApiError) -> ExitCode {
-    let result = Failure {
-        request_id,
-        ok: False,
-        error,
-    };
-    eprintln!(
-        "{}",
-        serde_json::to_string(&result).expect("error serialization")
-    );
-    ExitCode::FAILURE
+fn input_error(message: impl Into<String>) -> CliError {
+    CliError::new("invalid_input", message)
+        .hint("Run the command with --help to see the options it needs.")
 }
-#[tokio::main]
-async fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let token = match load_token(cli.token_file) {
-        Ok(token) => token,
-        Err(message) => {
-            return report(
-                None,
-                ApiError {
-                    code: ErrorCode::Unauthorized,
-                    message,
-                    details: None,
-                },
-            );
-        }
-    };
-    let client = match Client::new(&cli.base_url, &token) {
-        Ok(client) => client,
-        Err(e) => return report(None, e.api_error()),
-    };
+async fn run(cli: Cli, out: &Output) -> Result<Reply, CliError> {
+    let token = load_token(cli.token_file)?;
+    let client = Client::new(&cli.base_url, &token).map_err(|e| {
+        render::api_error(e.api_error(), None)
+            .hint("Check --base-url (it must be a loopback http URL) and the credential.")
+    })?;
     if matches!(cli.command, Command::Describe) {
         return match client.describe_cancellable(&CancellationToken::new()).await {
-            Ok(result) => {
-                println!("{}", serde_json::to_string_pretty(&result).unwrap());
-                ExitCode::SUCCESS
-            }
-            Err(e) => report(None, e.api_error()),
+            Ok(result) => Ok(render::describe(&result)),
+            Err(e) => Err(render::api_error(e.api_error(), None)),
         };
     }
-    let pending = match request_for(cli.command, cli.request_id) {
-        Ok(request) => request,
-        Err(message) => {
-            return report(
-                None,
-                ApiError {
-                    code: ErrorCode::InvalidInput,
-                    message,
-                    details: None,
-                },
-            );
-        }
-    };
+    let pending = request_for(cli.command, cli.request_id).map_err(input_error)?;
     let id = pending.request().request_id.clone();
+    let operation = pending.request().operation.clone();
     match client
         .execute_cancellable::<Value>(pending.request(), &CancellationToken::new())
         .await
     {
-        Ok(data) => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&OperationResponse::success(id, data)).unwrap()
-            );
-            ExitCode::SUCCESS
-        }
+        Ok(data) => Ok(render::operation(out, &operation, &id, data)),
         Err(error) => {
-            let mut api = error.api_error();
-            if matches!(error, ClientError::Transport) {
-                api.details=Some(serde_json::from_value(json!({"outcome":"unknown","retry":"reuse request_id with the identical operation and input"})).unwrap())
-            }
-            report(Some(id), api)
+            let api = error.api_error();
+            Err(if matches!(error, ClientError::Transport) {
+                render::transport_unknown(api, id)
+            } else {
+                render::api_error(api, Some(id))
+            })
         }
     }
+}
+fn main() -> ExitCode {
+    let cli = match calternal_cli::output::parse_args::<Cli>() {
+        Ok(cli) => cli,
+        Err(code) => return ExitCode::from(code as u8),
+    };
+    // Detect the time zone before the runtime starts its threads.
+    let out = Output::detect(cli.json);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    let result = runtime.block_on(run(cli, &out));
+    ExitCode::from(out.finish(result) as u8)
 }
 
 #[cfg(test)]

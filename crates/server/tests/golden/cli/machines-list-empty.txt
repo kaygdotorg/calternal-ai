@@ -1,0 +1,4 @@
+exit: 0
+--- stdout ---
+No machines are enrolled. Create a code with `calternal machines code`.
+--- stderr ---

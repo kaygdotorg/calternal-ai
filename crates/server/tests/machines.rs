@@ -6,7 +6,7 @@ mod machines_common;
 use std::time::Duration;
 
 use machines_common::*;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 const T: Duration = Duration::from_secs(15);
@@ -32,14 +32,16 @@ async fn enrolment_codes_are_single_use_and_expire() {
             "0",
             "--account",
             &owner_id,
+            "--json",
             "--data-dir",
         ])
         .arg(&data.0)
         .output()
         .unwrap();
     assert!(out.status.success());
-    let expired = String::from_utf8(out.stdout).unwrap();
-    assert_ne!(enrol(&server.url(), expired.trim(), &other.0), 0);
+    let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let expired = issued["data"]["code"].as_str().unwrap();
+    assert_ne!(enrol(&server.url(), expired, &other.0), 0);
     // Garbage and a re-enrol over existing credentials are refused.
     assert_ne!(enrol(&server.url(), "not-a-code", &other.0), 0);
     let fresh = server.code(&server.owner).await;
@@ -220,13 +222,14 @@ async fn pool_machines_serve_only_granted_accounts() {
     let data = TempDir::new("pool-data");
     let server = Server::start(&data.0, free_port());
     let out = std::process::Command::new(BIN)
-        .args(["machines", "code", "--pool", "--data-dir"])
+        .args(["machines", "code", "--pool", "--json", "--data-dir"])
         .arg(&data.0)
         .output()
         .unwrap();
-    let code = String::from_utf8(out.stdout).unwrap();
+    let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let code = issued["data"]["code"].as_str().unwrap();
     let mdir = TempDir::new("pool-m");
-    assert_eq!(enrol(&server.url(), code.trim(), &mdir.0), 0);
+    assert_eq!(enrol(&server.url(), code, &mdir.0), 0);
     let _m = machine(&mdir.0, 4);
     let space = server.owned_space(&server.owner).await;
     let run = server

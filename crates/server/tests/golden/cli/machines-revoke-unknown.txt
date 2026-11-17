@@ -1,0 +1,5 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+error: no machine dddddddd-dddd-4ddd-8ddd-dddddddddddd
+hint: `calternal machines list --data-dir DIR` shows the machines and their ids.

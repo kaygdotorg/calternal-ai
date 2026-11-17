@@ -1,4 +1,4 @@
-//! Enrolment: exchange a one-time code for a machine identity.
+//! Enrollment: exchange a one-time code for a machine identity.
 //!
 //! The key pair is generated here; only the public key is sent. The code is
 //! single-use and expires (the server stores only its hash). Credentials are
@@ -14,9 +14,9 @@ use crate::{Error, Result};
 
 /// Enrol this machine with `server` using `code`, saving credentials in `dir`.
 ///
-/// Refuses when `dir` already holds credentials, so a second enrolment never
-/// silently replaces a working identity; delete the file to enrol again.
-pub async fn enrol(server: &str, code: &str, dir: &Path, name: &str) -> Result<Credentials> {
+/// Refuses when `dir` already holds credentials, so a second enrollment never
+/// silently replaces a working identity; delete the file to enroll again.
+pub async fn enroll(server: &str, code: &str, dir: &Path, name: &str) -> Result<Credentials> {
     if Credentials::path(dir).exists() {
         return Err(Error::Protocol(format!(
             "already enrolled: {} exists",
@@ -34,7 +34,7 @@ pub async fn enrol(server: &str, code: &str, dir: &Path, name: &str) -> Result<C
     };
     let resp: EnrolResponse = link
         .post(
-            "/api/v1/machine/enrol",
+            "/api/v1/machine/enroll",
             &req,
             false,
             Duration::from_secs(30),

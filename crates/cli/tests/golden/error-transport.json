@@ -1,0 +1,13 @@
+{
+  "error": {
+    "code": "unavailable",
+    "details": {
+      "outcome": "unknown",
+      "retry": "reuse request_id with the identical operation and input"
+    },
+    "hint": "The server may or may not have applied this. Repeat the identical command with --request-id req-2 to retry safely.",
+    "message": "transport failed; server outcome may be unknown"
+  },
+  "ok": false,
+  "request_id": "req-2"
+}

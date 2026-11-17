@@ -5,7 +5,7 @@
 //!
 //! | Request (machine → server) | Purpose |
 //! | --- | --- |
-//! | `POST /api/v1/machine/enrol` | Exchange a one-time code for a machine identity ([`EnrolRequest`]). |
+//! | `POST /api/v1/machine/enroll` | Exchange a one-time code for a machine identity ([`EnrolRequest`]). |
 //! | `POST /api/v1/machine/session/start` | Ask for a challenge ([`SessionStart`] → [`SessionChallenge`]). |
 //! | `POST /api/v1/machine/session/finish` | Sign it with the machine key ([`SessionFinish`] → [`SessionGranted`]). |
 //! | `POST /api/v1/machine/sync` | Long-poll: report state, receive work ([`SyncRequest`] → [`SyncResponse`]). |

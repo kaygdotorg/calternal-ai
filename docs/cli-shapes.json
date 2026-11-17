@@ -1,0 +1,35 @@
+{
+  "_about": "Shapes of every command's --json output, checked by the golden tests (calternal_cli::testing::assert_shape). Leaves: string, string? (string or null), integer, bool, any. Objects have exactly the listed keys; a key ending in ? is optional. An array lists one element shape. 'commands' describes the document's `data`; the envelope ({ok, data, request_id?}) is added by the tests.",
+  "error": {
+    "ok": "bool",
+    "error": { "code": "string", "message": "string", "hint": "string?", "details?": "any" },
+    "request_id?": "string"
+  },
+  "commands": {
+    "cl describe": {
+      "protocol_version": "integer",
+      "genui_version": "integer",
+      "principal": { "id": "string", "spaces": [{ "id": "string", "role": "string" }] },
+      "operations": [{ "id": "string", "description": "string", "mutates": "bool", "input_schema": "any", "output_schema": "any" }]
+    },
+    "cl notes list": { "notes": [{ "id": "string", "space_id": "string", "title": "string", "revision": "string", "updated_at": "string" }] },
+    "cl notes get": { "note": { "id": "string", "space_id": "string", "title": "string", "markdown": "string", "revision": "string", "updated_at": "string" } },
+    "cl notes history": {
+      "versions": [{ "title": "string", "markdown": "string", "revision": "string", "updated_at": "string" }],
+      "next_cursor?": "string"
+    },
+    "cl plugins list": { "plugins": [{ "manifest": "any", "enabled": "bool", "generation": "integer" }] },
+    "cl plugins enable": { "plugin": { "manifest": "any", "enabled": "bool", "generation": "integer" } },
+    "cl plugins preview": { "view": "any", "preview": "bool" },
+    "cl invoke": "any",
+    "calternal serve": { "profile": "string", "url": "string", "token_files": "any", "startup_file": "string" },
+    "calternal machines code": { "code": "string", "owner": "string", "expires_at": "string" },
+    "calternal machines list": { "machines": [{ "id": "string", "owner": "string", "name": "string", "os": "string", "arch": "string", "state": "string" }] },
+    "calternal machines revoke": { "machine": "string", "revoked": "bool" },
+    "calternal machines pool-grant": { "account": "string", "pool_access": "bool" },
+    "calternal plugin-digest": { "workers": [{ "id": "string", "worker": "string", "sha256": "string?", "pinned": "bool", "state": "string" }] },
+    "calternal machine enroll": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string" },
+    "calternal machine status": { "machine_id": "string", "owner": "string", "server": "string", "credentials_file": "string" },
+    "calternal machine run": { "stopped": "bool" }
+  }
+}

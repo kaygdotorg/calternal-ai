@@ -1,0 +1,10 @@
+exit: 0
+--- stdout ---
+{
+  "data": {
+    "machine": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "revoked": true
+  },
+  "ok": true
+}
+--- stderr ---

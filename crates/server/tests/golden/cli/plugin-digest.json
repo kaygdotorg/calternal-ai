@@ -1,0 +1,17 @@
+exit: 0
+--- stdout ---
+{
+  "data": {
+    "workers": [
+      {
+        "id": "notes-insights",
+        "pinned": false,
+        "sha256": null,
+        "state": "unreadable: worker: No such file or directory (os error 2)",
+        "worker": "notes-insights/dist/worker.js"
+      }
+    ]
+  },
+  "ok": true
+}
+--- stderr ---

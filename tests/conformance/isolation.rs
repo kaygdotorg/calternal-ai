@@ -2502,7 +2502,7 @@ async fn running_worker_expired_session_blocks_delivery() {
 
 /// Machine routes as registered in `crates/server/src/machines/http.rs`.
 const MACHINE_ROUTES: &[(&str, &str)] = &[
-    ("POST", "/api/v1/machine/enrol"),
+    ("POST", "/api/v1/machine/enroll"),
     ("POST", "/api/v1/machine/session/start"),
     ("POST", "/api/v1/machine/session/finish"),
     ("POST", "/api/v1/machine/sync"),
@@ -2576,10 +2576,10 @@ async fn machines_and_runs_are_owner_private() {
     let key = MachineKey::generate().unwrap();
     let enrol = json!({"code":code.body["code"],"public_key":key.public_key_b64(),"name":"a","os":"linux","arch":"x86_64"});
     let first = f
-        .machine("/api/v1/machine/enrol", None, enrol.clone())
+        .machine("/api/v1/machine/enroll", None, enrol.clone())
         .await;
     first.ok();
-    let replay = f.machine("/api/v1/machine/enrol", None, enrol).await;
+    let replay = f.machine("/api/v1/machine/enroll", None, enrol).await;
     assert_eq!(replay.status, 404, "{}", replay.body);
     let machine: uuid::Uuid = first.body["machine_id"].as_str().unwrap().parse().unwrap();
     // A session needs the machine key.

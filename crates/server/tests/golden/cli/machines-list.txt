@@ -1,0 +1,6 @@
+exit: 0
+--- stdout ---
+ID                                    OWNER                                         NAME       PLATFORM       STATE
+aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa  pool                                          build-box  linux/x86_64   enrolled
+bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb  account:cccccccc-cccc-4ccc-8ccc-cccccccccccc  laptop     macos/aarch64  enrolled
+--- stderr ---

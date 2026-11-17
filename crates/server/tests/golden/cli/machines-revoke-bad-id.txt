@@ -1,0 +1,5 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+error: not a valid machine UUID
+hint: Pass the machine's UUID, for example 123e4567-e89b-42d3-a456-426614174000.

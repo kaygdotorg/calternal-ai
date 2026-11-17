@@ -7,17 +7,17 @@
 //!
 //! - [`protocol`]: the wire types shared with the server role.
 //! - [`identity`]: the machine key and its 0600 credentials file.
-//! - [`enrol`]: exchange a one-time code for a machine identity.
+//! - [`enroll`]: exchange a one-time code for a machine identity.
 //! - [`connection`]: the outbound session, long-poll loop and reconnect backoff.
 //! - [`runner`]: applies server messages to sandboxes and streams exec output.
 //! - [`sandbox`]: the sandbox interface with Podman and process backends.
-//! - [`cli`]: `calternal machine enrol | run | status`.
+//! - [`cli`]: `calternal machine enroll | run | status`.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod cli;
 pub mod connection;
-pub mod enrol;
+pub mod enroll;
 pub mod identity;
 pub mod link;
 pub mod protocol;
@@ -38,8 +38,8 @@ pub enum Error {
         /// The server's caller-safe message.
         message: String,
     },
-    /// The server revoked this machine; stop all work and enrol again.
-    #[error("this machine was revoked; enrol it again to use it")]
+    /// The server revoked this machine; stop all work and enroll again.
+    #[error("this machine was revoked; enroll it again to use it")]
     Revoked,
     /// Local file failure.
     #[error("file error: {0}")]

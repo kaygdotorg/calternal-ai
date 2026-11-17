@@ -1,0 +1,11 @@
+exit: 2
+--- stdout ---
+{
+  "error": {
+    "code": "usage",
+    "hint": "--pool makes a machine the operator runs; --account makes one a person owns.",
+    "message": "pass --pool or --account <uuid>"
+  },
+  "ok": false
+}
+--- stderr ---

@@ -1,0 +1,5 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+error: this computer is not enrolled (no credentials in <DIR>)
+hint: Run `calternal machine enroll --server URL --code CODE`, or pass the right --dir.
