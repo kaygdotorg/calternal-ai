@@ -46,7 +46,7 @@ fn invoke(s: &mut WorkerSession, h: &mut FakeHost, id: &str) {
     s.invoke(
         id.into(),
         "notes-insights.summarize".into(),
-        json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+        json!({"id":"01932910-0000-7000-8000-000000000003"}),
         authority(),
         h,
     )
@@ -95,7 +95,42 @@ fn manifest_validation_vectors() {
         ("/operations/0/mutates", json!(true)),
         ("/operations/0/idempotency", json!("never")),
         ("/operations/0/id", json!("")),
+        // A target must name a required string property of the input schema.
+        (
+            "/operations/0/target",
+            json!({"kind":"notes","field":"missing"}),
+        ),
+        (
+            "/operations/0/target",
+            json!({"kind":"notes","field":"space_id"}),
+        ),
+        (
+            "/operations/0/target",
+            json!({"kind":"Notes!","field":"id"}),
+        ),
+        (
+            "/operations/0/target",
+            json!({"kind":"notes","field":"id","extra":1}),
+        ),
+        ("/operations/0/target/field", json!("Id")),
         ("/kinds", json!([{"id":"notes","schema":null}])),
+        // Non-text kinds must name a safe extension; text kinds are Markdown.
+        (
+            "/kinds",
+            json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false}]),
+        ),
+        (
+            "/kinds",
+            json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"../x"}]),
+        ),
+        (
+            "/kinds",
+            json!([{"id":"bin","schema":{},"storage":{"hidden":true},"claimed_text":false,"extension":"PNG"}]),
+        ),
+        (
+            "/kinds",
+            json!([{"id":"t","schema":{},"storage":{"hidden":true},"claimed_text":true,"extension":"txt"}]),
+        ),
         (
             "/collections",
             json!([{"id":"all","kind":"bad/kind","name":"All"}]),
@@ -205,6 +240,7 @@ fn collisions_are_atomic_and_policy_is_data_only() {
         a.kinds.push(ManifestKind {
             storage: ManifestPlacement::Hidden { hidden: true },
             claimed_text: true,
+            extension: None,
             id: "notes".into(),
             schema: json!(true),
         });
@@ -459,6 +495,7 @@ fn storage_placement_names_and_cross_plugin_folder_claims() {
             folder: "Notes".into(),
         },
         claimed_text: true,
+        extension: None,
     });
     assert!(validate_manifest(&m).is_ok());
     for folder in [
@@ -487,6 +524,9 @@ fn storage_placement_names_and_cross_plugin_folder_claims() {
     assert!(validate_manifest(&hidden).is_err());
     hidden.kinds[0].storage = ManifestPlacement::Hidden { hidden: true };
     hidden.kinds[0].claimed_text = false;
+    // A non-text kind must name its file extension.
+    assert!(validate_manifest(&hidden).is_err());
+    hidden.kinds[0].extension = Some("png".into());
     assert!(validate_manifest(&hidden).is_ok());
     let mut registry = Registry::default();
     registry.register(m.clone()).unwrap();
@@ -549,6 +589,7 @@ fn failed_registration_does_not_reserve_other_names() {
             folder: "Tasks".into(),
         },
         claimed_text: true,
+        extension: None,
     });
     assert_eq!(r.register(collision.clone()), Err(Error::Collision));
     collision.operations.clear();
@@ -573,7 +614,7 @@ fn required_capability_is_checked_before_admission() {
         s.invoke(
             "denied".into(),
             "notes-insights.summarize".into(),
-            json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+            json!({"id":"01932910-0000-7000-8000-000000000003"}),
             authority(),
             &mut h
         ),
@@ -598,7 +639,7 @@ fn oversized_callback_output_is_redacted_without_repeating_the_effect() {
     s.invoke(
         "inv-1".into(),
         "notes-insights.summarize".into(),
-        json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+        json!({"id":"01932910-0000-7000-8000-000000000003"}),
         authority(),
         &mut h,
     )
@@ -649,7 +690,7 @@ fn a_secret_value_response_is_never_forwarded_as_a_handle() {
     s.invoke(
         "inv-1".into(),
         "notes-insights.summarize".into(),
-        json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+        json!({"id":"01932910-0000-7000-8000-000000000003"}),
         authority(),
         &mut h,
     )

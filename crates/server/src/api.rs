@@ -33,13 +33,13 @@ use crate::error::HostError;
 use crate::fault::{self, FaultPoint};
 use crate::plugins::worker::Outcome;
 use crate::plugins::{
-    Call, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, WorkerPool, activation, broker::SpaceHost,
+    Call, Jobs, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, Session, WorkerPool, activation,
+    broker::SpaceHost,
 };
 use crate::store::{PluginRow, Store, sha256_hex};
 
 /// Same-origin development content security policy applied to every response.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
-
 
 /// Shared host services; `D` is the protected source of current identity and grants.
 /// The default preserves fixture integrations; stored directories plug in without
@@ -53,6 +53,8 @@ pub struct AppState<D: Directory = TokenTable> {
     pub registry: Registry,
     /// Bounded pool of long-lived (plugin, space) workers; refuses calls without Node.
     pub workers: WorkerPool,
+    /// Durable plugin jobs and their live streams; [`Jobs::disabled`] refuses jobs.
+    pub jobs: Jobs,
     /// Exact loopback Host allowlist for this listener.
     pub allowed_hosts: Vec<String>,
 }
@@ -74,6 +76,10 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
         .route("/api/v1/operations", post(operations::<D>))
+        .route(
+            "/api/v1/jobs/{id}/events",
+            get(crate::plugins::job_api::events::<D>),
+        )
         .merge(crate::machines::http::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
@@ -131,6 +137,12 @@ pub(crate) fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -
         HeaderValue::from_static("application/json"),
     );
     r
+}
+
+/// A failure envelope without a request ID, for routes outside `/api/v1/operations`.
+/// Cost: one small serialization.
+pub(crate) fn error_response(e: HostError) -> Response {
+    failure(None, e)
 }
 
 async fn api_not_found() -> Response {
@@ -222,9 +234,9 @@ async fn guard<D: Directory>(
                 .headers()
                 .get(header::ORIGIN)
                 .is_some_and(|v| v.as_bytes() != service.config.origin_header().as_bytes())
-            {
-                break 'resp deny(HostError::unauthorized("missing or invalid session"));
-            }
+        {
+            break 'resp deny(HostError::unauthorized("missing or invalid session"));
+        }
 
         if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
             let expected = if bearer(req.headers())
@@ -252,20 +264,30 @@ async fn guard<D: Directory>(
             break 'resp deny(HostError::forbidden("cross-site request denied"));
         }
         if api && !account_route {
+            // The installation travels with the request so plugin work can recheck it.
             let session = if let Some(service) = state.tokens.http_auth() {
                 crate::account_http::identify(service, req.headers())
                     .await
-                    .map(|(id, _)| Identity {
-                        id: Arc::from(id.to_string()),
+                    .map(|(id, installation)| {
+                        let session = Session::installation(id, installation);
+                        (
+                            Identity {
+                                id: Arc::from(id.to_string()),
+                            },
+                            session,
+                        )
                     })
             } else {
                 None
             };
-            match session
-                .or_else(|| bearer(req.headers()).and_then(|t| state.tokens.authenticate(t)))
-            {
-                Some(p) => {
+            match session.or_else(|| {
+                bearer(req.headers())
+                    .and_then(|t| state.tokens.authenticate(t))
+                    .map(|p| (p, Session::Static))
+            }) {
+                Some((p, session)) => {
                     req.extensions_mut().insert(p);
+                    req.extensions_mut().insert(session);
                 }
                 None => {
                     break 'resp deny(HostError::unauthorized("missing or invalid session"));
@@ -350,6 +372,11 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
         .get::<Identity>()
         .cloned()
         .expect("guard inserts principal");
+    let session = req
+        .extensions()
+        .get::<Session>()
+        .cloned()
+        .expect("guard inserts session");
     let ct_ok = req
         .headers()
         .get(header::CONTENT_TYPE)
@@ -388,6 +415,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let result = dispatch(
         state,
         p,
+        session,
         &request.request_id,
         &request.operation,
         request.input,
@@ -446,11 +474,14 @@ fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
 /// Dispatch through the mandatory policy gate before any handler or receipt replay.
 /// The caller supplies a verified identity; supplied fixture grants are discarded
 /// by conversion for legacy development callers. Each attempt reads current capability sets.
+/// Plugin operations carry `session` into every worker host call, which rechecks it;
+/// in-process callers without a revocable sign-in pass [`Session::Static`].
 /// Summarize additionally rechecks membership after the worker before delivery.
 /// Stored directory lookups run on blocking tasks; identities contain no grants.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
     p: impl Into<Identity>,
+    session: Session,
     request_id: &str,
     op: &str,
     input: JsonObject,
@@ -462,23 +493,26 @@ pub async fn dispatch<D: Directory>(
         .policy(op)
         .is_some_and(|p| p.scope == authz::Scope::Note);
     if op == "resolve" || item_scoped {
+        // A plugin operation names its target in the manifest; host item operations
+        // and `resolve` carry the item ID in `id`.
+        let target = state
+            .registry
+            .owner_of_operation(op)
+            .and_then(|p| p.target(op));
+        let field = target.map_or("id", |t| t.field.as_str());
         if calternal_core::is_known_operation(op) {
             calternal_core::validate_operation_input(op, &input)?;
         } else {
-            validate_item_input(&input)?;
+            validate_item_input(&input, field)?;
         }
         let kind = if op == "resolve" {
             input.get("kind").and_then(Value::as_str).unwrap_or("")
         } else {
-            state
-                .registry
-                .owner_of_operation(op)
-                .and_then(|p| p.item_operation(op))
-                .map_or("notes", |b| b.kind.as_str())
+            target.map_or("notes", |t| t.kind.as_str())
         }
         .to_owned();
         let id = input
-            .get("id")
+            .get(field)
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_owned();
@@ -505,10 +539,21 @@ pub async fn dispatch<D: Directory>(
             .get("space_id")
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
-            && state.tokens.wire_space(hint) != resolved.space_id {
-                return Err(HostError::not_found("item not found"));
-            }
+            && state.tokens.wire_space(hint) != resolved.space_id
+        {
+            return Err(HostError::not_found("item not found"));
+        }
         input.insert("space_id".into(), Value::String(resolved.space_id));
+    }
+    // A job's space comes from the job store, never from the caller.
+    let job_scoped = state
+        .registry
+        .policy(op)
+        .is_some_and(|p| p.scope == authz::Scope::Job);
+    if job_scoped {
+        calternal_core::validate_operation_input(op, &input)?;
+        let space = crate::plugins::job_api::route(&state, &input)?;
+        input.insert("space_id".into(), Value::String(space));
     }
     // One authorization path: a host row or a row derived from a plugin manifest.
     // Without either, answer as a hidden target would, so a caller cannot tell an
@@ -529,6 +574,13 @@ pub async fn dispatch<D: Directory>(
     tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &identity, &checked))
         .await
         .map_err(|_| HostError::internal("directory task failed"))??;
+    if job_scoped {
+        let space = match input.remove("space_id") {
+            Some(Value::String(space)) => space,
+            _ => return Err(HostError::not_found("job not found")),
+        };
+        return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
+    }
     if op.starts_with("secrets.") {
         return crate::secrets::dispatch(state, p, policy, input).await;
     }
@@ -560,7 +612,7 @@ pub async fn dispatch<D: Directory>(
         *space = state.tokens.content_space(space);
     }
     if policy.constraint == Constraint::PluginInvocation {
-        return invoke_plugin(state, p, request_id, op, policy, input).await;
+        return invoke_plugin(state, p, session, request_id, op, policy, input).await;
     }
     let delivery_space = input
         .get("space_id")
@@ -695,7 +747,7 @@ async fn dispatch_checked<D: Directory>(
                     s.provision_plugin(
                         &i.space_id,
                         &principal,
-                        &plugin.kind_registrations()?,
+                        &plugin.kind_registrations(),
                         &collections,
                     )?;
                 }
@@ -783,15 +835,16 @@ fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, 
     })
 }
 
-/// Wire shape of an item-targeted plugin operation without a core-contract entry:
-/// exactly `{ "id": <string>, "space_id"?: <string> }`. Cost: O(keys).
-fn validate_item_input(input: &JsonObject) -> Result<(), HostError> {
+/// Host-checked part of an item-targeted plugin operation without a core-contract
+/// entry: `field` holds a bounded string ID and the optional `space_id` hint is a
+/// string. Every other property is checked by the declared input schema before the
+/// worker sees it. Cost: O(1) map lookups.
+fn validate_item_input(input: &JsonObject, field: &str) -> Result<(), HostError> {
     let shape = HostError::invalid_input("input does not match operation schema");
-    if input.keys().any(|k| k != "id" && k != "space_id")
-        || !input
-            .get("id")
-            .and_then(Value::as_str)
-            .is_some_and(|id| !id.is_empty() && id.len() <= 128)
+    if !input
+        .get(field)
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty() && id.len() <= 128)
         || input.get("space_id").is_some_and(|v| !v.is_string())
     {
         return Err(shape);
@@ -808,6 +861,7 @@ fn outcome_value(outcome: Outcome) -> Result<Value, HostError> {
         )),
         Outcome::Refused => Err(HostError::unavailable("extension request was refused")),
         Outcome::Failed(e) => Err(e),
+        Outcome::Cancelled => Err(HostError::unavailable("extension request was cancelled")),
     }
 }
 
@@ -829,6 +883,12 @@ fn check_view(plugin: &Plugin, value: &Value) -> Result<(), HostError> {
 
 /// Invoke a manifest-declared operation on its (plugin, space) worker.
 ///
+/// A mutating operation is receipted like every other write: a retry with the same
+/// request ID and input returns the original result without invoking the worker, and
+/// different input under that ID is a conflict. The worker's own `write_item` calls
+/// carry per-call receipts, so a retry after an undelivered result replays them.
+/// Cost for mutating operations: one receipt lookup before, one journal append after.
+///
 /// Admission (already done by the caller) checked the manifest-derived policy.
 /// Here: the plugin must be enabled; its activation generation is captured; every
 /// host call and the delivery are rechecked by the broker; then, as before, the
@@ -837,6 +897,7 @@ fn check_view(plugin: &Plugin, value: &Value) -> Result<(), HostError> {
 async fn invoke_plugin<D: Directory>(
     state: Shared<D>,
     p: Identity,
+    session: Session,
     request_id: &str,
     op: &str,
     policy: authz::Policy,
@@ -847,26 +908,53 @@ async fn invoke_plugin<D: Directory>(
         .owner_of_operation(op)
         .ok_or_else(|| HostError::not_found("unknown operation"))?
         .clone();
+    let fp = fingerprint(op, &input);
+    let mutates = plugin.operation(op).is_some_and(|o| o.mutates);
     let space = match input.remove("space_id") {
         Some(Value::String(space)) => space,
-        _ => return Err(HostError::invalid_input("input does not match operation schema")),
-    };
-    let plugin_input = match plugin.item_operation(op) {
-        Some(binding) => {
-            let id = input.remove("id").unwrap_or(Value::Null);
-            serde_json::json!({ binding.field.clone(): id })
+        _ => {
+            return Err(HostError::invalid_input(
+                "input does not match operation schema",
+            ));
         }
-        None => Value::Object(input.into_iter().collect()),
     };
+    // The resolved space travels separately; the plugin sees only its declared input.
+    let plugin_input = Value::Object(input.into_iter().collect());
     let (space_key, plugin2, account) = (space.clone(), plugin.clone(), p.id.clone());
-    let (generation, (account_id, space_id)) = blocking(&state, move |s| {
+    let (st, rid, operation, fp2) = (
+        state.clone(),
+        request_id.to_owned(),
+        op.to_owned(),
+        fp.clone(),
+    );
+    let admitted = blocking(&state, move |s| {
+        // A mutating operation's retry replays its receipt and runs nothing again.
+        if mutates {
+            if st.tokens.has_space_receipt(
+                &Identity {
+                    id: account.clone(),
+                },
+                &rid,
+            )? {
+                return Err(HostError::conflict(
+                    "request_id was already used with different input",
+                ));
+            }
+            if let Some(v) = replay_receipt(s, &account, &rid, &operation, &fp2)? {
+                return Ok(Err(v));
+            }
+        }
         let row = activation(s, &space_key, &plugin2)?;
         if !row.enabled {
             return Err(HostError::forbidden("plugin is disabled in this space"));
         }
-        Ok((row.generation, s.worker_ids(&account, &space_key)?))
+        Ok(Ok((row.generation, s.worker_ids(&account, &space_key)?)))
     })
     .await?;
+    let (generation, (account_id, space_id)) = match admitted {
+        Ok(admitted) => admitted,
+        Err(replayed) => return Ok(wire_spaces(&state.tokens, replayed)),
+    };
     let ids = calternal_plugin_host::AccountId::parse(&account_id)
         .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
     let Ok((account_id, space_id)) = ids else {
@@ -877,7 +965,9 @@ async fn invoke_plugin<D: Directory>(
     let host = SpaceHost::new(
         state.clone(),
         p.clone(),
+        session.clone(),
         space.clone(),
+        space_id.as_uuid().to_string(),
         plugin.clone(),
         generation,
         request_id.to_owned(),
@@ -893,11 +983,17 @@ async fn invoke_plugin<D: Directory>(
                 input: plugin_input,
                 account: account_id,
                 host: Arc::new(host),
+                timeout: crate::plugins::WORKER_TIMEOUT,
+                cancel: None,
+                job: None,
             },
         )
         .await;
     // Delivery checks run whatever the worker answered, so a refusal caused by a
     // revocation reports the same error the revocation itself would.
+    if !session.is_live(&state.tokens).await {
+        return Err(HostError::unauthorized("missing or invalid session"));
+    }
     let (space_key, plugin2) = (space.clone(), plugin.clone());
     let still = blocking(&state, move |s| activation(s, &space_key, &plugin2)).await?;
     if !still.enabled || still.generation != generation {
@@ -908,16 +1004,27 @@ async fn invoke_plugin<D: Directory>(
     }
     let st = state.clone();
     let delivery = space.clone();
+    let caller = p.id.clone();
     tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &delivery))
         .await
         .map_err(|_| HostError::internal("directory task failed"))??;
     let value = outcome_value(outcome)?;
     check_view(&plugin, &value)?;
+    if mutates {
+        // Only a delivered result is receipted: a refused or failed call may be
+        // retried, and its brokered writes replay by their own receipts.
+        let (principal, rid, op, result) =
+            (caller, request_id.to_owned(), op.to_owned(), value.clone());
+        blocking(&state, move |s| {
+            s.record_plugin_receipt(&principal, &rid, &op, &fp, &space, result)
+        })
+        .await?;
+    }
     Ok(wire_spaces(&state.tokens, value))
 }
 
 /// Preview a plugin without activating it or touching user data: its first
-/// item-targeted operation runs against the fixed fixture item, served by a
+/// item-targeted operation (manifest `target`) runs against the fixed fixture item, served by a
 /// broker that refuses every other host call. A plugin with no worker or no
 /// item-targeted operation has nothing to preview (not found).
 async fn preview<D: Directory>(
@@ -926,13 +1033,13 @@ async fn preview<D: Directory>(
     plugin: Arc<Plugin>,
     space: &str,
 ) -> Result<Value, HostError> {
-    let binding = plugin
-        .entry
-        .item_operations
-        .first()
+    let (operation, target) = plugin
+        .manifest
+        .operations
+        .iter()
+        .find_map(|op| Some((op.id.clone(), op.target.clone()?)))
         .filter(|_| plugin.entry.worker.is_some())
-        .ok_or_else(|| HostError::not_found("plugin has no views"))?
-        .clone();
+        .ok_or_else(|| HostError::not_found("plugin has no views"))?;
     let (space_key, account) = (space.to_owned(), p.id.clone());
     let (account_id, space_id) =
         blocking(&state, move |s| s.worker_ids(&account, &space_key)).await?;
@@ -950,10 +1057,13 @@ async fn preview<D: Directory>(
             space,
             space_id,
             Call {
-                operation: binding.operation.clone(),
-                input: serde_json::json!({ binding.field.clone(): PREVIEW_ITEM_ID }),
+                operation,
+                input: serde_json::json!({ target.field: PREVIEW_ITEM_ID }),
                 account: account_id,
-                host: Arc::new(PreviewHost { kind: binding.kind }),
+                host: Arc::new(PreviewHost { kind: target.kind }),
+                timeout: crate::plugins::WORKER_TIMEOUT,
+                cancel: None,
+                job: None,
             },
         )
         .await;

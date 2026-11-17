@@ -491,6 +491,31 @@ impl Store {
             .materialize(self.space(&space)?, item_id(id)?)
             .map_err(content_error)
     }
+    /// Records the result of a mutating plugin operation under the caller's request ID,
+    /// so a retry replays it through [`Self::receipt`] instead of running the plugin
+    /// again. The receipt lives in the space's journal like every other write receipt;
+    /// a request ID already bound to another space is a conflict.
+    /// Cost: one per-space journal append with FULL durability plus one indexed
+    /// request-route insert.
+    pub fn record_plugin_receipt(
+        &self,
+        principal: &str,
+        request_id: &str,
+        operation: &str,
+        fingerprint: &str,
+        space_id: &str,
+        result: serde_json::Value,
+    ) -> Result<(), HostError> {
+        let request = Request {
+            account: self.account(principal)?,
+            id: request_id,
+            operation,
+            fingerprint,
+        };
+        self.content
+            .record_receipt(self.space(space_id)?, request, result)
+            .map_err(content_error)
+    }
     /// UUID forms of an acting account and a content space, for worker authority
     /// correlation only (they grant nothing). Cost: at most two indexed binding
     /// lookups; a first-seen fixture name inserts one binding row.

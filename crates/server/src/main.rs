@@ -46,6 +46,10 @@ enum Cmd {
         /// Absolute Node executable for plugin workers (default: node on PATH).
         #[arg(long)]
         node: Option<PathBuf>,
+        /// Root of the test-only plugins (`tests/plugins`); refused unless the server
+        /// was built with the `test-plugins` feature.
+        #[arg(long)]
+        test_plugin_root: Option<PathBuf>,
         /// How long a machine's leases survive without a sync, in milliseconds.
         #[arg(long, default_value_t = 90_000)]
         machine_lease_ttl_ms: u64,
@@ -195,7 +199,14 @@ fn main() {
             trusted_proxies,
             machine_lease_ttl_ms,
             machine_poll_hold_ms,
+            test_plugin_root,
         } => {
+            if test_plugin_root.is_some() && plugins::test_entries().is_empty() {
+                eprintln!(
+                    "calternal: --test-plugin-root needs a build with the test-plugins feature"
+                );
+                std::process::exit(1);
+            }
             let machines = calternal_server::machines::Settings {
                 lease_ttl: std::time::Duration::from_millis(machine_lease_ttl_ms),
                 poll_hold: std::time::Duration::from_millis(machine_poll_hold_ms),
@@ -216,6 +227,7 @@ fn main() {
                 development,
                 origin,
                 trusted_proxies,
+                test_plugin_root,
                 machines,
             ))
         }
@@ -253,6 +265,7 @@ async fn serve(
     development: bool,
     origin: Option<String>,
     trusted_proxies: String,
+    test_plugin_root: Option<PathBuf>,
     machine_settings: calternal_server::machines::Settings,
 ) -> i32 {
     if let Err(e) = calternal_auth::private_fs::directory(&data_dir) {
@@ -288,7 +301,11 @@ async fn serve(
     };
     let _sweeper = machines.spawn_sweeper();
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
-    let registry = Registry::load(&plugin_root);
+    let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
+    let registry = match &test_root {
+        Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
+        None => Registry::load(&plugin_root),
+    };
     let node = match plugins::resolve_node(node.as_deref()).await {
         Ok(n) => {
             tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");
@@ -360,14 +377,30 @@ async fn serve(
             hosts.push(authority);
         }
     }
+    let jobs = match plugins::Jobs::open(&data_dir) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("calternal: {}", e.message);
+            return 2;
+        }
+    };
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
         store: Mutex::new(store),
         tokens,
         registry,
         workers: plugins::WorkerPool::new(node),
+        jobs,
         allowed_hosts: hosts,
     });
+    match plugins::runner::recover(&state).await {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),
+        Err(e) => {
+            eprintln!("calternal: job recovery: {}", e.message);
+            return 2;
+        }
+    }
     let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
 
     let base_url = if development {

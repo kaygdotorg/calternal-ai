@@ -11,14 +11,14 @@
       "input_schema": {
         "type": "object",
         "properties": {
-          "note_id": {
+          "id": {
             "type": "string",
             "format": "uuid",
             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
           }
         },
         "required": [
-          "note_id"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -63,7 +63,11 @@
       },
       "required_capability": "space.read",
       "mutates": false,
-      "idempotency": "read_only"
+      "idempotency": "read_only",
+      "target": {
+        "kind": "notes",
+        "field": "id"
+      }
     }
   ],
   "collections": [],

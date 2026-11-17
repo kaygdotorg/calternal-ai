@@ -104,6 +104,7 @@ impl Fixture {
                 tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),
+                jobs: calternal_server::plugins::Jobs::disabled(),
                 allowed_hosts: allowed_hosts(0),
             });
             Self {

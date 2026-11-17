@@ -41,6 +41,7 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),
+            jobs: calternal_server::plugins::Jobs::disabled(),
             allowed_hosts: api::allowed_hosts(8080),
         }),
         None,

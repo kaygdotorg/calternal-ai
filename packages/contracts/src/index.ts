@@ -10,7 +10,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Retry behavior declared by an operation.
  */
@@ -58,6 +58,12 @@ storage: ManifestPlacement,
  */
 claimed_text: boolean,
 /**
+ * Lowercase ASCII file extension without the dot (1 to 16 letters or digits).
+ * Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one;
+ * the host stores their bytes unparsed under it.
+ */
+extension?: string,
+/**
  * Stable kind name used in item addresses.
  */
 id: string,
@@ -65,6 +71,22 @@ id: string,
  * JSON Schema for the kind content; no executable code.
  */
 schema: unknown, };
+/**
+ * The single item an operation acts on. The host reads the item ID from the named
+ * input field, resolves its owning space with the existence-hiding resolver and
+ * authorizes the caller in that space before any plugin code runs.
+ */
+
+export type ManifestTarget = {
+/**
+ * Kind of the target item, such as `notes`; it may belong to another plugin.
+ */
+kind: string,
+/**
+ * Top-level input property holding the item ID; the input schema must require it
+ * as a string.
+ */
+field: string, };
 /**
  * Public operation declaration consumed by host policy.
  */
@@ -93,7 +115,12 @@ mutates: boolean,
 /**
  * Retry and host receipt contract.
  */
-idempotency: ManifestIdempotency, };
+idempotency: ManifestIdempotency,
+/**
+ * Item the operation targets; absent (or null) for a space-scoped operation,
+ * whose wire input names its space in `space_id`.
+ */
+target?: ManifestTarget, };
 /**
  * Provisioning template; the host allocates a fresh Collection UUID per enable.
  */
@@ -223,7 +250,8 @@ id: string,
  */
 stylesheet: string, };
 /**
- * Plugin menu read without running plugin code; all fields are required.
+ * Plugin menu read without running plugin code. Every top-level field is required;
+ * only the documented optional fields inside declarations may be omitted.
  */
 
 export type ManifestV1 = {
@@ -295,6 +323,68 @@ themes: Array<ManifestTheme>,
  * Broker calls the worker may request; each still needs live authorization.
  */
 host_calls: Array<HostCallKind>, };
+/**
+ * Lifecycle of a job. `admitted`, `running` and `waiting` are active; the rest are
+ * final and never change again.
+ */
+
+export type JobState = "admitted" | "running" | "waiting" | "done" | "failed" | "cancelled" | "outcome_unknown";
+/**
+ * Input for `jobs.get` and `jobs.cancel`. Possessing a job ID grants nothing: a job
+ * in a space the caller cannot read answers exactly like a missing one.
+ */
+
+export type JobInput = {
+/**
+ * Host-issued job UUID.
+ */
+job_id: string, };
+/**
+ * What a client may see of a job: its durable record, never its stream.
+ */
+
+export type JobView = {
+/**
+ * Host-issued job UUID.
+ */
+id: string,
+/**
+ * Plugin that runs the job.
+ */
+plugin_id: string,
+/**
+ * Space UUID that owns the job.
+ */
+space_id: string,
+/**
+ * Current lifecycle state.
+ */
+state: JobState,
+/**
+ * Parent job UUID for a child job.
+ */
+parent_id?: string,
+/**
+ * Last durable checkpoint written by the plugin, or null.
+ */
+checkpoint: unknown,
+/**
+ * Stream sequence number of the first chunk after that checkpoint.
+ */
+checkpoint_seq: bigint,
+/**
+ * Final result of a `done` job, or null.
+ */
+result: unknown, };
+/**
+ * Result for `jobs.get` and `jobs.cancel`.
+ */
+
+export type JobResult = {
+/**
+ * The job after the operation.
+ */
+job: JobView, };
 /**
  * Envelope for every `POST /api/v1/operations` call. Retain request identity and input unchanged after uncertain mutation outcomes.
  */

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ManifestV1",
-  "description": "Plugin menu read without running plugin code; all fields are required.",
+  "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
   "type": "object",
   "required": [
     "api_version",
@@ -168,6 +168,13 @@
           "type": "string",
           "enum": [
             "start_job"
+          ]
+        },
+        {
+          "description": "Durably record a running job's checkpoint, from its run invocation.",
+          "type": "string",
+          "enum": [
+            "checkpoint_job"
           ]
         },
         {
@@ -406,6 +413,13 @@
           "description": "True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.",
           "type": "boolean"
         },
+        "extension": {
+          "description": "Lowercase ASCII file extension without the dot (1 to 16 letters or digits). Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one; the host stores their bytes unparsed under it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "description": "Stable kind name used in item addresses.",
           "type": "string"
@@ -463,6 +477,17 @@
           "allOf": [
             {
               "$ref": "#/definitions/ManifestCapability"
+            }
+          ]
+        },
+        "target": {
+          "description": "Item the operation targets; absent (or null) for a space-scoped operation, whose wire input names its space in `space_id`.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestTarget"
+            },
+            {
+              "type": "null"
             }
           ]
         }
@@ -604,6 +629,25 @@
           ]
         }
       ]
+    },
+    "ManifestTarget": {
+      "description": "The single item an operation acts on. The host reads the item ID from the named input field, resolves its owning space with the existence-hiding resolver and authorizes the caller in that space before any plugin code runs.",
+      "type": "object",
+      "required": [
+        "field",
+        "kind"
+      ],
+      "properties": {
+        "field": {
+          "description": "Top-level input property holding the item ID; the input schema must require it as a string.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind of the target item, such as `notes`; it may belong to another plugin.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "ManifestTheme": {
       "description": "Network-free theme asset; protected surfaces cannot be themed.",

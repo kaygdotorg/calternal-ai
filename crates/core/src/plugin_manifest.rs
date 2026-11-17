@@ -64,6 +64,9 @@ pub enum HostCallKind {
     /// Request durable job admission.
     #[serde(rename = "start_job")]
     StartJob,
+    /// Durably record a running job's checkpoint, from its run invocation.
+    #[serde(rename = "checkpoint_job")]
+    CheckpointJob,
     /// Request a scoped opaque handle, never secret bytes.
     #[serde(rename = "request_secret_handle")]
     RequestSecretHandle,
@@ -148,10 +151,28 @@ pub struct ManifestKind {
     pub storage: ManifestPlacement,
     /// True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.
     pub claimed_text: bool,
+    /// Lowercase ASCII file extension without the dot (1 to 16 letters or digits).
+    /// Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one;
+    /// the host stores their bytes unparsed under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub extension: Option<String>,
     /// Stable kind name used in item addresses.
     pub id: String,
     /// JSON Schema for the kind content; no executable code.
     pub schema: serde_json::Value,
+}
+/// The single item an operation acts on. The host reads the item ID from the named
+/// input field, resolves its owning space with the existence-hiding resolver and
+/// authorizes the caller in that space before any plugin code runs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestTarget {
+    /// Kind of the target item, such as `notes`; it may belong to another plugin.
+    pub kind: String,
+    /// Top-level input property holding the item ID; the input schema must require it
+    /// as a string.
+    pub field: String,
 }
 /// Public operation declaration consumed by host policy.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -169,6 +190,11 @@ pub struct ManifestOperation {
     pub mutates: bool,
     /// Retry and host receipt contract.
     pub idempotency: ManifestIdempotency,
+    /// Item the operation targets; absent (or null) for a space-scoped operation,
+    /// whose wire input names its space in `space_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub target: Option<ManifestTarget>,
 }
 /// Provisioning template; the host allocates a fresh Collection UUID per enable.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -254,7 +280,8 @@ pub struct ManifestTheme {
     /// Relative packaged CSS asset; activation requires sealed theme validation.
     pub stylesheet: String,
 }
-/// Plugin menu read without running plugin code; all fields are required.
+/// Plugin menu read without running plugin code. Every top-level field is required;
+/// only the documented optional fields inside declarations may be omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestV1 {

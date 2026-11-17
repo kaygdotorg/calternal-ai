@@ -1,0 +1,324 @@
+//! Client surface of plugin jobs: `jobs.get`, `jobs.cancel` and the live stream.
+//!
+//! The stream is server-sent events at `GET /api/v1/jobs/<job-id>/events`. SSE was
+//! chosen over a WebSocket because the stream is one-way, the server's HTTP stack
+//! (axum 0.8 with only `http1`, `tokio` and `json`) needs no upgrade feature or new
+//! dependency for it, the same guard (Host, Origin, cookie session) applies as to
+//! any API request, and browsers reconnect by themselves with `Last-Event-ID`.
+//!
+//! Events, each `id: <epoch>:<seq>` where it applies:
+//! - `snapshot` — the durable record ([`calternal_core::JobView`]) plus the stream
+//!   `epoch`; always first.
+//! - `chunk` — `{ seq, data }`, in order.
+//! - `reset` — `{ epoch, from }`: the chunks the client asked for are gone (another
+//!   run started, or they were evicted from the bounded buffer). The client keeps
+//!   the snapshot's checkpoint and continues from `from`.
+//! - `end` — the final record; the stream then closes.
+//!
+//! A client resumes with `?after=<epoch>:<seq>` (or `Last-Event-ID`). Every delivery
+//! rechecks the subscriber's sign-in, its `space.read` in the job's space and the
+//! plugin's activation at the job's generation; on failure the stream closes. A job
+//! the caller cannot see is the same not-found as a missing one.
+
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
+use std::time::Duration;
+
+use axum::body::Body;
+use axum::extract::{Path, Request, State};
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use calternal_core::{JobInput, JobResult};
+use serde_json::{Value, json};
+
+use super::jobs::Job;
+use super::live::Subscription;
+use super::{Session, activation, runner};
+use crate::api::Shared;
+use crate::auth::{Directory, Identity};
+use crate::authz::Capability;
+use crate::error::HostError;
+
+/// Longest wait between deliveries; an idle stream sends a comment and rechecks access.
+pub const KEEPALIVE: Duration = Duration::from_secs(15);
+
+fn hidden() -> HostError {
+    HostError::not_found("job not found")
+}
+
+async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, HostError> + Send + 'static,
+) -> Result<T, HostError> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|_| HostError::internal("job task failed"))?
+}
+
+/// The space UUID of a job, for policy admission. Cost: one shared map read.
+pub fn route<D: Directory>(
+    state: &Shared<D>,
+    input: &calternal_core::JsonObject,
+) -> Result<String, HostError> {
+    let id = input.get("job_id").and_then(Value::as_str).unwrap_or("");
+    state.jobs.route(id).ok_or_else(hidden)
+}
+
+/// Whether `identity` may still see `job`: live sign-in, `required` in its space and
+/// the plugin enabled at the job's generation. Cost: one session check, one
+/// directory read and one activation read on a blocking task.
+async fn visible<D: Directory>(
+    state: &Shared<D>,
+    identity: &Identity,
+    session: &Session,
+    job: &Job,
+    required: Capability,
+) -> bool {
+    if !session.is_live(&state.tokens).await {
+        return false;
+    }
+    let (st, account, space, plugin, generation) = (
+        state.clone(),
+        identity.id.clone(),
+        state.tokens.content_space(&job.space),
+        job.plugin.clone(),
+        job.generation,
+    );
+    blocking(move || {
+        let caps = st.tokens.capabilities(&account, &space);
+        let Some(plugin) = st.registry.get(&plugin) else {
+            return Ok(false);
+        };
+        let store = st
+            .store
+            .lock()
+            .map_err(|_| HostError::internal("store poisoned"))?;
+        let row = activation(&store, &space, plugin)?;
+        Ok(caps.is_some_and(|c| c.contains(required))
+            && row.enabled
+            && row.generation == generation)
+    })
+    .await
+    .unwrap_or(false)
+}
+
+async fn load<D: Directory>(state: &Shared<D>, space: &str, id: &str) -> Result<Job, HostError> {
+    let (st, sp, jid) = (state.clone(), space.to_owned(), id.to_owned());
+    blocking(move || st.jobs.get(&sp, &jid))
+        .await?
+        .ok_or_else(hidden)
+}
+
+/// `jobs.get` and `jobs.cancel` after policy admission in `space` (a UUID).
+/// Cancelling needs the starting account or `plugins.manage`; it cancels the job and
+/// its active descendants and wakes a parent they unblock.
+/// Cost: one indexed read; cancel adds one FULL transaction.
+pub async fn dispatch<D: Directory>(
+    state: Shared<D>,
+    identity: Identity,
+    op: &str,
+    space: String,
+    input: calternal_core::JsonObject,
+) -> Result<Value, HostError> {
+    let i: JobInput = serde_json::from_value(Value::Object(input.into_iter().collect()))
+        .map_err(|_| HostError::invalid_input("input does not match operation schema"))?;
+    let job = load(&state, &space, &i.job_id).await?;
+    if op == "jobs.cancel" {
+        let owner = *job.account == *identity.id
+            || state
+                .tokens
+                .capabilities(&identity.id, &state.tokens.content_space(&space))
+                .is_some_and(|c| c.contains(Capability::PluginsManage));
+        if !owner {
+            return Err(HostError::forbidden(
+                "only the job's starter or a plugin manager can cancel it",
+            ));
+        }
+        let (st, sp, jid) = (state.clone(), space.clone(), i.job_id.clone());
+        for woken in blocking(move || st.jobs.cancel(&sp, &jid)).await? {
+            runner::schedule(&state, space.clone(), woken);
+        }
+    }
+    let job = load(&state, &space, &i.job_id).await?;
+    serde_json::to_value(JobResult { job: job.view() }).map_err(|_| HostError::internal("encode"))
+}
+
+/// Parse `<epoch>:<seq>` from the query or `Last-Event-ID`.
+fn cursor(req: &Request) -> Option<(String, u64)> {
+    let from_query = req.uri().query().and_then(|q| {
+        q.split('&')
+            .find_map(|kv| kv.strip_prefix("after="))
+            .map(str::to_owned)
+    });
+    let raw = from_query.or_else(|| {
+        req.headers()
+            .get("last-event-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    })?;
+    let (epoch, seq) = raw.split_once(':')?;
+    Some((epoch.to_owned(), seq.parse().ok()?))
+}
+
+fn event(name: &str, id: Option<String>, data: &Value) -> String {
+    let mut out = String::new();
+    if let Some(id) = id {
+        out.push_str(&format!("id: {id}\n"));
+    }
+    out.push_str(&format!("event: {name}\ndata: {data}\n\n"));
+    out
+}
+
+/// `GET /api/v1/jobs/<id>/events`: the job's server-sent event stream.
+pub async fn events<D: Directory>(
+    State(state): State<Shared<D>>,
+    Path(id): Path<String>,
+    req: Request,
+) -> Response {
+    let identity = req.extensions().get::<Identity>().cloned();
+    let session = req.extensions().get::<Session>().cloned();
+    let (Some(identity), Some(session)) = (identity, session) else {
+        return hidden_response();
+    };
+    let after = cursor(&req);
+    let Some(space) = state.jobs.route(&id) else {
+        return hidden_response();
+    };
+    let Ok(job) = load(&state, &space, &id).await else {
+        return hidden_response();
+    };
+    if !visible(&state, &identity, &session, &job, Capability::SpaceRead).await {
+        return hidden_response();
+    }
+    let sub = match state.jobs.subscribe(&id) {
+        Ok(sub) => sub,
+        Err(e) => return crate::api::error_response(e),
+    };
+    let stream = Stream {
+        state,
+        identity,
+        session,
+        space,
+        id,
+        sub,
+        after,
+        next: None,
+        epoch: String::new(),
+        started: false,
+        done: false,
+    };
+    let body = Body::from_stream(futures_util::stream::unfold(stream, |mut s| async move {
+        let frame = s.next_frame().await?;
+        Some((Ok::<_, std::convert::Infallible>(frame), s))
+    }));
+    let mut r = (StatusCode::OK, body).into_response();
+    let h = r.headers_mut();
+    h.insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream"),
+    );
+    h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r
+}
+
+fn hidden_response() -> Response {
+    crate::api::error_response(hidden())
+}
+
+/// One subscriber's position in a job stream.
+struct Stream<D: Directory> {
+    state: Shared<D>,
+    identity: Identity,
+    session: Session,
+    space: String,
+    id: String,
+    sub: Subscription,
+    after: Option<(String, u64)>,
+    next: Option<u64>,
+    epoch: String,
+    started: bool,
+    done: bool,
+}
+
+impl<D: Directory> Stream<D> {
+    /// The next SSE frame, or `None` to close. Each call is one delivery: it rechecks
+    /// access, then sends what is new. Cost: one indexed job read, one access check
+    /// and a copy of the newly buffered chunks.
+    async fn next_frame(&mut self) -> Option<String> {
+        if self.done {
+            return None;
+        }
+        let mut watch = self.sub.live.watch();
+        loop {
+            let job = load(&self.state, &self.space, &self.id).await.ok()?;
+            if !visible(
+                &self.state,
+                &self.identity,
+                &self.session,
+                &job,
+                Capability::SpaceRead,
+            )
+            .await
+            {
+                return None;
+            }
+            let batch = self.sub.live.read(0);
+            let mut out = String::new();
+            if !self.started {
+                self.started = true;
+                let snapshot = json!({ "job": job.view(), "epoch": batch.epoch });
+                out.push_str(&event("snapshot", None, &snapshot));
+                self.next = match self.after.take() {
+                    Some((epoch, seq)) if epoch == batch.epoch && seq + 1 >= batch.oldest => {
+                        Some(seq + 1)
+                    }
+                    Some(_) => None,
+                    None => Some(job.checkpoint_seq),
+                };
+                self.epoch = batch.epoch.clone();
+            }
+            if self.epoch != batch.epoch {
+                self.epoch = batch.epoch.clone();
+                self.next = None;
+            }
+            let want = match self.next {
+                Some(n) if n >= batch.oldest => n,
+                _ => {
+                    // Asked-for chunks are gone: continue from the checkpoint if it is
+                    // still buffered, else from the oldest chunk kept.
+                    let from = job.checkpoint_seq.max(batch.oldest);
+                    out.push_str(&event(
+                        "reset",
+                        None,
+                        &json!({ "epoch": batch.epoch, "from": from }),
+                    ));
+                    from
+                }
+            };
+            let mut next = want;
+            for chunk in batch.chunks.iter().filter(|c| c.seq >= want) {
+                let data: Value = serde_json::from_str(&chunk.data).unwrap_or(Value::Null);
+                out.push_str(&event(
+                    "chunk",
+                    Some(format!("{}:{}", batch.epoch, chunk.seq)),
+                    &json!({ "seq": chunk.seq, "data": data }),
+                ));
+                next = chunk.seq + 1;
+            }
+            self.next = Some(next);
+            if job.state.is_final() {
+                self.done = true;
+                out.push_str(&event("end", None, &json!({ "job": job.view() })));
+                return Some(out);
+            }
+            if !out.is_empty() {
+                return Some(out);
+            }
+            match tokio::time::timeout(KEEPALIVE, watch.changed()).await {
+                Ok(Ok(())) => continue,
+                Ok(Err(_)) => return None,
+                Err(_) => return Some(": keepalive\n\n".into()),
+            }
+        }
+    }
+}

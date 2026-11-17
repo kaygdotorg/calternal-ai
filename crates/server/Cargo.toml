@@ -13,6 +13,10 @@ path = "src/main.rs"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# Trust the test-only plugins under tests/plugins (never in a shipped build).
+test-plugins = []
+
 [dependencies]
 calternal-content.workspace = true
 calternal-roots.workspace = true
@@ -36,6 +40,8 @@ subtle = "2"
 getrandom = "0.3"
 time = { version = "0.3", features = ["formatting", "macros"] }
 tracing = "0.1"
+# Already in the dependency tree through axum; used for the SSE body stream.
+futures-util = { version = "0.3", default-features = false }
 ring = "0.17"
 base64 = "0.22"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }

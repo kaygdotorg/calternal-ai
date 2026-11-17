@@ -281,6 +281,21 @@ impl WorkerSession {
         self.outgoing.push_back(frame);
         Ok(())
     }
+    /// Cost: O(log bounded state), one small allocation; no I/O, locks or authority check.
+    /// Let an admitted invocation emit chunks for a job the host already admitted, as
+    /// when the host invokes a job's run operation. Jobs a worker starts itself are
+    /// attached by a successful `start_job` reply instead.
+    pub fn attach_job(&mut self, id: &str, job_id: &str) -> Result<(), Error> {
+        if !crate::registry::identifier(job_id) {
+            return Err(Error::Invalid);
+        }
+        let invocation = self.active.get_mut(id).ok_or(Error::Invocation)?;
+        if invocation.jobs.len() >= MAX_CALLBACKS {
+            return Err(Error::BackPressure);
+        }
+        invocation.jobs.insert(job_id.to_owned());
+        Ok(())
+    }
     /// Cost: O(frame bytes + schema evaluation + log bounded state), bounded queue allocations.
     /// At most one broker effect plus two authority checks; no library I/O or locks.
     /// Receive one worker frame. Full queues refuse before callbacks or state changes.

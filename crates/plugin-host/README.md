@@ -32,8 +32,9 @@ receipts for writes. Secret requests accept `{ "name": "declared-name" }` and re
 `{ "handle": "opaque-host-issued-id" }`; other response shapes are redacted. `start_job`
 returns `{ "job_id": "host-issued-id" }`; only jobs admitted for this invocation
 may emit chunks, whose sequence starts at zero across that invocation. These are
-ephemeral chunks; durable job admission/checkpoints/replay belong to a later host
-adapter. `next_delivery` rechecks current authority before returning queued data.
+ephemeral chunks; the server's job service (`crates/server/src/plugins/jobs.rs`) owns
+durable admission, checkpoints and replay, and attaches a host-started run invocation
+to its job with `attach_job`. `next_delivery` rechecks current authority before returning queued data.
 `next_outgoing` also rechecks current authority before releasing an invocation or
 callback reply to the transport. Adapters must deliver immediately after draining,
 and keep their final storage/network checks atomic with protected effects.
@@ -54,7 +55,10 @@ Node permission flags do not establish OS isolation. No arbitrary plugin
 installation, server wiring, trusted grant UI, durable scheduler, webhook route,
 theme sealing or Collection provisioning side effect is implemented here.
 Each kind declares `storage: { "folder": "Notes" }` or `storage: { "hidden": true }`,
-plus `claimed_text: true` (userdata-ssd) or `false` (userdata-hdd). Visible folders
+plus `claimed_text: true` (userdata-ssd) or `false` (userdata-hdd). Claimed text is
+Markdown (`extension` absent or `md`); any other kind must declare `extension`, 1 to 16
+lowercase ASCII letters or digits. An operation may declare `target: { kind, field }`;
+`field` must be a required string property of its input schema. Visible folders
 must be NFC single components, at most 255 UTF-8 bytes, without separators,
 control characters, leading dots, surrounding whitespace or reserved `Trash`.
 Inherited fsio NFC/lowercase comparison rejects two plugins claiming the same

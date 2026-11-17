@@ -150,14 +150,13 @@ impl Fixture {
         let worker = support::worker(
             &root,
             support::READ_NOTE,
-            if block { support::COMPLETE_AFTER_GO } else { support::COMPLETE },
+            if block {
+                support::COMPLETE_AFTER_GO
+            } else {
+                support::COMPLETE
+            },
         );
-        let plugin = support::plugin(
-            support::insights_manifest(),
-            Some(&worker),
-            true,
-            &[("notes-insights.summarize", "notes", "note_id")],
-        );
+        let plugin = support::plugin(support::insights_manifest(), Some(&worker), true);
         let mut store = Store::open(&root.join("data")).unwrap();
         let note = serde_json::to_value(
             store
@@ -182,6 +181,7 @@ impl Fixture {
                     .await
                     .expect("Node >= 22.13 for worker tests"),
             )),
+            jobs: calternal_server::plugins::Jobs::disabled(),
             allowed_hosts: allowed_hosts(0),
         });
         Self { state, note, root }
@@ -271,6 +271,9 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "spaces.leave",
         "spaces.transfer",
         "spaces.delete",
+        // Job rows need a durable job; their role matrix is in plugin_host.rs.
+        "jobs.get",
+        "jobs.cancel",
         // Account-or-space owned; dedicated stored-directory matrix in secrets.rs.
         "secrets.request",
         "secrets.list",
@@ -515,6 +518,7 @@ async fn membership_revocation_during_worker_discards_delivery() {
     let call = tokio::spawn(dispatch(
         state,
         identity,
+        calternal_server::plugins::Session::Static,
         "in-flight",
         "notes-insights.summarize",
         input,
@@ -551,6 +555,7 @@ async fn fixture_grants_cannot_override_directory_and_plugin_retries_recheck_rol
     let error = dispatch(
         fixture.state.clone(),
         claimed,
+        calternal_server::plugins::Session::Static,
         "forged",
         "plugins.disable",
         input,

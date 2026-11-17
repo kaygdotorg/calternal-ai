@@ -41,6 +41,38 @@ fn visible_folders(m: &ManifestV1) -> BTreeSet<String> {
 fn schema(value: &serde_json::Value) -> bool {
     (value.is_object() || value.is_boolean()) && jsonschema::validator_for(value).is_ok()
 }
+/// Claimed text is Markdown (`md` or absent); any other kind names its extension.
+/// Cost: O(extension bytes), no allocation.
+fn extension(claimed_text: bool, extension: Option<&str>) -> bool {
+    match extension {
+        None => claimed_text,
+        Some(e) => {
+            !e.is_empty()
+                && e.len() <= 16
+                && e.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                && (!claimed_text || e == "md")
+        }
+    }
+}
+/// An operation target names an identifier kind and a top-level input property that
+/// the input schema declares as a required string, so the host can always find the
+/// item ID before running plugin code. Cost: O(required list), no allocation.
+fn target(t: &ManifestTarget, input: &serde_json::Value) -> bool {
+    let field = t.field.as_str();
+    identifier(&t.kind)
+        && !field.is_empty()
+        && field.len() <= 64
+        && field
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        && field != "space_id"
+        && input["type"] == "object"
+        && input["properties"][field]["type"] == "string"
+        && input["required"]
+            .as_array()
+            .is_some_and(|r| r.iter().any(|v| v == field))
+}
 /// Cost: O(manifest bytes + schema compilation), bounded allocations, no I/O or locks.
 /// Parse a bounded manifest with strict unknown-field rejection, without executing code.
 pub fn parse_manifest(bytes: &[u8]) -> Result<ManifestV1, Error> {
@@ -88,13 +120,15 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
     }
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     if m.kinds.iter().any(|x| {
-        !schema(&x.schema)
+        !extension(x.claimed_text, x.extension.as_deref())
+            || !schema(&x.schema)
             || !match &x.storage {
                 ManifestPlacement::Visible { folder } => folder_name(folder),
                 ManifestPlacement::Hidden { hidden } => *hidden,
             }
     }) || m.operations.iter().any(|x| {
-        !schema(&x.input_schema)
+        !x.target.as_ref().is_none_or(|t| target(t, &x.input_schema))
+            || !schema(&x.input_schema)
             || !schema(&x.output_schema)
             || x.mutates == (x.idempotency == ManifestIdempotency::ReadOnly)
             || (x.mutates && x.required_capability == ManifestCapability::SpaceRead)
@@ -168,13 +202,24 @@ impl Registry {
         if self.manifests.contains_key(&manifest.id)
             || folders.iter().any(|f| self.folders.contains(f))
             || manifest.kinds.iter().any(|k| self.kinds.contains(&k.id))
-            || manifest.operations.iter().any(|op| self.operations.contains(&op.id))
-            || manifest.collections.iter().any(|c| self.collections.contains(&c.id))
-        { return Err(Error::Collision); }
+            || manifest
+                .operations
+                .iter()
+                .any(|op| self.operations.contains(&op.id))
+            || manifest
+                .collections
+                .iter()
+                .any(|c| self.collections.contains(&c.id))
+        {
+            return Err(Error::Collision);
+        }
         self.folders.extend(folders);
-        self.kinds.extend(manifest.kinds.iter().map(|k| k.id.clone()));
-        self.operations.extend(manifest.operations.iter().map(|op| op.id.clone()));
-        self.collections.extend(manifest.collections.iter().map(|c| c.id.clone()));
+        self.kinds
+            .extend(manifest.kinds.iter().map(|k| k.id.clone()));
+        self.operations
+            .extend(manifest.operations.iter().map(|op| op.id.clone()));
+        self.collections
+            .extend(manifest.collections.iter().map(|c| c.id.clone()));
         self.manifests.insert(manifest.id.clone(), manifest);
         Ok(())
     }

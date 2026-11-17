@@ -30,6 +30,7 @@ impl Fixture {
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),
+            jobs: calternal_server::plugins::Jobs::disabled(),
             allowed_hosts: Vec::new(),
         });
         Self {
@@ -49,6 +50,7 @@ impl Fixture {
         dispatch(
             self.state.clone(),
             account.clone(),
+            calternal_server::plugins::Session::Static,
             key,
             op,
             serde_json::from_value(input).unwrap(),

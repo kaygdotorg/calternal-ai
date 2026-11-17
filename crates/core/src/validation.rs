@@ -153,6 +153,8 @@ pub fn is_known_operation(operation: &str) -> bool {
             | "plugins.disable"
             | "plugins.preview"
             | "notes-insights.summarize"
+            | "jobs.get"
+            | "jobs.cancel"
             | "secrets.request"
             | "secrets.list"
             | "secrets.revoke"
@@ -170,9 +172,13 @@ pub fn validate_client_request(request: &OperationRequest) -> Result<(), Validat
     Ok(())
 }
 /// Decode and validate an operation body, bounding bytes before JSON allocation. Cost and allocations are O(body bytes).
+/// Inputs of operations in this catalog are checked here; any other operation (a
+/// plugin's manifest-declared one) is left to the server, which answers an
+/// unregistered name like a hidden target and checks the declared input schema.
 ///
 /// # Errors
-/// Returns too large above 2 MiB, invalid input for malformed JSON/schema, or not found for an unknown operation.
+/// Returns too large above 2 MiB, or invalid input for a malformed envelope or a
+/// catalog operation's malformed input.
 pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> {
     if bytes.len() > MAX_BODY_BYTES {
         return Err(ValidationError {
@@ -182,7 +188,7 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> 
     }
     let request: OperationRequest = serde_json::from_slice(bytes)
         .map_err(|_| ValidationError::invalid("malformed operation envelope"))?;
-    validate_request(&request)?;
+    validate_client_request(&request)?;
     Ok(request)
 }
 /// Decode a known operation input and enforce its value constraints; allocates a temporary JSON clone proportional to input size. Does not check access.
@@ -238,6 +244,10 @@ pub fn validate_operation_input(
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
             space(&i.space_id)
+        }
+        "jobs.get" | "jobs.cancel" => {
+            let i: JobInput = decode(input)?;
+            resource("", &i.job_id)
         }
         "notes.get" | "notes-insights.summarize" => {
             let i: NotesGetInput = decode(input)?;
@@ -653,6 +663,12 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             "notes-insights.summarize",
             "Compute word, character and line statistics",
             false,
+        ),
+        entry::<JobInput, JobResult>("jobs.get", "Read a plugin job's durable record", false),
+        entry::<JobInput, JobResult>(
+            "jobs.cancel",
+            "Cancel a plugin job and its active child jobs",
+            true,
         ),
         entry::<SecretsRequestInput, SecretsRequestResult>(
             "secrets.request",
