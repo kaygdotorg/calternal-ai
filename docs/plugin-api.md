@@ -131,7 +131,7 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
 - Agent files live in each space's visible `AI/` folder (2026-11-17, replacing the earlier
   hidden location): `AI/Chats/`, `AI/Skills/<name>/SKILL.md`, `AI/Automations/<name>.md`,
-  and the space's instructions at `AI/Instructions.md`. A person's own skills, automations,
+  and the space's instructions at `AI/AGENTS.md`. A person's own skills, automations,
   instructions and starred prompts are the same files in their personal space.
 
 ## Open

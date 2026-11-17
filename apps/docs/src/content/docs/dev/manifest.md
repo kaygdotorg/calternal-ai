@@ -20,6 +20,7 @@ Plugin menu read without running plugin code. Every top-level field is required;
 | `kinds` | yes | array | Kinds offered by this plugin. |
 | `name` | yes | string | Human-readable plugin name. |
 | `operations` | yes | array | Public operation schemas and policy. |
+| `provider` | no | schema | Machine-side provider adapter; omitted by plugins that offer no provider. |
 | `schedules` | yes | array | Schedule declarations. |
 | `secrets` | yes | array | Requested secret names only; no values. |
 | `settings` | yes | array | Typed space settings. |
@@ -444,6 +445,7 @@ Public operation declaration consumed by host policy.
 | `mutates` | yes | boolean | Whether this operation can produce durable effects. |
 | `output_schema` | yes | schema | JSON Schema of successful output. |
 | `required_capability` | yes | #/definitions/ManifestCapability | Required current host capability. |
+| `risk` | yes | #/definitions/OperationRisk | Required risk declaration; capability checks still apply in every mode. |
 | `target` | no | schema | Item the operation targets; absent (or null) for a space-scoped operation, whose wire input names its space in `space_id`. |
 
 ```json
@@ -456,7 +458,8 @@ Public operation declaration consumed by host policy.
     "input_schema",
     "mutates",
     "output_schema",
-    "required_capability"
+    "required_capability",
+    "risk"
   ],
   "properties": {
     "id": {
@@ -489,6 +492,14 @@ Public operation declaration consumed by host policy.
         }
       ]
     },
+    "risk": {
+      "description": "Required risk declaration; capability checks still apply in every mode.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/OperationRisk"
+        }
+      ]
+    },
     "target": {
       "description": "Item the operation targets; absent (or null) for a space-scoped operation, whose wire input names its space in `space_id`.",
       "anyOf": [
@@ -518,6 +529,28 @@ Placement inside a space userdata tree; hidden files belong to the declaring plu
   "description": "Placement inside a space userdata tree; hidden files belong to the declaring plugin.",
   "anyOf": [
     {
+      "description": "Visible subtree claimed by one plugin, with at most eight safe components.",
+      "type": "object",
+      "required": [
+        "folder",
+        "subdirectories"
+      ],
+      "properties": {
+        "folder": {
+          "description": "One safe visible top-level folder.",
+          "type": "string"
+        },
+        "subdirectories": {
+          "description": "Safe directory components below the folder; never a filesystem path.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
       "description": "User-visible top-level folder; the host rejects cross-plugin folder claims.",
       "type": "object",
       "required": [
@@ -546,6 +579,45 @@ Placement inside a space userdata tree; hidden files belong to the declaring plu
       "additionalProperties": false
     }
   ]
+}
+```
+
+## ManifestProvider
+
+Machine-side provider declaration; executable is installed in the sandbox image or account home, never downloaded or run by the server.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `default_model` | yes | string | Default installed-CLI model identifier, at most 128 UTF-8 bytes. |
+| `executable` | yes | string | Basename resolved inside the sandbox's PATH; no shell, path or arguments. |
+| `protocol_version` | yes | integer | Version of the bounded stdio contract, currently one. |
+
+```json
+{
+  "description": "Machine-side provider declaration; executable is installed in the sandbox image or account home, never downloaded or run by the server.",
+  "type": "object",
+  "required": [
+    "default_model",
+    "executable",
+    "protocol_version"
+  ],
+  "properties": {
+    "default_model": {
+      "description": "Default installed-CLI model identifier, at most 128 UTF-8 bytes.",
+      "type": "string"
+    },
+    "executable": {
+      "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
+      "type": "string"
+    },
+    "protocol_version": {
+      "description": "Version of the bounded stdio contract, currently one.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
 }
 ```
 
@@ -831,5 +903,56 @@ Webhook declaration; this does not mount an HTTP route.
     }
   },
   "additionalProperties": false
+}
+```
+
+## OperationRisk
+
+Declared risk class, evaluated in addition to capabilities and token scope.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+
+
+```json
+{
+  "description": "Declared risk class, evaluated in addition to capabilities and token scope.",
+  "oneOf": [
+    {
+      "description": "Reads data without changing durable state.",
+      "type": "string",
+      "enum": [
+        "read"
+      ]
+    },
+    {
+      "description": "Changes that ordinary application history can undo.",
+      "type": "string",
+      "enum": [
+        "reversible"
+      ]
+    },
+    {
+      "description": "Effects that cannot reliably be undone; reviewer seam may advise here only.",
+      "type": "string",
+      "enum": [
+        "irreversible"
+      ]
+    },
+    {
+      "description": "Communicates or publishes outside the space; approval is scoped.",
+      "type": "string",
+      "enum": [
+        "external"
+      ]
+    },
+    {
+      "description": "Expands authority or changes access; always requires a person.",
+      "type": "string",
+      "enum": [
+        "widens_access"
+      ]
+    }
+  ]
 }
 ```

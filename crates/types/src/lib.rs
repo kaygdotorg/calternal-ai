@@ -12,11 +12,13 @@ mod actor;
 mod capability;
 mod error;
 mod id;
+mod space_paths;
 
 pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, ErrorCode, Result};
 pub use id::{AccountId, InstallationId, SpaceId};
+pub use space_paths::{SPACE_INSTRUCTIONS_PATH, is_reserved_space_path};
 
 /// Milliseconds since the Unix epoch, or 0 if the clock reads before 1970.
 ///

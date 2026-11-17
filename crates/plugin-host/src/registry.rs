@@ -142,6 +142,12 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
                         && !subdirectories.is_empty()
                         && subdirectories.len() <= 8
                         && subdirectories.iter().all(|s| folder_name(s))
+                        && !calternal_types::is_reserved_space_path(
+                            &std::iter::once(folder.as_str())
+                                .chain(subdirectories.iter().map(String::as_str))
+                                .collect::<Vec<_>>()
+                                .join("/"),
+                        )
                 }
                 ManifestPlacement::Hidden { hidden } => *hidden,
             }

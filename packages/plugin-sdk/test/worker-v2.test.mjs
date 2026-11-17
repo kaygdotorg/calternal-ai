@@ -68,3 +68,9 @@ test('visible subtrees share the host bounded component rules',()=>{
   const bad=structuredClone(m);bad.kinds[0].storage.subdirectories=subdirectories;assert.throws(()=>validateManifestV1(bad));
  }
 });
+
+test('standing instruction files cannot become kind directories',()=>{
+ const m=structuredClone(manifest);m.kinds=[{id:'threads',schema:true,storage:{folder:'AI',subdirectories:['AGENTS.md']},claimed_text:true}];
+ assert.throws(()=>validateManifestV1(m));
+ m.kinds[0].storage={folder:'ai',subdirectories:['agents.md','child']};assert.throws(()=>validateManifestV1(m));
+});
