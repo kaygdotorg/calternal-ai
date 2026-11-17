@@ -40,10 +40,21 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - The app has management screens for plugins, skills and automations.
 - Machines: cloud users never see machines. People who bring their own can add one from the
   UI by giving SSH access; installation and enrolment are then automatic.
+- Deterministic first: installers and provisioning are fixed scripts; an agent is called in
+  only with the failure log when a step fails.
+- Sandbox images include NetBird and Tailscale clients able to run in userspace networking
+  mode, so a cloud sandbox can reach machines on the user's own private network.
+- Generated UI reuses the types of the GenUI plugin used in bb
+  (`github.com/ComicBit/bb-plugin-genui`, Apache-2.0: lexer, parser, AST, evaluator,
+  component catalog, validation) as the starting point for the component description
+  format.
+- Hooks may watch and block (proceed, wait, reject) within the plugin's own space, enabled by
+  a manager. No rewriting; bb's own dispatch hook does not rewrite either.
+- Page-wide JavaScript is not supported. Its legitimate uses are covered instead by full-CSS
+  themes, command and shortcut contributions, and the shell regions.
 
 ## Open
 
-- Hooks before an operation, and page-wide scripts: undecided.
 - Composer and chat experience (mentions, commands): needs its own design round.
 - Skills and automations management: needs fleshing out.
 - What a sandbox is on a cloud machine (being measured:
