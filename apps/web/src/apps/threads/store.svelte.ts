@@ -4,10 +4,12 @@
  */
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
+import { server, serverMode } from "../../server/client";
+import { ServerThreads } from "../../server/threads-client";
 import type { ProviderOption, Request, ThreadSummary } from "./model";
 
-/** The client in use. Replace with the real one when it exists. */
-export const client: ThreadsClient = new FixtureClient();
+/** The client in use: the real server with `?server=1` (development token mode, see server/client.ts), the fixtures otherwise (the default, the preview and the tests). */
+export const client: ThreadsClient = serverMode() ? new ServerThreads(server) : new FixtureClient();
 
 /** Threads, requests and providers as runes. */
 class ThreadsStore {

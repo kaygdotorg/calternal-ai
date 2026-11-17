@@ -17,6 +17,8 @@ export interface ThreadEvents {
   onStep(step: Step): void;
   /** The thread's summary changed (state, title, provider). */
   onSummary(summary: ThreadSummary): void;
+  /** The working turn ended without a message of its own appearing (stopped, failed): the working state goes away. */
+  onStreamEnd?(): void;
 }
 
 /** The Threads app's whole data surface. */
@@ -25,6 +27,12 @@ export interface ThreadsClient {
   providers(): Promise<ProviderOption[]>;
   /** All threads the person can see in the current space, children included (`parentId`). */
   listThreads(): Promise<ThreadSummary[]>;
+  /** One thread as it is now, with its real message count (the list does not know it); undefined when it does not exist or cannot be seen. */
+  getThread(threadId: string): Promise<ThreadSummary | undefined>;
+  /** Starts an empty thread (optionally under a parent). */
+  createThread(title: string, options?: { provider?: ThreadSummary["provider"]; parentId?: string }): Promise<ThreadSummary>;
+  /** Deletes a stopped thread: its file goes to the space's Trash. */
+  deleteThread(threadId: string): Promise<void>;
   /** Subscribes to changes of the thread list (state, new threads). Returns the unsubscribe. */
   watchThreads(cb: (threads: ThreadSummary[]) => void): () => void;
   /** Messages `from` (inclusive) to `to` (exclusive), oldest first. At most a few hundred per call. */

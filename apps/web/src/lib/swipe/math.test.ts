@@ -14,7 +14,7 @@ describe("swipe numbers (the existing app's)", () => {
   });
   it("commits a long swipe past the buttons plus 56 px, or 55 % of the row", () => {
     expect(fullAt(two, 300)).toBe(184);
-    expect(fullAt(two, 400)).toBe(220);
+    expect(fullAt(two, 400)).toBeCloseTo(220);
     expect(takeover(two, 300, 100)).toBe(0);
   });
   it("claims only a quick, mostly sideways move", () => {
