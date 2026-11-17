@@ -809,6 +809,9 @@ fn first_space_access_cleans_only_owned_temp_files() {
             .as_str()
             .unwrap()
             .to_string();
+        // Stop only after the baseline has reached userdata; this test examines
+        // owned temp cleanup, independently of interrupted placement recovery.
+        note_file(&d.0, &srv.personal, &id);
         (id, srv.personal.clone())
     };
     let dir = note_dir(&d.0, &personal);
