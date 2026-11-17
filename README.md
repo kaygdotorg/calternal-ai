@@ -4,7 +4,7 @@ A file-first AI orchestrator and personal productivity app, under development. T
 
 ## Local development preview
 
-This branch implements a **disposable-data engineering preview**, not the complete orchestrator or a daily-use replacement for Calternal. It includes real Notes operations, version history, permission checks, a trusted TypeScript statistics extension, web GenUI and the `cl` CLI. The AI pane clearly indicates that harness setup is not implemented.
+This branch implements a **disposable-data engineering preview**, not the complete orchestrator or a daily-use replacement for Calternal. It includes real Notes operations, version history, permission checks, a trusted TypeScript statistics extension and the `cl` CLI. There is no web UI yet; it will be built from [docs/ui-shell.md](docs/ui-shell.md).
 
 Requirements: Linux/macOS build environment, pinned Rust 1.99.1, a C linker, Node 22.13 or later, npm and Python 3 for the CLI integration check. The current server has been exercised on Linux; macOS and Apple bindings need their own execution checks. `scripts/with-toolchain.sh` uses an installed C compiler and limits Cargo concurrency; it does not install system packages.
 
@@ -14,14 +14,13 @@ From the repository root:
 npm ci
 npm run build
 ./scripts/with-toolchain.sh cargo build --locked -p calternal-server -p calternal-cli
-./scripts/dev-preview.sh
+./scripts/with-toolchain.sh cargo run --locked -p calternal-server -- serve \
+  --data-dir .dev-data --port 3210 --plugin-root plugins
 ```
 
-Open `http://127.0.0.1:3210`. The server prints **paths**, never token values. Privately open `.dev-data/dev-tokens/owner.token` and enter its contents in the connection screen. The browser holds it in memory only, so reloading requires reconnecting. Do not paste tokens into a conversation or include them in screenshots.
+The server prints **paths**, never token values. Do not paste tokens into a conversation.
 
-The owner can edit `personal` and `shared`; `.dev-data/dev-tokens/guest.token` can only read `shared`. These are fixed development principals, not production authentication. The server binds to loopback only. When running on a remote development machine, use an existing trusted port-forward/browser session; do not expose the preview publicly.
-
-Try creating and editing a note, inspect its history, enable Notes insights under Plugins, and open its statistics panel. A stale save preserves the draft and requires explicit resolution. Stable note links use `/s/<space>/notes/<id>`.
+The owner can edit `personal` and `shared`; `.dev-data/dev-tokens/guest.token` can only read `shared`. These are fixed development principals, not production authentication. The server binds to loopback only; do not expose the preview publicly.
 
 The CLI uses the same operation route:
 
@@ -36,7 +35,7 @@ For mutation retries, retain the `--request-id` and repeat exactly the same oper
 
 ## Verification
 
-`./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs web/SDK/Rust tests and backend integration checks. Browser interaction verification is documented separately in [the UI report](docs/ui-preview.md); automated unit tests alone are not a browser proof.
+`./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs SDK/Rust tests and backend integration checks.
 
 `python3 contract/verify-cli.py --running-data-dir .dev-data` checks the CLI against a running preview using disposable fixtures. `node scripts/measure-preview.mjs` launches a separate disposable server and records local debug timings in `artifacts/preview-smoke.json`. Those timings are not a 120 Hz UI result or a production performance gate.
 

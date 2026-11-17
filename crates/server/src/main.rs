@@ -28,7 +28,7 @@ enum Cmd {
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
-        /// Built web assets served same-origin (e.g. apps/web/dist).
+        /// Built web assets served same-origin (any static directory).
         #[arg(long)]
         web_dir: Option<PathBuf>,
         /// Enable disposable development accounts and bearer token files (off by default).

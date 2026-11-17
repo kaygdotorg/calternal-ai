@@ -6,8 +6,6 @@ cd "$ROOT"
 ./scripts/with-toolchain.sh cargo fmt --all -- --check
 ./scripts/with-toolchain.sh cargo run --locked -p calternal-core --bin export-contract -- --check
 npm run build
-npm run check --workspace @calternal/web
-npm test --workspace @calternal/web
 npm run test:plugins
 ./scripts/with-toolchain.sh cargo test --locked --workspace
 ./scripts/with-toolchain.sh cargo build --locked -p calternal-server -p calternal-cli
