@@ -143,3 +143,10 @@ validates the complete current record map before admitting requests. No authorit
 check is deferred to first space use. Independent standalone recovery reads still
 reread and validate the complete chain. A replaced snapshot or segment between
 open and reconciliation invalidates startup reuse and must pass fresh validation.
+
+A pending proposal retains its canonical frame digest with the decoded entry.
+Chain linkage, deterministic resolution and application reuse that one digest;
+reading a segment no longer serializes and hashes the same proposal repeatedly.
+The digest is derived from the same canonical frame function as publication, so
+the persisted format and witness values are unchanged. The extra cache is one
+64-character digest for the single pending proposal, not a history cache.

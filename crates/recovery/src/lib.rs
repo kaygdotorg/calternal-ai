@@ -77,9 +77,15 @@ struct Image {
     segment: String,
     records: BTreeMap<String, Record>,
 }
+/// A proposal and its one canonical frame hash, reused by chain validation,
+/// witness resolution and application. Entries remain immutable until applied.
+struct Pending {
+    entry: Entry,
+    digest: String,
+}
 struct Loaded {
     image: Image,
-    pending: Option<Entry>,
+    pending: Option<Pending>,
     tail: Vec<u8>,
     length: u64,
     stamps: (Vec<u64>, Vec<u64>),
@@ -88,11 +94,10 @@ struct Loaded {
 impl Loaded {
     fn resolution(&self, committed: bool) -> Result<(Vec<u8>, Checkpoint)> {
         let pending = self.pending.as_ref().ok_or_else(invalid)?;
-        let proposed = frame(pending)?;
         let marker = Entry {
-            installation: pending.installation,
-            sequence: pending.sequence.checked_add(1).ok_or_else(invalid)?,
-            previous: digest(&proposed),
+            installation: pending.entry.installation,
+            sequence: pending.entry.sequence.checked_add(1).ok_or_else(invalid)?,
+            previous: pending.digest.clone(),
             body: Body::Resolved { committed },
         };
         let bytes = frame(&marker)?;
@@ -104,8 +109,8 @@ impl Loaded {
         Ok((bytes, head))
     }
     fn apply(&mut self, committed: bool, head: Checkpoint) -> Result<()> {
-        let entry = self.pending.take().ok_or_else(invalid)?;
-        self.image.proposal_digest = digest(&frame(&entry)?);
+        let Pending { entry, digest } = self.pending.take().ok_or_else(invalid)?;
+        self.image.proposal_digest = digest;
         let Body::Proposed { transaction, delta } = entry.body else {
             return Err(invalid());
         };
@@ -246,7 +251,7 @@ impl Coordinator {
             }
             let entry: Entry = decode(&bytes[pos + 8..end])?;
             let (sequence, previous) = match &s.pending {
-                Some(p) => (p.sequence, digest(&frame(p)?)),
+                Some(p) => (p.entry.sequence, p.digest.clone()),
                 None => (s.image.head.sequence, s.image.head.digest.clone()),
             };
             if entry.installation != self.installation
@@ -267,7 +272,11 @@ impl Coordinator {
                             self.check_record(key, r)?;
                         }
                     }
-                    s.pending = Some(entry);
+                    let proposal = digest(&frame(&entry)?);
+                    s.pending = Some(Pending {
+                        entry,
+                        digest: proposal,
+                    });
                 }
                 Body::Resolved { committed } if s.pending.is_some() => {
                     let head = Checkpoint {
@@ -333,7 +342,7 @@ impl Coordinator {
         let w = Self::witness(c)?;
         if s.pending.is_some() {
             self.store.tick(Step::Replay)?;
-            let proposal = digest(&frame(s.pending.as_ref().ok_or_else(invalid)?)?);
+            let proposal = s.pending.as_ref().ok_or_else(invalid)?.digest.clone();
             let (yes, committed_head) = s.resolution(true)?;
             let (no, aborted_head) = s.resolution(false)?;
             let committed = if Self::matches(&w, &committed_head, &proposal) {
@@ -507,12 +516,16 @@ impl Coordinator {
             body: Body::Proposed { transaction, delta },
         };
         let bytes = frame(&entry)?;
+        let proposal = digest(&bytes);
         self.store.tick(Step::BeforeIntent)?;
         self.store.append(&s.image.segment, &bytes)?;
         self.store.tick(Step::AfterIntent)?;
         s.length += bytes.len() as u64;
-        s.pending = Some(entry);
-        Self::set_witness(c, &s.resolution(true)?.1, &digest(&bytes))?;
+        s.pending = Some(Pending {
+            entry,
+            digest: proposal.clone(),
+        });
+        Self::set_witness(c, &s.resolution(true)?.1, &proposal)?;
         self.store.tick(Step::BeforeCommit)?;
         s.stamps = self.stamps(&s.image.segment)?;
         *cache = Some(s);
