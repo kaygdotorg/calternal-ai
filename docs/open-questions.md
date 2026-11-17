@@ -13,7 +13,6 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Design rounds
 
-- **Provider terms** (in progress): whether personal AI subscriptions may be used from servers we operate and charge for. Research running.
 - **The orchestrator plugin** (next): threads, turns, subagents, review.
 - Composer and chat experience: mentions, commands, context chips, the request bar.
 - Skills and automations management screens.
@@ -21,6 +20,7 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Provider logins: each person signs in to the official programs inside their own sandbox; the server never stores a provider login.
 - State lives on the server; clients subscribe to it and cache what they need, as the existing app does. There is no sync protocol to design. A client whose bookmark is too old reloads.
 - Agent questions and approvals share the sticky bar with secret requests and do not expire.
 - Warm pool of pre-started sandboxes on each cloud machine: yes.

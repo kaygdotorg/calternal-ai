@@ -110,6 +110,11 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   edits typed while offline, which it sends on reconnect.
 - Agent questions and approvals appear in the same sticky bar as secret requests and do
   not expire.
+- Provider logins (2026-11-17): Calternal is an orchestrator, not a harness. It launches the
+  providers' official, unmodified programs (Claude Code, Codex), and each person signs in
+  to them through the provider's own flow inside their own sandbox. The server never
+  collects, stores or passes on a provider login. Evidence and provider wording:
+  `docs/reviews/provider-terms-2026-11-17.md`.
 
 ## Open
 
