@@ -7,7 +7,10 @@
   import { spaces } from "../../shell/spaces.svelte";
   import "./panel.css";
   let list = $state<people.Invite[]>([]), error = $state(""), busy = $state(false), loaded = $state(false), role = $state<people.GrantRole>("editor"), days = $state("7"), copied = $state("");
+  let more = $state(50), past = $state(false);
   const space = $derived(spaces.current.id);
+  const isLive = (i: people.Invite) => !i.revoked_at && !i.used_at && i.expires_at >= Date.now();
+  const open = $derived(list.filter(isLive)), earlier = $derived(list.filter((i) => !isLive(i)));
   const isOwner = $derived(spaces.current.role === "owner");
   const ROLES = $derived([{ id: "reader", label: "Reader" }, { id: "editor", label: "Editor" }, ...(isOwner ? [{ id: "manager", label: "Manager" }] : [])]);
   const WHEN = [{ id: "1", label: "1 day" }, { id: "7", label: "7 days" }, { id: "30", label: "30 days" }];
@@ -24,12 +27,14 @@
     <Capsule label="Role" kind="radio" glass={false} items={ROLES} value={role} onchange={(v) => (role = v as people.GrantRole)} />
     <Capsule label="Lasts" kind="radio" glass={false} items={WHEN} value={days} onchange={(v) => (days = v)} /></span>
     <Button text="Make an invitation" variant="primary" disabled={busy} onclick={() => act(() => people.createInvite(space, role, Date.now() + Number(days) * 86400000))} /></div>
-  {#each list as i (i.invite_id)}
+  {#each (past ? [...open, ...earlier] : open).slice(0, more) as i (i.invite_id)}
     <div class="r" data-setting="space.invite.{i.invite_id}">
       <span class="n"><span class="t">{i.role[0]!.toUpperCase() + i.role.slice(1)}</span><span class="h">{standing(i)}</span>{#if i.link}<code class="cmd">{i.link}</code>{/if}</span>
       <span class="a">{#if i.link}<Button text={copied === i.invite_id ? "Copied" : "Copy link"} variant="secondary" onclick={() => copy(i)} /><Button text="Revoke" variant="quiet" disabled={busy} onclick={() => confirm("Revoke this invitation? The link stops working.") && act(() => people.revokeInvite(space, i.invite_id))} />{/if}</span>
     </div>
   {/each}
+  {#if (past ? list.length : open.length) > more}<div class="r"><span class="h">Showing {more} of {past ? list.length : open.length}.</span><Button text="Show more" variant="quiet" onclick={() => (more += 50)} /></div>{/if}
+  {#if earlier.length}<div class="r"><span class="h">{earlier.length} earlier {earlier.length === 1 ? "invitation" : "invitations"} (used, revoked or expired)</span><Button text={past ? "Hide them" : "Show them"} variant="quiet" onclick={() => (past = !past)} /></div>{/if}
   {#if loaded && !list.length && !error}<div class="r"><span class="h">No invitations yet. An invitation is a one-use link for someone who has no account here.</span></div>{/if}
   {#if error}<p class="e" role="alert">{error}</p>{/if}
 </div>

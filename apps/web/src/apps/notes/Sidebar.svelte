@@ -10,6 +10,7 @@
   const current = $derived(segments()[0] === "notes" ? segments()[1] : undefined);
   // Each note's menu (the "…" button and a right-click): Rename in place, Move to Trash (with Undo).
   let ctx = $state<{ x: number; y: number; note: (typeof notes.list)[number] } | null>(null);
+  let allTags = $state(false);
   let renaming = $state<string | null>(null), draft = $state("");
   const items: MenuItem[] = [{ id: "rename", label: "Rename" }, { id: "trash", label: "Move to Trash", danger: true }];
   const menuAt = (e: MouseEvent, note: (typeof notes.list)[number], el?: HTMLElement) => { e.preventDefault(); e.stopPropagation(); const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? e.clientX, y: r?.bottom ?? e.clientY, note }; };
@@ -27,7 +28,8 @@
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
       <button type="button" class="tg" aria-pressed={!notes.tag} onclick={() => notes.filter(null)}>All</button>
-      {#each notes.tags.slice(0, 12) as t (t.name)}<button type="button" class="tg" aria-pressed={notes.tag === t.name} onclick={() => notes.filter(notes.tag === t.name ? null : t.name)}>#{t.name} <span class="ct">{t.count}</span></button>{/each}
+      {#each (allTags ? notes.tags : notes.tags.slice(0, 12)) as t (t.name)}<button type="button" class="tg" aria-pressed={notes.tag === t.name} onclick={() => notes.filter(notes.tag === t.name ? null : t.name)}>#{t.name} <span class="ct">{t.count}</span></button>{/each}
+    {#if notes.tags.length > 12}<button type="button" class="tg" onclick={() => (allTags = !allTags)}>{allTags ? "Fewer tags" : `${notes.tags.length - 12} more…`}</button>{/if}
     </div>
   {/if}
   <ul>{#each notes.list as n (n.id)}<li oncontextmenu={(e) => menuAt(e, n)}>
@@ -37,6 +39,7 @@
       <Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id}>{#snippet trailing()}<IconButton icon="more" label="Actions for {n.title}" onclick={(e) => menuAt(e, n, e.currentTarget as HTMLElement)} />{/snippet}</Row>
     {/if}
   </li>{:else}<li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li>{/each}</ul>
+  {#if notes.list.length >= 100}<p class="cap">Showing the newest 100. Use a tag, or search with Cmd-K, to find the others.</p>{/if}
   <button type="button" class="new" onclick={create}>New note</button>
   <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
   {#if notes.waiting.length}
@@ -65,6 +68,7 @@
   .tg[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: var(--strong-weight); }
   .ct { color: var(--ink-3); }
   .trash { display: flex; align-items: center; }
+  .cap { padding: var(--s-2) var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   .wait { display: grid; gap: var(--s-1); margin-top: var(--s-4); }
   .w { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-2) var(--s-5); font-size: var(--text-label); }
