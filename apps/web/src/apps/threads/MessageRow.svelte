@@ -2,14 +2,17 @@
   import { href } from "../../lib/route.svelte";
   // One message. The person's words sit in a tinted bubble on the right; the agent's are plain text on the card, with folded
   // steps, generated-UI cards and links to child threads between paragraphs. No inner card around a message.
+  import type { Component } from "svelte";
   import { Icon } from "@calternal/ui";
-  import GenUi from "../../genui/GenUi.svelte";
   import Md from "../../lib/Md.svelte";
   import MessageActions from "./MessageActions.svelte";
   import Steps from "./Steps.svelte";
   import type { Message } from "./model";
   import { store } from "./store.svelte";
   let { message }: { message: Message } = $props();
+  // The generated-UI renderer is its own chunk, fetched the first time a message holds a card; a thread of plain messages never downloads it.
+  let GenUi = $state<Component<{ source: string }>>();
+  $effect(() => { if (!GenUi && message.blocks.some((b) => b.type === "card")) void import("../../genui/GenUi.svelte").then((m) => (GenUi = m.default as never)); });
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
   let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
@@ -23,7 +26,7 @@
       {#each message.blocks as b}
         {#if b.type === "text"}<Md text={b.text} />
         {:else if b.type === "steps"}<Steps steps={b.steps} ms={b.ms} />
-        {:else if b.type === "card"}<GenUi source={b.source} />
+        {:else if b.type === "card"}{#if GenUi}<GenUi source={b.source} />{/if}
         {:else}
           {@const t = store.get(b.threadId)}
           {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" inline /><span>{t.title}</span><small>{t.state}</small></a>{/if}

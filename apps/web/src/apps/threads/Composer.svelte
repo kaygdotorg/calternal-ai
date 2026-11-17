@@ -12,7 +12,7 @@
   import type { FieldEditor } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
   import { fixtureItems } from "../../palette/fixtures";
-  import { mentionPool, pick as pickMentions, skillPool, triggerAt, type Mention } from "../../palette/mentions";
+  import { mentionPool, pick as pickMentions, skillPool, triggerAt, warmPool, type Mention } from "../../palette/mentions";
   import { store } from "./store.svelte";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import MentionPicker from "../../palette/MentionPicker.svelte";
@@ -74,6 +74,8 @@
   $effect(() => { marksOf("warm @a friday 5pm !high #t"); });
   const marks = $derived(marksOf(text));
   const pool = $derived(mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
+  // The pickers' search indexes are built when the composer is idle, not on the first `@` or `/`.
+  $effect(() => { const p = pool, k = skillPool(); const id = (window.requestIdleCallback ?? ((f: () => void) => setTimeout(f, 200)))(() => { warmPool(p); warmPool(k); }); return () => (window.cancelIdleCallback ?? clearTimeout)(id as number); });
   let caret = $state(0);
   let dismissed = $state<number | null>(null); // the trigger position the person closed with Escape
   const trig = $derived(triggerAt(text, caret));

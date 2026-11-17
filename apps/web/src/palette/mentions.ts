@@ -33,7 +33,18 @@ export function mentionPool(agents: string[], threads: { id: string; title: stri
   ];
 }
 /** Every skill `/` can list. */
-export const skillPool = (): Mention[] => SKILLS.map(([id, name]): Mention => ({ id: `s:${id}`, kind: "skill", label: name, sub: `/${id}`, insert: `/${id} ` }));
+const SKILL_POOL: Mention[] = SKILLS.map(([id, name]): Mention => ({ id: `s:${id}`, kind: "skill", label: name, sub: `/${id}`, insert: `/${id} ` }));
+export const skillPool = (): Mention[] => SKILL_POOL; // one array, so its search index is built once
+
+const indexes = new WeakMap<Mention[], { byId: Map<string, Mention>; ix: ReturnType<typeof buildIndex> }>();
+/** The search index of a pool, built once per pool (the pool changes when the data does, never per key). */
+function indexOf(pool: Mention[]) {
+  let e = indexes.get(pool);
+  if (!e) { e = { byId: new Map(pool.map((m) => [m.id, m])), ix: buildIndex(pool.map((m): Item => ({ id: m.id, kind: "note", title: m.label + " " + (m.sub ?? ""), space: "" }))) }; indexes.set(pool, e); }
+  return e;
+}
+/** Builds a pool's index ahead of the first query, for an idle moment (the first key after `@` should cost what the others do). */
+export const warmPool = (pool: Mention[]): void => { indexOf(pool); };
 
 /** The matches for what was typed after the trigger, grouped by kind (an empty query lists a few of each). Cost: one pass over the pool. */
 export function pick(pool: Mention[], query: string, perGroup = 4): MentionGroup[] {
@@ -41,8 +52,7 @@ export function pick(pool: Mention[], query: string, perGroup = 4): MentionGroup
   let hits: Mention[];
   if (!q) hits = pool;
   else {
-    const byId = new Map(pool.map((m) => [m.id, m]));
-    const ix = buildIndex(pool.map((m): Item => ({ id: m.id, kind: "note", title: m.label + " " + (m.sub ?? ""), space: "" })));
+    const { byId, ix } = indexOf(pool);
     hits = search(ix, q, 40).map((i) => byId.get(i.id)!);
   }
   return ORDER.map((kind) => ({ kind, title: TITLE[kind], entries: hits.filter((m) => m.kind === kind).slice(0, perGroup) })).filter((g) => g.entries.length);
@@ -67,7 +77,7 @@ export function tagPool(tags: string[], typed = ""): Mention[] {
   return w && !tags.some((t) => t.toLowerCase().startsWith(w.toLowerCase())) ? [{ id: `g:${w}`, kind: "tag", label: `#${w}`, sub: "New tag", insert: `#${w}` }, ...pool] : pool;
 }
 /** What `/` offers in a note: the blocks that can be inserted. Each replaces the typed `/word` with Markdown, which is all a block is. */
-export const blockPool = (): Mention[] => [
+const BLOCK_POOL: Mention[] = [
   { id: "b:h1", kind: "block", label: "Heading 1", sub: "#", insert: "# " },
   { id: "b:h2", kind: "block", label: "Heading 2", sub: "##", insert: "## " },
   { id: "b:h3", kind: "block", label: "Heading 3", sub: "###", insert: "### " },
@@ -78,3 +88,4 @@ export const blockPool = (): Mention[] => [
   { id: "b:table", kind: "block", label: "Table", sub: "|", insert: "| Column | Column |\n| --- | --- |\n|  |  |", caret: 2 },
   { id: "b:rule", kind: "block", label: "Divider", sub: "---", insert: "---\n" },
 ];
+export const blockPool = (): Mention[] => BLOCK_POOL;
