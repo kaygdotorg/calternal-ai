@@ -21,7 +21,7 @@
     display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3); white-space: nowrap;
     min-height: max(var(--pill-h), var(--hit-min)); padding: 0 var(--s-6); border-radius: var(--r-pill);
     font-size: var(--text-ui); font-weight: var(--strong-weight);
-    transition: scale var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+    transition: scale var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   }
   .btn:active:not(:disabled) { scale: var(--press-scale); }
   .btn:disabled { opacity: 0.45; }

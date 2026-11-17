@@ -21,7 +21,7 @@
   :global(.attn) { padding: var(--s-3); }
   h2 { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4) var(--s-2); font-size: var(--text-section); font-weight: var(--strong-weight); letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); }
   ul { display: grid; gap: var(--s-1); }
-  a { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-h); padding: var(--s-2) var(--s-4); border-radius: calc(var(--r-card) - var(--s-3)); transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-press) var(--ease-out); }
+  a { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-h); padding: var(--s-2) var(--s-4); border-radius: calc(var(--r-card) - var(--s-3)); transition: background-color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out); }
   a:active { scale: var(--press-scale); }
   @media (hover: hover) and (pointer: fine) { a:hover { background: color-mix(in oklab, var(--accent-base) 12%, transparent); } }
   .ic { color: var(--accent); display: grid; }

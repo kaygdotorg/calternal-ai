@@ -48,7 +48,7 @@
   .name { flex: 1; font-family: var(--font-rounded); font-size: var(--text-heading); font-weight: var(--strong-weight); letter-spacing: -0.01em; }
   .body { flex: 1; min-height: 0; overflow-y: auto; margin: 0 calc(var(--s-1) * -1); padding: 0 var(--s-1); }
   footer { position: relative; flex: none; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-4) 0 max(var(--s-4), var(--safe-bottom)); }
-  .avatar { flex: none; width: max(var(--pill-h), var(--hit-min)); height: max(var(--pill-h), var(--hit-min)); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-family: var(--font-rounded); font-weight: var(--strong-weight); transition: scale var(--dur-press) var(--ease-out); }
+  .avatar { flex: none; width: max(var(--pill-h), var(--hit-min)); height: max(var(--pill-h), var(--hit-min)); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-family: var(--font-rounded); font-weight: var(--strong-weight); transition: scale var(--dur-fast) var(--ease-out); }
   .avatar:active { scale: var(--press-scale); }
   .switch :global(.menu) { left: 0; right: 0; min-width: 0; max-width: none; }
   .switch { flex: 1; min-width: 0; display: flex; justify-content: center; }

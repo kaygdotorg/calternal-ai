@@ -28,7 +28,7 @@
     position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3); flex: none;
     min-width: max(var(--pill-h), var(--hit-min)); height: max(var(--pill-h), var(--hit-min)); padding: 0; border-radius: var(--r-pill);
     color: var(--ink); font-size: var(--text-ui); font-weight: var(--strong-weight); white-space: nowrap;
-    transition: scale var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+    transition: scale var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
   }
   .wide { padding: 0 var(--s-6) 0 var(--s-5); }
   .flat { background: rgb(var(--ink-rgb) / 0.065); }

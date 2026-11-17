@@ -68,12 +68,14 @@ From `docs/ui-shell.md` there are none. From the mockup:
 | --- | --- |
 | No frame, no inner page card, no horizontal app strip; the sidebar sits directly on the background | `docs/ui-shell.md` |
 | Middle and right cards run top to bottom of the viewport (rounded all round, gap 8 px between them and at the sides) | `docs/ui-shell.md`; the side gap is a choice (see Open) |
-| Glass blur 20 px (was 28 in the mockup's pane glass); the mockup's floating glass is also 20 | Software compositors stop blurring above about 24 px, so larger values could not be verified here |
+| Glass blur 20 px (was 28 in the mockup's pane glass); the mockup's floating glass and the native study's closest CSS (section 8) are also 20 | Software compositors stop blurring above about 24 px, so larger values could not be verified here |
 | No sky, photo or plain backdrop picker; one tinted mesh background | `docs/ui-shell.md` (one seamless background); the mesh is the adaptive material's data |
 | Two schemes plus "System"; no Warm and Cool paper | Not asked for; tokens make it a small later change |
 | Phone bottom bar is a plain flex capsule: the selected item widens and shows its name, the rest shrink to icons, on the sheet spring (the mockup's `Morph` is a measured, multi-mode bar) | Keeps the morph with far less code; the full Morph can replace `Capsule morph` later |
 | No progressive blur strips, home-screen standalone handling, or Safari toolbar insets | Not needed for a first shell; to revisit with real-device work |
-| Tokens are JSON, generated into CSS; springs are generated at build time, not installed by script | Native clients read the same tokens; no start-up script |
+| Tokens are JSON, generated into CSS; the one spring is generated at build time, not installed by script | Native clients read the same tokens; no start-up script |
+| Motion and spacing tokens collapsed: one `--inset` (mockup: five gap names), three durations and two curves (mockup: twelve), the control tier from `--pill-h` and `--hit-min` | `docs/native-ui-study.md` Simplification opportunities |
+| The mockup's desktop `--text-ui` 14, row 30 and selection radius 12 are kept although the native study measured 13, 32 and 8 | Owner decision pending (section 7.2); one token each |
 | Fonts: `block` display plus preload plus a paint gate instead of `optional`/`swap` | Owner rule: no fallback face may show |
 | Message and request text are never HTML: Markdown parses to a typed tree | Agent output is untrusted |
 
@@ -107,8 +109,9 @@ Design choices the documents do not settle. I chose the first option in each cas
 - **Panel in the address.** `?panel=changes` opens the right card on that tab, and the address follows the open
   panel (a transient parameter, per `docs/addresses.md`). Option: not in the address at all.
 - **Composer.** No mentions, slash commands or attachments (the plugin API says it needs its own design round).
-- **`docs/native-ui-study.md`** (issue #19) did not exist on `origin/dev` or its branch when this was written. The
-  shell follows the mockup until it appears; its measurements will change tokens only.
+- **`docs/native-ui-study.md` section 7.2** values (sidebar row 30 or 32, selection radius 12 or 8, desktop text 14 or 13,
+  bottom capsule 52 or 49 and 12 or 27 above the bottom). Each is one token (table in `docs/ui-design-system.md`);
+  the shell follows the mockup until the owner decides. A second study pass (motion, dark, tap behaviour) is pending.
 
 ## Unfinished
 

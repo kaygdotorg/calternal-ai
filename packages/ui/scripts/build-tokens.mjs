@@ -32,7 +32,7 @@ const springs = Object.entries(t.springs)
   .filter(([k]) => !k.startsWith("$"))
   .flatMap(([name, [d, r]]) => {
     const s = spring(d, r);
-    return [`  --spring-${name}: ${s.easing};`, `  --spring-${name}-ms: ${s.ms}ms;`];
+    return [`  --${name}: ${s.easing};`];
   })
   .join("\n");
 
@@ -75,9 +75,8 @@ ${decl(t.dark)}
 }
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-press: 1ms; --dur-fast: 1ms; --dur-base: 1ms; --dur-slow: 1ms;
-    --spring-snap: linear; --spring-morph: linear; --spring-sheet: linear; --spring-card: linear; --spring-bounce: linear;
-    --spring-snap-ms: 1ms; --spring-morph-ms: 1ms; --spring-sheet-ms: 1ms; --spring-card-ms: 1ms; --spring-bounce-ms: 1ms;
+    --dur-fast: 1ms; --dur-base: 1ms; --dur-slow: 1ms;
+    --spring: linear;
   }
 }
 `;

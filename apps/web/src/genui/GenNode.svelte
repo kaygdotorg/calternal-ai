@@ -118,7 +118,7 @@
   .radios { display: grid; gap: var(--s-2); } .radios button { display: grid; text-align: start; border-radius: var(--r-control); padding: var(--s-3) var(--s-5); } small { font-weight: var(--ui-weight); color: var(--ink-3); }
   .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: max(var(--pill-h), var(--hit-min)); font-size: var(--text-ui); text-align: start; }
   .track { position: relative; flex: none; width: calc(var(--s-9) + var(--s-4)); height: calc(var(--s-8) + var(--s-1) * 2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-fast) var(--ease-out); }
-  .track b { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--spring-snap-ms) var(--spring-snap); }
+  .track b { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--dur-base) var(--spring); }
   .toggle[aria-checked="true"] .track { background: var(--accent-base); }
   .toggle[aria-checked="true"] .track b { translate: calc(var(--s-9) + var(--s-4) - var(--s-8) - var(--s-1) * 2) 0; }
   .check { display: flex; align-items: center; gap: var(--s-4); min-height: max(var(--pill-h), var(--hit-min)); font-weight: var(--ui-weight); color: var(--ink); font-size: var(--text-ui); }

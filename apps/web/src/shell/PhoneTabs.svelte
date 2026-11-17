@@ -12,6 +12,6 @@
 <nav class="phone-tabs" aria-label="{app.name} sections"><Capsule label="{app.name} sections" morph {items} {value} onchange={(v) => (v === "main" ? shell.closeOver() : shell.showPanel(v))} /></nav>
 
 <style>
-  .phone-tabs { position: fixed; z-index: 5; left: var(--s-6); right: var(--s-6); bottom: max(var(--s-5), var(--safe-bottom)); display: flex; justify-content: center; }
+  .phone-tabs { position: fixed; z-index: 5; left: var(--s-6); right: var(--s-6); bottom: max(var(--cap-offset), var(--safe-bottom)); display: flex; justify-content: center; }
   .phone-tabs :global(.cap) { width: 100%; max-width: 26rem; }
 </style>

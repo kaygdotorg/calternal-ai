@@ -25,8 +25,33 @@ Tokens are data; surfaces are components. Visual language is ported from the moc
 - **Spacing:** components use `--s-*` only (plus the tokens derived from them: `--card-gap`, `--pad-region`).
 - **Radii nest:** an inner radius is the outer radius minus the padding between them (`--r-select` is the
   frame radius less 10, a menu item is the menu radius less its padding).
+- **One inset, three durations, two curves** (collapsed after `docs/native-ui-study.md`, which found the mockup
+  had five names for the space between surfaces and twelve duration and spring tokens): `--inset` (8) is the
+  only gap between surfaces and from the viewport's sides; `--dur-fast` 120, `--dur-base` 220, `--dur-slow` 300
+  and the curves `--ease-out` and `--spring` (one spring, damping 0.9, response 0.42 s, run over `--dur-slow`).
+  Heights: `--pill-h` (the control tier; 44 on touch, 30 on a desktop), `--hit-min`, `--row-h`, and the phone's
+  bottom capsule `--tier-cap`.
 - **Reduced motion and transparency:** under `prefers-reduced-motion` every duration is 1 ms and every spring
   is linear; under `prefers-reduced-transparency` glass becomes near-opaque.
+
+## Values waiting on the owner
+
+Where the native study measured something different from the mockup, the component reads one token and nothing
+else, so the decision is a one-line edit in `tokens.json` (then `npm run tokens`). Current values follow the
+mockup until the owner decides (`docs/native-ui-study.md` section 7.2).
+
+| Token | Now (mockup) | Native | Used by |
+| --- | --- | --- | --- |
+| `row-h` (desktop) | 30 | 32 | every row: sidebar, menus, steps, lists |
+| `r-select` | 12 | 8 | the selected-row tint (`Row`) |
+| `text-ui` (desktop) | 14 | 13 | all UI text on a desktop |
+| `tier-cap` | 52 | 49 | the phone's bottom capsule (`Capsule morph`) and the space reserved for it |
+| `cap-offset` | 12 | 27 | the bottom capsule's gap above the bottom edge or home indicator |
+| `inset` | 8 | 8 (mockup had 5) | gap between cards and to the viewport's sides |
+
+Not yet a decision but noted by the study: phone title 34 (now 26 `text-title`, used by the Notes title), the
+desktop toolbar tier 38 against `pill-h` 30, settings rows 44 and 52, panes that abut instead of floating
+(list and editor flush; here the middle and right cards keep one `inset` between them).
 
 ## Adaptive material
 
