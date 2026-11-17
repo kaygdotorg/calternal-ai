@@ -187,6 +187,16 @@ impl std::fmt::Debug for CompiledSchemas {
     }
 }
 impl CompiledSchemas {
+    /// Check a native engine input against the same cached manifest validator as workers.
+    /// Unknown operations and schema violations fail closed. Cost: O(input bytes), no I/O.
+    pub fn validate_input(&self, operation: &str, input: &serde_json::Value) -> Result<(), Error> {
+        self.0
+            .get(operation)
+            .filter(|(schema, _)| schema.is_valid(input))
+            .map(|_| ())
+            .ok_or(Error::Invalid)
+    }
+
     /// Validates `manifest` and compiles each operation's two schemas.
     ///
     /// # Errors

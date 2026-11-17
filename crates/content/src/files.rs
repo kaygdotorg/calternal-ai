@@ -136,6 +136,15 @@ impl Space {
             .ok_or_else(missing)?;
         Ok(self.files.join(path))
     }
+    /// UUID names avoid Trash collisions; placement remains the existing guarded move.
+    pub(crate) fn trash_path(&self, kind: &str, id: Uuid) -> Result<String> {
+        let (_, format) = self.registration(kind)?;
+        let extension = match format {
+            FileFormat::Markdown => "md".to_owned(),
+            FileFormat::Opaque { extension } => extension,
+        };
+        Ok(format!(".trash/{id}.{extension}"))
+    }
     pub(crate) fn choose_path(
         &mut self,
         kind: &str,

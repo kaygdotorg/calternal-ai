@@ -216,15 +216,23 @@ export type ManifestSettingType = "string" | "boolean" | "number";
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
 
-export type ManifestPlacement = { "Visible": {
+export type ManifestPlacement = {
+/**
+ * One safe visible top-level folder.
+ */
+folder: string,
+/**
+ * Safe directory components below the folder; never a filesystem path.
+ */
+subdirectories: Array<string>, } | {
 /**
  * One NFC folder component, with no leading dot or reserved name.
  */
-folder: string, } } | { "Hidden": {
+folder: string, } | {
 /**
  * Must be true; placement is `.calternal/<plugin-id>/<kind>/` within userdata.
  */
-hidden: boolean, } };
+hidden: boolean, };
 /**
  * Kind identity remains independent of plugin identity.
  */
