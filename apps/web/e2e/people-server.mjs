@@ -57,6 +57,7 @@ try {
   ok(true, "the owner sees the guest by name");
   await p.getByRole("button", { name: "Add a group…" }).click(); await p.getByRole("button", { name: /^Add as/ }).first().click(); await p.getByText(/Design/).first().waitFor({ timeout: 8000 });
   ok(true, "a group is given a role in the space and listed");
+  await p.screenshot({ path: process.env.CAL_SHOT ?? "/tmp/people-members.png" });
   await p.getByRole("radio", { name: "Editor" }).last().click().catch(() => {}); await p.waitForTimeout(800);
   await p.getByRole("button", { name: "Remove" }).first().click(); await p.waitForTimeout(1000);
   ok((await p.getByText("Guest Gus").count()) === 0, "removing the guest takes them off the list");
