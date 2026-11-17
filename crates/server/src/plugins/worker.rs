@@ -215,12 +215,36 @@ impl Worker {
     }
 }
 
+/// A worker handle that is dropped (evicted, replaced, or started for a caller
+/// that was cancelled) stops its process; a second Shutdown is ignored.
+impl Drop for Worker {
+    fn drop(&mut self) {
+        let _ = self.events.send(Event::Shutdown);
+    }
+}
+
+/// One reserved cold-start slot; dropping it releases the slot, on success,
+/// failure, panic or cancellation alike. Cost: two atomic operations.
+struct Starting(Arc<AtomicUsize>);
+impl Starting {
+    fn reserve(count: &Arc<AtomicUsize>) -> Self {
+        count.fetch_add(1, Ordering::AcqRel);
+        Self(count.clone())
+    }
+}
+impl Drop for Starting {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 /// Bounded pool of long-lived workers keyed by (plugin ID, space key).
 pub struct WorkerPool {
     node: Option<NodeRuntime>,
     workers: Mutex<HashMap<(String, SpaceId), Worker>>,
-    /// Cold starts in progress; they count against `max_workers`.
-    starting: AtomicUsize,
+    /// Cold starts in progress; they count against `max_workers`. Each is held
+    /// by a [`Starting`] reservation, so cancellation cannot leak a slot.
+    starting: Arc<AtomicUsize>,
     in_flight: Arc<AtomicUsize>,
     max_workers: usize,
 }
@@ -236,7 +260,7 @@ impl WorkerPool {
         Self {
             node,
             workers: Mutex::new(HashMap::new()),
-            starting: AtomicUsize::new(0),
+            starting: Arc::new(AtomicUsize::new(0)),
             in_flight: Arc::new(AtomicUsize::new(0)),
             max_workers: max_workers.max(1),
         }
@@ -295,25 +319,26 @@ impl WorkerPool {
                     }
                     // Reserve the slot, then start outside the lock and off the
                     // async thread: hashing and spawning never block other workers.
-                    self.starting.fetch_add(1, Ordering::AcqRel);
-                    Some(())
+                    Some(Starting::reserve(&self.starting))
                 }
             };
-            if started.is_some() {
+            if let Some(reservation) = started {
                 let (node, plugin2, bundle2, in_flight) = (
                     node.clone(),
                     plugin.clone(),
                     bundle.clone(),
                     self.in_flight.clone(),
                 );
+                // The reservation travels with the start: if this caller is
+                // cancelled, the detached task's output (and the slot) is dropped
+                // when the start finishes, never leaked.
                 let spawned = tokio::task::spawn_blocking(move || {
-                    spawn(&node, &plugin2, &bundle2, space, in_flight)
+                    (reservation, spawn(&node, &plugin2, &bundle2, space, in_flight))
                 })
                 .await;
-                self.starting.fetch_sub(1, Ordering::AcqRel);
-                let worker = match spawned {
-                    Ok(Ok(w)) => w,
-                    Ok(Err(e)) => return Outcome::Failed(e),
+                let (reservation, worker) = match spawned {
+                    Ok((r, Ok(w))) => (r, w),
+                    Ok((_, Err(e))) => return Outcome::Failed(e),
                     Err(_) => return Outcome::Failed(Error::internal("worker start failed")),
                 };
                 let mut workers = match self.workers.lock() {
@@ -322,10 +347,12 @@ impl WorkerPool {
                 };
                 // A concurrent cold start may have won; keep one worker per key.
                 if workers.get(&key).is_some_and(Worker::usable) {
-                    let _ = worker.events.send(Event::Shutdown);
+                    drop(worker); // stops the losing duplicate
                 } else {
                     workers.insert(key.clone(), worker);
                 }
+                // The worker now counts in the map; release the start slot.
+                drop(reservation);
             }
             let sent = {
                 let workers = match self.workers.lock() {
@@ -380,9 +407,7 @@ impl WorkerPool {
             .map(|(k, _)| k.clone());
         match idle {
             Some(key) => {
-                if let Some(w) = workers.remove(&key) {
-                    let _ = w.events.send(Event::Shutdown);
-                }
+                workers.remove(&key); // dropping the handle stops it
                 Ok(())
             }
             None => Err(
