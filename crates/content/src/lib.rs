@@ -414,20 +414,4 @@ impl Content {
                 .transpose()
         })
     }
-    /// Reads one per-space control value, such as a plugin's enablement, from the
-    /// space's own database. Callers authorize the space first.
-    /// Cost: the space's lock and one indexed read; no other space is touched.
-    pub fn control(&self, space: SpaceId, key: &str) -> Result<Option<Value>> {
-        self.with_space(space, |s| {
-            s.conn
-                .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
-                    r.get::<_, String>(0)
-                })
-                .optional()
-                .map_err(internal)?
-                .map(|v| serde_json::from_str(&v).map_err(internal))
-                .transpose()
-        })
-    }
-
 }
