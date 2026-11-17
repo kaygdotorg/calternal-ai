@@ -32,7 +32,7 @@
     <Card label={app.name} class="mid-card">
       <div class="col">
         <div class="app"><app.Main {id} /></div>
-        {#if cardSwitcher}<div class="appbar"><AppSwitcher {app} /></div>{/if}
+        {#if cardSwitcher}<div class="appbar" class:auto={appearance.prefs.switcherAutoHide}><AppSwitcher {app} /></div>{/if}
       </div>
     </Card>
   </main>
@@ -61,9 +61,13 @@
   /* The middle card's top and bottom edges touch the viewport; it keeps one gap on each side. */
   .mid { min-width: 0; padding: 0 var(--inset); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
-  .col { height: 100%; display: flex; flex-direction: column; }
+  .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }
+  /* Hidden until needed: the bar takes no room; a thin hot zone at the card's bottom edge (and focus inside) brings it in, on the form's ease. */
+  .appbar.auto { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: var(--s-5); padding: 0; }
+  .appbar.auto > :global(.switcher) { position: absolute; left: var(--s-6); right: var(--s-6); bottom: var(--s-3); opacity: 0; translate: 0 var(--s-4); pointer-events: none; transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-base) var(--ease-out); }
+  .appbar.auto:hover > :global(.switcher), .appbar.auto:focus-within > :global(.switcher) { opacity: 1; translate: 0 0; pointer-events: auto; }
   .right { min-width: 0; overflow: hidden; }
   .right > :global(.rs) { width: var(--right-w); }
 

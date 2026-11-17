@@ -27,6 +27,8 @@ export interface Prefs {
   uiSize: number;
   /** Where the app switcher lives: in the sidebar's footer, or as a capsule at the bottom of the middle card (an experiment). */
   switcher: "sidebar" | "card";
+  /** With the switcher under the card: hide it until the pointer or focus reaches the card's bottom edge. Off by default (always visible). */
+  switcherAutoHide: boolean;
   /** The theme (palette) in use: a preset id whose palette applies, or null for the built-in tokens. Independent of the wallpaper. */
   themeId: string | null;
   /** The preset last applied, for the gallery's selected tile. */
@@ -46,6 +48,7 @@ export const DEFAULTS: Prefs = {
   materials: { blur: true, dim: true, tint: true },
   uiSize: 100,
   switcher: "sidebar",
+  switcherAutoHide: false,
   themeId: null,
   presetId: tokens.appearance["default-preset"],
   accent: "wallpaper",
@@ -58,7 +61,7 @@ export const DEFAULTS: Prefs = {
 /** What each switch turns on. The sidebar tint and the card tint are floors: the wash is raised above them where the wallpaper needs it for contrast. */
 const SIDE_BLUR = 12, CARD_BLUR = 75, SIDE_TINT = 0.35, CARD_DIM = 0.3;
 /** The card tint floor per scheme: light keeps more of the picture (depth) because the contrast floor, not this number, guarantees legibility there. */
-const CARD_TINT = { light: 0.55, dark: 0.85 } as const;
+const CARD_TINT = { light: 0.7, dark: 0.85 } as const;
 const KEY = "cal.appearance";
 
 function read(): Prefs {
