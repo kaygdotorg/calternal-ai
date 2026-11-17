@@ -183,8 +183,8 @@ at `data`. The view consumes `data.event`; its `type` is
 For example:
 
 ```text
-event: chunk
 id: <epoch>:4
+event: chunk
 data: {"seq":4,"data":{"version":1,"seq":2,"event":{"type":"text_delta","text":"Example partial text"}}}
 
 ```
