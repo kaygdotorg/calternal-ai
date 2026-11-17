@@ -33,6 +33,24 @@ ok("an edit is saved (notes.update with the base revision)", (await page.locator
 const space = await page.evaluate(async (t) => { const r = await fetch("/api/v1/operations", { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: "spaces.list", input: {} }) }); return (await r.json()).data.spaces[0].id; }, token);
 await page.evaluate(async ([t, sp]) => { await fetch("/api/v1/operations", { method: "POST", headers: { authorization: `Bearer ${t}`, "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: "notes.create", input: { space_id: sp, title: "From another client", markdown: "hello" } }) }); }, [token, space]);
 await page.waitForFunction(() => [...document.querySelectorAll('nav[aria-label="Notes"] a.row')].some((a) => a.textContent.includes("From another client")), null, { timeout: 8000 }).then(() => ok("a note written elsewhere appears through the live stream", true), () => ok("a note written elsewhere appears through the live stream", false));
+// A draft survives a reload (drafts.save / drafts.get), and a write made while the server cannot be reached is queued (pending.queue) and sent later (pending.submit).
+await page.getByRole("button", { name: "Edit" }).click();
+await page.locator(".b-edit").fill("# Written in the browser\n\nAn unsent line.");
+await page.waitForTimeout(1000);
+await page.reload(); await page.waitForSelector("article h1");
+await page.waitForSelector(".draft");
+ok("an unsent draft is offered back after a reload (a private draft on the server)", (await page.locator(".draft").innerText()).includes("unsent draft"));
+await page.getByRole("button", { name: "Restore" }).click();
+ok("restoring brings the text back", (await page.locator(".b-edit").inputValue()).includes("An unsent line."));
+// Cut the notes.update call only (the queue call must get through), as if the connection dropped at that moment.
+await page.route("**/api/v1/operations", async (route) => { const op = JSON.parse(route.request().postData() ?? "{}").operation; if (op === "notes.update") await route.abort("connectionrefused"); else await route.continue(); });
+await page.getByRole("button", { name: "Done" }).click();
+await page.waitForSelector(".wait", { timeout: 8000 });
+ok("an update that could not be sent waits (pending.queue)", (await page.locator(".wait .wt").first().innerText()).includes("Written in the browser"));
+await page.unroute("**/api/v1/operations");
+await page.getByRole("button", { name: "Send now" }).click();
+await page.waitForFunction(() => !document.querySelector(".wait"), null, { timeout: 8000 }).then(() => ok("Send now submits it and the queue empties (pending.submit)", true), () => ok("Send now submits it and the queue empties (pending.submit)", false));
+ok("the note shows what was queued", (await page.getByText("An unsent line.").count()) >= 1);
 // describe and a wrong token
 const d = await page.evaluate(async (t) => { const r = await fetch("/api/v1/describe", { headers: { authorization: `Bearer ${t}` } }); return (await r.json()).operations?.length; }, token);
 ok("describe lists the operations", d > 20, `${d} operations`);

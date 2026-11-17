@@ -13,7 +13,14 @@
   let editing = $state(false);
   let title = $state("");
   let body = $state("");
-  const edit = () => { title = notes.note?.title ?? ""; body = notes.note?.markdown ?? ""; editing = true; };
+  const edit = (text?: string) => { title = notes.note?.title ?? ""; body = text ?? notes.note?.markdown ?? ""; editing = true; };
+  // What is typed is kept as the note's private draft (a complete replacement, saved after a short pause).
+  $effect(() => {
+    if (!editing) return;
+    const text = body;
+    const t = setTimeout(() => void notes.keepDraft(text), 600);
+    return () => clearTimeout(t);
+  });
   async function done() { editing = false; if (notes.note && (title !== notes.note.title || body !== notes.note.markdown)) await notes.save(title, body); }
   let toc = $state(false);
   const uid = $props.id();
@@ -40,14 +47,17 @@
 
   <article>
     {#if notes.note}
+      {#if notes.draft && !editing}
+        <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => edit(notes.draft?.text)} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
+      {/if}
       {#if editing}
         <InlineEditor class="t-edit" label="Title" bind:value={title} />
         <InlineEditor class="b-edit" multiline maxRows={30} label="Note" bind:value={body} />
         <div><Button variant="primary" text="Done" onclick={done} /></div>
       {:else}
-        <h1 ondblclick={edit}>{notes.note.title}</h1>
+        <h1 ondblclick={() => edit()}>{notes.note.title}</h1>
         <Md text={notes.note.markdown.replace(/^# .+\n*/, "")} />
-        <div><Button variant="quiet" text="Edit" onclick={edit} /></div>
+        <div><Button variant="quiet" text="Edit" onclick={() => edit()} /></div>
       {/if}
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     {:else}
@@ -64,6 +74,7 @@
   header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: calc(var(--bar-h) + var(--safe-top)); padding: var(--safe-top) var(--s-5) 0; }
   .grow { flex: 1; }
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
+  .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .err { color: var(--danger); font-size: var(--text-label); }
   :global(.t-edit) { font-size: var(--text-title); font-weight: var(--strong-weight); width: 100%; }
   :global(.b-edit) { width: 100%; min-height: 12rem; line-height: 1.55; }

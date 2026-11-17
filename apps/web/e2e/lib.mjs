@@ -9,12 +9,12 @@ export const BASE = process.env.CAL_URL ?? `http://127.0.0.1:${PORT}`;
 /** Starts the preview server and resolves when it answers. Returns a stop function. */
 export async function serve() {
   if (process.env.CAL_URL) return () => {};
-  const p = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"], { stdio: "ignore", detached: false });
+  const p = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"], { stdio: "ignore", detached: true }); // its own process group, so stopping it also stops the node process npx starts
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(BASE)).ok) break; } catch { /* not yet */ }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return () => p.kill();
+  return () => { try { process.kill(-p.pid); } catch { p.kill(); } };
 }
 
 /** The devices the screenshots and checks use. */
