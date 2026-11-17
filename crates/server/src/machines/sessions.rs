@@ -244,6 +244,9 @@ impl MachineService {
         if let Some(m) = st.machines.get_mut(&machine_id) {
             m.last_seen = Instant::now();
         }
+        if st.finish_worker_stops(machine_id, session, req)? > 0 {
+            self.worker_changes.notify_waiters();
+        }
         st.reconcile(machine_id, &req.leases, &self.settings);
         st.place_waiting(&self.settings);
         Ok(notify)
@@ -268,7 +271,7 @@ impl MachineService {
         let lease = st.leases.get(&post.lease_id).ok_or_else(fenced)?;
         if lease.row.machine != Some(machine_id)
             || lease.row.fence != post.fence
-            || lease.state == LeaseState::Ended
+            || matches!(lease.state, LeaseState::Ended | LeaseState::Stopping)
         {
             return Err(fenced());
         }
