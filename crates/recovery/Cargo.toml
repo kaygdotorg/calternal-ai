@@ -1,0 +1,22 @@
+[package]
+name = "calternal-recovery"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Protected installation-bound auth recovery intent coordinator"
+
+[dependencies]
+calternal-auth.workspace = true
+calternal-fsio.workspace = true
+rusqlite = { version = "0.41", features = ["bundled"] }
+serde.workspace = true
+serde_json.workspace = true
+uuid = { workspace = true, features = ["v7"] }
+blake3 = "1.8.7"
+thiserror.workspace = true
+rustix = { version = "1", features = ["fs"] }
+
+[dev-dependencies]
+tempfile = "3.27"
+tokio.workspace = true

@@ -20,7 +20,7 @@ async function startServer(dataDir) {
   const startupPath = join(dataDir, "startup.json");
   await unlink(startupPath).catch(() => {});
   const child = spawn(serverBinary, [
-    "serve",
+    "serve", "--development",
     "--data-dir", dataDir,
     "--port", "0",
     "--plugin-root", pluginRoot,
@@ -165,8 +165,8 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.deepEqual(new Set(history.body.data.versions.map((version) => version.title)), new Set(["Integration note", "Renamed integration note"]));
 
     const personalDenied = await operation(server, server.guestToken, "notes.get", { space_id: "personal", id: note.id });
-    assert.equal(personalDenied.status, 403);
-    assert.equal(personalDenied.body.error.code, "forbidden");
+    assert.equal(personalDenied.status, 404);
+    assert.equal(personalDenied.body.error.code, "not_found");
 
     const sharedCreate = await operation(server, server.ownerToken, "notes.create", {
       space_id: "shared",

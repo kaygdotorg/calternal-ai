@@ -278,3 +278,27 @@ lockfile before invoking --locked against this checkout.
 None for this bounded port. Space/legacy ownership mapping, invitation semantics
 and FO1 coordination stay in their later port-map steps; no product choice was
 made here.
+
+## HTTP-facing library additions (2026-11-17 server lane)
+
+Source `crates/auth/src/http.rs:119–143,148–258,390–425` and
+`crates/auth/src/passkey.rs:107–212` at `ea57b84b` require six missing host APIs:
+`setup_needed`, `finish_http_setup`, `admit_http_login`, `start_http_login`,
+`finish_http_login`, and `account_profile`. They live in `src/http_facing.rs`.
+`lib.rs` includes the private module. `ceremony.rs` adds a non-consuming lookup of
+a setup prompt's bound account, followed by the existing atomic take-once path.
+`passkey.rs` shares its existing verifier through `finish_login_inner`, permitting
+anonymous discovery only for an internally sentinel-bound SignIn prompt; existing
+account-bound library calls keep their account/purpose check. Reverify binds to
+the trusted session account and its own purpose before any prompt is consumed.
+The nil sentinel is never a persisted account or space identity. No auth schema,
+existing migration, credential verifier, account/space allocation or server role
+semantics were changed by this addition. The profile query preserves source
+server-role capability lookup, separate from all space authority.
+
+The server HTTP adapter has no dependency on old engine/server/plugin crates.
+Its source/test adaptation and deliberate omissions are in
+`../server/PORTING.md`; it does not implement the account mutation receipt/journal
+integration or DAV/app-password port. No new auth dependencies were added. Changes
+to recovery, spaces, setup/session/passkey publication by the concurrent recovery
+lane are independent and are not part of this server lane's patch accounting.

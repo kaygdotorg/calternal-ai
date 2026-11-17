@@ -62,6 +62,16 @@ struct Space {
     space: String,
 }
 #[derive(Args)]
+struct ItemSpace {
+    #[arg(
+        long,
+        alias = "space-id",
+        default_value = "",
+        help = "Optional compatibility space hint; item IDs resolve their owning space"
+    )]
+    space: String,
+}
+#[derive(Args)]
 struct DocumentText {
     #[arg(
         long,
@@ -110,7 +120,7 @@ enum NotesCommand {
     Get {
         id: String,
         #[command(flatten)]
-        scope: Space,
+        scope: ItemSpace,
     },
     Create {
         #[command(flatten)]
@@ -123,7 +133,7 @@ enum NotesCommand {
     Update {
         id: String,
         #[command(flatten)]
-        scope: Space,
+        scope: ItemSpace,
         #[arg(long)]
         base_revision: String,
         #[arg(long)]
@@ -134,7 +144,7 @@ enum NotesCommand {
     History {
         id: String,
         #[command(flatten)]
-        scope: Space,
+        scope: ItemSpace,
         #[arg(long)]
         limit: Option<u32>,
         #[arg(long)]
@@ -188,7 +198,7 @@ fn load_token(file: Option<PathBuf>) -> Result<String, String> {
     Ok(token.trim_end_matches(['\n', '\r']).to_string())
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
-    let (operation, input) = match command {
+    let (operation, mut input) = match command {
         Command::Describe => return Err("describe is not an operation".into()),
         Command::Invoke { operation, input } => {
             let input: Value =
@@ -251,6 +261,16 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
             ),
         },
     };
+    if matches!(
+        operation.as_str(),
+        "notes.get" | "notes.update" | "notes.history"
+    ) && input.get("space_id").and_then(Value::as_str) == Some("")
+    {
+        input
+            .as_object_mut()
+            .expect("typed item input")
+            .remove("space_id");
+    }
     Client::pending(&operation, &input, request_id).map_err(|e| e.to_string())
 }
 fn report(request_id: Option<String>, error: ApiError) -> ExitCode {

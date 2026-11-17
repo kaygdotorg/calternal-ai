@@ -243,13 +243,20 @@ impl Fixture {
     }
 }
 
+fn item_operation(op: &str) -> bool {
+    matches!(
+        op,
+        "notes.get" | "notes.history" | "notes.update" | "notes-insights.summarize"
+    )
+}
+
 fn denial(response: (StatusCode, Value), status: StatusCode, message: &str) {
     assert_eq!(response.0, status, "{}", response.1);
     assert_eq!(response.1["ok"], false);
     assert_eq!(
         response.1["error"],
         json!({
-            "code": if status == StatusCode::UNAUTHORIZED { "unauthorized" } else { "forbidden" },
+            "code": if status == StatusCode::UNAUTHORIZED { "unauthorized" } else if status == StatusCode::NOT_FOUND {"not_found"} else { "forbidden" },
             "message": message,
         })
     );
@@ -267,6 +274,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     // The real stored-directory matrix lives in spaces_matrix.rs, where every
     // directory handler and its target invariants are exercised against SQLite.
     let stored_rows: BTreeSet<_> = [
+        "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
         "spaces.create",
         "spaces.members",
@@ -327,8 +335,14 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
             } else {
                 denial(
                     response,
-                    StatusCode::FORBIDDEN,
-                    if role == 0 {
+                    if role == 0 && item_operation(op) {
+                        StatusCode::NOT_FOUND
+                    } else {
+                        StatusCode::FORBIDDEN
+                    },
+                    if role == 0 && item_operation(op) {
+                        "item not found"
+                    } else if role == 0 {
                         "no access to this space"
                     } else {
                         "insufficient role for this space"
@@ -339,8 +353,16 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
                 fixture
                     .call(Some(TOKEN), "unknown", op, fixture.input(op, "unknown"))
                     .await,
-                StatusCode::FORBIDDEN,
-                "no access to this space",
+                if item_operation(op) {
+                    StatusCode::NOT_FOUND
+                } else {
+                    StatusCode::FORBIDDEN
+                },
+                if item_operation(op) {
+                    "item not found"
+                } else {
+                    "no access to this space"
+                },
             );
             for token in [None, Some("invalid-token")] {
                 denial(
@@ -348,7 +370,7 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
                         .call(token, "token", op, fixture.input(op, "personal"))
                         .await,
                     StatusCode::UNAUTHORIZED,
-                    "missing or invalid dev bearer token",
+                    "missing or invalid session",
                 );
             }
         }
@@ -375,7 +397,19 @@ async fn no_grant_hides_existing_and_absent_resources() {
             .await;
         assert_eq!(existing, missing, "resource existence leak: {op}");
         assert_eq!(existing, unknown, "space existence leak: {op}");
-        denial(existing, StatusCode::FORBIDDEN, "no access to this space");
+        denial(
+            existing,
+            if item_operation(op) {
+                StatusCode::NOT_FOUND
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            if item_operation(op) {
+                "item not found"
+            } else {
+                "no access to this space"
+            },
+        );
     }
 }
 
@@ -412,8 +446,8 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
                 fixture.input("notes.get", "personal"),
             )
             .await,
-        StatusCode::FORBIDDEN,
-        "no access to this space",
+        StatusCode::NOT_FOUND,
+        "item not found",
     );
     fixture.state.tokens.set_role(3);
     fixture
@@ -431,7 +465,7 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
             )
             .await,
         StatusCode::UNAUTHORIZED,
-        "missing or invalid dev bearer token",
+        "missing or invalid session",
     );
 }
 
@@ -507,8 +541,8 @@ async fn membership_revocation_during_worker_discards_delivery() {
         .await
         .unwrap()
         .expect_err("revoked member must not receive worker data");
-    assert_eq!(error.code, calternal_core::ErrorCode::Forbidden);
-    assert_eq!(error.message, "no access to this space");
+    assert_eq!(error.code, calternal_core::ErrorCode::NotFound);
+    assert_eq!(error.message, "item not found");
 }
 
 #[tokio::test]
@@ -590,7 +624,7 @@ async fn no_grant_hides_summarize_binding_registration() {
         )
         .await;
     assert_eq!(registered, absent);
-    denial(absent, StatusCode::FORBIDDEN, "no access to this space");
+    denial(absent, StatusCode::NOT_FOUND, "item not found");
     fixture.state.tokens.set_role(1);
     assert_eq!(
         fixture
@@ -621,8 +655,16 @@ async fn every_operation_checks_only_its_required_capability() {
             } else {
                 denial(
                     response,
-                    StatusCode::FORBIDDEN,
-                    "insufficient role for this space",
+                    if item_operation(op) && required == Capability::SpaceRead {
+                        StatusCode::NOT_FOUND
+                    } else {
+                        StatusCode::FORBIDDEN
+                    },
+                    if item_operation(op) && required == Capability::SpaceRead {
+                        "item not found"
+                    } else {
+                        "insufficient role for this space"
+                    },
                 );
             }
         }

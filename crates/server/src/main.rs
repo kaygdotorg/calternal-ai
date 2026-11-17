@@ -31,6 +31,15 @@ enum Cmd {
         /// Built web assets served same-origin (e.g. apps/web/dist).
         #[arg(long)]
         web_dir: Option<PathBuf>,
+        /// Enable disposable development accounts and bearer token files (off by default).
+        #[arg(long)]
+        development: bool,
+        /// Exact public WebAuthn origin; defaults to `http://localhost:<bound-port>`.
+        #[arg(long)]
+        origin: Option<String>,
+        /// Comma-separated trusted proxy CIDRs; forwarded headers are ignored by default.
+        #[arg(long, default_value = "")]
+        trusted_proxies: String,
         /// Root of repository-shipped trusted plugins.
         #[arg(long, default_value = "plugins")]
         plugin_root: PathBuf,
@@ -62,6 +71,9 @@ fn main() {
             web_dir,
             plugin_root,
             node,
+            development,
+            origin,
+            trusted_proxies,
         } => {
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
@@ -69,7 +81,16 @@ fn main() {
                 .enable_all()
                 .build()
                 .expect("tokio runtime");
-            rt.block_on(serve(data_dir, port, web_dir, plugin_root, node))
+            rt.block_on(serve(
+                data_dir,
+                port,
+                web_dir,
+                plugin_root,
+                node,
+                development,
+                origin,
+                trusted_proxies,
+            ))
         }
     };
     std::process::exit(code);
@@ -102,6 +123,9 @@ async fn serve(
     web_dir: Option<PathBuf>,
     plugin_root: PathBuf,
     node: Option<PathBuf>,
+    development: bool,
+    origin: Option<String>,
+    trusted_proxies: String,
 ) -> i32 {
     if let Err(e) = std::fs::create_dir_all(&data_dir)
         .and_then(|_| std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700)))
@@ -121,13 +145,6 @@ async fn serve(
         Err(e) => {
             eprintln!("calternal: {}", e.message);
             return 2;
-        }
-    };
-    let tokens = match TokenTable::load_or_create(&data_dir) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("calternal: dev tokens: {e}");
-            return 1;
         }
     };
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
@@ -152,20 +169,78 @@ async fn serve(
         }
     };
     let port = listener.local_addr().expect("bound").port();
+    let public_origin = origin.unwrap_or_else(|| format!("http://localhost:{port}"));
+    let mut config = match calternal_auth::AuthConfig::new(&public_origin) {
+        Ok(c) => c,
+        Err(_) => {
+            eprintln!("calternal: invalid origin");
+            return 1;
+        }
+    };
+    if config.set_trusted_proxies(&trusted_proxies).is_err() {
+        eprintln!("calternal: invalid trusted proxies");
+        return 1;
+    }
+    let tokens = match TokenTable::open(&data_dir, config, development) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("calternal: account directory: {e}");
+            return 1;
+        }
+    };
+    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
+        match service.auth.first_owner_token().await {
+            Ok(Some(token)) => {
+                let path = data_dir.join("setup.token");
+                if let Err(e) = write_private_atomic(&path, token.as_bytes()) {
+                    eprintln!("calternal: setup token file: {e}");
+                    return 1;
+                }
+                Some(path)
+            }
+            Ok(None) => None,
+            Err(e) => {
+                eprintln!("calternal: setup: {e}");
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
+    let mut hosts = api::allowed_hosts(port);
+    if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
+        let authority = service
+            .config
+            .origin_header()
+            .split("://")
+            .nth(1)
+            .unwrap_or("")
+            .to_owned();
+        if !hosts.contains(&authority) {
+            hosts.push(authority);
+        }
+    }
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
         store: Mutex::new(store),
         tokens,
         registry,
         node,
-        allowed_hosts: api::allowed_hosts(port),
+        allowed_hosts: hosts,
     });
     let app = api::router(state, web_dir.clone());
 
-    let base_url = format!("http://127.0.0.1:{port}");
+    let base_url = if development {
+        format!("http://127.0.0.1:{port}")
+    } else {
+        public_origin.clone()
+    };
     let startup = serde_json::json!({
         "profile": "development-preview",
+        "development_tokens": development,
+        "setup_token_file": setup_file,
         "base_url": base_url,
+        "passkey_origin": public_origin,
         "pid": std::process::id(),
         "data_dir": data_dir,
         "token_files": token_files.iter().map(|(p, f)| (p.to_string(), serde_json::json!(f))).collect::<serde_json::Map<_, _>>(),
@@ -185,9 +260,12 @@ async fn serve(
     }
     println!("  startup info: {}", startup_path.display());
 
-    let served = axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await;
+    let served = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await;
     let _ = std::fs::remove_file(&startup_path);
     match served {
         Ok(()) => 0,

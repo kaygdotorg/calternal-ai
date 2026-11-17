@@ -1,11 +1,19 @@
 //! Crash-point fault injection for durability tests. Compiled into debug
 //! builds only; release builds ignore `CALTERNAL_FAULT` entirely.
 
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
+/// Durable write boundaries available to disposable crash tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultPoint {
+    /// SQLite committed the revision and receipt, before materialization.
     AfterCommit,
+    /// Materialization is about to publish the new file bytes.
     BeforePlacement,
+    /// File bytes were published, before placement bookkeeping finishes.
     AfterPlacement,
+    /// All handler work finished, before the transport sends its reply.
     BeforeReply,
 }
 
@@ -21,6 +29,7 @@ impl FaultPoint {
     }
 }
 
+/// Aborts a debug process at the selected environment-controlled boundary, once armed.
 #[cfg(debug_assertions)]
 pub fn hit(point: FaultPoint) {
     use std::sync::OnceLock;
@@ -32,6 +41,7 @@ pub fn hit(point: FaultPoint) {
     }
 }
 
+/// Release-build no-op; environment variables cannot arm fault injection.
 #[cfg(not(debug_assertions))]
 #[inline(always)]
 pub fn hit(_point: FaultPoint) {}

@@ -35,6 +35,7 @@ pub(crate) struct Redeemable {
 }
 
 /// Issues a fresh first-owner token while nobody owns the server.
+/// The optional protected recovery barrier precedes acknowledgement.
 pub(crate) async fn first_owner_token(inner: &Arc<Inner>) -> Result<Option<String>> {
     let ttl = inner.config.setup_ttl.as_millis() as i64;
     inner
@@ -54,7 +55,7 @@ pub(crate) async fn first_owner_token(inner: &Arc<Inner>) -> Result<Option<Strin
             .map_err(sql)?;
             let token = new_setup_token()?;
             insert_token(&tx, &token, "first-owner", None, ttl)?;
-            tx.commit().map_err(sql)?;
+            crate::spaces::commit(tx)?;
             Ok(Some(token))
         })
         .await
@@ -86,6 +87,7 @@ pub(crate) fn find_in(c: &Connection, who: &str) -> Result<(String, String)> {
     Ok(found)
 }
 
+/// Replaces recovery tokens atomically, including the optional recovery witness.
 pub(crate) fn recover_in(c: &mut Connection, who: &str, ttl: i64) -> Result<(String, String)> {
     let tx = c.transaction().map_err(sql)?;
     let (user, name) = find_in(&tx, who)?;
@@ -96,7 +98,7 @@ pub(crate) fn recover_in(c: &mut Connection, who: &str, ttl: i64) -> Result<(Str
     .map_err(sql)?;
     let token = new_setup_token()?;
     insert_token(&tx, &token, "recover", Some(&user), ttl)?;
-    tx.commit().map_err(sql)?;
+    crate::spaces::commit(tx)?;
     Ok((name, token))
 }
 
@@ -113,6 +115,7 @@ pub struct Created {
     pub token: String,
 }
 
+/// Creates an account and token, waiting for configured protected recovery.
 pub(crate) fn create_in(c: &mut Connection, name: &str, ttl: i64) -> Result<Created> {
     let name = clean_person_name(name).ok_or_else(|| Error::invalid("unusable account name"))?;
     let username = username_for(&name);
@@ -149,7 +152,7 @@ pub(crate) fn create_in(c: &mut Connection, name: &str, ttl: i64) -> Result<Crea
     // recovery token does, so it is one (no new kind of token to secure).
     let token = new_setup_token()?;
     insert_token(&tx, &token, "recover", Some(&id), ttl)?;
-    tx.commit().map_err(sql)?;
+    crate::spaces::commit(tx)?;
     Ok(Created {
         id: AccountId::parse(&id).ok_or_else(|| Error::internal("bad account id"))?,
         name,
@@ -236,6 +239,7 @@ pub(crate) async fn check(inner: &Arc<Inner>, raw: &str, name: &str) -> Result<R
 
 /// Uses up the token and saves the passkey and a new Installation, all in
 /// one transaction. Exactly one caller can ever win a given token.
+/// Configured recovery publication completes before enrollment is acknowledged.
 pub(crate) async fn redeem(
     inner: &Arc<Inner>,
     r: Redeemable,
@@ -300,7 +304,7 @@ pub(crate) async fn redeem(
                 params![out.0.to_string(), now],
             )
             .map_err(sql)?;
-            tx.commit().map_err(sql)?;
+            crate::spaces::commit(tx)?;
             Ok(out)
         })
         .await?;

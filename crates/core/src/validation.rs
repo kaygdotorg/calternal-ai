@@ -86,7 +86,9 @@ fn space(value: &str) -> Result<(), ValidationError> {
     validate_id(value)
 }
 fn resource(space_id: &str, id: &str) -> Result<(), ValidationError> {
-    space(space_id)?;
+    if !space_id.is_empty() {
+        space(space_id)?;
+    }
     validate_resource_id(id)
 }
 
@@ -134,6 +136,7 @@ pub fn is_known_operation(operation: &str) -> bool {
             | "spaces.delete"
             | "notes.list"
             | "notes.get"
+            | "resolve"
             | "notes.create"
             | "notes.update"
             | "notes.history"
@@ -179,6 +182,16 @@ pub fn validate_operation_input(
     operation: &str,
     input: &JsonObject,
 ) -> Result<(), ValidationError> {
+    if matches!(
+        operation,
+        "notes.get" | "notes.history" | "notes.update" | "notes-insights.summarize"
+    ) && let Some(hint) = input.get("space_id")
+    {
+        space(
+            hint.as_str()
+                .ok_or_else(|| ValidationError::invalid("invalid space_id"))?,
+        )?;
+    }
     match operation {
         "spaces.list" => {
             let _: SpacesListInput = decode(input)?;
@@ -205,6 +218,11 @@ pub fn validate_operation_input(
                 i.role != SpaceRole::Owner,
                 "use explicit ownership transfer",
             )
+        }
+        "resolve" => {
+            let i: ResolveInput = decode(input)?;
+            validate_id(&i.kind)?;
+            resource("", &i.id)
         }
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
@@ -574,6 +592,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             true,
         ),
         entry::<NotesListInput, NotesListResult>("notes.list", "List up to 100 notes", false),
+        entry::<ResolveInput, ResolveResult>(
+            "resolve",
+            "Resolve an item address with current access",
+            false,
+        ),
         entry::<NotesGetInput, NoteResult>("notes.get", "Read a note", false),
         entry::<NotesCreateInput, NoteResult>("notes.create", "Create a Markdown note", true),
         entry::<NotesUpdateInput, NoteResult>(

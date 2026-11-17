@@ -1,38 +1,96 @@
 # calternal-server: localhost development-preview host
 
-**Development preview only.** It runs on loopback with disposable data and two fixed dev principals. It is not production auth, not an OS sandbox for plugins, and does not provide the inherited Calternal storage, tiering or recovery guarantees. Do not point it at real data.
+Development preview with protected account sign-in and stored space authority.
+Use disposable data. The preview content store does not provide inherited tiering,
+FO1 recovery integration, or a production plugin sandbox.
 
 ## Run
 
 ```sh
-scripts/with-toolchain.sh cargo build -p calternal-server
-target/debug/calternal serve --data-dir .dev-data --port 3210 \
-  --web-dir apps/web/dist --plugin-root plugins   # optional: --node /abs/node
+scripts/with-toolchain.sh cargo build -p calternal-server -j4
+preview_data=$(mktemp -d /tmp/calternal-preview.XXXXXX)
+target/debug/calternal serve --data-dir "$preview_data" --port 0 \
+  --web-dir apps/web/dist --plugin-root plugins
 ```
 
-- The server binds `127.0.0.1` only. `--port 0` picks a free port.
-- When it is ready, it atomically writes `<data-dir>/startup.json` (mode 0600). The file contains `profile`, `base_url`, `pid`, `data_dir`, `token_files.{owner,guest}` and `web_dir`. It is removed on clean shutdown.
-- The dev tokens are in `<data-dir>/dev-tokens/{owner,guest}.token`. Each is a raw 256-bit hex token with no newline. The files are 0600 and the directory is 0700. Token values are never printed or logged; only the paths are printed.
-- Principals:
-  - `owner` is manager of `personal` and `shared`.
-  - `guest` is reader of `shared` only.
-- `calternal plugin-digest --plugin-root plugins` prints worker bundle digests and whether each matches `trusted-plugins.json`.
+The listener binds `127.0.0.1`. `startup.json` (0600) reports `base_url`,
+`passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
+paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn
+needs a hostname. Use the reported URL and preserve the port across restarts to
+preserve the passkey origin. `--origin https://example.org` selects an exact
+public origin behind a TLS proxy. `--trusted-proxies` accepts explicit CIDRs;
+without it, forwarded client addresses never influence rate-limit buckets.
+Only the configured public authority and the listener's loopback authorities
+are accepted as Host values. TLS is supplied by the deployment proxy.
+
+With no accounts, the privileged local setup token is written to `setup.token`
+(mode 0600) and its path appears in startup metadata. Its value is never logged.
+Redeem it through setup/start and setup/finish below. Enrollment creates an account,
+not a space; use `spaces.create` after signing in. An account's server admin role
+grants no content access.
+
+`--development` explicitly enables disposable seeded accounts and development
+bearer files; this flag is **off by default**, including after restart. Existing
+token files do not grant authority without this flag. Development `base_url`
+retains the preview's numeric loopback URL for existing bearer clients; use
+`passkey_origin` for browser passkey sign-in. The `owner` fixture owns the
+`personal` and `shared` space aliases; `guest` reads only `shared`. Each account
+and each space has an independent UUIDv7. Token files are 0600 under a 0700
+`dev-tokens` directory. New spaces use UUID roots. Aliases are retained temporarily.
 
 ## HTTP
 
-- `GET /api/v1/describe` returns a bare `DescribeResult`.
-- `POST /api/v1/operations` takes `{request_id, operation, input}` and returns the `OperationResponse` envelope. All types come from `calternal-core`.
-- A failure that happens before the request body is parsed (Host, Origin, auth, content type, malformed envelope) has `request_id: null`.
-- Every request, static assets included, must use an exact Host from `127.0.0.1:PORT`, `localhost:PORT` or `[::1]:PORT`.
-  - An `Origin` header may be absent, or must equal `http://<Host>`. `null` and foreign origins are denied, as is `Sec-Fetch-Site: cross-site`.
-  - The API requires `Authorization: Bearer`, compared in constant time.
-  - There are no cookies and no CORS headers.
-- Every response carries the frozen CSP, `nosniff`, `no-referrer` and `X-Frame-Options: DENY`. API responses are `no-store`.
-- Static files come from `--web-dir`.
-  - Client routes such as `/s/<space>/notes/<id>` get `index.html`.
-  - A missing `/assets/*` path, or any final path segment containing a `.`, returns 404.
-  - Any `/api/*` path returns a JSON envelope, never HTML.
-- Limits: body 2 MiB (413), document 1 MiB, title 1..256 characters with no control characters, list 100, history limit 1..100 (default 20). Unknown fields are rejected.
+Trusted account endpoints use `/api/v1/auth/` and bare JSON results:
+
+| Method/path | Input or result |
+|---|---|
+| GET status | `{setup, signed_in}`, no directory information |
+| POST setup/start | `{token, name?}` -> `{ceremony, options}` |
+| POST setup/finish | `{ceremony, credential, device?}` -> user and host cookie |
+| POST login/start | empty body or JSON -> discoverable options; no username |
+| POST login/finish | `{ceremony, credential, device?}` -> user and host cookie |
+| POST reverify/start, reverify/finish | session-account/purpose-bound challenge, same finish shape |
+| POST logout | revokes current installation; 204, clears cache; never clears a newer cookie |
+| GET me | private profile/server capabilities and installation ID |
+| GET installations | current account's devices, with `current` flags |
+| POST installations/revoke | `{installation}`; foreign and absent IDs both not found |
+| GET passkeys | current account's passkeys |
+| POST passkeys/add/start | `{}`, requires recent interactive proof |
+| POST passkeys/add/finish | `{ceremony, credential, name?}`, rechecks proof |
+| POST passkeys/rename | `{id, name}` |
+| POST passkeys/remove | `{id}`, requires recent proof; never removes the last key |
+
+Account POSTs require JSON and the exact configured Origin when present. Bodies
+are capped at 64 KiB. Source and target admission, bounded purpose-specific
+ceremony pools, account signature-failure backoff, token hashes and current
+revocation checks come from the ported auth library. Cookies are
+`__Host-calternal_session`, `Path=/; HttpOnly; SameSite=Lax; Secure`, without a
+Domain. Duplicate host cookies are refused across the merged router. No legacy cookie is recognized or cleared; delayed logout/refusal never expires
+a newer host cookie. Native clients may send a session bearer. DAV/app passwords are not
+accepted. Account mutation receipt replay and private live event feeds are not
+yet integrated (see PORTING.md and the ignored source test).
+
+`GET /api/v1/describe` returns `DescribeResult`. `POST /api/v1/operations` takes
+`{request_id, operation, input}` and returns the shared operation envelope. A
+session supplies only account identity; current Directory capability rows decide
+each operation, retry, commit and asynchronous delivery.
+
+`resolve {kind, id}` resolves `/<kind>/<id>` to `{kind,id,space_id,access}`. The
+current preview has only the `notes` item kind. Wrong kind, missing item and no
+access return identical 404 `not_found`/`item not found`. Resolution currently
+probes current membership roots, without enumerating content; the future storage
+index can replace this linear-in-memberships lookup without changing clients.
+`notes.get`, `notes.update`, `notes.history` and `notes-insights.summarize` accept
+just an item ID (plus their own fields). A supplied compatibility `space_id` must
+match the resolved owner. Collections and creation still require a space.
+The CLI's get/update/history commands omit the hint by default.
+
+Every response retains CSP, nosniff, no-referrer, DENY framing and API no-store.
+There are no CORS headers. Static routes such as `/notes/<id>` and
+`/collections/<id>` fall back to index.html; missing assets and API routes do not.
+Core operation bodies remain capped at 2 MiB, Markdown at 1 MiB. The server
+supports the settled addresses; the current web router still needs Claude-owned
+changes listed in HTTP-VALIDATION.md.
 
 ## Durability profile (preview)
 
@@ -76,7 +134,7 @@ Recovery and retries:
 
 ## Tests
 
-`scripts/with-toolchain.sh cargo test -p calternal-server` runs these suites. They need Node 22.13 or later on PATH.
+`scripts/with-toolchain.sh cargo test -p calternal-server -j4` runs these suites. They need Node 22.13 or later on PATH.
 
 - **Worker unit tests (`src/plugins.rs`):** cleared environment, filesystem confinement, malformed and hostile output, timeout and overflow, admission cap, digest tampering.
 - **`tests/http.rs` (black-box tests of the real binary):** two principals, stale writes and history, retries, crash points, external edits, the lock, Host/Origin/bearer/CSP checks, static fallback, plugin receipts, temp-file cleanup.

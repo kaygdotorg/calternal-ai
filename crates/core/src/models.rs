@@ -270,14 +270,39 @@ pub struct NotesListInput {
     #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
     pub space_id: String,
 }
+/// Input for the common `/<kind>/<id>` address resolver.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveInput {
+    /// Open item-kind identifier, independent of its rendering plugin; future kinds need no enum change.
+    #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
+    pub kind: String,
+    /// Globally unique item UUID; possession grants no authority.
+    pub id: String,
+}
+/// Current owning space and effective capabilities for a visible address.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveResult {
+    /// Resolved item kind.
+    pub kind: String,
+    /// Stable item UUID.
+    pub id: String,
+    /// Owning space UUID, independent of account identity.
+    pub space_id: String,
+    /// Current effective capability names; informational, rechecked on use.
+    pub access: Vec<String>,
+}
 /// Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct NotesGetInput {
-    /// Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+    /// Optional compatibility space hint; omission derives the owning space from `id`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(as = "Option<String>", optional)]
     #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
     pub space_id: String,
-    /// Stable UUID note identity; access is checked against the accompanying space.
+    /// Stable globally unique note UUID; the server resolves its owning space.
     pub id: String,
 }
 /// Input for `notes.create`; creates a new resource in an authorized space.
@@ -297,10 +322,12 @@ pub struct NotesCreateInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct NotesUpdateInput {
-    /// Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+    /// Optional compatibility space hint; omission derives the owning space from `id`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(as = "Option<String>", optional)]
     #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
     pub space_id: String,
-    /// Stable UUID note identity; access is checked against the accompanying space.
+    /// Stable globally unique note UUID; the server resolves its owning space.
     pub id: String,
     /// Expected opaque current revision, 1..256 UTF-8 bytes; mismatch produces a conflict.
     #[schemars(length(min = 1, max = 256))]
@@ -319,10 +346,12 @@ pub struct NotesUpdateInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct NotesHistoryInput {
-    /// Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+    /// Optional compatibility space hint; omission derives the owning space from `id`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[ts(as = "Option<String>", optional)]
     #[schemars(length(min = 1, max = 80), regex(pattern = r"^[a-zA-Z0-9_.:-]+$"))]
     pub space_id: String,
-    /// Stable UUID note identity; access is checked against the accompanying space.
+    /// Stable globally unique note UUID; the server resolves its owning space.
     pub id: String,
     /// Optional page size, 1..100 snapshots; omission selects the server default, null is rejected.
     #[serde(default)]
@@ -757,6 +786,10 @@ pub enum WorkerResponse {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct Contract {
+    /// Common address resolution input.
+    pub resolve_input: ResolveInput,
+    /// Current visible address resolution.
+    pub resolve_result: ResolveResult,
     /// Schema representative for the stored space directory spaces list input.
     pub spaces_list_input: crate::SpacesListInput,
     /// Schema representative for the stored space directory spaces create input.

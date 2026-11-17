@@ -106,6 +106,15 @@ impl Ceremonies {
         Ok(id)
     }
 
+    /// Returns an enrollment's bound account without consuming another purpose.
+    pub(crate) fn setup_account(&self, id: &str) -> Result<AccountId> {
+        let open = self.open.lock().unwrap_or_else(|p| p.into_inner());
+        match open.get(id) {
+            Some((at, Pending::Setup { user, .. })) if at.elapsed() < self.ttl => Ok(*user),
+            _ => Err(Error::new(ErrorCode::PasskeyFailed, "no such prompt")),
+        }
+    }
+
     /// Takes an "add a passkey" prompt, but only for the person who
     /// started it. Anyone else finds nothing and leaves it in place, so
     /// they can't cancel someone else's prompt (#409).

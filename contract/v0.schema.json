@@ -20,6 +20,8 @@
     "plugins_list_input",
     "plugins_list_result",
     "request",
+    "resolve_input",
+    "resolve_result",
     "response",
     "space_changed_result",
     "space_input",
@@ -160,6 +162,22 @@
       "allOf": [
         {
           "$ref": "#/definitions/OperationRequest"
+        }
+      ]
+    },
+    "resolve_input": {
+      "description": "Common address resolution input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ResolveInput"
+        }
+      ]
+    },
+    "resolve_result": {
+      "description": "Current visible address resolution.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ResolveResult"
         }
       ]
     },
@@ -856,16 +874,15 @@
       "description": "Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.",
       "type": "object",
       "required": [
-        "id",
-        "space_id"
+        "id"
       ],
       "properties": {
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "type": "string",
           "maxLength": 80,
           "minLength": 1,
@@ -878,8 +895,7 @@
       "description": "Input for `notes.history`; bounded pagination uses opaque server-issued cursors.",
       "type": "object",
       "required": [
-        "id",
-        "space_id"
+        "id"
       ],
       "properties": {
         "cursor": {
@@ -889,7 +905,7 @@
           "minLength": 1
         },
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "limit": {
@@ -900,7 +916,7 @@
           "minimum": 1.0
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "type": "string",
           "maxLength": 80,
           "minLength": 1,
@@ -974,8 +990,7 @@
       "required": [
         "base_revision",
         "id",
-        "markdown",
-        "space_id"
+        "markdown"
       ],
       "properties": {
         "base_revision": {
@@ -985,7 +1000,7 @@
           "minLength": 1
         },
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "markdown": {
@@ -993,7 +1008,7 @@
           "type": "string"
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "type": "string",
           "maxLength": 80,
           "minLength": 1,
@@ -1387,6 +1402,60 @@
           "items": {
             "$ref": "#/definitions/SpaceGrant"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolveInput": {
+      "description": "Input for the common `/<kind>/<id>` address resolver.",
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "description": "Globally unique item UUID; possession grants no authority.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Open item-kind identifier, independent of its rendering plugin; future kinds need no enum change.",
+          "type": "string",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolveResult": {
+      "description": "Current owning space and effective capabilities for a visible address.",
+      "type": "object",
+      "required": [
+        "access",
+        "id",
+        "kind",
+        "space_id"
+      ],
+      "properties": {
+        "access": {
+          "description": "Current effective capability names; informational, rechecked on use.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "description": "Stable item UUID.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Resolved item kind.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID, independent of account identity.",
+          "type": "string"
         }
       },
       "additionalProperties": false

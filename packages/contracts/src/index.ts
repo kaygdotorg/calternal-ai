@@ -169,13 +169,47 @@ space_id: string, };
 
 export type NotesGetInput = {
 /**
- * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ * Optional compatibility space hint; omission derives the owning space from `id`.
+ */
+space_id?: string,
+/**
+ * Stable globally unique note UUID; the server resolves its owning space.
+ */
+id: string, };
+/**
+ * Input for the common `/<kind>/<id>` address resolver.
+ */
+
+export type ResolveInput = {
+/**
+ * Open item-kind identifier, independent of its rendering plugin; future kinds need no enum change.
+ */
+kind: string,
+/**
+ * Globally unique item UUID; possession grants no authority.
+ */
+id: string, };
+/**
+ * Current owning space and effective capabilities for a visible address.
+ */
+
+export type ResolveResult = {
+/**
+ * Resolved item kind.
+ */
+kind: string,
+/**
+ * Stable item UUID.
+ */
+id: string,
+/**
+ * Owning space UUID, independent of account identity.
  */
 space_id: string,
 /**
- * Stable UUID note identity; access is checked against the accompanying space.
+ * Current effective capability names; informational, rechecked on use.
  */
-id: string, };
+access: Array<string>, };
 /**
  * Input for `notes.create`; creates a new resource in an authorized space.
  */
@@ -199,11 +233,11 @@ markdown: string, };
 
 export type NotesUpdateInput = {
 /**
- * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ * Optional compatibility space hint; omission derives the owning space from `id`.
  */
-space_id: string,
+space_id?: string,
 /**
- * Stable UUID note identity; access is checked against the accompanying space.
+ * Stable globally unique note UUID; the server resolves its owning space.
  */
 id: string,
 /**
@@ -224,11 +258,11 @@ markdown: string, };
 
 export type NotesHistoryInput = {
 /**
- * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
+ * Optional compatibility space hint; omission derives the owning space from `id`.
  */
-space_id: string,
+space_id?: string,
 /**
- * Stable UUID note identity; access is checked against the accompanying space.
+ * Stable globally unique note UUID; the server resolves its owning space.
  */
 id: string,
 /**

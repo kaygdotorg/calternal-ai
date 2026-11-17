@@ -185,7 +185,9 @@ pub(crate) async fn identify(
     Some((live.user, live.installation))
 }
 
-/// Extends a session and records that it was used, in the background.
+/// Extends a session and records use in the background. Last-seen/rolling expiry
+/// touches are intentionally excluded from recovery publication: losing a touch
+/// can shorten a recovered session, while explicit revocations use the barrier.
 fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) {
     let ttl = inner.config.session_ttl.as_millis() as i64;
     let last_seen_at = live.touched_at;
@@ -293,27 +295,43 @@ pub(crate) async fn list(inner: &Inner, user: AccountId) -> Result<Vec<Installat
 
 /// Signs an Installation out. Only its owner may do this. Takes effect
 /// immediately for every request after this one.
-pub(crate) async fn revoke(inner: &Inner, user: AccountId, id: InstallationId) -> Result<()> {
+pub(crate) async fn revoke(
+    inner: &std::sync::Arc<Inner>,
+    user: AccountId,
+    id: InstallationId,
+) -> Result<()> {
     revoke_matching(inner, user, id, false).await
 }
 
+/// Revokes under an IMMEDIATE transaction and waits for configured recovery.
 async fn revoke_matching(
-    inner: &Inner,
+    inner: &std::sync::Arc<Inner>,
     user: AccountId,
     id: InstallationId,
     only_dav: bool,
 ) -> Result<()> {
     let now = now_ms();
+    let fence = inner.clone();
     let changed = inner
         .db
         .run(move |c| {
-            c.execute(
-                "UPDATE installations SET revoked_at = ?3
+            let tx = c
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            let changed = tx
+                .execute(
+                    "UPDATE installations SET revoked_at = ?3
                  WHERE id = ?1 AND user_id = ?2 AND revoked_at IS NULL
                    AND (?4 = 0 OR kind = 'dav')",
-                params![id.to_string(), user.to_string(), now, only_dav as i64],
-            )
-            .map_err(sql)
+                    params![id.to_string(), user.to_string(), now, only_dav as i64],
+                )
+                .map_err(sql)?;
+            crate::spaces::commit_with(tx, || {
+                if changed != 0 {
+                    fence.sessions.forget_installation(id);
+                }
+            })?;
+            Ok(changed)
         })
         .await?;
     if changed == 0 {
@@ -321,7 +339,6 @@ async fn revoke_matching(
         // id revoked here would sign out whoever it does belong to (#409).
         return Err(Error::new(ErrorCode::NotFound, "no such installation"));
     }
-    inner.sessions.forget_installation(id);
     Ok(())
 }
 
@@ -421,6 +438,8 @@ mod tests {
 
 /// Preserve the source's dormant-device reset marker when touching legacy rows.
 /// This carries no authority or content into the session result.
+/// Sharing delivery/reset bookkeeping never triggers recovery publication. A
+/// future rebuild discards it and forces every device through an authorized resync.
 fn mark_stale_installation(
     c: &rusqlite::Connection,
     installation: &str,

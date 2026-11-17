@@ -1,5 +1,5 @@
 //! HTTP surface: `/api/v1/describe`, `/api/v1/operations`, same-origin static
-//! web assets with SPA fallback, loopback Host/Origin checks, dev bearer auth
+//! web assets with SPA fallback, Host/Origin checks, account sessions, optional development bearers
 //! and security headers.
 
 #![deny(missing_docs)]
@@ -43,7 +43,7 @@ pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample tex
 pub const PREVIEW_RESOURCE_ID: &str = "00000000-0000-4000-8000-000000000000";
 
 /// Shared host services; `D` is the protected source of current identity and grants.
-/// The default preserves development startup; stored directories plug in without
+/// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = TokenTable> {
     /// Serialized durable preview store; authorization precedes taking this lock.
@@ -78,7 +78,12 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found));
+    let http_auth = state.tokens.http_auth().cloned();
     let mut app = Router::new().merge(api);
+    if let Some(service) = &http_auth {
+        app = app.merge(crate::account_http::routes(service.clone()));
+    }
+
     app = match web_dir {
         Some(dir) if dir.join("index.html").is_file() => {
             let index = dir.join("index.html");
@@ -90,8 +95,17 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         }
         _ => app.fallback(web_not_built),
     };
-    app.layer(middleware::from_fn_with_state(state.clone(), guard::<D>))
-        .with_state(state)
+    let app = app
+        .layer(middleware::from_fn_with_state(state.clone(), guard::<D>))
+        .with_state(state);
+    if let Some(service) = http_auth {
+        app.layer(middleware::from_fn_with_state(
+            service,
+            crate::account_http::cookie_middleware,
+        ))
+    } else {
+        app
+    }
 }
 
 // ------------------------------------------------------------- envelope
@@ -120,7 +134,7 @@ async fn api_not_found() -> Response {
     failure(None, HostError::not_found("unknown API route"))
 }
 
-/// Client-side routes (e.g. `/s/personal/notes/<id>`) get index.html; a
+/// Client-side routes (e.g. `/notes/<id>`) get index.html; a
 /// missing asset (`/assets/...` or any last segment with an extension) is a
 /// plain 404, never SPA HTML.
 async fn spa_fallback(uri: axum::http::Uri, index: PathBuf) -> Response {
@@ -163,8 +177,8 @@ fn is_api(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/")
 }
 
-/// Host allowlist (DNS-rebinding defense), Origin same-origin check, bearer
-/// auth for the API, and security headers on every response.
+/// Host allowlist (DNS-rebinding defense), configured Origin checks, current session
+/// or explicitly enabled development bearer auth, and security headers on every response.
 async fn guard<D: Directory>(
     State(state): State<Shared<D>>,
     mut req: Request,
@@ -192,8 +206,34 @@ async fn guard<D: Directory>(
         if !state.allowed_hosts.iter().any(|h| h == host) {
             break 'resp deny(HostError::forbidden("host not allowed"));
         }
-        if let Some(origin) = req.headers().get(header::ORIGIN) {
-            let expected = format!("http://{host}");
+        let account_route = path.starts_with("/api/v1/auth/");
+        if api
+            && !account_route
+            && bearer(req.headers()).is_none()
+            && let Some(service) = state.tokens.http_auth()
+        {
+            if req
+                .headers()
+                .get(header::ORIGIN)
+                .is_some_and(|v| v.as_bytes() != service.config.origin_header().as_bytes())
+            {
+                break 'resp deny(HostError::unauthorized("missing or invalid session"));
+            }
+        }
+
+        if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
+            let expected = if bearer(req.headers())
+                .and_then(|t| state.tokens.authenticate(t))
+                .is_some()
+            {
+                format!("http://{host}")
+            } else {
+                state
+                    .tokens
+                    .http_auth()
+                    .map(|s| s.config.origin_header())
+                    .unwrap_or_else(|| format!("http://{host}"))
+            };
             if origin.to_str().ok() != Some(expected.as_str()) {
                 break 'resp deny(HostError::forbidden("cross-origin request denied"));
             }
@@ -206,15 +246,24 @@ async fn guard<D: Directory>(
         {
             break 'resp deny(HostError::forbidden("cross-site request denied"));
         }
-        if api {
-            match bearer(req.headers()).and_then(|t| state.tokens.authenticate(t)) {
+        if api && !account_route {
+            let session = if let Some(service) = state.tokens.http_auth() {
+                crate::account_http::identify(service, req.headers())
+                    .await
+                    .map(|(id, _)| Identity {
+                        id: Arc::from(id.to_string()),
+                    })
+            } else {
+                None
+            };
+            match session
+                .or_else(|| bearer(req.headers()).and_then(|t| state.tokens.authenticate(t)))
+            {
                 Some(p) => {
                     req.extensions_mut().insert(p);
                 }
                 None => {
-                    break 'resp deny(HostError::unauthorized(
-                        "missing or invalid dev bearer token",
-                    ));
+                    break 'resp deny(HostError::unauthorized("missing or invalid session"));
                 }
             }
         }
@@ -381,6 +430,48 @@ pub async fn dispatch<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, HostError> {
     let p = p.into();
+    let mut input = input;
+    if op == "resolve" || authz::policy(op).is_some_and(|p| p.scope == authz::Scope::Note) {
+        calternal_core::validate_operation_input(op, &input)?;
+        let kind = if op == "resolve" {
+            input.get("kind").and_then(Value::as_str).unwrap_or("")
+        } else {
+            "notes"
+        }
+        .to_owned();
+        let id = input
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        let op_required = authz::policy(op)
+            .map(|p| p.required)
+            .unwrap_or(authz::Capability::SpaceRead);
+        let st = state.clone();
+        let account = p.clone();
+        let resolved = tokio::task::spawn_blocking(move || {
+            let store = st
+                .store
+                .lock()
+                .map_err(|_| HostError::internal("store poisoned"))?;
+            crate::resolve::resolve_for(&st.tokens, &store, &account, &kind, &id, op_required)
+        })
+        .await
+        .map_err(|_| HostError::internal("resolver task failed"))??;
+        if op == "resolve" {
+            return to_value(resolved);
+        }
+        if let Some(hint) = input
+            .get("space_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+        {
+            if state.tokens.wire_space(hint) != resolved.space_id {
+                return Err(HostError::not_found("item not found"));
+            }
+        }
+        input.insert("space_id".into(), Value::String(resolved.space_id));
+    }
     let Some(policy) = authz::policy(op) else {
         return Err(if state.registry.owner_of_operation(op).is_some() {
             HostError::unavailable("operation has no host binding in this preview")

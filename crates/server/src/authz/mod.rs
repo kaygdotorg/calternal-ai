@@ -24,8 +24,8 @@ pub enum Scope {
     Account,
     /// The input's `space_id` is the complete access boundary.
     Space,
-    /// The input's `space_id` is authorized first, then storage binds `id` to it.
-    /// Cross-space IDs return the same not-found error as nonexistent IDs.
+    /// The global item resolver derives the owning space before policy admission.
+    /// Missing membership and cross-space IDs return the same not-found error.
     Note,
 }
 
@@ -56,6 +56,13 @@ pub struct Policy {
 /// Exhaustive host binding policies; new bindings must add a policy and matrix row.
 /// Unbound plugin operations fail closed instead of receiving inferred authority.
 pub const POLICIES: &[Policy] = &[
+    // The resolver derives and checks space.read itself; there is no supplied space.
+    Policy {
+        operation: "resolve",
+        required: Capability::SpaceRead,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
     Policy {
         operation: "spaces.list",
         required: Capability::SpacesList,
@@ -202,7 +209,15 @@ impl Policy {
         space: &str,
     ) -> Result<(), HostError> {
         match directory.capabilities(&principal.id, space) {
+            None if self.scope == Scope::Note => Err(HostError::not_found("item not found")),
             None => Err(HostError::forbidden("no access to this space")),
+            Some(set)
+                if self.scope == Scope::Note
+                    && !set.contains(Capability::SpaceRead)
+                    && !set.contains(self.required) =>
+            {
+                Err(HostError::not_found("item not found"))
+            }
             Some(set) if !set.contains(self.required) => {
                 // Preserve the development wire error text for existing clients.
                 Err(HostError::forbidden("insufficient role for this space"))

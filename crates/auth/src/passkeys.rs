@@ -119,6 +119,7 @@ pub(crate) async fn start_add(inner: &Arc<Inner>, user: AccountId) -> Result<(St
 }
 
 /// Finishes adding a passkey and saves it under `name`.
+/// Its insertion and optional recovery witness share an IMMEDIATE transaction.
 pub(crate) async fn finish_add(
     inner: &Arc<Inner>,
     user: AccountId,
@@ -157,7 +158,10 @@ pub(crate) async fn finish_add(
     inner
         .db
         .run(move |c| {
-            let added = c
+            let tx = c
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            let added = tx
                 .execute(
                     "INSERT OR IGNORE INTO passkeys (cred_id, user_id, passkey, created_at, name)
                      VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -170,13 +174,14 @@ pub(crate) async fn finish_add(
                     "passkey already registered",
                 ));
             }
-            Ok(())
+            crate::spaces::commit(tx)
         })
         .await?;
     Ok(row)
 }
 
-/// Renames one of your passkeys. Returns the name kept.
+/// Renames one of your passkeys and publishes its protected account metadata
+/// through the configured recovery barrier before returning the name kept.
 pub(crate) async fn rename(inner: &Inner, user: AccountId, id: &str, name: &str) -> Result<String> {
     let cred = cred_of(id)?;
     let name = clean_label(name, "");
@@ -187,11 +192,17 @@ pub(crate) async fn rename(inner: &Inner, user: AccountId, id: &str, name: &str)
     let changed = inner
         .db
         .run(move |c| {
-            c.execute(
-                "UPDATE passkeys SET name = ?3 WHERE cred_id = ?1 AND user_id = ?2",
-                params![cred, user.to_string(), name],
-            )
-            .map_err(sql)
+            let tx = c
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            let changed = tx
+                .execute(
+                    "UPDATE passkeys SET name = ?3 WHERE cred_id = ?1 AND user_id = ?2",
+                    params![cred, user.to_string(), name],
+                )
+                .map_err(sql)?;
+            crate::spaces::commit(tx)?;
+            Ok(changed)
         })
         .await?;
     if changed == 0 {
@@ -201,6 +212,7 @@ pub(crate) async fn rename(inner: &Inner, user: AccountId, id: &str, name: &str)
 }
 
 /// Removes one of your passkeys, unless it is the last.
+/// A configured recovery sink durably publishes removal before acknowledgement.
 pub(crate) async fn remove(inner: &Inner, user: AccountId, id: &str) -> Result<()> {
     let cred = cred_of(id)?;
     inner
@@ -235,7 +247,7 @@ pub(crate) async fn remove(inner: &Inner, user: AccountId, id: &str) -> Result<(
                 params![u, cred],
             )
             .map_err(sql)?;
-            tx.commit().map_err(sql)
+            crate::spaces::commit(tx)
         })
         .await
 }

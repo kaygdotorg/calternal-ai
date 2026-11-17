@@ -56,7 +56,7 @@ fn start_full(
     let startup = data.join("startup.json");
     let _ = std::fs::remove_file(&startup);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
-    cmd.args(["serve", "--port", "0", "--data-dir"])
+    cmd.args(["serve", "--development", "--port", "0", "--data-dir"])
         .arg(data)
         .arg("--plugin-root")
         .arg(plugins.unwrap_or(Path::new("/nonexistent-test-plugins")))
@@ -235,7 +235,7 @@ fn permissions_two_principals() {
         "notes.get",
         json!({"space_id": "personal", "id": personal["id"]}),
     );
-    assert_eq!(r.status, 403);
+    assert_eq!(r.status, 404);
     // Cross-space id binding: personal id via shared space is not found.
     let r = op(
         &srv,
@@ -503,7 +503,7 @@ fn exclusive_data_dir_lock() {
     let d = TempDir::new("lock");
     let _srv = start(&d.0, None);
     let st = Command::new(env!("CARGO_BIN_EXE_calternal"))
-        .args(["serve", "--port", "0", "--data-dir"])
+        .args(["serve", "--development", "--port", "0", "--data-dir"])
         .arg(&d.0)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -523,7 +523,10 @@ fn host_origin_and_bearer_checks() {
     assert_eq!(ok.status, 200);
     let principal = uuid::Uuid::parse_str(ok.body["principal"]["id"].as_str().unwrap()).unwrap();
     assert_eq!(principal.get_version_num(), 7);
-    assert_eq!(get(&[("Authorization", &auth)]).body["principal"]["id"], principal.to_string());
+    assert_eq!(
+        get(&[("Authorization", &auth)]).body["principal"]["id"],
+        principal.to_string()
+    );
     assert!(
         ok.headers
             .contains("content-security-policy: default-src 'self'")
@@ -724,4 +727,81 @@ fn startup_cleanup_only_removes_owned_temp_files() {
     for f in foreign {
         assert!(dir.join(f).exists(), "{f} must be preserved");
     }
+}
+
+#[test]
+fn development_tokens_require_an_explicit_startup_flag() {
+    let d = TempDir::new("explicit-development");
+    // A normal start must not create fixture identities or token files.
+    let start_default = || {
+        let startup = d.0.join("startup.json");
+        let _ = std::fs::remove_file(&startup);
+        let child = Command::new(env!("CARGO_BIN_EXE_calternal"))
+            .args(["serve", "--port", "0", "--data-dir"])
+            .arg(&d.0)
+            .arg("--plugin-root")
+            .arg("/nonexistent-test-plugins")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut child = child;
+        let at = Instant::now();
+        loop {
+            if let Ok(bytes) = std::fs::read(&startup)
+                && let Ok(v) = serde_json::from_slice::<Value>(&bytes)
+                && v["pid"].as_u64() == Some(child.id() as u64)
+            {
+                assert_eq!(v["development_tokens"], false);
+                assert_eq!(v["token_files"], json!({}));
+                let port = v["base_url"]
+                    .as_str()
+                    .unwrap()
+                    .rsplit(':')
+                    .next()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                return Server {
+                    child,
+                    port,
+                    owner: String::new(),
+                    guest: String::new(),
+                };
+            }
+            assert!(child.try_wait().unwrap().is_none(), "default server exited");
+            assert!(
+                at.elapsed() < Duration::from_secs(15),
+                "default startup timed out"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    let normal = start_default();
+    assert!(!d.0.join("dev-tokens").exists());
+    let status = raw(normal.port, "GET", "/api/v1/auth/status", &[], None).unwrap();
+    assert_eq!(status.status, 200);
+    assert_eq!(status.body, json!({"setup":true,"signed_in":false}));
+    assert_eq!(
+        std::os::unix::fs::PermissionsExt::mode(
+            &std::fs::metadata(d.0.join("setup.token"))
+                .unwrap()
+                .permissions()
+        ) & 0o777,
+        0o600
+    );
+    drop(normal);
+    let development = start(&d.0, None);
+    let token = development.owner.clone();
+    drop(development);
+    let normal = start_default();
+    let response = raw(
+        normal.port,
+        "GET",
+        "/api/v1/describe",
+        &[("Authorization", &format!("Bearer {token}"))],
+        None,
+    )
+    .unwrap();
+    assert_eq!(response.status, 401);
 }

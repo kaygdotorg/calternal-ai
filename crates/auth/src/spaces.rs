@@ -2,7 +2,7 @@
 //!
 //! All APIs block on SQLite and must run on a blocking host thread. Mutations
 //! acquire an IMMEDIATE transaction before checking current capability rows.
-//! State commits are durable; FO1 recovery publication is a later coordinator.
+//! State commits optionally pass through a protected recovery barrier before acknowledgement.
 use crate::{AccountId, Error, ErrorCode, Result};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
@@ -330,6 +330,10 @@ impl Spaces {
             db: crate::db::Db::open(path)?,
         })
     }
+    /// Attaches recovery before any requests are admitted; reconciles pending intents.
+    pub fn configure_recovery(&self, sink: std::sync::Arc<dyn RecoverySink>) -> Result<()> {
+        self.run(move |c| configure_recovery(c, sink))
+    }
     fn run<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T> + Send + 'static,
@@ -435,6 +439,8 @@ impl Spaces {
     /// Executes or replays atomically. Authority is rechecked before reading receipts.
     /// Receipts are private to the actor and bind the exact operation and fingerprint.
     /// Target checks execute on first application; retries cannot repeat a transfer.
+    /// When configured, the recovery barrier completes before results or receipts
+    /// are acknowledged; a barrier error can follow an unacknowledged DB commit.
     pub fn change_with_receipt(
         &self,
         actor: AccountId,
@@ -450,12 +456,14 @@ impl Spaces {
             let saved:Option<(String,String,String)>=tx.query_row("SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND request_id=?2",params![actor.to_string(),rid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(sql)?;
             if let Some((saved_op,saved_fp,result))=saved {
                 if saved_op!=*op || saved_fp!=*fp {return Err(Error::new(ErrorCode::Conflict,"request_id reused"));}
-                return serde_json::from_str(&result).map_err(sql);
+                let value = serde_json::from_str(&result).map_err(sql)?;
+                commit(tx)?;
+                return Ok(value);
             }
         }
         let value=apply(&tx,actor,space,&change)?;
         if let Some((rid,op,fp))=&receipt { tx.execute("INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5)",params![actor.to_string(),rid,op,fp,value.to_string()]).map_err(sql)?; }
-        tx.commit().map_err(sql)?;Ok(value)
+        commit(tx)?;Ok(value)
     })
     }
 }
@@ -476,6 +484,7 @@ impl Spaces {
     /// Creates development fixtures exactly once, preserving later revocations,
     /// transfers and deletions across restart. Never call for real installations.
     /// Accounts and spaces each receive a separate freshly allocated UUIDv7.
+    /// A configured recovery barrier also covers this explicit fixture mutation.
     pub fn seed_development(&self) -> Result<DevelopmentIds> {
         self.run(move |c| {
             let tx = c
@@ -538,8 +547,97 @@ impl Spaces {
                 personal: space_id(get("personal")?)?,
                 shared: space_id(get("shared")?)?,
             };
-            tx.commit().map_err(sql)?;
+            commit(tx)?;
             Ok(ids)
         })
     }
+}
+
+/// Host-injected durable recovery barrier for every protected auth transaction.
+/// Implementations reconcile earlier intents through committed visibility, stage
+/// only affected protected records, insert their witness in `transaction`, and
+/// refuse ambiguous recovery. They must never replay a transaction's own witness.
+/// The host serializes the prepare/commit/complete interval; direct trait callers
+/// must do the same. Every durability failure prevents acknowledgement.
+/// With no configured sink, transaction behavior is unchanged.
+pub trait RecoverySink: Send + Sync {
+    /// Reconciles pending work against the still-authoritative database.
+    fn reconcile(&self, connection: &Connection) -> Result<()>;
+    /// Durably stages a protected delta and its pending head, adding the witness
+    /// to this transaction. An empty token denotes no protected-state change.
+    fn prepare(&self, transaction: &Connection) -> Result<String>;
+    /// Publishes only a witnessed committed delta before acknowledgement; an
+    /// empty token from prepare requires no filesystem publication.
+    fn complete(&self, connection: &Connection, intent: &str) -> Result<()>;
+}
+
+fn sinks()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<dyn RecoverySink>>> {
+    static SINKS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<dyn RecoverySink>>>,
+    > = std::sync::OnceLock::new();
+    SINKS.get_or_init(Default::default)
+}
+/// Configures a process-wide barrier for this database path, including independent
+/// auth and space workers. Call before serving requests, under the root locks.
+/// Reconciliation fails closed; configuration is retained for the process lifetime.
+/// The same database must never be configured with two different sinks.
+pub fn configure_recovery(
+    connection: &Connection,
+    sink: std::sync::Arc<dyn RecoverySink>,
+) -> Result<()> {
+    let path = connection
+        .path()
+        .ok_or_else(|| Error::internal("recovery requires a file database"))?;
+    let path = std::fs::canonicalize(path)
+        .map_err(Error::internal)?
+        .to_string_lossy()
+        .into_owned();
+    let mut sinks = sinks().lock().map_err(Error::internal)?;
+    if let Some(existing) = sinks.get(&path) {
+        if !std::sync::Arc::ptr_eq(existing, &sink) {
+            return Err(Error::internal("recovery already configured"));
+        }
+    }
+    sink.reconcile(connection)?;
+    sinks.insert(path, sink);
+    Ok(())
+}
+fn recovery(connection: &Connection) -> Result<Option<std::sync::Arc<dyn RecoverySink>>> {
+    let Some(path) = connection.path().filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let path = std::fs::canonicalize(path)
+        .map_err(Error::internal)?
+        .to_string_lossy()
+        .into_owned();
+    Ok(sinks().lock().map_err(Error::internal)?.get(&path).cloned())
+}
+/// Commits authority with its configured protected-publication barrier; no-op
+/// deltas retain normal SQLite durability without writing recovery versions.
+pub(crate) fn commit(transaction: rusqlite::Transaction<'_>) -> Result<()> {
+    commit_with(transaction, || {})
+}
+/// Runs the in-memory revoke fence immediately after durable SQLite commit,
+/// including when later recovery publication fails and no acknowledgement occurs.
+pub(crate) fn commit_with(
+    mut transaction: rusqlite::Transaction<'_>,
+    committed: impl FnOnce(),
+) -> Result<()> {
+    let Some(sink) = recovery(&transaction)? else {
+        transaction.commit().map_err(sql)?;
+        committed();
+        return Ok(());
+    };
+    // Retain the barrier across commit: another worker must not stage an intent
+    // while completion is deciding which witnesses are committed.
+    static COMMIT_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = COMMIT_GATE.lock().map_err(Error::internal)?;
+    let intent = sink.prepare(&transaction)?;
+    // Keep the original pinned SQLite connection available after COMMIT. On a
+    // failed COMMIT, the transaction still rolls back using its normal Drop.
+    transaction.execute_batch("COMMIT").map_err(sql)?;
+    transaction.set_drop_behavior(rusqlite::DropBehavior::Ignore);
+    committed();
+    sink.complete(&transaction, &intent)
 }

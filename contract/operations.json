@@ -601,6 +601,69 @@
     }
   },
   {
+    "id": "resolve",
+    "description": "Resolve an item address with current access",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for the common `/<kind>/<id>` address resolver.",
+      "properties": {
+        "id": {
+          "description": "Globally unique item UUID; possession grants no authority.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Open item-kind identifier, independent of its rendering plugin; future kinds need no enum change.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "title": "ResolveInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Current owning space and effective capabilities for a visible address.",
+      "properties": {
+        "access": {
+          "description": "Current effective capability names; informational, rechecked on use.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "description": "Stable item UUID.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Resolved item kind.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID, independent of account identity.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "access",
+        "id",
+        "kind",
+        "space_id"
+      ],
+      "title": "ResolveResult",
+      "type": "object"
+    }
+  },
+  {
     "id": "notes.get",
     "description": "Read a note",
     "mutates": false,
@@ -610,11 +673,11 @@
       "description": "Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.",
       "properties": {
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[a-zA-Z0-9_.:-]+$",
@@ -622,8 +685,7 @@
         }
       },
       "required": [
-        "id",
-        "space_id"
+        "id"
       ],
       "title": "NotesGetInput",
       "type": "object"
@@ -813,7 +875,7 @@
           "type": "string"
         },
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "markdown": {
@@ -821,7 +883,7 @@
           "type": "string"
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[a-zA-Z0-9_.:-]+$",
@@ -835,8 +897,7 @@
       "required": [
         "base_revision",
         "id",
-        "markdown",
-        "space_id"
+        "markdown"
       ],
       "title": "NotesUpdateInput",
       "type": "object"
@@ -924,7 +985,7 @@
           "type": "string"
         },
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "limit": {
@@ -935,7 +996,7 @@
           "type": "integer"
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[a-zA-Z0-9_.:-]+$",
@@ -943,8 +1004,7 @@
         }
       },
       "required": [
-        "id",
-        "space_id"
+        "id"
       ],
       "title": "NotesHistoryInput",
       "type": "object"
@@ -2769,11 +2829,11 @@
       "description": "Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.",
       "properties": {
         "id": {
-          "description": "Stable UUID note identity; access is checked against the accompanying space.",
+          "description": "Stable globally unique note UUID; the server resolves its owning space.",
           "type": "string"
         },
         "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "description": "Optional compatibility space hint; omission derives the owning space from `id`.",
           "maxLength": 80,
           "minLength": 1,
           "pattern": "^[a-zA-Z0-9_.:-]+$",
@@ -2781,8 +2841,7 @@
         }
       },
       "required": [
-        "id",
-        "space_id"
+        "id"
       ],
       "title": "NotesGetInput",
       "type": "object"

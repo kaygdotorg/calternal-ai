@@ -420,6 +420,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-recovery"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "calternal-auth",
+ "calternal-fsio",
+ "rusqlite",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "calternal-roots"
 version = "0.1.0"
 dependencies = [
@@ -446,13 +463,17 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "tempfile",
  "time",
  "tokio",
  "tower",
  "tower-http 0.7.1",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
+ "webauthn-authenticator-rs",
+ "webauthn-rs",
 ]
 
 [[package]]

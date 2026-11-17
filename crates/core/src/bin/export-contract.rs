@@ -42,6 +42,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         NoteVersion,
         NotesListInput,
         NotesGetInput,
+        ResolveInput,
+        ResolveResult,
         NotesCreateInput,
         NotesUpdateInput,
         NotesHistoryInput,

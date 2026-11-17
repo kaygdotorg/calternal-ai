@@ -1,5 +1,8 @@
 //! Safe host errors translated into the shared protocol envelope.
 
+#![deny(missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links)]
+
 use calternal_core::{ErrorCode, ValidationError};
 
 /// Host error mapped 1:1 onto the wire error envelope. Messages are safe to

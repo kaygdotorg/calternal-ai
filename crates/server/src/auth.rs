@@ -1,4 +1,4 @@
-//! Development-preview principals and bearer tokens. Not production auth.
+//! Account directory, optional development credentials, and stored space grants.
 //!
 //! Two development tokens authenticate seeded accounts with independent UUIDv7
 //! identities. Their spaces and current memberships live in system/auth.db.
@@ -46,6 +46,10 @@ pub struct Identity {
 /// invokes authorization on blocking tasks to keep SQLite off async workers. Authentication
 /// must validate current sessions, never trust a caller-supplied account ID.
 pub trait Directory: Send + Sync + 'static {
+    /// Optional protected account HTTP service; absent for synthetic test directories.
+    fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
+        None
+    }
     /// Resolve a current bearer token to identity only, without caching grants.
     fn authenticate(&self, presented: &[u8]) -> Option<Identity>;
     /// Resolve current capability grants for one account and space; no membership
@@ -140,14 +144,16 @@ impl From<DevPrincipal> for Identity {
     }
 }
 
-/// Development tokens mapped to stored accounts. Memberships are never cached.
+/// Stored account/space directory with optional development tokens and HTTP sessions.
+/// Memberships are read on each request and never cached in identities.
 pub struct TokenTable {
     entries: Vec<(Vec<u8>, Identity)>,
     /// Private token file paths, never token values.
     pub files: Vec<(&'static str, PathBuf)>,
     /// Protected persisted space service for development host integration.
     pub spaces: Spaces,
-    ids: DevelopmentIds,
+    ids: Option<DevelopmentIds>,
+    http: Option<crate::account_http::HttpAuth>,
 }
 impl TokenTable {
     /// Open system/auth.db and seed disposable fixtures once, then open tokens.
@@ -184,20 +190,49 @@ impl TokenTable {
             entries,
             files,
             spaces,
-            ids,
+            ids: Some(ids),
+            http: None,
         })
+    }
+    /// Opens the protected directory and account service. Only explicit development
+    /// mode creates fixture accounts or accepts development bearer tokens.
+    pub fn open(
+        data: &Path,
+        config: calternal_auth::AuthConfig,
+        development: bool,
+    ) -> std::io::Result<Self> {
+        let mut table = if development {
+            Self::load_or_create(data)?
+        } else {
+            let path = data.join("system/auth.db");
+            let spaces = std::thread::spawn(move || Spaces::open(&path))
+                .join()
+                .map_err(|_| std::io::Error::other("directory startup failed"))?
+                .map_err(std::io::Error::other)?;
+            Self {
+                entries: Vec::new(),
+                files: Vec::new(),
+                spaces,
+                ids: None,
+                http: None,
+            }
+        };
+        let auth =
+            calternal_auth::Auth::open(data, config.clone()).map_err(std::io::Error::other)?;
+        table.http = Some(crate::account_http::HttpAuth { auth, config });
+        Ok(table)
     }
     fn account(&self, value: &str) -> Option<AccountId> {
         match value {
-            "owner" => Some(self.ids.owner),
-            "guest" => Some(self.ids.guest),
+            "owner" => self.ids.as_ref().map(|ids| ids.owner),
+            "guest" => self.ids.as_ref().map(|ids| ids.guest),
             _ => AccountId::parse(value),
         }
     }
     fn space(&self, value: &str) -> Option<SpaceId> {
         match value {
-            "personal" => Some(self.ids.personal),
-            "shared" => Some(self.ids.shared),
+            "personal" => self.ids.as_ref().map(|ids| ids.personal),
+            "shared" => self.ids.as_ref().map(|ids| ids.shared),
             _ => SpaceId::parse(value),
         }
     }
@@ -217,6 +252,9 @@ fn auth_error(e: calternal_auth::Error) -> HostError {
     }
 }
 impl Directory for TokenTable {
+    fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
+        self.http.as_ref()
+    }
     fn authenticate(&self, presented: &[u8]) -> Option<Identity> {
         let mut found = None;
         for (token, identity) in &self.entries {
@@ -257,8 +295,10 @@ impl Directory for TokenTable {
         // Temporary explicit binding keeps preview file/retry/CLI fixtures working.
         // No account ID is ever used to select this content root.
         match self.space(space) {
-            Some(id) if id == self.ids.personal => "personal".into(),
-            Some(id) if id == self.ids.shared => "shared".into(),
+            Some(id) if self.ids.as_ref().is_some_and(|ids| id == ids.personal) => {
+                "personal".into()
+            }
+            Some(id) if self.ids.as_ref().is_some_and(|ids| id == ids.shared) => "shared".into(),
             _ => space.to_owned(),
         }
     }

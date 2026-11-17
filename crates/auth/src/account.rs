@@ -3,7 +3,7 @@
 //! These methods are host APIs. The caller must authenticate administrative
 //! create/find/recover operations and derive account/installation arguments from
 //! its trusted session, never from an untrusted space request. They provide no
-//! content paths, memberships, transport cookies, or FO1 recovery publication.
+//! content paths, memberships or transport cookies. Recovery publication is optional.
 
 use crate::{AccountId, Error, ErrorCode, InstallationId, Result, config::AuthConfig};
 use serde_json::Value;
@@ -47,6 +47,19 @@ impl Auth {
                 config,
             }),
         })
+    }
+
+    /// Attaches the protected recovery barrier before serving requests. All workers
+    /// opening this database in this process share the configuration. The host must
+    /// also configure other processes or prohibit concurrent processes via root locks.
+    pub async fn configure_recovery(
+        &self,
+        sink: Arc<dyn crate::spaces::RecoverySink>,
+    ) -> Result<()> {
+        self.inner
+            .db
+            .run(move |c| crate::spaces::configure_recovery(c, sink))
+            .await
     }
 
     /// Issues a one-time first-account token only while no account exists.

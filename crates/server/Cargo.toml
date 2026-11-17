@@ -35,3 +35,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
+webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
+tempfile = "3.27"
+url = "2.5.8"

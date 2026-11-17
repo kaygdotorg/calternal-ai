@@ -127,7 +127,8 @@ pub(crate) fn start_login(
     Ok((id, options))
 }
 
-/// Finishes a sign-in and creates a new Installation for this browser.
+/// Finishes a sign-in and creates a new Installation for this browser, publishing
+/// credential-counter and session changes through the configured recovery barrier.
 pub(crate) async fn finish_login(
     inner: &Arc<Inner>,
     ceremony: &str,
@@ -135,6 +136,29 @@ pub(crate) async fn finish_login(
     device: String,
     expected_user: AccountId,
     purpose: crate::LoginPurpose,
+) -> Result<(AccountId, InstallationId, String)> {
+    finish_login_inner(
+        inner,
+        ceremony,
+        credential,
+        device,
+        expected_user,
+        purpose,
+        false,
+    )
+    .await
+}
+
+/// Verifies a bound or discoverable login and commits credential/session authority
+/// with its recovery witness before returning the session token.
+pub(crate) async fn finish_login_inner(
+    inner: &Arc<Inner>,
+    ceremony: &str,
+    credential: Value,
+    device: String,
+    expected_user: AccountId,
+    purpose: crate::LoginPurpose,
+    discoverable: bool,
 ) -> Result<(AccountId, InstallationId, String)> {
     let Pending::Login { state, .. } =
         inner
@@ -149,7 +173,7 @@ pub(crate) async fn finish_login(
         .identify_discoverable_authentication(&cred)
         .map_err(failed)?;
     let user = AccountId(uuid);
-    if expected_user != user {
+    if !discoverable && expected_user != user {
         return Err(failed("passkey belongs to a different account"));
     }
     let cred_id = cred_id.to_vec();
@@ -192,7 +216,9 @@ pub(crate) async fn finish_login(
     let (installation, token) = inner
         .db
         .run(move |c| {
-            let tx = c.transaction().map_err(sql)?;
+            let tx = c
+                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                .map_err(sql)?;
             let now = now_ms();
             match json {
                 Some(j) => tx.execute(
@@ -206,7 +232,7 @@ pub(crate) async fn finish_login(
             }
             .map_err(sql)?;
             let out = session::create(&tx, user, InstallationKind::Browser, &device, ttl, true)?;
-            tx.commit().map_err(sql)?;
+            crate::spaces::commit(tx)?;
             Ok(out)
         })
         .await?;
@@ -232,6 +258,8 @@ async fn user_passkeys(inner: &Arc<Inner>, user: AccountId) -> Result<Vec<Passke
         .collect()
 }
 
+/// Lists an account's enrolled credential identifiers without granting authority.
+/// Registration uses this inventory to prevent duplicate enrollment prompts.
 pub(crate) async fn existing_cred_ids(
     inner: &Arc<Inner>,
     user: AccountId,
@@ -241,4 +269,89 @@ pub(crate) async fn existing_cred_ids(
         .iter()
         .map(|k| k.cred_id().clone())
         .collect())
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};
+
+    struct RefusePublication;
+    impl crate::spaces::RecoverySink for RefusePublication {
+        fn reconcile(&self, _: &rusqlite::Connection) -> Result<()> {
+            Ok(())
+        }
+        fn prepare(&self, _: &rusqlite::Connection) -> Result<String> {
+            Err(Error::internal("injected protected-storage failure"))
+        }
+        fn complete(&self, _: &rusqlite::Connection, _: &str) -> Result<()> {
+            unreachable!("prepare refuses this transaction")
+        }
+    }
+
+    #[tokio::test]
+    async fn login_rolls_back_credentials_and_session_when_recovery_refuses() {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = url::Url::parse("http://localhost:8080").unwrap();
+        let auth =
+            crate::Auth::open(dir.path(), AuthConfig::new(origin.as_str()).unwrap()).unwrap();
+        let token = auth.first_owner_token().await.unwrap().unwrap();
+        let (account, ceremony, mut options) =
+            auth.start_setup(&token, "person", "local").await.unwrap();
+        options["publicKey"]["authenticatorSelection"]["residentKey"] = "discouraged".into();
+        options["publicKey"]["authenticatorSelection"]["requireResidentKey"] = false.into();
+        let handle = options["publicKey"]["user"]["id"].clone();
+        let mut device = WebauthnAuthenticator::new(SoftPasskey::new(true));
+        let registration = device
+            .do_registration(origin.clone(), serde_json::from_value(options).unwrap())
+            .unwrap();
+        let registration = serde_json::to_value(registration).unwrap();
+        let raw_id = registration["rawId"].clone();
+        auth.finish_setup(account, &ceremony, registration, "browser")
+            .await
+            .unwrap();
+        let c = crate::db::open_conn(&dir.path().join("system/auth.db")).unwrap();
+        let before: String = c
+            .query_row("SELECT passkey FROM passkeys", [], |r| r.get(0))
+            .unwrap();
+        auth.configure_recovery(Arc::new(RefusePublication))
+            .await
+            .unwrap();
+        let (ceremony, mut options) = auth
+            .start_login(account, crate::LoginPurpose::SignIn, "local")
+            .unwrap();
+        options["publicKey"]["allowCredentials"] =
+            serde_json::json!([{"type":"public-key","id":raw_id}]);
+        let answer = device
+            .do_authentication(origin, serde_json::from_value(options).unwrap())
+            .unwrap();
+        let mut answer = serde_json::to_value(answer).unwrap();
+        answer["response"]["userHandle"] = handle;
+        assert!(
+            auth.finish_login(
+                account,
+                crate::LoginPurpose::SignIn,
+                &ceremony,
+                answer,
+                "new session"
+            )
+            .await
+            .is_err(),
+            "login must not acknowledge without protected recovery"
+        );
+        let after: String = c
+            .query_row("SELECT passkey FROM passkeys", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            after, before,
+            "failed prepare must roll back the signature counter"
+        );
+        let sessions: i64 = c
+            .query_row("SELECT count(*) FROM installations", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            sessions, 1,
+            "failed prepare must not create another session"
+        );
+    }
 }
