@@ -689,7 +689,7 @@ fn host_origin_and_bearer_checks() {
 }
 
 #[test]
-fn static_dir_serves_files_without_spa_fallback() {
+fn static_dir_serves_files_and_only_app_addresses_fall_back() {
     let d = TempDir::new("web");
     let web = d.0.join("web");
     std::fs::create_dir_all(web.join("assets")).unwrap();
@@ -704,6 +704,31 @@ fn static_dir_serves_files_without_spa_fallback() {
     assert_eq!(get("/assets/app.js").status, 200);
     assert_eq!(get("/s/personal/notes/x").status, 404);
     assert_eq!(get("/assets/missing.js").status, 404);
+    let thread = format!("/threads/{}?server=1", uuid::Uuid::now_v7());
+    let page = get(&thread);
+    assert_eq!(page.status, 200);
+    assert!(page.headers.contains("text/html"));
+    assert!(page.headers.contains("script-src 'self';"));
+    assert!(page.headers.contains("img-src 'self' data: blob:;"));
+    assert_eq!(
+        raw(srv.port, "HEAD", &thread, &[], None).unwrap().status,
+        200
+    );
+    assert_ne!(
+        raw(srv.port, "POST", &thread, &[], None).unwrap().status,
+        200
+    );
+    assert_eq!(get("/threads/not-a-uuid").status, 404);
+    assert_eq!(
+        get("/somewhere/00000000-0000-0000-0000-000000000001").status,
+        404
+    );
+    assert_eq!(get("/settings/appearance").status, 200);
+    assert_eq!(
+        get(&format!("/spaces/{}/members", srv.personal)).status,
+        200
+    );
+
     // API paths never fall back to files.
     let auth = format!("Bearer {}", srv.owner);
     let r = raw(
