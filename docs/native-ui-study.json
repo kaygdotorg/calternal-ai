@@ -1,0 +1,187 @@
+{
+  "meta": {
+    "study": "native-ui-study",
+    "date": "2026-11-17",
+    "macos": "26.5.2 (25F84) VM, 1x, points=pixels",
+    "ios": "27.0 simulator iPhone 18 Pro, 402x874pt @3x",
+    "trust": "ax|px|fit|doc as in docs/native-ui-study.md"
+  },
+  "macos": {
+    "window": {
+      "radius": 28,
+      "toolbarHeight": 52,
+      "trafficLightSize": 16,
+      "trafficLightX": [
+        18,
+        41,
+        64
+      ],
+      "trafficLightCenterY": 26
+    },
+    "toolbar": {
+      "buttonCapsule": 38,
+      "buttonInsetY": 7,
+      "hitWidth": 44,
+      "searchFieldHeight": 36,
+      "addressFieldHeight": 34
+    },
+    "sidebar": {
+      "inset": 8,
+      "widthDefaultFinder": 173,
+      "widthMinFinder": 120,
+      "widthDefaultNotes": 222,
+      "widthMinNotes": 202,
+      "widthSettings": 215,
+      "maxFractionOfWindow": 0.69,
+      "rowHeight": 32,
+      "sectionHeaderHeight": 19,
+      "rowTintRadius": 8,
+      "iconInsideRow": 10,
+      "panelRadiusDerived": 20
+    },
+    "list": {
+      "notesColumnWidth": 280,
+      "notesRowHeight": 56,
+      "contentInset": 16,
+      "windowMinWidthNotes": 709
+    },
+    "settings": {
+      "cardWidth": 460,
+      "rowHeight": 44,
+      "groupGap": 10,
+      "cardRadius": 13,
+      "rightMargin": 20,
+      "searchHeight": 28,
+      "profileRowHeight": 54
+    },
+    "type": {
+      "body": 13,
+      "sectionHeader": 11,
+      "title2": 22,
+      "notesHeading": 24,
+      "callout": 12
+    },
+    "colors": {
+      "sidebarBg": "#F7F7F7",
+      "contentBg": "#FFFFFF",
+      "listSelected": "#DCDCDC",
+      "sidebarSelected": "#F2F2F2",
+      "separator": "#E6E6E6"
+    },
+    "motion": {
+      "sidebarToggleMsUpperBound": 300
+    }
+  },
+  "ios": {
+    "screen": {
+      "width": 402,
+      "height": 874,
+      "scale": 3
+    },
+    "largeTitle": {
+      "size": 34,
+      "weight": "bold",
+      "inkLeft": 18,
+      "textOrigin": 16
+    },
+    "bottomCapsule": {
+      "width": 347,
+      "height": 49,
+      "sideInset": 27,
+      "bottomInset": 27,
+      "radius": 24.5
+    },
+    "safariBar": {
+      "addressWidth": 220,
+      "height": 49,
+      "circleDiameter": 46,
+      "gap": 10,
+      "sideInset": 35,
+      "bottomInset": 34
+    },
+    "groupedList": {
+      "pageBg": "#F2F2F7",
+      "cardBg": "#FFFFFF",
+      "sideMargin": 16,
+      "rowHeight": 52,
+      "iconTile": 28,
+      "iconInset": 13,
+      "separatorStartWithIcon": 72
+    },
+    "primaryButton": {
+      "height": 51,
+      "width": 326,
+      "sideMargin": 38,
+      "shape": "capsule"
+    },
+    "sheetTopOffset": 62,
+    "safeArea": {
+      "top": 62,
+      "bottom": 34,
+      "source": "doc"
+    },
+    "dynamicType": {
+      "sizes": [
+        "xSmall",
+        "small",
+        "medium",
+        "large",
+        "xLarge",
+        "xxLarge",
+        "xxxLarge",
+        "ax1",
+        "ax2",
+        "ax3",
+        "ax4",
+        "ax5"
+      ],
+      "largeTitle": [
+        31,
+        32,
+        33,
+        34,
+        36,
+        38,
+        40,
+        44,
+        48,
+        52,
+        56,
+        60
+      ],
+      "body": [
+        14,
+        15,
+        16,
+        17,
+        19,
+        21,
+        23,
+        28,
+        33,
+        40,
+        47,
+        53
+      ],
+      "measured": [
+        "xSmall",
+        "large",
+        "xxxLarge"
+      ]
+    },
+    "motion": {
+      "appLaunchMs": 250,
+      "measured": "60fps recordVideo, 15 frames"
+    }
+  },
+  "notMeasured": [
+    "mac dark",
+    "mail/messages mac",
+    "inspector widths",
+    "menus/popovers/focus",
+    "ios taps: push/sheet timing, detents, swipe, share sheet",
+    "reduced motion",
+    "glass blur radius",
+    "stroke weights"
+  ]
+}
