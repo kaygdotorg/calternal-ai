@@ -301,13 +301,15 @@ impl Error {
 impl Spaces {
     /// Opens a configured migrated database. The host must validate roots first.
     pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self {
-            db: crate::db::Db::open(path)?,
-        })
+        Ok(Self::from_db(crate::db::Db::open(path)?))
     }
-    /// Attaches recovery before any requests are admitted; reconciles pending proposals.
+    pub(crate) fn from_db(db: crate::db::Db) -> Self {
+        Self { db }
+    }
+    /// Attaches recovery before any requests are admitted; reconciles pending
+    /// proposals. Covers every handle sharing this database (see [`crate::Auth::spaces`]).
     pub fn configure_recovery(&self, sink: std::sync::Arc<dyn RecoverySink>) -> Result<()> {
-        self.run(move |c| configure_recovery(c, sink))
+        self.db.configure_recovery(sink)
     }
     fn run<T: Send + 'static>(
         &self,
@@ -547,50 +549,12 @@ pub trait RecoverySink: Send + Sync {
     /// Publishes only a witnessed committed delta before acknowledgement; an
     /// empty token from prepare requires no filesystem publication.
     fn complete(&self, connection: &Connection, intent: &str) -> Result<()>;
+    /// Held from prepare through complete, so no other commit stages an intent while
+    /// this one decides which witnesses are committed. It belongs to the sink, so
+    /// database handles sharing a sink share it too.
+    fn serial(&self) -> &std::sync::Mutex<()>;
 }
 
-fn sinks()
--> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<dyn RecoverySink>>> {
-    static SINKS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<dyn RecoverySink>>>,
-    > = std::sync::OnceLock::new();
-    SINKS.get_or_init(Default::default)
-}
-/// Configures a process-wide barrier for this database path, including independent
-/// auth and space workers. Call before serving requests, under the root locks.
-/// Reconciliation fails closed; configuration is retained for the process lifetime.
-/// The same database must never be configured with two different sinks.
-pub fn configure_recovery(
-    connection: &Connection,
-    sink: std::sync::Arc<dyn RecoverySink>,
-) -> Result<()> {
-    let path = connection
-        .path()
-        .ok_or_else(|| Error::internal("recovery requires a file database"))?;
-    let path = std::fs::canonicalize(path)
-        .map_err(Error::internal)?
-        .to_string_lossy()
-        .into_owned();
-    let mut sinks = sinks().lock().map_err(Error::internal)?;
-    if let Some(existing) = sinks.get(&path)
-        && !std::sync::Arc::ptr_eq(existing, &sink)
-    {
-        return Err(Error::internal("recovery already configured"));
-    }
-    sink.reconcile(connection)?;
-    sinks.insert(path, sink);
-    Ok(())
-}
-fn recovery(connection: &Connection) -> Result<Option<std::sync::Arc<dyn RecoverySink>>> {
-    let Some(path) = connection.path().filter(|s| !s.is_empty()) else {
-        return Ok(None);
-    };
-    let path = std::fs::canonicalize(path)
-        .map_err(Error::internal)?
-        .to_string_lossy()
-        .into_owned();
-    Ok(sinks().lock().map_err(Error::internal)?.get(&path).cloned())
-}
 /// Commits authority with its configured protected-publication barrier; no-op
 /// deltas retain normal SQLite durability without writing recovery versions.
 pub(crate) fn commit(transaction: rusqlite::Transaction<'_>) -> Result<()> {
@@ -603,15 +567,14 @@ pub(crate) fn commit_with(
     mut transaction: rusqlite::Transaction<'_>,
     committed: impl FnOnce(),
 ) -> Result<()> {
-    let Some(sink) = recovery(&transaction)? else {
+    let Some(sink) = crate::db::active_sink() else {
         transaction.commit().map_err(sql)?;
         committed();
         return Ok(());
     };
-    // Retain the barrier across commit: another worker must not stage an intent
-    // while completion is deciding which witnesses are committed.
-    static COMMIT_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = COMMIT_GATE.lock().map_err(Error::internal)?;
+    // Retain the sink's barrier across commit: another worker must not stage an
+    // intent while completion is deciding which witnesses are committed.
+    let _guard = sink.serial().lock().map_err(Error::internal)?;
     let intent = match sink.prepare(&transaction) {
         Ok(intent) => intent,
         Err(error) => {

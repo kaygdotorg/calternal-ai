@@ -49,16 +49,23 @@ impl Auth {
         })
     }
 
-    /// Attaches the protected recovery barrier before serving requests. All workers
-    /// opening this database in this process share the configuration. The host must
-    /// also configure other processes or prohibit concurrent processes via root locks.
+    /// The space directory over this same `auth.db` handle: one connection, one
+    /// worker thread and one recovery sink for accounts and spaces. Cost: two Arc
+    /// clones.
+    pub fn spaces(&self) -> crate::spaces::Spaces {
+        crate::spaces::Spaces::from_db(self.inner.db.clone())
+    }
+
+    /// Attaches the protected recovery barrier before serving requests. It covers
+    /// this handle and every [`Self::spaces`] handle. The host must prohibit
+    /// concurrent processes via root locks.
     pub async fn configure_recovery(
         &self,
         sink: Arc<dyn crate::spaces::RecoverySink>,
     ) -> Result<()> {
         self.inner
             .db
-            .run(move |c| crate::spaces::configure_recovery(c, sink))
+            .configure_recovery_async(sink)
             .await
     }
 

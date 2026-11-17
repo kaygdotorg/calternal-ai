@@ -78,39 +78,56 @@ pub struct TokenTable {
 }
 impl TokenTable {
     /// Open system/auth.db and seed disposable fixtures once, then open tokens.
-    /// Only development startup calls this; it supplies no production sign-in.
+    /// In-process fixtures only: no account service and no recovery log.
     pub fn load_or_create(data_dir: &Path) -> std::io::Result<Self> {
-        Self::seeded(data_dir, None)
-    }
-    /// [`Self::load_or_create`] with an optional recovery barrier attached before
-    /// the fixtures are seeded, so the seed is published like any other change.
-    fn seeded(data_dir: &Path, recovery: Option<Recovery>) -> std::io::Result<Self> {
-        // This synchronous constructor is also used by async integration fixtures.
-        // Join a dedicated startup thread so bounded-worker blocking admission is
-        // never attempted from inside a Tokio runtime context.
         let path = data_dir.join("system/auth.db");
-        let (spaces, ids) = std::thread::spawn(move || -> calternal_auth::Result<_> {
-            let spaces = Spaces::open(&path)?;
+        let spaces = on_startup_thread(move || Spaces::open(&path))?;
+        Self::with_spaces(data_dir, spaces, true, None)
+    }
+    /// Opens the protected directory and account service over one `auth.db` handle.
+    /// Only explicit development mode creates fixture accounts or accepts
+    /// development bearer tokens.
+    ///
+    /// `recovery` is the protected security log: it is attached before any fixture
+    /// is seeded or request served, so every security change is published to it
+    /// before acknowledgement. Without it nothing is logged.
+    pub fn open(
+        data: &Path,
+        config: calternal_auth::AuthConfig,
+        development: bool,
+        recovery: Option<Recovery>,
+    ) -> std::io::Result<Self> {
+        let auth =
+            calternal_auth::Auth::open(data, config.clone()).map_err(std::io::Error::other)?;
+        let mut table = Self::with_spaces(data, auth.spaces(), development, recovery)?;
+        table.http = Some(crate::account_http::HttpAuth { auth, config });
+        Ok(table)
+    }
+    /// Attaches `recovery`, then (when `development`) seeds the fixtures and opens
+    /// their bearer token files.
+    fn with_spaces(
+        data_dir: &Path,
+        spaces: Spaces,
+        development: bool,
+        recovery: Option<Recovery>,
+    ) -> std::io::Result<Self> {
+        let (spaces, ids) = on_startup_thread(move || {
             if let Some(sink) = recovery {
                 spaces.configure_recovery(sink)?;
             }
-            let ids = spaces.seed_development()?;
+            let ids = development.then(|| spaces.seed_development()).transpose()?;
             Ok((spaces, ids))
-        })
-        .join()
-        .map_err(|_| std::io::Error::other("directory startup failed"))?
-        .map_err(std::io::Error::other)?;
-        let dir = data_dir.join("dev-tokens");
-        calternal_fsio::private::directory(&dir)?;
+        })?;
         let mut entries = Vec::new();
         let mut files = Vec::new();
-        for (name, id) in [("owner", ids.owner), ("guest", ids.guest)] {
-            let path = dir.join(format!("{name}.token"));
-            entries.push((
-                load_or_create_token(&path)?,
-                Identity { id },
-            ));
-            files.push((name, path));
+        if let Some(ids) = ids {
+            let dir = data_dir.join("dev-tokens");
+            calternal_fsio::private::directory(&dir)?;
+            for (name, id) in [("owner", ids.owner), ("guest", ids.guest)] {
+                let path = dir.join(format!("{name}.token"));
+                entries.push((load_or_create_token(&path)?, Identity { id }));
+                files.push((name, path));
+            }
         }
         Ok(Self {
             entries,
@@ -119,45 +136,17 @@ impl TokenTable {
             http: None,
         })
     }
-    /// Opens the protected directory and account service. Only explicit development
-    /// mode creates fixture accounts or accepts development bearer tokens.
-    ///
-    /// `recovery` is the protected security log: it is attached to `auth.db` before
-    /// any fixture is seeded or request served, so every security change is
-    /// published to it before acknowledgement. Without it nothing is logged
-    /// (in-process test fixtures only).
-    pub fn open(
-        data: &Path,
-        config: calternal_auth::AuthConfig,
-        development: bool,
-        recovery: Option<Recovery>,
-    ) -> std::io::Result<Self> {
-        let mut table = if development {
-            Self::seeded(data, recovery)?
-        } else {
-            let path = data.join("system/auth.db");
-            let spaces = std::thread::spawn(move || -> calternal_auth::Result<_> {
-                let spaces = Spaces::open(&path)?;
-                if let Some(sink) = recovery {
-                    spaces.configure_recovery(sink)?;
-                }
-                Ok(spaces)
-            })
-                .join()
-                .map_err(|_| std::io::Error::other("directory startup failed"))?
-                .map_err(std::io::Error::other)?;
-            Self {
-                entries: Vec::new(),
-                files: Vec::new(),
-                spaces,
-                http: None,
-            }
-        };
-        let auth =
-            calternal_auth::Auth::open(data, config.clone()).map_err(std::io::Error::other)?;
-        table.http = Some(crate::account_http::HttpAuth { auth, config });
-        Ok(table)
-    }
+}
+/// Runs blocking directory startup on its own thread: these constructors are also
+/// called from async fixtures, and the auth worker's blocking admission must never
+/// run inside a Tokio runtime context.
+fn on_startup_thread<T: Send + 'static>(
+    f: impl FnOnce() -> calternal_auth::Result<T> + Send + 'static,
+) -> std::io::Result<T> {
+    std::thread::spawn(f)
+        .join()
+        .map_err(|_| std::io::Error::other("directory startup failed"))?
+        .map_err(std::io::Error::other)
 }
 fn auth_error(e: calternal_auth::Error) -> Error {
     match e.code() {

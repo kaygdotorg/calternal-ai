@@ -285,6 +285,10 @@ mod recovery_tests {
         fn complete(&self, _: &rusqlite::Connection, _: &str) -> Result<()> {
             unreachable!("prepare refuses this transaction")
         }
+        fn serial(&self) -> &std::sync::Mutex<()> {
+            static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            &SERIAL
+        }
     }
 
     #[tokio::test]

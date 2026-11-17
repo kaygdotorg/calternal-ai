@@ -331,11 +331,28 @@ CREATE INDEX share_fanout_deliveries_recipient
     ON share_fanout_deliveries(recipient_id, delivered_at);
 ";
 
-/// A handle to `auth.db`. Cheap to clone.
+/// A handle to `auth.db`. Cheap to clone; clones share one connection, one worker
+/// thread and one recovery sink, so the account and space services open the file
+/// once (see [`crate::Auth::spaces`]).
 #[derive(Clone)]
 pub struct Db {
     conn: Arc<Mutex<Connection>>,
     worker: Arc<OnceLock<tokio::sync::mpsc::Sender<Job>>>,
+    sink: Arc<OnceLock<Sink>>,
+}
+
+type Sink = Arc<dyn crate::spaces::RecoverySink>;
+
+thread_local! {
+    /// The recovery sink of the [`Db`] whose worker runs on this thread; set before
+    /// each job, read by [`crate::spaces::commit_with`]. Other threads have none.
+    static ACTIVE_SINK: std::cell::RefCell<Option<Sink>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The recovery sink of the database this worker thread serves, if configured.
+/// Cost: one thread-local read and an Arc clone.
+pub(crate) fn active_sink() -> Option<Sink> {
+    ACTIVE_SINK.with(|s| s.borrow().clone())
 }
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
@@ -361,7 +378,39 @@ impl Db {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             worker: Arc::new(OnceLock::new()),
+            sink: Arc::new(OnceLock::new()),
         })
+    }
+
+    /// The job that attaches `sink`: reconcile pending proposals on this database's
+    /// worker, then make every later commit on this handle publish through it.
+    /// Attaching the same sink again is a no-op; a different one is refused.
+    fn attach(&self, sink: Sink) -> impl FnOnce(&mut Connection) -> Result<()> + Send + 'static {
+        let cell = self.sink.clone();
+        move |c| {
+            if let Some(existing) = cell.get() {
+                return if Arc::ptr_eq(existing, &sink) {
+                    Ok(())
+                } else {
+                    Err(Error::internal("recovery already configured"))
+                };
+            }
+            sink.reconcile(c)?;
+            cell.set(sink)
+                .map_err(|_| Error::internal("recovery already configured"))
+        }
+    }
+
+    /// Attaches the protected recovery barrier from a blocking thread; call before
+    /// serving requests, under the root locks. Fails closed if reconciliation fails.
+    /// Cost: one worker round trip plus the sink's reconciliation.
+    pub fn configure_recovery(&self, sink: Sink) -> Result<()> {
+        self.run_blocking(self.attach(sink))
+    }
+
+    /// [`Self::configure_recovery`] from async code.
+    pub async fn configure_recovery_async(&self, sink: Sink) -> Result<()> {
+        self.run(self.attach(sink)).await
     }
 
     /// Runs `f` with the connection on a dedicated blocking thread.
@@ -444,10 +493,12 @@ impl Db {
         self.worker.get_or_init(|| {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<Job>(64);
             let conn = self.conn.clone();
+            let sink = self.sink.clone();
             std::thread::Builder::new()
                 .name("auth-db".into())
                 .spawn(move || {
                     while let Some(job) = rx.blocking_recv() {
+                        ACTIVE_SINK.with(|s| *s.borrow_mut() = sink.get().cloned());
                         let mut conn = conn.lock().unwrap_or_else(|p| p.into_inner());
                         job(&mut conn);
                     }
