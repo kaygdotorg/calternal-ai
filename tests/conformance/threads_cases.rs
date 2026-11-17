@@ -566,7 +566,12 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
             let kind = entry["kind"].as_str().unwrap();
             if kind == "threads.turn_state_changed" {
                 assert_eq!(entry["data"]["job_id"], *job);
-                states.push(entry["data"]["job_state"].as_str().unwrap().to_owned());
+                let state = entry["data"]["job_state"].as_str().unwrap();
+                if state == "admitted" && states.last().map(String::as_str) == Some("admitted") {
+                    assert_eq!(entry["data"]["turn_reason"]["code"], "no_machine");
+                } else {
+                    states.push(state.to_owned());
+                }
             } else {
                 changes.push(kind.to_owned());
             }

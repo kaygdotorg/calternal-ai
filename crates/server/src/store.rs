@@ -71,11 +71,12 @@ fn content_fault(point: calternal_content::FaultPoint) {
     });
 }
 /// The control key holding a plugin's enablement in a space.
-fn plugin_key(plugin_id: &str) -> String {
+/// Encode a plugin identity as its existing space control key.
+pub(crate) fn plugin_key(plugin_id: &str) -> String {
     format!("plugin/{plugin_id}")
 }
 /// Decodes a stored enablement value; anything unreadable is a storage error.
-fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
+pub(crate) fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
     Ok(PluginRow {
         enabled: value["enabled"]
             .as_bool()

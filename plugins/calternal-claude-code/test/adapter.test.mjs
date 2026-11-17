@@ -13,9 +13,9 @@ async function run(prompt){const f=fixture();await f.command({type:'start',optio
 test('official CLI stream maps text, tools, session and usage without raw diagnostics',async()=>{
  const events=await run('hello');
  assert.deepEqual(events.map(e=>e.seq),events.map((_,i)=>i+1));
- assert.deepEqual(events.map(e=>e.event.type),['session','text_delta','tool_started','tool_finished','usage','done']);
+ assert.deepEqual(events.map(e=>e.event.type),['check','session','text_delta','tool_started','tool_finished','usage','done']);
  assert.equal(events.at(-1).event.outcome,'done');
- assert.equal(events[1].event.text,'Hello 🌏\n');
+ assert.equal(events[2].event.text,'Hello 🌏\n');
  assert.ok(!JSON.stringify(events).includes('PRIVATE_LOGIN_SENTINEL'));
 });
 test('questions and failures are normalized',async()=>{

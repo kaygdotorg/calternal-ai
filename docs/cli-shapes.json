@@ -78,6 +78,7 @@
     "calternal tags lookup": {"tags": [{"name": "string", "count": "integer"}]},
     "calternal trash list": {"notes": [{"id": "string", "space_id": "string", "title": "string", "revision": "string", "updated_at": "string"}]},
     "calternal trash purge": {"id": "string", "state": "string"},
+    "calternal agent readiness": {"machines": [{"machine_id": "string", "name": "string", "enrolled": "bool", "connected": "bool", "available": "bool", "execution": "string", "last_seen_ms": "any", "providers": "any"}], "pool": [{"enrolled": "bool", "connected": "bool", "available": "bool", "execution": "string", "providers": "any"}], "check_ttl_ms": "integer"},
     "calternal serve": { "profile": "string", "url": "string", "token_files": "any", "startup_file": "string" },
     "calternal machines code": { "code": "string", "owner": "string", "expires_at": "string" },
     "calternal machines list": { "machines": [{ "id": "string", "owner": "string", "name": "string", "os": "string", "arch": "string", "state": "string" }] },

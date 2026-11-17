@@ -7,8 +7,8 @@ pub(super) fn label(state: JobState) -> &'static str {
         JobState::Admitted | JobState::RetryWaiting => "queued",
         JobState::Running => "running",
         JobState::Waiting => "waiting",
-        JobState::Interrupted => "interrupted",
-        JobState::Failed | JobState::OutcomeUnknown => "failed",
+        JobState::Interrupted | JobState::OutcomeUnknown => "interrupted",
+        JobState::Failed => "failed",
         JobState::Done | JobState::Cancelled => "idle",
     }
 }

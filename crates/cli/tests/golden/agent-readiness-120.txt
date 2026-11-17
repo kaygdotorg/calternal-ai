@@ -1,0 +1,7 @@
+Machine      Connection  Execution  Capacity     Machine ID          Last seen     Provider      Sign-in     Readiness
+Development  Connected   sandboxed  Available    019a8c00-0000-700…  2025-10-09 …  calternal-c…  Signed out  Unavailable
+Cloud pool   Offline     sandboxed  Unavailable  —                   —             calternal-c…  Unknown     Unavailable
+
+Sign-in commands
+Development · calternal-claude-code:  claude auth login
+Use calternal agent check --help to refresh provider sign-in status.

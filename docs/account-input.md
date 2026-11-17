@@ -113,6 +113,9 @@ then accept its bookmark. Events contain no draft text, message body or space ID
 Bookmarks from another account, pruned history or a rolled-back/missing event
 produce `reset` and close the subscription. Reload authorized state before opening
 without a bookmark. There is no atomic snapshot/bookmark lease in this slice.
+Clients that follow machine status add `readiness=true`. The account-private
+`readiness_changed` frame asks the client to reload [readiness](agent-turns.md#machine-and-provider-readiness).
+It is coalesced and carries no bookmark.
 
 Account polling replays indexed pages every 250 ms, rechecking the current session.
 Expiry scans use a state/time expression index and decode only newly due

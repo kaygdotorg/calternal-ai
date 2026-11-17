@@ -1,0 +1,137 @@
+//! Persist provider output and its fenced durable checkpoint.
+use super::blocking;
+use crate::{
+    api::Shared,
+    auth::Directory,
+    plugins::{jobs::Job, live::Live},
+    threads::provider_session::ProviderSession,
+};
+use crate::{
+    auth::Identity,
+    machines::{LeaseState, MachineService},
+    plugins::jobs::RunEnd,
+};
+use calternal_types::{Capability, Error};
+use serde_json::{Value, json};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::sync::OwnedSemaphorePermit;
+use uuid::Uuid;
+
+/// Save scrubbed output through content and the existing jobs checkpoint.
+/// A reason-only save has no content I/O and one fenced FULL jobs update.
+pub(super) async fn save<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+    live: &Arc<Live>,
+    checkpoint: &mut Value,
+    thread_session: Option<ProviderSession>,
+) -> Result<(), Error> {
+    let (st_output, output_job, output_checkpoint) =
+        (state.clone(), job.clone(), checkpoint.clone());
+    blocking(move || {
+        crate::threads::persistence::checkpoint(
+            &st_output,
+            &output_job,
+            &output_checkpoint,
+            thread_session,
+        )
+    })
+    .await?;
+    checkpoint["thread_text"] = json!("");
+    let (st, sp, id, run, live, checkpoint) = (
+        state.clone(),
+        job.space.clone(),
+        job.id.clone(),
+        job.runs,
+        live.clone(),
+        checkpoint.clone(),
+    );
+    blocking(move || {
+        st.jobs
+            .checkpoint(&sp, &id, run, &live, &checkpoint)
+            .map(|_| ())
+    })
+    .await
+}
+
+pub(super) enum Placement {
+    Ready(Uuid, OwnedSemaphorePermit),
+    Ended(RunEnd),
+}
+
+/// Wait for the fenced placement while checking account access. The queue
+/// writes one checkpoint only when its displayed reason or position changes.
+pub(super) async fn place<D: Directory>(
+    state: &Shared<D>,
+    machines: &Arc<MachineService>,
+    job: &Job,
+    live: &Arc<Live>,
+    lease_id: Uuid,
+    checkpoint: &mut Value,
+) -> Result<Placement, Error> {
+    let account = job.account;
+    let who = Identity { id: account };
+    let placement_deadline = Instant::now() + Duration::from_secs(600);
+    let mut placement = Value::Null;
+    let acquire = state.jobs.permits().acquire_owned();
+    tokio::pin!(acquire);
+    loop {
+        if !live.is_current(job.runs) || !super::session_live(state, job).await? {
+            return Ok(Placement::Ended(RunEnd::Failed));
+        }
+        super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
+        let m = machines.clone();
+        let view = blocking(move || m.run(account, lease_id)).await?;
+        if view.state == LeaseState::Interrupted {
+            let m = machines.clone();
+            let since = blocking(move || m.interrupted_at(account, lease_id)).await?;
+            checkpoint["interruption"] = json!({"why":"machine_offline","since_ms":since});
+            save_placement(state, job, live, checkpoint).await?;
+            return Ok(Placement::Ended(RunEnd::Interrupted));
+        }
+        if view.state == LeaseState::Ended {
+            return Ok(Placement::Ended(RunEnd::OutcomeUnknown));
+        }
+        if let Some(machine) = view.machine_id {
+            tokio::select! {
+                permit=&mut acquire=>return Ok(Placement::Ready(machine,permit.map_err(|_|Error::unavailable("turn execution stopped"))?)),
+                _=tokio::time::sleep(Duration::from_secs(1))=>continue,
+            }
+        }
+        let (m, pin, position) = (
+            machines.clone(),
+            super::readiness::pin(&checkpoint, &job.input),
+            view.queue_position,
+        );
+        let reason = blocking(move || m.placement_reason(account, pin, position)).await?;
+        if placement != reason {
+            placement = reason;
+            checkpoint["placement"] = placement.clone();
+            save_placement(state, job, live, checkpoint).await?;
+            live.publish(
+                job.runs,
+                &json!({"type":"placement","queue_position":position}),
+            );
+        }
+        if Instant::now() >= placement_deadline {
+            checkpoint["interruption"] = json!({"why":"placement_timeout"});
+            save_placement(state, job, live, checkpoint).await?;
+            return Ok(Placement::Ended(RunEnd::Interrupted));
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn save_placement<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+    live: &Arc<Live>,
+    checkpoint: &Value,
+) -> Result<(), Error> {
+    let (state, job, live, checkpoint) =
+        (state.clone(), job.clone(), live.clone(), checkpoint.clone());
+    blocking(move || state.jobs.checkpoint_placing(&job, &live, &checkpoint)).await
+}

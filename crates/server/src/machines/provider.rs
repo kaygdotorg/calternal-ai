@@ -38,10 +38,12 @@ impl MachineService {
             .map_err(super::authority_error)?;
         let m = st.machines.get_mut(&machine).expect("checked owner");
         m.row.direct = direct;
+        m.checks.clear();
         if let Some(live) = m.live.take() {
             st.sessions.remove(&live.session);
             live.notify.notify_one();
         }
+        st.readiness.change(account);
         let leases: Vec<_> = st
             .leases
             .values()
@@ -65,6 +67,21 @@ impl MachineService {
     /// and its persistent account home. A matching ended lease replays after restart.
     /// Cost: one commit and machine message, or an indexed read for ended leases.
     pub fn release_run(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
+        self.release_provider_run(account, lease, true)
+    }
+
+    /// End a status probe and delete its scratch workspace while retaining its
+    /// persistent login home. Same durable release and ownership checks as a turn.
+    pub(crate) fn release_probe(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
+        self.release_provider_run(account, lease, false)
+    }
+
+    fn release_provider_run(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        keep_files: bool,
+    ) -> Result<(), Error> {
         let mut st = self.lock()?;
         match st.leases.get(&lease) {
             Some(l) if l.row.account == account && !l.row.worker => (),
@@ -78,7 +95,10 @@ impl MachineService {
             }
             _ => return Err(Error::not_found("run not found")),
         }
-        st.end_with_files(lease, "provider turn ended", &self.settings, true);
+        st.end_with_files(lease, "provider turn ended", &self.settings, keep_files);
+        if !keep_files {
+            st.leases.remove(&lease);
+        }
         Ok(())
     }
 }

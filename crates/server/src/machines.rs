@@ -35,7 +35,7 @@
 //! [`http`] does. The two async methods only wait on a `Notify` and take the lock
 //! on blocking tasks. Hot paths: a `sync` with nothing new reads and writes no
 //! file; an `output` upload never touches SQLite. Placement scans waiting
-//! leases × machines. Exec output stays in memory, at most
+//! leases × machines with indexed assignment counts. Exec output stays in memory, at most
 //! [`Settings::output_buffer_bytes`] per exec until read, and finished execs are
 //! dropped ten minutes after their exit; a server restart loses unread output.
 //!
@@ -52,6 +52,7 @@ mod execs;
 pub mod http;
 mod owners;
 pub mod provider;
+pub(crate) mod readiness;
 mod sessions;
 mod state;
 mod workers;
@@ -266,6 +267,7 @@ impl MachineService {
             })
             .collect();
         let mut st = State {
+            readiness: readiness::Readiness::default(),
             pool_grants: authority
                 .pool_grants()
                 .map_err(authority_error)?
@@ -284,6 +286,9 @@ impl MachineService {
             db,
             authority,
         };
+        for machine in st.machines.values() {
+            st.readiness.insert(machine);
+        }
         db::prune_ended(&st.db, settings.ended_lease_retention).map_err(sql)?;
         for mut row in db::active_leases(&st.db).map_err(sql)? {
             if row.worker {
@@ -312,7 +317,9 @@ impl MachineService {
             st.threads.insert(row.thread, row.id);
             let state = LeaseState::parse(&row.state);
             let order = st.next_order;
-            st.leases.insert(row.id, Lease { row, state, order });
+            let lease = Lease { row, state, order };
+            st.take_slot(lease.assigned_machine());
+            st.leases.insert(lease.row.id, lease);
         }
         Ok(Arc::new(Self {
             state: Mutex::new(st),
@@ -486,6 +493,8 @@ impl MachineService {
         db::set_draining(&st.db, machine, draining).map_err(sql)?;
         if let Some(m) = st.machines.get_mut(&machine) {
             m.row.draining = draining;
+            let owner = m.row.owner;
+            st.readiness_changed(owner);
         }
         st.place_waiting(&self.settings);
         Ok(())
@@ -522,7 +531,12 @@ impl MachineService {
         let now = Instant::now();
         let offline_after = self.settings.poll_hold + Duration::from_secs(5);
         let mut expired = Vec::new();
+        let mut disconnected = Vec::new();
+        let mut expired_checks = Vec::new();
         for m in st.machines.values_mut() {
+            let owner = m.row.owner;
+            expired_checks.extend(readiness::expire(m).map(|account| (owner, account)));
+            m.checks.retain(|_, checks| !checks.is_empty());
             if m.live.as_ref().is_some_and(|l| l.polls > 0) {
                 continue;
             }
@@ -533,11 +547,21 @@ impl MachineService {
                 && let Some(live) = m.live.take()
             {
                 st.sessions.remove(&live.session);
+                disconnected.push(m.row.owner);
             }
             if silent >= self.settings.lease_ttl {
                 expired.push(m.row.id);
             }
         }
+        for owner in disconnected {
+            st.readiness_changed(owner);
+        }
+        for (owner, account) in expired_checks {
+            if owner != Owner::Pool || st.pool_grants.contains(&account) {
+                st.readiness.change(account);
+            }
+        }
+        st.readiness.prune();
         for machine in expired {
             let leases: Vec<Uuid> = st
                 .leases

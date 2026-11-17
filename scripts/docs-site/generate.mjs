@@ -126,9 +126,12 @@ page('user/spaces-and-roles', 'Spaces and roles', ['docs/glossary.md'], section(
 page('user/permissions-modes', 'Permission modes', ['docs/agent-instructions.md'], 'Accepted design; the complete approval experience is not a released feature.\n\n' + section(await read('docs/agent-instructions.md'), 'Access'));
 page('user/space-instructions', 'Space standing instructions', ['docs/agent-instructions.md'], // The source links to the developer document on requests, which has no user page.
   section(await read('docs/agent-instructions.md'), 'Space standing instructions').replaceAll('[person requests](requests.md)', 'person requests'));
+page('dev/turn-readiness', 'Turn readiness', ['docs/agent-turns.md'],
+  section(await read('docs/agent-turns.md'), 'Machine and provider readiness'));
 const savedThreads = await read('docs/threads.md');
 page('user/threads', 'Threads', ['docs/threads.md', 'docs/orchestrator-proposal.md'],
-  '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates') +
+  '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates')
+    .replace('[machine and provider readiness](agent-turns.md#machine-and-provider-readiness)', 'the machine and provider readiness reference') +
   '\n## CLI\n' + section(savedThreads, 'CLI') +
   '\n## Accepted design\n' + section(await read('docs/orchestrator-proposal.md'), 'Decided in the grill (2026-11-17)'));
 for (const [id, title, source, note] of [

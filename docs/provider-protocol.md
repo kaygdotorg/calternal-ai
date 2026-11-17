@@ -36,7 +36,10 @@ chunks and receives reset plus checkpoint; it does not expand server memory.
 The adapter bounds raw CLI lines at 1 MiB and normalizes them before forwarding.
 At most 128 tool steps may be pending; duplicate starts fail closed.
 Provider crashes without a complete outcome become outcome-unknown. No login is
-read from disk, copied to the server or included in protocol output.
+read from disk, copied to the server or included in protocol output. The
+Claude adapter emits a Check result from its existing official status call
+before a regular turn. The server keeps that result private to the requesting
+account and excludes it from the shared turn stream.
 
 A Codex adapter reuses this entire protocol, machine stdin/exec transport, job
 streams/checkpoints, access tokens, instructions, risk policy, retry scheduler and
