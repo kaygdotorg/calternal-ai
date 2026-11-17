@@ -47,7 +47,7 @@ impl Jobs {
             new_session_token().map_err(|_| Error::internal("token randomness unavailable"))?;
         let token = format!("ct1_{}_{}", a.space, secret);
         let (a, digest) = (a.clone(), hash(&token));
-        self.with_current(&a.clone(),run,move |tx|{
+        self.with_current(&a.clone(),run,false,move |tx|{
             let current=retained_scope(tx,&a)?;
             let scope=match current {
                 Some(saved) if saved.job==a.job=>saved,
@@ -170,7 +170,15 @@ impl Jobs {
     /// Fence an active turn after an access change; resume is always explicit.
     /// One FULL transaction plus settling its live stream and cancellation flag.
     pub fn agent_interrupt(&self, space: &str, job: &str) -> Result<(), Error> {
-        self.tx(space,|tx|{tx.execute("UPDATE jobs SET state='interrupted',checkpoint=json_set(checkpoint,'$.interruption',json_object('why','permissions_changed')) WHERE id=?1 AND state IN ('running','admitted','retry_waiting')",[job]).map_err(db_err)?;Ok(())})?;
+        self.tx(space, |tx| {
+            tx.execute(
+                "UPDATE jobs SET state='interrupted',
+                    checkpoint=json_set(coalesce(nullif(checkpoint,'null'),'{}'),'$.interruption',json_object('why','permissions_changed'))
+                 WHERE id=?1 AND state IN ('running','placing','admitted','retry_waiting')",
+                [job],
+            ).map_err(db_err)?;
+            Ok(())
+        })?;
         self.settle(job);
         Ok(())
     }
@@ -226,7 +234,7 @@ impl Jobs {
     /// The token lifetime starts only when the machine is ready to execute.
     pub fn agent_prepare_scope(&self, a: &Authority, run: u32) -> Result<Authority, Error> {
         let a = a.clone();
-        self.with_current(&a.clone(),run,move |tx|{
+        self.with_current(&a.clone(),run,true,move |tx|{
             if let Some(previous)=retained_scope(tx,&a)? {
                 if previous.job==a.job{return with_grants(tx,previous)}
                 super::requests::cancel_pending_requests(tx,&a.space,&previous.job)?;
@@ -296,11 +304,12 @@ impl Jobs {
         &self,
         a: &Authority,
         run: u32,
+        allow_placing: bool,
         change: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error> + Send + 'static,
     ) -> Result<T, Error> {
         let conn = self.conn(&a.space)?;
         let c = conn.lock().unwrap_or_else(|p| p.into_inner());
-        let active:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND account=?2 AND state='running' AND runs=?3)",params![a.job,a.actor.account.to_string(),run],|r|r.get(0)).map_err(db_err)?;
+        let active:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND account=?2 AND (state='running' OR (?4 AND state='placing')) AND runs=?3)",params![a.job,a.actor.account.to_string(),run,allow_placing],|r|r.get(0)).map_err(db_err)?;
         if !active {
             return Err(Error::conflict("turn run is no longer current"));
         }

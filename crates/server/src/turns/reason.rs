@@ -27,8 +27,9 @@ pub(crate) fn describe(state: Option<JobState>, c: &Value, private: bool) -> Val
     use JobState::*;
     let reason = match state {
         None => json!({"code":"idle"}),
+        Some(Admitted) if !c["placement"].is_null() => c["placement"].clone(),
         Some(Admitted) => json!({"code":"queued"}),
-        Some(Running) => c["placement"].clone(),
+        Some(Running) => Value::Null,
         Some(Waiting) => json!({"code":"waiting_on_person","request_id":c["person_request"]}),
         Some(RetryWaiting) => {
             let retry = &c["retry"];

@@ -26,17 +26,17 @@ WHEN NEW.operation = 'agent.turn' AND json_type(NEW.input, '$.thread_request') =
 BEGIN
   DELETE FROM saved_turn_events WHERE created_at < unixepoch() - 604800;
   INSERT INTO saved_turn_events(event_id,thread,job,account,state,reason_checkpoint,created_at)
-  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,NEW.state,__REASON__,unixepoch());
+  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,CASE NEW.state WHEN 'placing' THEN 'admitted' ELSE NEW.state END,__REASON__,unixepoch());
 END;
 CREATE TRIGGER IF NOT EXISTS saved_turn_transition AFTER UPDATE OF state,checkpoint ON jobs
-WHEN (NEW.state != OLD.state
-  OR (NEW.state='running' AND json_extract(NEW.checkpoint,'$.placement') IS NOT json_extract(OLD.checkpoint,'$.placement')))
+WHEN ((NEW.state != OLD.state AND NEW.state != 'placing')
+  OR (NEW.state='placing' AND json_extract(NEW.checkpoint,'$.placement') IS NOT json_extract(OLD.checkpoint,'$.placement')))
  AND NEW.operation = 'agent.turn'
  AND json_type(NEW.input, '$.thread_request') = 'object'
 BEGIN
   DELETE FROM saved_turn_events WHERE created_at < unixepoch() - 604800;
   INSERT INTO saved_turn_events(event_id,thread,job,account,state,reason_checkpoint,created_at)
-  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,NEW.state,__REASON__,unixepoch());
+  VALUES(lower(hex(randomblob(16))),json_extract(NEW.input,'$.request.thread_id'),NEW.id,NEW.account,CASE NEW.state WHEN 'placing' THEN 'admitted' ELSE NEW.state END,__REASON__,unixepoch());
 END;
 ";
 
@@ -122,7 +122,7 @@ impl Event {
         let job_state = crate::plugins::job_sql::parse_state(&self.state);
         let checkpoint = serde_json::from_str(&self.checkpoint).map_err(|e| e.to_string())?;
         let reason = crate::turns::reason::describe(Some(job_state), &checkpoint, true);
-        let state = super::turn_status::label(job_state, &reason);
+        let state = super::turn_status::label(job_state);
         let result = journal
             .commit(Commit {
                 events: vec![StampedEvent {

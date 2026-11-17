@@ -244,6 +244,7 @@ impl MachineService {
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
         let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
+            || live.capacity.running_sandboxes != req.capacity.running_sandboxes
             || live.draining != req.draining;
         live.capacity = req.capacity;
         live.draining = req.draining;

@@ -2,6 +2,8 @@
 //! backend), on loopback with a 3 s lease TTL and 1 s poll hold.
 
 mod machines_common;
+#[path = "../../../tests/support/podman_guard.rs"]
+mod podman_guard;
 
 use std::time::Duration;
 
@@ -219,7 +221,11 @@ async fn other_accounts_cannot_use_see_or_touch_a_machine() {
 #[tokio::test(flavor = "multi_thread")]
 async fn pool_machines_serve_only_granted_accounts() {
     let data = TempDir::new("pool-data");
-    let server = Server::start(&data.0, free_port());
+    let server = Server::start_with_standard_timing(
+        &data.0,
+        free_port(),
+        std::path::Path::new("/nonexistent-test-plugins"),
+    );
     let out = std::process::Command::new(BIN)
         .args(["machines", "code", "--pool", "--json"])
         .args(installation(&data.0))
@@ -228,6 +234,7 @@ async fn pool_machines_serve_only_granted_accounts() {
     let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
     let code = issued["data"]["code"].as_str().unwrap();
     let mdir = TempDir::new("pool-m");
+    let _containers = podman_guard::PodmanGuard::new(mdir.0.join("sandboxes"));
     let status = std::process::Command::new(BIN)
         .args([
             "machine",
@@ -251,9 +258,8 @@ async fn pool_machines_serve_only_granted_accounts() {
             .unwrap(),
     );
     let space = server.owned_space(&server.owner).await;
-    let run = server
-        .request_run(&server.owner, &space, Uuid::new_v4())
-        .await;
+    let thread = Uuid::new_v4();
+    let run = server.request_run(&server.owner, &space, thread).await;
     let lease = run["lease_id"].as_str().unwrap().to_owned();
     tokio::time::sleep(Duration::from_millis(2000)).await;
     assert_eq!(
@@ -268,9 +274,14 @@ async fn pool_machines_serve_only_granted_accounts() {
         .status()
         .unwrap();
     assert!(st.success());
-    server
-        .wait_run(&server.owner, &lease, T, |v| v["state"] == "running")
+    let exec = server
+        .exec(&server.owner, &lease, &["echo", "granted"])
         .await;
+    let (text, _, exit) = server
+        .output(&server.owner, &exec, Duration::from_secs(35))
+        .await;
+    assert_eq!(exit["code"], 0, "{exit}");
+    assert_eq!(text, "granted\n");
 }
 
 #[tokio::test(flavor = "multi_thread")]

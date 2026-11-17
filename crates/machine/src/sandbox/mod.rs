@@ -136,8 +136,7 @@ pub trait Backend: Send + Sync + 'static {
     /// The caller must exclude active work. Missing artifacts succeed; I/O or
     /// engine failure returns an error. Cost: one recursive removal and optional container removal.
     fn discard(&self, account: uuid::Uuid, thread: uuid::Uuid) -> BoxFuture<'_, SandboxResult<()>>;
-    /// Start the thread's sandbox, or adopt the one left by an earlier run of the
-    /// machine role (same thread id), resuming it if it was frozen.
+    /// Start a sandbox using the existing mounted workspace for the thread.
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
     -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
 }
@@ -152,8 +151,8 @@ pub trait Sandbox: Send + Sync {
     fn resume(&self) -> BoxFuture<'_, SandboxResult<()>>;
     /// Kill everything and delete the sandbox, its writable layer and work directory.
     fn stop(&self) -> BoxFuture<'_, SandboxResult<()>>;
-    /// The machine role is exiting: end running execs (their output pipes die with
-    /// it) but keep the sandbox and its files so a restarted machine role adopts it.
+    /// End running execs and remove the runtime sandbox, preserving mounted workspace
+    /// files and the account home. Costs one engine removal or process-group signal.
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>>;
 }
 

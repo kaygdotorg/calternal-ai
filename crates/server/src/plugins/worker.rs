@@ -229,6 +229,7 @@ struct StartKey {
 
 /// Bounded pool of long-lived workers keyed by (plugin ID, space key).
 pub struct WorkerPool {
+    closing: AtomicBool,
     node: Option<NodeRuntime>,
     backend: Option<Arc<dyn calternal_machine::sandbox::Backend>>,
     workers: Mutex<HashMap<(String, SpaceId), Worker>>,
@@ -249,10 +250,16 @@ impl WorkerPool {
     /// Development/fixture pool with a custom worker-slot cap (at least one).
     /// Same adapter selection as [`Self::new`]; costs configuration allocations only.
     pub fn with_capacity(node: Option<NodeRuntime>, max_workers: usize) -> Self {
+        let root = std::env::temp_dir().join(format!("calternal-worker-{}", uuid::Uuid::new_v4()));
+        Self::with_local_root(node, max_workers, root)
+    }
+
+    /// Configure the development adapter with a sandbox root owned by the caller.
+    /// Construction performs no I/O. Use a separate root for each fixture.
+    pub fn with_local_root(node: Option<NodeRuntime>, max_workers: usize, root: PathBuf) -> Self {
         Self {
+            closing: AtomicBool::new(false),
             backend: node.as_ref().map(|_| {
-                let root =
-                    std::env::temp_dir().join(format!("calternal-worker-{}", uuid::Uuid::new_v4()));
                 if std::env::var("CALTERNAL_WORKER_TEST_BACKEND").as_deref() == Ok("podman") {
                     Arc::new(calternal_machine::sandbox::podman::PodmanBackend::new(
                         "podman",
@@ -281,6 +288,27 @@ impl WorkerPool {
         pool
     }
 
+    /// Wake and retire every worker while the runtime and machine link still
+    /// work. Stop accepting new workers and allow at most one startup budget
+    /// for their outstanding teardown confirmations.
+    pub async fn shutdown(&self) {
+        self.closing.store(true, Ordering::Release);
+        self.permits.close();
+        self.workers
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
+        let drained = tokio::time::timeout(WORKER_START_TIMEOUT, async {
+            while self.permits.available_permits() != self.max_workers {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await;
+        if drained.is_err() {
+            tracing::warn!("worker teardown was not confirmed before shutdown");
+        }
+    }
+
     /// Invocations admitted to a worker and not yet answered. Cost: one atomic load.
     pub fn in_flight(&self) -> usize {
         self.in_flight.load(Ordering::Acquire)
@@ -301,6 +329,9 @@ impl WorkerPool {
     /// the bundle on a blocking task and awaits sandbox startup with a reserved pool
     /// slot; then one channel round trip plus the worker's own frames and effects.
     pub async fn invoke(&self, plugin: &Arc<Plugin>, space: SpaceId, call: Call) -> Outcome {
+        if self.closing.load(Ordering::Acquire) {
+            return Outcome::Failed(Error::unavailable("worker pool is stopping"));
+        }
         let Some(backend) = &self.backend else {
             return Outcome::Failed(Error::unavailable("worker execution unavailable"));
         };
@@ -456,6 +487,9 @@ impl WorkerPool {
                     Ok(w) => w,
                     Err(_) => return Outcome::Failed(Error::internal("worker pool poisoned")),
                 };
+                if self.closing.load(Ordering::Acquire) {
+                    return Outcome::Failed(Error::unavailable("worker pool is stopping"));
+                }
                 // A concurrent cold start may have won; keep one worker per key.
                 if workers.get(&key).is_some_and(Worker::usable) {
                     drop(worker); // stops the losing duplicate

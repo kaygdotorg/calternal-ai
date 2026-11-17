@@ -2,10 +2,9 @@
 use calternal_core::JobState;
 
 /// Project the durable job lifecycle to the thread UI label. Cost: O(1).
-pub(super) fn label(state: JobState, reason: &serde_json::Value) -> &'static str {
+pub(super) fn label(state: JobState) -> &'static str {
     match state {
         JobState::Admitted | JobState::RetryWaiting => "queued",
-        JobState::Running if !reason.is_null() => "queued",
         JobState::Running => "running",
         JobState::Waiting => "waiting",
         JobState::Interrupted | JobState::OutcomeUnknown => "interrupted",

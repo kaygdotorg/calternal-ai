@@ -46,18 +46,22 @@ pending requests, and carries forward eligible grants. Archiving or deleting a
 thread removes its saved modes, credentials, and grants for every account.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
+An admitted run remains queued while it reserves a lease and waits for execution
+capacity. The first visible running state and its selected machine checkpoint
+commit together. A resumed run can expose the previous checkpoint while queued.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
 the lease and makes the turn interrupted; no machine automatically receives it.
 Only an explicit Resume starts interrupted work. Stop, completion and interruption
-end the token, stop processes and retain workspace files and the persistent account
-home. Container names and directories include the account UUID, preventing a
+end the token, remove the container, and retain the mounted workspace and persistent
+account home. Container names and directories include the account UUID, preventing a
 caller reusing a thread UUID from adopting another account's mounts. Persistent
 provider homes are intentionally retained until the machine owner removes them;
 the provider owns the files, and Calternal does not inspect or clean login files.
 
 Working areas follow the accepted orchestration retention rule: keep them until
-all changes are preserved or the person explicitly discards them. This lane keeps
-released workspaces and stopped containers until explicit deletion, with no timed
+all changes are preserved or the person explicitly discards them. The disposable
+container layer is removed on release. Persist work in the mounted `/work` directory
+and provider state in the mounted account home. Those directories have no timed
 expiry. A person runs `calternal agent ... discard <job-id>` after stopping the
 latest turn. The operation reports pending until every retained target machine
 confirms removal; the persistent account home remains. A failed result requires
@@ -75,6 +79,17 @@ per machine; completed rows are pruned after seven days or down to 1024 during
 cleanup activity. There are at most 64 target machines per request. Automatic
 cleanup after every change is preserved, and disk accounting against the person's
 plan, are named follow-ups. Neither is replaced by a timed workspace expiry.
+
+Each machine reserves at most `--max-sandboxes` slots across provider turns and
+plugin workers, including starts and unconfirmed removals. A provider turn
+removes its container when it ends. A lease with an idle provider container
+parks it on the first successful machine poll after one lease TTL without an
+exec (90 seconds by default). A later exec rebuilds the container over the same
+mounts on that machine. Plugin workers keep their existing 60-second idle limit.
+Machine shutdown and revocation close local containers. An unreachable server
+also triggers local removal after a lease TTL, when the machine detects the
+expiry. On startup the role removes orphan containers owned by its locked
+sandbox directory before accepting work. The sweep preserves provider files.
 
 Permission mode is independent of execution isolation. Cloud/pool machines always
 use a sandbox. An account-owned machine defaults to sandboxed execution; its owner
@@ -154,8 +169,9 @@ configuration, adapter crashes, unknown outcomes, user stop and machine silence
 never enter this scheduler. Retried official sessions receive a continuation
 message, not a replay of the original task. A `retry_waiting` job has durable
 `checkpoint.retry` fields: retry count, reason, billing and next attempt in Unix
-milliseconds. It holds no provider process or execution permit; its same-machine
-lease remains fenced by the ordinary machine protocol. A silent waiting machine
+milliseconds. It holds no provider process or execution permit. The idle
+container can be removed while its same-machine lease remains fenced by the
+ordinary machine protocol. A silent waiting machine
 interrupts the job instead of moving it. Restart restores the wait deadline.
 
 Turning off the applicable recovery setting during a wait parks the turn as

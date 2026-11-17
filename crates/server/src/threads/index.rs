@@ -122,7 +122,7 @@ pub(super) fn page<D: Directory>(
             metadata: serde_json::from_str(&metadata)
                 .map_err(|_| Error::internal("invalid indexed thread metadata"))?,
             revision,
-            turn_state: state.map_or("idle", |s| super::turn_status::label(s, &reason)),
+            turn_state: state.map_or("idle", |s| super::turn_status::label(s)),
             turn_reason: reason,
         })
     })
@@ -143,7 +143,7 @@ pub(crate) fn readiness_context<D: Directory>(
     attach(&conn)?;
     let mut stmt = conn.prepare_cached(
         "SELECT i.id, (
-            SELECT CASE WHEN j.account=?2 AND j.state IN ('waiting','admitted','running','interrupted','retry_waiting')
+            SELECT CASE WHEN j.account=?2 AND j.state IN ('waiting','admitted','placing','running','interrupted','retry_waiting')
                 THEN json_extract(j.checkpoint,'$.request_machine') END
             FROM main.jobs j WHERE j.operation='agent.turn'
                 AND json_extract(j.input,'$.request.thread_id')=+i.id

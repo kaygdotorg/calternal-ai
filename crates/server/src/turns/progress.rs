@@ -89,7 +89,7 @@ pub(super) async fn place<D: Directory>(
             let m = machines.clone();
             let since = blocking(move || m.interrupted_at(account, lease_id)).await?;
             checkpoint["interruption"] = json!({"why":"machine_offline","since_ms":since});
-            save(state, job, live, checkpoint, None).await?;
+            save_placement(state, job, live, checkpoint).await?;
             return Ok(Placement::Ended(RunEnd::Interrupted));
         }
         if view.state == LeaseState::Ended {
@@ -110,7 +110,7 @@ pub(super) async fn place<D: Directory>(
         if placement != reason {
             placement = reason;
             checkpoint["placement"] = placement.clone();
-            save(state, job, live, checkpoint, None).await?;
+            save_placement(state, job, live, checkpoint).await?;
             live.publish(
                 job.runs,
                 &json!({"type":"placement","queue_position":position}),
@@ -118,9 +118,20 @@ pub(super) async fn place<D: Directory>(
         }
         if Instant::now() >= placement_deadline {
             checkpoint["interruption"] = json!({"why":"placement_timeout"});
-            save(state, job, live, checkpoint, None).await?;
+            save_placement(state, job, live, checkpoint).await?;
             return Ok(Placement::Ended(RunEnd::Interrupted));
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }
+}
+
+async fn save_placement<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+    live: &Arc<Live>,
+    checkpoint: &Value,
+) -> Result<(), Error> {
+    let (state, job, live, checkpoint) =
+        (state.clone(), job.clone(), live.clone(), checkpoint.clone());
+    blocking(move || state.jobs.checkpoint_placing(&job, &live, &checkpoint)).await
 }

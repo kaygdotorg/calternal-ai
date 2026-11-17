@@ -379,7 +379,8 @@ impl State {
     pub(super) fn free(&self, m: &Machine) -> usize {
         match &m.live {
             Some(live) if !live.draining && !m.row.draining && !m.row.revoked => {
-                (live.capacity.max_sandboxes as usize).saturating_sub(m.assigned)
+                (live.capacity.max_sandboxes as usize)
+                    .saturating_sub(m.assigned.max(live.capacity.running_sandboxes as usize))
             }
             _ => 0,
         }
@@ -453,7 +454,7 @@ impl State {
                     Down::Stop {
                         lease_id: r.lease_id,
                         reason: "unknown lease".into(),
-                        keep_files: false,
+                        keep_files: true,
                     },
                 );
                 continue;
@@ -472,7 +473,7 @@ impl State {
                     }
                     SandboxState::Failed { reason } => {
                         let why = format!("sandbox failed: {reason}");
-                        self.end_lease(r.lease_id, &why, settings);
+                        self.end_with_files(r.lease_id, &why, settings, keep_files);
                     }
                     _ => {}
                 }

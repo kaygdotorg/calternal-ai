@@ -112,13 +112,30 @@ const emit=m=>"#);
         reason(&server, &space, &thread, "idle").await["code"],
         "idle"
     );
+    let subscriptions = json!([{"space_id":space}]).to_string();
+    let url = reqwest::Url::parse_with_params(
+        &format!("{}/api/v1/live", server.url()),
+        [("subscriptions", subscriptions)],
+    )
+    .unwrap();
+    let route = format!("/api/v1/live?{}", url.query().unwrap());
+    let mut journal = Feed::open(&server, &route).await;
+    journal.next(|f| f["type"] == "ready").await;
     let queued = op(
         &server,
         "threads.send",
         json!({"id":thread,"message":"hang"}),
     )
     .await;
-    reason(&server, &space, &thread, "no_machine").await;
+    let blocked = reason(&server, &space, &thread, "no_machine").await;
+    let entry = journal
+        .next(|f| {
+            f["entry"]["item"] == thread
+                && f["entry"]["data"]["turn_reason"]["code"] == "no_machine"
+        })
+        .await;
+    assert_eq!(entry["entry"]["data"]["turn_reason"], blocked);
+    assert_eq!(entry["entry"]["data"]["job_state"], "admitted");
 
     let code = server.code(&server.owner).await;
     assert_eq!(enrol(&server.url(), &code, &mdir.0), 0);
@@ -136,10 +153,8 @@ const emit=m=>"#);
     let mut machine = machine_with_adapter(&mdir.0, &bin.0);
     wait_online(&server, &server.owner, 1).await;
     let queued_id = queued["job"]["id"].as_str().unwrap();
-    until(&server, queued_id, |j| {
-        j["checkpoint"]["machine_id"].is_string()
-    })
-    .await;
+    let (running, _) = until(&server, queued_id, |j| j["state"] == "running").await;
+    assert_eq!(running["checkpoint"]["machine_id"], machine_id);
     machine.kill();
     let stopped = reason(&server, &space, &thread, "interrupted").await;
     assert_eq!(stopped["resumable"], true);
@@ -188,16 +203,7 @@ const emit=m=>"#);
     assert_eq!(enrol(&server.url(), &code, &spare.0), 0);
     let unpinned = op(&server, "agent.readiness", json!({"space_id":space})).await;
     assert_eq!(unpinned["machines"].as_array().unwrap().len(), 2);
-    let subscriptions = json!([{"space_id":space}]).to_string();
-    let url = reqwest::Url::parse_with_params(
-        &format!("{}/api/v1/live", server.url()),
-        [("subscriptions", subscriptions)],
-    )
-    .unwrap();
-    let route = format!("/api/v1/live?{}", url.query().unwrap());
-    let mut journal = Feed::open(&server, &route).await;
     let mut shared = Feed::open_as(&server, &route, &server.guest).await;
-    journal.next(|f| f["type"] == "ready").await;
     shared.next(|f| f["type"] == "ready").await;
     for (message, expected) in [
         ("auth-failure", "provider_signed_out"),

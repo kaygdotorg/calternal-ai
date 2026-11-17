@@ -30,6 +30,7 @@ pub(super) async fn prepare<D: Directory>(
     if let Some(fields) = initial.as_object_mut() {
         fields.remove("error");
         fields.remove("interruption");
+        fields.remove("placement");
     }
     let checkpoint = blocking(move || {
         let mut lease = None;
@@ -52,4 +53,28 @@ pub(super) async fn prepare<D: Directory>(
     })
     .await?;
     Ok(checkpoint)
+}
+
+/// Publish the selected machine with the running state before the provider can
+/// obtain its token or start. One per-space job commit on the blocking pool.
+pub(super) async fn publish_placement<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+    live: &Arc<crate::plugins::live::Live>,
+    checkpoint: &mut Value,
+) -> Result<(), Error> {
+    checkpoint["thread_text"] = json!("");
+    let (s, space, id, run, live, checkpoint) = (
+        state.clone(),
+        job.space.clone(),
+        job.id.clone(),
+        job.runs,
+        live.clone(),
+        checkpoint.clone(),
+    );
+    blocking(move || {
+        s.jobs
+            .start_placed_turn(&space, &id, run, &live, &checkpoint)
+    })
+    .await
 }

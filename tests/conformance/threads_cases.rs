@@ -500,22 +500,23 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
         .await;
     sent.ok();
     let job = &sent.body["data"]["job"]["id"];
+    let queued = f.op(1, "threads.get", json!({"id":thread})).await;
+    queued.ok();
+    assert_eq!(queued.body["data"]["thread"]["turn_state"], "queued");
+    assert_eq!(queued.body["data"]["job"]["state"], "admitted");
     // The requests lane uses this same jobs transition to park a turn. Inject
-    // only that state in this disposable fixture, without provisioning a request.
+    // only that state in this disposable fixture. With no machine, admission
+    // and the internal placement claim both remain queued to clients.
     let database =
         Connection::open(f.appdata().join("spaces").join(space).join("jobs.db")).unwrap();
     database.busy_timeout(Duration::from_secs(5)).unwrap();
     let changed = database
         .execute(
-            "UPDATE jobs SET state='waiting' WHERE id=?1 AND state='running'",
+            "UPDATE jobs SET state='waiting' WHERE id=?1 AND state IN ('admitted','placing')",
             [job.as_str().unwrap()],
         )
         .unwrap();
-    if changed == 0 {
-        // Admission and claim may race the fixture. Taking the state from admitted
-        // also fences a later claim; either path leaves the same durable wait.
-        assert_eq!(database.execute("UPDATE jobs SET state='waiting' WHERE id=?1 AND state IN ('admitted','running')", [job.as_str().unwrap()]).unwrap(), 1);
-    }
+    assert_eq!(changed, 1);
     let reopened = f.op(1, "threads.get", json!({"id":thread})).await;
     reopened.ok();
     assert_eq!(reopened.body["data"]["job"]["id"], *job);
@@ -565,7 +566,12 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
             let kind = entry["kind"].as_str().unwrap();
             if kind == "threads.turn_state_changed" {
                 assert_eq!(entry["data"]["job_id"], *job);
-                states.push(entry["data"]["job_state"].as_str().unwrap().to_owned());
+                let state = entry["data"]["job_state"].as_str().unwrap();
+                if state == "admitted" && states.last().map(String::as_str) == Some("admitted") {
+                    assert_eq!(entry["data"]["turn_reason"]["code"], "no_machine");
+                } else {
+                    states.push(state.to_owned());
+                }
             } else {
                 changes.push(kind.to_owned());
             }
@@ -584,8 +590,7 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
             "threads.send"
         ]
     );
-    assert_eq!(states.first().map(String::as_str), Some("admitted"));
-    assert!(states.iter().any(|state| state == "waiting"));
+    assert_eq!(states, ["admitted", "waiting", "cancelled"]);
 
     // A visible barrier after the foreign mutations detects accidental delivery
     // without relying on a fixed sleep or an idle event timeout.

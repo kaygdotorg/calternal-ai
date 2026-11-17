@@ -285,14 +285,12 @@ const scenarioFile="#);
         op(&server, "agent.events", json!({"job_id":sid})).await["job"]["checkpoint"]["machine_id"]
             .clone();
     op(&server, "agent.resume", json!({"job_id":sid})).await;
-    // Claiming a run marks it running before it saves the new lease checkpoint.
-    until(&server, sid, |j| {
-        let machine_id = &j["checkpoint"]["machine_id"];
-        (j["state"] == "running" || j["state"] == "done")
-            && machine_id.is_string()
-            && *machine_id != previous
+    let (current, _) = until(&server, sid, |j| {
+        j["state"] == "running" || j["state"] == "done"
     })
     .await;
+    assert!(current["checkpoint"]["machine_id"].is_string());
+    assert_ne!(current["checkpoint"]["machine_id"], previous);
     machine.signal("-CONT");
     op(&server, "agent.stop", json!({"job_id":sid})).await;
     drop(machine);

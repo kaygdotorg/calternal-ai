@@ -147,7 +147,7 @@ pub(super) fn apply<D: Directory>(
                 &job.checkpoint,
                 who.id == job.account,
             );
-            result["thread"]["turn_state"] = json!(super::turn_status::label(job.state, &reason));
+            result["thread"]["turn_state"] = json!(super::turn_status::label(job.state));
             result["thread"]["turn_reason"] = reason;
             if !job.state.is_final() {
                 result["job"] = json!(job.view_for(who.id));
