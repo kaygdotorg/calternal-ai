@@ -69,6 +69,8 @@
     });
   });
   // ---- the same engine as the palette: highlighted words, @ for people, agents, threads and items, / for skills ----
+  // Warm the recogniser once when the composer appears (its regular expressions compile on first use): the first key typed should cost what the others do.
+  $effect(() => { marksOf("warm @a friday 5pm !high #t"); });
   const marks = $derived(marksOf(text));
   const pool = $derived(mentionPool(providers.map((p) => p.name), store.threads.filter((t) => t.id !== thread.id).map((t) => ({ id: t.id, title: t.title })), fixtureItems().filter((i) => i.kind === "note")));
   let caret = $state(0);

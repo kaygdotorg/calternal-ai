@@ -122,6 +122,9 @@ the palette field all run on it. Measured on the dev VM, Chromium at **4x CPU sl
 | Measure | Result | Budget carried from the existing app |
 | --- | --- | --- |
 | Key press to the next frame after the field changed | median 7.3 ms, p95 10.1 ms, worst 31.7 ms | composer key p95 8 ms (gated there; the probe measures to paint, which includes the frame) |
+| Composer after the 2026-11-17 pass (4x CPU, dev-02, 3 to 5 runs) | script work per plain key: median 2.7 to 3.0 ms, p95 4.3 to 5.5 ms; key to next frame over all 74 keys: median 3.0 to 3.7 ms, p95 7.5 to 9.5 ms, worst 26 to 35 ms | p95 8 ms: met on script work; key-to-frame p95 straddles it. The worst keys are the first one and the ones that open a picker (@ # /) |
+
+What changed: the field grows with `field-sizing: content` where supported (no `scrollHeight` read per key), the mirror copies font metrics once instead of reading computed style per key and exists only while there are marks, and the recogniser is warmed when the composer mounts. What remains is the frame boundary (a key landing just after a frame waits up to a frame) and the heavier first and picker keys; both are noise-dominated on the shared VM, so the figures above are ranges, not a pass claim for key-to-frame p95.
 | Added to the first paint | 7.0 KB minified, **2.0 KB brotli** (the whole package) | under 3 KB |
 | Palette keystroke to painted rows (`e2e/perf-suite.mjs`) | one frame, unchanged | one frame |
 
