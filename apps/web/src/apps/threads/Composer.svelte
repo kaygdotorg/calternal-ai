@@ -125,7 +125,7 @@
   }
 </script>
 
-<Panel class="composer" radius="pane">
+<Panel class="composer" radius="pane" data-ring-host>
   <div class="ctx" aria-label="Context">
     <span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
@@ -169,7 +169,7 @@
 {/if}
 
 <style>
-  :global(.composer) { container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
+  :global(.composer) { --ring-offset: 2px; container: cmp / inline-size; padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-1); }
   .ctx { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: 0 var(--s-3) 0 0; }
   .cx { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; padding: var(--s-1) var(--s-4); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.06); color: var(--ink-2); font-size: var(--text-label); }
   .cx > span:not(:first-child) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -179,8 +179,7 @@
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
   :global(.field-input) { flex: 1; padding: var(--s-3) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
-  :global(:root[data-input="key"] .composer:has(.field-input:focus-visible)) { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
+    .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
   .chip { position: relative; flex: 0 1 auto; min-width: var(--pill-h); }
   .chip :global(.pill) { max-width: 100%; overflow: hidden; }
   .pl, .pm, .perm, .rl, .rm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

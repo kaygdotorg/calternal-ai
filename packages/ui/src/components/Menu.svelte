@@ -63,7 +63,7 @@
 
 {#snippet content()}
   {#if search}
-    <div class="s">
+    <div class="s" data-ring-host>
       <Icon inline name="search" />
       <input type="search" placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" spellcheck="false" onkeydown={fromSearch} />
     </div>

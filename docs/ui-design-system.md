@@ -163,7 +163,7 @@ Tests: `npm test --workspace @calternal/ui` (names, roles, keyboard, focus trap,
 | Primitive | Role |
 | --- | --- |
 | `Panel` | the material for cards, panes, pills (radius token), floating or docked |
-| `Pill`, `IconButton` | round controls; both carry the tooltip and the bounce |
+| `Pill`, `IconButton` | round controls; both carry the tooltip and the press |
 | `Popover`, `Menu` (search, anchor), `Sheet` | floating surfaces on `Panel` |
 | `InlineEditor` | the one text-input surface (composer, side chat, rename); the Notes block editor's input replaces this file alone |
 | `Toasts` | ported from the existing app; mount once; T1 rule: toasts only for something to act on (Undo, Retry) or a result awaited |
@@ -176,10 +176,11 @@ words slide with blur on swap, keeps itself centred while the trigger moves, **k
 **Kept the existing app's**: same behaviour as the reference, no dependency, a longer warm window that suits a toolbar, and it already follows our
 keyboard rule. Ported to `lib/tooltip.ts` (`use:tip={{ label, kbd }}`); the label also names the control.
 
-## Pill bounce
+## Pill press
 
-Defined once (`lib/bounce.ts`, used by `Pill` and `IconButton`): after a pointer or touch click the control rebounds from `--press-scale` (0.96) to 1.035 and
-settles over `--dur-slow` on `--ease-out`. A keyboard activation (`detail` 0, or key modality) and reduced motion never move it; a new press cancels it.
+The existing app's press, as plain CSS on each control (`Pill`, `IconButton`, `Button`, `Row`, `Capsule`): `scale` goes to `--press-scale` while pressed and returns over
+`--dur-fast` on `--ease-out`, transform only. There is no rebound past 1 (owner, 2026-11-18: the overshoot was too much; the existing app has none). A keyboard activation never
+moves it (key modality makes every transition 0 s) and reduced motion keeps only the scale.
 
 ## Motion, per transition (measured on the dev VM, p50 / p90 / p98 ms to reach the end value)
 
@@ -191,7 +192,6 @@ settles over `--dur-slow` on `--ease-out`. A keyboard activation (`detail` 0, or
 | Menu / popover | ready, then fade `--dur-base` 220; leave `--dur-leave` 200 | opens within a frame |
 | Toast | spring capsule (ported), arrive 260 | unchanged from the existing app |
 | Tooltip | pop 160, travel 320 on `--spring` | unchanged from the existing app |
-| Bounce | `--dur-slow` 300, `--ease-out` | n/a |
 
 All are interruptible (a reversal half way is continuous, checked in `e2e/motion.mjs`), and none run from the keyboard.
 
