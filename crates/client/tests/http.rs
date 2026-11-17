@@ -54,6 +54,7 @@ async fn typed_notes_and_sensitive_header() {
     let pending = Client::pending(
         "notes.list",
         &NotesListInput {
+            tag: None,
             space_id: "personal".into(),
         },
         Some("retry-1".into()),
@@ -95,6 +96,7 @@ async fn conflict_is_typed_not_retried() {
     let pending = Client::pending(
         "notes.list",
         &NotesListInput {
+            tag: None,
             space_id: "personal".into(),
         },
         Some("r".into()),
@@ -124,6 +126,7 @@ async fn mismatched_request_id_rejected() {
     let pending = Client::pending(
         "notes.list",
         &NotesListInput {
+            tag: None,
             space_id: "personal".into(),
         },
         Some("r".into()),
@@ -160,6 +163,7 @@ async fn predispatch_auth_failure_can_have_null_identity() {
     let pending = Client::pending(
         "notes.list",
         &NotesListInput {
+            tag: None,
             space_id: "personal".into(),
         },
         Some("r".into()),

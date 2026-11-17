@@ -86,10 +86,12 @@ fn plugin_row(value: serde_json::Value) -> Result<PluginRow, Error> {
             .ok_or_else(|| Error::internal("corrupt plugin state"))?,
     })
 }
-fn item_id(id: &str) -> Result<Uuid, Error> {
+/// Parse a note identifier, mapping malformed IDs to the ordinary absence error.
+pub(crate) fn item_id(id: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(id).map_err(|_| Error::not_found("item not found"))
 }
-fn note(item: &Item) -> Note {
+/// Build a wire snapshot from one current content revision, without file I/O.
+pub(crate) fn note(item: &Item) -> Note {
     Note {
         id: item.id.to_string(),
         space_id: item.space.to_string(),
@@ -97,6 +99,16 @@ fn note(item: &Item) -> Note {
         markdown: String::from_utf8_lossy(&item.bytes).into_owned(),
         revision: item.revision.clone(),
         updated_at: item.updated_at.clone(),
+    }
+}
+/// Map a selected content head into its wire summary without loading note bytes.
+pub(crate) fn note_summary(i: calternal_content::Summary) -> NoteSummary {
+    NoteSummary {
+        id: i.id.to_string(),
+        space_id: i.space.to_string(),
+        title: i.metadata["title"].as_str().unwrap_or("").into(),
+        revision: i.revision,
+        updated_at: i.updated_at,
     }
 }
 impl Store {
@@ -204,22 +216,14 @@ impl Store {
     /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
     /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
     pub fn list(&self, space_id: SpaceId, limit: u32) -> Result<Vec<NoteSummary>, Error> {
-        self.content.list(space_id, "notes", limit).map(|rows| {
-            rows.into_iter()
-                .map(|i| NoteSummary {
-                    id: i.id.to_string(),
-                    space_id: space_id.to_string(),
-                    title: i.metadata["title"].as_str().unwrap_or("").into(),
-                    revision: i.revision,
-                    updated_at: i.updated_at,
-                })
-                .collect()
-        })
+        self.content
+            .list(space_id, "notes", limit)
+            .map(|rows| rows.into_iter().map(note_summary).collect())
     }
     /// Gets one Notes item from its selected physical database. A foreign ID is absent.
     /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.
     pub fn get(&self, space_id: SpaceId, id: &str) -> Result<Note, Error> {
-        let item = self.content.get(space_id, item_id(id)?)?;
+        let item = self.content.get_live(space_id, item_id(id)?)?;
         if item.kind != "notes" {
             return Err(Error::not_found("item not found"));
         }
@@ -235,10 +239,9 @@ impl Store {
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<(Vec<NoteVersion>, Option<String>), Error> {
-        self.get(space_id, id)?;
-        let (versions, next) = self
-            .content
-            .history(space_id, item_id(id)?, limit, cursor)?;
+        let (versions, next) =
+            self.content
+                .history_live(space_id, "notes", item_id(id)?, limit, cursor)?;
         Ok((
             versions
                 .into_iter()
@@ -300,12 +303,14 @@ impl Store {
             operation,
             fingerprint,
         };
+        let title = crate::notes::heading_title(markdown).unwrap_or(title);
+        calternal_core::validate_title(title)?;
         let item = self.content.write(
             space_id,
             None,
             "notes",
             None,
-            serde_json::json!({"title":title}),
+            crate::notes::metadata(title, markdown)?,
             markdown.as_bytes(),
             request,
             |i| serde_json::json!({"note":note(i)}),
@@ -313,9 +318,11 @@ impl Store {
         Ok(note(&item))
     }
     /// Updates only the current base revision, preserving external edits/deletes.
-    /// Title changes journal a fixed exclusive rename with the same mutation.
-    /// Cost: indexed head read plus generic write costs, one old-file hash, optional
-    /// exclusive rename and parent fsync; no directory scan on warm Linux name caches.
+    /// Title changes stage the path and link edits in the same content transaction.
+    /// Warm content-only saves project tags and links once and load head metadata
+    /// without its previous body. Cost: two file hashes, one guarded placement and
+    /// the shared revision and receipt commits. A linked rename also reads its
+    /// bounded indexed source set.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
@@ -329,24 +336,52 @@ impl Store {
         title: Option<&str>,
         markdown: &str,
     ) -> Result<Note, Error> {
-        let current = self.get(space_id, id)?;
+        let id = item_id(id)?;
+        let current = self.content.live_metadata(space_id, "notes", id)?;
+        let old_title = current["title"].as_str().unwrap_or("");
         let request = Request {
             account: account,
             id: request_id,
             operation,
             fingerprint,
         };
-        let item = self.content.write(
-            space_id,
-            Some(item_id(id)?),
-            "notes",
-            Some(base_revision),
-            serde_json::json!({"title":title.unwrap_or(&current.title)}),
-            markdown.as_bytes(),
-            request,
-            |i| serde_json::json!({"note":note(i)}),
-        )?;
-        Ok(note(&item))
+        let (title, markdown) = match (title, crate::notes::heading_title(markdown)) {
+            (Some(title), Some(heading)) if title != heading => (
+                title,
+                std::borrow::Cow::Owned(crate::notes::rename_heading(markdown, title)),
+            ),
+            (title, heading) => (
+                title.or(heading).unwrap_or(old_title),
+                std::borrow::Cow::Borrowed(markdown),
+            ),
+        };
+        calternal_core::validate_title(title)?;
+        calternal_core::validate_markdown(&markdown)?;
+        let updated = if title == old_title {
+            self.content.write(
+                space_id,
+                Some(id),
+                "notes",
+                Some(base_revision),
+                crate::notes::metadata(title, &markdown)?,
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+            )?
+        } else {
+            self.content.write_with_links(
+                space_id,
+                id,
+                "notes",
+                base_revision,
+                serde_json::json!({"title":title}),
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i)}),
+                |item, old, new| crate::notes::retarget(item, old, new, old_title, title, id),
+            )?
+        };
+        Ok(note(&updated))
     }
     /// Finishes checked placement before retry replay. Cost: catalog lookup and
     /// generic materialization locks/reads, with file+directory fsync only if pending.
@@ -386,7 +421,11 @@ impl Store {
         if self.content.locate(kind, id)? != Some(space) {
             return Err(missing());
         }
-        let item = self.content.get(space, id)?;
+        let item = if kind == "notes" {
+            self.content.get_live(space, id)?
+        } else {
+            self.content.get(space, id)?
+        };
         if item.kind != kind {
             return Err(missing());
         }

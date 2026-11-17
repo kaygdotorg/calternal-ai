@@ -536,91 +536,6 @@
   },
   {
     "risk": "read",
-    "id": "notes.list",
-    "description": "List up to 100 notes",
-    "mutates": false,
-    "input_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "description": "Input for `notes.list`; the server independently checks access to the selected space.",
-      "properties": {
-        "space_id": {
-          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-          "maxLength": 80,
-          "minLength": 1,
-          "pattern": "^[a-zA-Z0-9_.:-]+$",
-          "type": "string"
-        }
-      },
-      "required": [
-        "space_id"
-      ],
-      "title": "NotesListInput",
-      "type": "object"
-    },
-    "output_schema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": false,
-      "definitions": {
-        "NoteSummary": {
-          "additionalProperties": false,
-          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
-          "properties": {
-            "id": {
-              "description": "Stable UUID note identity; access is checked against the accompanying space.",
-              "type": "string"
-            },
-            "revision": {
-              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
-              "type": "string"
-            },
-            "space_id": {
-              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-              "maxLength": 80,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9_.:-]+$",
-              "type": "string"
-            },
-            "title": {
-              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
-              "maxLength": 256,
-              "minLength": 1,
-              "type": "string"
-            },
-            "updated_at": {
-              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "revision",
-            "space_id",
-            "title",
-            "updated_at"
-          ],
-          "type": "object"
-        }
-      },
-      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
-      "properties": {
-        "notes": {
-          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
-          "items": {
-            "$ref": "#/definitions/NoteSummary"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "notes"
-      ],
-      "title": "NotesListResult",
-      "type": "object"
-    }
-  },
-  {
-    "risk": "read",
     "id": "resolve",
     "description": "Resolve an item address with current access",
     "mutates": false,
@@ -651,6 +566,34 @@
     "output_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
+      "definitions": {
+        "ItemState": {
+          "description": "Stable state of an item address.",
+          "oneOf": [
+            {
+              "description": "The item is in its ordinary collection.",
+              "enum": [
+                "active"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The item can be restored from the space's Trash.",
+              "enum": [
+                "in_trash"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The identity is retained after permanent deletion.",
+              "enum": [
+                "deleted"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
       "description": "Current owning space and effective capabilities for a visible address.",
       "properties": {
         "access": {
@@ -671,6 +614,14 @@
         "space_id": {
           "description": "Owning space UUID, independent of account identity.",
           "type": "string"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ItemState"
+            }
+          ],
+          "description": "Lifecycle state of a Notes address, omitted for kinds without this projection."
         }
       },
       "required": [
@@ -4547,6 +4498,746 @@
       "additionalProperties": false,
       "description": "Empty success for `secrets.revoke`.",
       "title": "SecretsRevokeResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "notes.list",
+    "description": "List up to 100 live notes, optionally under a tag",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for `notes.list`; the server independently checks access to the selected space.",
+      "properties": {
+        "space_id": {
+          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        },
+        "tag": {
+          "description": "Exact tag name (without a leading hash), including notes with descendant tags.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "NotesListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
+      "properties": {
+        "notes": {
+          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
+          "items": {
+            "$ref": "#/definitions/NoteSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "notes.delete",
+    "description": "Move a note to its space's Trash",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A single note UUID targeted by a lifecycle operation.",
+      "properties": {
+        "id": {
+          "description": "Global note UUID, resolved to its owning space by the host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "NoteTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result of a recoverable Trash move.",
+      "properties": {
+        "note": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NoteSummary"
+            }
+          ],
+          "description": "Updated metadata including the revision and the time of the move."
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteChange",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "notes.restore",
+    "description": "Restore a note from its space's Trash",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A single note UUID targeted by a lifecycle operation.",
+      "properties": {
+        "id": {
+          "description": "Global note UUID, resolved to its owning space by the host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "NoteTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result of a recoverable Trash move.",
+      "properties": {
+        "note": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/NoteSummary"
+            }
+          ],
+          "description": "Updated metadata including the revision and the time of the move."
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteChange",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "trash.list",
+    "description": "List notes in the space's Trash",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for members, leave and directory-record deletion.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID; names are never accepted in its place.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteSummary": {
+          "additionalProperties": false,
+          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
+      "properties": {
+        "notes": {
+          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
+          "items": {
+            "$ref": "#/definitions/NoteSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesListResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "id": "trash.purge",
+    "description": "Permanently delete a note from Trash",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "A single note UUID targeted by a lifecycle operation.",
+      "properties": {
+        "id": {
+          "description": "Global note UUID, resolved to its owning space by the host.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "NoteTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ItemState": {
+          "description": "Stable state of an item address.",
+          "oneOf": [
+            {
+              "description": "The item is in its ordinary collection.",
+              "enum": [
+                "active"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The item can be restored from the space's Trash.",
+              "enum": [
+                "in_trash"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The identity is retained after permanent deletion.",
+              "enum": [
+                "deleted"
+              ],
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "description": "Permanent deletion acknowledgement. Contains no note contents.",
+      "properties": {
+        "id": {
+          "description": "Stable UUID retained for address resolution.",
+          "type": "string"
+        },
+        "state": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ItemState"
+            }
+          ],
+          "description": "Deleted state of the address."
+        }
+      },
+      "required": [
+        "id",
+        "state"
+      ],
+      "title": "PurgeResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "notes.rename",
+    "description": "Rename a note at its current revision",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Rename one note at the revision shown in the list.",
+      "properties": {
+        "base_revision": {
+          "description": "Opaque revision selected by the caller.",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "description": "Global note UUID; its current space is resolved by the host.",
+          "type": "string"
+        },
+        "title": {
+          "description": "New title, used for the first H1 and readable filename.",
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_revision",
+        "id",
+        "title"
+      ],
+      "title": "NoteRenameInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "Note": {
+          "additionalProperties": false,
+          "description": "Current snapshot returned by `notes.get`, `notes.create` and `notes.update`.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "markdown": {
+              "description": "UTF-8 Markdown content, at most 1 MiB; byte size differs from character count.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "markdown",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
+      "properties": {
+        "note": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Note"
+            }
+          ],
+          "description": "Current note snapshot visible to the authenticated caller."
+        }
+      },
+      "required": [
+        "note"
+      ],
+      "title": "NoteResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "notes.lookup",
+    "description": "Find notes by title prefix",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Space-scoped lookup of notes or tags by literal prefix.",
+      "properties": {
+        "prefix": {
+          "description": "Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.",
+          "maxLength": 256,
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the space whose index to query.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix",
+        "space_id"
+      ],
+      "title": "NotePrefixInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "NoteMatch": {
+          "description": "Metadata for one picker match, including its relative Markdown destination.",
+          "properties": {
+            "id": {
+              "description": "Stable UUID note identity; access is checked against the accompanying space.",
+              "type": "string"
+            },
+            "link_target": {
+              "description": "Encoded relative target for a Markdown link from another note.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Opaque nonempty server revision; compare for equality, never infer order or parse it.",
+              "type": "string"
+            },
+            "space_id": {
+              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            "title": {
+              "description": "Display title, nonblank, at most 256 Unicode scalars and without control characters.",
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Server-authored UTC RFC 3339 timestamp for this snapshot.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "link_target",
+            "revision",
+            "space_id",
+            "title",
+            "updated_at"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bounded title-matching page in folded title and UUID order.",
+      "properties": {
+        "notes": {
+          "description": "At most 100 live matches with their exact on-disk destinations.",
+          "items": {
+            "$ref": "#/definitions/NoteMatch"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "notes"
+      ],
+      "title": "NotesLookupResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "tags.list",
+    "description": "List tags and their current note counts",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for members, leave and directory-record deletion.",
+      "properties": {
+        "space_id": {
+          "description": "Space UUID; names are never accepted in its place.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "SpaceInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "TagCount": {
+          "additionalProperties": false,
+          "description": "A named tag and its current note count in one space.",
+          "properties": {
+            "count": {
+              "description": "Number of live notes with this tag or one nested underneath it.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "description": "Tag name without a leading hash.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "count",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bounded tag lookup result.",
+      "properties": {
+        "tags": {
+          "description": "Up to 100 tag names and counts, in literal name order.",
+          "items": {
+            "$ref": "#/definitions/TagCount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tags"
+      ],
+      "title": "TagsResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "tags.lookup",
+    "description": "Find tags by name prefix",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Space-scoped lookup of notes or tags by literal prefix.",
+      "properties": {
+        "prefix": {
+          "description": "Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.",
+          "maxLength": 256,
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the space whose index to query.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix",
+        "space_id"
+      ],
+      "title": "NotePrefixInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "TagCount": {
+          "additionalProperties": false,
+          "description": "A named tag and its current note count in one space.",
+          "properties": {
+            "count": {
+              "description": "Number of live notes with this tag or one nested underneath it.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "description": "Tag name without a leading hash.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "count",
+            "name"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bounded tag lookup result.",
+      "properties": {
+        "tags": {
+          "description": "Up to 100 tag names and counts, in literal name order.",
+          "items": {
+            "$ref": "#/definitions/TagCount"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tags"
+      ],
+      "title": "TagsResult",
       "type": "object"
     }
   },

@@ -24,6 +24,15 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "pending.cancel",
         "pending.confirm",
         "pending.submit",
+        // Exercised with passkeys in tests/conformance/notes_cases.rs.
+        "notes.delete",
+        "notes.restore",
+        "notes.rename",
+        "notes.lookup",
+        "tags.list",
+        "tags.lookup",
+        "trash.list",
+        "trash.purge",
         "resolve", // dedicated address matrix in resolver.rs
         "spaces.list",
         "spaces.create",
@@ -100,6 +109,15 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .iter()
                 .map(|p| p.operation.to_string()),
         )
+        .chain(calternal_core::NOTE_OPERATIONS.iter().map(|op| {
+            fixture
+                .state
+                .registry
+                .policy(op.id)
+                .unwrap()
+                .operation
+                .to_string()
+        }))
         .chain(plugin_rows.iter().map(|p| (*p).to_owned()))
         .collect();
     assert_eq!(
@@ -113,6 +131,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_core::account_input_operations().count()
             + calternal_core::REQUEST_OPERATIONS.len()
             + calternal_server::authz::agent_policies().len()
+            + calternal_core::NOTE_OPERATIONS.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"

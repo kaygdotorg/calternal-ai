@@ -1,0 +1,14 @@
+{
+  "data": {
+    "note": {
+      "id": "019aabb0-1100-7111-8111-111111111111",
+      "markdown": "# New Plan\n",
+      "revision": "v2.preview",
+      "space_id": "019aabb0-2200-7222-8222-222222222222",
+      "title": "New Plan",
+      "updated_at": "2026-11-17T06:12:03.000Z"
+    }
+  },
+  "ok": true,
+  "request_id": "req-notes"
+}

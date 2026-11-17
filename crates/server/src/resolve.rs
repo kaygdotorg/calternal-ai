@@ -36,6 +36,7 @@ pub(crate) fn resolve_for(
         kind: kind.into(),
         id: id.into(),
         space_id: space.to_string(),
+        state: None,
         access: Capability::ALL
             .into_iter()
             .filter(|c| caps.contains(*c))
