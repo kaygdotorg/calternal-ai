@@ -4,7 +4,7 @@
   // next or previous section). Double-click or F2 renames a thread in place; right-click (or the menu key) opens its context menu: rename, move to a
   // section, copy link, archive, stop if it is running. A thread's state shows only when it means something (running, waiting for you, failed). A thread
   // that is in the attention card above is not listed here (its children, if any, stand on their own).
-  import { Icon, IconButton, Menu, Row, type MenuItem } from "@calternal/ui";
+  import { Icon, IconButton, InlineEditor, Menu, Row, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
   import StateMark from "./StateMark.svelte";
@@ -33,7 +33,6 @@
     if (kind === "thread") void client.rename(id, draft);
     else layout.rename(id, draft);
   }
-  const focusOnMount = (n: HTMLInputElement) => { n.focus(); n.select(); };
 
   // ---- context menus ----
   let ctx = $state<{ x: number; y: number; thread?: ThreadSummary; section?: string } | null>(null);
@@ -60,7 +59,7 @@
       else if (id.startsWith("move:")) { const to = id.slice(5) || null; layout.move(t.id, to, idsIn(to).length, idsIn(to)); }
       else if (id === "copy") void navigator.clipboard?.writeText(location.origin + href(`/threads/${t.id}`));
       else if (id === "stop") void client.stop(t.id);
-      else if (id === "archive") { void client.archive(t.id); if (current === t.id) navigate("/threads"); }
+      else if (id === "archive") { void client.archive(t.id).then(() => undoable("thread.archive", t.id, "Archived", () => client.unarchive(t.id))); if (current === t.id) navigate("/threads"); }
     } else if (c.section) {
       const s = layout.sections.find((x) => x.id === c.section);
       if (!s) return;
@@ -110,7 +109,7 @@
 
 {#snippet thread(t: ThreadSummary, c: Container, i: number, n: number)}
   {#if editing?.kind === "thread" && editing.id === t.id}
-    <li class="edit"><input class="rename" aria-label="Rename thread" bind:value={draft} use:focusOnMount onblur={commit} onkeydown={(e) => { if (e.key === "Enter") commit(); else if (e.key === "Escape") editing = null; }} /></li>
+    <li class="edit"><InlineEditor class="rename" label="Rename thread" bind:value={draft} autoselect onblur={commit} onsubmit={commit} oncancel={() => (editing = null)} /></li>
   {:else}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <li
@@ -128,12 +127,12 @@
       onkeydown={(e) => keyRow(e, t, c, i, n)}
     >
       <Row title={t.title} href={href(`/threads/${t.id}`)} selected={current === t.id}>
-        {#snippet meta()}{#if t.state === "running" || t.state === "waiting" || t.state === "failed"}<StateMark state={t.state} /><span aria-hidden="true">·</span>{/if}<span>{time(t.updatedAt)}</span>{/snippet}
+        {#snippet trailing()}<span class="tail"><span class="when">{time(t.updatedAt)}</span><StateMark state={t.state} /><Icon inline name={t.provider} /></span>{/snippet}
       </Row>
       {#each kids(t.id) as k (k.id)}
         <Row depth={1} title={k.title} href={href(`/threads/${k.id}`)} selected={current === k.id} onclick={() => {}}>
-          {#snippet meta()}{#if k.state === "running" || k.state === "waiting" || k.state === "failed"}<StateMark state={k.state} /><span aria-hidden="true">·</span>{/if}<span>{time(k.updatedAt)}</span>{/snippet}
-        </Row>
+        {#snippet trailing()}<span class="tail"><span class="when">{time(k.updatedAt)}</span><StateMark state={k.state} /><Icon inline name={k.provider} /></span>{/snippet}
+      </Row>
       {/each}
     </li>
   {/if}
@@ -154,7 +153,7 @@
     <section class="sec" aria-label={s.name}>
       <div class="sh" class:over={over?.c === s.id && !ids.length} role="presentation" ondragover={(e) => { if (dragId) { e.preventDefault(); over = { c: s.id, index: ids.length }; } }} ondrop={(e) => { e.preventDefault(); dropHere(s.id, ids.length); }} oncontextmenu={(e) => openCtx(e, { section: s.id })}>
         {#if editing?.kind === "section" && editing.id === s.id}
-          <input class="rename" aria-label="Rename section" bind:value={draft} use:focusOnMount onblur={commit} onkeydown={(e) => { if (e.key === "Enter") commit(); else if (e.key === "Escape") editing = null; }} />
+          <InlineEditor class="rename" label="Rename section" bind:value={draft} autoselect onblur={commit} onsubmit={commit} oncancel={() => (editing = null)} />
         {:else}
           <button type="button" class="tg" aria-expanded={!s.collapsed} onclick={() => layout.toggle(s.id)} ondblclick={() => edit("section", s.id, s.name)}>
             <span class="chev" class:open={!s.collapsed}><Icon inline name="chevron" /></span><span class="nm">{s.name}</span>
@@ -173,6 +172,9 @@
 <Menu open={!!ctx} items={ctxItems} label={ctx?.thread ? `Thread: ${ctx.thread.title}` : "Section"} anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
 
 <style>
+  .tail { display: inline-flex; align-items: center; gap: var(--s-3); color: var(--ink-3); }
+  .when { display: none; font-size: var(--text-label); font-variant-numeric: tabular-nums; }
+  :global(.row:hover) .when, :global(.row:focus-visible) .when { display: inline; }
   nav { display: grid; gap: var(--s-1); padding-bottom: var(--s-6); }
   ul { display: grid; gap: var(--s-1); }
   li { position: relative; }
@@ -190,8 +192,7 @@
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chev { display: grid; transition: rotate var(--dur-base) var(--ease-out); }
   .chev.open { rotate: 90deg; }
-  .rename { width: 100%; min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.1); color: var(--ink); font-size: var(--text-ui); }
-  .rename:focus, .rename:focus-visible { outline: none; }
+  :global(.rename) { width: 100%; min-height: var(--row-h); padding: 0 var(--s-4); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.1); color: var(--ink); font-size: var(--text-ui); }
   .new { display: flex; align-items: center; gap: var(--s-3); min-height: var(--row-h); margin-top: var(--s-3); padding: 0 var(--s-4); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); font-weight: var(--strong-weight); }
   @media (hover: hover) and (pointer: fine) { .tg:hover, .new:hover { background: var(--hover); color: var(--ink); } }
 </style>
