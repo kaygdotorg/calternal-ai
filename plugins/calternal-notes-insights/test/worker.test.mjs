@@ -22,6 +22,6 @@ test('one worker handles multiple authorized broker-backed invocations',async()=
 });
 test('malformed and oversized frames fail with safe diagnostics',async()=>{
  for(const input of ['{"protocol_version":1}\n','x'.repeat(256*1024+1)]) {
-  const child=spawn(process.execPath,[path.pathname],{stdio:['pipe','pipe','pipe']}); let stdout='',stderr=''; child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.stdin.on('error',()=>{}); const done=once(child,'exit'); child.stdin.end(input); const [code]=await done; assert.notEqual(code,0);assert.equal(stdout,'');assert.equal(stderr,'notes-insights worker protocol failure\n');
+  const child=spawn(process.execPath,[path.pathname],{stdio:['pipe','pipe','pipe']}); let stdout='',stderr=''; child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.stdin.on('error',()=>{}); const done=once(child,'exit'); child.stdin.end(input); const [code]=await done; assert.notEqual(code,0);assert.equal(stdout,'');assert.equal(stderr,'calternal-notes-insights worker protocol failure\n');
  }
 });

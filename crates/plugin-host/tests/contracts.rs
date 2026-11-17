@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 fn manifest() -> ManifestV1 {
     parse_manifest(include_bytes!(
-        "../../../plugins/notes-insights/manifest.json"
+        "../../../plugins/calternal-notes-insights/manifest.json"
     ))
     .unwrap()
 }
