@@ -28,6 +28,8 @@ try {
   await shot("desktop-dark-settings-fonts", "desktop", "dark", "/settings/appearance", async (p) => { await p.getByRole("button", { name: /Interface/ }).click(); await p.waitForTimeout(400); });
   await shot("desktop-dark-wallpaper-aurora", "desktop", "dark", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "ember" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
   await shot("desktop-light-wallpaper-slate", "desktop", "light", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "slate" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
+  await shot("phone-light-settings", "phone", "light", "/settings/appearance");
+  await shot("phone-dark-settings", "phone", "dark", "/settings/appearance");
   await shot("phone-light-thread", "phone", "light", "/threads/t-run");
   await shot("phone-dark-thread", "phone", "dark", "/threads/t-run");
   await shot("phone-light-request", "phone", "light", "/threads/t-wait");

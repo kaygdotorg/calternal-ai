@@ -88,7 +88,7 @@ describe("Toolbar and Card", () => {
 });
 
 describe("Sheet", () => {
-  it("is a modal dialog: focus moves in, Tab is trapped, Escape closes and restores focus", async () => {
+  it("is a modal dialog: focus moves to it, Tab is trapped, Escape closes and restores focus", async () => {
     const opener = document.createElement("button");
     document.body.append(opener);
     opener.focus();
@@ -97,6 +97,8 @@ describe("Sheet", () => {
     await tick();
     const dialog = screen.getByRole("dialog", { name: "Account" });
     expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.activeElement).toBe(dialog);
+    await userEvent.tab();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "First" }));
     screen.getByRole("button", { name: "Last" }).focus();
     await userEvent.tab();

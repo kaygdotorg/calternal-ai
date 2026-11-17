@@ -7,6 +7,7 @@ const browser = await launch();
 const result = {};
 try {
   const { page, ctx } = await open(browser, "desktop", "light", "/threads/t-long");
+  if (process.env.LIVE_BLUR) await page.addStyleTag({ content: ".mid-card { -webkit-backdrop-filter: blur(75px) saturate(140%); backdrop-filter: blur(75px) saturate(140%); } .mid-card::before { background: none !important; }" }); // the approach this replaces: a live blur over the whole card
   await page.waitForSelector('[role="feed"] [role="article"]');
   const count = () => page.evaluate(() => ({ dom: document.getElementsByTagName("*").length, rows: document.querySelectorAll('[role="feed"] [role="article"]').length }));
   result.dom_at_end = await count();
@@ -36,6 +37,22 @@ try {
   await page.waitForTimeout(300);
   result.dom_at_top = await count();
   await ctx.close();
+
+  // Choosing a wallpaper: from the click to the new blurred copies being in place (two canvas renders, one 24 by 14 read, the wash): the one-off cost
+  // that replaces a per-frame blur. Five picks.
+  const w = await open(browser, "desktop", "light", "/settings/appearance");
+  await w.page.waitForSelector('[role="radiogroup"][aria-label="Wallpaper"] [role="radio"]');
+  await w.page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-side").length > 0);
+  const picks = [];
+  for (const name of ["Aurora", "Ember", "Moss", "Slate", "Lagoon"]) {
+    const before = await w.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--wash"));
+    const t0 = Date.now();
+    await w.page.getByRole("radio", { name, exact: true }).click();
+    await w.page.waitForFunction((b) => getComputedStyle(document.documentElement).getPropertyValue("--wash") !== b, before, { polling: "raf", timeout: 5000 });
+    picks.push(Date.now() - t0);
+  }
+  result.wallpaper_pick_ms = { runs: picks, note: "click to applied, includes the 60 ms debounce and Playwright round trips" };
+  await w.ctx.close();
 
   // Streaming: how many elements change while a message streams (the list must not re-render).
   const s = await open(browser, "desktop", "light", "/threads/t-run");

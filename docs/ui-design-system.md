@@ -35,6 +35,29 @@ Tokens are data; surfaces are components. Visual language is ported from the moc
 - **Reduced motion and transparency:** under `prefers-reduced-motion` every duration is 1 ms and every spring
   is linear; under `prefers-reduced-transparency` glass becomes near-opaque.
 
+## From the owner's plugin (`calternal-ui`)
+
+Studied read-only at `/home/kayg/Developer/bb-plugins/calternal-ui` (`frame/css.ts`, `preblur.ts`, `wallpaper.ts`, `color.ts`, `accent.ts`,
+`pill-contrast.ts`, `pills*.ts`, `edge-fade.ts`, `composer.ts`, `shared/defaults.ts`, `shared/fonts.ts`, `server/fonts*.ts`, `server/wallpapers.ts`,
+`ui/settings/*`, `README.md`). It is the look the owner lives in daily and the bar to beat. What was taken, and what was not:
+
+| Plugin | Here |
+| --- | --- |
+| A wallpaper behind flat sidebars; the middle is the only card | Taken (`Backdrop`, `Card variant="pane"`, `RightSidebar`) |
+| The wallpaper is blurred **once**, into a canvas 1/k of the viewport (k up to 8) with saturation baked in, exported as a JPEG blob and shown as a plain background; no live filter | Taken: `appearance/wallpaper.ts` (`preblur.ts` ported; two copies, sidebars' and card's) |
+| Defaults: sidebar blur 12, tint 35, no dim; card blur 75, tint 85, dim 30; saturation 120 % (sidebar) and 140 % (card) | Taken as the defaults, editable in settings |
+| Card glass is two layers of its own (blurred wallpaper copy, then tint and dim), never a backdrop filter on the card, so the composer inside still blurs through | Taken (`Card variant="pane"` `::before` and `::after`) |
+| Card dim: a white wash in light (`min(0.9, dim × 1.5 + 0.2)`), black in dark; a 50 % white wash on the sidebars in light | Dim taken as tokens `card-dim` and `card-dim-a`; the sidebar wash is derived (below) instead of fixed |
+| The average colour and the most vivid hue are read once from a 48 by 48 copy (hues binned by 15 degrees, scored by count times chroma); the accent follows the hue (lightness fixed per scheme, chroma 0.09 to 0.17) | Taken (`colours()`; settings: Accent "From wallpaper") |
+| Pill glass: `blur(16px) saturate(180%) brightness(1.12)` (dark 0.72), clear fill, an inner shade, a 1 px edge and a soft shadow; drawn on a `::before` layer, never a backdrop filter on the button | Taken as tokens `glass-*` (`Glass.svelte`) |
+| `pill-contrast.ts`: a pill gets a faint fill (up to 0.35) only where its backdrop fights its glyphs, estimated from the wallpaper's brightness grid and from "hazards" scrolling under it (images, video, solid blocks) | The wallpaper half is taken (`material()` from the brightness grid, up to 0.35). The hazards half is not: pills here float over chat text, not over arbitrary media, so far |
+| Contrast: ink stays legible whatever the wallpaper (the plugin raised light washes by hand after measuring 2.3 to 2.7:1) | Derived instead of hand-tuned: `washFor` solves for the wash that brings secondary ink to 4.5:1 over the darkest (light scheme) or brightest (dark) cell under the sidebars. Checked by axe on all 8 built-ins in both schemes (`e2e/wallpapers.mjs`) |
+| Edge fade: rows fade progressively as they pass under floating bars (CSS scroll-driven animations, per row) | Not yet: a static mask fades the message list's top and bottom |
+| Fonts per role (interface, chat, code, terminal) from Google, Fontsource, Fontshare, own files, System; stored on the server so pages never load from those sites; SF/system stack for Apple | Taken for three roles (`appearance/fonts.ts`, `SettingsSheet.svelte`); the catalogues are fixture lists until the server exists |
+| Settings sections: Wallpaper (upload, link, library, Unsplash), Glass, Colour and size, Fonts, Wordmark, Storage | Wallpaper (upload, library, Unsplash), Glass, Colour, Fonts. Not yet: paste a link, Wordmark, Storage list with sizes |
+| The composer is one tidy row: model, context, permission, environment | Taken as three chips (provider and model, permission, where it runs) with labels that shorten on the composer's own width |
+| The thread title is a pill; wordmark row with the sidebar button at the other end; swipe gestures on phones; root size 17.6 px; card corner 62 px with squircle corners; 12 px gap | Not taken: sizes follow the native study (13 px text, pane radius 20, inset 8); title pill, wordmark and gestures are still to build |
+
 ## Native values (decided 2026-11-17)
 
 Where `docs/native-ui-study.md` section 7.2 measured something different from the mockup, the system follows native. Each
@@ -54,17 +77,52 @@ is one token in `tokens.json`, so a change is a one-line edit followed by `npm r
 
 Kept from the mockup deliberately: the narrow centred Notes column. Reading text stays at `text-body` (15 on a desktop).
 
+## Wallpaper
+
+`appearance/wallpaper.ts`. Choosing a wallpaper (a built-in, an upload, an Unsplash photo saved by the server) costs one pass: two canvas renders
+(the sidebars' copy at the chosen blur, the card's much blurrier copy), one 24 by 14 brightness read and one 48 by 48 colour read. The results are
+CSS variables (`--wall-side`, `--wall-card`, `--wash`) and a brightness grid handed to `setBackdropField`; nothing runs per frame and no
+`backdrop-filter` covers a large area. A resize re-renders after 400 ms. The wash over the sidebars is `washFor(scheme, range, base)`: the wash
+that brings `ink-3` to 4.5:1 over the worst cell under the sidebars, never below the chosen tint (35 % by default) and never above 0.9.
+
+The built-in set (`appearance/library.ts`) is eight palettes painted on a canvas (Dune, Lagoon, Aurora, Ember, Orchid, Moss, Slate, Paper), not
+photographs: no image files ship, and every one has a light and a dark region. "Automatic" (the default) uses Dune in the light scheme and Aurora in
+the dark. Uploads are images the person chooses (IndexedDB here, the server later). Unsplash search goes through `WallpaperLibrary.search`; the real
+one needs the server's access key and returns the photo's credit, which the settings sheet shows as the licence asks.
+
+## Fonts
+
+Defaults, exactly as the existing app: Google Sans Flex for all UI text, in its light family (weight and optical size) or, in the dark scheme, its
+Dark family (the same plus GRAD 30: more ink, identical advance widths); Maple Mono (400, 500) for code. Weights 440 (UI), 460 (reading text) and 620
+(emphasis); optical size follows the font size (`font-optical-sizing: auto`). The Rounded family is used only where the existing app uses it, with
+`font-variation-settings: "ROND" 100`: the app name in the sidebar header. No system font is in any default stack, nothing paints until the
+active family is loaded, and `registerFonts` (`packages/ui`) adds the faces under the app's mount path.
+
+Why the text was reported as not reading as Google Sans Flex: `e2e/font-compare.mjs` renders the same sentences at 13, 17 and 19 px and weights 440,
+460 and 620 twice, once with the existing app's own CSS (its `@font-face` rules and body settings, taken from `origin/review/switcher-a-pills`) and once
+through this app. The glyphs and advance widths are identical; the faces are the same files with the same axes. Three real differences were found
+and fixed: the Rounded family was drawn without `"ROND" 100`, so the app name was not rounded at all; Rounded was also applied to the avatar
+initial, where the existing app does not use it; and the text sat at 14 to 15 px with the heavier 620 weight in more places than the existing app
+(the owner's 13 px and the existing weights are now the only ones). A browser that fails to load the font (a wrong base path, a blocked file) would
+show a system face; `e2e/preview-check.mjs` checks on the deployed copy that Google Sans Flex and Maple Mono are loaded.
+
+Font choice is a setting per role (interface, chat, code): sources Google Fonts, Fontsource, Fontshare, own files and System. The server will
+download a chosen family once and serve it from its own storage; `FontLibrary.install` is that call. Own files are registered in the browser
+(`FontFace`) with weights and italics read from their file names. In this fixture only the shipped families and own files can be drawn; the others are
+listed and say they need the server.
+
 ## Adaptive material
 
 `lib/material.ts`. A surface uses `use:adaptive` (the components do it themselves). The background is a
 colour mesh, the same data that paints it; the brightness behind a surface is nine interpolations of that
-mesh inside the surface's rectangle. `material(scheme, behind, role)` returns the tint alpha and blur:
-unchanged over a calm backdrop, denser (up to +0.45 alpha) and slightly blurrier where the backdrop fights
+mesh inside the surface's rectangle (or, with a wallpaper, of the brightness grid read from its blurred copy). `material(scheme, behind, role)` returns the tint alpha and blur:
+unchanged over a calm backdrop, denser (up to +0.35 alpha, the plugin's limit) and slightly blurrier where the backdrop fights
 the ink. Values are written once per layout change as `--mat-a` and `--mat-blur` on the surface (batched in
 one animation frame, reads before writes). Nothing runs on scroll and no pixel is ever read.
 
-The blur is capped near the mockup's floating-glass 20 px: the headless Chromium used for screenshots stops
-blurring beyond about 24 px, so a larger value would not be verifiable here.
+Pills and sheets blur 16 px (the owner's plugin and iOS). The middle card's blur is baked into its own copy of the wallpaper, so it can be
+75 px with no per-frame cost. (A live blur above about 24 px is not drawn by the headless Chromium used for screenshots, which is one more reason
+a large live blur is avoided.)
 
 ## Surfaces
 

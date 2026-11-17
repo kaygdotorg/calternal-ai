@@ -3,6 +3,7 @@
   // glass strengths, colour scheme and accent, and a font per role (interface, chat, code) from Google Fonts, Fontsource, Fontshare, the person's own
   // files or the system. Everything goes through the adapters in library.ts and fonts.ts, so the real server plugs in without changes here.
   import { Button, Capsule, Icon, IconButton, Row, Sheet } from "@calternal/ui";
+  import Slider from "./Slider.svelte";
   import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import type { StockResult } from "./library";
   import { appearance as A } from "./prefs.svelte";
@@ -66,7 +67,7 @@
     error = "";
     try {
       await A.fonts.install(f);
-      A.change((x) => (x.fonts[role] = { family: f.family, source: f.source }));
+      A.change((x) => (x.fonts = { ...x.fonts, [role]: { family: f.family, source: f.source } }));
     } catch (err) {
       error = (err as Error).message;
     }
@@ -92,10 +93,6 @@
     onclose();
   }
 </script>
-
-{#snippet slider(name: string, unit: string, min: number, max: number, value: number, set: (v: number) => void)}
-  <label class="slider"><span>{name}</span><output>{value}{unit}</output><input type="range" {min} {max} {value} oninput={(e) => set(+e.currentTarget.value)} /></label>
-{/snippet}
 
 <Sheet {open} label="Appearance settings" onclose={close} side={shell.narrow ? "bottom" : "right"}>
   <div class="in">
@@ -133,11 +130,11 @@
 
       <section aria-labelledby="s-glass">
         <h2 id="s-glass">Glass</h2>
-        {@render slider("Sidebar blur", " px", 0, 40, p.side.blur, (v) => A.change((x) => (x.side.blur = v)))}
-        {@render slider("Sidebar tint", " %", 0, 100, p.side.tint, (v) => A.change((x) => (x.side.tint = v)))}
-        {@render slider("Card blur", " px", 0, 100, p.card.blur, (v) => A.change((x) => (x.card.blur = v)))}
-        {@render slider("Card tint", " %", 0, 100, p.card.tint, (v) => A.change((x) => (x.card.tint = v)))}
-        {@render slider("Card dim", " %", 0, 100, p.card.dim, (v) => A.change((x) => (x.card.dim = v)))}
+        <Slider label="Sidebar blur" unit=" px" min={0} max={40} value={p.side.blur} onchange={(v) => A.change((x) => (x.side.blur = v))} />
+        <Slider label="Sidebar tint" unit=" %" min={0} max={100} value={p.side.tint} onchange={(v) => A.change((x) => (x.side.tint = v))} />
+        <Slider label="Card blur" unit=" px" min={0} max={100} value={p.card.blur} onchange={(v) => A.change((x) => (x.card.blur = v))} />
+        <Slider label="Card tint" unit=" %" min={0} max={100} value={p.card.tint} onchange={(v) => A.change((x) => (x.card.tint = v))} />
+        <Slider label="Card dim" unit=" %" min={0} max={100} value={p.card.dim} onchange={(v) => A.change((x) => (x.card.dim = v))} />
         <p class="note">Text stays readable whatever the picture: the sidebar tint grows where the picture is too bright or too dark for it.</p>
       </section>
 
@@ -145,7 +142,7 @@
         <h2 id="s-col">Colour</h2>
         <Capsule label="Colour scheme" kind="radio" glass={false} items={[{ id: "system", label: "System", icon: "apps" }, { id: "light", label: "Light", icon: "sun" }, { id: "dark", label: "Dark", icon: "moon" }]} value={A.scheme} onchange={(v) => A.setScheme(v as never)} />
         <Capsule label="Accent colour" kind="radio" glass={false} items={[{ id: "default", label: "Amber" }, { id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }]} value={p.accent} onchange={(v) => A.change((x) => (x.accent = v as never))} />
-        {#if p.accent === "custom"}<label class="slider"><span>Accent</span><output>{p.accentColor}</output><input type="color" value={p.accentColor} oninput={(e) => A.change((x) => (x.accentColor = e.currentTarget.value))} /></label>{/if}
+        {#if p.accent === "custom"}<label class="color"><span>Accent colour</span><input type="color" value={p.accentColor} oninput={(e) => A.change((x) => (x.accentColor = e.currentTarget.value))} /></label>{/if}
       </section>
 
       <section aria-labelledby="s-font">
@@ -207,11 +204,9 @@
   .file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
   .file:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
   .field, .search input { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); width: 100%; }
-  .search input { flex: 1 1 10rem; width: auto; }
+  .search input { flex: 1 1 7rem; width: auto; }
   :global(.sources) { --seg-pad: var(--s-2); }
-  .slider { display: grid; grid-template-columns: 1fr auto; gap: var(--s-2) var(--s-4); align-items: center; font-weight: var(--strong-weight); }
-  .slider output { color: var(--ink-3); font-variant-numeric: tabular-nums; font-weight: var(--ui-weight); }
-  .slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent-base); min-height: var(--s-8); }
+  .color { display: flex; align-items: center; justify-content: space-between; font-weight: var(--strong-weight); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   .note a { color: var(--accent); }
   .err { color: var(--danger); font-size: var(--text-label); }

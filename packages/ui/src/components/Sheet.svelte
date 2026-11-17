@@ -16,7 +16,7 @@
   $effect(() => {
     if (!open || !box) return;
     from = document.activeElement as HTMLElement | null;
-    (box.querySelector<HTMLElement>(FOCUSABLE) ?? box).focus();
+    box.focus(); // the dialog itself: announced by name, and no focus ring until the person presses Tab
     return () => from?.focus?.();
   });
   function onkey(e: KeyboardEvent) {
@@ -46,6 +46,7 @@
 
 <style>
   .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
+  .sheet:focus { outline: none; }
   .sheet { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); }
   .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); animation: up var(--dur-slow) var(--spring); }
   .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); animation: in var(--dur-slow) var(--spring); }

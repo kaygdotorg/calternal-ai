@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/svelte";
+import { render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
@@ -27,12 +27,16 @@ describe("composer", () => {
     expect(onpermission).toHaveBeenCalledWith("full");
     expect(onrunson).not.toHaveBeenCalled();
   });
-  it("where it runs offers each machine sandboxed or direct", async () => {
+  it("where it runs is two choices, a machine then Sandboxed or Direct, in one picker", async () => {
     const onrunson = vi.fn();
     render(Composer, props({ onrunson }));
     await userEvent.click(screen.getByRole("button", { name: "dev-02 · Sandboxed" }));
-    await userEvent.click(screen.getByRole("menuitemradio", { name: /laptop · Direct/ }));
-    expect(onrunson).toHaveBeenCalledWith({ machine: "laptop", mode: "direct" });
+    const picker = screen.getByRole("dialog", { name: "Where it runs" });
+    expect(within(picker).getByRole("radiogroup", { name: "Machine" })).toBeTruthy();
+    await userEvent.click(within(picker).getByRole("radio", { name: "laptop" }));
+    expect(onrunson).toHaveBeenLastCalledWith({ machine: "laptop", mode: "sandboxed" });
+    await userEvent.click(within(picker).getByRole("radio", { name: /Direct/ }));
+    expect(onrunson).toHaveBeenLastCalledWith({ machine: "dev-02", mode: "direct" });
   });
   it("Enter sends, Shift+Enter does not, and the send button is named", async () => {
     const onsend = vi.fn();

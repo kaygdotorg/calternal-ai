@@ -2,7 +2,7 @@
   // The message field on its own glass. Enter sends, Shift+Enter is a new line; while a turn runs the same field steers it and the
   // send button becomes Stop. The provider control chooses who answers the next message: it changes nothing visible in the thread
   // (the handover is internal), and never creates a thread.
-  import { Glass, IconButton, Menu, Pill, Sheet, adaptive, currentForm, type MenuItem } from "@calternal/ui";
+  import { Button, Glass, IconButton, Menu, Pill, Sheet, adaptive, currentForm, type MenuItem } from "@calternal/ui";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import { shell } from "../../shell/shell.svelte";
   import type { Permission, ProviderOption, RunsOn, ThreadSummary } from "./model";
@@ -120,7 +120,7 @@
 </div>
 
 {#if sheet}
-  <Sheet open={whereOpen} label="Where it runs" onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /></Sheet>
+  <Sheet open={whereOpen} label="Where it runs" onclose={() => (whereOpen = false)}><RunsOnPicker {machines} value={thread.runsOn} onchange={onrunson} /><div class="done"><Button variant="primary" text="Done" onclick={() => (whereOpen = false)} /></div></Sheet>
 {/if}
 
 <style>
@@ -140,7 +140,8 @@
   .mach { max-width: 14em; }
   .where { flex-shrink: 1; min-width: var(--pill-h); }
   @container cmp (max-width: 680px) { .long { display: none; } .mid { display: inline; } .where .long { display: inline; } .mach { max-width: 6em; } }
-  @container cmp (max-width: 480px) { .long, .mid, .mach { display: none; } .chip :global(.pill) { padding: 0; } }
+  @container cmp (max-width: 480px) { .long, .mid, .mach, .where .long { display: none; } .chip :global(.pill) { padding: 0; } }
+  .done { display: flex; justify-content: flex-end; padding: 0 var(--s-5) var(--s-5); }
   .pop { position: absolute; z-index: 30; bottom: calc(100% + var(--s-3)); left: 0; min-width: 18rem; isolation: isolate; border-radius: var(--r-card); animation: pop var(--dur-base) var(--ease-out); transform-origin: bottom left; }
   @keyframes pop { from { opacity: 0; scale: var(--enter-scale); } }
 </style>
