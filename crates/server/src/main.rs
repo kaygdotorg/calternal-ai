@@ -159,7 +159,10 @@ async fn serve(
     };
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = Registry::load_with_tests(&plugin_root, test_root.as_deref());
+    let registry = match &test_root {
+        Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
+        None => Registry::load(&plugin_root),
+    };
     let node = match plugins::resolve_node(node.as_deref()).await {
         Ok(n) => {
             tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");

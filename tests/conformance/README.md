@@ -6,6 +6,10 @@ an ephemeral listener; `ORIGIN` is the fixed WebAuthn relying-party origin, not 
 fixed listening port. Each fixture owns a fresh temporary root and kills/reaps
 only its child process. Run serially to keep race evidence interpretable.
 
+The binary must be built with the `test-plugins` feature: fixtures pass
+`--test-plugin-root tests/plugins` so the test-only `jobs-demo` plugin (plugin
+writes, jobs, streams, cancellation) is trusted; `jobs_cases.rs` holds those cases.
+
 Accounts enroll and sign in through the HTTP passkey routes using the same
 software-authenticator approach as `crates/server/tests/account_common/mod.rs`.
 The software authenticator cannot store discoverable credentials, so fixtures
@@ -24,7 +28,7 @@ On hd01, **edit/sync only**. Build and test on the dedicated dev VM lane:
 git ls-files -co --exclude-standard -z | tar --null --ignore-failed-read -T - -cf - | ssh claude@calternal-dev-01-compute02 'mkdir -p ~/Developer/lanes/isolation-conformance-sol && cd ~/Developer/lanes/isolation-conformance-sol && tar xf -'
 
 # In ~/Developer/lanes/isolation-conformance-sol on the dev VM:
-nix develop -c cargo build --locked -j4 -p calternal-server
+nix develop -c cargo build --locked -j4 -p calternal-server --features test-plugins
 nix develop -c npm ci --ignore-scripts --no-audit --no-fund
 nix develop -c npm run build:plugins
 nix develop -c sh -c 'umask 022; CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" CONFORMANCE_RESULTS="$PWD/tests/conformance/corrected-results" cargo test --locked --manifest-path tests/conformance/Cargo.toml -j4 --test isolation -- --test-threads=1'

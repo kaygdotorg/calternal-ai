@@ -1,0 +1,285 @@
+//! Plugin job and plugin write conformance over TCP HTTP, using the test-only
+//! `jobs-demo` plugin (`tests/plugins`, trusted only by a `test-plugins` build).
+//!
+//! Accounts: 1 owns `spaces[0]`; 2 owns `spaces[1]` and is no member of `spaces[0]`.
+use super::*;
+
+/// Enable `jobs-demo` in `space` as `who` (an owner). Idempotent.
+pub async fn enable(f: &Fixture, who: usize, space: &str) {
+    f.op(
+        who,
+        "plugins.enable",
+        json!({"space_id":space,"plugin_id":"jobs-demo"}),
+    )
+    .await
+    .ok();
+}
+
+/// Enable `jobs-demo`, start a job with `input` and return its ID.
+pub async fn start_job(f: &Fixture, who: usize, space: &str, input: Value) -> String {
+    enable(f, who, space).await;
+    let mut input = input;
+    input["space_id"] = json!(space);
+    let r = f.op(who, "jobs-demo.start", input).await;
+    r.ok();
+    r.body["data"]["job_id"].as_str().unwrap().to_owned()
+}
+
+async fn job(f: &Fixture, who: usize, id: &str) -> Answer {
+    f.op(who, "jobs.get", json!({"job_id":id})).await
+}
+
+/// Poll until the job satisfies `done`, returning its record.
+async fn until(f: &Fixture, who: usize, id: &str, done: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(30);
+    loop {
+        let r = job(f, who, id).await;
+        if r.status == 200 && done(&r.body["data"]["job"]) {
+            return r.body["data"]["job"].clone();
+        }
+        assert!(Instant::now() < end, "job condition never held: {}", r.body);
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
+/// One server-sent event: name, id and JSON data.
+type Event = (String, Option<String>, Value);
+
+/// A job event stream read incrementally over HTTP.
+struct Sse {
+    response: reqwest::Response,
+    buffer: String,
+}
+
+impl Sse {
+    /// Open `/api/v1/jobs/<id>/events`; a refusal returns its status and JSON body.
+    async fn open(
+        f: &Fixture,
+        cookie: &str,
+        id: &str,
+        after: Option<&str>,
+    ) -> Result<Self, (u16, Value)> {
+        let query = after.map(|a| format!("?after={a}")).unwrap_or_default();
+        let response = f
+            .client
+            .get(format!("{}/api/v1/jobs/{id}/events{query}", f.base))
+            .header("host", "localhost:18080")
+            .header("origin", ORIGIN)
+            .header("cookie", cookie)
+            .send()
+            .await
+            .unwrap();
+        if response.status() != 200 {
+            let status = response.status().as_u16();
+            return Err((status, response.json().await.unwrap_or(Value::Null)));
+        }
+        Ok(Self {
+            response,
+            buffer: String::new(),
+        })
+    }
+
+    /// The next event, or `None` when the stream closes or stays silent for 10 s.
+    async fn next(&mut self) -> Option<Event> {
+        loop {
+            if let Some(i) = self.buffer.find("\n\n") {
+                let block: String = self.buffer.drain(..i + 2).collect();
+                if block.starts_with(':') {
+                    continue;
+                }
+                let (mut name, mut id, mut data) = (String::new(), None, Value::Null);
+                for line in block.lines() {
+                    if let Some(v) = line.strip_prefix("event: ") {
+                        name = v.into();
+                    } else if let Some(v) = line.strip_prefix("id: ") {
+                        id = Some(v.into());
+                    } else if let Some(v) = line.strip_prefix("data: ") {
+                        data = serde_json::from_str(v).unwrap();
+                    }
+                }
+                return Some((name, id, data));
+            }
+            match tokio::time::timeout(Duration::from_secs(10), self.response.chunk()).await {
+                Ok(Ok(Some(bytes))) => self.buffer.push_str(&String::from_utf8_lossy(&bytes)),
+                _ => return None,
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn job_streams_in_order_checkpoints_and_resumes_after_kill() {
+    let mut f = Fixture::new().await;
+    let s = f.spaces[0].clone();
+    let id = start_job(&f, 1, &s, json!({"steps":40,"delay_ms":40,"every":5})).await;
+    let mut sse = Sse::open(&f, &f.cookies[1], &id, None).await.unwrap();
+    let (name, _, snapshot) = sse.next().await.unwrap();
+    assert_eq!(name, "snapshot");
+    assert_eq!(snapshot["job"]["id"], json!(id));
+    let mut last = None;
+    for expected in 0..8u64 {
+        let (name, event_id, data) = sse.next().await.unwrap();
+        assert_eq!(name, "chunk");
+        assert_eq!(data, json!({"seq":expected,"data":{"step":expected}}));
+        last = event_id;
+    }
+    let last = last.unwrap();
+    until(&f, 1, &id, |j| j["checkpoint_seq"].as_u64() >= Some(10)).await;
+    drop(sse);
+    // SIGKILL mid-run: chunks are lost, the record and its checkpoint are not.
+    f.stop();
+    f.start().await;
+    let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+    let resumed = done["result"]["resumed_from"].as_u64().unwrap();
+    assert!(
+        resumed >= 10 && resumed % 5 == 0,
+        "not resumed from a checkpoint: {done}"
+    );
+    assert_eq!(done["result"]["steps"], 40);
+    // Reconnecting with the old cursor: the run epoch changed, so a reset precedes
+    // the final record.
+    let mut sse = Sse::open(&f, &f.cookies[1], &id, Some(&last))
+        .await
+        .unwrap();
+    let names: Vec<String> = {
+        let mut names = vec![];
+        while let Some((name, _, data)) = sse.next().await {
+            if name == "end" {
+                assert_eq!(data["job"]["state"], "done");
+            }
+            names.push(name);
+        }
+        names
+    };
+    assert_eq!(names.first().map(String::as_str), Some("snapshot"));
+    assert!(
+        names.iter().any(|n| n == "reset"),
+        "no reset after restart: {names:?}"
+    );
+    assert_eq!(names.last().map(String::as_str), Some("end"));
+    evidence("job-restart", json!({"job":done,"events":names}));
+}
+
+#[tokio::test]
+async fn jobs_are_invisible_outside_their_space_and_cancel_discards_output() {
+    let f = Fixture::new().await;
+    let s = f.spaces[0].clone();
+    let id = start_job(&f, 1, &s, json!({"steps":1000,"delay_ms":20,"every":10})).await;
+    until(&f, 1, &id, |j| j["state"] == "running").await;
+    let missing = uuid::Uuid::now_v7().to_string();
+    // Account 2 is no member of the job's space: every surface answers like a missing ID.
+    for op in ["jobs.get", "jobs.cancel"] {
+        let x = f.op_id(2, op, json!({"job_id":id}), "probe").await;
+        let y = f.op_id(2, op, json!({"job_id":missing}), "probe").await;
+        assert_eq!(x.status, 404, "{op}: {}", x.body);
+        assert_eq!(x.signature(), y.signature(), "{op} reveals the job");
+    }
+    let x = Sse::open(&f, &f.cookies[2], &id, None).await.err().unwrap();
+    let y = Sse::open(&f, &f.cookies[2], &missing, None)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(x.0, 404);
+    assert_eq!(x, y, "the event stream reveals the job");
+    // The owner watches, then cancels; the stream ends with the cancelled record.
+    let mut sse = Sse::open(&f, &f.cookies[1], &id, None).await.unwrap();
+    assert_eq!(sse.next().await.unwrap().0, "snapshot");
+    let r = f.op(1, "jobs.cancel", json!({"job_id":id})).await;
+    r.ok();
+    assert_eq!(r.body["data"]["job"]["state"], "cancelled");
+    let mut end = None;
+    while let Some((name, _, data)) = sse.next().await {
+        if name == "end" {
+            end = Some(data);
+        }
+    }
+    assert_eq!(end.unwrap()["job"]["state"], "cancelled");
+    let at_cancel = job(&f, 1, &id).await.body["data"]["job"].clone();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        job(&f, 1, &id).await.body["data"]["job"],
+        at_cancel,
+        "late output changed the job"
+    );
+}
+
+#[tokio::test]
+async fn running_job_stops_when_its_starter_signs_out() {
+    let mut f = Fixture::new().await;
+    let s = f.spaces[0].clone();
+    let other = f.login(1).await;
+    other.ok();
+    let other = other.cookie();
+    let id = start_job(&f, 1, &s, json!({"steps":1000,"delay_ms":20,"every":5})).await;
+    until(&f, 1, &id, |j| j["state"] == "running").await;
+    let r = f.auth("logout", Some(&f.cookies[1]), json!({})).await;
+    assert_eq!(r.status, 204);
+    // The job was started on the signed-out installation: its next host call is
+    // refused and it fails. The account's other session can still read the record.
+    f.cookies[1] = other;
+    let failed = until(&f, 1, &id, |j| j["state"] == "failed").await;
+    assert!(failed["checkpoint_seq"].as_u64().unwrap() < 1000);
+}
+
+#[tokio::test]
+async fn plugin_write_after_sign_out_does_not_land() {
+    let mut f = Fixture::new().await;
+    let s = f.spaces[0].clone();
+    enable(&f, 1, &s).await;
+    // Positive control: the same write lands with a live session.
+    f.op(
+        1,
+        "jobs-demo.write",
+        json!({"space_id":s,"text":"written-before"}),
+    )
+    .await
+    .ok();
+    f.stop();
+    gate_runtime(&f);
+    f.start().await;
+    let (client, base, cookie) = (f.client.clone(), f.base.clone(), f.cookies[1].clone());
+    let body = json!({"request_id":"late-write","operation":"jobs-demo.write","input":{"space_id":s,"text":"written-after-sign-out"}});
+    let task = tokio::spawn(async move {
+        client
+            .post(format!("{base}/api/v1/operations"))
+            .header("host", "localhost:18080")
+            .header("origin", ORIGIN)
+            .header("cookie", cookie)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    });
+    let marker = f.dir.path().join("worker-entered");
+    for _ in 0..300 {
+        if marker.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(marker.exists(), "worker did not reach barrier");
+    let r = f.auth("logout", Some(&f.cookies[1]), json!({})).await;
+    assert_eq!(r.status, 204);
+    std::fs::write(f.dir.path().join("worker-release"), "").unwrap();
+    let status = task.await.unwrap().status().as_u16();
+    assert_eq!(status, 401);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let mut files = vec![];
+    walk(f.dir.path(), f.dir.path(), &mut files);
+    let contents: Vec<String> = files
+        .iter()
+        .filter(|v| v["directory"] == false)
+        .filter_map(|v| std::fs::read(f.dir.path().join(v["path"].as_str()?)).ok())
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+        .collect();
+    assert!(
+        contents.iter().any(|c| c.contains("written-before")),
+        "control write missing"
+    );
+    assert!(
+        !contents
+            .iter()
+            .any(|c| c.contains("written-after-sign-out")),
+        "a plugin write landed after sign-out"
+    );
+}

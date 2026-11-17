@@ -32,8 +32,9 @@ receipts for writes. Secret requests accept `{ "name": "declared-name" }` and re
 `{ "handle": "opaque-host-issued-id" }`; other response shapes are redacted. `start_job`
 returns `{ "job_id": "host-issued-id" }`; only jobs admitted for this invocation
 may emit chunks, whose sequence starts at zero across that invocation. These are
-ephemeral chunks; durable job admission/checkpoints/replay belong to a later host
-adapter. `next_delivery` rechecks current authority before returning queued data.
+ephemeral chunks; the server's job service (`crates/server/src/plugins/jobs.rs`) owns
+durable admission, checkpoints and replay, and attaches a host-started run invocation
+to its job with `attach_job`. `next_delivery` rechecks current authority before returning queued data.
 `next_outgoing` also rechecks current authority before releasing an invocation or
 callback reply to the transport. Adapters must deliver immediately after draining,
 and keep their final storage/network checks atomic with protected effects.

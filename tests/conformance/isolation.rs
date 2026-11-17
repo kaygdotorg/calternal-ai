@@ -17,6 +17,10 @@ use std::{
 use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};
 use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse};
 
+/// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
+#[path = "jobs_cases.rs"]
+mod jobs_cases;
+
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
     ("GET", "status"),
@@ -156,6 +160,9 @@ impl Fixture {
                 .arg(self.dir.path())
                 .arg("--plugin-root")
                 .arg(repo.join("plugins"))
+                // The binary is built with `test-plugins`; see README.
+                .arg("--test-plugin-root")
+                .arg(repo.join("tests/plugins"))
                 .current_dir(repo)
                 .env_clear()
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
@@ -448,8 +455,21 @@ fn evidence(name: &str, value: Value) {
 async fn all_operations_hide_foreign_ids() {
     let f = Fixture::new().await;
     let n = f.note(1, &f.spaces[0]).await;
+    let job = jobs_cases::start_job(
+        &f,
+        1,
+        &f.spaces[0],
+        json!({"steps":1,"delay_ms":0,"every":1}),
+    )
+    .await;
     let missing = uuid::Uuid::now_v7().to_string();
     let cases = vec![
+        ("jobs.get", json!({"job_id":job}), json!({"job_id":missing})),
+        (
+            "jobs.cancel",
+            json!({"job_id":job}),
+            json!({"job_id":missing}),
+        ),
         (
             "resolve",
             json!({"kind":"notes","id":n["id"]}),
