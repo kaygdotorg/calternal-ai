@@ -100,6 +100,7 @@ impl Fixture {
             )
             .unwrap();
             let state = Arc::new(AppState {
+                inputs: calternal_server::account_input::Inputs::new(&root, Default::default()),
                 store: Mutex::new(Store::open(&root).unwrap()),
                 tokens,
                 registry: Registry::empty(),

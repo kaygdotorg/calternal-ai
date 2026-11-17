@@ -34,6 +34,20 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Save, read and erase private account compositions.
+    Drafts {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::account_input::Drafts,
+    },
+    /// Queue, edit, confirm, submit or cancel private pending input.
+    Pending {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::account_input::Pending,
+    },
     /// Follow a space journal; --json prints one compact JSON object per event.
     Watch {
         space: String,
@@ -133,6 +147,15 @@ fn main() {
     // Reads the local time zone, which is only safe before any thread starts.
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
+        Cmd::Drafts { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Pending { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
         Cmd::Watch {
             space,
             base_url,
@@ -365,6 +388,12 @@ async fn serve(
         plugins::Jobs::open(&data_dir).map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
+        inputs: calternal_server::account_input::Inputs::new(
+            &data_dir,
+            calternal_server::account_input::Limits::from_env()
+                .map_err(|e| CliError::new("invalid_input", e.message))?,
+        )
+        .with_content(store.shared_content()),
         store: Mutex::new(store),
         tokens,
         registry,

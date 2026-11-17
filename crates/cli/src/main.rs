@@ -56,6 +56,14 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    Drafts {
+        #[command(subcommand)]
+        command: calternal_cli::account_input::Drafts,
+    },
+    Pending {
+        #[command(subcommand)]
+        command: calternal_cli::account_input::Pending,
+    },
     #[command(
         about = "Follow a space and print changes as they arrive",
         after_help = "Examples:\n  cl watch <space-id>\n  cl watch <space-id> --json\n\nSee also: cl describe --help."
@@ -316,6 +324,16 @@ fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
     let (operation, mut input) = match command {
+        Command::Drafts { command } => {
+            let (op, input) = command.operation();
+            (op.into(), input)
+        }
+        Command::Pending { command } => {
+            let (op, input) = command
+                .operation()
+                .map_err(|_| "cannot read pending input; use --help")?;
+            (op.into(), input)
+        }
         Command::Watch { .. } => return Err("watch is a stream".into()),
         Command::Describe => return Err("describe is not an operation".into()),
         Command::Invoke { operation, input } => {

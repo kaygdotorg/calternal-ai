@@ -62,7 +62,8 @@ pub struct Policy {
     pub constraint: Constraint,
 }
 
-/// Exhaustive host binding policies; new bindings must add a policy and matrix row.
+/// Space and secrets host binding policies; account-input policies are derived
+/// from core by [`policy`]. new bindings must add a policy and matrix row.
 /// Plugin operations are never listed here: their rows are derived from registered
 /// manifests by [`crate::plugins::Registry`], and an operation with neither row fails
 /// closed instead of receiving inferred authority.
@@ -214,7 +215,21 @@ pub const POLICIES: &[Policy] = &[
 /// Find an explicit host policy using a bounded, allocation-free scan.
 /// Plugin rows are looked up through [`crate::plugins::Registry::policy`].
 pub fn policy(operation: &str) -> Option<&'static Policy> {
-    POLICIES.iter().find(|p| p.operation == operation)
+    static ACCOUNT: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    let account = ACCOUNT.get_or_init(|| {
+        calternal_core::account_input_operations()
+            .map(|id| Policy {
+                operation: Cow::Borrowed(id),
+                required: Capability::SpaceRead,
+                scope: Scope::Account,
+                constraint: Constraint::None,
+            })
+            .collect()
+    });
+    POLICIES
+        .iter()
+        .chain(account)
+        .find(|p| p.operation == operation)
 }
 
 impl Policy {

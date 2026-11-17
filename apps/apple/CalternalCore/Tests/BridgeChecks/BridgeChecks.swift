@@ -45,6 +45,23 @@ public enum BridgeChecks {
             _ = try await events.next()
             throw CheckFailure.failed("expected live cancellation")
         } catch NativeError.Cancelled { }
+        let accountCancellation = NativeCancellation()
+        let accountLive = try await client.subscribeAccount(bookmark: nil, cancellation: accountCancellation)
+        let accountReadyJson = try await accountLive.next()
+        try require(try object(accountReadyJson)["type"] as? String == "ready", "account ready")
+        try await accountLive.accept(frameJson: accountReadyJson)
+        let draftItem = UUID().uuidString.lowercased()
+        let draftSave = try NativeRequest(operation: "drafts.save", inputJson: input(["space_id": space, "item_id": draftItem, "text": "Swift private draft"]), requestId: nil)
+        _ = try await client.call(request: draftSave, cancellation: cancellation)
+        let changedJson = try await accountLive.next()
+        try require(try object(changedJson)["type"] as? String == "changed", "account draft invalidation")
+        let draftGet = try NativeRequest(operation: "drafts.get", inputJson: input(["space_id": space, "item_id": draftItem]), requestId: nil)
+        let privateDraft = try object(await client.call(request: draftGet, cancellation: cancellation))
+        try require((privateDraft["record"] as? [String: Any])?["text"] as? String == "Swift private draft", "account draft reload")
+        try await accountLive.accept(frameJson: changedJson)
+        accountCancellation.cancel()
+        do { _ = try await accountLive.next(); throw CheckFailure.failed("expected account cancellation") }
+        catch NativeError.Cancelled { }
         let create = try NativeRequest(operation: "notes.create", inputJson: input(["space_id": space, "title": "Swift bridge", "markdown": "First\n"]), requestId: nil)
         let first = try object(await client.call(request: create, cancellation: cancellation))
         let replay = try object(await client.call(request: create, cancellation: cancellation))

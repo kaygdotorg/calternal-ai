@@ -152,3 +152,8 @@ Human output uses labelled fields. Reconnect uses accepted signed bookmarks;
 That directory must be exclusive to this server and signed-in account; discard it
 on sign-out or account changes. Without the option, bookmarks stay in memory.
 A reset stops watch: reload the authorized space before discarding its old bookmark.
+
+`calternal drafts` and `calternal pending` manage private account input through
+the same shared operation route and output renderer as `cl drafts` / `cl pending`.
+See [account input](account-input.md) for queue files, stable nested request IDs,
+seven-day confirmation, examples and operator safety ceilings.
