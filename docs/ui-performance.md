@@ -214,3 +214,17 @@ Taken out of the first load: the Notes app (list, middle card, panels, its store
 | Opening Settings | 38 ms, 52 ms | 1 in the first run, 0 after | 33 ms (was 200 ms) |
 
 The first open of Settings was one 200 ms frame: the Appearance page asks for the thumbnails of the generated looks, and the "haze" look converted its colour mesh to OKLab again for every one of its 20,000 pixels (`recipe.ts`). The mesh is now converted once per scheme, thumbnails use a coarser grid than a wallpaper, and `ensureThumbs` paints one picture per frame. A prefetch of the apps loaded on demand was tried and dropped: it did not touch this cost and added bytes to the first load.
+
+## The documentation site in the app's look (2026-11-18)
+
+`apps/docs` now reads more of the single token source (`apps/docs/scripts/prepare.mjs` from `packages/ui/tokens/tokens.json`): radii, the pill height, the motion durations and curve, the press scale, and the default wallpaper's two tiny pre-blurred renditions. `calternal.css` uses them on Starlight's own classes only (no component is replaced beyond the existing theme picker): the wallpaper behind a veil on a fixed layer of its own, a translucent header and sidebars, the page as a rounded card, pill search and selects, the app's rounded rows and callouts, an accent focus ring. A themed preset drops the wallpaper. `e2e/docs-weight.mjs` (landing page and a doc page, both schemes, five runs):
+
+| | Before | After |
+| --- | --- | --- |
+| First contentful paint | 36 ms | 20 to 44 ms |
+| Stylesheet (gzip) | 13.2 KB | 13.6 KB |
+| Document (gzip) | 9.3 KB | 9.5 KB |
+| Image (gzip) | none | 3.8 KB (light) or 4.1 KB (dark), one of the two |
+| Fonts, scripts | 192 or 214 KB, 30.3 KB | the same |
+
+A first version put the wallpaper in `background-attachment: fixed` and blurred the header: it measured 44 to 56 ms and repaints on scroll, so it is a fixed pseudo-element now and the header is not blurred.
