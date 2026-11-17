@@ -170,7 +170,15 @@ impl Jobs {
     /// Fence an active turn after an access change; resume is always explicit.
     /// One FULL transaction plus settling its live stream and cancellation flag.
     pub fn agent_interrupt(&self, space: &str, job: &str) -> Result<(), Error> {
-        self.tx(space,|tx|{tx.execute("UPDATE jobs SET state='interrupted' WHERE id=?1 AND state IN ('running','placing','admitted','retry_waiting')",[job]).map_err(db_err)?;Ok(())})?;
+        self.tx(space, |tx| {
+            tx.execute(
+                "UPDATE jobs SET state='interrupted',
+                    checkpoint=json_set(coalesce(nullif(checkpoint,'null'),'{}'),'$.interruption',json_object('why','permissions_changed'))
+                 WHERE id=?1 AND state IN ('running','placing','admitted','retry_waiting')",
+                [job],
+            ).map_err(db_err)?;
+            Ok(())
+        })?;
         self.settle(job);
         Ok(())
     }
@@ -255,8 +263,14 @@ impl Jobs {
 impl Jobs {
     /// Interrupt a still-waiting retry only at the observed run. A timer from a
     /// prior run cannot interrupt a newer resume. One conditional FULL update.
-    pub fn agent_interrupt_wait(&self, space: &str, job: &str, run: u32) -> Result<(), Error> {
-        let changed=self.tx(space,|tx|tx.execute("UPDATE jobs SET state='interrupted' WHERE id=?1 AND runs=?2 AND state='retry_waiting'",params![job,run]).map_err(db_err))?;
+    pub fn agent_interrupt_wait(
+        &self,
+        space: &str,
+        job: &str,
+        run: u32,
+        why: &str,
+    ) -> Result<(), Error> {
+        let changed=self.tx(space,|tx|tx.execute("UPDATE jobs SET state='interrupted',checkpoint=json_set(checkpoint,'$.interruption',json_object('why',?3)) WHERE id=?1 AND runs=?2 AND state='retry_waiting'",params![job,run,why]).map_err(db_err))?;
         if changed > 0 {
             self.settle_run(job, run);
         }

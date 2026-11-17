@@ -160,6 +160,11 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "description": "Options declared by the selected provider, bounded by the command budget.",
       "type": "object"
     },
+    "pool": {
+      "default": false,
+      "description": "Check an entitled pool machine without exposing its identity.",
+      "type": "boolean"
+    },
     "prompt": {
       "default": "",
       "description": "Person's prompt; at most 16 KiB, required for run.",

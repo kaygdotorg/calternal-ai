@@ -102,6 +102,8 @@ pub enum AccountFrame {
         /// Current accepted position.
         bookmark: String,
     },
+    /// Re-read caller-scoped machine readiness. No bookmark advances.
+    ReadinessChanged,
     /// Foreign, expired or rolled-back bookmark: reload before reopening.
     Reset,
 }

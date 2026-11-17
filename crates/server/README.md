@@ -209,6 +209,9 @@ Timings from these tests are development-host smoke numbers, not performance gat
 Manual provider jobs and their CLI, scoped credentials, risk review, machine homes
 and durable retry waits are documented in [manual turns](../../docs/agent-turns.md).
 The provider test suite uses an account-free fake official CLI.
+The [readiness operation](../../docs/agent-turns.md#machine-and-provider-readiness)
+reads private machine and provider observations. Saved turn reasons travel in
+the ordinary space journal, with owner-only details filtered on delivery.
 
 `GET /api/v1/live?subscriptions=<JSON array>` follows 1–16 distinct space UUIDs.
 Each array element is `{ "space_id": "<uuid>", "bookmark": null | "<opaque>" }`.

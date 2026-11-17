@@ -2,7 +2,11 @@ Thread:   019a8c00-0000-7000-8000-000000000001
 Title:    Plan
 Address:  /threads/019a8c00-0000-7000-8000-000000000001
 State:    active
-Thread turn state:  running
+Thread turn state:  queued
+Reason:  Retry scheduled
+Retry rule:  Retry after a short wait
+Attempt:  2
+Next attempt:  2026-11-17 12:00:00 +00:00
 
 ---
 title: Plan

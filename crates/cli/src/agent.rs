@@ -6,6 +6,10 @@ use clap::{Args as ClapArgs, Subcommand};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
+mod readiness;
+
+pub use readiness::reply as readiness_reply;
+
 /// Connection arguments shared by agent operations and the generic operation CLI.
 #[derive(Debug, Clone, ClapArgs)]
 pub struct Connection {
@@ -34,6 +38,17 @@ pub struct Args {
 /// Manual provider lifecycle and access commands; no interactive prompts or TUI.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Show cached machine and provider status for your account.
+    #[command(after_help = "Example: calternal agent readiness --space-id SPACE_UUID
+See also: calternal agent check --help")]
+    Readiness {
+        /// Space UUID.
+        #[arg(long)]
+        space_id: String,
+        /// Optional saved thread UUID for its placement constraint.
+        #[arg(long, default_value = "")]
+        thread_id: String,
+    },
     /// Check the official program inside a sandbox; prints its own sign-in command.
     Check {
         /// Provider plugin ID; omitted uses the server default.
@@ -42,9 +57,15 @@ pub enum Command {
         /// Space UUID.
         #[arg(long)]
         space_id: String,
-        /// Thread UUID, allocated by the person before the storage lane exists.
-        #[arg(long)]
+        /// Optional thread UUID to associate with the check request.
+        #[arg(long, default_value = "")]
         thread_id: String,
+        /// Refresh the provider on this account-owned machine.
+        #[arg(long, default_value = "", conflicts_with = "pool")]
+        machine_id: String,
+        /// Refresh the provider on an available entitled pool machine.
+        #[arg(long)]
+        pool: bool,
     },
     /// Start a turn and stream its ordered text and tool steps.
     Run {
@@ -193,11 +214,33 @@ async fn run(args: Args, out: &Output) -> Result<(), CliError> {
         .map_err(|_| error("Credential loading failed."))??;
     let mut input = AgentInput::default();
     let (operation, stream) = match args.command {
+        Command::Readiness {
+            space_id,
+            thread_id,
+        } => {
+            let mut target = json!({"space_id":space_id});
+            if !thread_id.is_empty() {
+                target["thread_id"] = json!(thread_id);
+            }
+            let value = call(
+                &client,
+                calternal_core::AGENT_READINESS,
+                target,
+                args.connection.request_id,
+            )
+            .await?;
+            out.success(&readiness_reply(out, value));
+            return Ok(());
+        }
         Command::Check {
             provider,
             space_id,
             thread_id,
+            machine_id,
+            pool,
         } => {
+            input.machine_id = machine_id;
+            input.pool = pool;
             input.provider_id = provider;
             input.space_id = space_id;
             input.thread_id = thread_id;
