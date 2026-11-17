@@ -238,6 +238,16 @@ async fn execute<D: Directory>(
                 .to_string(),
         });
     }
+    if job.runs > 1 {
+        let (st, id) = (state.clone(), job.id.clone());
+        let outcomes = blocking(move || st.jobs.agent_request_outcomes(account, &id)).await?;
+        if !outcomes.is_empty() {
+            context.push(calternal_core::ProviderContext {
+                source: "calternal/person-request".into(),
+                text: json!(outcomes).to_string(),
+            });
+        }
+    }
     let check = job.input["check"] == true;
     let instructions = super::instructions::build(state, &i, &job.space, &scope).await?;
     if instructions.contains("[Space instructions truncated at 16 KiB.]") {

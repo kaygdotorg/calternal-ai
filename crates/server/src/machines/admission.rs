@@ -12,7 +12,21 @@ impl MachineService {
         thread: Uuid,
         image: Option<String>,
     ) -> Result<RunView, Error> {
-        self.request_work(space, account, thread, image, None)
+        self.request_run_on(space, account, thread, image, None)
+    }
+
+    /// Admit a provider lease optionally pinned to the machine that ran it
+    /// before a person request. A missing or busy pin waits for that machine.
+    /// Uses the shared lease and placement commits.
+    pub(crate) fn request_run_on(
+        &self,
+        space: SpaceId,
+        account: AccountId,
+        thread: Uuid,
+        image: Option<String>,
+        pinned_machine: Option<Uuid>,
+    ) -> Result<RunView, Error> {
+        self.request_work(space, account, thread, image, None, pinned_machine)
     }
 
     /// Admit agent or worker work atomically with placement. Rejects context
@@ -25,6 +39,7 @@ impl MachineService {
         thread: Uuid,
         image: Option<String>,
         worker: Option<calternal_machine::protocol::PluginWorker>,
+        pinned_machine: Option<Uuid>,
     ) -> Result<RunView, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
@@ -38,7 +53,10 @@ impl MachineService {
             if l.row.worker != worker.is_some() {
                 return Err(Error::not_found("run not found"));
             }
-            if l.row.account != account || l.row.space != space {
+            if l.row.account != account
+                || l.row.space != space
+                || l.row.pinned_machine != pinned_machine
+            {
                 return Err(Error::conflict("thread is running for another context"));
             }
             return Ok(st.view(id));
@@ -52,6 +70,7 @@ impl MachineService {
             worker: worker.is_some(),
             machine: None,
             last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
+            pinned_machine,
             fence: 0,
             state: LeaseState::Waiting.as_str().into(),
             reason: None,

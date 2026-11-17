@@ -1,0 +1,3 @@
+KIND      ID                                    SPACE                                 DETAIL
+approval  019a8c00-0000-7000-8000-000000000001  019a8c00-0000-7000-8000-000000000002  notes.create
+Next: calternal requests --help

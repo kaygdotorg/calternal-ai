@@ -38,6 +38,7 @@ use calternal_types::{AccountId, Error, SpaceId};
 mod dispatch;
 mod guard;
 mod plugins;
+mod request_action;
 mod web;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
@@ -297,7 +298,10 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let thread_account = p.id;
     let state_for_threads = state.clone();
     let thread_scheduler = machines.clone();
-    let mut result = if calternal_core::AGENT_OPERATIONS
+    let mut result = if let Some(row) = calternal_core::request_operation(&request.operation) {
+        crate::requests::dispatch(state, machines, p, session, agent, &rid, row, request.input)
+            .await
+    } else if calternal_core::AGENT_OPERATIONS
         .iter()
         .any(|(id, _, _)| *id == request.operation)
     {
@@ -326,6 +330,7 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
             &request.operation,
             request.input,
             agent,
+            machines,
         )
         .await
     };
@@ -369,7 +374,16 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     }
     fault::hit(FaultPoint::BeforeReply);
     match result {
-        Ok(data) => json_response(StatusCode::OK, &OperationResponse::success(rid, data)),
+        Ok(data) => {
+            let mut response =
+                json_response(StatusCode::OK, &OperationResponse::success(rid, data));
+            if request.operation == "requests.ask" || request.operation == "access.request" {
+                response
+                    .extensions_mut()
+                    .insert(guard::ParkedAcknowledgement);
+            }
+            response
+        }
         Err(e) => failure(Some(rid), e),
     }
 }

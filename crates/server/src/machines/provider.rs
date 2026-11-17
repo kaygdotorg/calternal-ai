@@ -62,15 +62,21 @@ impl MachineService {
 
 impl MachineService {
     /// End a provider lease and kill its processes while retaining thread files
-    /// and its persistent account home. Cost: one commit and one machine message.
+    /// and its persistent account home. A matching ended lease replays after restart.
+    /// Cost: one commit and machine message, or an indexed read for ended leases.
     pub fn release_run(&self, account: AccountId, lease: Uuid) -> Result<(), Error> {
         let mut st = self.lock()?;
-        if !st
-            .leases
-            .get(&lease)
-            .is_some_and(|l| l.row.account == account)
-        {
-            return Err(Error::not_found("run not found"));
+        match st.leases.get(&lease) {
+            Some(l) if l.row.account == account && !l.row.worker => (),
+            None if super::db::lease(&st.db, lease)
+                .map_err(super::sql)?
+                .is_some_and(|row| {
+                    row.account == account && !row.worker && row.state == "ended"
+                }) =>
+            {
+                return Ok(());
+            }
+            _ => return Err(Error::not_found("run not found")),
         }
         st.end_with_files(lease, "provider turn ended", &self.settings, true);
         Ok(())

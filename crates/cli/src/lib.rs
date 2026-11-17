@@ -20,3 +20,6 @@ pub mod account_input;
 
 /// Non-interactive thread operations using manifest admission and common output.
 pub mod threads;
+
+/// Account requests and trusted person decisions.
+pub mod requests;

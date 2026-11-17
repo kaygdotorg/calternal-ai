@@ -12,7 +12,7 @@ pub enum JobState {
     Admitted,
     /// A run invocation is executing in the plugin's worker.
     Running,
-    /// Parked until its child jobs report; it runs again when they all have.
+    /// Parked without a process until its child jobs report or its person request is resolved.
     Waiting,
     /// Machine or server went silent; only explicit resume may restart this turn.
     Interrupted,

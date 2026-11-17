@@ -120,7 +120,8 @@ page('admin/commands/index', 'Command reference', ['docs/cli-shapes.json', 'docs
 const glossary = await read('docs/glossary.md');
 page('user/spaces-and-roles', 'Spaces and roles', ['docs/glossary.md'], section(glossary, 'People and access'));
 page('user/permissions-modes', 'Permission modes', ['docs/agent-instructions.md'], 'Accepted design; the complete approval experience is not a released feature.\n\n' + section(await read('docs/agent-instructions.md'), 'Access'));
-page('user/space-instructions', 'Space standing instructions', ['docs/agent-instructions.md'], section(await read('docs/agent-instructions.md'), 'Space standing instructions'));
+page('user/space-instructions', 'Space standing instructions', ['docs/agent-instructions.md'], // The source links to the developer document on requests, which has no user page.
+  section(await read('docs/agent-instructions.md'), 'Space standing instructions').replaceAll('[person requests](requests.md)', 'person requests'));
 const savedThreads = await read('docs/threads.md');
 page('user/threads', 'Threads', ['docs/threads.md', 'docs/orchestrator-proposal.md'],
   '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates') +

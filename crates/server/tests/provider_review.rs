@@ -181,7 +181,18 @@ fn least_access_accepts_the_action_approval_its_denial_created() {
         .jobs
         .agent_action_request(&a, "notes.list", &input, "r1", OperationRisk::Read, false)
         .unwrap();
-    f.jobs.agent_approve(&mut a, &id).unwrap();
+    support::park_request(&f.jobs, &f.space, &job, &id);
+    f.jobs
+        .agent_decide(
+            a.actor.account,
+            &id,
+            "approve-r1",
+            "this_thread",
+            None,
+            |_| Ok(()),
+        )
+        .unwrap();
+    a = f.jobs.agent_scope(&a.space, &a.job).unwrap();
     assert!(
         a.grants.iter().any(|g| g.action_hash.as_deref()
             == Some(action_scope("notes.list", &input, "r1", OperationRisk::Read).as_str())),

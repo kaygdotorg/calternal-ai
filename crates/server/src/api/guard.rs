@@ -150,7 +150,15 @@ pub(super) async fn guard<D: Directory>(
             .get::<crate::turns::access::Authority>()
             .cloned();
         let response = next.run(req).await;
-        if api && !account_route && response.status().is_success() {
+        if api
+            && !account_route
+            && response.status().is_success()
+            && !(agent_admitted.is_some()
+                && response
+                    .extensions()
+                    .get::<ParkedAcknowledgement>()
+                    .is_some())
+        {
             let session = if let Some(service) = state.directory.http_auth() {
                 crate::account_http::identify(service, &credentials)
                     .await
@@ -206,6 +214,12 @@ pub(super) async fn guard<D: Directory>(
     }
     resp
 }
+
+/// A response containing only the request id and pending status after the
+/// operation itself ended the issuing run. All other responses recheck the
+/// original credential normally before delivering data.
+#[derive(Clone)]
+pub(super) struct ParkedAcknowledgement;
 
 pub(super) fn bearer(headers: &HeaderMap) -> Option<&[u8]> {
     let v = headers.get(header::AUTHORIZATION)?.as_bytes();

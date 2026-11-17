@@ -72,7 +72,7 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
     );
     assert!(
         a.check(
-            "access.approve",
+            "requests.approve",
             &serde_json::from_value(json!({"job_id":id})).unwrap()
         )
         .is_err()
@@ -226,7 +226,8 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     };
     let old =
         tokio::task::block_in_place(|| state.jobs.agent_token(&scope, _run.job.runs)).unwrap();
-    let app = api::router(state.clone(), None).layer(axum::Extension(machines));
+    let app = api::router(state.clone(), None);
+    let _machines = machines;
     let call = |token: String, op: &str, input: serde_json::Value| {
         let app = app.clone();
         let op = op.to_owned();
@@ -264,8 +265,8 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
     assert_eq!(
         call(
             old.clone(),
-            "access.approve",
-            json!({"space_id":space,"job_id":id,"approval_id":Uuid::now_v7()})
+            "requests.approve",
+            json!({"id":Uuid::now_v7(),"lifetime":"once"})
         )
         .await
         .0,
@@ -390,6 +391,6 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|o| o["id"] == "access.approve")
+            .any(|o| o["id"] == "requests.approve")
     );
 }
