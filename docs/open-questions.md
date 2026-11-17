@@ -13,6 +13,7 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Design rounds
 
+- **Agent access grants** (open): what an agent has by default and how long a grant lasts. See `agent-instructions.md`.
 - Composer and chat experience: mentions, commands, context chips, the request bar.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
