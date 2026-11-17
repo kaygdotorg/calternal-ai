@@ -17,3 +17,6 @@ pub mod agent;
 pub mod watch;
 
 pub mod account_input;
+
+/// Non-interactive thread operations using manifest admission and common output.
+pub mod threads;
