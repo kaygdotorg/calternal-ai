@@ -9,13 +9,14 @@ if [ ! -d scripts/docs-tools/node_modules/typedoc ]; then
 fi
 ./scripts/with-toolchain.sh cargo check --locked -j4 \
   -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
-  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content \
+  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content -p calternal-genui \
   --all-targets --all-features
 # rustdoc link checks run only during documentation generation, not cargo check.
 ./scripts/with-toolchain.sh cargo doc --locked -j4 --no-deps \
   -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
-  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content \
+  -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content -p calternal-genui \
   --all-features --target-dir reference-docs/rust
 # TypeScript reference checks resolve workspace packages through their built type output.
 npm run build:plugins --silent
 npm run check --prefix scripts/docs-tools
+node packages/genui/scripts/check-docs.mjs

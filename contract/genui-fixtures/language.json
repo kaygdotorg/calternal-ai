@@ -1,0 +1,2301 @@
+{
+  "version": 1,
+  "origin": "Adapted from bb-plugin-genui d8cac8d core/language.test.ts and core/components.test.ts; additional explicit accessibility and resource cases.",
+  "cases": [
+    {
+      "name": "arithmetic",
+      "kind": "evaluate",
+      "source": "Text(1 + 2 * 3)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "7"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "power-right",
+      "kind": "evaluate",
+      "source": "Text(2 ** 3 ** 2)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "512"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "power-prefix",
+      "kind": "evaluate",
+      "source": "Text(-2 ** 2)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "-4"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "parentheses",
+      "kind": "evaluate",
+      "source": "Text((1 + 2) * 3)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "9"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "nullish",
+      "kind": "evaluate",
+      "source": "Text(1 / 0 ?? \"inf\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "inf"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "null-text",
+      "kind": "evaluate",
+      "source": "Text(null + \"x\" + true)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "xtrue"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "logical-short-circuit",
+      "kind": "evaluate",
+      "source": "Text(false && (1 / 0))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "false"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "conditional",
+      "kind": "evaluate",
+      "source": "Text(3 > 2 ? \"yes\" : \"no\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "yes"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "strict-number-string",
+      "kind": "evaluate",
+      "source": "Text(1 == \"1\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "false"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "strict-scalars",
+      "kind": "evaluate",
+      "source": "Text(true !== false)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "template",
+      "kind": "evaluate",
+      "source": "Text(`hello ${2 + 3}`)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "hello 5"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "escaped",
+      "kind": "evaluate",
+      "source": "Text(\"line\\nnext\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "line\nnext"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unicode-braced",
+      "kind": "evaluate",
+      "source": "Text(\"\\u{1f680}\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "🚀"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unicode-length",
+      "kind": "evaluate",
+      "source": "Text(\"🚀\".length)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "2"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unicode-index",
+      "kind": "evaluate",
+      "source": "Text(\"🚀\"[0])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "�"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unicode-slice",
+      "kind": "evaluate",
+      "source": "Text(\"a🚀b\".slice(1,3))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "🚀"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unicode-split",
+      "kind": "evaluate",
+      "source": "Text(\"🚀\".split(\"\").join(\"-\"))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "�-�"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "sum",
+      "kind": "evaluate",
+      "source": "Text(sum([1,2,null,3]))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "6"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "min",
+      "kind": "evaluate",
+      "source": "Text(min([7,5]))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "5"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "max",
+      "kind": "evaluate",
+      "source": "Text(max(4,9,2))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "9"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "round-decimal",
+      "kind": "evaluate",
+      "source": "Text(round(2.345,2))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "2.35"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "round-away",
+      "kind": "evaluate",
+      "source": "Text(round(-1.5))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "-2"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "fmt",
+      "kind": "evaluate",
+      "source": "Text(fmt(1234.5))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1,234.5"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "fmt-digits",
+      "kind": "evaluate",
+      "source": "Text(fmt(1234.5,0))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1,235"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "fmt-negative",
+      "kind": "evaluate",
+      "source": "Text(fmt(-1234567.891))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "-1,234,567.89"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "fixed",
+      "kind": "evaluate",
+      "source": "Text(3.14159.toFixed(2))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "3.14"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "abs",
+      "kind": "evaluate",
+      "source": "Text(abs(-4))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "4"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "floor",
+      "kind": "evaluate",
+      "source": "Text(floor(1.9))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "ceil",
+      "kind": "evaluate",
+      "source": "Text(ceil(1.1))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "2"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "sqrt",
+      "kind": "evaluate",
+      "source": "Text(sqrt(9))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "3"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "pow",
+      "kind": "evaluate",
+      "source": "Text(pow(2,5))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "32"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "trig",
+      "kind": "evaluate",
+      "source": "Text(sin(0) + cos(0) + tan(0))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "inverse-trig",
+      "kind": "evaluate",
+      "source": "Text(asin(0) + acos(1) + atan(0) + atan2(0,1))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "0"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "clamp",
+      "kind": "evaluate",
+      "source": "Text(clamp(20,0,10))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "10"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "lerp",
+      "kind": "evaluate",
+      "source": "Text(lerp(2,6,0.5))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "4"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "range",
+      "kind": "evaluate",
+      "source": "Text(range(1,5).join(\",\"))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1,2,3,4"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "range-descending",
+      "kind": "evaluate",
+      "source": "Text(range(3,0,-1).join(\",\"))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "3,2,1"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "range-empty",
+      "kind": "evaluate",
+      "source": "Text(range(3,1).length)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "0"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "methods",
+      "kind": "evaluate",
+      "source": "Text(\"a,b\".split(\",\").join(\"+\").toUpperCase())",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "A+B"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "trim",
+      "kind": "evaluate",
+      "source": "Text(\" A \".trim().toLowerCase())",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "a"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "includes",
+      "kind": "evaluate",
+      "source": "Text(\"abc\".includes(\"b\") && \"abc\".startsWith(\"a\") && \"abc\".endsWith(\"c\"))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "list-index",
+      "kind": "evaluate",
+      "source": "Text([1,2,3].indexOf(2))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "list-includes",
+      "kind": "evaluate",
+      "source": "Text([1,2].includes(3))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "false"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "slice-negative",
+      "kind": "evaluate",
+      "source": "Text([1,2,3].slice(-2).join())",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "2,3"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "list-find",
+      "kind": "evaluate",
+      "source": "Text([1,2,3].find(x => x > 1))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "2"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "list-some",
+      "kind": "evaluate",
+      "source": "Text([1,2].some(x=>x==2))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "list-every",
+      "kind": "evaluate",
+      "source": "Text([1,2].every(x=>x>0))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "list-empty-every",
+      "kind": "evaluate",
+      "source": "Text([].every(x=>false))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "object-member",
+      "kind": "evaluate",
+      "source": "Text({count:3}.count * 2 + ({count:3}.missing ?? 10))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "16"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "keys",
+      "kind": "evaluate",
+      "source": "Text(keys({b:2,a:1}).join())",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "b,a"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "integer-keys",
+      "kind": "evaluate",
+      "source": "Text(keys({\"2\":2,\"1\":1,z:0}).join())",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1,2,z"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "values",
+      "kind": "evaluate",
+      "source": "Text(values({b:2,a:1}).join())",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "2,1"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "entries",
+      "kind": "evaluate",
+      "source": "Text(entries({b:2})[0].join(\":\"))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "b:2"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "scientific",
+      "kind": "evaluate",
+      "source": "Text(1e21 + \"\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1e+21"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "small-scientific",
+      "kind": "evaluate",
+      "source": "Text(1e-7 + \"\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "1e-7"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "small-decimal",
+      "kind": "evaluate",
+      "source": "Text(1e-6 + \"\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "0.000001"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "nested-map",
+      "kind": "evaluate",
+      "source": "Stack([[1,2],[3]].map(row => Row(row.map(x => Badge(x)))))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Stack",
+            "key": "1:1",
+            "props": {
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "Row",
+                  "key": "1:30#0",
+                  "props": {
+                    "children": [
+                      {
+                        "kind": "node",
+                        "type": "Badge",
+                        "key": "1:47#0#0",
+                        "props": {
+                          "text": "1"
+                        }
+                      },
+                      {
+                        "kind": "node",
+                        "type": "Badge",
+                        "key": "1:47#0#1",
+                        "props": {
+                          "text": "2"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "kind": "node",
+                  "type": "Row",
+                  "key": "1:30#1",
+                  "props": {
+                    "children": [
+                      {
+                        "kind": "node",
+                        "type": "Badge",
+                        "key": "1:47#1#0",
+                        "props": {
+                          "text": "3"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "named-root",
+      "kind": "evaluate",
+      "source": "root = Text(\"hi\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:8",
+            "props": {
+              "text": "hi"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "named-value",
+      "kind": "evaluate",
+      "source": "greeting = \"hi\"\nText(greeting)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "2:1",
+            "props": {
+              "text": "hi"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "state-initial",
+      "kind": "evaluate",
+      "source": " $n = 2\nText($n)",
+      "expected": {
+        "state": {
+          "n": 2
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "2:1",
+            "props": {
+              "text": "2"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "state-override",
+      "kind": "evaluate",
+      "source": "$n = 2\nText($n)",
+      "expected": {
+        "state": {
+          "n": 5
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "2:1",
+            "props": {
+              "text": "5"
+            }
+          }
+        ],
+        "diagnostics": []
+      },
+      "state": {
+        "n": 5
+      }
+    },
+    {
+      "name": "state-order",
+      "kind": "evaluate",
+      "source": "$a=2\n$b=$a+1\nText($b)",
+      "expected": {
+        "state": {
+          "a": 2,
+          "b": 3
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "3:1",
+            "props": {
+              "text": "3"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "named-function",
+      "kind": "evaluate",
+      "source": "greet = x => Text(\"Hi \" + x)\ngreet(\"A\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:14@2:1",
+            "props": {
+              "text": "Hi A"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "named-reference-identity",
+      "kind": "evaluate",
+      "source": "a = [1]\nText(a === a)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "2:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "distinct-reference-identity",
+      "kind": "evaluate",
+      "source": "Text([1] === [1])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "false"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "optional-null",
+      "kind": "evaluate",
+      "source": "Metric(value:\"5\",label:\"Score\",tone:null)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Metric",
+            "key": "1:1",
+            "props": {
+              "label": "Score",
+              "value": "5"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "set-copy-actions",
+      "kind": "evaluate",
+      "source": "$n=2\nButton(\"Inc\",[Set($n,$n+1),Copy(\"n=\"+$n)])",
+      "expected": {
+        "state": {
+          "n": 2
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Button",
+            "key": "2:1",
+            "props": {
+              "label": "Inc",
+              "action": [
+                {
+                  "kind": "action",
+                  "type": "set",
+                  "name": "n",
+                  "value": 3
+                },
+                {
+                  "kind": "action",
+                  "type": "copy",
+                  "text": "n=2"
+                }
+              ]
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "send-url-actions",
+      "kind": "evaluate",
+      "source": "Button(\"Go\",[Send(\"hello\"),OpenUrl(\"https://example.com\")])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Button",
+            "key": "1:1",
+            "props": {
+              "label": "Go",
+              "action": [
+                {
+                  "kind": "action",
+                  "type": "send",
+                  "text": "hello"
+                },
+                {
+                  "kind": "action",
+                  "type": "openUrl",
+                  "url": "https://example.com"
+                }
+              ]
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "operator-continuation",
+      "kind": "validate",
+      "source": "label = true\n ? \"yes\"\n : \"no\"\nText(label +\n \"!\")",
+      "expected": {
+        "accepted": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "comments-and-semicolons",
+      "kind": "validate",
+      "source": "// comment\n$n=1; Text($n) // end",
+      "expected": {
+        "accepted": true,
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unknown-name",
+      "kind": "validate",
+      "source": "Text(missing)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "unknown name: missing"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-state",
+      "kind": "validate",
+      "source": "Text($missing)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "unknown state: $missing"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-call",
+      "kind": "validate",
+      "source": "Missing()",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "unknown call: Missing"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-method",
+      "kind": "validate",
+      "source": "Text([1].evil())",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 10,
+            "message": "unknown method: evil"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-state",
+      "kind": "validate",
+      "source": "$n=1\n$n=2\nText($n)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "duplicate declaration: $n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-named",
+      "kind": "validate",
+      "source": "a=1\na=2\nText(a)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "duplicate declaration: a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "direct-cycle",
+      "kind": "validate",
+      "source": "a=a\nText(a)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "cyclic named value: a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "indirect-cycle",
+      "kind": "validate",
+      "source": "a=b\nb=a\nText(a)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "cyclic named value: a"
+          }
+        ]
+      }
+    },
+    {
+      "name": "state-self",
+      "kind": "validate",
+      "source": "$n=$n\nText($n)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "state initializer reads uninitialized state: $n"
+          }
+        ]
+      }
+    },
+    {
+      "name": "state-forward",
+      "kind": "validate",
+      "source": "$n=$m\n$m=1\nText($n)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "state initializer reads uninitialized state: $m"
+          }
+        ]
+      }
+    },
+    {
+      "name": "state-transitive",
+      "kind": "validate",
+      "source": "$n=amount\n$m=1\namount=$m\nText($n)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "state initializer reads uninitialized state: $m"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prototype-read",
+      "kind": "validate",
+      "source": "Text({}.constructor)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 9,
+            "message": "`constructor` is not accessible"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prototype-index",
+      "kind": "validate",
+      "source": "Text({}[\"__proto__\"])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 9,
+            "message": "`__proto__` is not accessible"
+          }
+        ]
+      }
+    },
+    {
+      "name": "prototype-key",
+      "kind": "validate",
+      "source": "Text({prototype:1})",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 7,
+            "message": "`prototype` is not accessible"
+          }
+        ]
+      }
+    },
+    {
+      "name": "wrong-arity",
+      "kind": "validate",
+      "source": "Text(pow(2))",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "wrong argument count: pow"
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing-argument",
+      "kind": "validate",
+      "source": "Text()",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "missing argument: Text.text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "unknown-argument",
+      "kind": "validate",
+      "source": "Text(\"a\",extra:1)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 10,
+            "message": "unknown argument: Text.extra"
+          }
+        ]
+      }
+    },
+    {
+      "name": "duplicate-argument",
+      "kind": "validate",
+      "source": "Text(\"a\",text:\"b\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 10,
+            "message": "duplicate argument: text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "binding-expression",
+      "kind": "validate",
+      "source": "$n=1\nSlider($n+1,0,2,label:\"Count\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 10,
+            "message": "Slider.value must be a $state reference"
+          }
+        ]
+      }
+    },
+    {
+      "name": "arrow-root",
+      "kind": "validate",
+      "source": "x => x",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "arrow functions are only allowed in named functions and list methods"
+          }
+        ]
+      }
+    },
+    {
+      "name": "lambda-not-arrow",
+      "kind": "validate",
+      "source": "Text([1].map(2))",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 14,
+            "message": ".map requires an arrow function"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-component-error",
+      "kind": "evaluate",
+      "source": "Text(range(0,3,0))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Error",
+            "key": "1:1",
+            "props": {
+              "message": "range step cannot be zero"
+            }
+          }
+        ],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "range step cannot be zero"
+          }
+        ]
+      }
+    },
+    {
+      "name": "runtime-accessibility",
+      "kind": "evaluate",
+      "source": "$label=\"\"\nButton($label)",
+      "expected": {
+        "state": {
+          "label": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Error",
+            "key": "2:1",
+            "props": {
+              "message": "accessibility: Button.label must be nonblank text"
+            }
+          }
+        ],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 1,
+            "message": "accessibility: Button.label must be nonblank text"
+          }
+        ]
+      }
+    },
+    {
+      "name": "math-aliases",
+      "kind": "evaluate",
+      "source": "Text(Math.round(Math.max(2.4,Math.floor(3.9)))+Math.ceil(0.2)+Math.pow(2,3)+Math.sqrt(9))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "15"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "object-alias",
+      "kind": "evaluate",
+      "source": "Text(Object.keys({react:\"19.0.0\",zod:\"4.1.0\"}).join(\",\"))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "react,zod"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "negative-power",
+      "kind": "evaluate",
+      "source": "Text(2 ** -1)",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "0.5"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "compound-interest",
+      "kind": "evaluate",
+      "source": "Text(round(5000 * (1 + 0.005) ** 120,2))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "9096.98"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "unicode-escaped-pair",
+      "kind": "evaluate",
+      "source": "Text(\"\\uD83D\\uDE80\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "🚀"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "random-stable",
+      "kind": "evaluate",
+      "source": "Text(random(0) === random(-0))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "1:1",
+            "props": {
+              "text": "true"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "function-missing-arg",
+      "kind": "evaluate",
+      "source": "rate=2\nf=(a,b)=>(b??10)*a*rate\nText(fmt(f(3)))",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Text",
+            "key": "3:1",
+            "props": {
+              "text": "60"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "multi-word-keys",
+      "kind": "evaluate",
+      "source": "KeyValue({Good for:\"views\",Day 1:\"Lisbon\",Area:\"Alfama\"})",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "KeyValue",
+            "key": "1:1",
+            "props": {
+              "pairs": {
+                "Good for": "views",
+                "Day 1": "Lisbon",
+                "Area": "Alfama"
+              }
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "steps-objects",
+      "kind": "evaluate",
+      "source": "Steps([{title:\"Design\",status:\"done\"},{title:\"Build\",detail:\"API first\",status:\"current\"}])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Steps",
+            "key": "1:1",
+            "props": {
+              "items": [
+                {
+                  "title": "Design",
+                  "status": "done"
+                },
+                {
+                  "title": "Build",
+                  "detail": "API first",
+                  "status": "current"
+                }
+              ]
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "code-template",
+      "kind": "evaluate",
+      "source": "Code(`const x = 1\nexport default x`,\"ts\")",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Code",
+            "key": "1:1",
+            "props": {
+              "code": "const x = 1\nexport default x",
+              "language": "ts"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "scalar-binding-list",
+      "kind": "evaluate",
+      "source": "$picked=\"a\"\nChecklist($picked,[\"a\",\"b\"],label:\"Checks\")",
+      "expected": {
+        "state": {
+          "picked": "a"
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Checklist",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "picked",
+                "value": [
+                  "a"
+                ]
+              },
+              "options": [
+                "a",
+                "b"
+              ],
+              "label": "Checks"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "scalar-binding-empty",
+      "kind": "evaluate",
+      "source": "$picked=\"\"\nChecklist($picked,[\"a\"],label:\"Checks\")",
+      "expected": {
+        "state": {
+          "picked": ""
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Checklist",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "picked",
+                "value": []
+              },
+              "options": [
+                "a"
+              ],
+              "label": "Checks"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "scalar-binding-number",
+      "kind": "evaluate",
+      "source": "$n=\"12\"\nSlider($n,0,20,label:\"Count\")",
+      "expected": {
+        "state": {
+          "n": "12"
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Slider",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "n",
+                "value": 12
+              },
+              "min": 0,
+              "max": 20,
+              "label": "Count"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "scalar-binding-text",
+      "kind": "evaluate",
+      "source": "$q=0\nInput($q,label:\"Query\")",
+      "expected": {
+        "state": {
+          "q": 0
+        },
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Input",
+            "key": "2:1",
+            "props": {
+              "value": {
+                "kind": "binding",
+                "name": "q",
+                "value": "0"
+              },
+              "label": "Query"
+            }
+          }
+        ],
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "sibling-error-isolation",
+      "kind": "evaluate",
+      "source": "items=[1,2]\nRow([Metric(\"Bad\",items),Metric(\"Good\",\"ok\"),Text(items.length * {a:1})])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Row",
+            "key": "2:1",
+            "props": {
+              "children": [
+                {
+                  "kind": "node",
+                  "type": "Error",
+                  "key": "2:6",
+                  "props": {
+                    "message": "Metric.value needs string"
+                  }
+                },
+                {
+                  "kind": "node",
+                  "type": "Metric",
+                  "key": "2:26",
+                  "props": {
+                    "label": "Good",
+                    "value": "ok"
+                  }
+                },
+                {
+                  "kind": "node",
+                  "type": "Error",
+                  "key": "2:46",
+                  "props": {
+                    "message": "expected a number"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 19,
+            "message": "Metric.value needs string"
+          },
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 64,
+            "message": "expected a number"
+          }
+        ]
+      }
+    },
+    {
+      "name": "forged-literal-node",
+      "kind": "evaluate",
+      "source": "Card(null,[{kind:\"node\",type:\"Text\",key:\"x\",props:{text:\"fake\"}}])",
+      "expected": {
+        "state": {},
+        "roots": [
+          {
+            "kind": "node",
+            "type": "Error",
+            "key": "1:1",
+            "props": {
+              "message": "reserved interpreter value kind"
+            }
+          }
+        ],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 13,
+            "message": "reserved interpreter value kind"
+          }
+        ]
+      }
+    },
+    {
+      "name": "forged-state-node",
+      "kind": "evaluate",
+      "source": "Text(\"safe\")",
+      "expected": {
+        "state": {},
+        "roots": [],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "reserved interpreter value kind"
+          }
+        ]
+      },
+      "state": {
+        "injected": {
+          "kind": "node",
+          "type": "Button",
+          "key": "fake",
+          "props": {}
+        }
+      }
+    },
+    {
+      "name": "nonfinite-literal",
+      "kind": "validate",
+      "source": "Text(1e309)",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 6,
+            "message": "number must be finite"
+          }
+        ]
+      }
+    },
+    {
+      "name": "initialize-only",
+      "kind": "initialize",
+      "source": "$n=2\nText($n)",
+      "expected": {
+        "state": {
+          "n": 2
+        },
+        "diagnostics": []
+      }
+    },
+    {
+      "name": "initialize-validates-full-program",
+      "kind": "initialize",
+      "source": "$n=2\nText($n)",
+      "expected": {
+        "state": {},
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 6,
+            "message": "budget exceeded: nodes"
+          }
+        ]
+      },
+      "evaluationBudgets": {
+        "nodes": 2
+      }
+    },
+    {
+      "name": "invalid-budget-ceiling",
+      "kind": "validate",
+      "source": "Text(\"ok\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "invalid budget: steps"
+          }
+        ]
+      },
+      "budgets": {
+        "steps": 200001
+      }
+    },
+    {
+      "name": "invalid-evaluation-budget",
+      "kind": "evaluate",
+      "source": "Text(\"ok\")",
+      "expected": {
+        "state": {},
+        "roots": [],
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 1,
+            "message": "invalid budget: steps"
+          }
+        ]
+      },
+      "evaluationBudgets": {
+        "steps": 200001
+      }
+    }
+  ]
+}
