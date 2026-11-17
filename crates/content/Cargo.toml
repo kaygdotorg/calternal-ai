@@ -7,7 +7,6 @@ license.workspace = true
 publish = false
 
 [dependencies]
-calternal-auth.workspace = true
 calternal-types.workspace = true
 calternal-fsio.workspace = true
 calternal-roots.workspace = true

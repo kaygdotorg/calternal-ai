@@ -112,8 +112,8 @@ impl Store {
     /// then startup-only pending publication/materialization recovery per space.
     pub fn open_roots(roots: calternal_roots::Roots, secrets: PathBuf) -> Result<Self, Error> {
         let root = roots.appdata.clone();
-        calternal_auth::private_fs::directory(&root).map_err(|e| io_err("create data dir", e))?;
-        let lock = calternal_auth::private_fs::file(&root.join(".calternal.lock"))
+        calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
+        let lock = calternal_fsio::private::file(&root.join(".calternal.lock"))
             .map_err(|e| io_err("open lock", e))?;
         match lock.try_lock() {
             Ok(()) => {}
@@ -125,7 +125,7 @@ impl Store {
             Err(fs::TryLockError::Error(e)) => return Err(io_err("lock data dir", e)),
         }
         let path = root.join("state.sqlite3");
-        calternal_auth::private_fs::file(&path)
+        calternal_fsio::private::file(&path)
             .map_err(|e| io_err("prepare plugin database", e))?;
         let conn = Connection::open(path).map_err(db_err)?;
         conn.pragma_update(None, "journal_mode", "WAL")

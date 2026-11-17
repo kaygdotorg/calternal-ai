@@ -16,9 +16,6 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
-// The only import of private_fs: a one-line change when it moves to calternal-fsio.
-pub(crate) use calternal_auth::private_fs;
-
 mod key;
 mod local;
 mod types;

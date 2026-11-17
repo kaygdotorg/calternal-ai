@@ -468,7 +468,6 @@ dependencies = [
 name = "calternal-content"
 version = "0.1.0"
 dependencies = [
- "calternal-auth",
  "calternal-fsio",
  "calternal-roots",
  "calternal-store",
@@ -582,7 +581,6 @@ name = "calternal-secrets"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "calternal-auth",
  "calternal-fsio",
  "calternal-types",
  "getrandom 0.4.3",

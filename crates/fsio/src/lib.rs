@@ -26,6 +26,7 @@
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 #![allow(clippy::disallowed_methods)] // This crate is the one allowed place.
 
+pub mod private;
 pub mod paced;
 pub mod usage;
 

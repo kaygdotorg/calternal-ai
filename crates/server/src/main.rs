@@ -268,7 +268,7 @@ async fn serve(
     test_plugin_root: Option<PathBuf>,
     machine_settings: calternal_server::machines::Settings,
 ) -> i32 {
-    if let Err(e) = calternal_auth::private_fs::directory(&data_dir) {
+    if let Err(e) = calternal_fsio::private::directory(&data_dir) {
         eprintln!("calternal: cannot prepare data dir: {e}");
         return 1;
     }

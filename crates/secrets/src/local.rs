@@ -100,7 +100,7 @@ impl LocalStore {
             )
             .map_err(|_| Error::Internal)?;
         let path = self.path(owner);
-        crate::private_fs::directory(path.parent().ok_or(Error::Internal)?)
+        calternal_fsio::private::directory(path.parent().ok_or(Error::Internal)?)
             .map_err(|_| Error::Internal)?;
         open_db(&path, SCHEMA)
     }
@@ -146,7 +146,7 @@ impl LocalStore {
 /// overwrite-on-delete. The schema and WAL mode are applied once, when
 /// `user_version` is still 0; later opens only set per-connection pragmas.
 pub(crate) fn open_db(path: &Path, schema: &str) -> Result<Connection> {
-    crate::private_fs::file(path).map_err(|_| Error::Internal)?;
+    calternal_fsio::private::file(path).map_err(|_| Error::Internal)?;
     let c = Connection::open(path).map_err(|_| Error::Internal)?;
     c.busy_timeout(Duration::from_secs(5))
         .map_err(|_| Error::Internal)?;

@@ -69,9 +69,9 @@ impl Journals {
     }
     fn prepare(&self, space: SpaceId) -> Result<()> {
         let dir = self.appdata.join("spaces").join(space.to_string());
-        calternal_auth::private_fs::directory(&dir).map_err(internal)?;
-        calternal_auth::private_fs::file(&dir.join("index.db")).map_err(internal)?;
-        calternal_auth::private_fs::directory(&self.secrets.join("spaces").join(space.to_string()))
+        calternal_fsio::private::directory(&dir).map_err(internal)?;
+        calternal_fsio::private::file(&dir.join("index.db")).map_err(internal)?;
+        calternal_fsio::private::directory(&self.secrets.join("spaces").join(space.to_string()))
             .map_err(internal)?;
         Ok(())
     }

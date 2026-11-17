@@ -146,9 +146,12 @@ impl Space {
         let (placement, format) = self.registration(kind)?;
         let folder = folder(&placement, kind);
         let dir = self.files.join(&folder);
-        calternal_auth::private_fs::directory(&dir).map_err(internal)?;
-        if !self.names.contains_key(&folder) && self.names.len() >= 32 {
-            self.names.clear();
+        // Prepare the folder once per cached name set, not on every write.
+        if !self.names.contains_key(&folder) {
+            calternal_fsio::private::directory(&dir).map_err(internal)?;
+            if self.names.len() >= 32 {
+                self.names.clear();
+            }
         }
         let names = self.names.entry(folder.clone()).or_default();
         names.refresh(&dir).map_err(internal)?;
@@ -257,7 +260,10 @@ impl Space {
         let new_hash = sha256(&bytes);
         let path = self.file_path(id)?;
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
-        calternal_auth::private_fs::directory(dir).map_err(internal)?;
+        // Normally prepared by `choose_path`; recreate only if it vanished since.
+        if !dir.is_dir() {
+            calternal_fsio::private::directory(dir).map_err(internal)?;
+        }
         let result = (|| {
             if let Some(old) = old {
                 let old = self.files.join(old);

@@ -35,8 +35,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-// private_fs moves to calternal-fsio; only this import changes then.
-use calternal_auth::private_fs;
 use calternal_core::{JobState, JobView};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
@@ -274,9 +272,9 @@ impl Jobs {
             return Ok(c.clone());
         }
         let dir = root.join(space);
-        private_fs::directory(&dir).map_err(|_| Error::internal("job storage directory"))?;
+        calternal_fsio::private::directory(&dir).map_err(|_| Error::internal("job storage directory"))?;
         let path = dir.join("jobs.db");
-        private_fs::file(&path).map_err(|_| Error::internal("job storage file"))?;
+        calternal_fsio::private::file(&path).map_err(|_| Error::internal("job storage file"))?;
         let c = Connection::open(path).map_err(db_err)?;
         c.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;

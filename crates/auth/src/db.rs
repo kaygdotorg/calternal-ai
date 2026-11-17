@@ -354,7 +354,7 @@ impl Db {
         if let Some(dir) = path.parent() {
             create_parent(dir)?;
         }
-        crate::private_fs::file(path).map_err(Error::internal)?;
+        calternal_fsio::private::file(path).map_err(Error::internal)?;
         let conn = Connection::open(path).map_err(Error::internal)?;
         configure(&conn).map_err(Error::internal)?;
         migrate(&conn).map_err(Error::internal)?;
@@ -518,7 +518,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
 
 // Owner-only creation and fsio directory durability; not a root guard.
 fn create_parent(dir: &Path) -> Result<()> {
-    crate::private_fs::directory(dir).map_err(Error::internal)
+    calternal_fsio::private::directory(dir).map_err(Error::internal)
 }
 
 #[cfg(test)]

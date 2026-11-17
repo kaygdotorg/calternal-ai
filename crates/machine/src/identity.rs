@@ -83,7 +83,7 @@ impl Credentials {
 
     /// Write atomically with mode 0600; the directory is created 0700.
     pub fn save(&self, dir: &Path) -> Result<()> {
-        create_private_dir(dir)?;
+        calternal_fsio::private::directory(dir)?;
         let owner = match self.owner {
             Owner::Account { id } => format!("account {id}"),
             Owner::Pool => "pool".to_owned(),
@@ -135,18 +135,6 @@ impl Credentials {
             )?,
         })
     }
-}
-
-/// Create `dir` (and parents) and set it to mode 0700.
-///
-/// Stand-in for `calternal_auth::private_fs::directory`, which this crate does
-/// not depend on (that would pull the whole auth crate onto machines); replace
-/// with `calternal_fsio`'s copy once `private_fs` moves there.
-pub fn create_private_dir(dir: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::create_dir_all(dir)?;
-    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-    Ok(())
 }
 
 #[cfg(test)]

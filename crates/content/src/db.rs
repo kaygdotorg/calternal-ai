@@ -17,9 +17,9 @@ pub(crate) struct Space {
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
 pub(crate) fn database(path: &Path) -> Result<Connection> {
-    calternal_auth::private_fs::directory(path.parent().ok_or_else(|| internal("parent"))?)
+    calternal_fsio::private::directory(path.parent().ok_or_else(|| internal("parent"))?)
         .map_err(internal)?;
-    calternal_auth::private_fs::file(path).map_err(internal)?;
+    calternal_fsio::private::file(path).map_err(internal)?;
     let conn = Connection::open(path).map_err(internal)?;
     conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(internal)?;

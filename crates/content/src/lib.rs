@@ -95,7 +95,7 @@ impl Content {
         fault: fn(FaultPoint),
     ) -> Result<Self> {
         for path in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd, &secrets] {
-            calternal_auth::private_fs::directory(path).map_err(internal)?;
+            calternal_fsio::private::directory(path).map_err(internal)?;
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;

@@ -10,8 +10,6 @@
 use std::path::Path;
 use std::time::Duration;
 
-// Moves to calternal-fsio with the shared-types work; this line is the only change then.
-use calternal_auth::private_fs;
 use calternal_auth::token::{hash32, new_setup_token, normalize_setup_token};
 use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::Owner;
@@ -68,10 +66,10 @@ pub(crate) use calternal_types::now_ms;
 /// Open (creating 0600 if missing) and migrate the database.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     if let Some(dir) = path.parent() {
-        private_fs::directory(dir)
+        calternal_fsio::private::directory(dir)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     }
-    private_fs::file(path).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    calternal_fsio::private::file(path).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let c = Connection::open(path)?;
     c.busy_timeout(std::time::Duration::from_secs(5))?;
     c.pragma_update(None, "journal_mode", "WAL")?;
