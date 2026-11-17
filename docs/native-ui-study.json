@@ -69,8 +69,43 @@
       "separator": "#E6E6E6"
     },
     "motion": {
-      "sidebarToggleMsUpperBound": 300
-    }
+      "sidebarRevealMs": 190,
+      "sidebarBurstMs": 225,
+      "easing": [
+        0.4,
+        0,
+        0.6,
+        0.85
+      ],
+      "easingFit": "cubic-bezier, rms 0.019",
+      "fps": 60,
+      "measured": "Finder, 761pt panel"
+    },
+    "dark": {
+      "content": "#1E1E1E",
+      "listColumn": "#232A2C",
+      "sidebar": "#282D2E",
+      "listSelected": "#464646",
+      "sidebarSelected": "#1E2324",
+      "separatorListEditor": "#000000",
+      "separatorUnderToolbar": "#393F41",
+      "note": "sidebar and list are translucent over the wallpaper"
+    },
+    "contextMenu": {
+      "width": 247,
+      "height": 256,
+      "rowPitch": 24,
+      "groupGap": 11
+    },
+    "popoverFormat": {
+      "width": 177,
+      "height": 326,
+      "pointer": 6
+    },
+    "liquidGlassOptions": [
+      "Clear",
+      "Tinted"
+    ]
   },
   "ios": {
     "screen": {
@@ -175,13 +210,22 @@
     }
   },
   "notMeasured": [
-    "mac dark",
-    "mail/messages mac",
-    "inspector widths",
-    "menus/popovers/focus",
-    "ios taps: push/sheet timing, detents, swipe, share sheet",
+    "inspector pane widths",
+    "focus rings, hover, pressed",
+    "mac sheet/popover/selection/push timing",
+    "ios: all touch-driven items (no Simulator.app in Xcode 27.2)",
     "reduced motion",
     "glass blur radius",
     "stroke weights"
-  ]
+  ],
+  "trust": {
+    "macos.window.radius": "px",
+    "macos.sidebar": "ax",
+    "macos.dark": "px",
+    "macos.contextMenu": "px",
+    "macos.motion": "measured 60fps video",
+    "ios.largeTitle": "px+fit",
+    "ios.safeArea": "doc",
+    "ios.dynamicType": "measured at xSmall/large/xxxLarge, rest doc"
+  }
 }
