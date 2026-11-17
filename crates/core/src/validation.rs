@@ -114,6 +114,7 @@ pub fn is_known_operation(operation: &str) -> bool {
     crate::AGENT_OPERATIONS
         .iter()
         .any(|(id, _, _)| *id == operation)
+        || crate::PeopleOperation::from_id(operation).is_some()
         || is_account_input_operation(operation)
         || crate::note_operation(operation).is_some()
         || request_operation(operation).is_some()
@@ -121,11 +122,7 @@ pub fn is_known_operation(operation: &str) -> bool {
             operation,
             "spaces.list"
                 | "spaces.create"
-                | "spaces.members"
-                | "spaces.set_role"
-                | "spaces.remove_member"
                 | "spaces.leave"
-                | "spaces.transfer"
                 | "spaces.delete"
                 | "notes.get"
                 | "resolve"
@@ -184,6 +181,9 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         let _: crate::AgentInput = decode(input)?;
         return Ok(());
     }
+    if let Some(people) = crate::PeopleOperation::from_id(operation) {
+        return people.validate(input);
+    }
     if let Some(op) = crate::note_operation(operation) {
         return op.validate(input);
     }
@@ -212,23 +212,9 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
             let i: SpacesCreateInput = decode(input)?;
             validate_title(&i.name)
         }
-        "spaces.members" | "spaces.leave" | "spaces.delete" => {
+        "spaces.leave" | "spaces.delete" => {
             let i: SpaceInput = decode(input)?;
             space(&i.space_id)
-        }
-        "spaces.remove_member" | "spaces.transfer" => {
-            let i: SpaceMemberInput = decode(input)?;
-            space(&i.space_id)?;
-            validate_resource_id(&i.account_id)
-        }
-        "spaces.set_role" => {
-            let i: SpaceSetRoleInput = decode(input)?;
-            space(&i.space_id)?;
-            validate_resource_id(&i.account_id)?;
-            require(
-                i.role != SpaceRole::Owner,
-                "use explicit ownership transfer",
-            )
         }
         "resolve" => {
             let i: ResolveInput = decode(input)?;
@@ -404,6 +390,8 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         let object = |value: Value| serde_json::from_value(value).expect("schema is object");
         OperationDescription {
             risk: crate::builtin_operation_risk(id, mutates),
+            required_capability: None,
+            target: None,
             id: id.into(),
             description: description.into(),
             mutates,
@@ -418,25 +406,9 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             false,
         ),
         entry::<SpacesCreateInput, SpaceResult>("spaces.create", "Create an owned space", true),
-        entry::<SpaceInput, SpaceMembersResult>("spaces.members", "List current members", false),
-        entry::<SpaceSetRoleInput, SpaceChangedResult>(
-            "spaces.set_role",
-            "Change an existing member role",
-            true,
-        ),
-        entry::<SpaceMemberInput, SpaceChangedResult>(
-            "spaces.remove_member",
-            "Remove a member",
-            true,
-        ),
         entry::<SpaceInput, SpaceChangedResult>(
             "spaces.leave",
             "Leave after transferring ownership if necessary",
-            true,
-        ),
-        entry::<SpaceMemberInput, SpaceChangedResult>(
-            "spaces.transfer",
-            "Transfer ownership to an existing member",
             true,
         ),
         entry::<SpaceInput, SpaceChangedResult>(
@@ -500,6 +472,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             true,
         ),
     ];
+    catalog.extend(
+        crate::PeopleOperation::ALL
+            .iter()
+            .map(|operation| operation.describe()),
+    );
     catalog.extend(
         crate::NOTE_OPERATIONS
             .iter()

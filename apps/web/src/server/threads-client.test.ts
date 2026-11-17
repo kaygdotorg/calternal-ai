@@ -3,6 +3,7 @@
 import { describe, expect, test } from "vitest";
 import { ServerClient } from "./client";
 import { ServerThreads } from "./threads-client";
+import { lifetimesOf } from "./requests";
 import { parseMessages, stateOfTurn, summaryOf } from "./thread-file";
 import type { ThreadEvents } from "../apps/threads/client";
 
@@ -204,45 +205,57 @@ describe("ServerThreads", () => {
   });
 });
 
-describe("requests (issue #32's operations; the wire shape is the lane's stated goal)", () => {
+describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
   const list = { requests: [
-    { id: "q1", kind: "question", thread_id: T1, title: "Before I open the pull request", form: "Form([],\"x\")" },
-    { id: "a1", kind: "approval", thread_id: T1, title: "Run a command", action: "Push the branch", command: "git push origin lane/x" },
-    { id: "s1", kind: "secret", thread_id: T2, name: "FORGEJO_TOKEN", label: "Forgejo token", why: "To publish", scope: "personal", required: true, expires_ms: 1_800_000 },
-    { id: "z", kind: "something-new", thread_id: T1 },
+    { id: "q1", space_id: SPACE, thread_id: T1, detail: { kind: "question", label: "Before I open the pull request", form: { genui_version: 2, source: "Form([],\"x\")" } } },
+    { id: "a1", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: true, action: { operation: "threads.delete", input: { id: T2 }, request_id: "r", risk: "irreversible" } } },
+    { id: "a2", space_id: SPACE, thread_id: T1, detail: { kind: "approval", app: "calternal-notes", write: false, action: { operation: "notes.get", input: { id: "n" }, request_id: "r", risk: "read" } } },
+    { id: "s1", space_id: null, thread_id: T2, detail: { kind: "secret", name: "FORGEJO_TOKEN", label: "Forgejo token", reason: "To publish", expires_at_ms: 1_800_000 } },
+    { id: "z", space_id: SPACE, thread_id: T1, detail: { kind: "something-new" } },
   ] };
-  test("a list maps to the three kinds the bar draws and drops what it cannot", async () => {
+  test("the list is account-wide (no space), mapped to the three kinds the bar draws; unknown kinds are dropped", async () => {
     const d = double({ "requests.list": () => list });
     const r = await d.client.requests();
-    expect(r.map((x) => [x.id, x.kind, x.threadId])).toEqual([["q1", "question", T1], ["a1", "approval", T1], ["s1", "secret", T2]]);
-    expect(r[2]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
-    expect(d.calls[0]).toMatchObject({ operation: "requests.list", input: { space_id: SPACE } });
+    expect(r.map((x) => [x.id, x.kind, x.threadId])).toEqual([["q1", "question", T1], ["a1", "approval", T1], ["a2", "approval", T1], ["s1", "secret", T2]]);
+    expect(r[0]).toMatchObject({ title: "Before I open the pull request", form: "Form([],\"x\")" });
+    expect(r[3]).toMatchObject({ name: "FORGEJO_TOKEN", expiresAt: 1_800_000, scope: "personal" });
+    expect(d.ops("requests.list")[0]!.input).toEqual({});
   });
-  test("answers become the operations: answer, approve once or for the thread, deny; a secret's value goes in the answer", async () => {
+  test("an irreversible or access-widening approval is single-use; the rest may last for the thread; a server list wins", async () => {
+    const d = double({ "requests.list": () => list });
+    const r = (await d.client.requests()).filter((x) => x.kind === "approval") as { lifetimes: string[] }[];
+    expect(r.map((x) => x.lifetimes)).toEqual([["once"], ["once", "thread"]]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "widens_access" } })).toEqual(["once"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, action: { risk: "read" }, lifetimes: ["once"] })).toEqual(["once"]);
+    expect(lifetimesOf({ kind: "approval", app: "a", write: true, lifetimes: ["once", "this_thread"] })).toEqual(["once", "thread"]);
+  });
+  test("answers become the real operations: answer, approve once or this_thread, deny", async () => {
     const d = double({ "requests.list": () => ({ requests: [] }), "requests.answer": () => ({}), "requests.approve": () => ({}), "requests.deny": () => ({}) });
+    d.client.watchRequests(() => {});
     await d.client.answer("q1", { kind: "question", values: { branch: "x" } });
     await d.client.answer("a1", { kind: "approval", decision: "once" });
     await d.client.answer("a2", { kind: "approval", decision: "thread" });
     await d.client.answer("a3", { kind: "approval", decision: "deny" });
-    await d.client.answer("s1", { kind: "secret", value: "hunter2" });
-    await d.client.answer("s2", { kind: "secret-skip" });
     expect(d.calls.filter((c) => c.operation !== "requests.list").map((c) => [c.operation, c.input])).toEqual([
-      ["requests.answer", { id: "q1", values: { branch: "x" } }],
+      ["requests.answer", { id: "q1", answer: { branch: "x" } }],
       ["requests.approve", { id: "a1", lifetime: "once" }],
-      ["requests.approve", { id: "a2", lifetime: "thread" }],
+      ["requests.approve", { id: "a2", lifetime: "this_thread" }],
       ["requests.deny", { id: "a3" }],
-      ["requests.answer", { id: "s1", secret: "hunter2" }],
-      ["requests.deny", { id: "s2" }],
     ]);
   });
-  test("after an answer the watchers hear the new list", async () => {
-    let open = true;
-    const d = double({ "requests.list": () => ({ requests: open ? [list.requests[0]] : [] }), "requests.approve": () => { open = false; return {}; } });
-    const seen: number[] = [];
-    const off = d.client.watchRequests((r) => seen.push(r.length));
-    await d.client.answer("a1", { kind: "approval", decision: "once" });
-    off();
-    expect(seen).toEqual([0]);
+  test("a secret's value goes to the trusted endpoint, with its space; skipping hides the prompt and calls nothing", async () => {
+    const posts: { url: string; body: any }[] = [];
+    const fetch = (async (url: string, init?: RequestInit) => {
+      if (url.includes("/auth/secrets/provide")) { posts.push({ url, body: JSON.parse(init!.body as string) }); return new Response(JSON.stringify({ secret: { name: "X", version: 1 } }), { status: 200 }); }
+      const b = JSON.parse(init!.body as string);
+      return ok(b.operation === "requests.list" ? { requests: [{ id: "s2", space_id: SPACE, thread_id: T1, detail: { kind: "secret", name: "N", label: "L", reason: "R", expires_at_ms: 1 } }, { id: "s3", space_id: null, thread_id: T1, detail: { kind: "secret", name: "M", label: "L", reason: "R", expires_at_ms: 1 } }] } : {});
+    }) as never;
+    const c = new ServerThreads(new ServerClient({ token: () => "T", fetch }), () => SPACE);
+    await c.requests();
+    await c.answer("s2", { kind: "secret", value: "hunter2" });
+    await c.answer("s3", { kind: "secret-skip" });
+    expect(posts).toEqual([{ url: "/api/v1/auth/secrets/provide", body: { request_id: "s2", space_id: SPACE, value: "hunter2" } }]);
+    expect((await c.requests()).map((r) => r.id)).toEqual(["s2"]);
   });
   test("a server without request operations answers not_found once: an empty list, and no more asking", async () => {
     const d = double({});
@@ -250,8 +263,8 @@ describe("requests (issue #32's operations; the wire shape is the lane's stated 
     expect(await d.client.requests()).toEqual([]);
     expect(d.calls.filter((c) => c.operation === "requests.list")).toHaveLength(1);
   });
-  test("a refused answer is thrown as the server said it", async () => {
-    const d = double({ "requests.approve": () => fail("forbidden", "an agent cannot approve") });
-    await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toBeDefined();
+  test("a refused approval (no fresh passkey proof) is thrown with the server's words", async () => {
+    const d = double({ "requests.approve": () => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "forbidden", message: "verify with your passkey again first" } }), { status: 403 }) });
+    await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toMatchObject({ message: "verify with your passkey again first" });
   });
 });

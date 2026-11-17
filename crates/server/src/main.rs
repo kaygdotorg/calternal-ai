@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 mod admin_cli;
+mod people_maintenance;
 use admin_cli::MachinesCmd;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
@@ -92,6 +93,27 @@ enum Cmd {
         #[command(subcommand)]
         cmd: calternal_cli::account_input::Pending,
     },
+    /// Manage space grants, role definitions, profiles, and server people.
+    People {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::People,
+    },
+    /// List and manage server groups and their members.
+    Groups {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::Groups,
+    },
+    /// Create, copy, revoke and redeem space invitations.
+    Invites {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::Invites,
+    },
     /// List, answer, approve or deny the requests waiting on you.
     Requests {
         #[command(flatten)]
@@ -139,6 +161,11 @@ enum Cmd {
         /// request.
         #[arg(long, env = "CALTERNAL_RECEIPT_RETENTION_DAYS", default_value_t = 7)]
         receipt_retention_days: u32,
+        /// Days to retain an invitation after expiry, revocation or redemption.
+        #[arg(long, env = "CALTERNAL_INVITE_RETENTION_DAYS",
+            default_value_t = calternal_auth::invites::DEFAULT_INVITE_RETENTION_DAYS,
+            value_parser = clap::value_parser!(u32).range(1..))]
+        invite_retention_days: u32,
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
@@ -248,6 +275,21 @@ fn main() {
         Cmd::Pending { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
             calternal_cli::account_input::run(connection, op, input, &out)
         })),
+        Cmd::People { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Groups { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Invites { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
         Cmd::Requests { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
             calternal_cli::account_input::run(connection, op, input, &out)
         })),
@@ -281,6 +323,7 @@ fn main() {
             create,
             installation_id,
             receipt_retention_days,
+            invite_retention_days,
             port,
             web_dir,
             plugin_root,
@@ -321,6 +364,7 @@ fn main() {
                     std::time::Duration::from_secs(
                         u64::from(receipt_retention_days.max(1)) * 86_400,
                     ),
+                    std::time::Duration::from_secs(u64::from(invite_retention_days) * 86_400),
                     port,
                     web_dir,
                     plugin_root,
@@ -352,6 +396,7 @@ async fn serve(
     installation_id: Option<String>,
     create: bool,
     receipt_retention: std::time::Duration,
+    invite_retention: std::time::Duration,
     port: u16,
     web_dir: Option<PathBuf>,
     plugin_root: Option<PathBuf>,
@@ -472,6 +517,7 @@ async fn serve(
     };
     // Directory receipts follow the same retention as space receipts.
     config.receipt_retention = receipt_retention;
+    config.invite_retention = invite_retention;
     if config.set_trusted_proxies(&trusted_proxies).is_err() {
         return Err(boot(
             1,
@@ -536,6 +582,15 @@ async fn serve(
     let _admin =
         calternal_server::machines::admin::serve_socket(&data_dir, installation, machines.clone())
             .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let mut invite_tasks = tokio::task::JoinSet::new();
+    if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
+        let auth = service.auth.clone();
+        let backlog = auth
+            .purge_invites()
+            .await
+            .map_err(|e| boot(1, "failed", format!("invite cleanup: {e}"), DATA_HINT))?;
+        invite_tasks.spawn(people_maintenance::sweep_invites(auth, backlog));
+    }
     let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
     {
         match service.auth.first_owner_token().await {

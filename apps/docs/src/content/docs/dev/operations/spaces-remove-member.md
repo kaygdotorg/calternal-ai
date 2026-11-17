@@ -6,16 +6,19 @@ title: "spaces.remove_member"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Remove a member
+Remove a direct account or group grant.
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: members.manage.
 
 ## Declaration
 
 ```json
 {
+  "risk": "irreversible",
+  "required_capability": "members.manage",
+  "target": "space",
   "id": "spaces.remove_member",
-  "description": "Remove a member",
+  "description": "Remove a direct account or group grant.",
   "mutates": true
 }
 ```
@@ -26,22 +29,31 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Target account for removal or explicit ownership transfer.",
+  "description": "A direct space grant identifies exactly one person or group.",
   "properties": {
     "account_id": {
-      "description": "Stable target account UUID, independently allocated from the space.",
-      "type": "string"
+      "description": "Account UUID when the grant targets a person.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "group_id": {
+      "description": "Group UUID when the grant targets a group.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "space_id": {
-      "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+      "description": "Space UUID.",
       "type": "string"
     }
   },
   "required": [
-    "account_id",
     "space_id"
   ],
-  "title": "SpaceMemberInput",
+  "title": "SpaceGrantInput",
   "type": "object"
 }
 ```

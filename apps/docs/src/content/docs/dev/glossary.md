@@ -53,5 +53,6 @@ first time it is used with a new meaning.
 - **Pool**: the cloud machines the operator runs for people whose group allows it.
 - **Sandbox**: the confined environment one agent thread runs in on a machine.
 - **Lease**: a machine's claim on a piece of work. A silent machine loses it, and its late output is refused.
+- **Person request**: a private question, approval or secret prompt addressed to an account.
 - **Secret**: a credential stored encrypted, per account or per space.
 - **Handle**: what a plugin or agent holds in place of a secret's value.

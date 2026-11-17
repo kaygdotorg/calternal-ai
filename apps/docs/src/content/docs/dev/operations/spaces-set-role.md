@@ -6,16 +6,19 @@ title: "spaces.set_role"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Change an existing member role
+Change a direct account or group grant.
 
-Capability: not declared in this catalogue; the host policy remains authoritative.
+Capability: members.manage.
 
 ## Declaration
 
 ```json
 {
+  "risk": "widens_access",
+  "required_capability": "members.manage",
+  "target": "space",
   "id": "spaces.set_role",
-  "description": "Change an existing member role",
+  "description": "Change a direct account or group grant.",
   "mutates": true
 }
 ```
@@ -61,11 +64,21 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       ]
     }
   },
-  "description": "Change an existing member's role; assigning Owner requires transfer instead.",
+  "description": "A role assignment to exactly one person or group.",
   "properties": {
     "account_id": {
-      "description": "Stable target account UUID.",
-      "type": "string"
+      "description": "Account UUID when granting access directly to a person.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "group_id": {
+      "description": "Group UUID when granting access through current group membership.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "role": {
       "allOf": [
@@ -73,19 +86,18 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "$ref": "#/definitions/SpaceRole"
         }
       ],
-      "description": "Requested membership role; Owner is refused here."
+      "description": "Requested role. Ownership uses explicit transfer."
     },
     "space_id": {
-      "description": "Stable space UUID; development inputs temporarily accept seeded aliases.",
+      "description": "Space UUID.",
       "type": "string"
     }
   },
   "required": [
-    "account_id",
     "role",
     "space_id"
   ],
-  "title": "SpaceSetRoleInput",
+  "title": "SpaceGrantRoleInput",
   "type": "object"
 }
 ```

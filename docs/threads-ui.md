@@ -13,14 +13,13 @@ Response shapes and the Markdown are in `server/thread-file.ts`; `server/threads
 | Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model travel with it (the server applies them directly) |
 | Working state and steps | the job's SSE stream: provider events are nested, `chunk.data.event` (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer |
 | Stop, rename, archive, unarchive, delete | `threads.stop`, `.rename`, `.archive`, `.unarchive`, `.delete` |
-| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`): `requests.list`, `requests.answer`, `requests.approve` (`once` or `thread`), `requests.deny`; refreshed when the feed says a turn started or stopped waiting. **The wire shape is issue #32's stated goal, not yet in dev**; `requestOf` and `answerInput` are the one place to change. A server without them answers `not_found` once and the list stays empty |
+| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`) on the requests lane's operations (`docs/requests.md`): `requests.list` (account-wide, `{}`), `requests.answer` `{id, answer}`, `requests.approve` `{id, lifetime: once or this_thread}`, `requests.deny`; a secret's value goes to `POST /api/v1/auth/secrets/provide`. The bar offers "Allow for this thread" only when the approval may last (irreversible and access-widening actions are single-use: `lifetimesOf`). Approving needs a fresh passkey proof on an installation session: a development bearer is refused and the server's words are shown. Refreshed when the feed says a turn started or stopped waiting |
 
 Tested against a recorded-response double (`threads-client.test.ts`) and, end to end, against a seeded installation (`e2e/live-threads.mjs`).
 
 ## What the server still lacks
 
 - Where a thread runs: no operation names or records a machine; the choice is kept on the page and the server picks one.
-- Requests (#32) are not in dev.
 - Changes and Run tabs have no operation.
 
 ## The client interface
@@ -48,3 +47,12 @@ For a fresh real account, each in plain words with the next step and no placehol
 | Request bar | Question: the agent waits and continues once answered. Approval: nothing runs until you decide; "for this thread" lasts until the thread is deleted. Secret: where the value goes | the buttons already on the bar |
 
 What the server can tell today: a failed or interrupted turn comes from the turn state (`failed`, `interrupted`) with generic words; "no machine", "machine offline" and "provider not signed in" need a machine-readiness read the server does not offer yet (the real adapter shows none of them rather than guess), and the retry countdown needs the retry fields of the job checkpoint. Resume is `agent.resume` on the thread's last job.
+
+## Backend follow-ups (for the requests and threads lanes)
+
+- **Which lifetimes a request allows.** The list does not say; the UI reads it from `action.risk` (`irreversible` and `widens_access` are single-use) in `lifetimesOf`. The server should send it, for example `detail.lifetimes: ["once"]` or `["once", "this_thread"]`, so the rule lives in one place. `lifetimesOf` already prefers such a list when it is there.
+- **Readiness** (machine enrolled, online, provider signed in) and **retry fields** (attempt, next attempt) for the states in "Empty, missing and failed states".
+- **A fixture provider that emits tool events.** The seeded installation's provider emits only `session` and `text_delta`, so a page reloaded mid-turn shows the Working row with no steps (a real provider's steps are replayed from the oldest retained event when a page connects without a bookmark; checked: the second connection returns the whole stream). A fixture with a few `tool_started` and `tool_finished` events would let `live-threads.mjs` check the steps.
+- **Resuming a job stream after a bookmark** re-sent the `session` chunk in a probe (`?after=<id>` with the last id seen): worth a look, harmless to the UI.
+
+The page's session code is the shell's: the adapter uses the shared `ServerClient` (bearer in development token mode, the browser's cookie otherwise, nothing of its own), and `/api/v1/auth/me` is called by the shell's `server/boot.ts`, not by the Threads adapter.

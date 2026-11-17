@@ -574,3 +574,6 @@ use state::{capture, ids, validate};
 use std::path::PathBuf;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod people_tests;

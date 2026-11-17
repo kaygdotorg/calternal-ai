@@ -31,17 +31,6 @@ pub struct SpaceMemberInput {
     /// Stable target account UUID, independently allocated from the space.
     pub account_id: String,
 }
-/// Change an existing member's role; assigning Owner requires transfer instead.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(deny_unknown_fields)]
-pub struct SpaceSetRoleInput {
-    /// Space UUID; names are never accepted in its place.
-    pub space_id: String,
-    /// Stable target account UUID.
-    pub account_id: String,
-    /// Requested membership role; Owner is refused here.
-    pub role: SpaceRole,
-}
 /// Space metadata and the caller's current effective role.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
@@ -79,15 +68,22 @@ pub struct SpaceResult {
 pub struct SpaceMember {
     /// Member's stable account UUID.
     pub account_id: String,
-    /// Current effective role.
+    /// Current account display name.
+    pub name: String,
+    /// Current directly granted role.
     pub role: SpaceRole,
 }
 /// Member directory visible to a current space reader.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct SpaceMembersResult {
-    /// Current account memberships, including exactly one Owner.
+    /// Direct account grants on this page. Exactly one Owner has a direct grant.
     pub members: Vec<SpaceMember>,
+    /// Direct group grants, including names and active member counts.
+    pub groups: Vec<crate::SpaceGroupMember>,
+    /// Continue after the last grant, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 /// A completed membership mutation or directory-record deletion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

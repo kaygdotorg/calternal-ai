@@ -111,6 +111,8 @@ export interface ApprovalRequest {
   action: string;
   /** The exact command or change. */
   command: string;
+  /** How long the person may allow it for. The server says: an irreversible or access-widening action is single-use (`once` only); the rest may also last for the thread. */
+  lifetimes: ("once" | "thread")[];
 }
 
 /** A request for a secret. Drawn by the shell; the value goes to the server and the agent only ever gets a handle. Expires after 15 minutes. */
@@ -123,6 +125,8 @@ export interface SecretRequest {
   label: string;
   why: string;
   scope: "personal" | "space";
+  /** The space it belongs to (a UUID) when `scope` is `space`: the value is stored there. */
+  spaceId?: string;
   required: boolean;
   /** Milliseconds since the epoch. */
   expiresAt: number;

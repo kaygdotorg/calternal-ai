@@ -134,6 +134,8 @@ impl NoteOperation {
 fn schemas<I: JsonSchema, O: JsonSchema>(op: &NoteOperation) -> OperationDescription {
     let object = |value| serde_json::from_value(value).expect("schema is object");
     OperationDescription {
+        required_capability: None,
+        target: None,
         id: op.id.into(),
         description: op.description.into(),
         risk: op.risk,

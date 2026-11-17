@@ -1,4 +1,4 @@
-//! The closed space capability vocabulary (ADR 0058: checks consume capability
+//! The closed host capability vocabulary (ADR 0058: checks consume capability
 //! sets, never role names).
 //!
 //! Dotted names follow the existing app's style: `members` scopes its
@@ -6,9 +6,9 @@
 //! `server.settings`. Read-only plugin operations need `space.read`;
 //! `plugins.use` is the broader use granted to Editors.
 
-/// One host-defined space permission; an unknown stored name confers nothing.
+/// One host-defined permission; an unknown stored name confers nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u16)]
+#[repr(u32)]
 pub enum Capability {
     /// Read space content and invoke read-only plugin operations.
     SpaceRead = 1 << 0,
@@ -36,11 +36,21 @@ pub enum Capability {
     SpacesCreate = 1 << 11,
     /// Manage space secret metadata, values and pending requests.
     SecretsManage = 1 << 12,
+    /// Manage the server-wide people directory and disable accounts.
+    PeopleManage = 1 << 13,
+    /// Manage the server-wide group directory and local memberships.
+    GroupsManage = 1 << 14,
+    /// Edit the signed-in account's own profile.
+    AccountProfile = 1 << 15,
+    /// Present a bearer invitation while signed in.
+    InviteRedeem = 1 << 16,
+    /// Inspect the built-in space role definitions.
+    RolesList = 1 << 17,
 }
 
 impl Capability {
     /// Every defined capability, for coverage tests and closed-set decoding.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 18] = [
         Self::SpaceRead,
         Self::ContentWrite,
         Self::PluginsUse,
@@ -54,6 +64,11 @@ impl Capability {
         Self::SpacesList,
         Self::SpacesCreate,
         Self::SecretsManage,
+        Self::PeopleManage,
+        Self::GroupsManage,
+        Self::AccountProfile,
+        Self::InviteRedeem,
+        Self::RolesList,
     ];
 
     /// The stored and wire name, as written in `auth.db` role rows and manifests.
@@ -72,11 +87,16 @@ impl Capability {
             Self::SpacesList => "spaces.list",
             Self::SpacesCreate => "spaces.create",
             Self::SecretsManage => "secrets.manage",
+            Self::PeopleManage => "people.manage",
+            Self::GroupsManage => "groups.manage",
+            Self::AccountProfile => "account.profile",
+            Self::InviteRedeem => "invites.redeem",
+            Self::RolesList => "roles.list",
         }
     }
 
     /// Resolves a stored name; an unknown name is `None` and grants nothing.
-    /// Cost: linear scan of 13 static names, no allocation.
+    /// Cost: linear scan of static names, no allocation.
     pub fn from_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|c| c.name() == name)
     }
@@ -84,7 +104,7 @@ impl Capability {
 
 /// Allocation-free set of capabilities, independent of any role name.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct CapabilitySet(u16);
+pub struct CapabilitySet(u32);
 
 impl CapabilitySet {
     /// The empty set, which grants no operation.
@@ -97,7 +117,7 @@ impl CapabilitySet {
         let mut bits = 0;
         let mut index = 0;
         while index < capabilities.len() {
-            bits |= capabilities[index] as u16;
+            bits |= capabilities[index] as u32;
             index += 1;
         }
         Self(bits)
@@ -105,17 +125,17 @@ impl CapabilitySet {
 
     /// Whether the set grants `capability`. Cost: one bitwise AND.
     pub const fn contains(self, capability: Capability) -> bool {
-        self.0 & capability as u16 != 0
+        self.0 & capability as u32 != 0
     }
 
     /// This set plus `capability`.
     pub const fn with(self, capability: Capability) -> Self {
-        Self(self.0 | capability as u16)
+        Self(self.0 | capability as u32)
     }
 
     /// This set without `capability`, keeping every other grant.
     pub const fn without(self, capability: Capability) -> Self {
-        Self(self.0 & !(capability as u16))
+        Self(self.0 & !(capability as u32))
     }
 
     /// The granted capabilities in [`Capability::ALL`] order.

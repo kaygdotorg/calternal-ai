@@ -21,6 +21,9 @@ pub mod account_input;
 /// Non-interactive thread operations using manifest admission and common output.
 pub mod threads;
 
+/// HTTP people, group and invitation commands.
+pub mod people;
+
 /// Structured Notes, tags and Trash command adapters.
 pub mod notes;
 

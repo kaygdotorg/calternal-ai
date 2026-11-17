@@ -49,6 +49,9 @@ export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/appdata/dev-tokens/owner.token"
 ./target/debug/cl plugins list --space <space-uuid>
 ```
 
+Use `calternal people`, `calternal groups`, and `calternal invites` to
+manage space access through the same HTTP transport. See [people and access](docs/people.md).
+
 For mutation retries, retain the `--request-id` and repeat exactly the same operation and input. A transport failure can mean the server committed even though the reply was lost. Tokens are accepted from a protected file or environment, never a command-line token argument.
 
 Space changes can be followed with `calternal watch <space-uuid> --token-file
