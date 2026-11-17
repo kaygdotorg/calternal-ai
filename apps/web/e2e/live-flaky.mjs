@@ -18,6 +18,7 @@ let fails = 0; const times = [];
 for (let i = 1; i <= N; i++) {
   log = []; ops = [];
   try {
+  await page.goto(BASE + "/threads?server=1"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1500);
   const mark = `${Date.now()}`; const problems = [];
   await page.keyboard.press("Control+k"); await page.getByRole("dialog", { name: "Search and commands" }).waitFor();
   await page.locator(".pal-input").fill("new thread"); await page.waitForTimeout(200);

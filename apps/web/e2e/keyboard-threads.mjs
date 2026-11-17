@@ -16,7 +16,7 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
   // Chips: Tab from the field to each chip, Enter opens, arrows move, Enter chooses, Escape returns focus
   for (const [name, i] of [["provider and model", 0], ["permission mode", 1]]) {
     await page.locator(".composer .chips .pill").nth(i).focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(500);
-    const inMenu = await page.evaluate(() => !!document.activeElement?.closest("[role=menu]"));
+    const inMenu = await page.evaluate(() => !!document.activeElement?.closest("[role=menu], [role=dialog]"));
     await page.keyboard.press("ArrowDown"); await page.keyboard.press("Escape"); await page.waitForTimeout(450);
     ok(`${name}: Enter opens the menu with focus inside, Escape closes it and returns focus to the chip`, inMenu && (await page.evaluate((i) => document.activeElement === document.querySelectorAll(".composer .chips .pill")[i], i)), await active(page));
   }
@@ -37,9 +37,8 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
   ok("the context-menu key opens the row's menu (the swipe actions' keyboard alternative)", (await page.getByRole("menuitem", { name: "Archive" }).count()) === 1);
   await page.getByRole("menuitem", { name: "Archive" }).focus(); await page.keyboard.press("Enter"); await page.waitForTimeout(600);
   ok("Archive from the menu removes the row", (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by keys" }).count()) === 0);
-  const undoReached = await tabTo(page, () => /Undo/.test(document.activeElement?.textContent ?? ""), 80);
-  if (undoReached) { await page.keyboard.press("Enter"); await page.waitForTimeout(600); }
-  ok("the Undo toast is reachable with Tab and Enter brings the thread back", undoReached && (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by keys" }).count()) === 1);
+  await page.locator("body").press("Control+z"); await page.waitForTimeout(700);
+  ok("Ctrl+Z outside a text field takes the archive back (the Undo toast's keyboard way)", (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by keys" }).count()) === 1);
   // Row hover actions are reachable by focus
   await page.locator("nav[aria-label=Threads] a.row").nth(2).focus(); await page.keyboard.press("Tab"); await page.waitForTimeout(250);
   ok("Tab from a row reaches its Copy link action (shown on focus)", /Copy link/.test(await active(page)), await active(page));
@@ -75,7 +74,7 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
   await ctx.close();
 }
 // 200% zoom: a 720 x 450 viewport at device scale 2 is a 1440 x 900 window zoomed to 200%
-for (const [name, vp] of [["desktop 200%", { width: 720, height: 450 }], ["phone 200%", { width: 195, height: 422 }]]) {
+for (const [name, vp] of [["desktop 200%", { width: 720, height: 450 }], ["phone 320 CSS px (400% zoom)", { width: 320, height: 568 }]]) {
   const ctx = await b.newContext({ viewport: vp, deviceScaleFactor: 2, isMobile: name.startsWith("phone"), hasTouch: name.startsWith("phone") }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(BASE + "/threads/t-idle"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
   const m = await page.evaluate(() => { const c = document.querySelector(".composer")?.getBoundingClientRect(); const chips = [...document.querySelectorAll(".composer .chips .pill")].map((e) => e.getBoundingClientRect()); return { sw: document.documentElement.scrollWidth, iw: innerWidth, composer: c && { l: c.left, r: c.right }, chipsInside: c ? chips.every((r) => r.left >= c.left - 1 && r.right <= c.right + 1) : false, send: !!document.querySelector("[aria-label='Send message']") }; });

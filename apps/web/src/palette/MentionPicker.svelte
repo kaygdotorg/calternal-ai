@@ -50,7 +50,7 @@
   <div class="mp">
     {#each view as g (g.kind)}
       <div class="mg" role="group" aria-label={g.title}>
-        <h3>{g.title}</h3>
+        <div class="gh" aria-hidden="true">{g.title}</div>
         {#each g.entries as m (m.id)}
           {@const i = dflat.indexOf(m)}
           <div class="mo" class:on={i === sel} role="option" tabindex="-1" aria-selected={i === sel} onpointermove={() => (sel = i)} onpointerdown={(e) => { e.preventDefault(); onchoose(m); }}><Icon inline name={ICON[m.kind]!} /><span class="l">{m.label}</span><span class="g">{m.sub}</span></div>
@@ -62,7 +62,7 @@
 
 <style>
   .mp { display: grid; gap: var(--s-2); min-width: 16rem; max-width: min(26rem, 90vw); padding: var(--s-2); }
-  .mg h3 { padding: var(--s-2) var(--s-4); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
+  .mg .gh { padding: var(--s-2) var(--s-4); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .mo { display: flex; align-items: center; gap: var(--s-4); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-select); cursor: pointer; font-size: var(--text-ui); }
   .mo.on { background: var(--accent-soft); }
   .mo .l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
