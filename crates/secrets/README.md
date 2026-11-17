@@ -66,7 +66,6 @@ owner's first write.
 
 ## Reused primitives
 
-`calternal_auth::private_fs` for 0600 files and 0700 directories (imported once in
-`lib.rs`; it moves to `calternal-fsio`), `calternal_fsio::sync_dir`, the invite key's
-hard-link publication, `rusqlite` with WAL and `synchronous=FULL` as in the other stores,
-and `AccountId`/`SpaceId` from `calternal-auth`.
+`calternal_fsio::private` for 0600 files and 0700 directories, `calternal_fsio::sync_dir`,
+the invite key's hard-link publication, `rusqlite` with WAL and `synchronous=FULL` as in
+the other stores, and `AccountId`/`SpaceId` from `calternal-types`.

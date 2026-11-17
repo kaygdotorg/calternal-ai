@@ -9,7 +9,6 @@ pub mod account_http;
 pub mod api;
 pub mod auth;
 pub mod authz;
-pub mod error;
 pub mod fault;
 pub mod machines;
 pub mod plugins;

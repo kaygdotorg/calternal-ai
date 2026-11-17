@@ -1,8 +1,6 @@
 use super::*;
-use calternal_auth::{
-    AccountId,
-    spaces::{SpaceId, Spaces},
-};
+use calternal_auth::spaces::Spaces;
+use calternal_types::{AccountId, SpaceId};
 use std::{
     os::unix::fs::PermissionsExt,
     sync::atomic::{AtomicBool, Ordering},
@@ -312,7 +310,7 @@ fn modes_symlinks_and_space_records_keep_credentials_private() {
         );
     }
     let s = c.load().unwrap();
-    let space = &s.image.records[&format!("2{}", f.space.0.simple())];
+    let space = &s.image.records[&format!("2{}", f.space.as_uuid().simple())];
     let text = serde_json::to_string(space).unwrap();
     for secret in [
         "PRIVATE-PASSKEY",
@@ -390,12 +388,12 @@ async fn account_creation_passkey_removal_and_session_revocation_use_the_barrier
     assert!(
         ids(&coordinator.validate_and_read().unwrap(), "users", "id")
             .unwrap()
-            .contains(&created.id.0)
+            .contains(&created.id.as_uuid())
     );
     for cred in [vec![1_u8], vec![2_u8]] {
         c.execute("INSERT INTO passkeys(cred_id,user_id,passkey,created_at) VALUES(?1,?2,'protected passkey fixture',1)", rusqlite::params![cred, created.id.to_string()]).unwrap();
     }
-    let installation = calternal_auth::InstallationId::new();
+    let installation = calternal_types::InstallationId::new();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -465,7 +463,7 @@ async fn failed_recovery_completion_still_fences_a_committed_session_revocation(
     .unwrap();
     let created = auth.create("revoke test").await.unwrap();
     let c = calternal_auth::db::open_conn(&f._dir.path().join("system/auth.db")).unwrap();
-    let installation = calternal_auth::InstallationId::new();
+    let installation = calternal_types::InstallationId::new();
     let token = calternal_auth::token::new_session_token().unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -548,7 +546,7 @@ fn missing_versions_and_partial_directory_trees_refuse_without_repair() {
 }
 
 // Independent review regressions: these deliberately express the required safety
-// contract; REVIEW.md records their original failures before implementation.
+// contract; docs/reviews/recovery-review-2026-11-17.md records their original failures before implementation.
 #[test]
 fn deleting_newest_generation_must_not_resurrect_revoked_membership() {
     let f = Fixture::new();
@@ -569,7 +567,7 @@ fn deleting_newest_generation_must_not_resurrect_revoked_membership() {
             "account_id"
         )
         .unwrap()
-        .contains(&f.member.0)
+        .contains(&f.member.as_uuid())
     );
     fsio::write_atomic_mode(&log_path(&f), &old, 0o600).unwrap();
     // A valid prefix is indistinguishable without independent freshness evidence.
@@ -665,9 +663,9 @@ fn log_path(f: &Fixture) -> PathBuf {
 }
 
 #[test]
-fn telemetry_and_sharing_delivery_changes_do_not_publish() {
+fn telemetry_changes_do_not_publish() {
     let f = Fixture::new();
-    let installation = calternal_auth::InstallationId::new();
+    let installation = calternal_types::InstallationId::new();
     f.connection().execute("INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at,expires_at) VALUES(?1,?2,'browser','test',x'0123',1,1,100)",rusqlite::params![installation.to_string(),f.owner.to_string()]).unwrap();
     f.baseline();
     let pin = f.coordinator().checkpoint().unwrap();
@@ -695,19 +693,12 @@ fn telemetry_and_sharing_delivery_changes_do_not_publish() {
     .unwrap();
     tx.execute("UPDATE passkeys SET last_used_at=50", [])
         .unwrap();
-    tx.execute(
-        "INSERT INTO sharing_installation_resets VALUES(?1,50)",
-        [installation.to_string()],
-    )
-    .unwrap();
     let id = c.prepare(&tx).unwrap();
     assert_eq!(id, "");
     tx.commit().unwrap();
     c.complete(&db, &id).unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
     let snapshot = c.validate_and_read_at(&pin).unwrap();
-    assert!(!snapshot.tables.contains_key("sharing_installation_resets"));
-    assert!(!snapshot.tables.contains_key("share_fanout"));
     let expiry = snapshot.tables["installations"]
         .columns
         .iter()
@@ -825,12 +816,12 @@ fn next_request_finishes_a_committed_revocation_before_publishing_another_change
     assert!(
         !ids(&snapshot, "space_memberships", "account_id")
             .unwrap()
-            .contains(&f.member.0)
+            .contains(&f.member.as_uuid())
     );
     assert!(
         ids(&snapshot, "spaces", "id")
             .unwrap()
-            .contains(&created.id.0)
+            .contains(&created.id.as_uuid())
     );
     assert_eq!(
         snapshot.tables,
@@ -882,6 +873,94 @@ fn account_receipt_and_space_change_publish_together_and_retry_has_no_fsyncs() {
     count.store(0, Ordering::SeqCst);
     assert_eq!(apply().unwrap(), first);
     assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+/// Machine authority (codes, enrollment, revocation, pool grants) is protected
+/// state: each change is published (two file fsyncs) before it returns, account-
+/// owned rows land in the owner's record and pool rows in the global record, and a
+/// refused publication leaves the authority unchanged.
+#[test]
+fn machine_authority_is_published_before_acknowledgement() {
+    let f = Fixture::new();
+    f.baseline();
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let fail = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (observed, failing) = (count.clone(), fail.clone());
+    let c = Arc::new(
+        Coordinator::with_observer(
+            &f.root,
+            f.install,
+            Arc::new(move |s| {
+                if matches!(s, Step::BeforeIntent) && failing.swap(false, Ordering::SeqCst) {
+                    return Err(err("injected crash before the intent"));
+                }
+                if matches!(s, Step::FileSynced) {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(())
+            }),
+        )
+        .unwrap(),
+    );
+    let spaces = Spaces::open(&f.db).unwrap();
+    spaces.configure_recovery(c.clone()).unwrap();
+    let machines = spaces.machines();
+    // A publication that fails before commit leaves no authority behind.
+    fail.store(true, Ordering::SeqCst);
+    assert!(machines.set_pool_grant(f.outsider, true).is_err());
+    assert!(machines.pool_grants().unwrap().is_empty());
+    let published = |label: &str, run: &dyn Fn()| {
+        count.store(0, Ordering::SeqCst);
+        run();
+        assert_eq!(count.load(Ordering::SeqCst), 2, "{label} was not published");
+    };
+    count.store(0, Ordering::SeqCst);
+    let (code, _) = machines
+        .issue_code(Some(f.owner), std::time::Duration::from_secs(60))
+        .unwrap();
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        2,
+        "an owner's code was not published"
+    );
+    let canon = calternal_auth::token::normalize_setup_token(&code).unwrap();
+    count.store(0, Ordering::SeqCst);
+    let machine = machines
+        .redeem_code(
+            calternal_auth::token::hash32(&canon),
+            vec![7; 32],
+            "laptop".into(),
+            "linux".into(),
+            "x86_64".into(),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        count.load(Ordering::SeqCst),
+        2,
+        "enrollment was not published"
+    );
+    published("a pool code", &|| {
+        machines
+            .issue_code(None, std::time::Duration::from_secs(60))
+            .unwrap();
+    });
+    published("a pool grant", &|| {
+        machines.set_pool_grant(f.member, true).unwrap()
+    });
+    published("a revocation", &|| {
+        assert!(machines.revoke(machine.id).unwrap());
+    });
+    let snapshot = c.validate_and_read().unwrap();
+    assert_eq!(snapshot.tables["machines"].rows.len(), 1);
+    assert_eq!(snapshot.tables["machine_pool_grants"].rows.len(), 1);
+    assert_eq!(snapshot.tables["machine_codes"].rows.len(), 2);
+    assert_eq!(
+        snapshot.tables,
+        capture(&f.connection(), f.install, snapshot.sequence)
+            .unwrap()
+            .tables
+    );
 }
 
 #[test]

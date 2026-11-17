@@ -86,19 +86,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         NotesHistoryResult,
         PluginsListInput,
         PluginInput,
-        PluginDependency,
-        PluginOperation,
-        ExtensionPoint,
-        PluginView,
-        PluginManifest,
         PluginState,
         PluginsListResult,
         PluginResult,
         PluginPreviewResult,
         Stats,
         SummarizeResult,
-        GenUiAction,
-        GenUiNode,
         GenUiView,
         SpacesListInput,
         SpacesCreateInput,
@@ -125,15 +118,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         SpaceGrant,
         Principal,
         OperationDescription,
-        DescribeResult,
-        WorkerResource,
-        WorkerOperation,
-        WorkerRequest,
-        WorkerErrorCode,
-        WorkerError,
-        WorkerSuccess,
-        WorkerFailure,
-        WorkerResponse
+        DescribeResult
     );
     // serde_json::Value is deliberately unknown at the transport boundary.
     ts = ts.replace("JsonValue", "unknown");

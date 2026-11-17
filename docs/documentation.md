@@ -14,7 +14,7 @@ npm run check:docs
 ./scripts/check-docs.sh
 ```
 
-The script runs locked Cargo checks for core, client, CLI and bindings with all targets and features, including UniFFI. Each owned crate target denies `missing_docs` and `rustdoc::broken_intra_doc_links`. It then runs `cargo doc --no-deps` because Rust checks documentation links during rustdoc, and TypeDoc validates all TypeScript modules discovered recursively under `src/` in the SDK, Notes and Notes Insights. Notes currently exports a JSON manifest only; Notes Insights is an executable module without named exports. Future TypeScript exports in either package join the same gate automatically. Referenced external contracts remain documented at their Rust source of truth.
+The script runs a locked `cargo check --workspace` over every crate with all targets and features (including UniFFI), then checks the standalone conformance suite (`tests/conformance`, its own manifest). Every crate root denies `missing_docs` and `rustdoc::broken_intra_doc_links`, so a new crate joins the gate by joining the workspace. It then runs `cargo doc --no-deps --workspace` because Rust checks documentation links during rustdoc, and TypeDoc validates all TypeScript modules discovered recursively under `src/` in the SDK, Notes and Notes Insights. Notes currently exports a JSON manifest only; Notes Insights is an executable module without named exports. Future TypeScript exports in either package join the same gate automatically. Referenced external contracts remain documented at their Rust source of truth.
 
 TypeDoc requires documentation for exports, public members and signatures and treats validation warnings as errors. Private/protected members and external dependencies are excluded. The checker does not use `excludeNotDocumented`: missing comments must fail instead of disappearing from the site. JSON manifests are data, not TypeScript declarations, and cannot carry TSDoc comments.
 
@@ -68,4 +68,4 @@ The only new direct development dependencies are `typedoc` **0.28.14**, for refe
 
 ## Server lane integration
 
-The server is owned by the concurrent backend lane and is intentionally absent from this lane's package selection. That lane adds its own `#![deny(missing_docs)]`, fills its public-item comments, and should also add `#![deny(rustdoc::broken_intra_doc_links)]`. Once its work passes, add `-p calternal-server` to both Cargo invocations in `scripts/check-docs.sh`; the build script delegates to that check, so the server then joins both the gate and generated site. Add its Rustdoc entry page here after verification. Do not weaken its lint or merge undocumented server changes to make a workspace check pass.
+Every workspace crate, the server included, is in both Cargo invocations through `--workspace`; there is no per-crate list to maintain.

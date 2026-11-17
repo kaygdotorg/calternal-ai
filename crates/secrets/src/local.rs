@@ -27,9 +27,10 @@ use crate::LIMITS;
 use crate::key::MasterKey;
 use crate::types::text;
 use crate::{
-    Action, Actor, AuditEntry, Consumer, Error, Handle, HandleToken, Metadata, Owner,
-    PendingRequest, RequestId, Result, SecretName, SecretStore, SecretValue,
+    Action, AuditEntry, Consumer, Error, Handle, HandleToken, Metadata, Owner, PendingRequest,
+    RequestId, Result, SecretName, SecretStore, SecretValue,
 };
+use calternal_types::Actor;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -100,7 +101,7 @@ impl LocalStore {
             )
             .map_err(|_| Error::Internal)?;
         let path = self.path(owner);
-        crate::private_fs::directory(path.parent().ok_or(Error::Internal)?)
+        calternal_fsio::private::directory(path.parent().ok_or(Error::Internal)?)
             .map_err(|_| Error::Internal)?;
         open_db(&path, SCHEMA)
     }
@@ -146,7 +147,7 @@ impl LocalStore {
 /// overwrite-on-delete. The schema and WAL mode are applied once, when
 /// `user_version` is still 0; later opens only set per-connection pragmas.
 pub(crate) fn open_db(path: &Path, schema: &str) -> Result<Connection> {
-    crate::private_fs::file(path).map_err(|_| Error::Internal)?;
+    calternal_fsio::private::file(path).map_err(|_| Error::Internal)?;
     let c = Connection::open(path).map_err(|_| Error::Internal)?;
     c.busy_timeout(Duration::from_secs(5))
         .map_err(|_| Error::Internal)?;
@@ -186,7 +187,7 @@ fn audit(
         "INSERT INTO audit(at,actor,action,name,version,consumer) VALUES(?1,?2,?3,?4,?5,?6)",
         params![
             now_ms(),
-            actor.describe(),
+            actor.to_string(),
             action.as_str(),
             name,
             version.map(|v| v as i64),
@@ -218,13 +219,7 @@ fn current(tx: &Connection, name: &str) -> Result<Option<(u64, String)>> {
     .map_err(|_| Error::Internal)
 }
 
-/// Unix milliseconds. A private copy because auth's `db::now_ms` is crate-private;
-/// it moves to the shared types crate with the IDs.
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
-}
+use calternal_types::now_ms;
 
 /// Test-only process abort just before a commit, to prove crash atomicity.
 #[cfg(test)]
@@ -417,7 +412,7 @@ impl SecretStore for LocalStore {
         }
         tx.execute(
             "INSERT INTO requests(id,name,label,reason,requested_by,created_at) VALUES(?1,?2,?3,?4,?5,?6)",
-            params![id.0.to_string(), name.as_str(), label, reason, actor.describe(), now_ms()],
+            params![id.0.to_string(), name.as_str(), label, reason, actor.to_string(), now_ms()],
         )
         .map_err(|_| Error::Internal)?;
         audit(&tx, actor, Action::Request, name.as_str(), None, None)?;

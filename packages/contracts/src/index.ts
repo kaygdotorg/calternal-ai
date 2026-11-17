@@ -37,10 +37,15 @@ text: string, };
 
 export type AccountInputList = Record<string, never>;
 /**
- * Stable pending identity; another account's identical ID selects its own state.
+ * Stable pending identity: the write's space and request ID, as request IDs
+ * are scoped to (account, space). Another account's identical ID selects its own state.
  */
 
 export type PendingInput = {
+/**
+ * Space UUID the write targets.
+ */
+space_id: string,
 /**
  * Request ID of the underlying write, retained through every reconnect.
  */
@@ -887,107 +892,14 @@ space_id: string,
  */
 plugin_id: string, };
 /**
- * Exact plugin dependency declaration in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.
- */
-
-export type PluginDependency = {
-/**
- * Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.
- */
-id: string,
-/**
- * Nonempty plugin version string; dependencies declare the exact version they require.
- */
-version: string, };
-/**
- * Read-only extension operation declaration in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.
- */
-
-export type PluginOperation = {
-/**
- * Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.
- */
-id: string,
-/**
- * Human-readable description for discovery; carries no execution authority.
- */
-description: string,
-/**
- * Whether this operation changes durable state; extension declarations are constrained to false.
- */
-mutates: false, };
-/**
- * Versioned host contribution slots in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.
- */
-
-export type ExtensionPoint = "notes.detail";
-/**
- * Portable view contribution in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.
- */
-
-export type PluginView = {
-/**
- * Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.
- */
-id: string,
-/**
- * Host slot at which this contribution may be mounted.
- */
-extension_point: ExtensionPoint,
-/**
- * Validated portable presentation with bounded node, depth, text and serialized sizes.
- */
-view: GenUiView, };
-/**
- * Versioned trusted-plugin metadata exposed by `plugins.list`, `plugins.enable` and `plugins.disable`. Declarations do not themselves grant authority.
- */
-
-export type PluginManifest = {
-/**
- * Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.
- */
-id: string,
-/**
- * Nonempty plugin version string; dependencies declare the exact version they require.
- */
-version: string,
-/**
- * Supported plugin contract version; exactly 1 in this preview.
- */
-api_version: 1,
-/**
- * Nonempty plugin display name for discovery.
- */
-name: string,
-/**
- * Human-readable description for discovery; carries no execution authority.
- */
-description: string,
-/**
- * Required plugin IDs and exact versions; no ambient access is inherited from a dependency.
- */
-dependencies: Array<PluginDependency>,
-/**
- * Declared capability names; actual authority remains host-controlled.
- */
-capabilities: Array<string>,
-/**
- * Declared/discovered operation contracts; dispatch still checks current permissions.
- */
-operations: Array<PluginOperation>,
-/**
- * Portable contributions registered for supported host extension points.
- */
-views: Array<PluginView>, };
-/**
  * Space-scoped activation snapshot returned by `plugins.list`, `plugins.enable` and `plugins.disable`.
  */
 
 export type PluginState = {
 /**
- * Registered trusted-plugin metadata; enabling it does not replace host enforcement.
+ * The plugin's full v1 manifest as registered; declarations grant no authority.
  */
-manifest: PluginManifest,
+manifest: ManifestV1,
 /**
  * Whether this plugin is currently active in the selected space.
  */
@@ -1020,7 +932,7 @@ plugin: PluginState, };
 
 export type PluginPreviewResult = {
 /**
- * Validated portable presentation with bounded node, depth, text and serialized sizes.
+ * Generated-UI view, compiled by the host before delivery.
  */
 view: GenUiView,
 /**
@@ -1054,108 +966,25 @@ export type SummarizeResult = {
  */
 stats: Stats,
 /**
- * Validated portable presentation with bounded node, depth, text and serialized sizes.
+ * Generated-UI view, compiled by the host before delivery.
  */
 view: GenUiView, };
 /**
- * Button operation call in `plugins.preview` and `notes-insights.summarize` views or plugin manifests; dispatch still checks current authority.
- */
-
-export type GenUiAction = {
-/**
- * Versioned operation identifier; operation envelopes and actions require 1..128 UTF-8 bytes.
- */
-operation: string,
-/**
- * Operation-specific JSON object; must pass the selected operation schema before dispatch.
- */
-input: { [key in string]?: unknown }, };
-/**
- * Portable declarative nodes in plugin previews and `notes-insights.summarize` results. Validation bounds depth to 8, nodes to 128 and enforces unique IDs.
- */
-
-export type GenUiNode = { "type": "stack",
-/**
- * Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.
- */
-id: string,
-/**
- * Ordered child nodes; the complete tree must remain within depth 8 and 128 nodes.
- */
-children: Array<GenUiNode>, } | { "type": "text",
-/**
- * Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.
- */
-id: string,
-/**
- * Literal display text, limited to 8 KiB of UTF-8.
- */
-text: string, } | { "type": "button",
-/**
- * Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.
- */
-id: string,
-/**
- * Accessible display label, 1..256 Unicode scalars.
- */
-label: string,
-/**
- * Declared operation to dispatch on activation; no authority is embedded in the action.
- */
-action: GenUiAction, } | { "type": "stat",
-/**
- * Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.
- */
-id: string,
-/**
- * Accessible display label, 1..256 Unicode scalars.
- */
-label: string,
-/**
- * Display-formatted statistic value; rendering must treat it as text.
- */
-value: string, } | { "type": "resource",
-/**
- * Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.
- */
-id: string,
-/**
- * Stable UUID resource target; resolving it requires access to its space.
- */
-resource_id: string,
-/**
- * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
- */
-space_id: string,
-/**
- * Accessible display label, 1..256 Unicode scalars.
- */
-label: string, } | { "type": "document-editor",
-/**
- * Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.
- */
-id: string,
-/**
- * Stable UUID resource target; resolving it requires access to its space.
- */
-resource_id: string,
-/**
- * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
- */
-space_id: string, };
-/**
- * Versioned portable view in plugin manifests, previews and `notes-insights.summarize`. Validation limits JSON to 64 KiB and string values to 32 KiB.
+ * A generated-UI view: a program in the GenUI language (`crates/genui`,
+ * `packages/genui`) that each client compiles and evaluates with its own native
+ * components. The host compiles it before delivery and refuses a view with any
+ * diagnostic; actions in it describe operations, which dispatch checks again.
  */
 
 export type GenUiView = {
 /**
- * Portable view contract version; exactly 1 in this preview.
+ * Generated-UI language version; exactly 2 (version 1 was the retired JSON tree).
  */
-genui_version: 1,
+genui_version: 2,
 /**
- * Root node of the bounded portable tree; IDs are unique across the tree.
+ * Program source, at most 64 KiB of UTF-8.
  */
-root: GenUiNode, };
+source: string, };
 /**
  * Empty input for account-scoped space listing.
  */
@@ -1176,7 +1005,7 @@ name: string, };
 
 export type SpaceInput = {
 /**
- * Stable space UUID; development inputs temporarily accept seeded aliases.
+ * Space UUID; names are never accepted in its place.
  */
 space_id: string, };
 /**
@@ -1185,7 +1014,7 @@ space_id: string, };
 
 export type SpaceMemberInput = {
 /**
- * Stable space UUID; development inputs temporarily accept seeded aliases.
+ * Space UUID; names are never accepted in its place.
  */
 space_id: string,
 /**
@@ -1198,7 +1027,7 @@ account_id: string, };
 
 export type SpaceSetRoleInput = {
 /**
- * Stable space UUID; development inputs temporarily accept seeded aliases.
+ * Space UUID; names are never accepted in its place.
  */
 space_id: string,
 /**
@@ -1449,7 +1278,7 @@ export type SpaceRole = "reader" | "editor" | "manager" | "owner";
 
 export type SpaceGrant = {
 /**
- * Stable space UUID in stored directories; fixture directories may expose aliases.
+ * Space UUID; the only way a space is named on the wire.
  */
 id: string,
 /**
@@ -1515,119 +1344,3 @@ principal: Principal,
  * Declared/discovered operation contracts; dispatch still checks current permissions.
  */
 operations: Array<OperationDescription>, };
-/**
- * Authorized note snapshot supplied to the `notes-insights.summarize` worker; contains no ambient storage access.
- */
-
-export type WorkerResource = {
-/**
- * Stable UUID note identity; access is checked against the accompanying space.
- */
-id: string,
-/**
- * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
- */
-space_id: string,
-/**
- * Opaque nonempty server revision; compare for equality, never infer order or parse it.
- */
-revision: string,
-/**
- * Display title, nonblank, at most 256 Unicode scalars and without control characters.
- */
-title: string,
-/**
- * UTF-8 Markdown content, at most 1 MiB; byte size differs from character count.
- */
-markdown: string, };
-/**
- * Worker protocol operations supported by the trusted `notes-insights.summarize` process.
- */
-
-export type WorkerOperation = "notes-insights.summarize";
-/**
- * Single invocation sent to the `notes-insights.summarize` worker over standard input.
- */
-
-export type WorkerRequest = {
-/**
- * Transport contract version; exactly 1 in this preview.
- */
-protocol_version: 1,
-/**
- * Host-issued worker correlation identifier; must match the expected invocation.
- */
-invocation_id: string,
-/**
- * Versioned operation identifier; operation envelopes and actions require 1..128 UTF-8 bytes.
- */
-operation: WorkerOperation,
-/**
- * Authorized immutable note snapshot delivered to this worker invocation.
- */
-resource: WorkerResource, };
-/**
- * Safe worker failure categories for `notes-insights.summarize`; transport failures are handled by the host.
- */
-
-export type WorkerErrorCode = "invalid_input" | "internal";
-/**
- * Safe failure payload from the `notes-insights.summarize` worker.
- */
-
-export type WorkerError = {
-/**
- * Stable machine-readable failure category; callers should branch on this rather than message text.
- */
-code: WorkerErrorCode,
-/**
- * Human-readable safe diagnostic; never include credentials or raw private exception details.
- */
-message: string, };
-/**
- * Successful `notes-insights.summarize` worker envelope correlated to one invocation.
- */
-
-export type WorkerSuccess = {
-/**
- * Transport contract version; exactly 1 in this preview.
- */
-protocol_version: 1,
-/**
- * Host-issued worker correlation identifier; must match the expected invocation.
- */
-invocation_id: string,
-/**
- * Exact boolean discriminant required by this envelope; the opposite value cannot deserialize.
- */
-ok: true,
-/**
- * Operation-specific successful result payload.
- */
-data: SummarizeResult, };
-/**
- * Failed `notes-insights.summarize` worker envelope correlated to one invocation.
- */
-
-export type WorkerFailure = {
-/**
- * Transport contract version; exactly 1 in this preview.
- */
-protocol_version: 1,
-/**
- * Host-issued worker correlation identifier; must match the expected invocation.
- */
-invocation_id: string,
-/**
- * Exact boolean discriminant required by this envelope; the opposite value cannot deserialize.
- */
-ok: false,
-/**
- * Safe structured failure returned instead of successful data.
- */
-error: WorkerError, };
-/**
- * Discriminated response from the `notes-insights.summarize` worker.
- */
-
-export type WorkerResponse = WorkerSuccess | WorkerFailure;

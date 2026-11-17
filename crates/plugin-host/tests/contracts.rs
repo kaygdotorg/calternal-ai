@@ -1,6 +1,7 @@
 use calternal_core::*;
 use calternal_plugin_host::validate_manifest;
 use calternal_plugin_host::*;
+use calternal_types::{AccountId, SpaceId};
 use serde_json::{Value, json};
 
 fn manifest() -> ManifestV1 {
@@ -37,10 +38,7 @@ impl HostBroker for FakeHost {
     }
 }
 fn session() -> (WorkerSession, FakeHost) {
-    (
-        WorkerSession::new(manifest(), authority().space_id).unwrap(),
-        FakeHost::default(),
-    )
+    (new_session(manifest()).unwrap(), FakeHost::default())
 }
 fn invoke(s: &mut WorkerSession, h: &mut FakeHost, id: &str) {
     s.invoke(
@@ -337,7 +335,7 @@ fn back_pressure_does_not_execute_or_advance_and_cancel_rejects_late_work() {
 fn streams_are_ordered_bounded_and_require_admitted_jobs() {
     let mut m = manifest();
     m.host_calls.push(HostCallKind::StartJob);
-    let mut s = WorkerSession::new(m, authority().space_id).unwrap();
+    let mut s = new_session(m).unwrap();
     let mut h = FakeHost::default();
     invoke(&mut s, &mut h, "inv-1");
     s.next_outgoing(&mut h).unwrap();
@@ -551,7 +549,7 @@ fn callbacks_enforce_declared_secret_names_and_operation_mutability() {
     m.host_calls
         .extend([HostCallKind::RequestSecretHandle, HostCallKind::WriteItem]);
     m.secrets.push("provider-key".into());
-    let mut s = WorkerSession::new(m, authority().space_id).unwrap();
+    let mut s = new_session(m).unwrap();
     let mut h = FakeHost::default();
     invoke(&mut s, &mut h, "inv-1");
     s.next_outgoing(&mut h).unwrap();
@@ -608,7 +606,7 @@ fn required_capability_is_checked_before_admission() {
     }
     let mut m = manifest();
     m.operations[0].required_capability = ManifestCapability::ContentWrite;
-    let mut s = WorkerSession::new(m, authority().space_id).unwrap();
+    let mut s = new_session(m).unwrap();
     let mut h = Gate;
     assert_eq!(
         s.invoke(
@@ -634,7 +632,7 @@ fn oversized_callback_output_is_redacted_without_repeating_the_effect() {
             Ok(json!("x".repeat(MAX_FRAME_BYTES + 1)))
         }
     }
-    let mut s = WorkerSession::new(manifest(), authority().space_id).unwrap();
+    let mut s = new_session(manifest()).unwrap();
     let mut h = LargeHost(0);
     s.invoke(
         "inv-1".into(),
@@ -685,7 +683,7 @@ fn a_secret_value_response_is_never_forwarded_as_a_handle() {
     let mut m = manifest();
     m.host_calls.push(HostCallKind::RequestSecretHandle);
     m.secrets.push("key".into());
-    let mut s = WorkerSession::new(m, authority().space_id).unwrap();
+    let mut s = new_session(m).unwrap();
     let mut h = WrongSecret;
     s.invoke(
         "inv-1".into(),
@@ -737,4 +735,10 @@ fn a_full_unrelated_output_queue_cannot_keep_cancelled_authority_alive() {
         Err(Error::Invocation)
     );
     assert_eq!(h.calls, MAX_QUEUE);
+}
+
+/// A session with the manifest's schemas compiled for it.
+fn new_session(manifest: ManifestV1) -> Result<WorkerSession, calternal_plugin_host::Error> {
+    let schemas = std::sync::Arc::new(CompiledSchemas::compile(&manifest)?);
+    WorkerSession::new(manifest, schemas, authority().space_id)
 }

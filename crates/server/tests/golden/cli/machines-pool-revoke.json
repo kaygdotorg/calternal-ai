@@ -2,7 +2,7 @@ exit: 0
 --- stdout ---
 {
   "data": {
-    "account": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "account": "cccccccc-cccc-7ccc-8ccc-cccccccccccc",
     "pool_access": false
   },
   "ok": true

@@ -16,7 +16,7 @@ exit: 0
         "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "name": "laptop",
         "os": "macos",
-        "owner": "account:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "owner": "account:cccccccc-cccc-7ccc-8ccc-cccccccccccc",
         "state": "enrolled"
       }
     ]

@@ -1,8 +1,14 @@
-//! Owner-only filesystem preparation for protected account and server state.
+//! Owner-only (0700 directory, 0600 file) preparation for protected state:
+//! databases, keys, tokens and private trees.
 //!
 //! Creation modes apply before publication, independently of the process umask.
-//! Directory entries are synced through the shared fsio durability primitive.
-//! These helpers do not replace installation root validation or root locking.
+//! New directory entries are synced with [`crate::sync_dir`]. These helpers do not
+//! replace installation root validation or root locking.
+//!
+//! Cost: [`directory()`] stats every missing ancestor once, then one `chmod` on the
+//! target; [`file()`] does one stat, one open and one `chmod`; each new entry adds one
+//! parent-directory fsync. Call them when a tree or file is first prepared, not per
+//! write.
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
@@ -38,7 +44,7 @@ fn create(path: &Path) -> io::Result<()> {
     match fs::DirBuilder::new().mode(0o700).create(path) {
         Ok(()) => {
             fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
-            calternal_fsio::sync_dir(parent)
+            crate::sync_dir(parent)
         }
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
             let m = fs::symlink_metadata(path)?;
@@ -74,7 +80,7 @@ pub fn file(path: &Path) -> io::Result<File> {
         .open(&path)?;
     file.set_permissions(fs::Permissions::from_mode(0o600))?;
     if !existed {
-        calternal_fsio::sync_dir(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
+        crate::sync_dir(path.parent().ok_or(io::ErrorKind::InvalidInput)?)?;
     }
     Ok(file)
 }

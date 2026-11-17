@@ -3,37 +3,12 @@
 //! All APIs block on SQLite and must run on a blocking host thread. Mutations
 //! acquire an IMMEDIATE transaction before checking current capability rows.
 //! State commits optionally pass through a protected recovery barrier before acknowledgement.
-use crate::{AccountId, Error, ErrorCode, Result};
+use crate::{AccountId, Error, ErrorCode, Result, SpaceId};
+use calternal_types::{Capability, CapabilitySet};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Stable UUIDv7 space identity, distinct from an account identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SpaceId(
-    /// UUID value; allocating a new space always uses UUIDv7.
-    pub uuid::Uuid,
-);
-impl SpaceId {
-    /// Allocates a fresh UUIDv7; never copies an account identifier.
-    pub fn new() -> Self {
-        Self(uuid::Uuid::now_v7())
-    }
-    /// Parses a persisted UUID without establishing access.
-    pub fn parse(value: &str) -> Option<Self> {
-        uuid::Uuid::parse_str(value).ok().map(Self)
-    }
-}
-impl Default for SpaceId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-impl std::fmt::Display for SpaceId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
 /// A space and the caller's effective role; no content or account secrets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Space {
@@ -61,7 +36,12 @@ pub struct Member {
 #[derive(Clone)]
 pub struct Spaces {
     db: crate::db::Db,
+    receipt_retention: std::time::Duration,
 }
+/// How long a directory receipt is kept by default: seven days, the same as space
+/// receipts. A retry after that runs as a new request.
+pub const DEFAULT_RECEIPT_RETENTION: std::time::Duration =
+    std::time::Duration::from_secs(7 * 24 * 60 * 60);
 fn sql(e: impl std::fmt::Display) -> Error {
     Error::internal(e)
 }
@@ -69,10 +49,10 @@ fn denied() -> Error {
     Error::new(ErrorCode::Forbidden, "no access to this space")
 }
 fn account(s: String) -> Result<AccountId> {
-    AccountId::parse(&s).ok_or_else(|| sql("invalid account UUID"))
+    AccountId::parse(&s).map_err(|_| sql("invalid account UUID"))
 }
 fn space_id(s: String) -> Result<SpaceId> {
-    SpaceId::parse(&s).ok_or_else(|| sql("invalid space UUID"))
+    SpaceId::parse(&s).map_err(|_| sql("invalid space UUID"))
 }
 fn role(c: &Connection, actor: AccountId, space: SpaceId) -> Result<Option<String>> {
     c.query_row(
@@ -330,15 +310,29 @@ impl Spaces {
         self.db.changes()
     }
 
-    /// Opens a configured migrated database. The host must validate roots first.
+    /// Opens a configured migrated database with the default receipt retention.
+    /// The host must validate roots first.
     pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self {
-            db: crate::db::Db::open(path)?,
-        })
+        Ok(Self::from_db(
+            crate::db::Db::open(path)?,
+            DEFAULT_RECEIPT_RETENTION,
+        ))
     }
-    /// Attaches recovery before any requests are admitted; reconciles pending proposals.
+    pub(crate) fn from_db(db: crate::db::Db, receipt_retention: std::time::Duration) -> Self {
+        Self {
+            db,
+            receipt_retention,
+        }
+    }
+    /// Machine authority over this same `auth.db` handle, sharing its worker and
+    /// recovery barrier. Cost: one Arc clone.
+    pub fn machines(&self) -> crate::machines::Machines {
+        crate::machines::Machines::new(self.db.clone())
+    }
+    /// Attaches recovery before any requests are admitted; reconciles pending
+    /// proposals. Covers every handle sharing this database (see [`crate::Auth::spaces`]).
     pub fn configure_recovery(&self, sink: std::sync::Arc<dyn RecoverySink>) -> Result<()> {
-        self.run(move |c| configure_recovery(c, sink))
+        self.db.configure_recovery(sink)
     }
     fn run<T: Send + 'static>(
         &self,
@@ -400,13 +394,30 @@ impl Spaces {
     pub fn list(&self, actor: AccountId) -> Result<Vec<Space>> {
         self.run(move |c| list(c, actor))
     }
-    /// Reads current capability rows. Missing space and missing membership coincide.
-    pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<Vec<String>>> {
+    /// The actor's current capabilities in `space`, read on every call; `None` for
+    /// both a missing space and a missing membership. Stored names this build does
+    /// not know grant nothing. Cost: one worker round trip and two indexed reads
+    /// (role, then its capability rows) on cached statements; no allocation beyond
+    /// the role name.
+    pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<CapabilitySet>> {
         self.run(move |c| {
-        let Some(role)=role(c,actor,space)? else {return Ok(None)};
-        let mut st=c.prepare("SELECT capability FROM space_role_capabilities WHERE role=?1 ORDER BY capability").map_err(sql)?;
-        st.query_map([role],|r|r.get(0)).map_err(sql)?.collect::<rusqlite::Result<Vec<_>>>().map(Some).map_err(sql)
-    })
+            let Some(role) = role(c, actor, space)? else {
+                return Ok(None);
+            };
+            let mut st = c
+                .prepare_cached("SELECT capability FROM space_role_capabilities WHERE role=?1")
+                .map_err(sql)?;
+            let mut rows = st.query([role]).map_err(sql)?;
+            let mut set = CapabilitySet::empty();
+            while let Some(row) = rows.next().map_err(sql)? {
+                if let Some(capability) =
+                    Capability::from_name(row.get_ref(0).map_err(sql)?.as_str().map_err(sql)?)
+                {
+                    set = set.with(capability);
+                }
+            }
+            Ok(Some(set))
+        })
     }
     /// Lists members after checking `space.read` in one read snapshot.
     pub fn members(&self, actor: AccountId, space: SpaceId) -> Result<Vec<Member>> {
@@ -417,20 +428,6 @@ impl Spaces {
         st.query_map([space.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get(1)?))).map_err(sql)?.map(|r|{let(id,role)=r.map_err(sql)?;Ok(Member{account_id:account(id)?,role})}).collect::<Result<Vec<_>>>()?};
         tx.commit().map_err(sql)?; Ok(out)
     })
-    }
-    /// Tests whether this actor has a directory mutation receipt for a request ID.
-    /// The server serializes this check with its content store to preserve the
-    /// existing principal/request-ID namespace across the two databases.
-    pub fn has_receipt(&self, actor: AccountId, request_id: &str) -> Result<bool> {
-        let request_id = request_id.to_owned();
-        self.run(move |c| {
-            c.query_row(
-                "SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND request_id=?2)",
-                params![actor.to_string(), request_id],
-                |r| r.get(0),
-            )
-            .map_err(sql)
-        })
     }
 
     /// Executes a mutation with fresh capability and target checks under a write lock.
@@ -443,10 +440,16 @@ impl Spaces {
         self.change_with_receipt(actor, space, change, None)
     }
     /// Executes or replays atomically. Authority is rechecked before reading receipts.
-    /// Receipts are private to the actor and bind the exact operation and fingerprint.
+    /// A receipt is private to the actor and keyed by (actor, scope, request ID):
+    /// the scope is `space`, or the actor's own account when there is none, so one
+    /// request ID is independent between spaces. It binds the exact operation and
+    /// fingerprint, and is kept for the receipt retention: the actor's expired
+    /// receipts are pruned in the same transaction, so an expired ID is new again.
     /// Target checks execute on first application; retries cannot repeat a transfer.
     /// When configured, the recovery barrier completes before results or receipts
     /// are acknowledged; a barrier error can follow an unacknowledged DB commit.
+    /// Cost: one IMMEDIATE transaction on the auth worker: authority checks, one
+    /// bounded indexed prune, one receipt read and, when new, the change and insert.
     pub fn change_with_receipt(
         &self,
         actor: AccountId,
@@ -455,22 +458,48 @@ impl Spaces {
         receipt: Option<(&str, &str, &str)>,
     ) -> Result<serde_json::Value> {
         let receipt = receipt.map(|(rid, op, fp)| (rid.to_owned(), op.to_owned(), fp.to_owned()));
+        let scope = space.map_or_else(|| actor.to_string(), |s| s.to_string());
+        let retention = self.receipt_retention.as_millis() as i64;
         self.run(move |c| {
-        let tx=c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
-        check(&tx,actor,space,&change)?;
-        if let Some((rid,op,fp))=&receipt {
-            let saved:Option<(String,String,String)>=tx.query_row("SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND request_id=?2",params![actor.to_string(),rid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(sql)?;
-            if let Some((saved_op,saved_fp,result))=saved {
-                if saved_op!=*op || saved_fp!=*fp {return Err(Error::new(ErrorCode::Conflict,"request_id reused"));}
-                let value = serde_json::from_str(&result).map_err(sql)?;
-                commit(tx)?;
-                return Ok(value);
+            let tx = c
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(sql)?;
+            check(&tx, actor, space, &change)?;
+            let now = crate::db::now_ms();
+            if let Some((rid, op, fp)) = &receipt {
+                tx.execute(
+                    "DELETE FROM space_receipts WHERE actor=?1 AND at_ms<?2",
+                    params![actor.to_string(), now.saturating_sub(retention)],
+                )
+                .map_err(sql)?;
+                let saved: Option<(String, String, String)> = tx
+                    .query_row(
+                        "SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND scope=?2 AND request_id=?3",
+                        params![actor.to_string(), scope, rid],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()
+                    .map_err(sql)?;
+                if let Some((saved_op, saved_fp, result)) = saved {
+                    if saved_op != *op || saved_fp != *fp {
+                        return Err(Error::new(ErrorCode::Conflict, "request_id reused"));
+                    }
+                    let value = serde_json::from_str(&result).map_err(sql)?;
+                    commit(tx)?;
+                    return Ok(value);
+                }
             }
-        }
-        let value=apply(&tx,actor,space,&change)?;
-        if let Some((rid,op,fp))=&receipt { tx.execute("INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5)",params![actor.to_string(),rid,op,fp,value.to_string()]).map_err(sql)?; }
-        commit(tx)?;Ok(value)
-    })
+            let value = apply(&tx, actor, space, &change)?;
+            if let Some((rid, op, fp)) = &receipt {
+                tx.execute(
+                    "INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5,?6,?7)",
+                    params![actor.to_string(), scope, rid, op, fp, value.to_string(), now],
+                )
+                .map_err(sql)?;
+            }
+            commit(tx)?;
+            Ok(value)
+        })
     }
 }
 
@@ -481,14 +510,16 @@ pub struct DevelopmentIds {
     pub owner: AccountId,
     /// Account associated with the development guest token.
     pub guest: AccountId,
-    /// Space displayed as personal, with an explicit temporary preview root binding.
+    /// The owner's space named `personal`; the guest is not a member.
     pub personal: SpaceId,
-    /// Space displayed as shared, with an explicit temporary preview root binding.
+    /// The space named `shared`, where the guest is a reader.
     pub shared: SpaceId,
 }
 impl Spaces {
     /// Creates development fixtures exactly once, preserving later revocations,
     /// transfers and deletions across restart. Never call for real installations.
+    /// `development_directory` records what it created so a restart returns the same
+    /// IDs; nothing on the request path reads it, and requests never use the names.
     /// Accounts and spaces each receive a separate freshly allocated UUIDv7.
     /// A configured recovery barrier also covers this explicit fixture mutation.
     pub fn seed_development(&self) -> Result<DevelopmentIds> {
@@ -575,50 +606,12 @@ pub trait RecoverySink: Send + Sync {
     /// Publishes only a witnessed committed delta before acknowledgement; an
     /// empty token from prepare requires no filesystem publication.
     fn complete(&self, connection: &Connection, intent: &str) -> Result<()>;
+    /// Held from prepare through complete, so no other commit stages an intent while
+    /// this one decides which witnesses are committed. It belongs to the sink, so
+    /// database handles sharing a sink share it too.
+    fn serial(&self) -> &std::sync::Mutex<()>;
 }
 
-fn sinks()
--> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<dyn RecoverySink>>> {
-    static SINKS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<dyn RecoverySink>>>,
-    > = std::sync::OnceLock::new();
-    SINKS.get_or_init(Default::default)
-}
-/// Configures a process-wide barrier for this database path, including independent
-/// auth and space workers. Call before serving requests, under the root locks.
-/// Reconciliation fails closed; configuration is retained for the process lifetime.
-/// The same database must never be configured with two different sinks.
-pub fn configure_recovery(
-    connection: &Connection,
-    sink: std::sync::Arc<dyn RecoverySink>,
-) -> Result<()> {
-    let path = connection
-        .path()
-        .ok_or_else(|| Error::internal("recovery requires a file database"))?;
-    let path = std::fs::canonicalize(path)
-        .map_err(Error::internal)?
-        .to_string_lossy()
-        .into_owned();
-    let mut sinks = sinks().lock().map_err(Error::internal)?;
-    if let Some(existing) = sinks.get(&path)
-        && !std::sync::Arc::ptr_eq(existing, &sink)
-    {
-        return Err(Error::internal("recovery already configured"));
-    }
-    sink.reconcile(connection)?;
-    sinks.insert(path, sink);
-    Ok(())
-}
-fn recovery(connection: &Connection) -> Result<Option<std::sync::Arc<dyn RecoverySink>>> {
-    let Some(path) = connection.path().filter(|s| !s.is_empty()) else {
-        return Ok(None);
-    };
-    let path = std::fs::canonicalize(path)
-        .map_err(Error::internal)?
-        .to_string_lossy()
-        .into_owned();
-    Ok(sinks().lock().map_err(Error::internal)?.get(&path).cloned())
-}
 /// Commits authority with its configured protected-publication barrier; no-op
 /// deltas retain normal SQLite durability without writing recovery versions.
 pub(crate) fn commit(transaction: rusqlite::Transaction<'_>) -> Result<()> {
@@ -631,15 +624,14 @@ pub(crate) fn commit_with(
     mut transaction: rusqlite::Transaction<'_>,
     committed: impl FnOnce(),
 ) -> Result<()> {
-    let Some(sink) = recovery(&transaction)? else {
+    let Some(sink) = crate::db::active_sink() else {
         transaction.commit().map_err(sql)?;
         committed();
         return Ok(());
     };
-    // Retain the barrier across commit: another worker must not stage an intent
-    // while completion is deciding which witnesses are committed.
-    static COMMIT_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = COMMIT_GATE.lock().map_err(Error::internal)?;
+    // Retain the sink's barrier across commit: another worker must not stage an
+    // intent while completion is deciding which witnesses are committed.
+    let _guard = sink.serial().lock().map_err(Error::internal)?;
     let intent = match sink.prepare(&transaction) {
         Ok(intent) => intent,
         Err(error) => {

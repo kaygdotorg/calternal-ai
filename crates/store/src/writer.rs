@@ -9,7 +9,7 @@ use crate::proof::MAX_ISSUED_TOKENS;
 use crate::shared::Shared;
 use crate::{Commit, Options, now_ms, restore};
 use crate::{Error, ErrorCode, JournalEntry, Result};
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -21,12 +21,6 @@ const QUEUE: usize = 64;
 
 pub(crate) enum Cmd {
     Commit(Commit, oneshot::Sender<Result<Vec<JournalEntry>>>),
-    Once(
-        String,
-        String,
-        Vec<crate::StampedEvent>,
-        oneshot::Sender<Result<crate::SyncToken>>,
-    ),
     /// The journal went back in time: start a new epoch (the epoch the
     /// caller saw, so two proofs rotate once).
     Rotate(String, oneshot::Sender<Result<()>>),
@@ -62,40 +56,20 @@ pub(crate) fn spawn(
                     Cmd::Rotate(observed, reply) => {
                         let _ = reply.send(restore::rotate(&mut conn, &shared, &observed, None));
                     }
-                    Cmd::Once(key, digest, events, reply) => {
-                        let result = conn
-                            .pragma_update(None, "synchronous", "FULL")
-                            .map_err(Error::internal)
-                            .and_then(|()| {
-                                commit_inner(
-                                    &mut conn,
-                                    &shared,
-                                    Commit {
-                                        events,
-                                        idempotency: None,
-                                    },
-                                    Some((key, digest)),
-                                )
-                            });
-                        if let Err(e) = conn.pragma_update(None, "synchronous", "NORMAL") {
-                            tracing::warn!(%e, "journal retains stronger sync after publication");
-                        }
-                        let result = result.map(|(entries, seq)| {
-                            if let Some(last) = entries.last() {
-                                head.store(last.seq, Ordering::Relaxed);
-                                for e in entries {
-                                    let _ = live.send(Arc::new(e));
-                                }
-                            }
-                            crate::SyncToken {
-                                epoch: shared.epoch().to_string(),
-                                seq,
-                            }
-                        });
-                        let _ = reply.send(result);
-                    }
                     Cmd::Commit(c, reply) => {
-                        let r = commit(&mut conn, &shared, c);
+                        let durable = c.durable;
+                        let r = if durable {
+                            conn.pragma_update(None, "synchronous", "FULL")
+                                .map_err(Error::internal)
+                                .and_then(|()| commit(&mut conn, &shared, c))
+                        } else {
+                            commit(&mut conn, &shared, c)
+                        };
+                        if durable
+                            && let Err(e) = conn.pragma_update(None, "synchronous", "NORMAL")
+                        {
+                            tracing::warn!(%e, "journal retains stronger sync after a durable commit");
+                        }
                         if let Ok(entries) = &r
                             && let Some(last) = entries.last()
                         {
@@ -132,39 +106,11 @@ fn prune(conn: &Connection, options: Options) {
     }
 }
 
-fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Vec<JournalEntry>> {
-    commit_inner(conn, shared, c, None).map(|(entries, _)| entries)
-}
-
 /// Commits one batch, then retains only its newest bounded set of signed tokens.
-fn commit_inner(
-    conn: &mut Connection,
-    shared: &Shared,
-    c: Commit,
-    once: Option<(String, String)>,
-) -> Result<(Vec<JournalEntry>, i64)> {
+fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Vec<JournalEntry>> {
     let at_ms = now_ms();
     let epoch = shared.epoch();
     let tx = conn.transaction().map_err(Error::internal)?;
-    if let Some((key, digest)) = &once {
-        let prior: Option<(String, i64)> = tx
-            .query_row(
-                "SELECT digest, seq FROM publication_receipts WHERE key = ?1",
-                [key],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()
-            .map_err(Error::internal)?;
-        if let Some((previous, seq)) = prior {
-            if previous != *digest {
-                return Err(Error::new(
-                    ErrorCode::IdempotencyConflict,
-                    "publication key changed",
-                ));
-            }
-            return Ok((vec![], seq));
-        }
-    }
     let mut entries = Vec::with_capacity(c.events.len());
     let mut last_check = None;
     {
@@ -232,13 +178,6 @@ fn commit_inner(
             ));
         }
     }
-    if let Some((key, digest)) = once {
-        tx.execute(
-            "INSERT INTO publication_receipts (key, digest, seq) VALUES (?1, ?2, ?3)",
-            params![key, digest, seq],
-        )
-        .map_err(Error::internal)?;
-    }
     tx.commit().map_err(Error::internal)?;
     if shared.guard.is_some() {
         for entry in entries.iter().rev().take(MAX_ISSUED_TOKENS) {
@@ -248,5 +187,5 @@ fn commit_inner(
     if let (Some(e), Some(_)) = (entries.last(), last_check) {
         shared.remember_proof(&epoch, &e.token, e.seq);
     }
-    Ok((entries, seq))
+    Ok(entries)
 }

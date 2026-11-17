@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 mod admin_cli;
 use admin_cli::MachinesCmd;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
-use calternal_server::auth::TokenTable;
+use calternal_server::auth::StoredDirectory;
 use calternal_server::machines::MachineService;
 use calternal_server::plugins::{self, Registry};
 use calternal_server::store::Store;
@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "calternal",
     about = "Run a Calternal server or manage its enrolled machines",
-    after_help = "Examples:\n  calternal serve --data-dir ./calternal-data --development\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
+    after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
 )]
 struct Cli {
     /// Print one JSON document instead of text (errors too, on stdout); see docs/cli.md.
@@ -64,12 +64,30 @@ enum Cmd {
     /// Serve the development preview on 127.0.0.1.
     #[command(
         about = "Start the development-preview server",
-        after_help = "Examples:\n  calternal serve --data-dir ./calternal-data --development\n  calternal serve --data-dir /srv/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
+        after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal serve --appdata /srv/calternal/appdata --userdata-ssd /srv/calternal/ssd --userdata-hdd /mnt/hdd/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
     )]
     Serve {
-        /// Disposable data directory (created if missing, mode 0700).
+        /// Protected databases and state (normally on SSD).
         #[arg(long)]
-        data_dir: PathBuf,
+        appdata: PathBuf,
+        /// Space trees of claim-validated text files (normally on SSD).
+        #[arg(long)]
+        userdata_ssd: PathBuf,
+        /// Space trees of other original files (normally on HDD).
+        #[arg(long)]
+        userdata_hdd: PathBuf,
+        /// First setup: pair three empty or missing roots. Without it every root must
+        /// already belong to this installation; harmless on a paired installation.
+        #[arg(long)]
+        create: bool,
+        /// This installation's UUID, kept in the server's configuration outside every
+        /// root (ADR 0062). Each root's marker must carry it; required.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: Option<String>,
+        /// Days each space keeps request receipts; a retry after that runs as a new
+        /// request.
+        #[arg(long, env = "CALTERNAL_RECEIPT_RETENTION_DAYS", default_value_t = 7)]
+        receipt_retention_days: u32,
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
@@ -114,7 +132,7 @@ enum Cmd {
     /// Operator administration of execution machines in a data directory.
     #[command(
         about = "Manage machines enrolled with this server",
-        after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal machines code, calternal machine --help."
+        after_help = "Examples:\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal machines code, calternal machine --help."
     )]
     Machines {
         #[command(subcommand)]
@@ -180,7 +198,12 @@ fn main() {
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
         Cmd::Serve {
-            data_dir,
+            appdata,
+            userdata_ssd,
+            userdata_hdd,
+            create,
+            installation_id,
+            receipt_retention_days,
             port,
             web_dir,
             plugin_root,
@@ -211,7 +234,16 @@ fn main() {
                 .hint("Rebuild with `--features test-plugins`, or drop --test-plugin-root."))
             } else {
                 rt.block_on(serve(
-                    data_dir,
+                    calternal_roots::Roots {
+                        appdata,
+                        userdata_ssd,
+                        userdata_hdd,
+                    },
+                    installation_id,
+                    create,
+                    std::time::Duration::from_secs(
+                        u64::from(receipt_retention_days.max(1)) * 86_400,
+                    ),
                     port,
                     web_dir,
                     plugin_root,
@@ -239,7 +271,10 @@ fn boot(exit: i32, code: &str, message: impl Into<String>, hint: &str) -> CliErr
 }
 
 async fn serve(
-    data_dir: PathBuf,
+    roots: calternal_roots::Roots,
+    installation_id: Option<String>,
+    create: bool,
+    receipt_retention: std::time::Duration,
     port: u16,
     web_dir: Option<PathBuf>,
     plugin_root: PathBuf,
@@ -252,50 +287,52 @@ async fn serve(
     out: &Output,
 ) -> Result<(), CliError> {
     const DATA_HINT: &str =
-        "Check that --data-dir exists (or can be created) and that you can write to it.";
-    calternal_auth::private_fs::directory(&data_dir).map_err(|e| {
-        boot(
-            1,
-            "io",
-            format!("cannot prepare the data directory: {e}"),
-            DATA_HINT,
-        )
-    })?;
-    let data_dir = std::fs::canonicalize(&data_dir)
-        .map_err(|e| boot(1, "io", format!("data directory: {e}"), DATA_HINT))?;
-    let store = Store::open(&data_dir).map_err(|e| {
+        "Check that --appdata exists (or can be created) and that you can write to it.";
+    // The roots guard runs first: a missing, swapped or foreign root is refused
+    // before any directory, lock or database is created.
+    const PIN_HINT: &str = "Put this installation's UUID in the server configuration as \
+         CALTERNAL_INSTALLATION_ID (or pass --installation-id). For first setup, generate a \
+         new UUID, keep it there, and start once with --create.";
+    let installation = installation_id
+        .ok_or_else(|| {
+            boot(
+                1,
+                "invalid_input",
+                "no installation ID is configured",
+                PIN_HINT,
+            )
+        })
+        .and_then(|id| {
+            uuid::Uuid::parse_str(&id).map_err(|_| {
+                boot(
+                    1,
+                    "invalid_input",
+                    "the installation ID is not a UUID",
+                    PIN_HINT,
+                )
+            })
+        })?;
+    let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
         boot(
             1,
             "failed",
             e.message,
-            "Is another server using this data directory? Check its log.",
+            "Pass the three roots this installation was set up with (--create only for \
+             first setup), and make sure no other server is using them.",
         )
     })?;
-    let machines = {
-        let dir = data_dir.clone();
-        match tokio::task::spawn_blocking(move || MachineService::open(&dir, machine_settings))
-            .await
-        {
-            Ok(Ok(m)) => m,
-            Ok(Err(e)) => {
-                return Err(boot(
-                    1,
-                    "failed",
-                    format!("machines: {}", e.message),
-                    DATA_HINT,
-                ));
-            }
-            Err(_) => {
-                return Err(boot(
-                    1,
-                    "internal",
-                    "the machines service did not start",
-                    DATA_HINT,
-                ));
-            }
-        }
-    };
-    let _sweeper = machines.spawn_sweeper();
+    let data_dir = std::fs::canonicalize(&roots.appdata)
+        .map_err(|e| boot(1, "io", format!("appdata: {e}"), DATA_HINT))?;
+    // Every security change is written to this log in userdata-ssd before it is
+    // acknowledged (crates/recovery), so auth.db can be rebuilt if appdata is lost.
+    let recovery = store.open_recovery(create).map_err(|e| {
+        boot(
+            1,
+            "failed",
+            e.message,
+            "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
+        )
+    })?;
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
     let registry = match &test_root {
@@ -338,6 +375,8 @@ async fn serve(
             ));
         }
     };
+    // Directory receipts follow the same retention as space receipts.
+    config.receipt_retention = receipt_retention;
     if config.set_trusted_proxies(&trusted_proxies).is_err() {
         return Err(boot(
             1,
@@ -346,18 +385,53 @@ async fn serve(
             "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
         ));
     }
-    let tokens = match TokenTable::open(&data_dir, config, development) {
-        Ok(t) => t,
-        Err(e) => {
-            return Err(boot(
-                1,
-                "failed",
-                format!("account directory: {e}"),
-                DATA_HINT,
-            ));
+    let directory =
+        match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
+            Ok(t) => t,
+            Err(e) => {
+                return Err(boot(
+                    1,
+                    "failed",
+                    format!("account directory: {e}"),
+                    DATA_HINT,
+                ));
+            }
+        };
+    // Machine authority shares auth.db and its recovery barrier.
+    let machines = {
+        let dir = data_dir.clone();
+        let authority = directory.spaces.machines();
+        match tokio::task::spawn_blocking(move || {
+            MachineService::open(&dir, authority, machine_settings)
+        })
+        .await
+        {
+            Ok(Ok(m)) => m,
+            Ok(Err(e)) => {
+                return Err(boot(
+                    1,
+                    "failed",
+                    format!("machines: {}", e.message),
+                    DATA_HINT,
+                ));
+            }
+            Err(_) => {
+                return Err(boot(
+                    1,
+                    "internal",
+                    "the machines service did not start",
+                    DATA_HINT,
+                ));
+            }
         }
     };
-    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
+    let _sweeper = machines.spawn_sweeper();
+    // Operator commands reach this server here instead of writing behind it.
+    let _admin =
+        calternal_server::machines::admin::serve_socket(&data_dir, installation, machines.clone())
+            .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
+    {
         match service.auth.first_owner_token().await {
             Ok(Some(token)) => {
                 let path = data_dir.join("setup.token");
@@ -372,7 +446,7 @@ async fn serve(
         None
     };
     let mut hosts = api::allowed_hosts(port);
-    if let Some(service) = calternal_server::auth::Directory::http_auth(&tokens) {
+    if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
         let authority = service
             .config
             .origin_header()
@@ -386,7 +460,7 @@ async fn serve(
     }
     let jobs =
         plugins::Jobs::open(&data_dir).map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
-    let token_files = tokens.files.clone();
+    let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         inputs: calternal_server::account_input::Inputs::new(
             &data_dir,
@@ -394,8 +468,8 @@ async fn serve(
                 .map_err(|e| CliError::new("invalid_input", e.message))?,
         )
         .with_content(store.shared_content()),
-        store: Mutex::new(store),
-        tokens,
+        store,
+        directory,
         registry,
         workers: plugins::WorkerPool::new(node),
         jobs,
@@ -427,7 +501,7 @@ async fn serve(
         "base_url": base_url,
         "passkey_origin": public_origin,
         "pid": std::process::id(),
-        "data_dir": data_dir,
+        "appdata": data_dir,
         "token_files": token_files.iter().map(|(p, f)| (p.to_string(), serde_json::json!(f))).collect::<serde_json::Map<_, _>>(),
         "web_dir": web_dir,
     });
@@ -495,7 +569,6 @@ async fn shutdown_signal() {
 mod cli_output_tests {
     use super::*;
     use calternal_cli::testing::assert_golden;
-    use calternal_machine::protocol::Owner;
     use std::path::{Path, PathBuf};
     use time::UtcOffset;
 
@@ -505,35 +578,47 @@ mod cli_output_tests {
             .join(name)
     }
 
-    fn enrolled_data_dir() -> (tempfile::TempDir, PathBuf) {
+    /// A paired, stopped installation (as `serve --create` leaves it) with the
+    /// given pool machines written before recovery is first attached.
+    fn installation(machines: &[(&str, &str)]) -> (tempfile::TempDir, admin_cli::Installation) {
+        use std::os::unix::fs::DirBuilderExt;
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("system/machines.db");
-        let mut conn = calternal_server::machines::db::open(&path).unwrap();
-        let (code, _) = calternal_server::machines::db::new_code(
-            &conn,
-            Owner::Pool,
-            std::time::Duration::from_secs(60),
-        )
-        .unwrap();
-        let code = calternal_auth::token::normalize_setup_token(&code).unwrap();
-        let row = calternal_server::machines::db::redeem_code(
-            &mut conn,
-            &calternal_auth::token::hash32(&code),
-            &[7; 32],
-            "build-machine-with-a-long-name",
-            "linux",
-            "x86_64",
-        )
-        .unwrap()
-        .unwrap();
-        let id = uuid::Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
-        conn.execute(
-            "UPDATE machines SET id = ?1 WHERE id = ?2",
-            [id.to_string(), row.id.to_string()],
-        )
-        .unwrap();
-        let path = dir.path().to_path_buf();
-        (dir, path)
+        let roots = calternal_roots::Roots {
+            appdata: dir.path().join("appdata"),
+            userdata_ssd: dir.path().join("userdata-ssd"),
+            userdata_hdd: dir.path().join("userdata-hdd"),
+        };
+        let id = "00000000-0000-0000-0000-000000000001";
+        drop(
+            Store::open(
+                &roots,
+                uuid::Uuid::parse_str(id).unwrap(),
+                true,
+                calternal_content::DEFAULT_RECEIPT_RETENTION,
+            )
+            .unwrap(),
+        );
+        let c = calternal_auth::db::open_conn(&roots.appdata.join("system/auth.db")).unwrap();
+        for (machine, name) in machines {
+            c.execute(
+                "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms) VALUES(?1,NULL,?2,?3,'linux','x86_64',0)",
+                rusqlite::params![machine, vec![7u8; 32], name],
+            )
+            .unwrap();
+        }
+        drop(c);
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .recursive(true)
+            .create(roots.userdata_ssd.join(".calternal/recovery"))
+            .unwrap();
+        let installation = admin_cli::Installation {
+            appdata: roots.appdata,
+            userdata_ssd: roots.userdata_ssd,
+            userdata_hdd: roots.userdata_hdd,
+            installation_id: id.into(),
+        };
+        (dir, installation)
     }
 
     fn redact_code_and_time(text: &str) -> String {
@@ -553,12 +638,15 @@ mod cli_output_tests {
 
     #[test]
     fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
-        let (_keep, data_dir) = enrolled_data_dir();
+        let (_keep, installation) = installation(&[(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "build-machine-with-a-long-name",
+        )]);
         for width in [120, 80, 40] {
             let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
             let machines = admin_cli::machines(
                 MachinesCmd::List {
-                    data_dir: data_dir.clone(),
+                    installation: installation.clone(),
                 },
                 &out,
             )
@@ -584,8 +672,14 @@ mod cli_output_tests {
             "calternal",
             "machines",
             "list",
-            "--data-dir",
-            "/tmp/calternal",
+            "--appdata",
+            "/tmp/calternal/appdata",
+            "--userdata-ssd",
+            "/tmp/calternal/ssd",
+            "--userdata-hdd",
+            "/tmp/calternal/hdd",
+            "--installation-id",
+            "00000000-0000-0000-0000-000000000001",
             "--no-hints",
         ])
         .unwrap();
@@ -594,11 +688,11 @@ mod cli_output_tests {
 
     #[test]
     fn machine_code_and_empty_list_hint_goldens_cover_enabled_and_disabled_hints() {
-        let dir = tempfile::tempdir().unwrap();
+        let (_keep, installation) = installation(&[]);
         let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
         let code = admin_cli::machines(
             MachinesCmd::Code {
-                data_dir: dir.path().to_path_buf(),
+                installation: installation.clone(),
                 pool: true,
                 account: None,
                 minutes: 60,
@@ -616,10 +710,10 @@ mod cli_output_tests {
             &redact_code_and_time(&no_hints.render(&code)),
         );
 
-        let empty_dir = tempfile::tempdir().unwrap();
+        let (_keep_empty, empty_installation) = self::installation(&[]);
         let empty = admin_cli::machines(
             MachinesCmd::List {
-                data_dir: empty_dir.path().to_path_buf(),
+                installation: empty_installation,
             },
             &out,
         )

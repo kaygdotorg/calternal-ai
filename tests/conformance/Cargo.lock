@@ -224,6 +224,7 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "calternal-fsio",
+ "calternal-types",
  "getrandom 0.4.3",
  "rusqlite",
  "serde",
@@ -246,6 +247,7 @@ version = "0.1.0"
 dependencies = [
  "calternal-client",
  "calternal-core",
+ "calternal-types",
  "clap",
  "rustix",
  "serde_json",
@@ -260,6 +262,7 @@ version = "0.1.0"
 dependencies = [
  "calternal-core",
  "calternal-fsio",
+ "calternal-types",
  "reqwest",
  "serde",
  "serde_json",
@@ -289,10 +292,10 @@ dependencies = [
 name = "calternal-core"
 version = "0.1.0"
 dependencies = [
+ "calternal-types",
  "schemars",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
  "ts-rs",
  "uuid",
 ]
@@ -311,9 +314,10 @@ dependencies = [
 name = "calternal-machine"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "calternal-cli",
  "calternal-fsio",
+ "calternal-types",
  "clap",
  "reqwest",
  "ring",
@@ -323,6 +327,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "calternal-types"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "ts-rs",
  "uuid",
 ]
 

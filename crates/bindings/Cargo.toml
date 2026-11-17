@@ -13,7 +13,9 @@ default = []
 uniffi = ["dep:uniffi"]
 
 [dependencies]
+calternal-types.workspace = true
 calternal-core.workspace = true
+calternal-genui.workspace = true
 serde_json.workspace = true
 uniffi = { version = "0.29", optional = true, features = ["cli", "tokio"] }
 schemars.workspace = true

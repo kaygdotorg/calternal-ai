@@ -26,17 +26,12 @@
 //! [`MAX_SUBSCRIBERS`] stream subscribers. Final jobs are deleted [`RETAIN_FINAL`]
 //! after they finish, and beyond the newest [`MAX_FINAL_PER_SPACE`] per space.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-// private_fs moves to calternal-fsio; only this import changes then.
-use calternal_auth::private_fs;
 use calternal_core::{JobState, JobView};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
@@ -49,7 +44,7 @@ use super::job_sql::{
 };
 use super::live::{Live, LiveMap, Subscription};
 use super::worker::CancelFlag;
-use crate::error::HostError;
+use calternal_types::{AccountId, Error};
 
 /// Active (admitted, running or waiting) jobs allowed per space.
 pub const MAX_ACTIVE_JOBS_PER_SPACE: usize = 64;
@@ -77,10 +72,10 @@ pub const RETAIN_FINAL: Duration = Duration::from_secs(7 * 24 * 3600);
 pub const MAX_FINAL_PER_SPACE: usize = 1024;
 
 /// Serialize `value` if it fits `max` bytes. Cost: one serialization.
-pub fn bounded_json(value: &Value, max: usize) -> Result<String, HostError> {
+pub fn bounded_json(value: &Value, max: usize) -> Result<String, Error> {
     let text = value.to_string();
     if text.len() > max {
-        return Err(HostError::invalid_input("job data is too large"));
+        return Err(Error::invalid_input("job data is too large"));
     }
     Ok(text)
 }
@@ -94,8 +89,8 @@ pub struct Job {
     pub space: String,
     /// Plugin whose run operation executes the job.
     pub plugin: String,
-    /// Identity of the starting account, as the directory knows it.
-    pub account: String,
+    /// The starting account.
+    pub account: AccountId,
     /// The starting account's sign-in, rechecked at every boundary.
     pub session: Session,
     /// Declared operation invoked for each run.
@@ -152,8 +147,8 @@ pub struct Admission {
     pub space: String,
     /// Plugin ID.
     pub plugin: String,
-    /// Starting account identity.
-    pub account: String,
+    /// The starting account.
+    pub account: AccountId,
     /// Starting sign-in.
     pub session: Session,
     /// Declared run operation of the same plugin.
@@ -213,7 +208,7 @@ impl Jobs {
     /// apply retention and load job routes (job ID to space); nothing else runs.
     /// Cost at startup: one directory listing plus, per space with jobs, one open,
     /// one retention delete and one ID scan.
-    pub fn open(appdata: &Path) -> Result<Self, HostError> {
+    pub fn open(appdata: &Path) -> Result<Self, Error> {
         let jobs = Self {
             root: Some(appdata.join("spaces")),
             ..Self::disabled()
@@ -255,13 +250,13 @@ impl Jobs {
 
     /// The space's job connection, opening (and applying retention to) it on first
     /// use and closing the least recently used beyond [`MAX_OPEN_SPACES`].
-    fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, HostError> {
+    fn conn(&self, space: &str) -> Result<Arc<Mutex<Connection>>, Error> {
         let root = self
             .root
             .as_ref()
-            .ok_or_else(|| HostError::unavailable("jobs are not available on this host"))?;
+            .ok_or_else(|| Error::unavailable("jobs are not available on this host"))?;
         if Uuid::parse_str(space).is_err() {
-            return Err(HostError::unavailable("jobs need a space UUID"));
+            return Err(Error::unavailable("jobs need a space UUID"));
         }
         let tick = self.tick.fetch_add(1, Ordering::Relaxed) as u64;
         if let Some((c, used)) = self
@@ -274,9 +269,10 @@ impl Jobs {
             return Ok(c.clone());
         }
         let dir = root.join(space);
-        private_fs::directory(&dir).map_err(|_| HostError::internal("job storage directory"))?;
+        calternal_fsio::private::directory(&dir)
+            .map_err(|_| Error::internal("job storage directory"))?;
         let path = dir.join("jobs.db");
-        private_fs::file(&path).map_err(|_| HostError::internal("job storage file"))?;
+        calternal_fsio::private::file(&path).map_err(|_| Error::internal("job storage file"))?;
         let c = Connection::open(path).map_err(db_err)?;
         c.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
@@ -302,8 +298,8 @@ impl Jobs {
     pub(super) fn tx<T>(
         &self,
         space: &str,
-        f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, HostError>,
-    ) -> Result<T, HostError> {
+        f: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T, Error>,
+    ) -> Result<T, Error> {
         let conn = self.conn(space)?;
         let mut c = conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = c
@@ -324,7 +320,7 @@ impl Jobs {
     }
 
     /// Read one job. Cost: one indexed read.
-    pub fn get(&self, space: &str, id: &str) -> Result<Option<Job>, HostError> {
+    pub fn get(&self, space: &str, id: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn(space)?;
         let c = conn.lock().unwrap_or_else(|p| p.into_inner());
         c.query_row(
@@ -340,10 +336,9 @@ impl Jobs {
     /// Refused: an over-full space, an oversized input, or a parent that is missing,
     /// final, of another plugin, or already has [`MAX_CHILDREN`] children.
     /// Cost: one FULL transaction with a few indexed reads and one insert.
-    pub fn admit(&self, a: Admission) -> Result<String, HostError> {
+    pub fn admit(&self, a: Admission) -> Result<String, Error> {
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
-        let session =
-            serde_json::to_string(&a.session).map_err(|_| HostError::internal("encode"))?;
+        let session = serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
         let space = a.space.clone();
         let id = self.tx(&space, |tx| {
             if let Some(id) = tx
@@ -359,7 +354,7 @@ impl Jobs {
                 .query_row(&format!("SELECT count(*) FROM jobs WHERE state IN {ACTIVE}"), [], |r| r.get(0))
                 .map_err(db_err)?;
             if active as usize >= MAX_ACTIVE_JOBS_PER_SPACE {
-                return Err(HostError::unavailable("too many active jobs in this space")
+                return Err(Error::unavailable("too many active jobs in this space")
                     .with_details(serde_json::json!({"reason": "job_capacity"})));
             }
             if let Some(parent) = &a.parent {
@@ -375,13 +370,13 @@ impl Jobs {
                 if !ok.is_some_and(|(p, s)| p == a.plugin && !parse_state(&s).is_final())
                     || children as usize >= MAX_CHILDREN
                 {
-                    return Err(HostError::invalid_input("parent job cannot take a child"));
+                    return Err(Error::invalid_input("parent job cannot take a child"));
                 }
             }
             let id = Uuid::now_v7().to_string();
             tx.execute(
                 "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,'admitted','null',0,0,'null',0,?8,?9,NULL)",
-                params![id, a.plugin, a.account, session, a.operation, input, a.parent, a.generation, a.request_key],
+                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, a.generation, a.request_key],
             )
             .map_err(db_err)?;
             Ok(id)
@@ -396,7 +391,7 @@ impl Jobs {
     /// Move an admitted job to running and start a fresh stream epoch whose sequence
     /// continues from the checkpoint. `None` when the job is no longer admitted.
     /// Cost: one FULL transaction.
-    pub fn claim(&self, space: &str, id: &str) -> Result<Option<Claimed>, HostError> {
+    pub fn claim(&self, space: &str, id: &str) -> Result<Option<Claimed>, Error> {
         let job = self.tx(space, |tx| {
             let n = tx
                 .execute(
@@ -451,7 +446,7 @@ impl Jobs {
         run: u32,
         live: &Live,
         checkpoint: &Value,
-    ) -> Result<u32, HostError> {
+    ) -> Result<u32, Error> {
         let text = bounded_json(checkpoint, MAX_CHECKPOINT_BYTES)?;
         let seq = live.next_seq() as i64;
         self.tx(space, |tx| {
@@ -462,7 +457,7 @@ impl Jobs {
                 )
                 .map_err(db_err)?;
             if n == 0 {
-                return Err(HostError::conflict("job is no longer running"));
+                return Err(Error::conflict("job is no longer running"));
             }
             tx.query_row("SELECT checkpoints FROM jobs WHERE id=?1", [id], |r| r.get(0)).map_err(db_err)
         })
@@ -478,7 +473,7 @@ impl Jobs {
         id: &str,
         run: u32,
         end: RunEnd,
-    ) -> Result<Vec<String>, HostError> {
+    ) -> Result<Vec<String>, Error> {
         let (state, result) = match end {
             RunEnd::Done(v) => match bounded_json(&v, MAX_CHECKPOINT_BYTES) {
                 Ok(text) => (JobState::Done, text),
@@ -536,7 +531,7 @@ impl Jobs {
     /// that parent was cancelled too. Returns the jobs to schedule (a woken parent).
     /// Cost: one FULL transaction walking the descendant tree (at most
     /// [`MAX_CHILDREN`] per level within the space's active-job bound).
-    pub fn cancel(&self, space: &str, id: &str) -> Result<Vec<String>, HostError> {
+    pub fn cancel(&self, space: &str, id: &str) -> Result<Vec<String>, Error> {
         let (cancelled, wake) = self.tx(space, |tx| {
             let mut st = tx
                 .prepare(&format!(
@@ -601,7 +596,7 @@ impl Jobs {
     }
 
     /// Child results recorded for `parent`, in report order. Cost: one indexed scan.
-    pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, HostError> {
+    pub fn children(&self, space: &str, parent: &str) -> Result<Vec<ChildResult>, Error> {
         let conn = self.conn(space)?;
         let c = conn.lock().unwrap_or_else(|p| p.into_inner());
         let mut st = c
@@ -621,9 +616,9 @@ impl Jobs {
 
     /// Take a subscriber slot on a job's stream; refused beyond the per-job and
     /// server-wide bounds. Cost: one map lock and one stream lock.
-    pub fn subscribe(&self, id: &str) -> Result<Subscription, HostError> {
+    pub fn subscribe(&self, id: &str) -> Result<Subscription, Error> {
         let busy = || {
-            HostError::unavailable("too many job subscribers; retry shortly")
+            Error::unavailable("too many job subscribers; retry shortly")
                 .with_details(serde_json::json!({"reason": "subscriber_capacity"}))
         };
         if self.subscribers.fetch_add(1, Ordering::AcqRel) >= MAX_SUBSCRIBERS {

@@ -13,25 +13,34 @@
 //! recovery, external-editor reconciliation and tier moves remain separate work.
 //!
 //! Callers must retain installation root locks and enforce current authority.
-//! The cache is capped at 64 active spaces with a configurable idle deadline;
-//! a background sweep runs every 30 seconds even with no requests. The journal
-//! bridge has a bounded 32-command queue. SQL and file work belong on blocking
-//! host threads, never on async executor workers.
+//! SQL and file work belong on blocking host threads, never on async executor workers.
+//!
+//! Locks: work in one space never waits for another space's work, except that a
+//! new item's first catalog route takes the one catalog writer (below). The space
+//! cache map lock is held only to find, insert or remove an entry (no I/O: an
+//! evicted space is closed after the map lock is released). Each space has its own
+//! lock, held for that space's whole operation, including its SQLite, journal and
+//! file fsyncs; it serializes work within the space only. Catalog reads use a
+//! [`ReadPool`]; the one catalog writer connection is locked only when an item is
+//! first routed (a create), for one insert. The cache keeps at most 64 open spaces
+//! and closes idle ones after a configurable deadline; a background thread sweeps
+//! every 30 seconds even with no requests.
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
+use crate::types::{internal, missing};
 mod collections;
 mod db;
 mod files;
 mod journal;
+mod pool;
 mod types;
-pub use calternal_core::ErrorCode;
 use calternal_roots::Roots;
-pub use calternal_store::{AccountId, SpaceId};
+use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
 use db::Space;
-use journal::{Journals, Shared, lock};
+use journal::{Journals, lock};
+pub use pool::ReadPool;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
@@ -40,37 +49,81 @@ use std::{
     time::{Duration, Instant},
 };
 pub use types::{
-    Collection, CollectionOwner, Error, FaultPoint, FileFormat, Item, Materialization, Placement,
-    Receipt, Request, Result, Summary,
+    Collection, CollectionOwner, FaultPoint, FileFormat, Item, Placement, Receipt, Request, Result,
+    Summary,
 };
 use uuid::Uuid;
 
-struct Entry {
-    space: Shared<Space>,
-    last_used: Instant,
+/// One cached space: opened on first use under its own lock, so a cold open in
+/// one space never blocks another.
+struct Slot {
+    space: Mutex<Option<Space>>,
+    last_used: Mutex<Instant>,
 }
-type Cache = Arc<Mutex<HashMap<SpaceId, Entry>>>;
+impl Slot {
+    /// Whether something outside the cache (a live subscriber) still holds this
+    /// space's journal. Cost: a try-lock and two counter reads; a slot being worked
+    /// on right now counts as in use.
+    fn in_use(&self) -> bool {
+        match self.space.try_lock() {
+            Ok(space) => space.as_ref().is_some_and(|s| !s.journal.is_unused()),
+            Err(_) => true,
+        }
+    }
+}
+type Cache = Arc<Mutex<HashMap<SpaceId, Arc<Slot>>>>;
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
     roots: Roots,
     index: Mutex<Connection>,
+    catalog: ReadPool,
+    // Declared before `journals`: open stores drain before the driver stops.
     spaces: Cache,
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),
-    writes: Vec<Mutex<()>>,
-    admission: Mutex<()>,
 }
+/// Closes idle spaces nobody holds. Closing drops the space's journal store, which
+/// drains its writer, outside the map lock.
 fn sweep(spaces: &Cache, idle: Duration) -> usize {
-    let mut spaces = lock(spaces);
-    let before = spaces.len();
-    spaces.retain(|_, e| Arc::strong_count(&e.space) > 1 || e.last_used.elapsed() < idle);
-    before - spaces.len()
+    let mut closed = Vec::new();
+    {
+        let mut map = lock(spaces);
+        map.retain(|_, slot| {
+            let keep = Arc::strong_count(slot) > 1
+                || lock(&slot.last_used).elapsed() < idle
+                || slot.in_use();
+            if !keep {
+                closed.push(slot.clone());
+            }
+            keep
+        });
+    }
+    closed.len()
 }
-pub(crate) fn sha256(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+/// Sweeps `spaces` every 30 seconds until the cache is dropped.
+fn spawn_sweeper(spaces: &Cache, idle: Duration) -> Result<()> {
+    let weak = Arc::downgrade(spaces);
+    std::thread::Builder::new()
+        .name("content-sweep".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(30));
+                let Some(spaces) = weak.upgrade() else { return };
+                sweep(&spaces, idle);
+            }
+        })
+        .map(drop)
+        .map_err(internal)
 }
+/// BLAKE3 of an item file's bytes, as hex. Cost: O(bytes), one allocation.
+pub(crate) fn file_hash(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
+}
+/// How long request receipts are kept by default: seven days, the store's default.
+/// A retry after that is treated as a new request.
+pub const DEFAULT_RECEIPT_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// Current UTC timestamp used by item versions and server adapters.
 /// Cost: one clock read and a short string allocation; no locks, SQLite or fsync.
 pub fn now_rfc3339() -> String {
@@ -82,16 +135,21 @@ pub fn now_rfc3339() -> String {
 }
 impl Content {
     /// Opens the identifier-only catalog and replays unfinished space intents.
+    /// `receipt_retention` bounds how long each space keeps request receipts
+    /// ([`DEFAULT_RECEIPT_RETENTION`] unless the operator sets another); a retry
+    /// after that runs as a new request.
     /// Roots must have been validated/locked by the host. `secrets` is the journal
     /// witness root, outside production state backups. Fault callbacks are trusted
     /// test hooks; production callers pass a no-op.
-    /// Cost: directory/catalog I/O and FULL schema syncs, one journal-runtime thread;
+    /// Cost: directory/catalog I/O and FULL schema syncs, two journal-driver threads
+    /// and one sweeper thread;
     /// startup visits existing space databases, then reads only pending intents.
     /// Each recovered revision has [`Self::write`] publication/placement costs.
     pub fn open(
         roots: Roots,
         secrets: PathBuf,
         idle_after: Duration,
+        receipt_retention: Duration,
         fault: fn(FaultPoint),
     ) -> Result<Self> {
         for path in [
@@ -100,32 +158,29 @@ impl Content {
             &roots.userdata_hdd,
             &secrets,
         ] {
-            calternal_auth::private_fs::directory(path).map_err(Error::internal)?;
+            calternal_fsio::private::directory(path).map_err(internal)?;
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS requests(account TEXT NOT NULL,request TEXT NOT NULL,space TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;").map_err(Error::internal)?;
+            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(HashMap::new()));
-        let cache = spaces.clone();
-        let journals = Journals::open(roots.appdata.clone(), secrets, move || {
-            sweep(&cache, idle_after);
-        })?;
+        spawn_sweeper(&spaces, idle_after)?;
+        let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
+        let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
             roots,
             index: Mutex::new(index),
+            catalog,
             spaces,
             idle_after,
             journals,
             fault,
-            writes: (0..64).map(|_| Mutex::new(())).collect(),
-            admission: Mutex::new(()),
         };
         let dir = content.roots.appdata.join("spaces");
         if dir.exists() {
-            for entry in fs::read_dir(dir).map_err(Error::internal)? {
-                let entry = entry.map_err(Error::internal)?;
-                if !entry.file_type().map_err(Error::internal)?.is_dir() {
+            for entry in fs::read_dir(dir).map_err(internal)? {
+                let entry = entry.map_err(internal)?;
+                if !entry.file_type().map_err(internal)?.is_dir() {
                     continue;
                 }
                 let Some(id) = entry
@@ -142,16 +197,16 @@ impl Content {
                         let mut stmt = space
                             .conn
                             .prepare("SELECT id FROM items WHERE mat_state='pending'")
-                            .map_err(Error::internal)?;
+                            .map_err(internal)?;
                         let ids = stmt
                             .query_map([], |r| r.get::<_, String>(0))
-                            .map_err(Error::internal)?
+                            .map_err(internal)?
                             .collect::<std::result::Result<Vec<_>, _>>()
-                            .map_err(Error::internal)?;
+                            .map_err(internal)?;
                         drop(stmt);
                         for id in ids {
                             if let Err(e) =
-                                space.place(Uuid::parse_str(&id).map_err(Error::internal)?, fault)
+                                space.place(Uuid::parse_str(&id).map_err(internal)?, fault)
                                 && e.code != ErrorCode::Conflict
                             {
                                 return Err(e);
@@ -165,67 +220,55 @@ impl Content {
         }
         Ok(content)
     }
+    /// Runs `f` on space `id` under that space's lock, opening the space first if it
+    /// is not cached. Cost: map lock for a lookup or insert (no I/O); a cold space
+    /// opens SQLite and its journal under its own lock only. Refuses with
+    /// unavailable when 64 spaces are open and all are in use.
     fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
-        let cached = {
+        // A capacity-evicted space is dropped (draining its journal writer) only
+        // after the map lock is released, so no other space waits on that drain.
+        let mut evicted = None;
+        let slot = {
             let mut map = lock(&self.spaces);
-            map.get_mut(&id).map(|e| {
-                e.last_used = Instant::now();
-                e.space.clone()
-            })
-        };
-        let held = if let Some(held) = cached {
-            held
-        } else {
-            // Bound cold admissions before opening SQLite/writer handles. Never
-            // hold the map mutex across journal round trips or database I/O.
-            let _admission = lock(&self.admission);
-            let again = { lock(&self.spaces).get(&id).map(|e| e.space.clone()) };
-            if let Some(held) = again {
-                held
-            } else {
-                {
-                    let mut map = lock(&self.spaces);
+            match map.get(&id) {
+                Some(slot) => slot.clone(),
+                None => {
                     if map.len() >= 64 {
-                        if let Some(old) = map
+                        let idle = map
                             .iter()
-                            .filter(|(_, e)| Arc::strong_count(&e.space) == 1)
-                            .min_by_key(|(_, e)| e.last_used)
+                            .filter(|(_, s)| Arc::strong_count(s) == 1 && !s.in_use())
+                            .min_by_key(|(_, s)| *lock(&s.last_used))
                             .map(|(k, _)| *k)
-                        {
-                            map.remove(&old);
-                        } else {
-                            return Err(Error::new(
-                                ErrorCode::Unavailable,
-                                "content cache is busy",
-                            ));
-                        }
+                            .ok_or_else(|| Error::unavailable("content cache is busy"))?;
+                        evicted = map.remove(&idle);
                     }
+                    let slot = Arc::new(Slot {
+                        space: Mutex::new(None),
+                        last_used: Mutex::new(Instant::now()),
+                    });
+                    map.insert(id, slot.clone());
+                    slot
                 }
-                let opened = Arc::new(Mutex::new(Space::open(
-                    &self.roots.appdata,
-                    &self.roots.userdata_ssd,
-                    id,
-                    self.journals.handle(id)?,
-                )?));
-                lock(&self.spaces).insert(
-                    id,
-                    Entry {
-                        space: opened.clone(),
-                        last_used: Instant::now(),
-                    },
-                );
-                opened
             }
         };
-        let result = f(&mut lock(&held));
-        if let Some(entry) = lock(&self.spaces).get_mut(&id) {
-            entry.last_used = Instant::now();
+        drop(evicted);
+        let mut held = lock(&slot.space);
+        if held.is_none() {
+            let journal = self.journals.open_store(id)?;
+            *held = Some(Space::open(
+                &self.roots.appdata,
+                &self.roots.userdata_ssd,
+                id,
+                journal,
+            )?);
         }
+        let result = f(held.as_mut().expect("opened above"));
+        *lock(&slot.last_used) = Instant::now();
         result
     }
-    /// Releases idle unpinned connections, also performed by the background worker.
-    /// Cost: O(active spaces), at most 64, under the cache mutex; closing SQLite may
-    /// checkpoint WAL. No directory scan or unrelated item/history read.
+    /// Releases idle unpinned spaces, also performed by the background sweeper.
+    /// Cost: O(open spaces), at most 64, under the cache map lock; closing happens
+    /// after it is released and may checkpoint WAL and drain the journal writer.
     pub fn sweep(&self) -> usize {
         sweep(&self.spaces, self.idle_after)
     }
@@ -244,7 +287,7 @@ impl Content {
     ) -> Result<()> {
         files::validate_kind(kind)?;
         files::validate_registration(&placement, &format)?;
-        let definition = serde_json::to_string(&(placement, format)).map_err(Error::internal)?;
+        let definition = serde_json::to_string(&(placement, format)).map_err(internal)?;
         self.with_space(space, |s| {
             let old = s
                 .conn
@@ -252,7 +295,7 @@ impl Content {
                     r.get::<_, String>(0)
                 })
                 .optional()
-                .map_err(Error::internal)?;
+                .map_err(internal)?;
             if let Some(old) = old {
                 if old != definition {
                     return Err(Error::new(
@@ -263,7 +306,7 @@ impl Content {
             } else {
                 s.conn
                     .execute("INSERT INTO kinds VALUES(?1,?2)", params![kind, definition])
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
             }
             Ok(())
         })
@@ -272,30 +315,17 @@ impl Content {
     /// The returned space grants no authority; the host must check current membership.
     /// Cost: catalog mutex and one indexed lookup, allocating one UUID string; no fsync.
     pub fn locate(&self, kind: &str, id: Uuid) -> Result<Option<SpaceId>> {
-        lock(&self.index)
-            .query_row(
-                "SELECT space FROM items WHERE id=?1 AND kind=?2",
-                params![id.to_string(), kind],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(Error::internal)?
-            .map(|s| s.parse().map_err(Error::internal))
-            .transpose()
-    }
-    /// Selects a receipt's space by identifiers only, for the host's account-wide
-    /// request namespace check. Never returns a payload or grants content access.
-    /// Cost: catalog mutex, one indexed lookup and UUID allocation; no space scans.
-    pub fn receipt_space(&self, account: AccountId, request: &str) -> Result<Option<SpaceId>> {
-        lock(&self.index)
-            .query_row(
-                "SELECT space FROM requests WHERE account=?1 AND request=?2",
-                params![account.to_string(), request],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(Error::internal)?
-            .map(|s| s.parse().map_err(Error::internal))
+        self.catalog
+            .read(|c| {
+                c.query_row(
+                    "SELECT space FROM items WHERE id=?1 AND kind=?2",
+                    params![id.to_string(), kind],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()
+            })
+            .map_err(internal)?
+            .map(|s| s.parse().map_err(internal))
             .transpose()
     }
     /// Reads one current item after the caller selects an authorized space.
@@ -324,8 +354,8 @@ impl Content {
         self.with_space(space, |s| s.history(id, limit, cursor))
     }
     /// Reads an account-qualified receipt from the selected space's inherited store.
-    /// Current authority must be checked before replay. Cost: one bounded bridge
-    /// round trip, lazy journal open, indexed receipt read and payload allocation;
+    /// Current authority must be checked before replay. Cost: the space's lock,
+    /// a lazy journal open, indexed receipt read and payload allocation;
     /// unfinished local outbox intents are republished before replay, with the
     /// write path's journal/catalog fsync costs. No other-space content is read.
     pub fn receipt(
@@ -336,59 +366,68 @@ impl Content {
     ) -> Result<Option<Receipt>> {
         self.with_space(space, |s| {
             self.publish_pending(s)?;
-            self.journals.receipt(space, account, request)
+            self.journals.receipt(&s.journal, account, request)
         })
     }
     /// Publishes a receipt for a host-owned control mutation, such as plugin
     /// enablement. The host must commit its own mutation plus a replayable outbox
     /// before calling, and retire that outbox only after success. No item bytes or
     /// metadata are stored in the global catalog. Repeated publication is idempotent.
-    /// Cost: cache/space locks, identifier-only catalog write and one journal bridge
-    /// round trip with receipt/event transaction followed by a FULL durability barrier.
+    /// Cost: the space's lock, one receipt read and, when new, one FULL receipt/event
+    /// transaction on the space's journal writer.
     pub fn record_receipt(
         &self,
         space: SpaceId,
         request: Request<'_>,
         result: Value,
     ) -> Result<()> {
-        self.with_space(space,|_| {
-            {
-                let index=lock(&self.index);
-                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![request.account.to_string(),request.id,space.to_string()]).map_err(Error::internal)?;
-                let bound:String=index.query_row("SELECT space FROM requests WHERE account=?1 AND request=?2",params![request.account.to_string(),request.id],|r|r.get(0)).map_err(Error::internal)?;
-                if bound!=space.to_string(){return Err(Error::new(ErrorCode::Conflict,"request_id was already used with different input"));}
-            }
-            self.journals.publish(space,request.account,request.id.into(),request.operation.into(),request.fingerprint.into(),None,"control".into(),result)
+        self.with_space(space, |s| {
+            self.journals.publish(
+                &s.journal,
+                request.account,
+                request.id,
+                request.operation,
+                request.fingerprint,
+                None,
+                "control",
+                result,
+            )
         })
     }
+    /// How long a request receipt is kept; a retry after that runs as a new
+    /// request. Cost: a copy.
+    pub fn receipt_retention(&self) -> Duration {
+        self.journals.retention()
+    }
     /// Checks one item's current kind and existence inside an authorized space.
-    /// Cost: bounded cache lookup and one indexed per-space SQLite read; no global
-    /// catalog access, content body allocation, journal bridge or fsync.
-    pub fn contains(&self, space: SpaceId, kind: &str, item: uuid::Uuid) -> Result<bool> {
+    /// Cost: the space's lock and one indexed read; no catalog access, body
+    /// allocation, journal call or fsync.
+    pub fn contains(&self, space: SpaceId, kind: &str, item: Uuid) -> Result<bool> {
         self.with_space(space, |s| {
             s.conn
                 .query_row(
                     "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1 AND kind=?2)",
-                    rusqlite::params![item.to_string(), kind],
+                    params![item.to_string(), kind],
                     |r| r.get(0),
                 )
-                .map_err(Error::internal)
+                .map_err(internal)
         })
     }
 
-    /// Pins the existing per-space journal for asynchronous following. The host must
-    /// authorize the space first and invoke this method on a blocking thread.
-    /// Cost: one bounded bridge round trip, lazy database/key opens on first use;
-    /// cloning the returned handle needs no further bridge or content lock.
+    /// The space's journal store, for asynchronous following. The host must
+    /// authorize the space first and call this on a blocking thread. While the
+    /// returned handle (or a subscription on it) lives, the space stays open, so a
+    /// reopen never starts a second writer on the same journal.
+    /// Cost: the space's lock (opening the space if cold) and one Arc clone.
     pub fn live_journal(&self, space: SpaceId) -> Result<calternal_store::SpaceStore> {
-        self.journals.handle(space)
+        self.with_space(space, |s| Ok(s.journal.clone()))
     }
 
     /// Returns a bounded journal page for host diagnostics and conformance tests.
-    /// Cost: one bridge round trip and indexed read allocating at most 10,000 events;
+    /// Cost: the space's lock and one indexed read allocating at most 10,000 events;
     /// a cold journal opens its database/witness. No content reads or normal fsync.
     pub fn journal(&self, space: SpaceId) -> Result<Vec<calternal_store::JournalEntry>> {
-        self.with_space(space, |_| self.journals.entries(space))
+        self.with_space(space, |s| self.journals.entries(&s.journal))
     }
     /// Returns the stored ID-to-path mapping in the selected SSD tree.
     /// `kind` must match; callers must authorize the selected space first.
@@ -404,15 +443,10 @@ impl Content {
                     |r| r.get::<_, String>(0),
                 )
                 .optional()
-                .map_err(Error::internal)?
-                .ok_or_else(Error::missing)?;
+                .map_err(internal)?
+                .ok_or_else(missing)?;
             Ok(s.files.join(path))
         })
-    }
-    /// Reads placement bookkeeping without opening a file.
-    /// Cost: cache/space locks and one indexed SQLite lookup, no fsync or byte allocation.
-    pub fn materialization(&self, space: SpaceId, id: Uuid) -> Result<Option<Materialization>> {
-        self.with_space(space, |s| s.materialization(id))
     }
     /// Finishes pending file placement without changing the committed revision.
     /// Cost: cache/space locks, head bytes/hash allocation; pending placement reads
@@ -421,53 +455,59 @@ impl Content {
     pub fn materialize(&self, space: SpaceId, id: Uuid) -> Result<()> {
         self.with_space(space, |s| s.place(id, self.fault))
     }
-    fn publish_pending(&self, space: &mut Space) -> Result<()> {
-        loop {
-            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(Error::internal)?;
-            let Some((account, request, op, fp, id, revision, result)) = row else {
-                return Ok(());
-            };
-            let item = space.get(Uuid::parse_str(&id).map_err(Error::internal)?)?;
-            {
+    /// Records the global route of item `id`, once. An existing route (every update)
+    /// is a pooled read only; a new item takes the catalog writer for one FULL insert.
+    fn route(&self, space: SpaceId, id: &str, kind: &str) -> Result<()> {
+        let read = |c: &Connection| {
+            c.query_row("SELECT space,kind FROM items WHERE id=?1", [id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .optional()
+        };
+        let existing = match self.catalog.read(read).map_err(internal)? {
+            Some(existing) => existing,
+            None => {
                 let index = lock(&self.index);
                 index
                     .execute(
                         "INSERT INTO items VALUES(?1,?2,?3) ON CONFLICT(id) DO NOTHING",
-                        params![id, space.id.to_string(), item.kind],
+                        params![id, space.to_string(), kind],
                     )
-                    .map_err(Error::internal)?;
-                let existing: (String, String) = index
-                    .query_row("SELECT space,kind FROM items WHERE id=?1", [&id], |r| {
-                        Ok((r.get(0)?, r.get(1)?))
-                    })
-                    .map_err(Error::internal)?;
-                if existing != (space.id.to_string(), item.kind.clone()) {
-                    return Err(Error::internal("global item collision"));
-                }
-                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![account,request,space.id.to_string()]).map_err(Error::internal)?;
-                let bound: String = index
-                    .query_row(
-                        "SELECT space FROM requests WHERE account=?1 AND request=?2",
-                        params![account, request],
-                        |r| r.get(0),
-                    )
-                    .map_err(Error::internal)?;
-                if bound != space.id.to_string() {
-                    return Err(Error::new(
-                        ErrorCode::Conflict,
-                        "request_id was already used with different input",
-                    ));
-                }
+                    .map_err(internal)?;
+                read(&index)
+                    .map_err(internal)?
+                    .ok_or_else(|| internal("route missing"))?
             }
+        };
+        if existing != (space.to_string(), kind.to_owned()) {
+            return Err(internal("global item collision"));
+        }
+        Ok(())
+    }
+    fn publish_pending(&self, space: &mut Space) -> Result<()> {
+        loop {
+            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
+            let Some((account, request, op, fp, id, revision, result)) = row else {
+                return Ok(());
+            };
+            // Item writes route their item first; control changes have no item.
+            let item = match id {
+                Some(id) => {
+                    let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
+                    self.route(space.id, &id, &item.kind)?;
+                    Some(item.id)
+                }
+                None => None,
+            };
             self.journals.publish(
-                space.id,
-                account.parse().map_err(Error::internal)?,
-                request.clone(),
-                op,
-                fp,
-                Some(item.id),
-                revision,
-                serde_json::from_str(&result).map_err(Error::internal)?,
+                &space.journal,
+                account.parse().map_err(internal)?,
+                &request,
+                &op,
+                &fp,
+                item,
+                &revision,
+                serde_json::from_str(&result).map_err(internal)?,
             )?;
             space
                 .conn
@@ -475,16 +515,132 @@ impl Content {
                     "DELETE FROM outbox WHERE account=?1 AND request=?2",
                     params![account, request],
                 )
-                .map_err(Error::internal)?;
+                .map_err(internal)?;
         }
+    }
+    /// Reads one per-space control value, such as a plugin's enablement, from the
+    /// space's own database. Callers authorize the space first.
+    /// Cost: the space's lock and one indexed read; no other space is touched.
+    pub fn control(&self, space: SpaceId, key: &str) -> Result<Option<Value>> {
+        self.with_space(space, |s| {
+            s.conn
+                .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(internal)?
+                .map(|v| serde_json::from_str(&v).map_err(internal))
+                .transpose()
+        })
+    }
+    /// Changes one per-space control value and records the request's receipt, as
+    /// one admission: a stored receipt for the same request replays its response
+    /// (or is a conflict for different input) without calling `change`. `change`
+    /// gets the current value and returns the new value and the response (an
+    /// error writes nothing); both
+    /// commit with an outbox intent in one FULL transaction, then the receipt is
+    /// published to the space's journal. Callers authorize the space first.
+    /// Cost: the space's lock (this space only), one receipt read, one FULL
+    /// content transaction and one FULL journal commit.
+    pub fn set_control(
+        &self,
+        space: SpaceId,
+        request: Request<'_>,
+        key: &str,
+        change: impl FnOnce(Option<Value>) -> Result<(Value, Value)>,
+    ) -> Result<Value> {
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            if let Some(saved) = self.journals.receipt(&s.journal, request.account, request.id)? {
+                if saved.operation != request.operation || saved.fingerprint != request.fingerprint {
+                    return Err(Error::request_reused());
+                }
+                return Ok(saved.result);
+            }
+            let tx = s
+                .conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(internal)?;
+            let current = tx
+                .query_row("SELECT value FROM controls WHERE key=?1", [key], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(internal)?
+                .map(|v| serde_json::from_str(&v).map_err(internal))
+                .transpose()?;
+            let (next, response) = change(current)?;
+            tx.execute(
+                "INSERT INTO controls VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                params![key, next.to_string()],
+            )
+            .map_err(internal)?;
+            tx.execute(
+                "INSERT INTO outbox VALUES(?1,?2,?3,?4,NULL,'control',?5)",
+                params![
+                    request.account.to_string(),
+                    request.id,
+                    request.operation,
+                    request.fingerprint,
+                    response.to_string()
+                ],
+            )
+            .map_err(internal)?;
+            tx.commit().map_err(internal)?;
+            self.publish_pending(s)?;
+            Ok(response)
+        })
+    }
+    /// Admits one write whose effect lives outside this crate (a directory change
+    /// in a space) through the space's receipts, the same admission as every
+    /// content and control write there: a stored receipt replays (or conflicts),
+    /// otherwise `run` executes and its response becomes the receipt.
+    ///
+    /// The space's lock is held across `run` so that one request ID cannot start
+    /// two different writes in the space at once; `run` must be short and must
+    /// not touch this space's content. If the process stops after `run` commits
+    /// and before the receipt does, a retry calls `run` again, so `run` must
+    /// replay its own committed result (the directory keeps an atomic receipt).
+    /// Cost: the space's lock, one receipt read, `run`, and one FULL journal commit.
+    pub fn admit(
+        &self,
+        space: SpaceId,
+        request: Request<'_>,
+        run: impl FnOnce() -> Result<Value>,
+    ) -> Result<Value> {
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            if let Some(saved) = self
+                .journals
+                .receipt(&s.journal, request.account, request.id)?
+            {
+                if saved.operation != request.operation || saved.fingerprint != request.fingerprint
+                {
+                    return Err(Error::request_reused());
+                }
+                return Ok(saved.result);
+            }
+            let response = run()?;
+            self.journals.publish(
+                &s.journal,
+                request.account,
+                request.id,
+                request.operation,
+                request.fingerprint,
+                None,
+                "control",
+                response.clone(),
+            )?;
+            Ok(response)
+        })
     }
     /// Commits generic bytes/metadata and finishes journal publication and placement.
     /// `id=None` creates a UUIDv7; updates require the current base token. The host
     /// supplies the operation response encoder and checks authority before calling.
-    /// Same-account request IDs are unique across this service's spaces.
-    /// Cost: one of 64 request-stripe locks, cache/space locks, bounded metadata/byte
-    /// allocations, indexed head/name checks, one FULL content transaction, catalog
-    /// routing writes, two journal queue round trips (receipt/event then FULL barrier),
+    /// Request IDs are unique per (account, space); a reused one is a conflict.
+    /// Cost: cache/space locks, bounded metadata/byte
+    /// allocations, indexed head/name checks, one FULL content transaction, a catalog
+    /// route insert for a new item, one FULL journal receipt/event commit,
     /// checked file I/O with file+directory fsync, and FULL placement/outbox updates.
     /// First name allocation loads the directory-name cache; warm Linux allocations
     /// drain inherited name-watch events. Other platforms rescan that one directory.
@@ -501,38 +657,35 @@ impl Content {
         request: Request<'_>,
         result: impl FnOnce(&Item) -> Value,
     ) -> Result<Item> {
-        use std::hash::{Hash, Hasher};
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        request.account.hash(&mut hash);
-        request.id.hash(&mut hash);
-        let _stripe = lock(&self.writes[hash.finish() as usize % self.writes.len()]);
         if bytes.len() > 2 * 1024 * 1024
             || metadata.to_string().len() > 256 * 1024
             || request.id.len() > 256
         {
-            return Err(Error::invalid("content input is too large"));
+            return Err(Error::invalid_input("content input is too large"));
         }
         files::validate_kind(kind)?;
         self.with_space(space,|s| {
             s.validate_bytes(kind,bytes)?;
             self.publish_pending(s)?;
-            if self.receipt_space(request.account,request.id)?.is_some(){return Err(Error::new(ErrorCode::Conflict,"request_id was already used with different input"));}
+            // Request IDs are unique per (account, space): the host replays a matching
+            // receipt before calling, so any receipt here is a reuse.
+            if self.journals.receipt(&s.journal,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
             let (id,seq,old_path,expected)=if let Some(id)=id {
-                let current=s.get(id)?;if current.kind!=kind{return Err(Error::missing());}
+                let current=s.get(id)?;if current.kind!=kind{return Err(missing());}
                 s.place(id,self.fault)?;s.check_file(id)?;
                 if base!=Some(current.revision.as_str()) {return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":current.revision}))});}
-                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_sha256 FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(Error::internal)?;
+                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_hash FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(internal)?;
                 (id,seq+1,Some(path),sha)
             }else{(Uuid::now_v7(),1,None,None)};
             let title=metadata.get("title").and_then(Value::as_str).unwrap_or(kind);
             let path=s.choose_path(kind,title,old_path.as_deref())?;
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:format!("v{seq}.{}",Uuid::now_v7().simple()),updated_at:now_rfc3339()};
             let response=result(&item);
-            let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(Error::internal)?;
-            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_sha256) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(Error::internal)?;
-            tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,item.metadata.to_string(),bytes,item.updated_at,request.account.to_string()]).map_err(Error::internal)?;
-            tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(Error::internal)?;
-            tx.commit().map_err(Error::internal)?;
+            let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
+            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(internal)?;
+            tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,item.metadata.to_string(),bytes,item.updated_at,request.account.to_string()]).map_err(internal)?;
+            tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(internal)?;
+            tx.commit().map_err(internal)?;
             (self.fault)(FaultPoint::AfterCommit);
             self.publish_pending(s)?;
             s.place(id,self.fault)?;

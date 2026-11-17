@@ -25,6 +25,7 @@ async fn commits_are_read_back_in_order() {
         .commit(Commit {
             events: vec![ev("t.a", "1"), ev("t.a", "2")],
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();
@@ -50,6 +51,7 @@ async fn idempotency_is_saved_with_the_events_or_not_at_all() {
     s.commit(Commit {
         events: vec![ev("t.a", "1")],
         idempotency: Some(idem(json!({"ok": 1}))),
+        durable: false,
     })
     .await
     .unwrap();
@@ -62,6 +64,7 @@ async fn idempotency_is_saved_with_the_events_or_not_at_all() {
         .commit(Commit {
             events: vec![ev("t.a", "2")],
             idempotency: Some(idem(json!({"ok": 2}))),
+            durable: false,
         })
         .await
         .unwrap_err();
@@ -81,6 +84,7 @@ async fn tokens_survive_a_restart_and_reject_strangers() {
         .commit(Commit {
             events: vec![ev("t.a", "1")],
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();
@@ -114,6 +118,7 @@ async fn reads_are_capped() {
     s.commit(Commit {
         events,
         idempotency: None,
+        durable: false,
     })
     .await
     .unwrap();
@@ -133,6 +138,7 @@ async fn live_entries_arrive_in_journal_order() {
                 s.commit(Commit {
                     events: vec![ev("t.a", &format!("{t}-{i}"))],
                     idempotency: None,
+                    durable: false,
                 })
                 .await
                 .unwrap();
@@ -161,6 +167,7 @@ fn idem(key: &str) -> Commit {
             payload_hash: "h".into(),
             result: json!(key),
         }),
+        durable: false,
     }
 }
 
@@ -233,61 +240,6 @@ async fn a_store_with_a_listener_or_a_copy_is_in_use() {
     assert!(s.is_unused());
 }
 
-#[tokio::test]
-async fn publication_receipt_survives_pruning_and_reopen() {
-    let dir = TempDir::new();
-    let s = SpaceStore::open_dir(dir.path()).await.unwrap();
-    let first = s
-        .commit_once(
-            test_account(),
-            "notes:one".into(),
-            "digest".into(),
-            vec![ev("notes.saved", "a"), ev("notes.saved", "b")],
-        )
-        .await
-        .unwrap();
-    assert_eq!(first.seq, 2);
-    assert_eq!(
-        s.commit_once(
-            test_account(),
-            "notes:one".into(),
-            "digest".into(),
-            vec![ev("notes.saved", "a"), ev("notes.saved", "b")]
-        )
-        .await
-        .unwrap(),
-        first
-    );
-    assert!(
-        s.commit_once(
-            test_account(),
-            "notes:one".into(),
-            "different".into(),
-            vec![]
-        )
-        .await
-        .is_err()
-    );
-    assert_eq!(s.since(0, 10).await.unwrap().len(), 2);
-    drop(s);
-    let s = SpaceStore::open_dir_with(
-        dir.path(),
-        Options {
-            idempotency_retention: Duration::ZERO,
-            ..Options::default()
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        s.commit_once(test_account(), "notes:one".into(), "digest".into(), vec![])
-            .await
-            .unwrap(),
-        first
-    );
-    assert_eq!(s.since(0, 10).await.unwrap().len(), 2);
-}
-
 /// Members may reuse request IDs but can read only their own response.
 #[tokio::test]
 async fn receipts_are_partitioned_by_account_within_one_space() {
@@ -319,6 +271,7 @@ async fn receipts_are_partitioned_by_account_within_one_space() {
                     payload_hash: "h".into(),
                     result: json!(value),
                 }),
+                durable: false,
             })
             .await
             .unwrap();
@@ -348,22 +301,6 @@ async fn receipts_are_partitioned_by_account_within_one_space() {
     assert_eq!(
         entries.iter().map(|e| e.author).collect::<Vec<_>>(),
         vec![a, b]
-    );
-    let first = store
-        .commit_once(a, "publish".into(), "a".into(), vec![ev("t.publish", "a")])
-        .await
-        .unwrap();
-    let second = store
-        .commit_once(b, "publish".into(), "b".into(), vec![ev("t.publish", "b")])
-        .await
-        .unwrap();
-    assert_eq!(second.seq, first.seq + 1);
-    assert_eq!(
-        store
-            .commit_once(a, "publish".into(), "a".into(), vec![])
-            .await
-            .unwrap(),
-        first
     );
     assert!(
         temp.path()

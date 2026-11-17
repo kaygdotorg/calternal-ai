@@ -1,6 +1,7 @@
 //! Protected identity storage primitives ported from Calternal's auth crate.
 //!
-//! This crate preserves the v1–15 legacy schema, including sharing tables.
+//! `auth.db` has one current schema (`schema.sql`, version 1); there is no migration
+//! chain and no sharing, DAV or host-cookie state.
 //! It supplies stored space authority, but no login endpoints or recovery coordinator.
 //! Callers must validate and lock installation roots before opening the DB;
 //! opening a missing path creates it and is not safe recovery of lost state.
@@ -13,16 +14,16 @@ mod config;
 pub mod db;
 mod http_facing;
 pub mod limit;
+pub mod machines;
 mod passkey;
 mod passkeys;
-pub mod private_fs;
 mod session;
 mod setup;
 pub mod spaces;
-pub use spaces::SpaceId;
+use calternal_types::{AccountId, InstallationId, SpaceId};
 pub mod token;
 pub use account::{Auth, LoginPurpose};
-pub use config::AuthConfig;
+pub use config::{AuthConfig, Clock};
 pub use passkeys::PasskeyInfo;
 pub use session::{Installation, InstallationKind};
 pub use setup::Created;
@@ -38,47 +39,6 @@ struct Inner {
     setup_targets: limit::TargetLimiter,
     login_starts: limit::Limiter,
 }
-
-/// Stable account identity; never selects a content root or grants space access.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct AccountId(
-    /// The account UUID, separate from every content/space identifier.
-    pub uuid::Uuid,
-);
-
-/// Stable installation identity, owned by an account.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct InstallationId(
-    /// The installation UUID; its account ownership is held in auth.db.
-    pub uuid::Uuid,
-);
-
-macro_rules! identity_impl {
-    ($name:ident) => {
-        impl $name {
-            /// Allocates a fresh version-seven identity.
-            pub fn new() -> Self {
-                Self(uuid::Uuid::now_v7())
-            }
-            /// Parses UUID syntax; this does not establish authority.
-            pub fn parse(value: &str) -> Option<Self> {
-                uuid::Uuid::parse_str(value).ok().map(Self)
-            }
-        }
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-        impl std::fmt::Display for $name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                self.0.fmt(f)
-            }
-        }
-    };
-}
-identity_impl!(AccountId);
-identity_impl!(InstallationId);
 
 /// Stable refusal categories for account and stored-space operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

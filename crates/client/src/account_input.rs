@@ -26,7 +26,10 @@ impl Client {
             if row.state != "confirmation_required" {
                 let submit = Client::pending(
                     "pending.submit",
-                    &calternal_core::PendingInput { id: row.id },
+                    &calternal_core::PendingInput {
+                        space_id: row.space_id,
+                        id: row.id,
+                    },
                     None,
                 )?;
                 let _: AccountInputResult =
@@ -73,6 +76,7 @@ impl Client {
         let submit = Client::pending(
             "pending.submit",
             &calternal_core::PendingInput {
+                space_id: input.space_id.clone(),
                 id: input.request.request_id.clone(),
             },
             None,

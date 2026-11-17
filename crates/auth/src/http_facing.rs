@@ -43,8 +43,8 @@ impl Auth {
 
     /// Starts discoverable sign-in, or account-bound reverification, after admission.
     /// The HTTP adapter must call `admit_http_login` before reading the request body.
-    /// Anonymous prompts bind to the internal nil sentinel until the signed
-    /// WebAuthn answer identifies the account. The sentinel is never persisted.
+    /// Anonymous prompts bind to no account until the signed
+    /// WebAuthn answer identifies the account.
     pub fn start_http_login(
         &self,
         expected: Option<AccountId>,
@@ -52,7 +52,7 @@ impl Auth {
     ) -> Result<(String, Value)> {
         crate::passkey::start_login(
             &self.inner,
-            expected.unwrap_or(AccountId(uuid::Uuid::nil())),
+            expected,
             if expected.is_some() {
                 LoginPurpose::Reverify
             } else {
@@ -77,13 +77,12 @@ impl Auth {
             ceremony,
             credential,
             device.to_owned(),
-            expected.unwrap_or(AccountId(uuid::Uuid::nil())),
+            expected,
             if expected.is_some() {
                 LoginPurpose::Reverify
             } else {
                 LoginPurpose::SignIn
             },
-            expected.is_none(),
         )
         .await
     }

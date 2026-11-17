@@ -5,15 +5,12 @@ use axum::{
 };
 use calternal_server::{
     api::{AppState, Shared, allowed_hosts, router},
-    auth::{Directory, TokenTable},
+    auth::{Directory, StoredDirectory},
     plugins::Registry,
     store::Store,
 };
 use serde_json::{Value, json};
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::{path::PathBuf, sync::Arc};
 use tower::ServiceExt;
 
 struct Fixture {
@@ -29,16 +26,31 @@ struct Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        // `root` is appdata; its parent holds all three roots.
+        let _ = std::fs::remove_dir_all(self.root.parent().unwrap());
     }
 }
 impl Fixture {
     async fn new(role: Option<&str>) -> Self {
         let role = role.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            let root =
+            let base =
                 std::env::temp_dir().join(format!("calternal-spaces-{}", uuid::Uuid::new_v4()));
-            let tokens = TokenTable::load_or_create(&root).unwrap();
+            let roots = calternal_roots::Roots {
+                appdata: base.join("appdata"),
+                userdata_ssd: base.join("userdata-ssd"),
+                userdata_hdd: base.join("userdata-hdd"),
+            };
+            let store = Store::open(
+                &roots,
+                uuid::Uuid::from_u128(1),
+                true,
+                calternal_content::DEFAULT_RECEIPT_RETENTION,
+            )
+            .unwrap();
+            // Every later path is in appdata; `base` holds all three roots.
+            let root = roots.appdata.clone();
+            let tokens = StoredDirectory::load_or_create(&root).unwrap();
             let token = std::fs::read_to_string(root.join("dev-tokens/guest.token")).unwrap();
             let owner_token = std::fs::read_to_string(root.join("dev-tokens/owner.token")).unwrap();
             let actor = tokens
@@ -50,7 +62,7 @@ impl Fixture {
             let owner = owner_identity.id.to_string();
             let spaces = tokens
                 .spaces
-                .list(calternal_auth::AccountId::parse(&owner).unwrap())
+                .list(calternal_types::AccountId::parse(&owner).unwrap())
                 .unwrap();
             let shared = spaces
                 .iter()
@@ -100,9 +112,9 @@ impl Fixture {
             )
             .unwrap();
             let state = Arc::new(AppState {
-                inputs: calternal_server::account_input::Inputs::new(&root, Default::default()),
-                store: Mutex::new(Store::open(&root).unwrap()),
-                tokens,
+                inputs: store.account_inputs(),
+                store,
+                directory: tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),
                 jobs: calternal_server::plugins::Jobs::disabled(),
@@ -224,7 +236,7 @@ async fn stored_operations_have_complete_role_space_and_authentication_matrix() 
 #[tokio::test]
 async fn sqlite_revocation_takes_effect_on_next_request_and_note_receipt_replay() {
     let f = Fixture::new(Some("editor")).await;
-    let input = json!({"space_id":"shared","title":"private","markdown":"body"});
+    let input = json!({"space_id":f.shared,"title":"private","markdown":"body"});
     let first = f
         .call(Some(&f.token), "receipt", "notes.create", input.clone())
         .await;
@@ -295,7 +307,8 @@ async fn discovery_and_alias_inputs_keep_stable_independent_uuid_identities() {
                 .get_version_num()
                 == 7)
     );
-    let alias = f
+    // A space's display name is not an address.
+    let name = f
         .call(
             Some(&f.token),
             "same",
@@ -311,12 +324,13 @@ async fn discovery_and_alias_inputs_keep_stable_independent_uuid_identities() {
             json!({"space_id":f.shared}),
         )
         .await;
-    assert_eq!(alias, uuid);
+    assert_eq!(name.0, StatusCode::NOT_FOUND);
+    assert_eq!(uuid.0, StatusCode::OK);
     let state = f.state.clone();
     let owner = f.owner.clone();
     let described = tokio::task::spawn_blocking(move || {
-        state.tokens.describe(&calternal_server::auth::Identity {
-            id: Arc::from(owner),
+        state.directory.describe(&calternal_server::auth::Identity {
+            id: calternal_types::AccountId::parse(&owner).unwrap(),
         })
     })
     .await
@@ -435,42 +449,22 @@ async fn accounts_never_replay_each_others_results_or_read_another_space() {
     assert_eq!(cross.0, StatusCode::NOT_FOUND);
 }
 
+/// Request IDs are scoped to (account, space); directory changes (`spaces.*`) keep
+/// their own receipts, so one ID used in both places gives two independent results.
 #[tokio::test]
-async fn directory_and_content_mutations_share_the_request_id_namespace() {
+async fn directory_and_content_request_ids_are_independent() {
     let f = Fixture::new(Some("editor")).await;
     let note = json!({"space_id":f.shared,"title":"note","markdown":"body"});
-    assert_eq!(
-        f.call(Some(&f.token), "note-first", "notes.create", note.clone())
-            .await
-            .0,
-        StatusCode::OK
-    );
-    assert_eq!(
-        f.call(
-            Some(&f.token),
-            "note-first",
-            "spaces.create",
-            json!({"name":"space"})
-        )
-        .await
-        .0,
-        StatusCode::CONFLICT
-    );
-    assert_eq!(
-        f.call(
-            Some(&f.token),
-            "space-first",
-            "spaces.create",
-            json!({"name":"space"})
-        )
-        .await
-        .0,
-        StatusCode::OK
-    );
-    assert_eq!(
-        f.call(Some(&f.token), "space-first", "notes.create", note)
-            .await
-            .0,
-        StatusCode::CONFLICT
-    );
+    for (op, input) in [
+        ("notes.create", note.clone()),
+        ("spaces.create", json!({"name":"space"})),
+    ] {
+        let first = f.call(Some(&f.token), "same-id", op, input.clone()).await;
+        assert_eq!(first.0, StatusCode::OK, "{op}");
+        assert_eq!(
+            f.call(Some(&f.token), "same-id", op, input).await,
+            first,
+            "{op} replays"
+        );
+    }
 }

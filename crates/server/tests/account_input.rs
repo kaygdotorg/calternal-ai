@@ -4,13 +4,13 @@ use calternal_core::AccountFrame;
 use calternal_server::account_input::{Inputs, Limits};
 use calternal_server::{
     api::{self, AppState, Shared},
-    auth::{Directory, Identity, TokenTable},
+    auth::{Directory, Identity, StoredDirectory},
     plugins::{Jobs, Registry, WorkerPool},
     store::Store,
 };
 use serde_json::{Value, json};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -28,11 +28,25 @@ impl Fixture {
         let (dir, tokens, token, guest_token, owner, spaces, store) =
             tokio::task::spawn_blocking(|| {
                 let dir = tempfile::tempdir().unwrap();
-                let tokens = TokenTable::load_or_create(dir.path()).unwrap();
+                let roots = calternal_roots::Roots {
+                    appdata: dir.path().join("appdata"),
+                    userdata_ssd: dir.path().join("userdata-ssd"),
+                    userdata_hdd: dir.path().join("userdata-hdd"),
+                };
+                let store = Store::open(
+                    &roots,
+                    uuid::Uuid::from_u128(1),
+                    true,
+                    calternal_content::DEFAULT_RECEIPT_RETENTION,
+                )
+                .unwrap();
+                let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
                 let token =
-                    std::fs::read_to_string(dir.path().join("dev-tokens/owner.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/owner.token"))
+                        .unwrap();
                 let guest_token =
-                    std::fs::read_to_string(dir.path().join("dev-tokens/guest.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/guest.token"))
+                        .unwrap();
                 let owner = tokens.authenticate(token.as_bytes()).unwrap();
                 let spaces = tokens
                     .describe(&owner)
@@ -40,7 +54,6 @@ impl Fixture {
                     .into_iter()
                     .map(|s| s.id)
                     .collect();
-                let store = Store::open(dir.path()).unwrap();
                 (dir, tokens, token, guest_token, owner, spaces, store)
             })
             .await
@@ -62,8 +75,8 @@ impl Fixture {
                 Arc::new(move || injected.load(Ordering::SeqCst)),
             )
             .with_content(store.shared_content()),
-            store: Mutex::new(store),
-            tokens,
+            store,
+            directory: tokens,
             registry: Registry::load(std::path::Path::new("/missing")),
             workers: WorkerPool::new(None),
             jobs: Jobs::disabled(),
@@ -177,9 +190,13 @@ async fn pending_stable_id_retry_edit_confirm_and_cancel() {
     f.op(false, "pending.edit", edited.clone()).await.unwrap();
     assert!(f.op(true, "pending.edit", edited.clone()).await.is_err());
     assert!(
-        f.op(true, "pending.submit", json!({"id":"send-once"}))
-            .await
-            .is_err()
+        f.op(
+            true,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"send-once"})
+        )
+        .await
+        .is_err()
     );
     f.client()
         .drain_pending(&CancellationToken::new())
@@ -187,7 +204,11 @@ async fn pending_stable_id_retry_edit_confirm_and_cancel() {
         .unwrap();
     // The terminal reply survives removal of the pending record, without a second result log.
     let retried = f
-        .op(false, "pending.submit", json!({"id":"send-once"}))
+        .op(
+            false,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"send-once"}),
+        )
         .await
         .unwrap();
     assert!(retried["result"]["note"]["id"].is_string());
@@ -209,29 +230,49 @@ async fn pending_stable_id_retry_edit_confirm_and_cancel() {
     let old = f.queue("old", 8 * 24 * 60 * 60 * 1000);
     f.op(false, "pending.queue", old).await.unwrap();
     let held = f
-        .op(false, "pending.submit", json!({"id":"old"}))
+        .op(
+            false,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"old"}),
+        )
         .await
         .unwrap();
     assert_eq!(held["record"]["state"], "confirmation_required");
     assert!(
-        f.op(true, "pending.confirm", json!({"id":"old"}))
-            .await
-            .is_err()
-    );
-    f.op(false, "pending.confirm", json!({"id":"old"}))
+        f.op(
+            true,
+            "pending.confirm",
+            json!({"space_id":f.spaces[0],"id":"old"})
+        )
         .await
-        .unwrap();
+        .is_err()
+    );
+    f.op(
+        false,
+        "pending.confirm",
+        json!({"space_id":f.spaces[0],"id":"old"}),
+    )
+    .await
+    .unwrap();
     f.op(false, "pending.queue", f.queue("cancel", 0))
         .await
         .unwrap();
     assert!(
-        f.op(true, "pending.cancel", json!({"id":"cancel"}))
-            .await
-            .is_err()
-    );
-    f.op(false, "pending.cancel", json!({"id":"cancel"}))
+        f.op(
+            true,
+            "pending.cancel",
+            json!({"space_id":f.spaces[0],"id":"cancel"})
+        )
         .await
-        .unwrap();
+        .is_err()
+    );
+    f.op(
+        false,
+        "pending.cancel",
+        json!({"space_id":f.spaces[0],"id":"cancel"}),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         f.op(false, "pending.list", json!({})).await.unwrap()["records"],
         json!([])
@@ -271,20 +312,24 @@ async fn pending_cap_age_transition_and_revocation_cleanup() {
     let st = f.state.clone();
     // Direct directory removal is also filtered on the next account operation.
     tokio::task::spawn_blocking(move || {
-        st.tokens
+        st.directory
             .spaces
             .delete(
-                calternal_auth::AccountId::parse(&owner).unwrap(),
-                calternal_auth::SpaceId::parse(&space).unwrap(),
+                calternal_types::AccountId::parse(&owner).unwrap(),
+                calternal_types::SpaceId::parse(&space).unwrap(),
             )
             .unwrap()
     })
     .await
     .unwrap();
     assert!(
-        f.op(false, "pending.submit", json!({"id":"one"}))
-            .await
-            .is_err()
+        f.op(
+            false,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"one"})
+        )
+        .await
+        .is_err()
     );
     assert_eq!(
         f.op(false, "pending.list", json!({})).await.unwrap()["records"],

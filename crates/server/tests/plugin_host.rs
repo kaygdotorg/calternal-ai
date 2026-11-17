@@ -4,21 +4,23 @@
 mod support;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use calternal_core::{ErrorCode, JsonObject};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch};
-use calternal_server::auth::{DevPrincipal, TokenTable, dev_principals};
-use calternal_server::authz::{self, Capability, Constraint, Scope};
-use calternal_server::error::HostError;
+use calternal_server::auth::StoredDirectory;
+use calternal_server::authz::{self, Constraint, Scope};
 use calternal_server::plugins::{Plugin, Registry, WORKER_TIMEOUT, WorkerPool, resolve_node};
 use calternal_server::store::Store;
+use calternal_types::Capability;
+use calternal_types::Error;
 use serde_json::{Value, json};
 
 struct Fixture {
-    state: Shared<TokenTable>,
+    state: Shared<StoredDirectory>,
     root: PathBuf,
+    dev: support::Dev,
 }
 
 impl Drop for Fixture {
@@ -29,10 +31,6 @@ impl Drop for Fixture {
 
 fn obj(v: Value) -> JsonObject {
     serde_json::from_value(v).unwrap()
-}
-
-fn principal(id: &str) -> DevPrincipal {
-    dev_principals().into_iter().find(|p| p.id == id).unwrap()
 }
 
 fn tmp(tag: &str) -> PathBuf {
@@ -75,30 +73,38 @@ fn tagger(dir: &Path) -> Plugin {
 
 async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixture {
     let root = tmp(tag);
-    let data = root.join("data");
-    std::fs::create_dir_all(&data).unwrap();
+    let roots = support::roots(&root);
+    let store = Store::open(
+        &roots,
+        uuid::Uuid::from_u128(1),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13 on PATH");
     let workers = match pool {
         Some(cap) => WorkerPool::with_capacity(Some(node), cap),
         None => WorkerPool::new(Some(node)),
     };
     let state = Arc::new(AppState {
-        inputs: calternal_server::account_input::Inputs::new(&data, Default::default()),
-        store: Mutex::new(Store::open(&data).unwrap()),
-        tokens: TokenTable::load_or_create(&data).unwrap(),
+        inputs: store.account_inputs(),
+        store,
+        directory: StoredDirectory::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(plugins),
         workers,
         jobs: calternal_server::plugins::Jobs::open(&data).unwrap(),
         allowed_hosts: allowed_hosts(0),
     });
-    Fixture { state, root }
+    let dev = support::dev(&state.directory);
+    Fixture { state, root, dev }
 }
 
 impl Fixture {
-    async fn op(&self, who: &str, rid: &str, op: &str, input: Value) -> Result<Value, HostError> {
+    async fn op(&self, who: &str, rid: &str, op: &str, input: Value) -> Result<Value, Error> {
         dispatch(
             self.state.clone(),
-            principal(who),
+            self.dev.who(who),
             calternal_server::plugins::Session::Static,
             rid,
             op,
@@ -106,7 +112,7 @@ impl Fixture {
         )
         .await
     }
-    async fn note(&self, space: &str, text: &str) -> String {
+    async fn note(&self, space: calternal_types::SpaceId, text: &str) -> String {
         let rid = uuid::Uuid::new_v4().to_string();
         let r = self
             .op(
@@ -119,7 +125,7 @@ impl Fixture {
             .unwrap();
         r["note"]["id"].as_str().unwrap().to_owned()
     }
-    async fn summarize(&self, id: &str) -> Result<Value, HostError> {
+    async fn summarize(&self, id: &str) -> Result<Value, Error> {
         let rid = uuid::Uuid::new_v4().to_string();
         self.op("owner", &rid, "notes-insights.summarize", json!({"id": id}))
             .await
@@ -151,7 +157,7 @@ fn policy_rows_are_derived_from_manifests() {
 
     let summarize = registry.policy("notes-insights.summarize").unwrap();
     assert_eq!(summarize.required, Capability::SpaceRead);
-    assert_eq!(summarize.scope, Scope::Note);
+    assert_eq!(summarize.scope, Scope::Item);
     assert_eq!(summarize.constraint, Constraint::PluginInvocation);
     let tag = registry.policy("tagger.tag").unwrap();
     assert_eq!(tag.required, Capability::ContentWrite);
@@ -190,7 +196,7 @@ fn policy_rows_are_derived_from_manifests() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collections() {
     let f = fixture("tagger", vec![tagger(&tmp("tagger-worker"))], None).await;
-    let input = json!({"space_id": "shared", "label": "urgent"});
+    let input = json!({"space_id": f.dev.shared, "label": "urgent"});
     // Disabled by default: admitted by policy, then refused as disabled.
     let e = f
         .op("owner", "t0", "tagger.tag", input.clone())
@@ -201,12 +207,12 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "tagger"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "tagger"}),
     )
     .await
     .unwrap();
     // Enable registered the hidden kind and created the standard collection file.
-    let ssd = f.root.join("data/userdata-ssd");
+    let ssd = f.root.join("userdata-ssd");
     assert!(
         find(&ssd, "All tags.json"),
         "standard collection not provisioned"
@@ -227,13 +233,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
         .await
         .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
-    let item = f
-        .state
-        .store
-        .lock()
-        .unwrap()
-        .read_item("shared", "tags", &id)
-        .unwrap();
+    let item = f.state.store.read_item(f.dev.shared, "tags", &id).unwrap();
     assert_eq!(item.bytes, b"urgent");
     assert!(find(&ssd, "tags"), "hidden kind folder missing");
     // A missing space hides existence exactly like a host operation.
@@ -259,14 +259,19 @@ async fn undeclared_host_call_is_refused_before_any_effect() {
         "done(f,stats('should not be delivered'))",
     );
     let f = fixture("undeclared", vec![plugin], None).await;
-    let id = f.note("personal", "hello world\n").await;
+    let id = f.note(f.dev.personal, "hello world\n").await;
     let e = f.summarize(&id).await.unwrap_err();
     assert_eq!(
         (e.code, e.message.as_str()),
         (ErrorCode::Unavailable, "extension request was refused")
     );
     let list = f
-        .op("owner", "l", "notes.list", json!({"space_id": "personal"}))
+        .op(
+            "owner",
+            "l",
+            "notes.list",
+            json!({"space_id": f.dev.personal}),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -289,8 +294,8 @@ async fn one_long_lived_worker_per_plugin_and_space() {
         "const r=stats(m.data.text);r.stats.words=globalThis.n;done(f,r)",
     );
     let f = fixture("reuse", vec![plugin], None).await;
-    let personal = f.note("personal", "a b c\n").await;
-    let shared = f.note("shared", "a b c\n").await;
+    let personal = f.note(f.dev.personal, "a b c\n").await;
+    let shared = f.note(f.dev.shared, "a b c\n").await;
     assert_eq!(f.summarize(&personal).await.unwrap()["stats"]["words"], 1);
     assert_eq!(f.summarize(&personal).await.unwrap()["stats"]["words"], 2);
     assert_eq!(f.state.workers.live(), 1);
@@ -298,6 +303,16 @@ async fn one_long_lived_worker_per_plugin_and_space() {
     assert_eq!(f.summarize(&shared).await.unwrap()["stats"]["words"], 1);
     assert_eq!(f.state.workers.live(), 2);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// The string a probing worker put in its view as `Metric("Probe", "<value>")`.
+fn probe(r: &Value) -> String {
+    let source = r["view"]["source"].as_str().unwrap();
+    let literal = source
+        .strip_prefix("Metric(\"Probe\", ")
+        .and_then(|s| s.strip_suffix(')'))
+        .unwrap();
+    serde_json::from_str(literal).unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -308,18 +323,15 @@ async fn worker_reads_only_its_own_space_and_has_no_ambient_access() {
     let plugin = insights(
         &dir,
         "call(f,'read_item',{kind:'notes',item_id:fs.readFileSync(__dirname+'/foreign','utf8')})",
-        "const env=Object.keys(process.env).sort().join(',');let fsr;try{fs.readFileSync('/etc/hostname');fsr='read'}catch(e){fsr=e.code}const r=stats(m.ok?m.data.text:'');r.view.root.children[0].value=env+'|'+fsr+'|'+m.ok;done(f,r)",
+        "const env=Object.keys(process.env).sort().join(',');let fsr;try{fs.readFileSync('/etc/hostname');fsr='read'}catch(e){fsr=e.code}const r=stats(m.ok?m.data.text:'');r.view.source='Metric(\"Probe\", '+JSON.stringify(env+'|'+fsr+'|'+m.ok)+')';done(f,r)",
     );
     let f = fixture("probe", vec![plugin], None).await;
-    let foreign = f.note("shared", "secret words here\n").await;
-    let own = f.note("personal", "mine\n").await;
+    let foreign = f.note(f.dev.shared, "secret words here\n").await;
+    let own = f.note(f.dev.personal, "mine\n").await;
     std::fs::write(dir.join("foreign"), &foreign).unwrap();
     let r = f.summarize(&own).await.unwrap();
     assert_eq!(r["stats"]["words"], 0, "foreign text reached the worker");
-    assert_eq!(
-        r["view"]["root"]["children"][0]["value"],
-        "LANG|ERR_ACCESS_DENIED|false"
-    );
+    assert_eq!(probe(&r), "LANG|ERR_ACCESS_DENIED|false");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -354,7 +366,7 @@ async fn deadline_overflow_and_malformed_output_stop_the_worker() {
     for (tag, on_invoke, message, bound) in cases {
         let dir = tmp(tag);
         let f = fixture(tag, vec![insights(&dir, on_invoke, "")], None).await;
-        let id = f.note("personal", "x\n").await;
+        let id = f.note(f.dev.personal, "x\n").await;
         let t0 = Instant::now();
         let e = f.summarize(&id).await.unwrap_err();
         assert_eq!(
@@ -380,14 +392,14 @@ async fn pool_capacity_is_bounded_and_released() {
         Some(1),
     )
     .await;
-    let personal = f.note("personal", "a\n").await;
-    let shared = f.note("shared", "b\n").await;
+    let personal = f.note(f.dev.personal, "a\n").await;
+    let shared = f.note(f.dev.shared, "b\n").await;
     let state = f.state.clone();
     let p2 = personal.clone();
     let first = tokio::spawn(async move {
         dispatch(
             state,
-            principal("owner"),
+            f.dev.owner,
             calternal_server::plugins::Session::Static,
             "c1",
             "notes-insights.summarize",
@@ -416,7 +428,7 @@ async fn tampered_bundle_is_refused_before_start() {
     let plugin = insights(&dir, support::READ_NOTE, support::COMPLETE);
     std::fs::write(dir.join("worker.js"), "process.exit(0)").unwrap();
     let f = fixture("digest", vec![plugin], None).await;
-    let id = f.note("personal", "x\n").await;
+    let id = f.note(f.dev.personal, "x\n").await;
     let e = f.summarize(&id).await.unwrap_err();
     assert_eq!(
         (e.code, e.message.as_str()),
@@ -434,7 +446,7 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     let worker = support::worker(
         &dir,
         "call(f,'read_item',{kind:'notes',item_id:m.input.note})",
-        "const r=stats(m.ok?m.data.text:'');r.view.root.children[0].value=JSON.stringify(inv.get(f.invocation_id).input);done(f,r)",
+        "const r=stats(m.ok?m.data.text:'');r.view.source='Metric(\"Probe\", '+JSON.stringify(JSON.stringify(inv.get(f.invocation_id).input))+')';done(f,r)",
     );
     let mut manifest = support::insights_manifest();
     manifest.id = "targeted".into();
@@ -450,9 +462,9 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     let f = fixture("target", vec![plugin], None).await;
     assert_eq!(
         f.state.registry.policy("targeted.count").unwrap().scope,
-        Scope::Note
+        Scope::Item
     );
-    let own = f.note("personal", "one two three\n").await;
+    let own = f.note(f.dev.personal, "one two three\n").await;
     let r = f
         .op(
             "owner",
@@ -465,8 +477,7 @@ async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
     assert_eq!(r["stats"]["words"], 3);
     // Compare as JSON, not text: key order depends on serde_json's `preserve_order`
     // feature, which other workspace crates may switch on.
-    let echoed: Value =
-        serde_json::from_str(r["view"]["root"]["children"][0]["value"].as_str().unwrap()).unwrap();
+    let echoed: Value = serde_json::from_str(&probe(&r)).unwrap();
     assert_eq!(echoed, json!({"note": own, "mode": "fast"}));
     // A note in a space the caller cannot read answers exactly like a missing one.
     let missing = uuid::Uuid::now_v7().to_string();
@@ -549,7 +560,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "shapes"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "shapes"}),
     )
     .await
     .unwrap();
@@ -559,7 +570,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
             "owner",
             "s1",
             "shapes.save",
-            json!({"space_id": "shared", "body": body}),
+            json!({"space_id": f.dev.shared, "body": body}),
         )
         .await
         .unwrap();
@@ -567,9 +578,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
     let item = f
         .state
         .store
-        .lock()
-        .unwrap()
-        .read_item("shared", "shapes", &id)
+        .read_item(f.dev.shared, "shapes", &id)
         .unwrap();
     assert_eq!(
         item.bytes,
@@ -577,7 +586,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         "opaque bytes are stored unchanged"
     );
     assert!(
-        has_extension(&f.root.join("data"), "geojson"),
+        has_extension(&f.root, "geojson"),
         "file not stored under its extension"
     );
     let _ = std::fs::remove_dir_all(dir);
@@ -593,27 +602,27 @@ async fn host_calls_recheck_the_callers_sign_in() {
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "tagger"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "tagger"}),
     )
     .await
     .unwrap();
     let gone = calternal_server::plugins::Session::Installation {
-        account: uuid::Uuid::now_v7().to_string(),
-        installation: uuid::Uuid::now_v7().to_string(),
+        account: calternal_types::AccountId::new(),
+        installation: calternal_types::InstallationId::new(),
     };
     let e = calternal_server::api::dispatch(
         f.state.clone(),
-        principal("owner"),
+        f.dev.owner,
         gone,
         "s1",
         "tagger.tag",
-        obj(json!({"space_id": "shared", "label": "late"})),
+        obj(json!({"space_id": f.dev.shared, "label": "late"})),
     )
     .await
     .unwrap_err();
     assert_eq!(e.code, ErrorCode::Unauthorized);
     assert!(
-        !find(&f.root.join("data/userdata-ssd"), "late.md"),
+        !find(&f.root.join("userdata-ssd"), "late.md"),
         "write landed without a live sign-in"
     );
     // The same call with a live (static) credential writes.
@@ -621,7 +630,7 @@ async fn host_calls_recheck_the_callers_sign_in() {
         "owner",
         "s2",
         "tagger.tag",
-        json!({"space_id": "shared", "label": "now"}),
+        json!({"space_id": f.dev.shared, "label": "now"}),
     )
     .await
     .unwrap();
@@ -634,11 +643,11 @@ async fn mutating_operation_retry_replays_its_receipt() {
         "owner",
         "e",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "tagger"}),
+        json!({"space_id": f.dev.shared, "plugin_id": "tagger"}),
     )
     .await
     .unwrap();
-    let input = json!({"space_id": "shared", "label": "once"});
+    let input = json!({"space_id": f.dev.shared, "label": "once"});
     let first = f
         .op("owner", "r1", "tagger.tag", input.clone())
         .await
@@ -653,12 +662,12 @@ async fn mutating_operation_retry_replays_its_receipt() {
             "owner",
             "r1",
             "tagger.tag",
-            json!({"space_id": "shared", "label": "other"}),
+            json!({"space_id": f.dev.shared, "label": "other"}),
         )
         .await
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::Conflict);
-    assert!(!find(&f.root.join("data/userdata-ssd"), "other.md"));
+    assert!(!find(&f.root.join("userdata-ssd"), "other.md"));
 }
 
 /// The test-only jobs plugin from `tests/plugins/jobs-demo`, digest pinned.
@@ -672,7 +681,7 @@ fn jobs_demo() -> Plugin {
 
 async fn jobs_fixture(tag: &str) -> Fixture {
     let f = fixture(tag, vec![jobs_demo()], None).await;
-    for space in ["shared", "personal"] {
+    for space in [f.dev.shared, f.dev.personal] {
         f.op(
             "owner",
             &format!("enable-{space}"),
@@ -686,7 +695,7 @@ async fn jobs_fixture(tag: &str) -> Fixture {
 }
 
 impl Fixture {
-    async fn start_job(&self, space: &str, input: Value) -> String {
+    async fn start_job(&self, space: calternal_types::SpaceId, input: Value) -> String {
         let mut input = input;
         input["space_id"] = json!(space);
         let rid = uuid::Uuid::new_v4().to_string();
@@ -696,7 +705,7 @@ impl Fixture {
             .unwrap();
         r["job_id"].as_str().unwrap().to_owned()
     }
-    async fn job(&self, who: &str, id: &str) -> Result<Value, HostError> {
+    async fn job(&self, who: &str, id: &str) -> Result<Value, Error> {
         self.op(
             who,
             &uuid::Uuid::new_v4().to_string(),
@@ -723,13 +732,16 @@ impl Fixture {
 async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
     let f = jobs_fixture("job-run").await;
     let id = f
-        .start_job("shared", json!({"steps": 6, "delay_ms": 30, "every": 2}))
+        .start_job(
+            f.dev.shared,
+            json!({"steps": 6, "delay_ms": 30, "every": 2}),
+        )
         .await;
     // Durable before the ID was returned: the record exists in the space's job file.
     let space = f.state.jobs.route(&id).expect("job routed to its space");
     assert!(
         f.root
-            .join("data/spaces")
+            .join("appdata/spaces")
             .join(&space)
             .join("jobs.db")
             .is_file()
@@ -758,7 +770,10 @@ async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
 async fn cancel_discards_late_output_and_needs_the_starter_or_a_manager() {
     let f = jobs_fixture("job-cancel").await;
     let id = f
-        .start_job("shared", json!({"steps": 500, "delay_ms": 20, "every": 5}))
+        .start_job(
+            f.dev.shared,
+            json!({"steps": 500, "delay_ms": 20, "every": 5}),
+        )
         .await;
     f.until(&id, "running").await;
     tokio::time::sleep(Duration::from_millis(150)).await;
@@ -790,7 +805,7 @@ async fn child_jobs_report_exactly_once_to_their_parent() {
     let f = jobs_fixture("job-children").await;
     let id = f
         .start_job(
-            "shared",
+            f.dev.shared,
             json!({"steps": 0, "delay_ms": 0, "every": 1, "children": 3}),
         )
         .await;
@@ -803,7 +818,10 @@ async fn a_job_outside_the_callers_spaces_is_not_found() {
     let f = jobs_fixture("job-hidden").await;
     // `personal` belongs to the owner alone; the guest is a member of `shared` only.
     let id = f
-        .start_job("personal", json!({"steps": 1, "delay_ms": 0, "every": 1}))
+        .start_job(
+            f.dev.personal,
+            json!({"steps": 1, "delay_ms": 0, "every": 1}),
+        )
         .await;
     let hidden = f.job("guest", &id).await.unwrap_err();
     let missing = f
@@ -825,7 +843,7 @@ async fn a_job_outside_the_callers_spaces_is_not_found() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn job_start_retry_returns_the_same_job() {
     let f = jobs_fixture("job-retry").await;
-    let input = json!({"space_id": "shared", "steps": 1, "delay_ms": 0, "every": 1});
+    let input = json!({"space_id": f.dev.shared, "steps": 1, "delay_ms": 0, "every": 1});
     let a = f
         .op("owner", "same", "jobs-demo.start", input.clone())
         .await
@@ -866,22 +884,25 @@ async fn secret_handle_requests_are_owned_by_the_space_uuid() {
     // The secret does not exist yet: the call is refused and one request is recorded
     // for the space (by UUID), not for the content-space key or the account.
     let r = f
-        .op("owner", "k1", "keyed.use", json!({"space_id": "shared"}))
+        .op(
+            "owner",
+            "k1",
+            "keyed.use",
+            json!({"space_id": f.dev.shared}),
+        )
         .await
         .unwrap();
     assert_eq!(r, json!({"ok": false}));
-    f.op("owner", "k2", "keyed.use", json!({"space_id": "shared"}))
-        .await
-        .unwrap();
-    let (_, space) = f
-        .state
-        .store
-        .lock()
-        .unwrap()
-        .worker_ids("owner", "shared")
-        .unwrap();
-    let owner = Owner::Space(calternal_auth::SpaceId::parse(&space).unwrap());
-    let secrets = f.state.store.lock().unwrap().secrets();
+    f.op(
+        "owner",
+        "k2",
+        "keyed.use",
+        json!({"space_id": f.dev.shared}),
+    )
+    .await
+    .unwrap();
+    let owner = Owner::Space(f.dev.shared);
+    let secrets = f.state.store.secrets();
     let pending = secrets.pending(&owner).unwrap();
     assert_eq!(
         pending.len(),
