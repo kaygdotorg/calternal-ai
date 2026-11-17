@@ -2,27 +2,18 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 00:35 IST.
+[glossary](glossary.md). Updated 2026-11-18 02:25 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | Keep the provisional choice unless it looks wrong on the preview | Materials |
-| 6 | Light renditions of the eight default wallpapers (they suit dark mode): derive a lighter version automatically (provisional), or kayg supplies light ones | Automatic for now | Light theme |
-| 7 | Spaces in the shell: where the space switcher lives, what the current space limits, Settings groups, groups holding space roles, an automatic personal space (five questions asked 2026-11-17) | See chat; recommendations stand as provisional | Shell, Settings |
-| 8 | One editor engine everywhere, or a native field for short text and the full editor only for notes? The lane built the second: every inline field shares the editor's transaction layer but short fields stay native, which keeps first paint light (2 KB against the full editor's size). kayg said every inline field should be the block editor | Keep the split unless kayg wants identical behaviour in short fields | Editor |
-| 9 | Live editing of a note needs the server to accept small text changes, not whole-note replacement. Port the existing app's live rooms (a shared document per open note), or a simpler patch operation? | Port the existing app's rooms | Editor stage 3 |
-| 10 | Native apps: Google Sans Flex (shipped with the app) or the system font? The web rule is no system font; the native study measured the system's own | Google Sans Flex, to match the web and your brand | Native apps |
-| 11 | Native icons: our own icon set drawn from the web's paths, or SF Symbols? | Our own set, for one look everywhere | Native apps |
-| 12 | On a Mac the wordmark is tight beside the window's traffic lights: widen the sidebar, put the wordmark under the lights, or hide that row | Under the lights | Native shell |
-| 13 | How long to keep the record that an owner's secret key was erased. It depends on how long backups are kept, which is undecided | Keep while any backup could predate the erasure; needs a backup retention period first | Backups |
-| 14 | An agent's sandbox home is shared by all of a person's threads, so a Least-access thread in one space can read the provider's transcripts from another space. Accept (it is the person's own data), a home per space with only the provider login shared, or a provider folder per thread (loses resuming across threads) | A home per space, login shared read-only | Provider merge follow-up |
-| 15 | The thread token sits in the agent's environment. The server will redact it from everything it publishes, but a tool could still write it to a file or send it out. Keep it there, or hand it over a per-turn socket only the `calternal` CLI reads | Socket, as a follow-up; redaction now | Agents |
-| 16 | The composer asks for a wider permission mode than the thread's saved one: apply it, or require the separate mode change with a fresh passkey check (today it is ignored) | Require the mode change | Agents |
-| 17 | Grant lifetimes "once", "this thread" and "always in this space" are not built; every grant lasts the current turn | Build "once" and "this thread" with thread storage; "always" later | Requests UI |
-| 18 | Saved thread modes are capped at 1024 per account and nothing deletes them yet, so thread 1025 would fail | Delete with the thread once thread storage exists; raise no cap | Orchestrator step 2 |
-| 19 | Nothing yet limits who may write a space's `AI/Instructions.md`, which every agent in the space reads (it is context, never authority) | Managers and the Owner only | Agents |
+| 5 | Readability floor for surfaces over a wallpaper (provisional, built so kayg can see it): primary text held at 7:1, lesser text nudged toward it, and a surface may flip its text between light and dark as Craft's header does. Leaves 21 to 49% of the wallpaper visible on sidebars | kayg wants to see it: a comparison is being built on the preview | Materials |
+| 18 | Saved thread modes are capped at 1024 per account and nothing deletes them yet, so thread 1025 would fail | Delete with the thread; raise no cap (the threads lane, #28, is building it this way) | Orchestrator step 2 |
+| 21 | Light mode over a photo: derive a lighter photo and keep showing a lot of it (built), or do as Craft does and put a nearly opaque light surface over any photo (92% white, about 8% of the photo shows), which works with every photo but shows little of it | See both on the preview, then choose | Light theme |
+| 22 | Members screen: can a group hold a role in a space ("Family: Editor"), or only people one by one at first | Groups too | Members |
+| 23 | The record that a deleted owner's secret key was erased: backups are external (PBS), so the app cannot know when the last old backup is gone. Keep the record permanently (32 bytes per deleted owner)? Needs the owner's sign-off because it is kept forever | Keep permanently | Secrets |
+| 10 | Native font: decide after seeing both on a Mac and an iPhone (deferred by kayg) | Build a switch in the native preview | Native apps |
 
 ## Design rounds
 
@@ -34,12 +25,23 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Queued, no decision needed
 
 - Rewrite git history to drop old images at the next quiet point.
-- A documentation site generated from the code (`/docs/user`, `/docs/admin`, `/docs/dev`, `llms.txt`, Markdown for every page).
+- Try phone navigation (swipe back, dragging the card) on a real phone: it is merged but not counted as done until checked on a device.
 
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
-
+- Agent sandbox home: one per space per person, with the provider sign-in shared; a thread reaches another space's thread only through the `calternal` command and its permissions (2026-11-18).
+- Spaces in the shell: the switcher is a row of dots at the bottom centre of the left sidebar, as Aside's profile switcher; the sidebar shows only the current space (the palette still searches all); Settings gets a third section for the current space; everyone gets a personal space at sign-up (2026-11-18).
+- Native apps: SF Symbols for icons; the wordmark sits under the traffic lights on a Mac (2026-11-18).
+- Backups are external for now (a PBS job for the production VM); the app has no retention setting (2026-11-18).
+- A space's standing instructions for agents live in `AI/AGENTS.md` (the familiar name); only Managers and the Owner may edit it (2026-11-18).
+- The thread token stays in the agent's environment for now, redacted by the server; a private channel only the `calternal` command reads comes later (2026-11-18).
+- Approval lifetimes: build "once" and "this thread" with thread storage; "always in this space" later (2026-11-18).
+- Text behaves the same in every field: one implementation, the block editor extending a base text field, never two kept in step (2026-11-18).
+- Performance: fix startup, save and the account feed first, then adopt measured values as limits for paths the existing app never limited. Aim to beat the inherited budgets, not just meet them (2026-11-18).
+- A permission mode picked in the composer applies directly to the next turn, wider or narrower; no extra passkey check (2026-11-18).
+- Live editing of notes: port the existing app's live rooms, rewritten for the plugin architecture (2026-11-18).
+- The documentation site is built and on the preview at `/docs/`.
 - Provider logins: each person signs in to the official programs inside their own sandbox; the server never stores a provider login.
 - State lives on the server; clients subscribe to it and cache what they need, as the existing app does. There is no sync protocol to design. A client whose bookmark is too old reloads.
 - Agent questions and approvals share the sticky bar with secret requests and do not expire.

@@ -1,0 +1,689 @@
+{
+  "commit": "e712ff4a7ac5d9ec6a188db1d21734c6c6030cc2",
+  "baseline_commit": "e712ff4a7ac5d9ec6a188db1d21734c6c6030cc2",
+  "binary_sha256": "fe4886d34a9ebaa0a25c1983c2dfe4c89484d0423fa8c0b725a919f6b151f40f  /home/kayg/calternal-ai-perf/20261117-merged/bin/calternal\nfe4886d34a9ebaa0a25c1983c2dfe4c89484d0423fa8c0b725a919f6b151f40f  /home/kayg/calternal-ai-perf/20261117-merged/bin/calternal\n1fe2cf7c97b961da8155b384b7f1fc52316ef50641c0b31233403470c7878062  /home/kayg/calternal-ai-perf/20261117-merged/bin/calternal-perf\n",
+  "machine": "Linux calternal-perf-01-backup01 6.12.115+deb13.1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01) x86_64 GNU/Linux\nArchitecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 7 3700X 8-Core Processor\nCPU family:                              23\nModel:                                   113\nThread(s) per core:                      1\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                0\nBogoMIPS:                                7186.49\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl xtopology cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy svm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw perfctr_core ssbd ibpb stibp vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 clzero xsaveerptr wbnoinvd arat npt lbrv nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload vgif umip rdpid overflow_recov succor\nVirtualization:                          AMD-V\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               256 KiB (4 instances)\nL1i cache:                               256 KiB (4 instances)\nL2 cache:                                2 MiB (4 instances)\nL3 cache:                                64 MiB (4 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-3\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; untrained return thunk; SMT disabled\nVulnerability Spec rstack overflow:      Mitigation; SMT disabled\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n               total        used        free      shared  buff/cache   available\nMem:      8262774784  1302286336  6662053888   600043520  1172267008  6960488448\nSwap:              0           0           0\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/sda1 ext4   rw,relatime,discard,errors=remount-ro\nNAME      SIZE ROTA FSTYPE  MOUNTPOINTS\nsda       400G    0         \n├─sda1  399.9G    0 ext4    /\n├─sda14     3M    0         \n└─sda15   124M    0 vfat    /boot/efi\nsdb       100G    1         \n└─sdb1    100G    1 xfs     /srv/homes\nsr0         4M    1 iso9660 \n",
+  "noise_pct": {
+    "1x1000/baseline/warm/account.draft_write_to_feed": 6.899696652643025,
+    "1x1000/baseline/warm/auth.session": 15.265036694320347,
+    "1x1000/baseline/warm/live.update_to_client": 3.0973615408656663,
+    "1x1000/baseline/warm/memory.1_spaces.after_2s": 1.5819896562214786,
+    "1x1000/baseline/warm/notes.get": 10.663599104744396,
+    "1x1000/baseline/warm/notes.list.first100": 13.012300004804684,
+    "1x1000/baseline/warm/notes.update": 3.697869439618015,
+    "1x1000/baseline/warm/receipt.round_trip": 7.316027372710912,
+    "1x1000/baseline/warm/resolve": 12.936164135764258,
+    "1x1000/baseline/warm/space.process_cold_open": 12.926769193986036,
+    "1x1000/baseline/warm/startup.1_spaces": 5.77707709688742,
+    "1x1000/head/warm/account.draft_write_to_feed": 6.620425729967046,
+    "1x1000/head/warm/auth.session": 4.111229924530618,
+    "1x1000/head/warm/live.update_to_client": 1.0389177956077171,
+    "1x1000/head/warm/memory.1_spaces.after_2s": 1.193207893529142,
+    "1x1000/head/warm/notes.get": 1.8302509299788288,
+    "1x1000/head/warm/notes.list.first100": 2.5138448136394684,
+    "1x1000/head/warm/notes.update": 1.191896976418624,
+    "1x1000/head/warm/receipt.round_trip": 4.779137482220957,
+    "1x1000/head/warm/resolve": 5.780611200937213,
+    "1x1000/head/warm/space.process_cold_open": 7.978452543997606,
+    "1x1000/head/warm/startup.1_spaces": 5.838850369521035
+  },
+  "qualification": "incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites",
+  "seed": 20261117,
+  "operation_concurrency": 1,
+  "subscriptions": 2,
+  "cache": "cold pairs drop OS caches; warm pairs retain OS caches",
+  "warm_pairs": 3,
+  "cold_pairs": 0,
+  "reproduced_breach": true,
+  "runs": [
+    {
+      "size": 1000,
+      "spaces": 1,
+      "pair": 0,
+      "cache": "warm",
+      "arm": "baseline",
+      "summary": [
+        {
+          "metric": "account.draft_write_to_feed",
+          "p50": 33.162313,
+          "p95": 253.291117,
+          "p99": 253.571159,
+          "max": 253.89290599999998,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "auth.session",
+          "p50": 0.200576,
+          "p95": 0.26627900000000004,
+          "p99": 0.301456,
+          "max": 0.744158,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "live.update_to_client",
+          "p50": 42.446062,
+          "p95": 47.409053,
+          "p99": 51.977152,
+          "max": 59.529188,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 25.5546875,
+          "p95": 25.5546875,
+          "p99": 25.5546875,
+          "max": 25.5546875,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "notes.get",
+          "p50": 0.38326,
+          "p95": 0.490351,
+          "p99": 0.5844469999999999,
+          "max": 0.616248,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.list.first100",
+          "p50": 0.5827640000000001,
+          "p95": 0.6897850000000001,
+          "p99": 0.751571,
+          "max": 0.8574309999999999,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.update",
+          "p50": 42.431325,
+          "p95": 47.46083,
+          "p99": 51.946946000000004,
+          "max": 59.543415,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "receipt.round_trip",
+          "p50": 0.753305,
+          "p95": 0.96902,
+          "p99": 1.157915,
+          "max": 1.1593280000000001,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "resolve",
+          "p50": 0.25208400000000003,
+          "p95": 0.320683,
+          "p99": 0.359465,
+          "max": 0.368282,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "space.process_cold_open",
+          "p50": 0.859676,
+          "p95": 0.859676,
+          "p99": 0.859676,
+          "max": 0.859676,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "startup.1_spaces",
+          "p50": 53.967542,
+          "p95": 53.967542,
+          "p99": 53.967542,
+          "max": 53.967542,
+          "samples": 1,
+          "breached": false
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "spaces": 1,
+      "pair": 0,
+      "cache": "warm",
+      "arm": "head",
+      "summary": [
+        {
+          "metric": "account.draft_write_to_feed",
+          "p50": 33.032346999999994,
+          "p95": 253.43068000000002,
+          "p99": 253.643226,
+          "max": 253.652304,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "auth.session",
+          "p50": 0.194516,
+          "p95": 0.253986,
+          "p99": 0.335109,
+          "max": 0.599585,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "live.update_to_client",
+          "p50": 42.027181,
+          "p95": 46.800886999999996,
+          "p99": 49.750566000000006,
+          "max": 57.551458,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 25.39453125,
+          "p95": 25.39453125,
+          "p99": 25.39453125,
+          "max": 25.39453125,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "notes.get",
+          "p50": 0.37766,
+          "p95": 0.5276620000000001,
+          "p99": 0.6050260000000001,
+          "max": 0.752153,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.list.first100",
+          "p50": 0.5805899999999999,
+          "p95": 0.71362,
+          "p99": 0.85726,
+          "max": 0.895954,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.update",
+          "p50": 42.017183,
+          "p95": 46.833719,
+          "p99": 49.82871299999999,
+          "max": 57.755713,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "receipt.round_trip",
+          "p50": 0.7272160000000001,
+          "p95": 0.8800220000000001,
+          "p99": 0.9492320000000001,
+          "max": 0.951708,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "resolve",
+          "p50": 0.2454,
+          "p95": 0.328417,
+          "p99": 0.383029,
+          "max": 0.453511,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "space.process_cold_open",
+          "p50": 0.948261,
+          "p95": 0.948261,
+          "p99": 0.948261,
+          "max": 0.948261,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "startup.1_spaces",
+          "p50": 59.886476,
+          "p95": 59.886476,
+          "p99": 59.886476,
+          "max": 59.886476,
+          "samples": 1,
+          "breached": false
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "spaces": 1,
+      "pair": 1,
+      "cache": "warm",
+      "arm": "head",
+      "summary": [
+        {
+          "metric": "account.draft_write_to_feed",
+          "p50": 32.623626,
+          "p95": 253.125739,
+          "p99": 253.50175000000002,
+          "max": 253.685041,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "auth.session",
+          "p50": 0.200588,
+          "p95": 0.264446,
+          "p99": 0.361248,
+          "max": 0.42354600000000003,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "live.update_to_client",
+          "p50": 42.051353999999996,
+          "p95": 47.695493,
+          "p99": 56.608563000000004,
+          "max": 71.253136,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 25.53515625,
+          "p95": 25.53515625,
+          "p99": 25.53515625,
+          "max": 25.53515625,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "notes.get",
+          "p50": 0.38462199999999996,
+          "p95": 0.53747,
+          "p99": 0.9248970000000001,
+          "max": 1.082493,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.list.first100",
+          "p50": 0.5955379999999999,
+          "p95": 0.759436,
+          "p99": 0.877097,
+          "max": 0.8903920000000001,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.update",
+          "p50": 42.092732,
+          "p95": 47.626173,
+          "p99": 56.604614999999995,
+          "max": 71.232148,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "receipt.round_trip",
+          "p50": 0.762833,
+          "p95": 0.973568,
+          "p99": 1.206075,
+          "max": 1.2936,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "resolve",
+          "p50": 0.259808,
+          "p95": 0.334789,
+          "p99": 0.389762,
+          "max": 0.40510999999999997,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "space.process_cold_open",
+          "p50": 0.885673,
+          "p95": 0.885673,
+          "p99": 0.885673,
+          "max": 0.885673,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "startup.1_spaces",
+          "p50": 56.580982,
+          "p95": 56.580982,
+          "p99": 56.580982,
+          "max": 56.580982,
+          "samples": 1,
+          "breached": false
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "spaces": 1,
+      "pair": 1,
+      "cache": "warm",
+      "arm": "baseline",
+      "summary": [
+        {
+          "metric": "account.draft_write_to_feed",
+          "p50": 34.893539000000004,
+          "p95": 253.147277,
+          "p99": 253.735618,
+          "max": 253.740062,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "auth.session",
+          "p50": 0.19101900000000002,
+          "p95": 0.245951,
+          "p99": 0.280067,
+          "max": 0.363272,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "live.update_to_client",
+          "p50": 41.329755000000006,
+          "p95": 49.118724,
+          "p99": 58.925581,
+          "max": 63.068220999999994,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 25.6796875,
+          "p95": 25.6796875,
+          "p99": 25.6796875,
+          "max": 25.6796875,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "notes.get",
+          "p50": 0.383801,
+          "p95": 0.481594,
+          "p99": 0.573778,
+          "max": 0.645031,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.list.first100",
+          "p50": 0.576894,
+          "p95": 0.677511,
+          "p99": 0.7909250000000001,
+          "max": 0.86804,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.update",
+          "p50": 41.335406,
+          "p95": 49.123332999999995,
+          "p99": 58.882078,
+          "max": 63.035760999999994,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "receipt.round_trip",
+          "p50": 0.734851,
+          "p95": 0.956526,
+          "p99": 1.058157,
+          "max": 1.617869,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "resolve",
+          "p50": 0.24799700000000002,
+          "p95": 0.312917,
+          "p99": 0.42047,
+          "max": 0.60709,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "space.process_cold_open",
+          "p50": 0.9851099999999999,
+          "p95": 0.9851099999999999,
+          "p99": 0.9851099999999999,
+          "max": 0.9851099999999999,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "startup.1_spaces",
+          "p50": 56.031847000000006,
+          "p95": 56.031847000000006,
+          "p99": 56.031847000000006,
+          "max": 56.031847000000006,
+          "samples": 1,
+          "breached": false
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "spaces": 1,
+      "pair": 2,
+      "cache": "warm",
+      "arm": "baseline",
+      "summary": [
+        {
+          "metric": "account.draft_write_to_feed",
+          "p50": 32.60544,
+          "p95": 253.171384,
+          "p99": 253.30863300000001,
+          "max": 253.44908999999998,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "auth.session",
+          "p50": 0.221637,
+          "p95": 0.38387099999999996,
+          "p99": 0.517191,
+          "max": 0.719471,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "live.update_to_client",
+          "p50": 42.644463,
+          "p95": 49.25711,
+          "p99": 60.29074,
+          "max": 72.01827399999999,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 25.9609375,
+          "p95": 25.9609375,
+          "p99": 25.9609375,
+          "max": 25.9609375,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "notes.get",
+          "p50": 0.42418700000000004,
+          "p95": 0.5477690000000001,
+          "p99": 0.646243,
+          "max": 1.349544,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.list.first100",
+          "p50": 0.652725,
+          "p95": 0.752644,
+          "p99": 1.090438,
+          "max": 1.7511379999999999,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.update",
+          "p50": 42.904461,
+          "p95": 49.386864,
+          "p99": 60.309275,
+          "max": 71.914218,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "receipt.round_trip",
+          "p50": 0.789963,
+          "p95": 1.1296410000000001,
+          "p99": 1.273602,
+          "max": 1.362538,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "resolve",
+          "p50": 0.280607,
+          "p95": 0.358232,
+          "p99": 0.5855199999999999,
+          "max": 0.737815,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "space.process_cold_open",
+          "p50": 0.9703430000000001,
+          "p95": 0.9703430000000001,
+          "p99": 0.9703430000000001,
+          "max": 0.9703430000000001,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "startup.1_spaces",
+          "p50": 57.204545,
+          "p95": 57.204545,
+          "p99": 57.204545,
+          "max": 57.204545,
+          "samples": 1,
+          "breached": false
+        }
+      ]
+    },
+    {
+      "size": 1000,
+      "spaces": 1,
+      "pair": 2,
+      "cache": "warm",
+      "arm": "head",
+      "summary": [
+        {
+          "metric": "account.draft_write_to_feed",
+          "p50": 34.810508,
+          "p95": 253.46107299999997,
+          "p99": 254.002385,
+          "max": 254.31402199999997,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "auth.session",
+          "p50": 0.192591,
+          "p95": 0.271419,
+          "p99": 0.343355,
+          "max": 0.888849,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "live.update_to_client",
+          "p50": 42.464059999999996,
+          "p95": 45.979121,
+          "p99": 55.961406,
+          "max": 61.100876,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "memory.1_spaces.after_2s",
+          "p50": 25.69921875,
+          "p95": 25.69921875,
+          "p99": 25.69921875,
+          "max": 25.69921875,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "notes.get",
+          "p50": 0.38038500000000003,
+          "p95": 0.478879,
+          "p99": 0.632979,
+          "max": 2.355182,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.list.first100",
+          "p50": 0.594627,
+          "p95": 0.699534,
+          "p99": 0.902865,
+          "max": 2.339725,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "notes.update",
+          "p50": 42.518885,
+          "p95": 46.028333999999994,
+          "p99": 55.958452,
+          "max": 62.090776,
+          "samples": 100,
+          "breached": true
+        },
+        {
+          "metric": "receipt.round_trip",
+          "p50": 0.7452599999999999,
+          "p95": 0.903085,
+          "p99": 1.089836,
+          "max": 2.158834,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "resolve",
+          "p50": 0.24924700000000002,
+          "p95": 0.311284,
+          "p99": 0.37065600000000004,
+          "max": 0.63874,
+          "samples": 100,
+          "breached": false
+        },
+        {
+          "metric": "space.process_cold_open",
+          "p50": 0.8775980000000001,
+          "p95": 0.8775980000000001,
+          "p99": 0.8775980000000001,
+          "max": 0.8775980000000001,
+          "samples": 1,
+          "breached": false
+        },
+        {
+          "metric": "startup.1_spaces",
+          "p50": 56.612069,
+          "p95": 56.612069,
+          "p99": 56.612069,
+          "max": 56.612069,
+          "samples": 1,
+          "breached": false
+        }
+      ]
+    }
+  ],
+  "failures": []
+}
