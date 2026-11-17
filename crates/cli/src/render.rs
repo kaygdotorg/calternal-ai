@@ -310,7 +310,7 @@ mod tests {
         let result: DescribeResult = serde_json::from_value(json!({
             "protocol_version":1,"genui_version":1,
             "principal":{"id":"acct-1","spaces":[{"id":"space-1","role":"owner"}]},
-            "operations":[{"id":"notes.list","description":"List notes","mutates":false,"input_schema":{},"output_schema":{}}]
+            "operations":[{"id":"notes.list","description":"List notes","risk":"read","mutates":false,"input_schema":{},"output_schema":{}}]
         })).unwrap();
         let human = Output::fixed(false, None, tz()).render(&describe(&result));
         assert_golden(&golden("describe.txt"), &human);

@@ -158,6 +158,7 @@ fn enrolled_data_dir() -> (tempfile::TempDir, String) {
             name,
             os,
             arch,
+            false,
         )
         .unwrap()
         .unwrap();

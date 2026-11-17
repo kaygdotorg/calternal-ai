@@ -7,7 +7,8 @@
         "id": "notes.list",
         "input_schema": {},
         "mutates": false,
-        "output_schema": {}
+        "output_schema": {},
+        "risk": "read"
       }
     ],
     "principal": {

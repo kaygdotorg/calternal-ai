@@ -10,7 +10,7 @@
       "protocol_version": "integer",
       "genui_version": "integer",
       "principal": { "id": "string", "spaces": [{ "id": "string", "role": "string" }] },
-      "operations": [{ "id": "string", "description": "string", "mutates": "bool", "input_schema": "any", "output_schema": "any" }]
+      "operations": [{ "id": "string", "description": "string", "risk": "string", "mutates": "bool", "input_schema": "any", "output_schema": "any" }]
     },
     "cl notes list": { "notes": [{ "id": "string", "space_id": "string", "title": "string", "revision": "string", "updated_at": "string" }] },
     "cl notes get": { "note": { "id": "string", "space_id": "string", "title": "string", "markdown": "string", "revision": "string", "updated_at": "string" } },

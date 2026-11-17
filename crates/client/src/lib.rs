@@ -97,7 +97,7 @@ pub struct Client {
     base: Url,
 }
 impl Client {
-    /// Build a reusable session client for an HTTP loopback origin and ASCII graphic
+    /// Build a reusable session client for an HTTPS origin or HTTP loopback origin and ASCII graphic
     /// credential. Allocates URL/header/connection-pool state, O(URL + token bytes),
     /// without network or persistent I/O. Uses 15-second request and 3-second connection
     /// timeouts; disables proxies and redirects. No credential appears in Debug/errors.
@@ -113,8 +113,8 @@ impl Client {
                     .parse::<std::net::IpAddr>()
                     .is_ok_and(|a| a.is_loopback())
         });
-        if base.scheme() != "http"
-            || !loopback
+        if (base.scheme() != "https" && (base.scheme() != "http" || !loopback))
+            || base.host_str().is_none()
             || !base.username().is_empty()
             || base.password().is_some()
             || base.query().is_some()
@@ -122,7 +122,7 @@ impl Client {
             || base.path() != "/"
         {
             return Err(ClientError::Configuration(
-                "preview URL must be an HTTP loopback origin without credentials, path, query or fragment",
+                "server URL must be HTTPS (or loopback HTTP) without credentials, path, query or fragment",
             ));
         }
         if token.is_empty() || token.bytes().any(|b| !b.is_ascii_graphic()) {
