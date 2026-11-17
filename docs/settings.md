@@ -77,7 +77,8 @@ to git; this list is the source.
 | Geronimo Giqueaux | `ngWVYP9NIYM` |
 | Nataliya Melnychuk | `I_xBR4NmDhU` |
 
-Each is at `https://unsplash.com/photos/<Photo ID>`.
+Each is at `https://unsplash.com/photos/<Photo ID>`. The default is Geronimo Giqueaux's
+`EX_STserBZM`.
 
 ## Being tried
 
