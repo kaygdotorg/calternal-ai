@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 /// Flush at most 32 KiB of scrubbed output; existing content CAS serializes it
 /// against person messages. A saved cursor/receipt prevents duplicate checkpoint
-/// blocks after a partial failure. Caller runs on a blocking worker, outside jobs locks.
+/// blocks after a partial failure. The first saved block gets a UTC timestamp.
+/// Caller runs on a blocking worker, outside jobs locks.
 pub(crate) fn checkpoint<D: Directory>(
     state: &Shared<D>,
     job: &Job,
@@ -64,6 +65,7 @@ pub(crate) fn checkpoint<D: Directory>(
         }
         let mut body = super::document::body(&item)?.to_owned();
         let mut metadata = item.metadata.clone();
+        let now = calternal_content::now_rfc3339();
         let output = &metadata["output"];
         let end = if output["job_id"] == job.id {
             let offset = output["end"]
@@ -75,7 +77,7 @@ pub(crate) fn checkpoint<D: Directory>(
             offset + text.len()
         } else {
             body.push_str(&format!(
-                "\n<!-- message:{} role:agent turn:{} actor:{} -->\n",
+                "\n<!-- message:{} role:agent turn:{} actor:{} time:{now} -->\n",
                 job.id,
                 job.id,
                 calternal_types::Actor::agent(job.account, id)
@@ -85,6 +87,11 @@ pub(crate) fn checkpoint<D: Directory>(
             body.push_str("\n<!-- /message -->\n");
             end
         };
+        if metadata["output"]["job_id"] != job.id {
+            super::document::record_message(&mut metadata, &now);
+        } else {
+            super::document::record_activity(&mut metadata, &now);
+        }
         metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"end":end});
         let bytes = super::document::encode(&metadata, &body);
         match content.write(

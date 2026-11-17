@@ -250,6 +250,74 @@
       }
     },
     {
+      "id": "threads.rename",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    },
+    {
+      "id": "threads.unarchive",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "space_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object"
+      },
+      "required_capability": "content.write",
+      "mutates": true,
+      "risk": "reversible",
+      "idempotency": "request_id",
+      "target": {
+        "kind": "threads",
+        "field": "id"
+      }
+    },
+    {
       "id": "threads.delete",
       "input_schema": {
         "type": "object",

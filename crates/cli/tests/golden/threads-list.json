@@ -5,8 +5,14 @@
         "id": "019a8c00-0000-7000-8000-000000000001",
         "metadata": {
           "archived": false,
+          "last_activity_at": "2026-11-17T12:00:00.000Z",
+          "message_count": 17,
+          "mode": "least_access",
+          "model": "sonnet",
+          "provider": "calternal-claude-code",
           "title": "Long conversation title that should wrap clearly"
-        }
+        },
+        "turn_state": "waiting"
       }
     ]
   },
