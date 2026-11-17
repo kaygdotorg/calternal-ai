@@ -87,7 +87,11 @@ fn space(value: &str) -> Result<(), ValidationError> {
 }
 /// An omitted space (empty) selects the caller's account as owner.
 fn optional_space(value: &str) -> Result<(), ValidationError> {
-    if value.is_empty() { Ok(()) } else { space(value) }
+    if value.is_empty() {
+        Ok(())
+    } else {
+        space(value)
+    }
 }
 fn resource(space_id: &str, id: &str) -> Result<(), ValidationError> {
     if !space_id.is_empty() {

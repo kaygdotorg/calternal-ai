@@ -16,6 +16,9 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+// The only import of private_fs: a one-line change when it moves to calternal-fsio.
+pub(crate) use calternal_auth::private_fs;
+
 mod key;
 mod local;
 mod types;
@@ -41,6 +44,9 @@ pub enum Error {
     /// `put` found a secret of that name already; use `rotate`.
     #[error("secret already exists")]
     Conflict,
+    /// The owner already holds [`LIMITS`]' maximum of secrets or pending requests.
+    #[error("too many secrets or pending requests for this owner")]
+    Limit,
     /// `system/secret.key` is absent while encrypted secrets exist. Restore it from
     /// backup; a new key would make every stored value unreadable.
     #[error("secret key is missing; restore appdata/system/secret.key from backup")]
@@ -53,6 +59,23 @@ pub enum Error {
     #[error("secret storage failed")]
     Internal,
 }
+
+/// Storage bounds per owner (review gate item 7). Values are bounded by
+/// [`SecretValue::MAX`], labels and reasons by their character limits.
+pub struct Limits {
+    /// Stored secrets per owner.
+    pub secrets: u32,
+    /// Pending requests per owner.
+    pub pending: u32,
+    /// Audit rows kept per owner; older rows are pruned on each audited write.
+    pub audit: u32,
+}
+/// The bounds the local backend enforces.
+pub const LIMITS: Limits = Limits {
+    secrets: 1000,
+    pending: 64,
+    audit: 10_000,
+};
 
 /// Result type of every secret operation.
 pub type Result<T> = std::result::Result<T, Error>;

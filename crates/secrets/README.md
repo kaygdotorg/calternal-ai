@@ -49,8 +49,24 @@ identifier rule. Encryption, handle MACs and the key fingerprint use separate de
 | Audit trail | Bao audit device (who read which path) plus our own audit row (which consumer) |
 | Pending requests | Stay in the host database: they hold no value |
 
+## Bounds
+
+Per owner: 1,000 secrets, 64 pending requests, the newest 10,000 audit rows (older rows
+are pruned on each audited write). Values are at most 64 KiB, labels 120 characters,
+reasons 500. Constants: `LIMITS` and `SecretValue::MAX`.
+
 ## Costs
 
-Each call opens and closes the owner's SQLite database (about 0.1–0.5 ms); writes and
-`use_value` are one fsync'd transaction; sealing and opening are one AES-GCM pass over
-at most 64 KiB.
+No installation-wide lock or connection: each call opens only its owner's database (one
+`open` and a `user_version` read; the schema is created once per file). `use_value` is one
+indexed read, one AES-GCM open and one commit (one WAL fsync). Writes are one commit; an
+owner's first write also records it in `system/secrets.db` and creates its directory.
+Reads do not fsync. The `system/secrets.db` registry is opened only at startup and on an
+owner's first write.
+
+## Reused primitives
+
+`calternal_auth::private_fs` for 0600 files and 0700 directories (imported once in
+`lib.rs`; it moves to `calternal-fsio`), `calternal_fsio::sync_dir`, the invite key's
+hard-link publication, `rusqlite` with WAL and `synchronous=FULL` as in the other stores,
+and `AccountId`/`SpaceId` from `calternal-auth`.

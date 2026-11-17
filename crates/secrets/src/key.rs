@@ -23,9 +23,11 @@ pub(crate) struct MasterKey {
 
 /// Open `system/secrets.db`, the owner registry that lets a missing key be detected.
 /// It holds no values: only a key fingerprint and which owners have secrets.
+/// Opened at startup and when an owner writes its first secret, never kept open,
+/// so no installation-wide connection or lock sits on the request path.
 pub(crate) fn registry(appdata: &Path) -> Result<Connection> {
     let dir = appdata.join("system");
-    calternal_auth::private_fs::directory(&dir).map_err(|_| Error::Internal)?;
+    crate::private_fs::directory(&dir).map_err(|_| Error::Internal)?;
     crate::local::open_db(
         &dir.join("secrets.db"),
         "CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v BLOB NOT NULL);
@@ -87,7 +89,11 @@ impl MasterKey {
     /// Opaque token for a handle. Cost: one BLAKE3 keyed hash over < 200 bytes.
     pub(crate) fn token(&self, handle: &Handle) -> HandleToken {
         let mut h = blake3::Hasher::new_keyed(&self.handle);
-        h.update(&binding(&handle.owner, handle.name.as_str(), handle.version));
+        h.update(&binding(
+            &handle.owner,
+            handle.name.as_str(),
+            handle.version,
+        ));
         let hex = h.finalize().to_hex();
         HandleToken(format!("sh-{}", &hex[..40]))
     }
@@ -95,9 +101,15 @@ impl MasterKey {
     /// AES-256-GCM with a random nonce; owner, name and version are the associated
     /// data, so a row copied to another owner, name or version fails to decrypt.
     /// Output: nonce (12) | tag (16) | ciphertext. Cost: one AEAD pass.
-    pub(crate) fn seal(&self, owner: &Owner, name: &str, version: u64, plain: &[u8]) -> Result<Vec<u8>> {
+    pub(crate) fn seal(
+        &self,
+        owner: &Owner,
+        name: &str,
+        version: u64,
+        plain: &[u8],
+    ) -> Result<Vec<u8>> {
         let mut nonce = [0u8; NONCE];
-        nonce.copy_from_slice(&calternal_auth::token::random32().map_err(|_| Error::Internal)?[..NONCE]);
+        getrandom::fill(&mut nonce).map_err(|_| Error::Internal)?;
         let mut tag = [0u8; TAG];
         let sealed = encrypt_aead(
             Cipher::aes_256_gcm(),
@@ -113,7 +125,13 @@ impl MasterKey {
 
     /// Reverse of [`seal`](Self::seal). Any tampering or mismatch is [`Error::NotFound`],
     /// the same answer as a missing secret.
-    pub(crate) fn open_value(&self, owner: &Owner, name: &str, version: u64, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>> {
+    pub(crate) fn open_value(
+        &self,
+        owner: &Owner,
+        name: &str,
+        version: u64,
+        bytes: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>> {
         if bytes.len() < NONCE + TAG {
             return Err(Error::NotFound);
         }
@@ -148,7 +166,8 @@ fn binding(owner: &Owner, name: &str, version: u64) -> Vec<u8> {
 /// Write a fresh key to a private temporary file, fsync it, then publish it by
 /// hard link: atomic, and never replaces a key another process just published.
 fn create(dir: &Path, path: &Path) -> std::io::Result<()> {
-    let bytes = Zeroizing::new(calternal_auth::token::random32().map_err(std::io::Error::other)?);
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    getrandom::fill(&mut bytes[..]).map_err(std::io::Error::other)?;
     let tmp = dir.join(format!(".secret-key-{}", uuid::Uuid::new_v4()));
     let result = (|| {
         let mut f = std::fs::OpenOptions::new()

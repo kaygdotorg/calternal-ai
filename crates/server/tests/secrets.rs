@@ -37,12 +37,21 @@ impl Fixture {
     /// (`None` removes the membership).
     async fn new(role: Option<&'static str>) -> Self {
         tokio::task::spawn_blocking(move || {
-            let root = std::env::temp_dir().join(format!("calternal-secrets-{}", uuid::Uuid::new_v4()));
+            let root =
+                std::env::temp_dir().join(format!("calternal-secrets-{}", uuid::Uuid::new_v4()));
             let tokens = TokenTable::load_or_create(&root).unwrap();
             let guest = std::fs::read_to_string(root.join("dev-tokens/guest.token")).unwrap();
             let owner = std::fs::read_to_string(root.join("dev-tokens/owner.token")).unwrap();
-            let guest_id = tokens.authenticate(guest.as_bytes()).unwrap().id.to_string();
-            let owner_id = tokens.authenticate(owner.as_bytes()).unwrap().id.to_string();
+            let guest_id = tokens
+                .authenticate(guest.as_bytes())
+                .unwrap()
+                .id
+                .to_string();
+            let owner_id = tokens
+                .authenticate(owner.as_bytes())
+                .unwrap()
+                .id
+                .to_string();
             let shared = tokens
                 .spaces
                 .list(calternal_auth::AccountId::parse(&owner_id).unwrap())
@@ -54,8 +63,14 @@ impl Fixture {
                 .to_string();
             let c = rusqlite::Connection::open(root.join("system/auth.db")).unwrap();
             match role {
-                None => c.execute("DELETE FROM space_memberships WHERE account_id=?1", [&guest_id]),
-                Some("owner") => c.execute("UPDATE spaces SET owner_account=?1 WHERE id=?2", [&guest_id, &shared]),
+                None => c.execute(
+                    "DELETE FROM space_memberships WHERE account_id=?1",
+                    [&guest_id],
+                ),
+                Some("owner") => c.execute(
+                    "UPDATE spaces SET owner_account=?1 WHERE id=?2",
+                    [&guest_id, &shared],
+                ),
                 Some(role) => c.execute(
                     "UPDATE space_memberships SET role=?1 WHERE account_id=?2",
                     [role, &guest_id],
@@ -69,7 +84,13 @@ impl Fixture {
                 workers: calternal_server::plugins::WorkerPool::new(None),
                 allowed_hosts: allowed_hosts(0),
             });
-            Self { state, root, guest, owner, shared }
+            Self {
+                state,
+                root,
+                guest,
+                owner,
+                shared,
+            }
         })
         .await
         .unwrap()
@@ -92,7 +113,11 @@ impl Fixture {
     }
     async fn request(&self, token: &str, space: &str, name: &str) -> String {
         let (status, body) = self
-            .call(token, "secrets.request", json!({"space_id": space, "name": name, "label": "L", "reason": "R"}))
+            .call(
+                token,
+                "secrets.request",
+                json!({"space_id": space, "name": name, "label": "L", "reason": "R"}),
+            )
             .await;
         assert_eq!(status, StatusCode::OK, "{body}");
         body["data"]["request_id"].as_str().unwrap().to_owned()
@@ -100,7 +125,13 @@ impl Fixture {
 }
 
 // Guest role in `shared`: none, reader, editor, manager, owner.
-const ROLES: [Option<&str>; 5] = [None, Some("reader"), Some("editor"), Some("manager"), Some("owner")];
+const ROLES: [Option<&str>; 5] = [
+    None,
+    Some("reader"),
+    Some("editor"),
+    Some("manager"),
+    Some("owner"),
+];
 // request needs plugins.use, list needs space.read, revoke needs space.settings.
 const MATRIX: &[(&str, [bool; 5])] = &[
     ("secrets.request", [false, false, true, true, true]),
@@ -115,7 +146,9 @@ async fn space_secrets_follow_the_capability_matrix() {
         for (op, allowed) in MATRIX {
             let pending = f.request(&f.owner, &f.shared, "target").await;
             let input = match *op {
-                "secrets.request" => json!({"space_id": f.shared, "name": "x", "label": "L", "reason": "R"}),
+                "secrets.request" => {
+                    json!({"space_id": f.shared, "name": "x", "label": "L", "reason": "R"})
+                }
                 "secrets.list" => json!({"space_id": f.shared}),
                 _ => json!({"space_id": f.shared, "request_id": pending}),
             };
@@ -123,15 +156,25 @@ async fn space_secrets_follow_the_capability_matrix() {
             if allowed[index] {
                 assert_eq!(status, StatusCode::OK, "{role:?} {op}: {body}");
             } else if role.is_none() {
-                assert_eq!((status, body["error"]["message"].as_str()), (StatusCode::NOT_FOUND, Some("space not found")));
+                assert_eq!(
+                    (status, body["error"]["message"].as_str()),
+                    (StatusCode::NOT_FOUND, Some("space not found"))
+                );
             } else {
                 assert_eq!(status, StatusCode::FORBIDDEN, "{role:?} {op}: {body}");
             }
             // Same answer for a space that does not exist.
             let (status, _) = f
-                .call(&f.guest, op, json!({"space_id": uuid::Uuid::now_v7().to_string()}))
+                .call(
+                    &f.guest,
+                    op,
+                    json!({"space_id": uuid::Uuid::now_v7().to_string()}),
+                )
                 .await;
-            assert!(matches!(status, StatusCode::NOT_FOUND | StatusCode::BAD_REQUEST), "{op}");
+            assert!(
+                matches!(status, StatusCode::NOT_FOUND | StatusCode::BAD_REQUEST),
+                "{op}"
+            );
         }
     }
 }
@@ -145,17 +188,29 @@ async fn personal_secrets_are_isolated_and_provide_is_not_an_operation() {
     let (_, theirs) = f.call(&f.owner, "secrets.list", json!({})).await;
     assert_eq!(theirs["data"], json!({"secrets": [], "requests": []}));
     // The owner cannot withdraw the guest's personal request.
-    let (status, _) = f.call(&f.owner, "secrets.revoke", json!({"request_id": id})).await;
+    let (status, _) = f
+        .call(&f.owner, "secrets.revoke", json!({"request_id": id}))
+        .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-    let (status, _) = f.call(&f.guest, "secrets.revoke", json!({"request_id": id})).await;
+    let (status, _) = f
+        .call(&f.guest, "secrets.revoke", json!({"request_id": id}))
+        .await;
     assert_eq!(status, StatusCode::OK);
     // No operation can carry a value in.
     let (status, body) = f
-        .call(&f.guest, "secrets.provide", json!({"request_id": id, "value": CANARY}))
+        .call(
+            &f.guest,
+            "secrets.provide",
+            json!({"request_id": id, "value": CANARY}),
+        )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND, "{body}");
     let (status, _) = f
-        .call(&f.guest, "secrets.revoke", json!({"name": "a", "request_id": id}))
+        .call(
+            &f.guest,
+            "secrets.revoke",
+            json!({"name": "a", "request_id": id}),
+        )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
@@ -170,7 +225,9 @@ async fn development_bearer_tokens_cannot_provide() {
         .header("Host", "127.0.0.1:0")
         .header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", f.guest))
-        .body(Body::from(json!({"request_id": id, "value": CANARY}).to_string()))
+        .body(Body::from(
+            json!({"request_id": id, "value": CANARY}).to_string(),
+        ))
         .unwrap();
     let res = router(f.state.clone(), None).oneshot(req).await.unwrap();
     // Without account sessions the route is not mounted at all.
@@ -211,8 +268,13 @@ fn scan(dir: &Path) -> Vec<PathBuf> {
 async fn fresh_session_provides_and_value_never_leaks() {
     let app = app();
     let (cookie, _device) = first_owner(&app, "Owner").await;
-    let id = op(&app, &cookie, "secrets.request", json!({"name": "openai", "label": "OpenAI", "reason": "agent run"}))
-        .await["request_id"]
+    let id = op(
+        &app,
+        &cookie,
+        "secrets.request",
+        json!({"name": "openai", "label": "OpenAI", "reason": "agent run"}),
+    )
+    .await["request_id"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -220,20 +282,40 @@ async fn fresh_session_provides_and_value_never_leaks() {
         .as_str()
         .unwrap()
         .to_owned();
-    let space_request = op(&app, &cookie, "secrets.request", json!({"space_id": space, "name": "smtp", "label": "SMTP", "reason": "mail"}))
-        .await["request_id"]
+    let space_request = op(
+        &app,
+        &cookie,
+        "secrets.request",
+        json!({"space_id": space, "name": "smtp", "label": "SMTP", "reason": "mail"}),
+    )
+    .await["request_id"]
         .as_str()
         .unwrap()
         .to_owned();
     let mut responses = String::new();
-    for body in [json!({"request_id": id, "value": CANARY}), json!({"space_id": space, "request_id": space_request, "value": CANARY})] {
-        let r = post(&app, calternal_server::secrets::PROVIDE_PATH, Some(&cookie), body).await;
+    for body in [
+        json!({"request_id": id, "value": CANARY}),
+        json!({"space_id": space, "request_id": space_request, "value": CANARY}),
+    ] {
+        let r = post(
+            &app,
+            calternal_server::secrets::PROVIDE_PATH,
+            Some(&cookie),
+            body,
+        )
+        .await;
         assert_eq!(r.status, 200, "{}", r.body);
         assert_eq!(r.body["secret"]["version"], 1);
         responses.push_str(&r.body.to_string());
     }
     // Answered once; a second answer finds nothing.
-    let again = post(&app, calternal_server::secrets::PROVIDE_PATH, Some(&cookie), json!({"request_id": id, "value": CANARY})).await;
+    let again = post(
+        &app,
+        calternal_server::secrets::PROVIDE_PATH,
+        Some(&cookie),
+        json!({"request_id": id, "value": CANARY}),
+    )
+    .await;
     assert_eq!(again.status, 404);
     responses.push_str(&again.body.to_string());
     let personal = op(&app, &cookie, "secrets.list", json!({})).await;
@@ -247,7 +329,10 @@ async fn fresh_session_provides_and_value_never_leaks() {
     // Databases, WAL files, journals, receipts and recovery records.
     assert_eq!(scan(app.dir.path()), Vec::<PathBuf>::new());
     op(&app, &cookie, "secrets.revoke", json!({"name": "openai"})).await;
-    assert_eq!(op(&app, &cookie, "secrets.list", json!({})).await["secrets"], json!([]));
+    assert_eq!(
+        op(&app, &cookie, "secrets.list", json!({})).await["secrets"],
+        json!([])
+    );
 }
 
 #[tokio::test]
@@ -255,15 +340,32 @@ async fn provide_needs_a_fresh_passkey_session() {
     let app = app();
     // A setup session has registered a passkey but never asserted one.
     let (cookie, _device) = first_owner_setup_session(&app, "Owner").await;
-    let id = op(&app, &cookie, "secrets.request", json!({"name": "k", "label": "K", "reason": "R"}))
-        .await["request_id"]
+    let id = op(
+        &app,
+        &cookie,
+        "secrets.request",
+        json!({"name": "k", "label": "K", "reason": "R"}),
+    )
+    .await["request_id"]
         .as_str()
         .unwrap()
         .to_owned();
     let body = json!({"request_id": id, "value": CANARY});
-    let stale = post(&app, calternal_server::secrets::PROVIDE_PATH, Some(&cookie), body.clone()).await;
+    let stale = post(
+        &app,
+        calternal_server::secrets::PROVIDE_PATH,
+        Some(&cookie),
+        body.clone(),
+    )
+    .await;
     assert_eq!(stale.status, 403, "{}", stale.body);
-    let anonymous = post(&app, calternal_server::secrets::PROVIDE_PATH, None, body.clone()).await;
+    let anonymous = post(
+        &app,
+        calternal_server::secrets::PROVIDE_PATH,
+        None,
+        body.clone(),
+    )
+    .await;
     assert_eq!(anonymous.status, 401);
     let forged = send(
         &app,
@@ -278,13 +380,26 @@ async fn provide_needs_a_fresh_passkey_session() {
         &app,
         "POST",
         calternal_server::secrets::PROVIDE_PATH,
-        &[("cookie", cookie.as_str()), ("origin", "https://evil.example")],
+        &[
+            ("cookie", cookie.as_str()),
+            ("origin", "https://evil.example"),
+        ],
         Body::from(body.to_string()),
     )
     .await;
-    assert!(foreign.status == 401 || foreign.status == 403, "{}", foreign.status);
+    assert!(
+        foreign.status == 401 || foreign.status == 403,
+        "{}",
+        foreign.status
+    );
     // Still pending, nothing stored.
     let listed = op(&app, &cookie, "secrets.list", json!({})).await;
-    assert_eq!((listed["secrets"].as_array().unwrap().len(), listed["requests"].as_array().unwrap().len()), (0, 1));
+    assert_eq!(
+        (
+            listed["secrets"].as_array().unwrap().len(),
+            listed["requests"].as_array().unwrap().len()
+        ),
+        (0, 1)
+    );
     assert!(scan(app.dir.path()).is_empty());
 }

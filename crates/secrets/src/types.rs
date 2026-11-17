@@ -41,11 +41,18 @@ impl SecretName {
     /// Validate a name. Cost: one pass over at most 96 bytes.
     pub fn new(name: &str) -> Result<Self> {
         let ok = name.len() <= 96
-            && name.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
+            && name
+                .as_bytes()
+                .first()
+                .is_some_and(u8::is_ascii_alphanumeric)
             && name
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-:".contains(&b));
-        if ok { Ok(Self(name.to_owned())) } else { Err(Error::InvalidInput) }
+        if ok {
+            Ok(Self(name.to_owned()))
+        } else {
+            Err(Error::InvalidInput)
+        }
     }
     /// The name of a plugin's declared secret: `plugin:<plugin-id>:<name>`.
     pub fn for_plugin(plugin: &str, name: &str) -> Result<Self> {
@@ -114,7 +121,11 @@ impl HandleToken {
     /// Parse a presented token; anything not in the exact format is refused.
     pub fn parse(token: &str) -> Result<Self> {
         let hex = token.strip_prefix("sh-").ok_or(Error::NotFound)?;
-        if hex.len() == 40 && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        if hex.len() == 40
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
             Ok(Self(token.to_owned()))
         } else {
             Err(Error::NotFound)
@@ -183,16 +194,22 @@ impl Consumer {
                 !variable.is_empty()
                     && variable.len() <= 64
                     && !variable.as_bytes()[0].is_ascii_digit()
-                    && variable.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+                    && variable
+                        .bytes()
+                        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
             }
             Self::RequestHeader { origin, header } => {
                 origin.len() <= 256
                     && origin.strip_prefix("https://").is_some_and(|h| {
-                        !h.is_empty() && h.bytes().all(|b| b.is_ascii_alphanumeric() || b".-:[]".contains(&b))
+                        !h.is_empty()
+                            && h.bytes()
+                                .all(|b| b.is_ascii_alphanumeric() || b".-:[]".contains(&b))
                     })
                     && !header.is_empty()
                     && header.len() <= 64
-                    && header.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+                    && header
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
             }
         };
         if ok { Ok(()) } else { Err(Error::InvalidInput) }
@@ -241,9 +258,17 @@ impl Action {
         }
     }
     pub(crate) fn parse(s: &str) -> Option<Self> {
-        [Self::Put, Self::Rotate, Self::Use, Self::Delete, Self::Request, Self::Provide, Self::Cancel]
-            .into_iter()
-            .find(|a| a.as_str() == s)
+        [
+            Self::Put,
+            Self::Rotate,
+            Self::Use,
+            Self::Delete,
+            Self::Request,
+            Self::Provide,
+            Self::Cancel,
+        ]
+        .into_iter()
+        .find(|a| a.as_str() == s)
     }
 }
 

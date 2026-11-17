@@ -560,6 +560,7 @@ dependencies = [
  "blake3",
  "calternal-auth",
  "calternal-fsio",
+ "getrandom 0.4.3",
  "openssl",
  "rusqlite",
  "serde",

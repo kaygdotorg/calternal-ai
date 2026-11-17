@@ -12,8 +12,10 @@
 //!   `SecretStore::use_value` at a named consumer.
 //!
 //! Responses and errors never contain a value; [`calternal_secrets::Error`] text is
-//! fixed. Each call clones the store's `Arc` under the store lock, then runs the
-//! secret I/O on a blocking task without that lock.
+//! fixed. Each call takes the host's store lock only to clone the secret store's
+//! `Arc` (no I/O under it), then runs the owner's I/O on a blocking task; the
+//! secret store itself has no installation-wide lock or connection.
+//! Spaces are named by UUID only; development aliases are not accepted here.
 
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
@@ -49,11 +51,12 @@ pub const PROVIDE_CAPABILITY: Capability = Capability::SpaceSettings;
 const PROVIDE_BODY_MAX: usize = 400 * 1024;
 
 /// Translate a store refusal into a caller-safe host error.
-pub fn host_error(e: Error) -> HostError {
+fn host_error(e: Error) -> HostError {
     match e {
         Error::NotFound => HostError::not_found("secret not found"),
         Error::InvalidInput => HostError::invalid_input("input does not match operation schema"),
         Error::Conflict => HostError::conflict("secret already exists"),
+        Error::Limit => HostError::conflict("too many secrets or pending requests"),
         Error::KeyMissing | Error::KeyUnusable => HostError::unavailable(e.to_string()),
         Error::Internal => HostError::internal("secret storage failed"),
     }
@@ -82,7 +85,7 @@ fn owner<D: Directory>(
         constraint: Constraint::None,
     }
     .authorize_space(&state.tokens, p, space)?;
-    SpaceId::parse(&state.tokens.wire_space(space))
+    SpaceId::parse(space)
         .map(Owner::Space)
         .ok_or_else(|| HostError::not_found("space not found"))
 }
@@ -117,7 +120,10 @@ pub async fn dispatch<D: Directory>(
     tokio::task::spawn_blocking(move || {
         let op = policy.operation.as_ref();
         let secrets = store(&state)?;
-        let actor = Actor { account: account(&p)?, via: Via::Session };
+        let actor = Actor {
+            account: account(&p)?,
+            via: Via::Session,
+        };
         match op {
             "secrets.request" => {
                 let i: SecretsRequestInput = decode(input)?;
@@ -126,7 +132,9 @@ pub async fn dispatch<D: Directory>(
                 let id = secrets
                     .request(&owner, &name, &i.label, &i.reason, &actor)
                     .map_err(host_error)?;
-                to_value(SecretsRequestResult { request_id: id.0.to_string() })
+                to_value(SecretsRequestResult {
+                    request_id: id.0.to_string(),
+                })
             }
             "secrets.list" => {
                 let i: SecretsListInput = decode(input)?;
@@ -147,7 +155,9 @@ pub async fn dispatch<D: Directory>(
                 .map_err(host_error)?;
                 to_value(SecretsRevokeResult {})
             }
-            _ => Err(HostError::unavailable("operation has no host binding in this preview")),
+            _ => Err(HostError::unavailable(
+                "operation has no host binding in this preview",
+            )),
         }
     })
     .await
@@ -192,8 +202,13 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
 }
 
 fn reply(e: HostError) -> Response {
-    let status = StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status, axum::Json(json!({"error": {"code": e.code, "message": e.message}}))).into_response()
+    let status =
+        StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+    (
+        status,
+        axum::Json(json!({"error": {"code": e.code, "message": e.message}})),
+    )
+        .into_response()
 }
 
 /// Supply a value for a pending request. Order: live session, fresh passkey
@@ -204,20 +219,34 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
     let Some(service) = state.tokens.http_auth().cloned() else {
         return reply(HostError::not_found("not found"));
     };
-    let Some((account, installation)) = crate::account_http::identify(&service, req.headers()).await
+    let Some((account, installation)) =
+        crate::account_http::identify(&service, req.headers()).await
     else {
         return reply(HostError::unauthorized("missing or invalid session"));
     };
-    if service.auth.require_fresh(account, installation, false).await.is_err() {
+    if service
+        .auth
+        .require_fresh(account, installation, false)
+        .await
+        .is_err()
+    {
         return reply(HostError::forbidden("verify with your passkey again first"));
     }
     let json = req
         .headers()
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.split(';').next().unwrap_or("").trim().eq_ignore_ascii_case("application/json"));
+        .is_some_and(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .eq_ignore_ascii_case("application/json")
+        });
     if !json {
-        return reply(HostError::invalid_input("Content-Type must be application/json"));
+        return reply(HostError::invalid_input(
+            "Content-Type must be application/json",
+        ));
     }
     let Ok(bytes) = axum::body::to_bytes(req.into_body(), PROVIDE_BODY_MAX).await else {
         return reply(HostError::invalid_input("request too large"));
@@ -226,12 +255,23 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
         return reply(HostError::invalid_input("input does not match schema"));
     };
     let result = tokio::task::spawn_blocking(move || {
-        let p = Identity { id: account.to_string().into() };
-        let owner = owner(&state, &p, &input.space_id, "secrets.provide", PROVIDE_CAPABILITY)?;
+        let p = Identity {
+            id: account.to_string().into(),
+        };
+        let owner = owner(
+            &state,
+            &p,
+            &input.space_id,
+            "secrets.provide",
+            PROVIDE_CAPABILITY,
+        )?;
         let request = uuid::Uuid::parse_str(&input.request_id)
             .map_err(|_| HostError::not_found("secret not found"))?;
         let value = SecretValue::new(input.value.into_bytes()).map_err(host_error)?;
-        let actor = Actor { account, via: Via::Session };
+        let actor = Actor {
+            account,
+            via: Via::Session,
+        };
         let handle = store(&state)?
             .provide(&owner, &RequestId(request), value, &actor)
             .map_err(host_error)?;
@@ -248,8 +288,9 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
     }
 }
 
-/// Adapter for the plugin host's `request_secret_handle` call, for the broker in
-/// `plugins::broker` to call once it routes that method here.
+/// Adapter for the plugin host's `request_secret_handle` call. Its caller is the
+/// broker in `plugins::broker` (plugin-host lane, issue #9 records the hand-off),
+/// which must pass the space's UUID owner, not the content-space key.
 ///
 /// `name` is the manifest-declared secret name (the plugin host has already
 /// checked the declaration); it is stored as `plugin:<plugin>:<name>` under
