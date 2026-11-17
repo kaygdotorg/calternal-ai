@@ -24,6 +24,7 @@
 pub mod configured;
 pub mod direct;
 pub mod podman;
+pub mod worker;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -62,6 +63,8 @@ pub type SandboxResult<T> = std::result::Result<T, SandboxError>;
 pub struct ExecRequest {
     /// Program and arguments; no shell is implied.
     pub argv: Vec<String>,
+    /// Keep stdin open and return its bounded writer for a worker session.
+    pub interactive: bool,
     /// Input delivered once and closed; callers enforce the 128 KiB budget.
     pub stdin: String,
     /// Environment on top of the sandbox's minimal one. Names must be POSIX
@@ -99,12 +102,19 @@ pub enum OutputEvent {
 
 /// A running exec: read its events until [`OutputEvent::Exit`].
 pub struct Exec {
+    /// Bounded stdin writer for interactive execs; absent for one-shot commands.
+    pub input: Option<mpsc::Sender<Vec<u8>>>,
     /// Bounded event stream; dropping it lets the process block on output.
     pub events: mpsc::Receiver<OutputEvent>,
 }
 
 /// Starts per-thread sandboxes. Implementations must be cheap to share.
 pub trait Backend: Send + Sync + 'static {
+    /// Reconcile machine-owned transient artifacts once after acquiring its
+    /// process lock, before accepting assignments. Default backends need no work.
+    fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
     /// Short name for logs and capacity reports.
     fn name(&self) -> &'static str;
     /// Backend request in the machine handshake. `auto` follows the owner's stored setting.
@@ -154,18 +164,36 @@ pub trait Sandbox: Send + Sync {
 pub(crate) fn spawn_streaming(
     mut cmd: tokio::process::Command,
     input: String,
+    interactive: bool,
+    discard_stderr: bool,
 ) -> SandboxResult<(Exec, Option<u32>)> {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(if discard_stderr {
+            Stdio::null()
+        } else {
+            Stdio::piped()
+        });
     let mut child = cmd
         .spawn()
         .map_err(|e| SandboxError(format!("cannot start command: {}", e.kind())))?;
     let pid = child.id();
+    let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(16);
     if let Some(mut stdin) = child.stdin.take() {
         tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(input.as_bytes()).await;
+            if stdin.write_all(input.as_bytes()).await.is_err() {
+                return;
+            }
+            if interactive {
+                while let Some(data) = input_rx.recv().await {
+                    if data.len() > calternal_types::MAX_FRAME_BYTES + 1
+                        || stdin.write_all(&data).await.is_err()
+                    {
+                        return;
+                    }
+                }
+            }
             let _ = stdin.shutdown().await;
         });
     }
@@ -200,7 +228,13 @@ pub(crate) fn spawn_streaming(
         };
         let _ = tx.send(OutputEvent::Exit(info)).await;
     });
-    Ok((Exec { events: rx }, pid))
+    Ok((
+        Exec {
+            events: rx,
+            input: interactive.then_some(input_tx),
+        },
+        pid,
+    ))
 }
 
 async fn pump(
@@ -232,7 +266,10 @@ pub fn failed_exec(reason: impl Into<String>) -> Exec {
         error: Some(reason.into()),
         ..ExitInfo::default()
     }));
-    Exec { events: rx }
+    Exec {
+        events: rx,
+        input: None,
+    }
 }
 
 /// Collect an exec's output into (stdout, stderr, exit), for unit tests.

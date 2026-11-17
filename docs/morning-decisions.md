@@ -72,3 +72,17 @@ invented in this lane; generic kind writers are denied the reserved path.
 Approval lifetimes are handed to a separate lane: once-only grants need atomic
 consumption with request receipt replay, and thread grants need protected storage
 that survives jobs and is erased by thread deletion. Always-in-space remains later.
+## Plugin worker placement and network contract (issue #29, 2026-11-17)
+
+- Decide how shared-space workers receive trusted placement and capacity: an
+  operator-owned service or explicitly space-trusted participant machines.
+  Pending that contract, remote workers use operator pool machines only.
+- For a server host without a container runtime, choose explicit enrollment of an
+  operator machine or an approved automatic setup flow; there is no direct fallback.
+- Define operator recovery for a permanently lost/revoked worker machine; pending
+  teardown holds capacity until authenticated cleanup proof, without a timeout.
+- Define manifest destinations, manager approval and brokered fetch together;
+  ManifestV1 currently has none of these, so worker network remains disabled.
+
+[Worker execution](plugin-workers.md#placement-and-unresolved-contracts) lists the
+options, implementation costs and the placement revocation problem.
