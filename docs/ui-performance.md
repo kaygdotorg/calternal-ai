@@ -201,3 +201,16 @@ What was on those keys, from the traces: the first key flipped the input-modalit
 | fonts, images | 375.6 KB, 625.3 KB | same | same (the images are the fixture wallpaper) |
 
 Taken out of the first load: the Notes app (list, middle card, panels, its store and fixture notes) and the Settings pages load when first opened (a Notes page then fetches them with the editor chunks, 296 KB of script before paint and the rest after); the generated-UI renderer (60 KB) is fetched the first time a message holds a card or a question form is about to be drawn; the app data starts per app, Threads always and the others on first visit. Settings' registry stays in the first load because the palette finds every setting by its words before Settings has been opened. By the time the app paints, everything it asks for has arrived (the page waits for its font first), so the saving is download and parse time, not a changed paint time; a fast first paint with the rest after needs a decision about showing before the font arrives, which is not made here.
+
+## Shell interactions (2026-11-18)
+
+`e2e/shell-perf.mjs` at 4x CPU slowdown, dev-02, six runs each (the first of each includes anything loaded on first use):
+
+| Interaction | Time to ready (median, worst) | Frames over 20 ms | Worst frame |
+| --- | --- | --- | --- |
+| Dragging a sidebar handle (153 frames) | n/a | 0 | 16.8 ms (median and p95 16.7) |
+| Switching space | 31 ms, 38 ms | 0 in 6 runs | 17 ms |
+| Switching app | 31 ms, 36 ms | 0 in 6 runs | 17 ms |
+| Opening Settings | 38 ms, 52 ms | 1 in the first run, 0 after | 33 ms (was 200 ms) |
+
+The first open of Settings was one 200 ms frame: the Appearance page asks for the thumbnails of the generated looks, and the "haze" look converted its colour mesh to OKLab again for every one of its 20,000 pixels (`recipe.ts`). The mesh is now converted once per scheme, thumbnails use a coarser grid than a wallpaper, and `ensureThumbs` paints one picture per frame. A prefetch of the apps loaded on demand was tried and dropped: it did not touch this cost and added bytes to the first load.
