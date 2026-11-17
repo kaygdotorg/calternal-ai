@@ -107,7 +107,8 @@ async fn load<D: Directory>(state: &Shared<D>, space: &str, id: &str) -> Result<
 /// `jobs.get` and `jobs.cancel` after policy admission in `space` (a UUID).
 /// Cancelling needs the starting account or `plugins.manage`; it cancels the job and
 /// its active descendants and wakes a parent they unblock.
-/// Cost: one indexed read; cancel adds one FULL transaction.
+/// Cost: one indexed read; cancel adds one FULL transaction, and a caller
+/// other than the starter one capability read on a blocking worker.
 pub async fn dispatch<D: Directory>(
     state: Shared<D>,
     identity: Identity,
@@ -119,14 +120,18 @@ pub async fn dispatch<D: Directory>(
         .map_err(|_| Error::invalid_input("input does not match operation schema"))?;
     let job = load(&state, &space, &i.job_id).await?;
     if op == "jobs.cancel" {
-        let owner = job.account == identity.id
-            || state
-                .directory
-                .capabilities(
-                    identity.id,
-                    SpaceId::parse(&space).map_err(|_| Error::not_found("job not found"))?,
-                )
-                .is_some_and(|c| c.contains(Capability::PluginsManage));
+        let owner = job.account == identity.id || {
+            // The directory is SQLite-backed: read it on a blocking worker.
+            let space_id = SpaceId::parse(&space).map_err(|_| Error::not_found("job not found"))?;
+            let (st, account) = (state.clone(), identity.id);
+            blocking(move || {
+                Ok(st
+                    .directory
+                    .capabilities(account, space_id)
+                    .is_some_and(|c| c.contains(Capability::PluginsManage)))
+            })
+            .await?
+        };
         if !owner {
             return Err(Error::forbidden(
                 "only the job's starter or a plugin manager can cancel it",
