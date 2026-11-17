@@ -218,7 +218,7 @@ registerManifest({
   plugin: "calternal-settings",
   commands: [
     ...visibleSections().flatMap((s) => s.pages.map((p) => ({ id: `settings.${p.id}`, label: p.name, group: "Settings", go: `/settings/${p.id}`, words: [p.blurb] }))),
-    ...allSettings().filter((x) => x.setting.control.type !== "info").map(({ page, setting }) => ({ id: setting.id, label: setting.label, group: `Settings · ${page.name}`, go: `/settings/${page.id}/${setting.id}`, words: [setting.help ?? ""] })),
+    ...allSettings().filter((x) => x.setting.control.type !== "info").map(({ page, setting }) => ({ id: setting.id, label: setting.label, group: `Settings, ${page.name}`, go: `/settings/${page.id}/${setting.id}`, words: [setting.help ?? ""] })),
     { id: "settings.shortcuts", label: "Keyboard shortcuts", group: "Settings", op: "help.shortcuts", words: ["keys", "hotkeys"] },
   ],
 });
