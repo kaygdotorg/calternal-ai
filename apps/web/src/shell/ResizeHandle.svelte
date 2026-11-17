@@ -62,6 +62,8 @@
   .grip i { display: block; width: var(--s-2); height: var(--s-10); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.4); opacity: 0; transition: opacity var(--dur-base) var(--ease-out), height var(--dur-base) var(--ease-out), background-color var(--dur-base) var(--ease-out); }
   .grip:hover i, .grip:focus-visible i, .grip.drag i { opacity: 1; }
   .grip.drag i { height: calc(var(--s-10) + var(--s-4)); background: var(--accent); }
+  /* Touch has no hover and no precise pointer: the handles are not offered (a phone has no sidebars to resize at all). */
+  @media (pointer: coarse) { .grip { display: none; } }
   .grip:focus-visible { outline: none; }
   .grip:focus-visible i { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
