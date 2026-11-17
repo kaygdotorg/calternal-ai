@@ -340,6 +340,14 @@ impl MachineService {
 
     /// Queue a command for a run; it is sent as soon as the run is assigned.
     /// Blocks briefly (no file I/O).
+    ///
+    /// `env` is plain configuration, never a credential. Secrets seam (not wired
+    /// yet): the exec input gains `secrets: [{variable, handle}]`; the handle is
+    /// resolved for the run's owner when the exec is queued, and the value is
+    /// released by `calternal_secrets::SecretStore::use_value` with
+    /// `Consumer::SandboxEnv { thread, variable }` on a blocking task right
+    /// before the `Exec` message is pushed, so no plaintext waits in the queue
+    /// or the database and every release is audited per thread.
     pub fn exec(
         &self,
         account: AccountId,

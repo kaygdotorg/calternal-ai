@@ -252,6 +252,10 @@ pub enum Down {
         /// Program and arguments; no shell is implied.
         argv: Vec<String>,
         /// Extra environment; the sandbox starts from an empty environment.
+        /// Never a credential: secret values reach a sandbox only as
+        /// `calternal_secrets::Consumer::SandboxEnv { thread, variable }`,
+        /// released by `SecretStore::use_value` when the server builds this
+        /// message (see `MachineService::exec` for the seam).
         env: Vec<(String, String)>,
     },
     /// Stop and remove the lease's sandbox (the lease ended or was fenced).
