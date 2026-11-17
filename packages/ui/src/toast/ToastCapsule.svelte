@@ -1,4 +1,3 @@
-// Ported from the existing app (origin/dev packages/ui/src/primitives/toast), logic and motion unchanged except where noted.
 <script lang="ts">
   // One toast, drawn inside the stack's item (which handles stacking, swipe and timers). It opens
   // from a small dot into a capsule that fits its words, and stays the same toast as those words
