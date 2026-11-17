@@ -27,11 +27,11 @@ for (const p of list) {
       const base = new URL(head.url);
       for (const k of ["w", "h", "q", "dl"]) base.searchParams.delete(k);
       const sized = (w, q) => { const u = new URL(base); u.searchParams.set("w", String(w)); u.searchParams.set("q", String(q)); u.searchParams.set("fit", "max"); return u.href; };
-      await get(sized(2400, 78), full);
+      await get(sized(1600, 72), full);
       await get(sized(360, 70), thumb);
       // The photographs suit the dark scheme. The light scheme gets a lighter rendition of each, made by the image host (brighter, flatter, a little less saturated),
       // so a light sidebar does not have to be nearly opaque to keep its text readable.
-      const lighter = new URL(sized(2400, 78));
+      const lighter = new URL(sized(1600, 72));
       for (const [k, v] of Object.entries({ bri: 35, con: -25, sat: -8 })) lighter.searchParams.set(k, String(v));
       await get(lighter.href, light);
     }

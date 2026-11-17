@@ -4,6 +4,7 @@
   import { appearance as A } from "./prefs.svelte";
   let { onpick }: { onpick?: (id: string) => void } = $props();
   const p = $derived(A.prefs);
+  $effect(() => { void A.ensureThumbs(); });
 </script>
 
 <div class="presets" role="radiogroup" aria-label="Theme presets">
@@ -11,7 +12,7 @@
     {@const th = pr.theme ? pr.theme[A.drawn] : null}
     {@const wp = pr.wallpaper === "none" ? null : A.wallpapers.find((w) => w.id === (pr.wallpaper === "none" ? "" : pr.wallpaper)) ?? (pr.wallpaper === "Nkwrpa_v0WA" ? A.wallpapers.find((w) => w.id === "haze") : undefined)}
     <button type="button" role="radio" class="preset" aria-checked={p.presetId === pr.id} aria-label={pr.name} onclick={() => { A.applyPreset(pr.id); onpick?.(pr.id); }}>
-      <span class="mini" style:--bg={th ? th.paper : "var(--paper)"} style:--ink={th ? th.ink : "var(--ink)"} style:--acc={th ? th.accent : "var(--accent-base)"} style:background-image={wp ? `url(${wp.thumb})` : "none"} aria-hidden="true">
+      <span class="mini" style:--bg={th ? th.paper : "var(--paper)"} style:--ink={th ? th.ink : "var(--ink)"} style:--acc={th ? th.accent : "var(--accent-base)"} style:background-image={wp ? `url(${A.thumbOf(wp)})` : "none"} aria-hidden="true">
         <i class="ms"></i><i class="mc"><b></b><b></b></i><i class="mr"></i>
       </span>
       <span class="pn">{pr.name}</span>

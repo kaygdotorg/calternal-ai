@@ -18,6 +18,11 @@ const report = async () => {
   const dt = profile.timeDeltas; const self = new Map(); const byId = new Map(profile.nodes.map((n) => [n.id, n]));
   profile.samples.forEach((id, i) => { const n = byId.get(id); const f = n.callFrame; const key = `${f.functionName || "(anon)"} ${f.url.split("/").slice(-2).join("/")}:${f.lineNumber}`; self.set(key, (self.get(key) ?? 0) + (dt[i] ?? 0)); });
   const total = [...self.values()].reduce((a, c) => a + c, 0);
+  // Who calls the natives that stand out: the nearest named ancestors of getPropertyValue, remove, before, getComputedStyle.
+  const parent = new Map(); for (const n of profile.nodes) for (const c of n.children ?? []) parent.set(c, n.id);
+  const callers = new Map();
+  profile.samples.forEach((id, i) => { const f = byId.get(id).callFrame; if (!["getPropertyValue", "remove", "before", "getComputedStyle", "elementsFromPoint"].includes(f.functionName)) return; let p = parent.get(id), chain = []; while (p && chain.length < 4) { const pf = byId.get(p).callFrame; if (pf.url) chain.push(`${pf.functionName || "(anon)"}@${pf.url.split("/").pop()}:${pf.lineNumber}:${pf.columnNumber}`); p = parent.get(p); } const k = `${f.functionName} <- ${chain.join(" <- ")}`; callers.set(k, (callers.get(k) ?? 0) + (dt[i] ?? 0)); });
+  for (const [k, v] of [...callers.entries()].sort((a, c) => c[1] - a[1]).slice(0, 6)) console.log(`   caller ${(v / 1000).toFixed(1)} ms ${k}`);
   console.log(`== ${what} (4x CPU), ${(total / 1000).toFixed(0)} ms sampled`);
   for (const [k, v] of [...self.entries()].sort((a, c) => c[1] - a[1]).slice(0, 14)) console.log(`${(v / 1000).toFixed(1).padStart(7)} ms  ${k}`);
 };
