@@ -17,4 +17,11 @@ function read(): "operator" | "member" {
 }
 
 /** The capabilities the shell checks (reactive: the server's answer can arrive after the first paint). With the real server this starts false and start-up sets it from the account's capabilities (server/boot.ts). */
-export const caps = $state({ serverAdmin: serverMode() ? false : read() === "operator" });
+export const caps = $state({ serverAdmin: serverMode() ? false : read() === "operator", peopleManage: false, groupsManage: false });
+
+/** Takes the account's capability names (`auth/me`) into the shell's checks. */
+export function applyCapabilities(names: string[]): void {
+  caps.serverAdmin = names.includes("server.settings");
+  caps.peopleManage = names.includes("people.manage");
+  caps.groupsManage = names.includes("groups.manage");
+}

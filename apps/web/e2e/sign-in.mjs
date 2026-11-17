@@ -65,7 +65,7 @@ try {
   check(await page.getByText("(this browser)").first().isVisible(), "Account: this browser listed among the installations");
   check(await page.locator('[data-setting^="account.passkey."]').count() === 1, "Account: the one passkey is listed");
   await go("/settings/members");
-  await page.getByText("You", { exact: true }).first().waitFor({ timeout: 8000 });
+  await page.getByText("Tester (you)").first().waitFor({ timeout: 8000 });
   check(await page.getByText("Owner", { exact: true }).first().isVisible(), "Members: you are the owner");
   await go("/settings/machines");
   await page.getByRole("button", { name: "Make a code" }).click();

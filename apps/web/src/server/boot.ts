@@ -5,10 +5,11 @@
  * (`auth/me`), the spaces (`spaces.list`). Each has its own failure: no session → the sign-in or first-owner screen; another protocol → a plain notice; an unreachable server on a first visit → a screen with
  * Try again; on a known device the app starts anyway and the reconnecting banner (link.svelte.ts) tells the truth.
  */
-import { caps } from "../shell/capabilities.svelte";
+import { applyCapabilities } from "../shell/capabilities.svelte";
 import { spaces } from "../shell/spaces.svelte";
 import { account, status } from "./auth";
 import { clearCache, readCache, writeCache } from "./cache";
+import { inviteSecret, redeemInvite } from "./people";
 import { devToken, server } from "./client";
 import { link } from "./link.svelte";
 
@@ -16,7 +17,7 @@ import { link } from "./link.svelte";
 export const EXPECTED_PROTOCOL = 1;
 
 /** Where start-up goes next. */
-export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
+export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean; invite?: string } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
 
 async function check(): Promise<Boot> {
   link.quiet = true;
@@ -25,16 +26,28 @@ async function check(): Promise<Boot> {
 async function run(): Promise<Boot> {
   const [st, d, me] = await Promise.all([devToken() ? Promise.resolve(null) : status().catch(() => undefined), server.describe().catch(() => null), account.me().catch(() => null)]);
   if (st === undefined) return { screen: "offline" };
-  if (st && !st.signed_in) { clearCache(); return { screen: "signin", needsSetup: st.setup }; }
+  const invite = inviteSecret(location.pathname) ?? undefined; // an invitation link: …/invites/<secret>
+  if (st && !st.signed_in) { clearCache(); return { screen: "signin", needsSetup: st.setup, invite }; }
   if (d && d.protocol_version !== EXPECTED_PROTOCOL) return { screen: "version", server: d.protocol_version, expected: EXPECTED_PROTOCOL };
   if (me) {
     const cached = readCache();
-    caps.serverAdmin = me.user.capabilities.includes("server.settings");
+    applyCapabilities(me.user.capabilities);
     if (cached && cached.account !== me.user.id) { clearCache(); location.reload(); return { screen: "app" }; } // another person on this device: start again from the server's answer
+    if (invite) await redeem(invite);
     await spaces.load().catch(() => {});
-    writeCache({ account: me.user.id, admin: caps.serverAdmin, spaces: spaces.list.map((s) => ({ id: s.id, name: s.name })) });
+    writeCache({ account: me.user.id, capabilities: me.user.capabilities, spaces: spaces.list });
   } else await spaces.load().catch(() => {});
   return { screen: "app" };
+}
+
+/** A signed-in person opened an invitation link: join the space, then show the app at its start (the secret leaves the address). The new space becomes the current one. */
+async function redeem(secret: string): Promise<void> {
+  try {
+    const { space_id } = await redeemInvite(secret);
+    history.replaceState(null, "", import.meta.env.BASE_URL);
+    await spaces.load().catch(() => {});
+    spaces.switchTo(space_id);
+  } catch { history.replaceState(null, "", import.meta.env.BASE_URL); } // a used or unknown link: the app opens as usual (the invitation page of the server says why)
 }
 
 /**
@@ -45,7 +58,7 @@ export function start(): { paintNow: boolean; result: Promise<Boot> } {
   const cached = devToken() ? null : readCache();
   if (cached) {
     spaces.setList(cached.spaces);
-    caps.serverAdmin = cached.admin;
+    applyCapabilities(cached.capabilities);
   }
   return { paintNow: !!cached, result: check() };
 }

@@ -23,7 +23,7 @@ Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => set
   const ready = () => { document.documentElement.dataset.ready = ""; };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {
     const { default: Gate } = await import("./shell/SignIn.svelte");
-    return mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup } : b.screen === "offline" ? { offline: true } : { version: b } });
+    return mount(Gate, { target, props: b.screen === "signin" ? { needsSetup: b.needsSetup, invite: b.invite } : b.screen === "offline" ? { offline: true } : { version: b } });
   };
   if (!boot) { mount(App, { target }); ready(); return; }
   const { s } = await boot.catch(() => ({ s: { paintNow: true, result: new Promise<never>(() => {}) } }));

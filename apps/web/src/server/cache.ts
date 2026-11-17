@@ -8,7 +8,7 @@ const KEY = "cal.boot";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 /** The record. */
-export interface BootCache { account: string; admin: boolean; spaces: { id: string; name: string }[]; at: number }
+export interface BootCache { account: string; capabilities: string[]; spaces: { id: string; name: string; role?: string }[]; at: number }
 
 /** The cached record, or null when there is none, it is old, or it is unreadable. */
 export function readCache(): BootCache | null {
