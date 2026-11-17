@@ -128,7 +128,8 @@ in Settings.
 
 1. Open [the preview](https://preview.calternal.cloud/ai/?server=1). Paste
    the private setup code from the file below into the first-owner screen.
-2. Create your passkey and stay signed in. In the browser’s developer tools,
+2. Create your passkey and stay signed in. The server creates your Personal
+   space during setup. In the browser’s developer tools,
    open storage for `https://preview.calternal.cloud` and copy the value of
    `__Host-calternal_session` for the next step.
 3. Run the post-setup script and paste the session value at its hidden
@@ -143,9 +144,10 @@ in Settings.
 
 4. Sign in to Claude Code in that home. The coordinator can place a reduced
    sign-in copy there using the file names and modes above. Alternatively,
-   replace `ACCOUNT_UUID` with the UUID from the printed path and run this
-   interactive command. The container mounts the same private home as the
-   account’s thread sandboxes. The server receives no provider credentials.
+   run the interactive SSH command printed by the script. It has this
+   form with the account UUID filled in. The container mounts the same
+   private home as the account’s thread sandboxes. The server receives no
+   provider credentials.
 
    ```sh
    ssh -t claude@calternal-dev-01-compute02 'podman run --rm -it -e HOME=/home/agent -v /home/claude/calternal-e2e/browser/machine/sandboxes/accounts/ACCOUNT_UUID/home:/home/agent localhost/calternal-e2e-claude:dev claude auth login'
@@ -162,10 +164,9 @@ as `claude` and enters the token in the HTTPS setup screen. Keep it out of
 the URL, console, and logs. An unredeemed token expires after 24 hours.
 Restarting the empty installation replaces the unused token. The file path
 is safe to report. After setup, check `GET /api/v1/auth/status`; the used
-file can remain and its value is invalid. The browser account needs its own
-space and machine enrollment before sending a turn in this installation.
-Use the account UUID returned by `/setup/finish` or `/me`, and create a
-space through `spaces.create` if it has none. The enrollment target is
+file can remain and its value is invalid. The post-setup script discovers
+the account and its provisioned Personal space through the signed-in API.
+The enrollment target is
 `http://127.0.0.1:34136` from dev-01, with a machine directory under
 `~/calternal-e2e/browser/machine`. Any Claude Code sign-in for that account
 belongs in that machine directory’s account-specific sandbox home.

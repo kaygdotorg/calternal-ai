@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise saved threads over the disposable server's authenticated HTTP API."""
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -84,7 +85,9 @@ def require_image(mode):
 
 def create(title):
     spaces = op("spaces.list")["spaces"]
-    space, = (s["id"] for s in spaces if s["role"] == "owner" and s["personal"])
+    personal = [s["id"] for s in spaces if s["role"] == "owner" and s["personal"]]
+    verify(len(personal) == 1, "Expected one server-created personal space for this account")
+    space = personal[0]
     thread = op("threads.create", space_id=space, title=title)["thread"]["id"]
     return space, thread
 
@@ -113,10 +116,7 @@ def after_owner_setup():
         verify(not any(home.iterdir()) if home.is_dir() else True,
                "Finish the fixture proof before placing provider sign-in files")
         browser_machine(account, "fixture")
-        owned = [s["id"] for s in op("spaces.list")["spaces"] if s["role"] == "owner"]
-        space = owned[0] if owned else op("spaces.create", name="Personal")["space"]["id"]
-        title = "Morning machine fixture"
-        thread = op("threads.create", space_id=space, title=title)["thread"]["id"]
+        _, thread = create("Morning machine fixture")
         job = op("threads.send", id=thread, message="Verify the fixture machine")["job"]["id"]
         text = ""
         for event, payload in stream(job):
@@ -129,6 +129,11 @@ def after_owner_setup():
         print("Browser fixture turn streamed and completed", flush=True)
     browser_machine(account, "claude")
     print(f"Sandbox home  {home}")
+    login = shlex.join([
+        "podman", "run", "--rm", "-it", "-e", "HOME=/home/agent",
+        "-v", f"{home}:/home/agent", "localhost/calternal-e2e-claude:dev", "claude", "auth", "login",
+    ])
+    print(shlex.join(["ssh", "-t", "claude@calternal-dev-01-compute02", login]))
 
 
 def run_fixture():
