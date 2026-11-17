@@ -68,7 +68,7 @@ fn first_owner_has_capabilities_and_cannot_be_demoted_or_removed() {
         "space.transfer",
         "space.delete",
     ] {
-        assert!(caps.iter().any(|c| c == cap));
+        assert!(caps.iter().any(|c| c.name() == cap));
     }
     for change in [
         SpaceChange::Leave,
@@ -412,14 +412,14 @@ fn identifiers_are_fresh_v7_and_memberships_are_space_scoped() {
             .capabilities(f.ids.guest, s)
             .unwrap()
             .unwrap()
-            .contains(&"space.delete".into())
+            .contains(calternal_types::Capability::from_name("space.delete").unwrap())
     );
     assert!(
         !f.spaces
             .capabilities(f.ids.guest, f.ids.shared)
             .unwrap()
             .unwrap()
-            .contains(&"space.delete".into())
+            .contains(calternal_types::Capability::from_name("space.delete").unwrap())
     );
     forbidden(f.change(f.ids.guest, f.ids.shared, SpaceChange::Delete));
     forbidden(f.spaces.members(f.ids.guest, f.ids.personal));

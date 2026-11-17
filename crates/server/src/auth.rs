@@ -19,7 +19,7 @@ use calternal_core::Principal;
 use subtle::ConstantTimeEq;
 
 use calternal_auth::spaces::{SpaceChange, Spaces};
-use calternal_types::{AccountId, Capability, CapabilitySet, Error, SpaceId};
+use calternal_types::{AccountId, CapabilitySet, Error, SpaceId};
 use calternal_core::JsonObject;
 use serde_json::{Value, json};
 
@@ -187,12 +187,7 @@ impl Directory for TokenTable {
         found
     }
     fn capabilities(&self, account: AccountId, space: SpaceId) -> Option<CapabilitySet> {
-        let names = self.spaces.capabilities(account, space).ok()??;
-        let caps = names
-            .iter()
-            .filter_map(|name| Capability::from_name(name))
-            .collect::<Vec<_>>();
-        Some(CapabilitySet::new(&caps))
+        self.spaces.capabilities(account, space).ok()?
     }
     fn describe(&self, principal: &Identity) -> Principal {
         let spaces = self.spaces.list(principal.id).unwrap_or_default();

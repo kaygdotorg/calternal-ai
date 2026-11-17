@@ -4,6 +4,7 @@
 //! acquire an IMMEDIATE transaction before checking current capability rows.
 //! State commits optionally pass through a protected recovery barrier before acknowledgement.
 use crate::{AccountId, Error, ErrorCode, Result, SpaceId};
+use calternal_types::{Capability, CapabilitySet};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -368,13 +369,28 @@ impl Spaces {
     pub fn list(&self, actor: AccountId) -> Result<Vec<Space>> {
         self.run(move |c| list(c, actor))
     }
-    /// Reads current capability rows. Missing space and missing membership coincide.
-    pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<Vec<String>>> {
+    /// The actor's current capabilities in `space`, read on every call; `None` for
+    /// both a missing space and a missing membership. Stored names this build does
+    /// not know grant nothing. Cost: one worker round trip and two indexed reads
+    /// (role, then its capability rows) on cached statements; no allocation beyond
+    /// the role name.
+    pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<CapabilitySet>> {
         self.run(move |c| {
-        let Some(role)=role(c,actor,space)? else {return Ok(None)};
-        let mut st=c.prepare("SELECT capability FROM space_role_capabilities WHERE role=?1 ORDER BY capability").map_err(sql)?;
-        st.query_map([role],|r|r.get(0)).map_err(sql)?.collect::<rusqlite::Result<Vec<_>>>().map(Some).map_err(sql)
-    })
+            let Some(role) = role(c, actor, space)? else {
+                return Ok(None);
+            };
+            let mut st = c
+                .prepare_cached("SELECT capability FROM space_role_capabilities WHERE role=?1")
+                .map_err(sql)?;
+            let mut rows = st.query([role]).map_err(sql)?;
+            let mut set = CapabilitySet::empty();
+            while let Some(row) = rows.next().map_err(sql)? {
+                if let Some(capability) = Capability::from_name(row.get_ref(0).map_err(sql)?.as_str().map_err(sql)?) {
+                    set = set.with(capability);
+                }
+            }
+            Ok(Some(set))
+        })
     }
     /// Lists members after checking `space.read` in one read snapshot.
     pub fn members(&self, actor: AccountId, space: SpaceId) -> Result<Vec<Member>> {

@@ -451,6 +451,9 @@ pub async fn dispatch<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     let mut input = input;
+    // Capabilities already read for this request (by the resolver), so admission
+    // does not look them up again.
+    let mut granted = None;
     let item_scoped = state
         .registry
         .policy(op)
@@ -486,11 +489,12 @@ pub async fn dispatch<D: Directory>(
             .unwrap_or(calternal_types::Capability::SpaceRead);
         let st = state.clone();
         let account = p.clone();
-        let resolved = tokio::task::spawn_blocking(move || {
+        let (resolved, caps) = tokio::task::spawn_blocking(move || {
             crate::resolve::resolve_for(&st.tokens, &st.store, &account, &kind, &id, op_required)
         })
         .await
         .map_err(|_| Error::internal("resolver task failed"))??;
+        granted = Some(caps);
         if op == "resolve" {
             return to_value(resolved);
         }
@@ -526,13 +530,19 @@ pub async fn dispatch<D: Directory>(
             "unknown operation"
         }));
     };
-    let st = state.clone();
-    let identity = p.clone();
-    let checked = input.clone();
-    let admission = policy.clone();
-    tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &identity, &checked))
-        .await
-        .map_err(|_| Error::internal("directory task failed"))??;
+    // Admission: one capability lookup per request (or none after the resolver);
+    // handlers do not repeat it. Delivery rechecks once after the handler.
+    match granted {
+        Some(caps) => policy.check(Some(caps))?,
+        None => {
+            let st = state.clone();
+            let checked = input.clone();
+            let admission = policy.clone();
+            tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &p, &checked))
+                .await
+                .map_err(|_| Error::internal("directory task failed"))??;
+        }
+    }
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,
@@ -628,10 +638,6 @@ async fn dispatch_checked<D: Directory>(
             let st = state.clone();
             let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
             blocking(&state, move |s| {
-                st.registry
-                    .policy(&op)
-                    .expect("bound policy")
-                    .authorize_space(&st.tokens, &Identity { id: principal }, space)?;
                 if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
                     return Ok(v);
                 }
@@ -970,7 +976,6 @@ async fn mutate_note<D: Directory>(
     let rid = request_id.to_string();
     let op = op.to_string();
     let principal = p.id;
-    let st = state.clone();
     let space = space_of(
         create
             .as_ref()
@@ -979,9 +984,6 @@ async fn mutate_note<D: Directory>(
             .expect("note scope"),
     )?;
     blocking(&state, move |s| {
-        authz::policy(&op)
-            .expect("bound policy")
-            .authorize_space(&st.tokens, &Identity { id: principal }, space)?;
         if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
             return Ok(v);
         }

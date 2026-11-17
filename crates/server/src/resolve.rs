@@ -13,7 +13,7 @@ use calternal_types::{Capability, CapabilitySet, Error};
 /// Resolves a kind and global item UUID to its owning space and current access.
 /// Wrong kind, absent item and missing read access have identical refusals.
 /// Takes no lock beyond the catalog read pool. Cost: one indexed global route lookup,
-/// two current capability checks, and one bounded capability-vector allocation;
+/// one current capability check, and one bounded capability-vector allocation;
 /// no content reads, membership scans or fsyncs.
 pub fn resolve(
     directory: &impl Directory,
@@ -22,11 +22,12 @@ pub fn resolve(
     kind: &str,
     id: &str,
 ) -> Result<ResolveResult, Error> {
-    resolve_for(directory, store, account, kind, id, Capability::SpaceRead)
+    resolve_for(directory, store, account, kind, id, Capability::SpaceRead).map(|(r, _)| r)
 }
 
 /// Internal mutation lookup permits explicit write authority without implicit read grants.
-/// Cost: one indexed global route, two authority checks and a small access vector;
+/// Returns the caller's capabilities in the owning space so admission needs no second
+/// lookup. Cost: one indexed global route, one authority check and a small access vector;
 /// no content database or file I/O and no work proportional to membership count.
 pub(crate) fn resolve_for(
     directory: &impl Directory,
@@ -35,7 +36,7 @@ pub(crate) fn resolve_for(
     kind: &str,
     id: &str,
     required: Capability,
-) -> Result<ResolveResult, Error> {
+) -> Result<(ResolveResult, CapabilitySet), Error> {
     let visible = |caps: CapabilitySet| {
         caps.contains(Capability::SpaceRead)
             || (required == Capability::ContentWrite && caps.contains(Capability::ContentWrite))
@@ -46,7 +47,7 @@ pub(crate) fn resolve_for(
         .capabilities(account.id, space)
         .filter(|c| visible(*c))
         .ok_or_else(missing)?;
-    Ok(ResolveResult {
+    let resolved = ResolveResult {
         kind: kind.into(),
         id: id.into(),
         space_id: space.to_string(),
@@ -55,5 +56,6 @@ pub(crate) fn resolve_for(
             .filter(|c| caps.contains(*c))
             .map(|c| c.name().to_owned())
             .collect(),
-    })
+    };
+    Ok((resolved, caps))
 }

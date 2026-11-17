@@ -17,7 +17,7 @@ pub mod capabilities;
 pub use capabilities::{BUILTIN_ROLES, RoleSet};
 
 use crate::auth::{Directory, Identity};
-use calternal_types::{Capability, Error, SpaceId};
+use calternal_types::{Capability, CapabilitySet, Error, SpaceId};
 
 /// Input scope whose space must be authorized before any resource lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -260,7 +260,13 @@ impl Policy {
         principal: &Identity,
         space: SpaceId,
     ) -> Result<(), Error> {
-        match directory.capabilities(principal.id, space) {
+        self.check(directory.capabilities(principal.id, space))
+    }
+
+    /// Applies this policy to an already looked-up capability set (`None`: no
+    /// membership), so one lookup can serve admission. Cost: a few bit tests.
+    pub fn check(&self, granted: Option<CapabilitySet>) -> Result<(), Error> {
+        match granted {
             None => Err(self.hidden()),
             Some(set)
                 if self.scope == Scope::Note
