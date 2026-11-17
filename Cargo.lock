@@ -580,6 +580,7 @@ dependencies = [
  "calternal-fsio",
  "calternal-plugin-host",
  "calternal-roots",
+ "calternal-secrets",
  "clap",
  "getrandom 0.3.4",
  "hex",

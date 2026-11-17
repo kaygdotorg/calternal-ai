@@ -271,6 +271,10 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "spaces.leave",
         "spaces.transfer",
         "spaces.delete",
+        // Account-or-space owned; dedicated stored-directory matrix in secrets.rs.
+        "secrets.request",
+        "secrets.list",
+        "secrets.revoke",
     ]
     .into_iter()
     .collect();

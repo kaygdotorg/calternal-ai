@@ -171,6 +171,26 @@ pub const POLICIES: &[Policy] = &[
         scope: Scope::Space,
         constraint: Constraint::None,
     },
+    // Secrets are owned by the caller's account or, with `space_id`, by a space.
+    // `required` applies only to the space case; `crate::secrets` checks it.
+    Policy {
+        operation: Cow::Borrowed("secrets.request"),
+        required: Capability::PluginsUse,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: Cow::Borrowed("secrets.list"),
+        required: Capability::SpaceRead,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: Cow::Borrowed("secrets.revoke"),
+        required: Capability::SpaceSettings,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
 ];
 
 /// Find an explicit host policy using a bounded, allocation-free scan.
