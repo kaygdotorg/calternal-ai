@@ -834,3 +834,38 @@ async fn job_start_retry_returns_the_same_job() {
         .unwrap();
     assert_eq!(a, b);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn secret_handle_requests_are_owned_by_the_space_uuid() {
+    use calternal_secrets::{Owner, SecretStore};
+    let dir = tmp("secret-worker");
+    let worker = support::worker(
+        &dir,
+        "call(f,'request_secret_handle',{name:'api-key'})",
+        "done(f,{ok:m.ok})",
+    );
+    let manifest = support::manifest(json!({
+        "id": "keyed",
+        "secrets": ["api-key"],
+        "operations": [{
+            "id": "keyed.use",
+            "input_schema": {"type": "object"},
+            "output_schema": {"type": "object"},
+            "required_capability": "plugins.use", "mutates": false, "idempotency": "read_only"
+        }],
+        "host_calls": ["request_secret_handle"]
+    }));
+    let f = fixture("secret", vec![support::plugin(manifest, Some(&worker), true)], None).await;
+    // The secret does not exist yet: the call is refused and one request is recorded
+    // for the space (by UUID), not for the content-space key or the account.
+    let r = f.op("owner", "k1", "keyed.use", json!({"space_id": "shared"})).await.unwrap();
+    assert_eq!(r, json!({"ok": false}));
+    f.op("owner", "k2", "keyed.use", json!({"space_id": "shared"})).await.unwrap();
+    let (_, space) = f.state.store.lock().unwrap().worker_ids("owner", "shared").unwrap();
+    let owner = Owner::Space(calternal_auth::SpaceId::parse(&space).unwrap());
+    let secrets = f.state.store.lock().unwrap().secrets();
+    let pending = secrets.pending(&owner).unwrap();
+    assert_eq!(pending.len(), 1, "a repeated request must not queue a second prompt");
+    assert_eq!(pending[0].name, "plugin:keyed:api-key");
+    let _ = std::fs::remove_dir_all(dir);
+}

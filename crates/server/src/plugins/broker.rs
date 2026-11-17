@@ -10,7 +10,8 @@
 //!
 //! Implemented host calls: `read_item` and `write_item`, both through
 //! [`calternal_content`] via [`crate::store::Store`]; `start_job` and
-//! `checkpoint_job` through [`super::jobs::Jobs`]. Every other declared host call is
+//! `checkpoint_job` through [`super::jobs::Jobs`]; `request_secret_handle` through
+//! [`crate::secrets::plugin_handle`]. Every other declared host call is
 //! refused until its host service exists.
 
 #![deny(missing_docs)]
@@ -24,6 +25,8 @@ use calternal_plugin_host::Error;
 use serde_json::{Map, Value, json};
 use tokio::runtime::Handle;
 use uuid::Uuid;
+
+use calternal_secrets::{Actor, Owner, Via};
 
 use super::jobs::Admission;
 use super::live::Live;
@@ -170,6 +173,35 @@ impl<D: Directory> SpaceHost<D> {
         Ok(json!({ "job_id": id }))
     }
 
+    /// `request_secret_handle { name }`: an opaque handle to the space's secret for this
+    /// plugin, owned by the space's UUID (never the content-space key). When the secret
+    /// is missing, one pending request is recorded for the trusted prompt and the call
+    /// is refused. The worker session has already checked `name` is declared, and
+    /// rechecks sign-in, membership and enablement around the call.
+    fn secret_handle(&self, input: &Value) -> Result<Value, Error> {
+        let object = exact(input, &["name"])?;
+        let name = str_field(object, "name")?.ok_or(Error::Invalid)?;
+        let space = calternal_auth::SpaceId::parse(&self.space_uuid).ok_or(Error::Refused)?;
+        let (secrets, account) = {
+            let store = self.state.store.lock().map_err(|_| Error::Refused)?;
+            let (account, _) = store
+                .worker_ids(&self.identity.id, &self.space)
+                .map_err(|_| Error::Refused)?;
+            (store.secrets(), account)
+        };
+        let actor = Actor {
+            account: calternal_auth::AccountId::parse(&account).ok_or(Error::Refused)?,
+            via: Via::Plugin(self.plugin.manifest.id.clone()),
+        };
+        crate::secrets::plugin_handle(
+            secrets.as_ref(),
+            &Owner::Space(space),
+            &actor,
+            &self.plugin.manifest.id,
+            name,
+        )
+    }
+
     /// Durably checkpoint the bound job: `{ job_id, checkpoint }`. Answers the stream
     /// sequence the checkpoint covers.
     fn checkpoint_job(&self, input: &Value) -> Result<Value, Error> {
@@ -278,13 +310,15 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
     /// Cost: `read_item` takes the store lock for one catalog route lookup and one
     /// item read; `write_item` adds a durable content write (journal, file and
     /// directory fsync); `start_job` and `checkpoint_job` are one FULL transaction on
-    /// the space's job file. Other methods allocate nothing and are refused.
+    /// the space's job file; `request_secret_handle` one secret-database read (plus one
+    /// fsync'd insert when it records a request). Other methods are refused.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error> {
         match method {
             HostCallKind::ReadItem => self.read_item(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),
+            HostCallKind::RequestSecretHandle => self.secret_handle(input),
             _ => Err(Error::Refused),
         }
     }
