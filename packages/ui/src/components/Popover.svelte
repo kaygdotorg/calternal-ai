@@ -59,9 +59,16 @@
     const t = setTimeout(() => { present = false; leaving = false; }, 200);
     return () => clearTimeout(t);
   });
+  // Popovers live in one landmark at the end of <body> (a region, named for what it holds), built when the first opens and removed when the last closes: they are outside the app's own landmarks
+  // (so that nothing clips them), and page content outside every landmark is a failure (axe `region`). One host also means one node to append to, not one per popover.
+  let host: HTMLElement | null = null;
+  let users = 0;
   const portal = (node: HTMLElement) => {
-    document.body.append(node);
-    return { destroy: () => node.remove() };
+    host = document.getElementById("overlays");
+    if (!host) { host = document.createElement("div"); host.id = "overlays"; host.setAttribute("role", "region"); host.setAttribute("aria-label", "Menus and pickers"); document.body.append(host); }
+    users = Number(host.dataset.users ?? 0) + 1; host.dataset.users = String(users);
+    host.append(node);
+    return { destroy: () => { node.remove(); const h = document.getElementById("overlays"); if (!h) return; const n = Number(h.dataset.users ?? 1) - 1; if (n <= 0) h.remove(); else h.dataset.users = String(n); } };
   };
   $effect(() => {
     if (!open || !box || !anchor) return;

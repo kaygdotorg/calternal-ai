@@ -33,11 +33,11 @@
 
 <div class="sp">
   {#each g.members as m (m.account_id)}
-    <div class="r" data-setting="space.member.{m.account_id}">
+    <div class="r" class:col={canManage && m.role !== "owner" && m.account_id !== me} data-setting="space.member.{m.account_id}">
       <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{label(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}
-        <Capsule label="Role of {m.name}" kind="radio" glass={false} items={mine === "owner" ? ROLES : ROLES.slice(0, 2)} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
         <span class="a">
+          <Capsule label="Role of {m.name}" kind="radio" glass={false} items={mine === "owner" ? ROLES : ROLES.slice(0, 2)} value={m.role} onchange={(v) => act(() => people.setRole(space, m.account_id, v as people.GrantRole))} />
           {#if mine === "owner"}<Button text="Make owner" variant="quiet" disabled={busy} onclick={() => confirm(`Make ${m.name} the owner of this space? You become a manager.`) && act(() => people.transfer(space, m.account_id))} />{/if}
           <Button text="Remove" variant="quiet" disabled={busy} onclick={() => confirm(`Remove ${m.name} from this space?`) && act(() => people.removeMember(space, m.account_id))} />
         </span>
