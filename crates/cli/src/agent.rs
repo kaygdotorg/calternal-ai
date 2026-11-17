@@ -334,10 +334,10 @@ pub fn invoke(
         let client = tokio::task::spawn_blocking(move || client(&selected))
             .await
             .map_err(|_| error("Credential loading failed."))??;
-        let value = if let Some(op) = operation {
+        let value = if let Some(op) = &operation {
             call(
                 &client,
-                &op,
+                op,
                 serde_json::from_str(&input).map_err(|_| error("Input must be JSON."))?,
                 connection.request_id,
             )
@@ -351,6 +351,11 @@ pub fn invoke(
             )
             .map_err(|_| error("Cannot decode discovery."))?
         };
+        if let Some(op) = operation
+            && calternal_core::note_operation(&op).is_some()
+        {
+            return Ok(crate::notes::reply(out, &op, value));
+        }
         Ok(crate::output::Reply::new(value.clone())
             .text(serde_json::to_string_pretty(&value).unwrap_or_default()))
     });

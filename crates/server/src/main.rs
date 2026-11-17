@@ -39,6 +39,27 @@ enum Cmd {
         #[command(flatten)]
         args: calternal_cli::threads::Args,
     },
+    /// Find, rename, delete and restore notes.
+    Notes {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::notes::Notes,
+    },
+    /// List and look up note tags in a space.
+    Tags {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::notes::Tags,
+    },
+    /// List or permanently delete notes in Trash.
+    Trash {
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::notes::Trash,
+    },
     /// Run, watch and control official provider sessions in machine sandboxes.
     Agent {
         #[command(flatten)]
@@ -190,6 +211,18 @@ fn main() {
     let out = Output::detect_with_options(cli.json, cli.no_hints);
     let code = match cli.cmd {
         Cmd::Threads { args } => calternal_cli::threads::main(args, &out),
+        Cmd::Notes { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            calternal_cli::notes::run(connection, op, input, &out)
+        }
+        Cmd::Tags { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            calternal_cli::notes::run(connection, op, input, &out)
+        }
+        Cmd::Trash { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            calternal_cli::notes::run(connection, op, input, &out)
+        }
         Cmd::Agent { args } => calternal_cli::agent::main(args, &out),
         Cmd::Invoke {
             connection,
