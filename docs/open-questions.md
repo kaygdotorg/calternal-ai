@@ -8,16 +8,19 @@ move to the decision record they belong to and leave this list. Terms: see
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| 2 | When to rewrite git history to drop old images | At the next quiet point | Repo size |
-| 3 | Where per-person files live (personal instructions, starred prompts) | The personal space's `.calternal/` folder | Personal instructions |
 | 4 | When to start performance budgets and benchmarks on the perf VMs | After the simplification lane merges | Performance |
 
 ## Design rounds
 
-- **Next: the Settings screen.** Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
-- The composer as a unified command and search palette (plain-language input, mentions, commands, context chips), after the existing app's.
+- **Next: the composer as a unified command and search palette**, from the existing app's design.
+- The Settings screen. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
+
+## Queued, no decision needed
+
+- Rewrite git history to drop old images at the next quiet point.
+- A documentation site generated from the code (`/docs/user`, `/docs/admin`, `/docs/dev`, `llms.txt`, Markdown for every page).
 
 ## Recently decided (2026-11-17), now in the decision records
 

@@ -130,6 +130,10 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Protocols that need long-lived connections (mail: IMAP, JMAP, SMTP) are Rust engines in
   the server behind a contract, with every outbound connection through one guard
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
+- Agent files live in each space's visible `AI/` folder (2026-11-17, replacing the earlier
+  hidden location): `AI/Chats/`, `AI/Skills/<name>/SKILL.md`, `AI/Automations/<name>.md`,
+  and the space's instructions at `AI/Instructions.md`. A person's own skills, automations,
+  instructions and starred prompts are the same files in their personal space.
 
 ## Open
 
