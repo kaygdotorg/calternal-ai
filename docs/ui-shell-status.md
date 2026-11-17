@@ -12,7 +12,7 @@ download into `~/.cache/ms-playwright`, no system packages needed on `calternal-
 
 | Part | Where |
 | --- | --- |
-| Tokens (one JSON source), fonts, adaptive glass, 12 surfaces and icons | `packages/ui` |
+| Tokens (one JSON source), fonts, adaptive glass, 13 components (surfaces, controls, icons) | `packages/ui` |
 | Shell: tinted background, sidebar (header, attention card, body, footer with account, app switcher, search), middle card, right card with tabs at the bottom, narrow-screen layers and the phone's bottom tab morph | `apps/web/src/shell` |
 | Routes as plain paths (`/threads`, `/threads/<id>`, `/notes/<id>`; the open right-card panel in `?panel=`) | `apps/web/src/lib/route.svelte.ts`, `App.svelte` |
 | App contract (what a plugin fills: sidebar body, middle card, panels, attention) | `apps/web/src/apps/registry.ts` |
