@@ -44,7 +44,7 @@ fn tokens_rotate_expire_at_end_and_never_cross_space_or_thread() {
         space: space.clone(),
         job: id.clone(),
         mode: AgentMode::LeastAccess,
-        source_app: "calternal-notes".into(),
+        source_app: "notes".into(),
         grants: vec![],
     };
     let old = jobs.agent_token(&authority, run.job.runs).unwrap();
@@ -261,7 +261,7 @@ async fn thread_bearers_enforce_scope_before_handlers_and_cannot_approve() {
         .0,
         403
     );
-    scope.source_app = "calternal-notes".into();
+    scope.source_app = "notes".into();
     tokio::task::block_in_place(|| state.jobs.agent_scope_change(&scope)).unwrap();
     assert_eq!(
         call(old.clone(), "notes.list", json!({"space_id":space}))
