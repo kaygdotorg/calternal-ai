@@ -83,6 +83,14 @@ try {
   await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Sign in"), null, { timeout: 15000 }).catch(() => {});
   st = await (await ctx.request.get(`${url}/api/v1/auth/status`)).json();
   check(st.signed_in === true, "signing in again with the passkey works");
+  // Another protocol version: a plain notice instead of the app (older and newer server).
+  for (const [v, title] of [[2, "This page is out of date"], [0, "The server is out of date"]]) {
+    const p2 = await ctx.newPage();
+    await p2.route("**/api/v1/describe", async (r) => { const res = await r.fetch(); const j = await res.json(); j.protocol_version = v; await r.fulfill({ response: res, json: j }); });
+    await p2.goto(`${url}/`); await p2.waitForSelector("html[data-ready]");
+    check(await p2.getByRole("heading", { name: title }).isVisible(), `protocol ${v}: "${title}"`);
+    await p2.close();
+  }
   // An ended session returns to the sign-in screen at the same address.
   await go("/settings/account");
   await ctx.clearCookies();

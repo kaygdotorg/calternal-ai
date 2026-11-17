@@ -53,7 +53,7 @@ class Spaces {
       const mine = me?.user?.id;
       all = await withPersonal(all);
       const byAge = [...all].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : 0));
-      const personal = byAge.find((s) => s.owner === mine);
+      const personal = byAge.find((s) => (s as { personal?: boolean }).personal) ?? byAge.find((s) => s.owner === mine); // the server marks it (`personal: true`); owner-and-oldest is the stand-in until that is in dev
       this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name })));
     })().catch((e) => { this.loading = null; throw e; });
     return this.loading;

@@ -15,9 +15,9 @@ const cheapWallpaper = () => ({
     if (!existsSync(join(dir, `${id}-blur.jpg`)) || !existsSync(join(dir, `${id}-blur-light.jpg`))) return html;
     const base = process.env.CAL_BASE ?? "/";
     const dark = `${base}wallpapers/${id}-blur.jpg`, light = `${base}wallpapers/${id}-blur-light.jpg`;
-    const head = `<script>(function(){try{var d=document.documentElement,s=JSON.parse(localStorage.getItem("cal.appearance")||"null");if(!s||s.wallpaperId==="auto"){d.dataset.cheap="";var l=document.createElement("link");l.rel="preload";l.as="image";l.href=d.dataset.scheme==="dark"?"${dark}":"${light}";document.head.appendChild(l)}}catch(e){}})()</script>
-    <style>:root{--wall-cheap:url(${light})}:root[data-scheme="dark"]{--wall-cheap:url(${dark})}html[data-cheap]{--wall-fallback:var(--wall-cheap);background:var(--wall-cheap) center/cover no-repeat fixed}</style>`;
-    return html.replace("</head>", `${head}\n  </head>`);
+    // No inline script (the server's CSP allows none): the two addresses ride on the <html> element and public/boot.js, which runs first, reads them.
+    const head = `<style>:root{--wall-cheap:url(${light})}:root[data-scheme="dark"]{--wall-cheap:url(${dark})}html[data-cheap]{--wall-fallback:var(--wall-cheap);background:var(--wall-cheap) center/cover no-repeat fixed}</style>`;
+    return html.replace("<html ", `<html data-wall-light="${light}" data-wall-dark="${dark}" `).replace("</head>", `${head}\n  </head>`);
   },
 });
 
