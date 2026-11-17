@@ -21,6 +21,11 @@ import { ServerRequests } from "./requests";
 import { SpaceFeed, type FeedEntry } from "./space-feed";
 import { parseMessages, providerPlugin, stateOfTurn, summaryOf, updatedAtOf, wireMode, type WireRow, type WireThread, type WireJob } from "./thread-file";
 
+/** Development tracing (`localStorage["cal.debug.threads"] = "1"`): every journal entry, read and stream event with a timestamp, to the console. Off by default; a read of one storage key at start-up. */
+const TRACE = (() => { try { return localStorage.getItem("cal.debug.threads") === "1"; } catch { return false; } })();
+const t0 = Date.now();
+const trace = (...a: unknown[]) => { if (TRACE) console.debug(`[threads +${Date.now() - t0}ms]`, ...a); };
+
 const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default" }] }];
 
 interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary }
@@ -80,7 +85,8 @@ export class ServerThreads implements ThreadsClient {
     return () => { this.watchers.delete(cb); this.maybeStopFeed(); };
   }
   private async refreshList(): Promise<void> {
-    try { const l = await this.listThreads(); for (const w of this.watchers) w(l); } catch { /* the server is away: the feed resets and reloads when it is back */ }
+    trace("list read");
+    try { const l = await this.listThreads(); trace("list result", l.length, "rows; first", l[0]?.id.slice(0, 8), l[0]?.title); for (const w of this.watchers) w(l); } catch { /* the server is away: the feed resets and reloads when it is back */ }
   }
   private tellList(): void { for (const w of this.watchers) w(this.lastList); }
 
@@ -103,6 +109,7 @@ export class ServerThreads implements ThreadsClient {
   }
   /** One journal entry about a thread: a turn's new state is applied as it is; anything else says what to re-read. */
   private onEntry(e: FeedEntry): void {
+    trace("feed", e.kind, e.item.slice(0, 8), JSON.stringify(e.data ?? {}).slice(0, 80));
     if (!e.kind.startsWith("threads.") || !e.item) return;
     const id = e.item;
     if (e.kind === "threads.turn_state_changed") {
@@ -157,9 +164,11 @@ export class ServerThreads implements ThreadsClient {
     const f = this.follows.get(id);
     if (!f) return;
     let open: Open;
+    trace("pull start", id.slice(0, 8), force ? "forced" : "");
     try { open = await this.load(id, force); } catch { return; }
     const before = this.seen.get(id) ?? [];
     const now = this.texts(open.messages);
+    trace("pull read", id.slice(0, 8), "rev", open.thread.revision.slice(0, 8), "messages", now.length, "state", open.summary.state);
     open.messages.forEach((m, i) => { if (now[i] !== before[i]) f.ev.onMessage(m, i); });
     this.seen.set(id, now);
     f.ev.onSummary({ ...open.summary, ...this.known(id) } as ThreadSummary);
@@ -192,6 +201,7 @@ export class ServerThreads implements ThreadsClient {
     let n = 0, last: { title: string; at: number } | null = null;
     try {
       await this.server.jobEvents(job, (name, data, eid) => {
+        trace("job event", name, eid ?? "");
         if (eid) this.bookmarks.set(job, eid);
         if (name === "reset") { void this.pull(id, true); return; }
         if (name !== "chunk") return;
@@ -209,6 +219,7 @@ export class ServerThreads implements ThreadsClient {
       }, { signal: abort.signal, after: this.bookmarks.get(job) });
     } catch { if (abort.signal.aborted) return; }
     if (abort.signal.aborted) return;
+    trace("job stream ended", job.slice(0, 8));
     // The turn ended (or the stream did): the saved file has the answer, and the journal has said what state it is in.
     this.streams.delete(id);
     this.follows.get(id)?.ev.onStreamEnd?.();
@@ -272,7 +283,9 @@ export class ServerThreads implements ThreadsClient {
     if (o) { o.summary = { ...o.summary, title: t }; this.follows.get(id)?.ev.onSummary(o.summary); }
   }
   async archive(id: string): Promise<void> {
+    trace("archive op start", id.slice(0, 8));
     await this.server.operate("threads.archive", { id, space_id: this.space() });
+    trace("archive op done", id.slice(0, 8));
     this.opened.delete(id);
     this.lastList = this.lastList.filter((t) => t.id !== id);
     this.tellList();

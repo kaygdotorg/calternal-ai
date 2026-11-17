@@ -2,6 +2,7 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
+  import { untrack } from "svelte";
   import { Button, cssPx, InlineEditor, Panel, Pill, toast } from "@calternal/ui";
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
@@ -53,9 +54,12 @@
   const reqs = $derived(store.requestsFor(id));
   const total = $derived((conv?.count ?? 0) + (conv?.stream ? 1 : 0));
 
+  // One conversation per open thread. It depends on the thread being listed (a boolean), not on the list itself: the list is replaced whenever the server says something changed (every checkpoint of a
+  // running turn), and a conversation rebuilt each time lost its cache and its place and left the open thread showing placeholders for messages the adapter had already read.
+  const listed = $derived(!!store.get(id));
   $effect(() => {
-    const s = store.get(id);
-    if (!s) return;
+    if (!listed) return;
+    const s = untrack(() => store.get(id))!;
     const c = new Conversation(client, id, s);
     conv = c;
     return () => c.dispose();
