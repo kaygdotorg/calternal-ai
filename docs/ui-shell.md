@@ -32,10 +32,12 @@ Not a card: it sits directly on the tinted background.
   freely between them; nothing is grouped under an automatic project label. Double-click
   renames a thread; right-click opens a context menu.
 - The sidebar's content fades out at its top and bottom edges; no hard cut-off.
-- Footer: account picture on the left; the app switcher in the middle; a search icon on
-  the right. Switching always happens at the bottom: apps in the sidebar footer, panels
-  as tabs at the bottom of the right card, the tab bar on phones. The header's app name is
-  a label, not a control; discoverability wins over removing the switcher.
+- Footer: account picture on the left; the space switcher in the middle, a row of dots as
+  in Aside's profile switcher (one per space, the current one marked); a search icon on
+  the right. The sidebar shows only the current space; the palette searches all spaces.
+  Switching always happens at the bottom: spaces in the sidebar footer, apps in the
+  capsule at the bottom of the middle card, panels as tabs at the bottom of the right
+  sidebar, the tab bar on phones. The header's app name is a label, not a control.
 
 ### Middle card
 

@@ -20,6 +20,7 @@ const qs = (p) => ss[Math.min(ss.length - 1, Math.floor(p * (ss.length - 1)))];
 const qw = (p) => sw[Math.min(sw.length - 1, Math.floor(p * (sw.length - 1)))];
 const s = [...keys].sort((a, c) => a - c);
 const q = (p) => s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))];
-if (process.env.SLOW_KEYS) console.log("slow keys:", work.map((w, i) => (w > 8 ? `${JSON.stringify(LINE[i])}@${i}=${w.toFixed(1)}` : null)).filter(Boolean).join(" "));
+if (process.env.SLOW_KEYS) console.log("slow key-to-frame:", keys.map((w, i) => (w > 8 ? `${JSON.stringify(LINE[i])}@${i}=${w.toFixed(1)}` : null)).filter(Boolean).join(" "));
+if (process.env.SLOW_KEYS) console.log("slow work:", work.map((w, i) => (w > 8 ? `${JSON.stringify(LINE[i])}@${i}=${w.toFixed(1)}` : null)).filter(Boolean).join(" "));
 console.log(JSON.stringify({ cpuSlowdown: 4, steady: { keys: ss.length, median: +qs(0.5).toFixed(1), p95: +qs(0.95).toFixed(1) }, work: { median: +qw(0.5).toFixed(1), p95: +qw(0.95).toFixed(1), worst: +sw[sw.length - 1].toFixed(1) }, keys: keys.length, median: +q(0.5).toFixed(1), p95: +q(0.95).toFixed(1), worst: +s[s.length - 1].toFixed(1) }));
 await b.close(); stop();

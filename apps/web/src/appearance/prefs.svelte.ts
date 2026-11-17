@@ -47,7 +47,7 @@ export const DEFAULTS: Prefs = {
   wallpaperId: "auto",
   materials: { blur: true, dim: true, tint: true },
   uiSize: 100,
-  switcher: "sidebar",
+  switcher: "card",
   switcherAutoHide: false,
   themeId: null,
   presetId: tokens.appearance["default-preset"],
@@ -104,13 +104,15 @@ class Appearance {
     this.apply();
   }
 
-  /** Writes the CSS variables and starts whatever must be redone for the current preferences. */
-  apply(): void {
+  /** Writes the CSS variables and starts whatever must be redone for the current preferences. Stores them only when `save` (a change the person made): a first visit keeps no stored setting, so the defaults stay the defaults. */
+  apply(save = false): void {
     const p = this.prefs;
     const st = document.documentElement.style;
     const m = p.materials;
     st.setProperty("--ui-scale", String(Math.min(150, Math.max(80, p.uiSize)) / 100));
     setFlags(m);
+    // The tiny wallpaper index.html paints first belongs to the default only: any other choice (or none) takes it away.
+    if (p.wallpaperId !== "auto") delete document.documentElement.dataset.cheap;
     const w = this.wallpaper;
     const look = { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 };
     const mine = ++this.applySeq;
@@ -121,6 +123,7 @@ class Appearance {
     updateVeil(m);
     this.applyAccent();
     void applyFonts(p.fonts);
+    if (!save) return;
     try {
       localStorage.setItem(KEY, JSON.stringify(p));
     } catch {
@@ -140,7 +143,7 @@ class Appearance {
   /** Changes preferences with `f` and applies them. */
   change(f: (p: Prefs) => void): void {
     f(this.prefs);
-    this.apply();
+    this.apply(true);
   }
 
   /** Colour scheme preference (System, Light, Dark). */
@@ -165,7 +168,7 @@ class Appearance {
   /** Restores every setting to its default. */
   reset(): void {
     this.prefs = structuredClone(DEFAULTS);
-    this.apply();
+    this.apply(true);
   }
 
   /** Renders the thumbnails of generated looks that have none yet (when a picker opens). Each is rendered once. */

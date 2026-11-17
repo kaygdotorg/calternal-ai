@@ -96,7 +96,8 @@
 </script>
 
 <div class="ie">
-  {#if marks?.length}<div class="mirror" aria-hidden="true" bind:this={mirror}>{#each parts as x}{#if x.on}<mark data-kind={x.kind}>{x.t}</mark>{:else}{x.t}{/if}{/each}{"\n"}</div>{/if}
+  <!-- The layer exists whenever the host passes `marks` (even none) so its metrics are copied once, when the field mounts, not on the key that first marks a word; it holds text only while there are marks. -->
+  {#if marks}<div class="mirror" aria-hidden="true" bind:this={mirror}>{#if marks.length}{#each parts as x}{#if x.on}<mark data-kind={x.kind}>{x.t}</mark>{:else}{x.t}{/if}{/each}{"\n"}{/if}</div>{/if}
   {#if multiline}
     <textarea {id} class={["inline-editor", klass]} bind:this={el} bind:value rows="1" aria-label={label} {placeholder} oninput={() => { grow(); oninput?.(); }} onkeydown={key} onkeyup={onselect} onclick={onselect} onscroll={syncMirror} {onblur}></textarea>
   {:else}

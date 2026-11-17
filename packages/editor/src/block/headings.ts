@@ -1,5 +1,6 @@
 /** The headings of a note, for the contents rail: level, text and where each starts. Cost: one walk of the parsed tree. */
 import { syntaxTree } from "@codemirror/language";
+import { IterMode } from "@lezer/common";
 import type { EditorState } from "@codemirror/state";
 
 export interface Heading { level: number; text: string; from: number }
@@ -7,6 +8,7 @@ export interface Heading { level: number; text: string; from: number }
 export function headingsOf(state: EditorState): Heading[] {
   const out: Heading[] = [];
   syntaxTree(state).iterate({
+    mode: IterMode.IgnoreMounts, // never walk into a code fence's own grammar: nothing here looks at it, and a nested tree is many more nodes per key
     enter(n) {
       const m = /^(?:ATX|Setext)Heading([1-6])$/.exec(n.name);
       if (!m) return n.name === "Document" || n.name.endsWith("List") || n.name === "ListItem" || n.name === "Blockquote" ? undefined : false;

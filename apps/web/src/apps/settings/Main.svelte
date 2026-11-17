@@ -2,7 +2,9 @@
   // A Settings page: the title, one line of purpose, then groups of rows in a centred column (at most 560 px, like Notes). `/settings/<section>/<setting-id>`
   // opens the page with that row highlighted for a moment and scrolled into view. Admin pages end with a Danger area.
   import { tick } from "svelte";
-  import { segments } from "../../lib/route.svelte";
+  import { navigate, route, segments } from "../../lib/route.svelte";
+  import SettingsSheet from "../../appearance/SettingsSheet.svelte";
+  import { shell } from "../../shell/shell.svelte";
   import SettingGroup from "./SettingGroup.svelte";
   import SettingRow from "./SettingRow.svelte";
   import { pageById, SECTIONS } from "./registry";
@@ -22,6 +24,10 @@
   });
 </script>
 
+{#if !shell.narrow && route.query.get("sheet") === "1"}
+  <!-- A desktop has no sheet for settings: wallpaper and fonts are a page of the Settings app (a phone keeps its bottom sheet, mounted by App). -->
+  <SettingsSheet inline open onclose={() => navigate("/settings/appearance")} />
+{:else}
 <div class="page">
   {#if page}
     <h1>{page.name}</h1>
@@ -37,6 +43,7 @@
     {#each SECTIONS as s}<p class="soft">{s.name}: {s.pages.map((p) => p.name).join(", ")}</p>{/each}
   {/if}
 </div>
+{/if}
 
 <style>
   .page { box-sizing: border-box; min-width: 0; overflow-x: clip; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }

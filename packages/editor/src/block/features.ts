@@ -28,6 +28,8 @@ export function detect(text: string): Feature[] {
 }
 /** The pieces this text needs that are not loaded yet. */
 export const missing = (text: string): Feature[] => detect(text).filter((f) => !loaded.has(f));
+/** True when every piece is loaded, so there is nothing left to detect. */
+export const allLoaded = (): boolean => loaded.size === Object.keys(DETECT).length;
 /** The extensions of every piece loaded so far. */
 export const loadedExtensions = (): Extension[] => [...loaded.values()];
 

@@ -4,13 +4,15 @@
   //   approval  drawn by the shell only (never by generated UI); an agent cannot answer it. Never expires.
   //   secret    drawn by the shell only; masked entry, the agent only ever gets a handle; expires after 15 minutes and can be asked again.
   // Answering is an operation (`onanswer`), so the same answer works from any device or the CLI. The bar is absent when nothing waits.
-  import { untrack } from "svelte";
+  import { untrack, type Component } from "svelte";
   import { Badge, Button, Icon, IconButton, Panel } from "@calternal/ui";
-  import GenUi from "../../genui/GenUi.svelte";
   import type { Value } from "@calternal/genui";
   import type { Answer, Request } from "./model";
 
   let { requests, onanswer, now = () => Date.now() }: { requests: Request[]; onanswer: (id: string, a: Answer) => void; now?: () => number } = $props();
+  // The generated-UI renderer is its own chunk, fetched when the first question form is about to be drawn.
+  let GenUi = $state<Component<{ source: string; values: Record<string, Value> }>>();
+  $effect(() => { if (requests.some((r) => r.kind === "question") && !GenUi) void import("../../genui/GenUi.svelte").then((m) => (GenUi = m.default as never)); });
   let index = $state(0);
   let folded = $state(false);
   let formState = $state<Record<string, Value>>({});
@@ -53,7 +55,7 @@
     {#if !folded}
       <div class="body">
         {#if cur.kind === "question"}
-          <GenUi source={cur.form} bind:values={formState} />
+          {#if GenUi}<GenUi source={cur.form} bind:values={formState} />{/if}
           <div class="foot"><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></div>
         {:else if cur.kind === "approval"}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. An agent can’t answer this for you.</div>

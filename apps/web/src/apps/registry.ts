@@ -10,12 +10,13 @@ import ThreadsPanels from "./threads/Panels.svelte";
 import SideChat from "./threads/SideChat.svelte";
 import ThreadsSidebar from "./threads/Sidebar.svelte";
 import { store as threads } from "./threads/store.svelte";
-import Notes from "./notes/Notes.svelte";
-import NotesPanels from "./notes/Panels.svelte";
-import NotesSidebar from "./notes/Sidebar.svelte";
-import { notes } from "./notes/store.svelte";
-import SettingsMain from "./settings/Main.svelte";
-import SettingsSidebar from "./settings/Sidebar.svelte";
+// Notes and Settings are loaded when first opened: the wrappers draw nothing but the import, and the Notes store (with its fixtures) comes in with `start`.
+import Notes from "./notes/NotesMain.svelte";
+import NotesPanels from "./notes/NotesPanels.svelte";
+import NotesSidebar from "./notes/NotesSidebar.svelte";
+import "./settings/registry"; // registers a palette command for every setting: the palette finds settings before the Settings app has ever been opened
+import SettingsMain from "./settings/SettingsMain.svelte";
+import SettingsSidebar from "./settings/SettingsSidebar.svelte";
 
 /** One thing that needs the person. The shell shows at most three. */
 export interface AttentionItem {
@@ -48,7 +49,7 @@ export interface AppDef {
   panels: PanelDef[];
   /** Reactive: read inside markup so the card follows the data. */
   attention?: () => AttentionItem[];
-  /** One-time loading. */
+  /** One-time loading, run when the app is first opened (Threads at start-up: its attention list shows in every app). */
   start?: () => Promise<void>;
   /** Reloads what the sidebar lists (pull to refresh on a phone). Absent when there is nothing to reload. */
   refresh?: () => Promise<unknown>;
@@ -89,8 +90,8 @@ export const APPS: AppDef[] = [
       { id: "inspector", label: "Inspector", icon: "info", component: NotesPanels, props: { kind: "inspector" } },
       { id: "style", label: "Style", icon: "settings", component: NotesPanels, props: { kind: "style" } },
     ],
-    start: () => notes.start(),
-    refresh: () => notes.refresh(),
+    start: () => import("./notes/store.svelte").then((m) => m.notes.start()),
+    refresh: () => import("./notes/store.svelte").then((m) => m.notes.refresh()),
   },
 ];
 
