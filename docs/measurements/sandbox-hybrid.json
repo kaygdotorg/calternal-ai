@@ -1,0 +1,977 @@
+{
+ "cold_vm_2vcpu_4096MiB": {
+  "disk_prepare": {
+   "n": 30,
+   "p50": 0.0443,
+   "p95": 0.0624,
+   "max": 0.0797
+  },
+  "boot_to_agent": {
+   "n": 30,
+   "p50": 4.7339,
+   "p95": 8.4136,
+   "max": 8.7712
+  },
+  "total_to_agent": {
+   "n": 30,
+   "p50": 4.785,
+   "p95": 8.4734,
+   "max": 8.8172
+  },
+  "runtime_info": {
+   "n": 30,
+   "p50": 1.0262,
+   "p95": 1.2475,
+   "max": 1.3524
+  },
+  "total_to_runtime": {
+   "n": 30,
+   "p50": 5.7953,
+   "p95": 9.4986,
+   "max": 9.8445
+  },
+  "first_container": {
+   "n": 30,
+   "p50": 5.2395,
+   "p95": 8.821,
+   "max": 10.0242
+  },
+  "total_to_first_container": {
+   "n": 30,
+   "p50": 11.2026,
+   "p95": 15.9349,
+   "max": 17.957
+  }
+ },
+ "cold_vm_4vcpu_4096MiB": {
+  "disk_prepare": {
+   "n": 10,
+   "p50": 0.043,
+   "p95": 0.0506,
+   "max": 0.0506
+  },
+  "boot_to_agent": {
+   "n": 10,
+   "p50": 2.8767,
+   "p95": 2.9455,
+   "max": 2.9455
+  },
+  "total_to_agent": {
+   "n": 10,
+   "p50": 2.931,
+   "p95": 2.9983,
+   "max": 2.9983
+  },
+  "runtime_info": {
+   "n": 10,
+   "p50": 0.7147,
+   "p95": 0.7988,
+   "max": 0.7988
+  },
+  "total_to_runtime": {
+   "n": 10,
+   "p50": 3.6528,
+   "p95": 3.7674,
+   "max": 3.7674
+  },
+  "first_container": {
+   "n": 10,
+   "p50": 1.7704,
+   "p95": 4.3303,
+   "max": 4.3303
+  },
+  "total_to_first_container": {
+   "n": 10,
+   "p50": 5.3683,
+   "p95": 7.955,
+   "max": 7.955
+  }
+ },
+ "cold_vm_2vcpu_1024MiB": {
+  "disk_prepare": {
+   "n": 10,
+   "p50": 0.0436,
+   "p95": 0.0481,
+   "max": 0.0481
+  },
+  "boot_to_agent": {
+   "n": 10,
+   "p50": 3.6852,
+   "p95": 4.81,
+   "max": 4.81
+  },
+  "total_to_agent": {
+   "n": 10,
+   "p50": 3.7413,
+   "p95": 4.8554,
+   "max": 4.8554
+  },
+  "runtime_info": {
+   "n": 10,
+   "p50": 1.0333,
+   "p95": 1.388,
+   "max": 1.388
+  },
+  "total_to_runtime": {
+   "n": 10,
+   "p50": 4.8694,
+   "p95": 6.2434,
+   "max": 6.2434
+  },
+  "first_container": {
+   "n": 10,
+   "p50": 1.7333,
+   "p95": 3.4738,
+   "max": 3.4738
+  },
+  "total_to_first_container": {
+   "n": 10,
+   "p50": 6.6888,
+   "p95": 8.0587,
+   "max": 8.0587
+  }
+ },
+ "container_start_in_warm_vm_2vcpu_n1": {
+  "individual": {
+   "n": 30,
+   "p50": 0.2299,
+   "p95": 0.2946,
+   "max": 0.3258
+  },
+  "batch": {
+   "n": 30,
+   "p50": 0.2299,
+   "p95": 0.2946,
+   "max": 0.3258
+  }
+ },
+ "container_start_in_warm_vm_2vcpu_n10": {
+  "individual": {
+   "n": 300,
+   "p50": 1.5053,
+   "p95": 5.9193,
+   "max": 24.8384
+  },
+  "batch": {
+   "n": 30,
+   "p50": 1.6686,
+   "p95": 6.1332,
+   "max": 24.852
+  }
+ },
+ "container_start_in_warm_vm_4vcpu_n1": {
+  "individual": {
+   "n": 30,
+   "p50": 0.2573,
+   "p95": 0.297,
+   "max": 0.304
+  },
+  "batch": {
+   "n": 30,
+   "p50": 0.2573,
+   "p95": 0.297,
+   "max": 0.304
+  }
+ },
+ "container_start_in_warm_vm_4vcpu_n10": {
+  "individual": {
+   "n": 300,
+   "p50": 0.9532,
+   "p95": 1.6368,
+   "max": 6.1161
+  },
+  "batch": {
+   "n": 30,
+   "p50": 1.1053,
+   "p95": 1.8947,
+   "max": 6.1236
+  }
+ },
+ "rpc_connect_retries_in_4vcpu_parallel_run": 27,
+ "fanout_warm_vm_3": {
+  "n": 30,
+  "p50": 1.3132,
+  "p95": 2.3637,
+  "max": 2.4835
+ },
+ "fanout_cold_vm_3": {
+  "request": {
+   "n": 30,
+   "p50": 31.2022,
+   "p95": 42.0265,
+   "max": 45.9218
+  },
+  "vm_ready": {
+   "n": 30,
+   "p50": 5.3374,
+   "p95": 7.4405,
+   "max": 9.178
+  }
+ },
+ "fanout_warm_vm_10": {
+  "n": 30,
+  "p50": 4.3966,
+  "p95": 8.3144,
+  "max": 33.564
+ },
+ "fanout_cold_vm_10": {
+  "request": {
+   "n": 13,
+   "p50": 75.0916,
+   "p95": 89.9354,
+   "max": 89.9354
+  },
+  "vm_ready": {
+   "n": 13,
+   "p50": 5.3504,
+   "p95": 6.1545,
+   "max": 6.1545
+  }
+ },
+ "memory_profiles": [
+  {
+   "mode": "idle",
+   "threads": 0,
+   "pss_MiB": 270.8,
+   "rss_MiB": 270.8,
+   "host_available_delta_MiB": 249.1,
+   "data_disk_allocated_MiB": 68.5,
+   "guest_ctr_cgroup_memory_current_MiB": 0.0,
+   "vmm_cpu_percent_of_one_core": 0.79,
+   "upper_KiB_per_thread": []
+  },
+  {
+   "mode": "idle",
+   "threads": 1,
+   "pss_MiB": 353.9,
+   "rss_MiB": 353.9,
+   "host_available_delta_MiB": 351.0,
+   "data_disk_allocated_MiB": 73.6,
+   "guest_ctr_cgroup_memory_current_MiB": 81.4,
+   "vmm_cpu_percent_of_one_core": 45.53,
+   "upper_KiB_per_thread": [
+    5524
+   ]
+  },
+  {
+   "mode": "idle",
+   "threads": 3,
+   "pss_MiB": 406.6,
+   "rss_MiB": 406.6,
+   "host_available_delta_MiB": 385.6,
+   "data_disk_allocated_MiB": 83.7,
+   "guest_ctr_cgroup_memory_current_MiB": 117.1,
+   "vmm_cpu_percent_of_one_core": 3.52,
+   "upper_KiB_per_thread": [
+    5524,
+    5524,
+    5524
+   ]
+  },
+  {
+   "mode": "idle",
+   "threads": 10,
+   "pss_MiB": 634.2,
+   "rss_MiB": 634.2,
+   "host_available_delta_MiB": 623.2,
+   "data_disk_allocated_MiB": 120.1,
+   "guest_ctr_cgroup_memory_current_MiB": 241.4,
+   "vmm_cpu_percent_of_one_core": 1.08,
+   "upper_KiB_per_thread": [
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524
+   ]
+  },
+  {
+   "mode": "light",
+   "threads": 0,
+   "pss_MiB": 268.4,
+   "rss_MiB": 268.4,
+   "host_available_delta_MiB": 234.7,
+   "data_disk_allocated_MiB": 68.5,
+   "guest_ctr_cgroup_memory_current_MiB": 0.0,
+   "vmm_cpu_percent_of_one_core": 0.79,
+   "upper_KiB_per_thread": []
+  },
+  {
+   "mode": "light",
+   "threads": 1,
+   "pss_MiB": 356.8,
+   "rss_MiB": 356.9,
+   "host_available_delta_MiB": 362.3,
+   "data_disk_allocated_MiB": 73.6,
+   "guest_ctr_cgroup_memory_current_MiB": 87.6,
+   "vmm_cpu_percent_of_one_core": 22.41,
+   "upper_KiB_per_thread": [
+    5524
+   ]
+  },
+  {
+   "mode": "light",
+   "threads": 3,
+   "pss_MiB": 440.0,
+   "rss_MiB": 440.0,
+   "host_available_delta_MiB": 423.2,
+   "data_disk_allocated_MiB": 84.6,
+   "guest_ctr_cgroup_memory_current_MiB": 123.8,
+   "vmm_cpu_percent_of_one_core": 2.07,
+   "upper_KiB_per_thread": [
+    5524,
+    5524,
+    5524
+   ]
+  },
+  {
+   "mode": "light",
+   "threads": 10,
+   "pss_MiB": 608.3,
+   "rss_MiB": 608.3,
+   "host_available_delta_MiB": 591.9,
+   "data_disk_allocated_MiB": 119.9,
+   "guest_ctr_cgroup_memory_current_MiB": 251.6,
+   "vmm_cpu_percent_of_one_core": 5.5,
+   "upper_KiB_per_thread": [
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524,
+    5524
+   ]
+  }
+ ],
+ "balloon": {
+  "events": [
+   {
+    "step": "10 idle threads running",
+    "vmm_pss_MiB": 634.2,
+    "guest_mem_available_MiB": 3581,
+    "guest_cached_MiB": 173
+   },
+   {
+    "step": "threads removed +1s",
+    "vmm_pss_MiB": 634.2,
+    "guest_mem_available_MiB": 3718,
+    "guest_cached_MiB": 122
+   },
+   {
+    "step": "threads removed +11s (free page reporting only)",
+    "vmm_pss_MiB": 634.2,
+    "guest_mem_available_MiB": 3717,
+    "guest_cached_MiB": 122
+   },
+   {
+    "step": "after guest drop_caches +3s",
+    "vmm_pss_MiB": 461.1,
+    "guest_mem_available_MiB": 3784,
+    "guest_cached_MiB": 7
+   },
+   {
+    "step": "balloon inflated to 1024 MiB +5s",
+    "vmm_pss_MiB": 247.3,
+    "guest_mem_available_MiB": 2759,
+    "guest_cached_MiB": 8
+   },
+   {
+    "step": "balloon inflated to 2048 MiB +5s",
+    "vmm_pss_MiB": 247.4,
+    "guest_mem_available_MiB": 1735,
+    "guest_cached_MiB": 8
+   },
+   {
+    "step": "balloon inflated to 3072 MiB +5s",
+    "vmm_pss_MiB": 247.3,
+    "guest_mem_available_MiB": 711,
+    "guest_cached_MiB": 8
+   },
+   {
+    "step": "balloon deflated to 0 +3s",
+    "vmm_pss_MiB": 247.5,
+    "guest_mem_available_MiB": 3756,
+    "guest_cached_MiB": 8
+   },
+   {
+    "step": "3 light threads again",
+    "vmm_pss_MiB": 443.3,
+    "guest_mem_available_MiB": 3638,
+    "guest_cached_MiB": 143
+   }
+  ],
+  "statistics": {
+   "target_pages": 786432,
+   "actual_pages": 786432,
+   "target_mib": 3072,
+   "actual_mib": 3072,
+   "swap_in": 0,
+   "swap_out": 0,
+   "major_faults": 949,
+   "minor_faults": 363650,
+   "free_memory": 862593024,
+   "total_memory": 4130877440,
+   "available_memory": 745844736,
+   "disk_caches": 10358784,
+   "hugetlb_allocations": 0,
+   "hugetlb_failures": 0
+  }
+ },
+ "disk_sharing": {
+  "kind": "disk_sharing",
+  "utc": "2026-11-17T11:43:17Z",
+  "base_alloc": {
+   "os.ext4": 628559872,
+   "toolset.ext4": 2383638528
+  },
+  "base_logical": {
+   "os.ext4": 2147483648,
+   "toolset.ext4": 4294967296
+  },
+  "vm_inodes_equal": true,
+  "vmfds": {
+   "a": [
+    "/home/kayg/calternal-ai-sandbox-hybrid/os.ext4",
+    "/home/kayg/calternal-ai-sandbox-hybrid/toolset.ext4"
+   ],
+   "b": [
+    "/home/kayg/calternal-ai-sandbox-hybrid/os.ext4",
+    "/home/kayg/calternal-ai-sandbox-hybrid/toolset.ext4"
+   ]
+  },
+  "blank_data_disk_allocated": 71831552,
+  "after_two_threads": 75907072,
+  "before_write": 75907072,
+  "after_write_1MiB": 92884992,
+  "thread2_sees": "ls: cannot access '/work/probe.bin': No such file or directory\nABSENT",
+  "sha_before": {
+   "os.ext4": "5005a4872025fac8cf99ebf2ccce145bae1079eb03895772465217d6f5094116",
+   "toolset.ext4": "77e8755ac7d8a66701534300eec6e203d041ac634396f7726e2e4f27d8055781"
+  },
+  "sha_after": {
+   "os.ext4": "5005a4872025fac8cf99ebf2ccce145bae1079eb03895772465217d6f5094116",
+   "toolset.ext4": "77e8755ac7d8a66701534300eec6e203d041ac634396f7726e2e4f27d8055781"
+  }
+ },
+ "freeze_vm_3_threads": {
+  "immediate": {
+   "freeze_ms": {
+    "n": 30,
+    "p50": 0.398,
+    "p95": 0.463,
+    "max": 2.18
+   },
+   "resume_call_ms": {
+    "n": 30,
+    "p50": 0.262,
+    "p95": 0.338,
+    "max": 0.407
+   },
+   "resume_to_first_output_s": {
+    "n": 30,
+    "p50": 0.1523,
+    "p95": 0.221,
+    "max": 0.3627
+   }
+  },
+  "5 s": {
+   "freeze_ms": {
+    "n": 10,
+    "p50": 0.415,
+    "p95": 0.439,
+    "max": 0.439
+   },
+   "resume_call_ms": {
+    "n": 10,
+    "p50": 0.632,
+    "p95": 5.384,
+    "max": 5.384
+   },
+   "resume_to_first_output_s": {
+    "n": 10,
+    "p50": 0.1572,
+    "p95": 0.2261,
+    "max": 0.2261
+   }
+  },
+  "vsock_after_resume": "vsock does not answer after resume: TimeoutError('timed out')"
+ },
+ "noisy_neighbour": [
+  {
+   "layout": "B",
+   "vcpus": 2,
+   "build": false,
+   "container_limits": false,
+   "runs": 1,
+   "probes": 329,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 329,
+    "p50": 0.1372,
+    "p95": 0.4866,
+    "max": 6.5633
+   },
+   "per_run_p50_s": [
+    0.137
+   ],
+   "compiling_lines_in_window": [],
+   "cgroup_last_run": "181092352\nlibpod-5f99734 37949440 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-6e24fee 93949952 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-f2b328e 52101120 nr_throttled 0 throttled_usec 0 oom_kill 0\n"
+  },
+  {
+   "layout": "B",
+   "vcpus": 2,
+   "build": true,
+   "container_limits": false,
+   "runs": 3,
+   "probes": 130,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 130,
+    "p50": 3.3192,
+    "p95": 17.1639,
+    "max": 32.2396
+   },
+   "per_run_p50_s": [
+    0.423,
+    7.424,
+    7.891
+   ],
+   "compiling_lines_in_window": [
+    88,
+    6,
+    6
+   ],
+   "cgroup_last_run": "912609280\nlibpod-359586c 37957632 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-525586e 836165632 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-c4f1c56 51585024 nr_throttled 0 throttled_usec 0 oom_kill 0\n"
+  },
+  {
+   "layout": "B",
+   "vcpus": 2,
+   "build": true,
+   "container_limits": true,
+   "runs": 3,
+   "probes": 101,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 101,
+    "p50": 5.2827,
+    "p95": 22.5213,
+    "max": 27.9135
+   },
+   "per_run_p50_s": [
+    5.47,
+    4.313,
+    5.144
+   ],
+   "compiling_lines_in_window": [
+    6,
+    6,
+    6
+   ],
+   "cgroup_last_run": "890396672\nlibpod-70e8005 37920768 nr_throttled 6 throttled_usec 75281 oom_kill 0\nlibpod-99b58ad 51572736 nr_throttled 2 throttled_usec 61780 oom_kill 0\nlibpod-f396300 820858880 nr_throttled 280 throttled_usec 13041064 oom_kill 0\n"
+  },
+  {
+   "layout": "A",
+   "vcpus": 2,
+   "build": false,
+   "container_limits": false,
+   "runs": 1,
+   "probes": 373,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 373,
+    "p50": 0.131,
+    "p95": 0.1785,
+    "max": 2.9946
+   },
+   "per_run_p50_s": [
+    0.131
+   ],
+   "compiling_lines_in_window": [],
+   "cgroup_last_run": "94117888\nlibpod-d41260c 94109696 nr_throttled 0 throttled_usec 0 oom_kill 0\n"
+  },
+  {
+   "layout": "A",
+   "vcpus": 2,
+   "build": true,
+   "container_limits": false,
+   "runs": 3,
+   "probes": 1006,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 1006,
+    "p50": 0.1676,
+    "p95": 0.4464,
+    "max": 1.1728
+   },
+   "per_run_p50_s": [
+    0.168,
+    0.171,
+    0.163
+   ],
+   "compiling_lines_in_window": [
+    87,
+    88,
+    88
+   ],
+   "cgroup_last_run": "1214103552\nlibpod-4e9cdd7 1214095360 nr_throttled 0 throttled_usec 0 oom_kill 0\n"
+  },
+  {
+   "layout": "A",
+   "vcpus": 2,
+   "build": true,
+   "container_limits": true,
+   "runs": 3,
+   "probes": 1093,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 1093,
+    "p50": 0.1442,
+    "p95": 0.2143,
+    "max": 2.2254
+   },
+   "per_run_p50_s": [
+    0.143,
+    0.144,
+    0.144
+   ],
+   "compiling_lines_in_window": [
+    11,
+    9,
+    18
+   ],
+   "cgroup_last_run": "953090048\nlibpod-4e08e10 953081856 nr_throttled 1239 throttled_usec 119859574 oom_kill 0\n"
+  },
+  {
+   "layout": "B",
+   "vcpus": 4,
+   "build": false,
+   "container_limits": false,
+   "runs": 1,
+   "probes": 336,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 336,
+    "p50": 0.1417,
+    "p95": 0.2172,
+    "max": 10.0148
+   },
+   "per_run_p50_s": [
+    0.142
+   ],
+   "compiling_lines_in_window": [],
+   "cgroup_last_run": "180682752\nlibpod-1650b64 52281344 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-17f7867 94044160 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-319f5fe 38363136 nr_throttled 0 throttled_usec 0 oom_kill 0\n"
+  },
+  {
+   "layout": "B",
+   "vcpus": 4,
+   "build": true,
+   "container_limits": false,
+   "runs": 2,
+   "probes": 277,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 277,
+    "p50": 0.2483,
+    "p95": 6.5745,
+    "max": 16.6156
+   },
+   "per_run_p50_s": [
+    0.236,
+    0.268
+   ],
+   "compiling_lines_in_window": [
+    154,
+    148
+   ],
+   "cgroup_last_run": "1781370880\nlibpod-410113e 52125696 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-b0aeb43 38711296 nr_throttled 0 throttled_usec 0 oom_kill 0\nlibpod-d33eefe 1706864640 nr_throttled 0 throttled_usec 0 oom_kill 0\n"
+  },
+  {
+   "layout": "B",
+   "vcpus": 4,
+   "build": true,
+   "container_limits": true,
+   "runs": 2,
+   "probes": 418,
+   "failed_probes": 0,
+   "latency_s": {
+    "n": 418,
+    "p50": 0.1861,
+    "p95": 2.0415,
+    "max": 17.0809
+   },
+   "per_run_p50_s": [
+    0.188,
+    0.182
+   ],
+   "compiling_lines_in_window": [
+    131,
+    130
+   ],
+   "cgroup_last_run": "1159815168\nlibpod-b75e65b 1073741824 nr_throttled 1136 throttled_usec 101917278 oom_kill 0\nlibpod-d99b43d 53551104 nr_throttled 41 throttled_usec 1288903 oom_kill 0\nlibpod-ee6658c 39055360 nr_throttled 45 throttled_usec 1063463 oom_kill 0\n"
+  }
+ ],
+ "a_vs_b": {
+  "memory_pss_MiB": {
+   "A/idle": {
+    "runs": [
+     1346.4,
+     1344.7,
+     1358.5
+    ],
+    "mean": 1349.9
+   },
+   "A/boot": {
+    "runs": [
+     793.4,
+     789.7,
+     789.0,
+     797.4,
+     798.4,
+     790.6
+    ],
+    "mean": 793.1
+   },
+   "A/idle/disk": {
+    "runs": [
+     284.5,
+     279.2,
+     273.0
+    ],
+    "mean": 278.9
+   },
+   "A/light": {
+    "runs": [
+     1378.8,
+     1378.2,
+     1394.6
+    ],
+    "mean": 1383.9
+   },
+   "A/light/disk": {
+    "runs": [
+     284.5,
+     285.0,
+     284.4
+    ],
+    "mean": 284.6
+   },
+   "B/idle": {
+    "runs": [
+     700.5,
+     708.8,
+     734.6
+    ],
+    "mean": 714.6
+   },
+   "B/boot": {
+    "runs": [
+     272.5,
+     272.0,
+     273.0,
+     272.2,
+     270.6,
+     273.0
+    ],
+    "mean": 272.2
+   },
+   "B/idle/disk": {
+    "runs": [
+     155.5,
+     163.7,
+     162.4
+    ],
+    "mean": 160.5
+   },
+   "B/light": {
+    "runs": [
+     686.6,
+     725.5,
+     684.1
+    ],
+    "mean": 698.8
+   },
+   "B/light/disk": {
+    "runs": [
+     161.8,
+     163.7,
+     162.4
+    ],
+    "mean": 162.6
+   }
+  },
+  "new_thread_s": {
+   "A_warm": {
+    "n": 30,
+    "p50": 0.6059,
+    "p95": 1.7246,
+    "max": 1.9074
+   },
+   "B_warm": {
+    "n": 30,
+    "p50": 0.595,
+    "p95": 0.7339,
+    "max": 4.0748
+   },
+   "A_cold": {
+    "n": 30,
+    "p50": 15.5161,
+    "p95": 27.2805,
+    "max": 27.9474
+   }
+  },
+  "cold_vm_ready_s": {
+   "n": 30,
+   "p50": 5.7785,
+   "p95": 11.12,
+   "max": 12.235
+  },
+  "fanout_s": {
+   "A_3": {
+    "n": 30,
+    "p50": 1.298,
+    "p95": 9.4808,
+    "max": 12.15
+   },
+   "A_10": {
+    "n": 30,
+    "p50": 4.3189,
+    "p95": 11.4649,
+    "max": 70.0361
+   },
+   "B_3": {
+    "n": 30,
+    "p50": 1.324,
+    "p95": 3.5868,
+    "max": 3.924
+   },
+   "B_10": {
+    "n": 30,
+    "p50": 4.4,
+    "p95": 11.5246,
+    "max": 53.8095
+   }
+  },
+  "disk_allocated_MiB_after_fanout_runs": {
+   "A": [
+    219.0,
+    97.0,
+    97.0
+   ],
+   "B": [
+    292.5
+   ]
+  },
+  "visibility": {
+   "mounts": "/ overlay rw,lowerdir=/toolset,upperdir=/data/home/.local/share/containers/storage/overlay-containers/db5c18d8aee5b01b3d74d7a7fe82daa00916f3439d6ee8b6c07b4d06f394abfb/rootfs/upper,workdir=/data/home/.local/share/containers/storage/overlay-containers/db5c18d8aee5b01b3d74d7a7fe82daa00916f3439d6ee8b6c07b4d06f394abfb/rootfs/work,userxattr\n/checkout.tar /dev/root ro\n/proc proc rw\n/dev tmpfs rw,size=65536k,mode=755,uid=1000,gid=1000\n/sys sysfs rw\n/dev/pts devpts rw,gid=100004,mode=620,ptmxmode=666\n/dev/mqueue mqueue rw\n/etc/hosts tmpfs rw\n/dev/shm shm rw,size=64000k,uid=1000,gid=1000\n/run/.containerenv tmpfs rw\n/etc/hostname tmpfs rw\n/sys/fs/cgroup cgroup rw\n/dev/null devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/dev/zero devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/dev/full devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/dev/tty devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/dev/random devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/dev/urandom devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/proc/acpi tmpfs rw\n/proc/kcore devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/proc/keys devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/proc/scsi tmpfs rw\n/proc/timer_list devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/sys/firmware tmpfs rw\n/sys/fs/selinux tmpfs rw\n/proc/interrupts devtmpfs rw,size=2014044k,nr_inodes=503511,mode=755\n/proc/bus proc rw\n/proc/fs proc rw\n/proc/irq proc rw\n/proc/sys proc rw\n/proc/sysrq-trigger proc rw\n",
+   "pids": "1 /bin/sh /sbin/workload idle\n2 node -e setInterval(()=>{}, 1000000)\n25 /bin/sh -c . /etc/bench-env; for p in /proc/[0-9]*; do echo ${p#/proc/} $(tr \"\\0\" \" \" < $p/cmdline); done\n3 sleep 3600\n",
+   "root_ls": "total 6812\ndrwxr-xr-x   1 root  root     4096 Nov 17 12:50 .\ndrwxr-xr-x   1 root  root     4096 Nov 17 12:50 ..\ndrwxrwxr-x   2 root  root     4096 Nov 17 08:20 bin\n-rw-r--r--   1 65534 65534 6912000 Nov 17 08:20 checkout.tar\ndrwxr-xr-x   5 root  root      340 Nov 17 12:50 dev\ndrwxrwxr-x   1 root  root     4096 Nov 17 12:50 etc\ndrwx------   2 65534 65534   16384 Nov 17 08:20 lost+found\ndrwxrwxr-x   3 root  root     4096 Nov 17 08:20 nix\ndr-xr-xr-x 115 65534 65534       0 Nov 17 12:50 proc\ndrwxrwxr-x   2 root  root     4096 Nov 17 08:20 root\ndrwxrwxr-x   1 root  root     4096 Nov 17 12:50 run\ndrwxrwxr-x   2 root  root     4096 Nov 17 08:20 sbin\ndrwxrwxr-x   3 root  root     4096 Nov 17 08:20 seed\ndr-xr-xr-x  12 65534 65534       0 Nov 17 12:50 sys\ndrwxrwxr-x   2 root  root     4096 Nov 17 08:20 tmp\ndrwxrwxr-x   3 root  root     4096 Nov 17 08:20 usr\ndrwxrwxr-x   1  1001  1001    4096 Nov 17 12:50 work\n",
+   "data_ls": "ls: cannot access '/data': No such file or directory\nls: cannot access '/opt': No such file or directory\n/run:\ntotal 8\ndrwxrwxr-x 1 root root 4096 Nov 17 12:50 .\ndrwxr-xr-x 1 root root 4096 Nov 17 12:50 ..\n-rw-r--r-- 1 root root    0 Nov 17 12:50 .containerenv\n",
+   "find_cred": "/work/.agent-credential\n---\n/work/.agent-credential\n",
+   "work_ls": "total 304\ndrwxrwxr-x  1 1001 1001  4096 Nov 17 12:50 .\ndrwxr-xr-x  1 root root  4096 Nov 17 12:50 ..\n-rw-------  1 root root    23 Nov 17 12:50 .agent-credential\ndrwxrwxr-x  2 1001 1001  4096 Nov 17 08:20 .cargo\ndrwxrwxr-x  7 1001 1001  4096 Nov 17 08:20 .git\n-rw-------  1 1001 1001   171 Nov 17 08:13 .gitignore\n-rw-------  1 1001 1001  4855 Nov 17 08:13 AGENTS.md\nBENCH_DUMMY_PROJECT_ONE\n",
+   "cgroup": "0::/\ncgroup.controllers\ncgroup.events\ncgroup.freeze\ncgroup.kill\ncgroup.max.depth\ncgroup.max.descendants\ncgroup.procs\ncgroup.stat\ncgroup.subtree_control\ncgroup.threads\ncgroup.type\ncpu.idle\ncpu.max\ncpu.max.burst\ncpu.stat\ncpu.weight\ncpu.weight.nice\nmemory.current\nmemory.events\nmemory.events.local\n",
+   "id": "uid=0(root) gid=0(root) groups=0(root)\n         0       1000          1\n         1     100000      65536\n         0       1000          1\n         1     100000      65536\nCapEff:\t00000000800405fb\nCapBnd:\t00000000800405fb\n",
+   "net": "lo\n    lo\n",
+   "kernel": "6.1.188+\ndb5c18d8aee5\n",
+   "dev": "core fd full mqueue null ptmx pts random shm stderr stdin stdout tty urandom zero ",
+   "tmp": "/dev/shm:\n\n/tmp:\n",
+   "vm_level_find_cred": "/data/home/.local/share/containers/storage/overlay-containers/0876ab9a531411cd36d695d5b39283ea72810c997f4706f94cd6e633410ce873/rootfs/upper/work/.agent-credential\n/data/home/.local/share/containers/storage/overlay-containers/242c5f9840adbe5c3c394adb96be5aa9f817c841a1eed906ae7003e6e0e6d648/rootfs/upper/work/.agent-credential\n/data/home/.local/share/containers/storage/overlay-containers/cef61f0782de29a0bd7e73dbc9ec5f2dc3be5e4dc6e05c78539c43155bef65dd/rootfs/upper/work/.agent-credential\n/data/home/.local/share/containers/storage/overlay-containers/db5c18d8aee5b01b3d74d7a7fe82daa00916f3439d6ee8b6c07b4d06f394abfb/rootfs/upper/work/.agent-credential\n/data/home/.local/share/containers/storage/overlay-containers/456fe7b11f2ea70c081eef584b44e1f169eff95cdf77bc1a48f03339795e71ab/rootfs/upper/work/.agent-credential\n/data/home/.local/share/containers/storage/overlay-containers/6c7585dfefa93bba76056c656199fff1dbdae66767dec387252d9c66179b2982/rootfs/upper/work/.agent-credential\n",
+   "vm_level_cred_values": "find: /data/home/.local/share/containers/storage/overlay-containers/0876ab9a531411cd36d695d5b39283ea72810c997f4706f94cd6e633410ce873/rootfs/work/work: Permission denied\nfind: /data/home/.local/share/containers/storage/overlay-containers/242c5f9840adbe5c3c394adb96be5aa9f817c841a1eed906ae7003e6e0e6d648/rootfs/work/work: Permission denied\nfind: /data/home/.local/share/containers/storage/overlay-containers/cef61f0782de29a0bd7e73dbc9ec5f2dc3be5e4dc6e05c78539c43155bef65dd/rootfs/work/work: Permission denied\nfind: /data/home/.local/share/containers/storage/overlay-containers/db5c18d8aee5b01b3d74d7a7fe82daa00916f3439d6ee8b6c07b4d06f394abfb/rootfs/work/work: Permission denied\nfind: /data/home/.local/share/containers/storage/overlay-containers/456fe7b11f2ea70c081eef584b44e1f169eff95cdf77bc1a48f03339795e71ab/rootfs/work/work: Permission denied\nfind: /data/home/.local/share/containers/storage/overlay-containers/6c7585dfefa93bba76056c656199fff1dbdae66767dec387252d9c66179b2982/rootfs/work/work: Permission denied\n      2 BENCH_DUMMY_PROJECT_ONE\n      2 BENCH_DUMMY_PROJECT_THREE\n      2 BENCH_DUMMY_PROJECT_TWO\n",
+   "vm_level_ps": "104\n",
+   "vm_level_podman_ps": "p1t0\np1t1\np2t0\np2t1\np3t0\np3t1\n",
+   "p1t0_proc_count": "6\n",
+   "p1t0_other_rootfs_probe": "bin\ncheckout.tar\ndev\nls: cannot access '/data': No such file or directory\nls: cannot access '/run/user': No such file or directory\n"
+  },
+  "diag_build_with_sibling_B_2vcpu": [
+   {
+    "rep": 0,
+    "seconds": 85,
+    "jiffies": {
+     "user": 3759,
+     "nice": 0,
+     "system": 6904,
+     "idle": 8,
+     "iowait": 57,
+     "irq": 0,
+     "softirq": 101,
+     "steal": 71
+    },
+    "compiling_lines_start_end": [
+     "2",
+     "6"
+    ]
+   },
+   {
+    "rep": 1,
+    "seconds": 85,
+    "jiffies": {
+     "user": 4124,
+     "nice": 0,
+     "system": 7448,
+     "idle": 11,
+     "iowait": 42,
+     "irq": 0,
+     "softirq": 78,
+     "steal": 65
+    },
+    "compiling_lines_start_end": [
+     "2",
+     "51"
+    ]
+   },
+   {
+    "rep": 2,
+    "seconds": 85,
+    "jiffies": {
+     "user": 3811,
+     "nice": 0,
+     "system": 7514,
+     "idle": 12,
+     "iowait": 34,
+     "irq": 0,
+     "softirq": 71,
+     "steal": 62
+    },
+    "compiling_lines_start_end": [
+     "2",
+     "43"
+    ]
+   }
+  ]
+ },
+ "metadata": {
+  "host": "calternal-perf-01-backup01",
+  "date": "2026-11-17",
+  "firecracker": "1.16.1",
+  "guest_kernel": "6.1.188+ (Firecracker CI vmlinux)",
+  "podman": "6.1.4 (in guest, rootless, cgroupfs, crun 1.30.1, conmon 2.2.1)",
+  "vm_default": {
+   "vcpus": 2,
+   "mem_mib": 4096,
+   "disks": "vda os ext4 ro (root), vdb toolset ext4 ro, vdc data ext4 sparse 8GiB rw",
+   "balloon": {
+    "amount_mib": 0,
+    "deflate_on_oom": true,
+    "free_page_reporting": true,
+    "stats_polling_interval_s": 1
+   }
+  },
+  "checkout": {
+   "git_head_of_source": "496d001d5aa36f6c5141013757f6261b28160925",
+   "note": "working tree of lane/measure-hybrid; fan-out fixture adds a fresh git repo"
+  },
+  "raw": [
+   "raw/events.jsonl",
+   "raw/events2.jsonl"
+  ],
+  "scripts": "~/calternal-ai-sandbox-hybrid/{setup.py,hlib.py,m.py,m2.py,rebuild-os.sh}"
+ }
+}
