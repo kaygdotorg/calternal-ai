@@ -56,6 +56,7 @@ Paths are plain (no `#/`), rooted at `/`.
 - No legacy forms are supported: no `#/` conversion, six-character block IDs,
   `day-YYYY-MM-DD` items or old-route aliases.
 - A deleted item's ID keeps resolving to its Trash or deleted state and is never reused.
+  The Notes resolver returns that lifecycle state after checking current space access.
 
 ## Serving the web app
 

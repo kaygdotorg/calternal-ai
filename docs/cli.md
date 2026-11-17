@@ -65,6 +65,22 @@ Global options on every command: `--json`, `--no-hints`.
 | `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
 
+| Command | Purpose | Human output | Data |
+|---|---|---|---|
+| `notes list --space UUID [--tag TAG]` | List active notes, optionally under a tag. | Note table | `notes[]` |
+| `notes lookup --space UUID PREFIX` | Find live notes by title prefix. | Note table with link target | `notes[]` with `link_target` |
+| `notes rename ID --base-revision REVISION --title TITLE` | Update heading, filename and links. | Note fields and Markdown | `note` |
+| `notes delete ID` | Move a note to Trash. | Note fields and state | `note` |
+| `notes restore ID` | Restore a note. | Note fields and state | `note` |
+| `tags list --space UUID` | List tags and note counts. | Tag and count table | `tags[]` |
+| `tags lookup --space UUID PREFIX` | Find tags by name prefix. | Tag and count table | `tags[]` |
+| `trash list --space UUID` | List trashed notes. | Note table with deletion time | `notes[]` |
+| `trash purge ID` | Permanently delete a note in Trash. | ID and deletion state | `id`, `state` |
+
+These commands accept `--base-url`, `--token-file`, `--request-id` and
+`--json`. See [Notes operations](notes-operations.md) for bounds, permission
+checks and Trash retention.
+
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
 | `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |

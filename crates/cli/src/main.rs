@@ -181,6 +181,9 @@ enum NotesCommand {
     List {
         #[command(flatten)]
         scope: Space,
+        /// Exact tag without a leading hash, including descendant tags.
+        #[arg(long)]
+        tag: Option<String>,
     },
     #[command(
         about = "Show one note and its current revision",
@@ -352,7 +355,13 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
             (operation, input)
         }
         Command::Notes { command } => match command {
-            NotesCommand::List { scope } => ("notes.list".into(), json!({"space_id":scope.space})),
+            NotesCommand::List { scope, tag } => {
+                let mut input = json!({"space_id":scope.space});
+                if let Some(tag) = tag {
+                    input["tag"] = json!(tag);
+                }
+                ("notes.list".into(), input)
+            }
             NotesCommand::Get { id, scope } => {
                 ("notes.get".into(), json!({"space_id":scope.space,"id":id}))
             }
