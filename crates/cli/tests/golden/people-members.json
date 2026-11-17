@@ -1,0 +1,21 @@
+{
+  "data": {
+    "groups": [
+      {
+        "group_id": "01912345-6789-7abc-8123-000000000002",
+        "member_count": 3,
+        "name": "Studio",
+        "role": "editor"
+      }
+    ],
+    "members": [
+      {
+        "account_id": "01912345-6789-7abc-8123-000000000001",
+        "name": "Sam Wu",
+        "role": "owner"
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "people-example"
+}

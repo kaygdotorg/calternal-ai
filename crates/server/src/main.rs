@@ -71,6 +71,27 @@ enum Cmd {
         #[command(subcommand)]
         cmd: calternal_cli::account_input::Pending,
     },
+    /// Manage space grants, role definitions, profiles, and server people.
+    People {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::People,
+    },
+    /// List and manage server groups and their members.
+    Groups {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::Groups,
+    },
+    /// Create, copy, revoke and redeem space invitations.
+    Invites {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::people::Invites,
+    },
     /// Follow a space journal; --json prints one compact JSON object per event.
     Watch {
         space: String,
@@ -206,6 +227,21 @@ fn main() {
             ))
         }
         Cmd::Pending { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
+        Cmd::People { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Groups { connection, cmd } => {
+            let (op, input) = cmd.operation();
+            out.finish(calternal_cli::account_input::run(
+                connection, op, input, &out,
+            ))
+        }
+        Cmd::Invites { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
             calternal_cli::account_input::run(connection, op, input, &out)
         })),
         Cmd::Watch {

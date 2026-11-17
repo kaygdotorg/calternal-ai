@@ -1,0 +1,3 @@
+invite:   01912345-6789-7abc-8123-000000000003
+expires:  2026-07-24 10:10:00 +00:00
+Next: calternal invites list --space SPACE_UUID
