@@ -1,4 +1,11 @@
 TITLE: Long conversation title that sho…
+TURN: waiting
+MESSAGES: 17
 ID: 019a8c00-0000-7000-8000-000000000001
-STATE: active
+PROVIDER: calternal-claude-code
+MODEL: sonnet
+MODE: least_access
+LAST ACTIVITY: 2026-11-17T12:00:00.000Z
+ARCHIVED: no
+PARENT: —
 Next: calternal threads create --help

@@ -84,6 +84,19 @@ pub enum Command {
         /// Thread UUID.
         id: String,
     },
+    /// Give a conversation a new title and keep its ID and messages.
+    Rename {
+        /// Thread UUID.
+        id: String,
+        /// Human-readable title, at most 256 UTF-8 bytes.
+        #[arg(long)]
+        title: String,
+    },
+    /// Return a conversation to the ordinary list.
+    Unarchive {
+        /// Thread UUID.
+        id: String,
+    },
     /// Move a stopped conversation to its space's Trash and forget saved modes.
     Delete {
         /// Thread UUID.
@@ -122,6 +135,8 @@ impl Command {
             Self::Get { id } => ("threads.get", json!({"id":id})),
             Self::Stop { id } => ("threads.stop", json!({"id":id})),
             Self::Archive { id } => ("threads.archive", json!({"id":id})),
+            Self::Rename { id, title } => ("threads.rename", json!({"id":id,"title":title})),
+            Self::Unarchive { id } => ("threads.unarchive", json!({"id":id})),
             Self::Delete { id } => ("threads.delete", json!({"id":id})),
             Self::Send {
                 id,
@@ -148,21 +163,44 @@ pub fn reply(data: Value) -> Reply {
         let rows = rows
             .iter()
             .map(|r| {
+                let metadata = &r["metadata"];
+                let field = |key: &str| metadata[key].as_str().unwrap_or("—").to_owned();
                 vec![
-                    r["metadata"]["title"].as_str().unwrap_or("").into(),
+                    field("title"),
+                    r["turn_state"].as_str().unwrap_or("idle").into(),
+                    metadata["message_count"].as_u64().unwrap_or(0).to_string(),
                     r["id"].as_str().unwrap_or("").into(),
-                    if r["metadata"]["deleted"] == true {
-                        "deleted".into()
-                    } else if r["metadata"]["archived"] == true {
-                        "archived".into()
+                    field("provider"),
+                    field("model"),
+                    field("mode"),
+                    field("last_activity_at"),
+                    if metadata["archived"] == true {
+                        "yes"
                     } else {
-                        "active".into()
-                    },
+                        "no"
+                    }
+                    .into(),
+                    field("parent_thread"),
                 ]
             })
             .collect();
         return Reply::new(data)
-            .table(&["TITLE", "ID", "STATE"], rows, "No threads in this space.")
+            .table(
+                &[
+                    "TITLE",
+                    "TURN",
+                    "MESSAGES",
+                    "ID",
+                    "PROVIDER",
+                    "MODEL",
+                    "MODE",
+                    "LAST ACTIVITY",
+                    "ARCHIVED",
+                    "PARENT",
+                ],
+                rows,
+                "No threads in this space.",
+            )
             .hint("Next: calternal threads create --help");
     }
     let thread = &data["thread"];
@@ -192,6 +230,24 @@ pub fn reply(data: Value) -> Reply {
         ),
     ];
     let mut result = Reply::new(data.clone()).fields(fields);
+    let metadata = &thread["metadata"];
+    for (label, key) in [
+        ("Provider", "provider"),
+        ("Model", "model"),
+        ("Permission mode", "mode"),
+        ("Last activity", "last_activity_at"),
+        ("Parent", "parent_thread"),
+    ] {
+        if let Some(value) = metadata[key].as_str() {
+            result = result.fields([(label, value)]);
+        }
+    }
+    if let Some(count) = metadata["message_count"].as_u64() {
+        result = result.fields([("Messages", count.to_string())]);
+    }
+    if let Some(state) = thread["turn_state"].as_str() {
+        result = result.fields([("Thread turn state", state)]);
+    }
     if let Some(job) = data.get("job") {
         result = result.fields([
             ("Turn", job["id"].as_str().unwrap_or("")),
