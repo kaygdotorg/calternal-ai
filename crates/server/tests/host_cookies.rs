@@ -115,7 +115,7 @@ async fn duplicate_host_headers_and_stale_requests_never_clear_new_session() {
 async fn upgrading_schema_six_removes_cookie_state_and_keeps_passkeys() {
     let app = app();
     let (host, _) = first_owner(&app, "Owner").await;
-    let path = app.dir.path().join("system/auth.db");
+    let path = app.dir.path().join("appdata/system/auth.db");
     let db = rusqlite::Connection::open(&path).unwrap();
     // `app()` creates the current schema. Remove v11 tables before modeling
     // the v6 database this test upgrades.
@@ -133,7 +133,7 @@ async fn upgrading_schema_six_removes_cookie_state_and_keeps_passkeys() {
     .unwrap();
     drop(db);
     let reopened = calternal_auth::Auth::open(
-        app.dir.path(),
+        &app.dir.path().join("appdata"),
         calternal_auth::AuthConfig::new(ORIGIN).unwrap(),
     )
     .unwrap();

@@ -29,7 +29,8 @@ struct Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        // `root` is appdata; its parent holds all three roots.
+        let _ = std::fs::remove_dir_all(self.root.parent().unwrap());
     }
 }
 impl Fixture {
@@ -37,8 +38,12 @@ impl Fixture {
     /// (`None` removes the membership).
     async fn new(role: Option<&'static str>) -> Self {
         tokio::task::spawn_blocking(move || {
-            let root =
+            let base =
                 std::env::temp_dir().join(format!("calternal-secrets-{}", uuid::Uuid::new_v4()));
+            let roots = calternal_roots::Roots { appdata: base.join("appdata"), userdata_ssd: base.join("userdata-ssd"), userdata_hdd: base.join("userdata-hdd") };
+            let store = Store::open(&roots, true).unwrap();
+            // Every later path is in appdata; `base` holds all three roots.
+            let root = roots.appdata.clone();
             let tokens = TokenTable::load_or_create(&root).unwrap();
             let guest = std::fs::read_to_string(root.join("dev-tokens/guest.token")).unwrap();
             let owner = std::fs::read_to_string(root.join("dev-tokens/owner.token")).unwrap();
@@ -78,7 +83,7 @@ impl Fixture {
             }
             .unwrap();
             let state = Arc::new(AppState {
-                store: Store::open(&root).unwrap(),
+                store,
                 tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),
@@ -233,7 +238,7 @@ async fn development_bearer_tokens_cannot_provide() {
     let res = router(f.state.clone(), None).oneshot(req).await.unwrap();
     // Without account sessions the route is not mounted at all.
     assert_eq!(res.status(), StatusCode::NOT_FOUND);
-    assert!(scan(&f.root).is_empty());
+    assert!(scan(f.root.parent().unwrap()).is_empty());
 }
 
 async fn op(app: &App, cookie: &str, operation: &str, input: Value) -> Value {

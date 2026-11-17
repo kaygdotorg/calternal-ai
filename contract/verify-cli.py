@@ -27,12 +27,12 @@ def smoke(data_dir, spawn):
 
     def start():
         nonlocal process
-        process = subprocess.Popen([str(ROOT/'target/debug/calternal'), 'serve', '--data-dir', str(data_dir), '--port', '0'], stdout=log, stderr=log, cwd=ROOT)
+        process = subprocess.Popen([str(ROOT/'target/debug/calternal'), 'serve', '--development', '--create', '--appdata', str(data_dir/'appdata'), '--userdata-ssd', str(data_dir/'userdata-ssd'), '--userdata-hdd', str(data_dir/'userdata-hdd'), '--port', '0'], stdout=log, stderr=log, cwd=ROOT)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise AssertionError('private preview failed to start (credentials omitted)')
-            ready = data_dir/'startup.json'
+            ready = data_dir/'appdata'/'startup.json'
             if ready.exists():
                 info = json.loads(ready.read_text())
                 if info['pid'] == process.pid:
@@ -45,13 +45,13 @@ def smoke(data_dir, spawn):
             process.terminate()
             process.wait(timeout=10)
 
-    info = start() if spawn else json.loads((data_dir/'startup.json').read_text())
+    info = start() if spawn else json.loads((data_dir/'appdata'/'startup.json').read_text())
 
     def cl(*command, principal='owner', error=None):
         env = dict(os.environ)
         env.pop('CALTERNAL_TOKEN', None)
         env.pop('CALTERNAL_TOKEN_FILE', None)
-        result = subprocess.run([str(ROOT/'target/debug/cl'), '--base-url', info['base_url'], '--token-file', str(data_dir/'dev-tokens'/f'{principal}.token'), *command], capture_output=True, text=True, env=env, timeout=20)
+        result = subprocess.run([str(ROOT/'target/debug/cl'), '--base-url', info['base_url'], '--token-file', str(data_dir/'appdata'/'dev-tokens'/f'{principal}.token'), *command], capture_output=True, text=True, env=env, timeout=20)
         payload = json.loads(result.stderr if error else result.stdout)
         if error:
             assert result.returncode != 0 and payload['error']['code'] == error, 'unexpected CLI error category'

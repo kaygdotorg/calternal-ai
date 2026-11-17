@@ -21,6 +21,7 @@ test-plugins = []
 calternal-types.workspace = true
 calternal-content.workspace = true
 calternal-roots.workspace = true
+calternal-recovery.workspace = true
 calternal-auth.workspace = true
 calternal-fsio.workspace = true
 calternal-core.workspace = true

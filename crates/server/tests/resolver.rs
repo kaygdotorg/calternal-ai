@@ -19,10 +19,11 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let tokens = TokenTable::load_or_create(dir.path()).unwrap();
+        let roots = support::roots(dir.path());
+        let store = Store::open(&roots, true).unwrap();
+        let tokens = TokenTable::load_or_create(&roots.appdata).unwrap();
         let dev = support::dev(&tokens);
         let (owner, guest) = (dev.owner, dev.guest);
-        let store = Store::open(dir.path()).unwrap();
         let state = Arc::new(AppState {
             store,
             tokens,

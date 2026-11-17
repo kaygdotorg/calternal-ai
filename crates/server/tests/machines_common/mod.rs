@@ -82,17 +82,16 @@ pub struct Server {
 
 impl Server {
     pub fn start(data: &Path, port: u16) -> Self {
-        let startup = data.join("startup.json");
+        let startup = data.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(BIN)
-            .args([
-                "serve",
-                "--development",
-                "--port",
-                &port.to_string(),
-                "--data-dir",
-            ])
-            .arg(data)
+            .args(["serve", "--development", "--port", &port.to_string(), "--create"])
+            .arg("--appdata")
+            .arg(data.join("appdata"))
+            .arg("--userdata-ssd")
+            .arg(data.join("userdata-ssd"))
+            .arg("--userdata-hdd")
+            .arg(data.join("userdata-hdd"))
             .args(["--plugin-root", "/nonexistent-test-plugins"])
             .args(["--machine-lease-ttl-ms", &LEASE_TTL_MS.to_string()])
             .args(["--machine-poll-hold-ms", &POLL_HOLD_MS.to_string()])

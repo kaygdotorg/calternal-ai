@@ -611,6 +611,7 @@ dependencies = [
  "calternal-fsio",
  "calternal-machine",
  "calternal-plugin-host",
+ "calternal-recovery",
  "calternal-roots",
  "calternal-secrets",
  "calternal-types",

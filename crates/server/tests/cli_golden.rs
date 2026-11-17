@@ -311,7 +311,8 @@ fn machine_status_and_enroll_failures_say_what_to_do() {
 
 fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
     let d = tempfile::tempdir().unwrap();
-    let dir = data(d.path());
+    let dir = data(&d.path().join("appdata"));
+    let (ssd, hdd) = (data(&d.path().join("userdata-ssd")), data(&d.path().join("userdata-hdd")));
     let mut args = vec![
         "serve",
         "--development",
@@ -319,8 +320,13 @@ fn serve_start(extra: &[&str], json: bool) -> (String, Option<i32>) {
         "0",
         "--plugin-root",
         "/nonexistent-plugins",
-        "--data-dir",
+        "--appdata",
         &dir,
+        "--userdata-ssd",
+        &ssd,
+        "--userdata-hdd",
+        &hdd,
+        "--create",
     ];
     args.extend_from_slice(extra);
     if json {

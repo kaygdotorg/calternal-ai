@@ -135,3 +135,12 @@ pub fn dev(table: &calternal_server::auth::TokenTable) -> Dev {
             .unwrap()
     })
 }
+
+/// Three sibling roots under one disposable directory.
+pub fn roots(dir: &Path) -> calternal_roots::Roots {
+    calternal_roots::Roots {
+        appdata: dir.join("appdata"),
+        userdata_ssd: dir.join("userdata-ssd"),
+        userdata_hdd: dir.join("userdata-hdd"),
+    }
+}

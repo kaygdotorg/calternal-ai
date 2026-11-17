@@ -2,11 +2,10 @@
 //!
 //! `state.sqlite3` retains plugin enablement and unfinished control publication intents only;
 //! it has no item, content or history tables. `system/content-index.db` holds
-//! identifier-only item/request routes. The content crate owns each UUID space's
+//! identifier-only item routes. The content crate owns each UUID space's
 //! `content.db`, inherited `index.db` journal/receipts and SSD-tree files.
-//! `open` selects separate `userdata-ssd`/`userdata-hdd` subdirectories for disposable preview data;
-//! production callers must supply validated and locked roots through `open_roots`.
-//! No old shared-content schema is migrated or adopted.
+//! [`Store::open`] validates and locks the three roots through `calternal-roots`
+//! before it creates or opens anything, and holds those locks for its lifetime.
 use crate::fault::{self, FaultPoint};
 use calternal_types::Error;
 use calternal_content::{Content, Item, ReadPool, Request};
@@ -15,8 +14,6 @@ use calternal_core::{Note, NoteSummary, NoteVersion};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, File},
-    path::{Path, PathBuf},
     sync::Mutex,
     time::Duration,
 };
@@ -36,7 +33,9 @@ pub struct Store {
     readers: ReadPool,
     content: Content,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
-    _lock: File,
+    installation: uuid::Uuid,
+    // Dropped last: every database and file handle above closes first.
+    _roots: calternal_roots::RootLocks,
 }
 /// Replayable account-qualified result; note responses live in their space journal.
 pub struct Receipt {
@@ -119,43 +118,35 @@ impl Store {
     fn writer(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.writer.lock().unwrap_or_else(|e| e.into_inner())
     }
+    /// The installation UUID recorded in the root markers. Cost: a copy.
+    pub fn installation(&self) -> uuid::Uuid {
+        self.installation
+    }
     /// Shared secret store under this appdata root. Cost: one reference-count
     /// increment.
     pub fn secrets(&self) -> std::sync::Arc<calternal_secrets::LocalStore> {
         self.secrets.clone()
     }
-    /// Opens disposable preview roots under one data directory and takes its lock.
-    /// Cost: directory/lock/plugin SQLite I/O, generic catalog startup and replay;
-    /// recovered writes fsync their database, journal, current file and directory.
-    /// This helper is not production three-root validation or witness provisioning.
-    pub fn open(root: &Path) -> Result<Self, Error> {
-        Self::open_roots(
-            calternal_roots::Roots {
-                appdata: root.into(),
-                userdata_ssd: root.join("userdata-ssd"),
-                userdata_hdd: root.join("userdata-hdd"),
-            },
-            root.join("secrets"),
-        )
-    }
-    /// Opens caller-validated, externally locked three-root storage plus a separate
-    /// journal witness root. The host must retain the roots guards for this lifetime.
-    /// Cost: one installation lock, plugin/catalog database opens and schema fsyncs,
-    /// then startup-only pending publication/materialization recovery per space.
-    pub fn open_roots(roots: calternal_roots::Roots, secrets: PathBuf) -> Result<Self, Error> {
+    /// Validates and locks the installation's three roots, then opens its stores.
+    ///
+    /// `create` allows first setup of empty or missing roots; without it every root
+    /// must already carry this installation's marker for its role. Missing, swapped,
+    /// mismatched or occupied roots are refused before anything is created (see
+    /// [`calternal_roots::open`]). The journal witness and secret key live in
+    /// `<appdata>/secrets`.
+    ///
+    /// # Errors
+    /// Unavailable for a refused or locked root, or a store that cannot open.
+    ///
+    /// Cost: the roots guard (marker reads, three locks), plugin/catalog database
+    /// opens and schema fsyncs, then startup-only pending publication and
+    /// materialization recovery per space.
+    pub fn open(roots: &calternal_roots::Roots, create: bool) -> Result<Self, Error> {
+        let (installation, locks) = calternal_roots::open(roots, create)
+            .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?;
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
-        let lock = calternal_fsio::private::file(&root.join(".calternal.lock"))
-            .map_err(|e| io_err("open lock", e))?;
-        match lock.try_lock() {
-            Ok(()) => {}
-            Err(fs::TryLockError::WouldBlock) => {
-                return Err(Error::unavailable(
-                    "data directory is locked by another calternal process",
-                ));
-            }
-            Err(fs::TryLockError::Error(e)) => return Err(io_err("lock data dir", e)),
-        }
+        let secrets = root.join("secrets");
         let path = root.join("state.sqlite3");
         calternal_fsio::private::file(&path)
             .map_err(|e| io_err("prepare plugin database", e))?;
@@ -177,8 +168,7 @@ impl Store {
             CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
             CREATE TABLE IF NOT EXISTS plugin_outbox(principal TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(principal,space_id,request_id));
             PRAGMA user_version=3;COMMIT;").map_err(db_err)?;
-        let content = Content::open(roots, secrets, Duration::from_secs(600), content_fault)
-            ?;
+        let content = Content::open(roots.clone(), secrets, Duration::from_secs(600), content_fault)?;
         // Fails closed: a missing or wrong secret key stops startup instead of
         // minting a key that cannot read the stored secrets.
         let secrets = calternal_secrets::LocalStore::open(&root)
@@ -188,7 +178,8 @@ impl Store {
             readers: ReadPool::new(path),
             content,
             secrets: std::sync::Arc::new(secrets),
-            _lock: lock,
+            installation,
+            _roots: locks,
         };
         let pending = store
             .readers

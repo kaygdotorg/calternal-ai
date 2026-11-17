@@ -15,20 +15,32 @@ npm ci
 npm run build
 ./scripts/with-toolchain.sh cargo build --locked -p calternal-server -p calternal-cli
 ./scripts/with-toolchain.sh cargo run --locked -p calternal-server -- serve \
-  --data-dir .dev-data --port 3210 --plugin-root plugins
+  --development --create --port 3210 --plugin-root plugins \
+  --appdata .dev-data/appdata \
+  --userdata-ssd .dev-data/userdata-ssd \
+  --userdata-hdd .dev-data/userdata-hdd
 ```
 
-The server prints **paths**, never token values. Do not paste tokens into a conversation.
+The server keeps its databases in appdata and space files in the two userdata
+roots. `--create` pairs three empty roots on first start; afterwards the server
+refuses roots that are missing, swapped or from another installation. Security
+changes are also written to a protected log in `userdata-ssd/.calternal/recovery`.
 
-The owner can edit `personal` and `shared`; `.dev-data/dev-tokens/guest.token` can only read `shared`. These are fixed development principals, not production authentication. The server binds to loopback only; do not expose the preview publicly.
+`--development` creates two fixture accounts and writes their bearer tokens to
+`.dev-data/appdata/dev-tokens/`. The server prints **paths**, never token values.
+Do not paste tokens into a conversation. The owner has two spaces named
+`personal` and `shared`; the guest can only read `shared`. These are fixed
+development principals, not production authentication. The server binds to
+loopback only; do not expose the preview publicly.
 
-The CLI uses the same operation route:
+The CLI uses the same operation route. Spaces are named by UUID, listed by
+`describe`:
 
 ```sh
-export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/dev-tokens/owner.token"
+export CALTERNAL_TOKEN_FILE="$PWD/.dev-data/appdata/dev-tokens/owner.token"
 ./target/debug/cl describe
-./target/debug/cl notes list --space personal
-./target/debug/cl plugins list --space personal
+./target/debug/cl notes list --space <space-uuid>
+./target/debug/cl plugins list --space <space-uuid>
 ```
 
 For mutation retries, retain the `--request-id` and repeat exactly the same operation and input. A transport failure can mean the server committed even though the reply was lost. Tokens are accepted from a protected file or environment, never a command-line token argument.

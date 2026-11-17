@@ -28,9 +28,19 @@ struct Cli {
 enum Cmd {
     /// Serve the development preview on 127.0.0.1.
     Serve {
-        /// Disposable data directory (created if missing, mode 0700).
+        /// Protected databases and state (normally on SSD).
         #[arg(long)]
-        data_dir: PathBuf,
+        appdata: PathBuf,
+        /// Space trees of claim-validated text files (normally on SSD).
+        #[arg(long)]
+        userdata_ssd: PathBuf,
+        /// Space trees of other original files (normally on HDD).
+        #[arg(long)]
+        userdata_hdd: PathBuf,
+        /// First setup: pair three empty or missing roots. Without it every root must
+        /// already belong to this installation; harmless on a paired installation.
+        #[arg(long)]
+        create: bool,
         /// Loopback port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
@@ -99,7 +109,10 @@ fn main() {
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
         Cmd::Serve {
-            data_dir,
+            appdata,
+            userdata_ssd,
+            userdata_hdd,
+            create,
             port,
             web_dir,
             plugin_root,
@@ -130,7 +143,12 @@ fn main() {
                 .hint("Rebuild with `--features test-plugins`, or drop --test-plugin-root."))
             } else {
                 rt.block_on(serve(
-                    data_dir,
+                    calternal_roots::Roots {
+                        appdata,
+                        userdata_ssd,
+                        userdata_hdd,
+                    },
+                    create,
                     port,
                     web_dir,
                     plugin_root,
@@ -158,7 +176,8 @@ fn boot(exit: i32, code: &str, message: impl Into<String>, hint: &str) -> CliErr
 }
 
 async fn serve(
-    data_dir: PathBuf,
+    roots: calternal_roots::Roots,
+    create: bool,
     port: u16,
     web_dir: Option<PathBuf>,
     plugin_root: PathBuf,
@@ -171,25 +190,34 @@ async fn serve(
     out: &Output,
 ) -> Result<(), CliError> {
     const DATA_HINT: &str =
-        "Check that --data-dir exists (or can be created) and that you can write to it.";
-    calternal_fsio::private::directory(&data_dir).map_err(|e| {
-        boot(
-            1,
-            "io",
-            format!("cannot prepare the data directory: {e}"),
-            DATA_HINT,
-        )
-    })?;
-    let data_dir = std::fs::canonicalize(&data_dir)
-        .map_err(|e| boot(1, "io", format!("data directory: {e}"), DATA_HINT))?;
-    let store = Store::open(&data_dir).map_err(|e| {
+        "Check that --appdata exists (or can be created) and that you can write to it.";
+    // The roots guard runs first: a missing, swapped or foreign root is refused
+    // before any directory, lock or database is created.
+    let store = Store::open(&roots, create).map_err(|e| {
         boot(
             1,
             "failed",
             e.message,
-            "Is another server using this data directory? Check its log.",
+            "Pass the three roots this installation was set up with (--create only for \
+             first setup), and make sure no other server is using them.",
         )
     })?;
+    let data_dir = std::fs::canonicalize(&roots.appdata)
+        .map_err(|e| boot(1, "io", format!("appdata: {e}"), DATA_HINT))?;
+    // Every security change is written to this log in userdata-ssd before it is
+    // acknowledged (crates/recovery), so auth.db can be rebuilt if appdata is lost.
+    let recovery_dir = roots.userdata_ssd.join(".calternal/recovery");
+    calternal_fsio::private::directory(&recovery_dir)
+        .map_err(|e| boot(1, "io", format!("recovery log directory: {e}"), DATA_HINT))?;
+    let recovery = calternal_recovery::Coordinator::open(&recovery_dir, store.installation())
+        .map_err(|e| {
+            boot(
+                1,
+                "failed",
+                format!("recovery log: {e}"),
+                "The recovery log in userdata-ssd is damaged or belongs to another installation.",
+            )
+        })?;
     let machines = {
         let dir = data_dir.clone();
         match tokio::task::spawn_blocking(move || MachineService::open(&dir, machine_settings))
@@ -265,7 +293,7 @@ async fn serve(
             "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
         ));
     }
-    let tokens = match TokenTable::open(&data_dir, config, development) {
+    let tokens = match TokenTable::open(&data_dir, config, development, Some(Arc::new(recovery))) {
         Ok(t) => t,
         Err(e) => {
             return Err(boot(
@@ -340,7 +368,7 @@ async fn serve(
         "base_url": base_url,
         "passkey_origin": public_origin,
         "pid": std::process::id(),
-        "data_dir": data_dir,
+        "appdata": data_dir,
         "token_files": token_files.iter().map(|(p, f)| (p.to_string(), serde_json::json!(f))).collect::<serde_json::Map<_, _>>(),
         "web_dir": web_dir,
     });

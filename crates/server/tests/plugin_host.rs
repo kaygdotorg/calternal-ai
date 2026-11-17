@@ -73,15 +73,16 @@ fn tagger(dir: &Path) -> Plugin {
 
 async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixture {
     let root = tmp(tag);
-    let data = root.join("data");
-    std::fs::create_dir_all(&data).unwrap();
+    let roots = support::roots(&root);
+    let store = Store::open(&roots, true).unwrap();
+    let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13 on PATH");
     let workers = match pool {
         Some(cap) => WorkerPool::with_capacity(Some(node), cap),
         None => WorkerPool::new(Some(node)),
     };
     let state = Arc::new(AppState {
-        store: Store::open(&data).unwrap(),
+        store,
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(plugins),
         workers,
@@ -204,7 +205,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
     .await
     .unwrap();
     // Enable registered the hidden kind and created the standard collection file.
-    let ssd = f.root.join("data/userdata-ssd");
+    let ssd = f.root.join("userdata-ssd");
     assert!(
         find(&ssd, "All tags.json"),
         "standard collection not provisioned"
@@ -569,7 +570,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         "opaque bytes are stored unchanged"
     );
     assert!(
-        has_extension(&f.root.join("data"), "geojson"),
+        has_extension(&f.root, "geojson"),
         "file not stored under its extension"
     );
     let _ = std::fs::remove_dir_all(dir);
@@ -605,7 +606,7 @@ async fn host_calls_recheck_the_callers_sign_in() {
     .unwrap_err();
     assert_eq!(e.code, ErrorCode::Unauthorized);
     assert!(
-        !find(&f.root.join("data/userdata-ssd"), "late.md"),
+        !find(&f.root.join("userdata-ssd"), "late.md"),
         "write landed without a live sign-in"
     );
     // The same call with a live (static) credential writes.
@@ -650,7 +651,7 @@ async fn mutating_operation_retry_replays_its_receipt() {
         .await
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::Conflict);
-    assert!(!find(&f.root.join("data/userdata-ssd"), "other.md"));
+    assert!(!find(&f.root.join("userdata-ssd"), "other.md"));
 }
 
 /// The test-only jobs plugin from `tests/plugins/jobs-demo`, digest pinned.
@@ -721,7 +722,7 @@ async fn job_is_durable_streams_in_order_checkpoints_and_finishes() {
     let space = f.state.jobs.route(&id).expect("job routed to its space");
     assert!(
         f.root
-            .join("data/spaces")
+            .join("appdata/spaces")
             .join(&space)
             .join("jobs.db")
             .is_file()

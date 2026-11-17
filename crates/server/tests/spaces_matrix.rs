@@ -29,15 +29,20 @@ struct Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.root);
+        // `root` is appdata; its parent holds all three roots.
+        let _ = std::fs::remove_dir_all(self.root.parent().unwrap());
     }
 }
 impl Fixture {
     async fn new(role: Option<&str>) -> Self {
         let role = role.map(str::to_owned);
         tokio::task::spawn_blocking(move || {
-            let root =
+            let base =
                 std::env::temp_dir().join(format!("calternal-spaces-{}", uuid::Uuid::new_v4()));
+            let roots = calternal_roots::Roots { appdata: base.join("appdata"), userdata_ssd: base.join("userdata-ssd"), userdata_hdd: base.join("userdata-hdd") };
+            let store = Store::open(&roots, true).unwrap();
+            // Every later path is in appdata; `base` holds all three roots.
+            let root = roots.appdata.clone();
             let tokens = TokenTable::load_or_create(&root).unwrap();
             let token = std::fs::read_to_string(root.join("dev-tokens/guest.token")).unwrap();
             let owner_token = std::fs::read_to_string(root.join("dev-tokens/owner.token")).unwrap();
@@ -100,7 +105,7 @@ impl Fixture {
             )
             .unwrap();
             let state = Arc::new(AppState {
-                store: Store::open(&root).unwrap(),
+                store,
                 tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),

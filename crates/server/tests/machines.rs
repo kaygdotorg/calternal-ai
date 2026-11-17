@@ -35,7 +35,7 @@ async fn enrolment_codes_are_single_use_and_expire() {
             "--json",
             "--data-dir",
         ])
-        .arg(&data.0)
+        .arg(data.0.join("appdata"))
         .output()
         .unwrap();
     assert!(out.status.success());
@@ -206,7 +206,7 @@ async fn other_accounts_cannot_use_see_or_touch_a_machine() {
     let (guest_id, _) = server.principal(g).await;
     let st = std::process::Command::new(BIN)
         .args(["machines", "pool-grant", &guest_id, "--data-dir"])
-        .arg(&data.0)
+        .arg(data.0.join("appdata"))
         .status()
         .unwrap();
     assert!(st.success());
@@ -223,7 +223,7 @@ async fn pool_machines_serve_only_granted_accounts() {
     let server = Server::start(&data.0, free_port());
     let out = std::process::Command::new(BIN)
         .args(["machines", "code", "--pool", "--json", "--data-dir"])
-        .arg(&data.0)
+        .arg(data.0.join("appdata"))
         .output()
         .unwrap();
     let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -245,7 +245,7 @@ async fn pool_machines_serve_only_granted_accounts() {
     let (owner_id, _) = server.principal(&server.owner).await;
     let st = std::process::Command::new(BIN)
         .args(["machines", "pool-grant", &owner_id, "--data-dir"])
-        .arg(&data.0)
+        .arg(data.0.join("appdata"))
         .status()
         .unwrap();
     assert!(st.success());

@@ -34,10 +34,12 @@ async fn disable_during_invocation_discards_result() {
     // The worker reads the note through the broker, then blocks until `go` exists.
     let worker = support::worker(&wdir, support::READ_NOTE, support::COMPLETE_AFTER_GO);
     let plugin = support::plugin(support::insights_manifest(), Some(&worker), false);
-    let data = root.0.join("data");
+    let roots = support::roots(&root.0);
+    let store = Store::open(&roots, true).unwrap();
+    let data = roots.appdata;
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
-        store: Store::open(&data).unwrap(),
+        store,
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),
         workers: WorkerPool::new(Some(node)),

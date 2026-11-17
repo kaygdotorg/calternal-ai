@@ -70,11 +70,11 @@ fn start_full(
     web: Option<&Path>,
     plugins: Option<&Path>,
 ) -> Server {
-    let startup = data.join("startup.json");
+    let startup = data.join("appdata/startup.json");
     let _ = std::fs::remove_file(&startup);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
-    cmd.args(["serve", "--development", "--port", "0", "--data-dir"])
-        .arg(data)
+    cmd.args(["serve", "--development", "--port", "0"])
+        .args(roots(data))
         .arg("--plugin-root")
         .arg(plugins.unwrap_or(Path::new("/nonexistent-test-plugins")))
         .env("RUST_LOG", "warn")
@@ -129,6 +129,22 @@ fn start_full(
         );
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+/// Serve arguments for three sibling roots under `data`; `--create` pairs them on
+/// first start and is harmless afterwards.
+fn roots(data: &Path) -> Vec<std::ffi::OsString> {
+    let mut args = Vec::new();
+    for (flag, dir) in [
+        ("--appdata", "appdata"),
+        ("--userdata-ssd", "userdata-ssd"),
+        ("--userdata-hdd", "userdata-hdd"),
+    ] {
+        args.push(flag.into());
+        args.push(data.join(dir).into_os_string());
+    }
+    args.push("--create".into());
+    args
 }
 
 struct Resp {
@@ -234,7 +250,7 @@ fn note_dir(data: &Path, space: &str) -> PathBuf {
 }
 fn note_file(data: &Path, space: &str, id: &str) -> PathBuf {
     let conn = rusqlite::Connection::open_with_flags(
-        data.join("spaces").join(&space).join("content.db"),
+        data.join("appdata/spaces").join(&space).join("content.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
@@ -547,8 +563,8 @@ fn exclusive_data_dir_lock() {
     let d = TempDir::new("lock");
     let _srv = start(&d.0, None);
     let st = Command::new(env!("CARGO_BIN_EXE_calternal"))
-        .args(["serve", "--development", "--port", "0", "--data-dir"])
-        .arg(&d.0)
+        .args(["serve", "--development", "--port", "0"])
+        .args(roots(&d.0))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -654,7 +670,7 @@ fn host_origin_and_bearer_checks() {
     assert_eq!(r.map(|r| r.status), Some(413));
     // Token files are owner-only and never printed (stdout checked in startup).
     use std::os::unix::fs::PermissionsExt;
-    let mode = std::fs::metadata(d.0.join("dev-tokens/owner.token"))
+    let mode = std::fs::metadata(d.0.join("appdata/dev-tokens/owner.token"))
         .unwrap()
         .permissions()
         .mode();
@@ -778,11 +794,11 @@ fn development_tokens_require_an_explicit_startup_flag() {
     let d = TempDir::new("explicit-development");
     // A normal start must not create fixture identities or token files.
     let start_default = || {
-        let startup = d.0.join("startup.json");
+        let startup = d.0.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(env!("CARGO_BIN_EXE_calternal"))
-            .args(["serve", "--port", "0", "--data-dir"])
-            .arg(&d.0)
+            .args(["serve", "--port", "0"])
+            .args(roots(&d.0))
             .arg("--plugin-root")
             .arg("/nonexistent-test-plugins")
             .stdout(Stdio::null())
@@ -824,13 +840,13 @@ fn development_tokens_require_an_explicit_startup_flag() {
         }
     };
     let normal = start_default();
-    assert!(!d.0.join("dev-tokens").exists());
+    assert!(!d.0.join("appdata/dev-tokens").exists());
     let status = raw(normal.port, "GET", "/api/v1/auth/status", &[], None).unwrap();
     assert_eq!(status.status, 200);
     assert_eq!(status.body, json!({"setup":true,"signed_in":false}));
     assert_eq!(
         std::os::unix::fs::PermissionsExt::mode(
-            &std::fs::metadata(d.0.join("setup.token"))
+            &std::fs::metadata(d.0.join("appdata/setup.token"))
                 .unwrap()
                 .permissions()
         ) & 0o777,
@@ -861,8 +877,8 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
     let b = create(&srv, "b", &srv.shared, "shared body");
     let aid = a["space_id"].as_str().unwrap();
     let bid = b["space_id"].as_str().unwrap();
-    let pa = d.0.join("spaces").join(aid).join("content.db");
-    let pb = d.0.join("spaces").join(bid).join("content.db");
+    let pa = d.0.join("appdata/spaces").join(aid).join("content.db");
+    let pb = d.0.join("appdata/spaces").join(bid).join("content.db");
     assert!(pa.is_file() && pb.is_file());
     assert_ne!(
         std::fs::metadata(&pa).unwrap().ino(),
@@ -890,7 +906,7 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
         );
     }
     let global = rusqlite::Connection::open_with_flags(
-        d.0.join("state.sqlite3"),
+        d.0.join("appdata/state.sqlite3"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
@@ -912,7 +928,7 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
         "---\ncalternal-id: {}\n---\n",
         a["id"].as_str().unwrap()
     )));
-    assert!(d.0.join("spaces").join(aid).join("index.db").is_file());
+    assert!(d.0.join("appdata/spaces").join(aid).join("index.db").is_file());
 }
 
 #[test]
@@ -983,4 +999,66 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
             2
         );
     }
+}
+
+/// Starts `serve` on explicit roots and returns its exit status, or `None` if it
+/// was still serving after five seconds (then it is killed).
+fn serve_status(appdata: &Path, ssd: &Path, hdd: &Path, create: bool) -> Option<i32> {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
+    cmd.args(["serve", "--development", "--port", "0", "--appdata"])
+        .arg(appdata)
+        .arg("--userdata-ssd")
+        .arg(ssd)
+        .arg("--userdata-hdd")
+        .arg(hdd)
+        .arg("--plugin-root")
+        .arg("/nonexistent-test-plugins")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if create {
+        cmd.arg("--create");
+    }
+    let mut child = cmd.spawn().unwrap();
+    let t0 = Instant::now();
+    while t0.elapsed() < Duration::from_secs(5) {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status.code();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+/// The roots guard runs before anything is created: empty roots without
+/// `--create`, swapped roots and a root of another installation are all refused,
+/// and a refused start leaves no database behind.
+#[test]
+fn server_refuses_empty_swapped_or_foreign_roots() {
+    let d = TempDir::new("roots");
+    let (appdata, ssd, hdd) = (
+        d.0.join("appdata"),
+        d.0.join("userdata-ssd"),
+        d.0.join("userdata-hdd"),
+    );
+    for dir in [&appdata, &ssd, &hdd] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    assert_eq!(serve_status(&appdata, &ssd, &hdd, false), Some(1), "empty roots");
+    assert!(!appdata.join("system").exists(), "a refused start created state");
+    // First setup, then a normal restart, both serve.
+    drop(start(&d.0, None));
+    assert_eq!(serve_status(&appdata, &ssd, &hdd, false), None, "paired restart");
+    // Swapped userdata roots carry the wrong role markers.
+    assert_eq!(serve_status(&appdata, &hdd, &ssd, false), Some(1), "swapped roots");
+    assert_eq!(serve_status(&appdata, &hdd, &ssd, true), Some(1), "--create cannot repair");
+    // A userdata root of another installation carries another installation ID.
+    let other = TempDir::new("roots-other");
+    drop(start(&other.0, None));
+    let foreign = other.0.join("userdata-ssd");
+    assert_eq!(serve_status(&appdata, &foreign, &hdd, false), Some(1), "foreign root");
+    // The recovery log lives in userdata-ssd, owner-only.
+    let log = ssd.join(".calternal/recovery");
+    assert!(log.join("snapshot.json").is_file(), "recovery log provisioned");
 }

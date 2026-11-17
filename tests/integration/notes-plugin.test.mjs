@@ -13,15 +13,18 @@ const pluginRoot = resolve(repoRoot, "plugins");
 const sleep = (milliseconds) => new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 
 function readStartup(dataDir) {
-  return readFile(join(dataDir, "startup.json"), "utf8").then((text) => JSON.parse(text));
+  return readFile(join(dataDir, "appdata", "startup.json"), "utf8").then((text) => JSON.parse(text));
 }
 
 async function startServer(dataDir) {
-  const startupPath = join(dataDir, "startup.json");
+  const startupPath = join(dataDir, "appdata", "startup.json");
   await unlink(startupPath).catch(() => {});
   const child = spawn(serverBinary, [
     "serve", "--development",
-    "--data-dir", dataDir,
+    "--appdata", join(dataDir, "appdata"),
+    "--userdata-ssd", join(dataDir, "userdata-ssd"),
+    "--userdata-hdd", join(dataDir, "userdata-hdd"),
+    "--create",
     "--port", "0",
     "--plugin-root", pluginRoot,
     "--node", process.execPath,

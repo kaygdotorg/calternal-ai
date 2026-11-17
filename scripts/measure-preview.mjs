@@ -9,7 +9,7 @@ import { performance } from 'node:perf_hooks';
 const root = resolve(import.meta.dirname, '..');
 const data = await mkdtemp(join(tmpdir(), 'calternal-smoke-'));
 const started = performance.now();
-const child = spawn(join(root, 'target/debug/calternal'), ['serve', '--data-dir', data, '--port', '0', '--plugin-root', join(root, 'plugins')], { stdio: 'ignore' });
+const child = spawn(join(root, 'target/debug/calternal'), ['serve', '--development', '--create', '--appdata', join(data, 'appdata'), '--userdata-ssd', join(data, 'userdata-ssd'), '--userdata-hdd', join(data, 'userdata-hdd'), '--port', '0', '--plugin-root', join(root, 'plugins')], { stdio: 'ignore' });
 let exited = false;
 child.on('exit', () => { exited = true; });
 let spawnError;
@@ -20,7 +20,7 @@ try {
   for (let i = 0; i < 200; i++) {
     if (spawnError) throw spawnError;
     if (exited) throw new Error('Smoke server exited before readiness');
-    try { ready = JSON.parse(await readFile(join(data, 'startup.json'), 'utf8')); break; } catch {}
+    try { ready = JSON.parse(await readFile(join(data, 'appdata', 'startup.json'), 'utf8')); break; } catch {}
     await pause(25);
   }
   if (!ready) throw new Error('Smoke server readiness timeout');

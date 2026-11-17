@@ -160,7 +160,7 @@ impl Fixture {
             },
         );
         let plugin = support::plugin(support::insights_manifest(), Some(&worker), true);
-        let store = Store::open(&root.join("data")).unwrap();
+        let store = Store::open(&support::roots(&root.join("data")), true).unwrap();
         let tokens = MutableDirectory::new(role);
         let note = serde_json::to_value(
             store

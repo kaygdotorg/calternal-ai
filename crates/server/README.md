@@ -2,18 +2,30 @@
 
 Development preview with protected account sign-in and stored space authority.
 Use disposable data. The preview content store does not provide inherited tiering,
-FO1 recovery integration, or a production plugin sandbox.
+a rebuild from the recovery log, or a production plugin sandbox.
 
 ## Run
 
 ```sh
 scripts/with-toolchain.sh cargo build -p calternal-server -j4
 preview_data=$(mktemp -d /tmp/calternal-preview.XXXXXX)
-target/debug/calternal serve --data-dir "$preview_data" --port 0 \
-  --plugin-root plugins
+target/debug/calternal serve --create --port 0 --plugin-root plugins \
+  --appdata "$preview_data/appdata" \
+  --userdata-ssd "$preview_data/userdata-ssd" \
+  --userdata-hdd "$preview_data/userdata-hdd"
 ```
 
-The listener binds `127.0.0.1`. `startup.json` (0600) reports `base_url`,
+Startup first validates and locks the three roots (`calternal-roots`): each
+carries the installation ID (taken from appdata's marker) and its role. Missing,
+swapped, nested, occupied-but-unpaired or foreign roots are refused before any
+directory, lock or database is created; `--create` only pairs empty or missing
+roots. The protected security log (`calternal-recovery`) lives in
+`userdata-ssd/.calternal/recovery` and is attached to `auth.db` before any request
+or fixture seeding, so every security change is durable there before it is
+acknowledged. The operator `machines` commands take the appdata path as
+`--data-dir`.
+
+The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
 paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn
 needs a hostname. Use the reported URL and preserve the port across restarts to

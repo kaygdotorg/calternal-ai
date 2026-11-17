@@ -212,7 +212,7 @@ async fn issued_cookie_is_host_only_secure_and_does_not_include_a_domain() {
 async fn stale_account_proof_requires_reverification_before_adding_a_passkey() {
     let app = app();
     let (cookie, mut device) = first_owner(&app, "Owner").await;
-    let db = rusqlite::Connection::open(app.dir.path().join("system/auth.db")).unwrap();
+    let db = rusqlite::Connection::open(app.dir.path().join("appdata/system/auth.db")).unwrap();
     db.execute(
         "UPDATE installations SET assertion_at=0, registration_session=0",
         [],

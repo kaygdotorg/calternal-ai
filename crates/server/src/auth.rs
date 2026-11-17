@@ -63,6 +63,9 @@ pub trait Directory: Send + Sync + 'static {
     }
 }
 
+/// The protected security log attached to `auth.db` (see `calternal-recovery`).
+pub type Recovery = std::sync::Arc<dyn calternal_auth::spaces::RecoverySink>;
+
 /// Stored account/space directory with optional development tokens and HTTP sessions.
 /// Memberships are read on each request and never cached in identities.
 pub struct TokenTable {
@@ -77,12 +80,20 @@ impl TokenTable {
     /// Open system/auth.db and seed disposable fixtures once, then open tokens.
     /// Only development startup calls this; it supplies no production sign-in.
     pub fn load_or_create(data_dir: &Path) -> std::io::Result<Self> {
+        Self::seeded(data_dir, None)
+    }
+    /// [`Self::load_or_create`] with an optional recovery barrier attached before
+    /// the fixtures are seeded, so the seed is published like any other change.
+    fn seeded(data_dir: &Path, recovery: Option<Recovery>) -> std::io::Result<Self> {
         // This synchronous constructor is also used by async integration fixtures.
         // Join a dedicated startup thread so bounded-worker blocking admission is
         // never attempted from inside a Tokio runtime context.
         let path = data_dir.join("system/auth.db");
         let (spaces, ids) = std::thread::spawn(move || -> calternal_auth::Result<_> {
             let spaces = Spaces::open(&path)?;
+            if let Some(sink) = recovery {
+                spaces.configure_recovery(sink)?;
+            }
             let ids = spaces.seed_development()?;
             Ok((spaces, ids))
         })
@@ -110,16 +121,28 @@ impl TokenTable {
     }
     /// Opens the protected directory and account service. Only explicit development
     /// mode creates fixture accounts or accepts development bearer tokens.
+    ///
+    /// `recovery` is the protected security log: it is attached to `auth.db` before
+    /// any fixture is seeded or request served, so every security change is
+    /// published to it before acknowledgement. Without it nothing is logged
+    /// (in-process test fixtures only).
     pub fn open(
         data: &Path,
         config: calternal_auth::AuthConfig,
         development: bool,
+        recovery: Option<Recovery>,
     ) -> std::io::Result<Self> {
         let mut table = if development {
-            Self::load_or_create(data)?
+            Self::seeded(data, recovery)?
         } else {
             let path = data.join("system/auth.db");
-            let spaces = std::thread::spawn(move || Spaces::open(&path))
+            let spaces = std::thread::spawn(move || -> calternal_auth::Result<_> {
+                let spaces = Spaces::open(&path)?;
+                if let Some(sink) = recovery {
+                    spaces.configure_recovery(sink)?;
+                }
+                Ok(spaces)
+            })
                 .join()
                 .map_err(|_| std::io::Error::other("directory startup failed"))?
                 .map_err(std::io::Error::other)?;
