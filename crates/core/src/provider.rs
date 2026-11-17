@@ -78,14 +78,7 @@ pub struct ProviderRequest {
 #[ts(tag = "type", rename_all = "snake_case")]
 pub enum ProviderEventKind {
     /// Installation and login status; no credential or raw status output.
-    Check {
-        /// Official program was found.
-        installed: bool,
-        /// Official program reports a current login.
-        signed_in: bool,
-        /// Command the person runs in their sandbox, never run by the adapter.
-        sign_in_command: String,
-    },
+    Check(crate::ProviderCheck),
     /// Session identity issued by the official program, used for explicit resume.
     Session {
         /// Opaque provider session identifier; never a login or access token.
@@ -179,9 +172,7 @@ impl ProviderEvent {
         let short = |s: &str, n: usize| s.len() <= n;
         let safe = |n: u64| n <= 9_007_199_254_740_991;
         let valid = match &self.event {
-            ProviderEventKind::Check {
-                sign_in_command, ..
-            } => short(sign_in_command, 128),
+            ProviderEventKind::Check(status) => short(&status.sign_in_command, 128),
             ProviderEventKind::Session { session_id } => {
                 !session_id.is_empty() && short(session_id, 128)
             }

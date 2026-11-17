@@ -1909,6 +1909,7 @@ async fn simultaneous_transfers_preserve_exactly_one_owner() {
 async fn every_bound_space_operation_requires_its_policy_capability() {
     let cases = [
         ("resolve", "space.read"),
+        ("agent.readiness", "plugins.use"),
         ("spaces.members", "space.read"),
         ("spaces.set_role", "members.manage"),
         ("spaces.remove_member", "members.manage"),

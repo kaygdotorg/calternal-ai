@@ -174,6 +174,10 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, Error> {
 /// # Errors
 /// Returns invalid input for schema/value violations, too large for oversized Markdown, or not found for unknown operations.
 pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(), Error> {
+    if operation == crate::AGENT_READINESS {
+        let _: crate::ReadinessInput = decode(input)?;
+        return Ok(());
+    }
     if crate::AGENT_OPERATIONS
         .iter()
         .any(|(id, _, _)| *id == operation)
@@ -485,7 +489,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
     catalog.extend(account_input_catalog());
     catalog.extend(REQUEST_OPERATIONS.iter().map(RequestOperation::description));
     catalog.extend(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {
-        entry::<crate::AgentInput, crate::JsonObject>(id, text, *mutates)
+        if *id == crate::AGENT_READINESS {
+            entry::<crate::ReadinessInput, crate::ReadinessResult>(id, text, *mutates)
+        } else {
+            entry::<crate::AgentInput, crate::JsonObject>(id, text, *mutates)
+        }
     }));
     catalog
 }

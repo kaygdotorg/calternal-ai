@@ -1,4 +1,6 @@
 //! Saved thread commands use the same manifest operations as every client.
+mod reason;
+
 use crate::{
     agent::{self, Connection},
     output::{CliError, Output, Reply},
@@ -168,7 +170,7 @@ fn lifecycle(metadata: &Value) -> &'static str {
 
 /// Render server thread data with shared width adaptation, stable JSON and hints.
 /// Cost: O(returned rows or document bytes); no I/O. Unknown shapes fail visibly.
-pub fn reply(data: Value) -> Reply {
+pub fn reply(out: &Output, data: Value) -> Reply {
     if let Some(rows) = data["threads"].as_array() {
         let rows = rows
             .iter()
@@ -178,6 +180,7 @@ pub fn reply(data: Value) -> Reply {
                 vec![
                     field("title"),
                     r["turn_state"].as_str().unwrap_or("idle").into(),
+                    reason::summary(&r["turn_reason"]).unwrap_or("—").into(),
                     lifecycle(metadata).into(),
                     metadata["message_count"].as_u64().unwrap_or(0).to_string(),
                     r["id"].as_str().unwrap_or("").into(),
@@ -194,6 +197,7 @@ pub fn reply(data: Value) -> Reply {
                 &[
                     "TITLE",
                     "TURN",
+                    "TURN REASON",
                     "STATE",
                     "MESSAGES",
                     "ID",
@@ -243,6 +247,7 @@ pub fn reply(data: Value) -> Reply {
     if let Some(state) = thread["turn_state"].as_str() {
         result = result.fields([("Thread turn state", state)]);
     }
+    result = reason::details(out, result, &thread["turn_reason"]);
     if let Some(job) = data.get("job") {
         result = result.fields([
             ("Turn", job["id"].as_str().unwrap_or("")),
@@ -272,7 +277,7 @@ pub fn main(args: Args, out: &Output) -> i32 {
         let (operation, input) = args.command.operation();
         agent::call(&client, operation, input, connection.request_id)
             .await
-            .map(reply)
+            .map(|value| reply(out, value))
     });
     out.finish(result)
 }
