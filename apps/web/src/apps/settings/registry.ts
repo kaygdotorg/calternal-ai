@@ -137,6 +137,10 @@ const danger = (id: string, label: string, help: string, text: string): Group =>
 const membersPage: Page = {
   id: "members", name: "Members and roles", icon: "user", blurb: "Who is in this space and what each role may do.",
   groups: [
+    { title: "Roles in this space", settings: [
+      { id: "space.add-person", label: "Add a person", help: "Give a person a role in this space.", control: { type: "button", text: "Add a person…", run: confirmLater("Add a person") } },
+      { id: "space.add-group", label: "Add a group", help: "A role can be given to a group as well as to a person: everyone in the group (and anyone who joins it later) has the role here. The group's own members are managed under Admin.", control: { type: "button", text: "Add a group…", run: confirmLater("Add a group") } },
+    ] },
     { title: "Members", settings: [{ id: "space.members", label: "Members", help: "Roles are sets of capabilities.", control: { type: "drill", summary: () => "12 members", run: confirmLater("Members") } }, { id: "space.roles", label: "Roles", control: { type: "drill", summary: () => "Owner, Manager, Member, Reader", run: confirmLater("Roles") } }] },
     danger("space.leave", "Leave this space", "You lose access to everything in it.", "Leave space…"),
   ],
