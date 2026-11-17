@@ -1,5 +1,6 @@
 //! Private account input storage, following the secrets per-owner database pattern.
-//! Each call opens one account connection on a blocking worker. No connection,
+//! Mutations open one account connection on a blocking worker; live feeds retain
+//! their own connection under the existing listener lease. No mutation connection,
 //! mutation mutex or background thread is shared across accounts. A short map
 //! lookup selects an active account's wake sender, released before sending and
 //! never held over SQL, I/O or awaits. One IMMEDIATE transaction
@@ -7,6 +8,7 @@
 mod db;
 mod dispatch;
 mod http;
+mod reader;
 mod wake;
 use calternal_types::Error;
 pub(crate) use dispatch::dispatch;

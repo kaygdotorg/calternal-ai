@@ -30,7 +30,9 @@ struct Follow<D: Directory> {
     wake: super::wake::Listener,
     changes: Vec<tokio::sync::watch::Receiver<u64>>,
     done: bool,
-    _admission: std::fs::File,
+    reader: Option<super::reader::Reader<D>>,
+    maintenance: bool,
+    maintenance_at: tokio::time::Instant,
 }
 fn encode(frame: AccountFrame) -> String {
     format!(
@@ -60,10 +62,13 @@ pub(crate) async fn events<D: Directory>(
     let head = tokio::task::spawn_blocking(move || {
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
-        Ok::<_, Error>((Inputs::head(&c)?, st.inputs.admit(identity.id)?))
+        let head = Inputs::head(&c)?;
+        let admission = st.inputs.admit(identity.id)?;
+        let reader = super::reader::Reader::new(c, admission, st)?;
+        Ok::<_, Error>((head, reader))
     })
     .await;
-    let (head, admission) = match head {
+    let (head, reader) = match head {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => return error_response(e),
         Err(e) => return error_response(internal(e)),
@@ -79,7 +84,9 @@ pub(crate) async fn events<D: Directory>(
         wake,
         changes,
         done: false,
-        _admission: admission,
+        reader: Some(reader),
+        maintenance: false,
+        maintenance_at: tokio::time::Instant::now() + std::time::Duration::from_secs(1),
     };
     let body = Body::from_stream(futures_util::stream::unfold(follow, |mut f| async move {
         if f.done {
@@ -100,17 +107,31 @@ pub(crate) async fn events<D: Directory>(
                 f.wake.receiver.try_recv(),
                 Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
             ) {}
-            let st = f.state.clone();
             let p = f.p.clone();
             let after = f.after.clone();
-            let page = tokio::task::spawn_blocking(move || {
-                let mut c = st.inputs.open(p.id)?;
-                st.inputs.clean(&mut c, &st.directory, &p)?;
-                Inputs::page(&c, &after)
+            let maintenance = f.maintenance
+                || tokio::time::Instant::now() >= f.maintenance_at
+                || f.changes
+                    .iter()
+                    .any(|change| change.has_changed().unwrap_or(true));
+            if maintenance {
+                for change in &mut f.changes {
+                    let _ = change.borrow_and_update();
+                }
+            }
+            let mut reader = f.reader.take()?;
+            let (reader, page) = tokio::task::spawn_blocking(move || {
+                let page = reader.page(&p, &after, maintenance);
+                (reader, page)
             })
             .await
-            .ok()?
             .ok()?;
+            f.reader = Some(reader);
+            if maintenance {
+                f.maintenance_at = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+            }
+            f.maintenance = false;
+            let page = page.ok()?;
             let Some(page) = page else {
                 f.done = true;
                 return Some((Ok(encode(AccountFrame::Reset)), f));
@@ -136,8 +157,9 @@ pub(crate) async fn events<D: Directory>(
             };
             tokio::select! {
                 _ = f.wake.receiver.recv() => {},
-                _ = authority => {},
-                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                _ = authority => { f.maintenance = true; },
+                _ = tokio::time::sleep_until(f.maintenance_at) => {
+                    f.maintenance = true;
                     // Bounds session expiry and age-based confirmation checks;
                     // commits wake immediately, independently of this keepalive.
                     return Some((Ok(": keepalive\n\n".into()), f));

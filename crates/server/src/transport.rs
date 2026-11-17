@@ -1,4 +1,5 @@
 //! Accepted HTTP sockets send small live-feed frames without Nagle batching.
+//! Matches the reference app's crates/calternal/src/main.rs listener policy.
 use axum::serve::{ListenerExt, TapIo};
 use tokio::net::{TcpListener, TcpStream};
 
