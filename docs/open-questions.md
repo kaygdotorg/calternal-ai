@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-17 22:50 IST.
+[glossary](glossary.md). Updated 2026-11-17 23:20 IST.
 
 ## Waiting now
 
@@ -17,6 +17,7 @@ move to the decision record they belong to and leave this list. Terms: see
 | 10 | Native apps: Google Sans Flex (shipped with the app) or the system font? The web rule is no system font; the native study measured the system's own | Google Sans Flex, to match the web and your brand | Native apps |
 | 11 | Native icons: our own icon set drawn from the web's paths, or SF Symbols? | Our own set, for one look everywhere | Native apps |
 | 12 | On a Mac the wordmark is tight beside the window's traffic lights: widen the sidebar, put the wordmark under the lights, or hide that row | Under the lights | Native shell |
+| 13 | How long to keep the record that an owner's secret key was erased. It depends on how long backups are kept, which is undecided | Keep while any backup could predate the erasure; needs a backup retention period first | Backups |
 
 ## Design rounds
 
