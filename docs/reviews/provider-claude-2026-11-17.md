@@ -99,7 +99,7 @@ commit. Build results are source-snapshot evidence, not individual commit runs.
 | `cargo test --locked -j6 --workspace --no-fail-fast` with `CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-provider-test-provider-claude:20261117` | 503 passed, 0 failed; 1 inherited opt-in ignored |
 | `cargo build --locked -j6 -p calternal-server --features test-plugins` | Passed |
 | `CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1` | 46 passed, 0 failed (43 dev + 3 provider) |
-| `env CALTERNAL_TEST_REAL_CLAUDE=0 npm run test:plugins` | SDK 15, existing worker 2, adapter 6 pass; real-account test skipped |
+| `env CALTERNAL_TEST_REAL_CLAUDE=0 npm run test:plugins` | SDK 12, existing worker 2, adapter 6 pass; real-account test skipped |
 | `CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --locked -j6 -p calternal-client --test real_server -- --ignored --test-threads=1` | 1 passed; explicitly runs the inherited workspace opt-in |
 | `npm run test:integration` | 1 passed |
 | `cargo run --locked -j6 -p calternal-core --bin export-contract -- --check` | Artifacts match Rust models |
