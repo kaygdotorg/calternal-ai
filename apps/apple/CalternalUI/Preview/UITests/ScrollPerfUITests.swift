@@ -17,6 +17,10 @@ final class ScrollPerfUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = (ProcessInfo.processInfo.environment["PERF_ARGS"]?.contains("-scene") == true ? ["-appearance", "light"] : ["-scene", "long", "-appearance", "light"]) + (ProcessInfo.processInfo.environment["PERF_ARGS"] ?? "").split(separator: " ").map(String.init)
         app.launch()
+        #if os(macOS)
+        app.activate()
+        #endif
+        addTeardownBlock { app.terminate() }
         let list = app.scrollViews["thread.list"]
         XCTAssertTrue(list.waitForExistence(timeout: 20))
         Thread.sleep(forTimeInterval: 1.5)   // let the wallpaper and veils settle
@@ -59,6 +63,10 @@ final class ScrollPerfUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-scene", "long", "-appearance", "light"]
         app.launch()
+        #if os(macOS)
+        app.activate()
+        #endif
+        addTeardownBlock { app.terminate() }
         let list = app.scrollViews["thread.list"]
         XCTAssertTrue(list.waitForExistence(timeout: 20))
         Thread.sleep(forTimeInterval: 1.5)

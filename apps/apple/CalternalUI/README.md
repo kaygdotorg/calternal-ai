@@ -49,7 +49,23 @@ Preview app launch arguments: `-scene shell|long|list|gallery|genui|lab`, `-appe
 
 ## Measurements (development machine: Mac Studio `kayg@std`, 120 Hz display, Xcode 27.2; not benchmark numbers)
 
-MEASUREMENTS
+Ten thousand thread rows in the shell (`ShellView` with `ShellFixture.long()`, lazy `LazyVStack` sections, edge fade mask), scrolled hard by the UI tests
+(`Preview/UITests/ScrollPerfUITests.swift`), Release build, macOS, 120 Hz:
+
+| Measure | Result |
+| --- | --- |
+| System hitch metric (`XCTHitchMetric`, 3 iterations of 40 scroll gestures) | **0 hitches, hitch time ratio 0.000 ms/s, 0.000 s total hitch duration** |
+| Display-link frame meter, idle (8 s, same scene) | 0.28 % late frames |
+| Display-link frame meter while scrolling, 10,000 rows | p50 8.3 ms (120 Hz), p95 22 to 30 ms, 8 to 14 % of frames late |
+| Same meter, 200 rows, list alone (no shell surfaces) | p95 20.5 ms, 8 % late |
+
+The meter counts every main-thread gap, including the time the test spends injecting scroll events (a 200-row list shows the same 8 %), so it is a gross
+sanity check only and the system hitch metric is the proof: no frame the render server missed. Row count adds little: 200 and 10,000 rows measure within a few points of each other.
+On the iOS 27.0 simulator (60 Hz, host-rendered, so not representative) the meter read p50 16.7 ms, p95 37.7 ms in a Debug build; the simulator's hitch metric is not meaningful.
+**Not yet done: the same run on a real iPhone, and a check of the animations' fluidity on a real device** (`AGENTS.md`: animation is not done until checked there).
+Rerun: `PERF_ARGS='-scene list' ` (env `TEST_RUNNER_PERF_ARGS`) selects the list-only scene; `TEST_RUNNER_PERF_IDLE=1` runs the idle baseline.
+
+UI test results: macOS 5 passed, 1 skipped (Tab focus needs full keyboard access); iOS 5 passed, 1 skipped (no hardware keyboard focus in the simulator). 28 unit tests pass.
 
 ## Matches the web design system exactly
 

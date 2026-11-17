@@ -5,6 +5,8 @@ import XCTest
 final class InteractionUITests: XCTestCase {
     private var app: XCUIApplication!
 
+    override func tearDown() { app.terminate() }
+
     override func setUp() {
         continueAfterFailure = false
         app = XCUIApplication()
