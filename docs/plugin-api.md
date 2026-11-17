@@ -52,6 +52,8 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   a manager. No rewriting; bb's own dispatch hook does not rewrite either.
 - Page-wide JavaScript is not supported. Its legitimate uses are covered instead by full-CSS
   themes, command and shortcut contributions, and the shell regions.
+- Themes can be full CSS, with no network access. Trusted screens (sign-in, permission
+  approval, secret entry) render in a protected layer that themes cannot restyle or cover.
 
 ## Open
 
