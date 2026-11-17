@@ -2,7 +2,7 @@
   // Appearance settings in a sheet (a side panel on a desktop, a bottom sheet on a phone): wallpaper (built-in, own upload, Unsplash search),
   // glass strengths, colour scheme and accent, and a font per role (interface, chat, code) from Google Fonts, Fontsource, Fontshare, the person's own
   // files or the system. Everything goes through the adapters in library.ts and fonts.ts, so the real server plugs in without changes here.
-  import { Button, Capsule, Icon, IconButton, Row, Sheet, Switch, tip } from "@calternal/ui";
+  import { Button, Capsule, Icon, IconButton, Row, Sheet, Switch, textField, tip } from "@calternal/ui";
   import PresetGallery from "./PresetGallery.svelte";
   import Slider from "./Slider.svelte";
   import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
@@ -167,12 +167,12 @@
         {#if A.wallpaper?.credit}<p class="note">Photo by <a href={A.wallpaper.credit.link} target="_blank" rel="noopener noreferrer">{A.wallpaper.credit.author}</a> on Unsplash</p>{/if}
         <form class="search" onsubmit={(e) => { e.preventDefault(); void fromLink(); }}>
           <label class="visually-hidden" for="u-link">Paste a picture link</label>
-          <input id="u-link" type="url" placeholder="Paste a picture link" bind:value={link} autocomplete="off" />
+          <input id="u-link" type="url" use:textField={{ kind: "url" }} placeholder="Paste a picture link" bind:value={link} autocomplete="off" />
           <Button text="Use link" type="submit" disabled={busy === "link" || !link.trim()} />
         </form>
         <form class="search" onsubmit={(e) => { e.preventDefault(); void search(); }}>
           <label class="visually-hidden" for="u-q">Search Unsplash</label>
-          <input id="u-q" type="search" placeholder="Search Unsplash" bind:value={query} autocomplete="off" />
+          <input id="u-q" type="search" use:textField={{ kind: "search" }} placeholder="Search Unsplash" bind:value={query} autocomplete="off" />
           <Button text="Search" type="submit" disabled={busy === "search"} />
         </form>
         {#if results.length}
@@ -219,7 +219,7 @@
 
       <section aria-labelledby="s-mark">
         <h2 id="s-mark">Wordmark</h2>
-        <label class="field-l"><span>Name at the top of the sidebar</span><input class="field" type="text" value={p.brand} maxlength="24" autocomplete="off" oninput={(e) => A.change((x) => (x.brand = e.currentTarget.value))} /></label>
+        <label class="field-l"><span>Name at the top of the sidebar</span><input class="field" type="text" use:textField value={p.brand} maxlength="24" autocomplete="off" oninput={(e) => A.change((x) => (x.brand = e.currentTarget.value))} /></label>
         <Row tall title="Wordmark font" sub={label("brand")} icon="notes" onclick={() => { view = "brand"; source = A.prefs.fonts.brand.source; fq = ""; error = ""; }}>
           {#snippet trailing()}<Icon name="chevron" inline />{/snippet}
         </Row>
@@ -241,7 +241,7 @@
       <Capsule class="sources" label="Font source" kind="radio" glass={false} items={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ id: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
       {#if source !== "system" && source !== "upload"}
         <label class="visually-hidden" for="f-q">Search fonts</label>
-        <input id="f-q" class="field" type="search" placeholder="Search {SOURCE_LABEL[source]}" bind:value={fq} autocomplete="off" />
+        <input id="f-q" class="field" type="search" use:textField={{ kind: "search" }} placeholder="Search {SOURCE_LABEL[source]}" bind:value={fq} autocomplete="off" />
       {/if}
       <div role="radiogroup" aria-label="{ROLE[view]} font" class="fonts">
         {#each fonts as f (f.source + f.family)}
@@ -257,7 +257,7 @@
       </div>
       {#if source === "upload"}
         <form class="own" onsubmit={addOwn}>
-          <label class="field-l"><span>Name</span><input class="field" type="text" bind:value={ownName} autocomplete="off" /></label>
+          <label class="field-l"><span>Name</span><input class="field" type="text" use:textField bind:value={ownName} autocomplete="off" /></label>
           <label class="field-l"><span>Font files (woff2, woff, ttf, otf)</span><input class="field" name="files" type="file" multiple accept=".woff2,.woff,.ttf,.otf" /></label>
           <Button text="Add this font" type="submit" />
         </form>

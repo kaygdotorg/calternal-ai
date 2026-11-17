@@ -1,4 +1,4 @@
-// Behaviour checks for the owner's list: one-line rows, one state signal, tooltip, title rename, archive + undo toast, pill bounce.
+// Behaviour checks for the owner's list: one-line rows, one state signal, tooltip, title rename, archive + undo toast, pill press.
 import { chromium } from "playwright";
 import { serve, open } from "./lib.mjs";
 const stop = await serve();
@@ -21,17 +21,15 @@ const early = await page.locator(".warm-tip[data-open=true]").count();
 await page.waitForTimeout(400);
 const late = await page.locator(".warm-tip[data-open=true]").count();
 ok("tooltip waits ~400 ms then shows", early === 0 && late === 1);
-// bounce: click with the pointer, a running animation appears
+// press: plain CSS (scale to --press-scale and back over --dur-fast); a pointer click starts no rebound animation
 await page.mouse.move(5, 5);
 await rows.first().click();
 await page.waitForSelector("h1");
-const pill = page.locator(".chip.prov button").first();
-const anim = await pill.evaluate(async (el) => { el.click(); return new Promise((r) => setTimeout(() => r(el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length), 30)); }).catch(() => -1);
-ok("pill bounce is not run by a synthetic (detail 0) click", anim === 0);
-await page.keyboard.press("Escape");
+const pill = page.locator(".composer .chip.prov button").first();
 await pill.click();
+await page.waitForTimeout(60);
 const running = await pill.evaluate((el) => el.getAnimations().filter((a) => !(a instanceof CSSTransition)).length);
-ok("pill bounce runs on a pointer click", running >= 1, `animations=${running}`);
+ok("a pointer click starts no rebound on the pill (the press is CSS only)", running === 0, `animations=${running}`);
 await page.keyboard.press("Escape");
 // open a thread, rename by double-clicking the title
 await rows.first().click();

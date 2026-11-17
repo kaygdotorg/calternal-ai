@@ -93,10 +93,6 @@
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 
-  /** Scrolls so row `i` is at the top. */
-  export function scrollToIndex(i: number) {
-    if (scroller) scroller.scrollTop = tree.prefix(i) + topInset;
-  }
   /** Scrolls to the end and keeps following it while the list grows. */
   export function scrollToBottom() {
     stuck = true;
@@ -133,7 +129,7 @@
 </div>
 
 <style>
-  .scroller { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; }
+  .scroller { position: absolute; inset: 0; border-radius: var(--r-card); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; }
   .sizer { position: relative; width: 100%; }
   .window { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
   .row { contain: layout style; }

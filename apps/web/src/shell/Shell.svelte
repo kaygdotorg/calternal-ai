@@ -24,7 +24,7 @@
   });
   // Phone gestures (docs/ui-motion.md "Panels over the card"). The middle card and the side panel follow the finger one to one; on release they settle by the sheet motion tokens
   // (`--dur-sheet` 340 ms on `--ease-sheet`), toward whichever rest state the position and the release speed point at. What a gesture decides goes through `shell.over`/`shell.dismiss`,
-  // so it is a history entry: Back, Forward and the platform's own back gesture do the same thing. Touch only; horizontal intent (more across than down); a row swipe, a sheet drag or a
+  // so it is a history entry: Back, Forward and the platform's own back gesture do the same thing. Touch only; horizontal intent (more across than down); a row swipe (`.ra`), a sheet drag or a
   // text selection is not a panel gesture. Interruptible: a touch while either is still settling takes hold of it where it is (its current transform) and carries on from there.
   type Mode = "card" | "panel";
   let mode: Mode | null = null, gx = 0, gy = 0, g0 = 0, gskip = false, gtouch = false, gmoved = false;
@@ -41,7 +41,7 @@
   function gdown(e: PointerEvent) {
     if (!shell.narrow || e.pointerType !== "touch") return;
     gtouch = true; gx = e.clientX; gy = e.clientY; gmoved = false; samples = [{ t: e.timeStamp, x: e.clientX }];
-    gskip = !!(e.target as Element).closest(".slide, [role=dialog], input, textarea, pre");
+    gskip = !!(e.target as Element).closest(".ra, [role=dialog], input, textarea, pre");
     mode = null;
     // Taking hold of a card or panel that is still settling: freeze it where it is.
     if (settling(midEl)) { mode = "card"; g0 = matrixX(midEl); dragMode = "card"; drag = g0; return; }
@@ -100,7 +100,8 @@
   const hasRight = $derived(app.panels.length > 0);
   const rightOpen = $derived(shell.rightOpen && hasRight);
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
-  const showLeft = $derived(!shell.narrow && !shell.sidebarOpen);
+  // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
+  const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && app.kind === "settings" && !shell.sidebarOpen));
   const showRight = $derived(!shell.narrow && hasRight && !rightOpen);
   const cardSwitcher = $derived(!shell.narrow && appearance.prefs.switcher === "card");
 </script>
@@ -111,7 +112,7 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" bind:this={midEl} style:--edge-l={showLeft ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l"><Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
@@ -129,7 +130,8 @@
 
   {#if hasRight}<aside class="right" bind:this={rightEl} class:dragging={dragMode === "panel" && drag !== null} style:transform={dragMode === "panel" && drag !== null ? `translateX(${drag}px)` : undefined} data-ink={surfaces.right ?? undefined} aria-label="{app.name} side panel" inert={!rightOpen}><RightSidebar {app} {id} /></aside>{/if}
 </div>
-{#if shell.narrow && !shell.sidebarOpen}<PhoneTabs {app} />{/if}
+<!-- The phone's bottom bar is the app's panels: an app with none (Settings) has no bar, and its pages use the whole height. -->
+{#if shell.narrow && !shell.sidebarOpen && app.panels.length}<PhoneTabs {app} />{/if}
 
 <style>
   /* Wide chat (the plugin's default, Settings, Appearance, Chat layout): on a desktop the thread's column is the whole card, with room on the left for a contents rail and a margin on the right. */

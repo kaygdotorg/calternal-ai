@@ -7,7 +7,7 @@
   import { fixtureItems } from "../palette/fixtures";
   import { spaces } from "./spaces.svelte";
   import { navigate, segments } from "../lib/route.svelte";
-  import { client, store } from "../apps/threads/store.svelte";
+  import { client, startThread, store } from "../apps/threads/store.svelte";
   import { shell } from "./shell.svelte";
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
   let text = $state("");
@@ -34,6 +34,7 @@
     onclose();
     if (a.go) navigate(a.go);
     else if (a.op === "help.shortcuts") shell.helpOpen = true;
+    else if (a.op === "thread.new") void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`));
     else if (a.ask) {
       const s = segments();
       if (s[0] === "threads" && s[1]) { void client.send(s[1], a.ask, crypto.randomUUID()); toast("Sent to the agent"); }

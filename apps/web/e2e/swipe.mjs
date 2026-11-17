@@ -1,4 +1,4 @@
-// Touch gestures on a thread row: swipe left reveals two 50 px round actions; a long press opens the context menu (a sheet on a phone).
+// Shell touch gestures on a phone: pull to refresh, the edge swipes, a sheet's grabber. (The rows' own swipe is e2e/swipe-rows.mjs.)
 import { chromium } from "playwright";
 import { serve, open } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch();
@@ -7,28 +7,6 @@ const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${not
 const { page, ctx } = await open(b, "phone", "light", "/threads/t-run");
 await page.getByRole("button", { name: "Show threads" }).click();
 await page.waitForTimeout(500);
-const slide = page.locator(".slide").first();
-const box = await slide.boundingBox();
-const fire = (type, x, y) => page.evaluate(([t, x, y]) => { const el = document.querySelector(".slide"); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 7, clientX: x, clientY: y, isPrimary: true })); }, [type, x, y]);
-await fire("pointerdown", box.x + box.width - 20, box.y + 20);
-for (let i = 1; i <= 8; i++) await fire("pointermove", box.x + box.width - 20 - i * 18, box.y + 20);
-await fire("pointerup", box.x + box.width - 20 - 8 * 18, box.y + 20);
-await page.waitForTimeout(500);
-ok("a swipe leaves the row open", (await slide.getAttribute("data-open")) === "true");
-const tx = await slide.evaluate((e) => parseFloat(getComputedStyle(e).translate));
-ok("the row slid left by 130", Math.abs(tx + 130) < 2, `translate ${tx.toFixed(0)}`);
-const sizes = await page.locator(".sb").first().evaluate((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; });
-ok("the actions are 50 px round", sizes[0] === 50 && sizes[1] === 50, sizes.join("x"));
-await page.locator(".sb.arch").first().click();
-await page.waitForTimeout(400);
-ok("Archive works from the swipe", (await page.locator('[aria-label="Notifications"]').getByText("Undo").count()) > 0);
-await page.getByRole("button", { name: "Undo" }).click(); await page.waitForTimeout(300);
-const row = page.locator(".slide").nth(1);
-const rb = await row.boundingBox();
-await page.evaluate(([x, y]) => { const el = document.querySelectorAll(".slide")[1]; el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", pointerId: 8, clientX: x, clientY: y })); }, [rb.x + 50, rb.y + 20]);
-await page.waitForTimeout(650);
-await page.screenshot({ path: "/tmp/swipe-long.png" });
-ok("a long press opens the context menu as a sheet of 42 px rows", (await page.getByRole("menu").count()) > 0 && (await page.getByRole("menuitem").first().evaluate((e) => e.getBoundingClientRect().height)) >= 42);
 // Pull to refresh on the sidebar list.
 await page.getByRole("button", { name: "Show threads" }).click().catch(() => {});
 await page.waitForTimeout(500);
@@ -53,7 +31,10 @@ ok("the card follows the finger while swiping from the edge", follow > 100, `car
 await touch("pointerup", 160, 405);
 await page.waitForTimeout(500);
 ok("a swipe from the left edge opens the sidebar", (await page.locator(".shell").getAttribute("data-sidebar")) === "true");
-await touch("pointerdown", 300, 400); await touch("pointerup", 150, 402);
+// (From the strip of card that stays visible: a finger that starts on a thread row swipes that row instead.)
+const peek = await page.locator(".peek").first().boundingBox();
+const px = peek.x + peek.width / 2;
+await touch("pointerdown", px, 400); await touch("pointermove", px - 60, 402); await touch("pointermove", px - 200, 402); await touch("pointerup", px - 220, 402);
 await page.waitForTimeout(500);
 ok("a swipe left closes it", (await page.locator(".shell").getAttribute("data-sidebar")) === "false");
 await page.keyboard.press("Escape"); await page.waitForTimeout(300);

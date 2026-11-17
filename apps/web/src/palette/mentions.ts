@@ -3,6 +3,7 @@
  * line. The same typo-tolerant search as the palette ranks inside the groups. Fixture data; the real lists come from the space (members, installed
  * agents, threads and items the person can reach) and the person's skills.
  */
+import { matchTrigger } from "../../../../packages/editor/src/text/triggers";
 import { buildIndex, search, type Item } from "./search";
 
 export type MentionKind = "person" | "agent" | "thread" | "item" | "skill" | "tag" | "block";
@@ -58,14 +59,11 @@ export function pick(pool: Mention[], query: string, perGroup = 4): MentionGroup
   return ORDER.map((kind) => ({ kind, title: TITLE[kind], entries: hits.filter((m) => m.kind === kind).slice(0, perGroup) })).filter((g) => g.entries.length);
 }
 
-/** The trigger the caret is in: `@` and what follows it, or a `/` at the start of a line, as a range of the text. */
+/** The trigger the caret is in: `@` and what follows it, or a `/` at the start of a line, as a range of the text. The rules are the editor package's (one set for every text surface). */
 export function triggerAt(text: string, caret: number): { kind: "mention" | "skill"; query: string; start: number } | null {
-  const before = text.slice(0, caret);
-  const at = /(?:^|[\s(])@([^\s@[\]]{0,40})$/u.exec(before);
-  if (at) return { kind: "mention", query: at[1]!, start: caret - at[1]!.length - 1 };
-  const sl = /(?:^|\n)\/([\p{L}\d_-]{0,30})$/u.exec(before);
-  if (sl) return { kind: "skill", query: sl[1]!, start: caret - sl[1]!.length - 1 };
-  return null;
+  const line = text.lastIndexOf("\n", caret - 1) + 1;
+  const m = matchTrigger(text.slice(line, caret), ["mention", "skill"]);
+  return m ? { kind: m.kind as "mention" | "skill", query: m.query, start: caret - m.query.length - m.lead } : null;
 }
 
 /** What `[[` can pick in a note: the notes of the space, inserted as `[[Title]]`. */
