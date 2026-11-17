@@ -8,12 +8,14 @@
   } = $props();
   const ICON: Record<string, IconName> = { person: "user", agent: "spark", thread: "threads", item: "notes", skill: "wrench", tag: "list", block: "plus" };
   const flat = $derived(groups.flatMap((g) => g.entries));
-  // The list appears one frame after the key that asked for it, so that key paints its own character first and the popover's layout is its own frame; it closes at once.
+  // The list appears two frames after the key that asked for it: the key's own frame paints its character, the next one is free for the key typed right after, and the popover's mount
+  // (its portal, its material and its placement, about 9 ms at 4x CPU slowdown) is a frame of its own, never inside a key's. It closes at once. (The field reports a trigger on the `input` event
+  // itself, one event earlier than the caret tracking this replaced, so one frame of delay is no longer enough to keep the mount out of the key's frame.)
   let shown = $state(false);
   $effect(() => {
     if (!groups.length) { shown = false; return; }
     if (shown) return;
-    const id = requestAnimationFrame(() => (shown = true));
+    let id = requestAnimationFrame(() => { id = requestAnimationFrame(() => (shown = true)); });
     return () => cancelAnimationFrame(id);
   });
 </script>

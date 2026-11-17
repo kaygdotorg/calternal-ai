@@ -6,20 +6,22 @@ Response shapes and the Markdown are in `server/thread-file.ts`; `server/threads
 
 | Screen | Server |
 | --- | --- |
-| Sidebar list | `threads.list` (space from the shell's current space), re-read every 5 s while watched and after each change here |
-| Open a thread | `threads.get`: the Markdown is parsed once per revision; messages are read in ranges from the parse |
-| Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model are sent with it (the server applies them directly) |
-| Working state and steps | the job's SSE stream (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer. The open file is re-read every 3 s, so a reload mid-turn still shows checkpointed text |
-| Stop, archive, delete | `threads.stop`, `.archive`, `.delete` |
-| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`): `requests.list`, `requests.answer`, `requests.approve` (`once` or `thread`), `requests.deny`, polled every 4 s while watched. **The wire shape is issue #32's stated goal, not yet in dev**: `requestOf` and `answerInput` are the one place to change when the contract lands. Tested against a double (`threads-client.test.ts`) |
+| Sidebar list | `threads.list` (the shell's current space): turn state, provider, model, mode, message count, last activity, parent. One operation, no file read. Kept current by the space's live journal (`server/space-feed.ts`), never polled |
+| Turn state | applied in place from `threads.turn_state_changed` journal entries (`data.state`, `data.job_id`) |
+| Open a thread | `threads.get`: the Markdown is parsed once per revision (message times from the markers); messages are read in ranges from the parse. A saved message or checkpoint of the open thread re-reads it (coalesced 120 ms) |
+| Reload mid-turn | `threads.get` names the running job; the page follows its job stream from the last event it saw |
+| Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model travel with it (the server applies them directly) |
+| Working state and steps | the job's SSE stream: provider events are nested, `chunk.data.event` (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer |
+| Stop, rename, archive, unarchive, delete | `threads.stop`, `.rename`, `.archive`, `.unarchive`, `.delete` |
+| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`): `requests.list`, `requests.answer`, `requests.approve` (`once` or `thread`), `requests.deny`; refreshed when the feed says a turn started or stopped waiting. **The wire shape is issue #32's stated goal, not yet in dev**; `requestOf` and `answerInput` are the one place to change. A server without them answers `not_found` once and the list stays empty |
 
-## Gaps the UI cannot close alone (for the backend)
+Tested against a recorded-response double (`threads-client.test.ts`) and, end to end, against a seeded installation (`e2e/live-threads.mjs`).
 
-- `threads.list` has no per-thread job state, model or message count: a turn started elsewhere shows idle until its file changes; the model is only known after a send here.
-- The Markdown has no per-message time: every message shows the thread's creation time, the last one its update time.
-- No operation renames or un-archives a thread, lists machines or records where a thread runs, or lists requests (questions, approvals): those calls return empty or say so. Picking a machine is kept locally.
-- Finding a thread's running job after a reload needs an operation or a field on the thread; until then only turns started on this page are followed live.
-- Lists and the open file are polled; a per-kind journal subscription would replace both.
+## What the server still lacks
+
+- Where a thread runs: no operation names or records a machine; the choice is kept on the page and the server picks one.
+- Requests (#32) are not in dev.
+- Changes and Run tabs have no operation.
 
 ## The client interface
 

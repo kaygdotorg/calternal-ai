@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { marksOf } from "./engine";
-import { blockPool, mentionPool, notePool, pick, skillPool, tagPool, triggerAt } from "./mentions";
+import { blockPool, mentionPool, notePool, pick, skillPool, tagPool } from "./mentions";
 
 const pool = mentionPool(["Claude Code", "Codex"], [{ id: "t1", title: "Split store.rs by concern" }, { id: "t2", title: "Expired invite test" }], [{ id: "n1", title: "Storage layout" }]);
 
@@ -18,15 +18,6 @@ describe("the @ picker", () => {
   });
   test("/ lists skills", () => {
     expect(pick(skillPool(), "rev")[0]?.entries[0]?.label).toBe("Code review");
-  });
-});
-
-describe("where the caret is", () => {
-  test("after @ and some letters", () => expect(triggerAt("hello @pr", 9)).toEqual({ kind: "mention", query: "pr", start: 6 }));
-  test("not inside an email", () => expect(triggerAt("write a@b", 9)).toBeNull());
-  test("a / at the start of a line is a skill, mid-line it is not", () => {
-    expect(triggerAt("/rev", 4)).toEqual({ kind: "skill", query: "rev", start: 0 });
-    expect(triggerAt("a and/or b", 6)).toBeNull();
   });
 });
 
