@@ -31,6 +31,8 @@ export interface ChoicesClient {
   setPermission(threadId: string, permission: Permission): Promise<void>;
   /** The machines this person can run a thread on (their own, and the pool if their group allows it). */
   machines(): Promise<string[]>;
+  /** Asks the machine to check the thread's provider again (is it installed, is the login there), then re-reads readiness. */
+  check(threadId: string): Promise<void>;
   /** Where the thread runs next: a machine, sandboxed or direct. Never moves work that is already running. */
   setRunsOn(threadId: string, runsOn: RunsOn): Promise<void>;
 }

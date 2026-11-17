@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { ServerClient } from "./client";
 import { ServerThreads } from "./threads-client";
 import { lifetimesOf } from "./requests";
-import { parseMessages, stateOfTurn, summaryOf } from "./thread-file";
+import { parseMessages, readinessNotice, reasonNotice, stateOfTurn, summaryOf, type WireMachine, type WireReadiness } from "./thread-file";
 import type { ThreadEvents } from "../apps/threads/client";
 
 const SPACE = "0197f3a2-5c1e-7b4d-9a60-3d2e8f1c4b11";
@@ -73,6 +73,83 @@ describe("the saved thread's Markdown", () => {
   test("a summary carries everything the sidebar shows, from the list row alone", () => {
     const s = summaryOf(T1, SPACE, meta({ mode: "full_access", provider: "calternal-codex", parent_thread: T2, model: "sonnet", message_count: 7 }), "running");
     expect([s.provider, s.permission, s.parentId, s.model, s.messageCount, s.state, s.updatedAt]).toEqual(["codex", "full", T2, "sonnet", 7, "running", Date.parse("2026-11-17T12:04:00.000Z")]);
+  });
+});
+
+describe("turn reasons (turn readiness: turn_reason on the list, the thread and the journal)", () => {
+  test("every code that asks something of the person becomes its notice; the rest ask nothing", () => {
+    expect(reasonNotice({ code: "no_machine" })).toEqual({ kind: "no-machine" });
+    expect(reasonNotice({ code: "waiting_for_capacity", queue_position: 2 })).toEqual({ kind: "waiting-capacity", queuePosition: 2 });
+    expect(reasonNotice({ code: "machine_offline", since_ms: 5 })).toMatchObject({ kind: "machine-offline", sinceMs: 5 });
+    expect(reasonNotice({ code: "provider_signed_out", provider: "Claude Code", sign_in_command: "claude auth login" })).toEqual({ kind: "provider-signin", provider: "Claude Code", command: "claude auth login" });
+    expect(reasonNotice({ code: "retrying", attempt: 3, next_attempt_ms: 9, rule: "provider_backoff" })).toEqual({ kind: "retrying", rule: "provider_backoff", attempt: 3, of: 5, nextAt: 9 });
+    expect(reasonNotice({ code: "retrying", rule: "subscription_reset", next_attempt_ms: 9 })).toMatchObject({ rule: "subscription_reset" });
+    expect(reasonNotice({ code: "failed", class: "usage_limit", reset_at_ms: 7 })).toEqual({ kind: "failed", failure: "usage_limit", resetAtMs: 7 });
+    expect(reasonNotice({ code: "failed", class: "permanent" })).toMatchObject({ failure: "permanent" });
+    expect(reasonNotice({ code: "interrupted", resumable: false, why: "unsure" })).toMatchObject({ kind: "interrupted", resumable: false });
+    for (const c of ["idle", "queued", "completed", "cancelled", "waiting_on_person"]) expect(reasonNotice({ code: c })).toBeNull();
+    expect(reasonNotice(null)).toBeNull();
+  });
+  test("a list row's reason is the thread's notice; without one, the turn label stands in", () => {
+    const withReason = summaryOf(T1, SPACE, meta(), "idle", {}, { code: "no_machine" });
+    expect(withReason.notice).toEqual({ kind: "no-machine" });
+    expect(summaryOf(T1, SPACE, meta(), "failed").notice).toMatchObject({ kind: "failed", failure: "transient" });
+    expect(summaryOf(T1, SPACE, meta(), "idle").notice).toBeUndefined();
+  });
+  test("a turn-state entry carries the reason: the notice changes with no read", async () => {
+    const d = double({ "threads.list": () => ({ threads: [row(T1)] }) });
+    const seen: (string | undefined)[] = [];
+    await d.client.listThreads();
+    const off = d.client.watchThreads((l) => seen.push(l[0]!.notice?.kind));
+    await until(() => d.hasFeed(), "the journal subscription");
+    const lists = d.ops("threads.list").length;
+    d.push("threads.turn_state_changed", T1, { job_id: JOB, state: "queued", job_state: "admitted", turn_reason: { code: "no_machine" } });
+    await until(() => seen.includes("no-machine"), "the notice");
+    off();
+    expect(d.ops("threads.list")).toHaveLength(lists);
+  });
+});
+
+const PROV = "calternal-claude-code";
+const machine = (o: Partial<WireMachine> = {}, p: Partial<WireMachine["providers"][string]> = {}): WireMachine => ({ machine_id: "m1", name: "dev-02", last_seen_ms: Date.now(), enrolled: true, connected: true, available: true, execution: "sandboxed", providers: { [PROV]: { enabled: true, check: { installed: true, signed_in: true, sign_in_command: "claude auth login" }, ready: true, ...p } }, ...o });
+const snap = (machines: WireMachine[], pool: WireMachine[] = []): WireReadiness => ({ machines, pool, check_ttl_ms: 300000 });
+
+describe("readiness (agent.readiness): before a message is sent", () => {
+  test("says nothing when some machine is up with the provider signed in", () => {
+    expect(readinessNotice(snap([machine()]), PROV, "Claude Code")).toBeNull();
+    expect(readinessNotice(snap([machine({ connected: false })], [machine({ machine_id: undefined, name: undefined })]), PROV, "Claude Code")).toBeNull();
+  });
+  test("no machine at all", () => { expect(readinessNotice(snap([]), PROV, "Claude Code")).toEqual({ kind: "no-machine" }); });
+  test("every machine offline: the one seen last is named", () => {
+    const n = readinessNotice(snap([machine({ connected: false, name: "old", last_seen_ms: 1 }), machine({ connected: false, name: "newer", last_seen_ms: 9 })]), PROV, "Claude Code");
+    expect(n).toMatchObject({ kind: "machine-offline", machine: "newer", sinceMs: 9 });
+  });
+  test("signed out on the machine that is up: with the provider's own command", () => {
+    const n = readinessNotice(snap([machine({}, { ready: false, check: { installed: true, signed_in: false, sign_in_command: "claude auth login" } })]), PROV, "Claude Code");
+    expect(n).toEqual({ kind: "provider-signin", machine: "dev-02", provider: "Claude Code", command: "claude auth login" });
+  });
+  test("a provider not observed yet is not called signed out", () => {
+    expect(readinessNotice(snap([machine({}, { ready: false, check: null })]), PROV, "Claude Code")).toBeNull();
+  });
+  test("the thread carries it until its turn says something else; Check again calls agent.check and re-reads", async () => {
+    let signedIn = false;
+    const d = double({
+      "threads.list": () => ({ threads: [row(T1)] }),
+      "agent.readiness": () => snap([machine({}, { ready: signedIn, check: { installed: true, signed_in: signedIn, sign_in_command: "claude auth login" } })]),
+      "agent.check": () => ({}),
+    });
+    d.client.watchThreads(() => {});
+    await until(() => d.ops("agent.readiness").length > 0, "the readiness read");
+    const l = await d.client.listThreads();
+    expect(l[0]!.notice).toMatchObject({ kind: "provider-signin", command: "claude auth login" });
+    signedIn = true;
+    await d.client.check(T1);
+    expect(d.ops("agent.check")[0]!.input).toEqual({ space_id: SPACE, machine_id: "m1", provider_id: PROV });
+    expect((await d.client.listThreads())[0]!.notice).toBeUndefined();
+  });
+  test("the machines offered are the account's own, and the pool when it has one", async () => {
+    const d = double({ "agent.readiness": () => snap([machine(), machine({ machine_id: "m2", name: "laptop" })], [machine({ machine_id: undefined, name: undefined })]) });
+    expect(await d.client.machines()).toEqual(["dev-02", "laptop", "Pool"]);
   });
 });
 

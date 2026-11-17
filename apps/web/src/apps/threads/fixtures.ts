@@ -60,7 +60,7 @@ const STREAM_TEXT =
 
 /**
  * Fixture scenarios for the screens that only show when something is wrong or missing, picked with `?scenario=` (fixtures only; tests and review): `empty` (a fresh account with no thread and no
- * request), `no-machine`, `offline`, `signin`, `failed`, `retrying` and `interrupted` (the thread `t-idle` carries that notice).
+ * request), `no-machine`, `offline`, `signin`, `failed`, `usage-limit`, `permanent`, `queued`, `retrying`, `retrying-api`, `retrying-plan`, `interrupted` and `interrupted-unsure` (the thread `t-idle` carries that notice).
  */
 function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
   let s: string | null = null;
@@ -74,13 +74,19 @@ function applyScenario(threads: ThreadSummary[], requests: Request[]): void {
     "no-machine": { kind: "no-machine" },
     offline: { kind: "machine-offline", machine },
     signin: { kind: "provider-signin", machine, provider: "Claude Code" },
-    failed: { kind: "failed", reason: "The provider kept answering that it was overloaded" },
-    retrying: { kind: "retrying", reason: "The provider answered that it was overloaded", attempt: 3, of: 5, nextAt: Date.now() + 2 * 60_000 },
-    interrupted: { kind: "interrupted", machine },
+    failed: { kind: "failed", failure: "transient", reason: "The provider kept answering that it was overloaded" },
+    "usage-limit": { kind: "failed", failure: "usage_limit", resetAtMs: Date.now() + 3 * 3600_000 },
+    permanent: { kind: "failed", failure: "permanent", reason: "The provider stopped with an error that retrying will not change" },
+    queued: { kind: "waiting-capacity", queuePosition: 2 },
+    retrying: { kind: "retrying", rule: "provider_backoff", reason: "The provider answered that it was overloaded", attempt: 3, of: 5, nextAt: Date.now() + 2 * 60_000 },
+    "retrying-api": { kind: "retrying", rule: "api_availability", reason: "The provider is not answering", nextAt: Date.now() + 3 * 3600_000 },
+    "retrying-plan": { kind: "retrying", rule: "subscription_reset", reason: "Your plan's limit is reached", nextAt: Date.now() + 90 * 60_000 },
+    interrupted: { kind: "interrupted", machine, resumable: true },
+    "interrupted-unsure": { kind: "interrupted", machine, resumable: false, why: "It is not known whether the last step finished" },
   };
   t.notice = notices[s];
-  if (s === "failed") t.state = "failed";
-  if (s === "interrupted" || s === "retrying") t.state = "waiting";
+  if (s === "failed" || s === "usage-limit" || s === "permanent") t.state = "failed";
+  if (s.startsWith("interrupted") || s.startsWith("retrying")) t.state = "waiting";
 }
 
 /** The in-memory `ThreadsClient`. */
@@ -215,6 +221,7 @@ export class FixtureClient implements ThreadsClient {
       this.finishStream(threadId, `${threadId}-stopped-${Date.now()}`, STREAM_TEXT.slice(0, o.sent));
     } else this.patch(threadId, { state: "idle" });
   }
+  async check(): Promise<void> { /* the fixture machines are always ready */ }
   async resume(threadId: string): Promise<void> {
     this.patch(threadId, { state: "running", notice: undefined });
     setTimeout(() => this.patch(threadId, { state: "idle" }), 2500);

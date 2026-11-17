@@ -45,7 +45,7 @@ http.createServer((req, res) => {
     let body = ""; req.on("data", (c) => (body += c)); req.on("end", () => {
       const { operation, input } = JSON.parse(body); const ok = (data) => json(res, { request_id: "r", ok: true, data });
       if (operation === "spaces.list") return ok({ spaces: [{ id: SPACE, name: "Personal" }] });
-      if (operation === "threads.list") return ok({ threads: [T10K, T5MB].map((id) => ({ id, address: `/threads/${id}`, revision: "r", turn_state: state.turn.thread === id ? "running" : "idle", metadata: meta(id) })) });
+      if (operation === "threads.list") return ok({ threads: (process.env.EMPTY ? [] : [T10K, T5MB]).map((id) => ({ id, address: `/threads/${id}`, revision: "r", turn_state: state.turn.thread === id ? "running" : "idle", metadata: meta(id) })) });
       if (operation === "threads.get") return ok(view(input.id));
       if (operation === "threads.send") { files[input.id].md += msg(20000, "person", input.message); const job = startTurn(input.id, +(process.env.TURN_SECONDS ?? 20)); return ok({ ...view(input.id), job: { id: job, state: "queued" } }); }
       return json(res, { request_id: "r", ok: false, error: { code: "not_found", message: "unknown operation" } }, 404);

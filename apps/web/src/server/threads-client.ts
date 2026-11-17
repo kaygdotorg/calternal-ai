@@ -19,7 +19,7 @@ import type { Answer, Change, Message, Permission, ProviderOption, Request, RunI
 import { ServerClient, ServerError } from "./client";
 import { ServerRequests } from "./requests";
 import { SpaceFeed, type FeedEntry } from "./space-feed";
-import { parseMessages, providerPlugin, stateOfTurn, summaryOf, updatedAtOf, wireMode, type WireRow, type WireThread, type WireJob } from "./thread-file";
+import { parseMessages, providerPlugin, readinessNotice, reasonNotice, stateOfTurn, summaryOf, updatedAtOf, wireMode, type WireReadiness, type WireReason, type WireRow, type WireThread, type WireJob } from "./thread-file";
 
 /** Development tracing (`localStorage["cal.debug.threads"] = "1"`): every journal entry, read and stream event with a timestamp, to the console. Off by default; a read of one storage key at start-up. */
 const TRACE = (() => { try { return localStorage.getItem("cal.debug.threads") === "1"; } catch { return false; } })();
@@ -57,16 +57,47 @@ export class ServerThreads implements ThreadsClient {
 
   private known(id: string): Choices { return this.choices.get(id) ?? {}; }
   private choose(id: string, c: Choices) { this.choices.set(id, { ...this.known(id), ...c }); }
-  private summary(id: string, space: string, row: { metadata: WireRow["metadata"]; turn_state?: string }): ThreadSummary {
+  private summary(id: string, space: string, row: { metadata: WireRow["metadata"]; turn_state?: string; turn_reason?: WireReason | null }): ThreadSummary {
     const t = stateOfTurn(row.turn_state);
     const have = this.turns.get(id);
     this.turns.set(id, { state: t, job: have?.state === t ? have.job : undefined });
-    return summaryOf(id, space, row.metadata, row.turn_state, this.known(id));
+    return this.withReadiness(summaryOf(id, space, row.metadata, row.turn_state, this.known(id), row.turn_reason));
   }
   /** Runs `fn` once, 120 ms after the last request for `key`: a burst of journal entries is one read. */
   private later(key: string, fn: () => void, ms = 120) {
     clearTimeout(this.timers.get(key));
     this.timers.set(key, window.setTimeout(() => { this.timers.delete(key); fn(); }, ms));
+  }
+
+  // ---- readiness: is there a machine, is it up, is the provider signed in on it (agent.readiness; re-read when the account feed says it changed) ----
+  private ready: WireReadiness | null = null;
+  private readyFeed: AbortController | null = null;
+  /** A thread with nothing from its turn to say gets what the machines say, so "no machine", "offline" and "not signed in" show before a message is sent, not after it fails. */
+  private withReadiness(s: ThreadSummary): ThreadSummary {
+    if (s.notice || s.state !== "idle") return s;
+    const n = readinessNotice(this.ready, providerPlugin(s.provider), PROVIDERS.find((p) => p.id === s.provider)?.name ?? "The provider");
+    return n ? { ...s, notice: n } : s;
+  }
+  private async loadReadiness(): Promise<void> {
+    await this.loadSpaces();
+    try { this.ready = await this.server.operate<WireReadiness>("agent.readiness", { space_id: this.space() }); } catch (e) { if (!(e instanceof ServerError) || e.code !== "not_found") trace("readiness read failed", String(e)); this.ready = null; }
+    this.lastList = this.lastList.map((t) => this.withReadiness({ ...t, notice: undefined }));
+    for (const [id, o] of this.opened) { o.summary = this.withReadiness({ ...o.summary, notice: undefined }); this.follows.get(id)?.ev.onSummary({ ...o.summary, ...this.known(id) } as ThreadSummary); }
+    this.tellList();
+  }
+  private watchReadiness(): void {
+    if (this.readyFeed) return;
+    this.readyFeed = new AbortController();
+    const ac = this.readyFeed;
+    void this.loadReadiness();
+    void (async () => { for (let wait = 1000; !ac.signal.aborted; wait = Math.min(wait * 2, 15000)) { try { await this.server.readinessLive(() => void this.loadReadiness(), ac.signal); } catch { /* away: try again */ } if (ac.signal.aborted) return; await new Promise((r) => setTimeout(r, wait)); } })();
+  }
+  async check(id: string): Promise<void> {
+    const s = this.lastList.find((t) => t.id === id) ?? this.opened.get(id)?.summary;
+    const m = this.ready?.machines.find((x) => x.connected) ?? this.ready?.machines[0];
+    if (!m?.machine_id || !s) throw new Error("there is no machine of yours to check");
+    await this.server.operate("agent.check", { space_id: this.space(), machine_id: m.machine_id, provider_id: providerPlugin(s.provider) });
+    await this.loadReadiness();
   }
 
   async providers(): Promise<ProviderOption[]> { return PROVIDERS; }
@@ -82,6 +113,7 @@ export class ServerThreads implements ThreadsClient {
   watchThreads(cb: (t: ThreadSummary[]) => void): () => void {
     this.watchers.add(cb);
     void this.ensureFeed();
+    this.watchReadiness();
     return () => { this.watchers.delete(cb); this.maybeStopFeed(); };
   }
   private async refreshList(): Promise<void> {
@@ -101,6 +133,7 @@ export class ServerThreads implements ThreadsClient {
   private maybeStopFeed(): void {
     if (this.watchers.size || this.follows.size) return;
     this.feed?.stop(); this.feed = null;
+    this.readyFeed?.abort(); this.readyFeed = null;
   }
   private onReset(): void {
     void this.refreshList();
@@ -117,10 +150,12 @@ export class ServerThreads implements ThreadsClient {
       const before = this.turns.get(id)?.state;
       const job = (e.data?.job_id as string | undefined) ?? undefined;
       this.turns.set(id, { state, job });
-      this.lastList = this.lastList.map((t) => (t.id === id ? { ...t, state } : t));
+      // The entry carries the reason too: the notice changes with the state, no read.
+      const notice = reasonNotice(e.data?.turn_reason as WireReason | undefined) ?? undefined;
+      this.lastList = this.lastList.map((t) => (t.id === id ? { ...t, state, notice } : t));
       this.tellList();
       const o = this.opened.get(id);
-      if (o) { o.summary = { ...o.summary, state }; this.follows.get(id)?.ev.onSummary({ ...o.summary, ...this.known(id) } as ThreadSummary); }
+      if (o) { o.summary = { ...o.summary, state, notice }; this.follows.get(id)?.ev.onSummary({ ...o.summary, ...this.known(id) } as ThreadSummary); }
       if (state === "running" && job && this.follows.has(id) && !this.streams.has(id)) void this.follow(id, job);
       if (state === "waiting" || before === "waiting") void this.asks.refresh();
       return;
@@ -299,7 +334,7 @@ export class ServerThreads implements ThreadsClient {
   // The composer's choices travel with the next send; the server has no operation for where a thread runs.
   async setProvider(id: string, provider: ThreadSummary["provider"], model: string): Promise<void> { this.choose(id, { provider, model }); this.announce(id); }
   async setPermission(id: string, permission: Permission): Promise<void> { this.choose(id, { permission }); this.announce(id); }
-  async machines(): Promise<string[]> { return []; }
+  async machines(): Promise<string[]> { await this.loadReadiness(); return [...(this.ready?.machines.map((m) => m.name ?? "Machine") ?? []), ...(this.ready?.pool.length ? ["Pool"] : [])]; }
   async setRunsOn(id: string, runsOn: RunsOn): Promise<void> { this.choose(id, { runsOn }); this.announce(id); }
   /** Tells the open thread and the list about a change made here, without asking the server. */
   private announce(id: string): void {

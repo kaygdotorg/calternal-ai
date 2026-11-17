@@ -23,15 +23,16 @@ export type ProviderId = "claude" | "codex";
 
 /**
  * Something about a thread that needs the person's attention and has a next step: why a message cannot run yet, or what happened to the last turn. Drawn by `ThreadNotices` in plain words.
- * `retrying` carries the automatic retry (5 tries, after 30 s, 1, 2, 4 and 8 minutes, `docs/orchestrator-proposal.md`); `interrupted` is a machine that went silent (nothing moves by itself, Resume does).
+ * The server's `turn_reason` (docs/threads.md, turn readiness) becomes one of these (`reasonNotice`, server/thread-file.ts): `retrying` carries the automatic retry rule (provider backoff: 5 tries after 30 s, 1, 2, 4 and 8 minutes; API availability: a check every 3 hours; subscription: wait for the limit to reset); `interrupted` is a machine that went silent (nothing moves by itself; Resume continues it when it is resumable).
  */
 export type ThreadNotice =
   | { kind: "no-machine" }
-  | { kind: "machine-offline"; machine: string }
-  | { kind: "provider-signin"; machine: string; provider: string }
-  | { kind: "failed"; reason: string }
-  | { kind: "retrying"; reason: string; attempt: number; of: number; nextAt: number }
-  | { kind: "interrupted"; machine: string };
+  | { kind: "waiting-capacity"; queuePosition?: number }
+  | { kind: "machine-offline"; machine?: string; queuePosition?: number; sinceMs?: number }
+  | { kind: "provider-signin"; machine?: string; provider: string; command?: string }
+  | { kind: "failed"; failure: "transient" | "usage_limit" | "permanent"; reason?: string; resetAtMs?: number }
+  | { kind: "retrying"; rule: "provider_backoff" | "api_availability" | "subscription_reset"; reason?: string; attempt?: number; of?: number; nextAt?: number }
+  | { kind: "interrupted"; machine?: string; resumable: boolean; why?: string; sinceMs?: number };
 
 /** What the sidebar and the header need to know about a thread. A child thread has a `parentId`. */
 export interface ThreadSummary {
