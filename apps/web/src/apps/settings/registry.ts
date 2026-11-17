@@ -234,11 +234,11 @@ function serverSections(): Section[] {
   const secrets: Page = { ...secretsPage, groups: [lazy("space.secrets", "Secrets", () => import("./SecretsPanel.svelte"))] };
   const plugins: Page = { ...spacePluginsPage, groups: [lazy("space.plugins", "Plugins", () => import("./ServerPluginsPanel.svelte"))] };
   const manage: Page = { id: "manage", name: "Delete this space", icon: "folder", blurb: "Removes the space for everyone in it.", groups: [{ title: "Danger area", danger: true, settings: [{ id: "space.delete", label: "Delete this space", help: "Only the owner may.", control: { type: "button", text: "Delete space…", danger: true, run: deleteSpace } }] }] };
+  // Admin has no page backed by an operation yet, so it has no section even with the capability (the table in docs/ui-shell-status.md).
   return [
     { id: "user", name: "User", pages: [appearancePage, keyboardPage, machines, account] },
     { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [members, secrets, plugins, manage] },
-    ...(caps.serverAdmin ? [{ id: "server" as const, name: "Admin", pages: [] }] : []),
-  ].filter((x) => x.pages.length);
+  ];
 }
 
 /** The sections this person sees: Admin (the server) only with the server-admin capability (the real one in server mode). */
