@@ -66,7 +66,7 @@ Calternal accounts and machines.
 After the coordinator confirms placement, run:
 
 ```sh
-./scripts/dev-e2e/service.sh stop
+systemctl --user stop calternal-e2e-machine.service
 ./scripts/dev-e2e/service.sh start claude
 ./scripts/dev-e2e/prove.py claude
 ```
@@ -75,6 +75,9 @@ The real proof creates a fresh thread so its Podman sandbox uses the Claude
 Code image. It submits one prompt with retries disabled for that turn and
 reports time to first text, elapsed time and outcome. Existing thread containers retain their original image.
 A saved thread lives under `~/calternal-e2e/userdata-ssd/spaces/<space-uuid>/AI/Chats/`.
+To check continuation, use `./scripts/dev-e2e/prove.py claude-continuation`
+in place of `prove.py claude`. It verifies a two-message exchange and reports
+only timing and outcome.
 
 ## Browser installation and Caddy
 
@@ -126,8 +129,11 @@ in Settings.
 
 ### Morning steps
 
-1. Open [the preview](https://preview.calternal.cloud/ai/?server=1). Paste
-   the private setup code from the file below into the first-owner screen.
+1. Open the private link for the first-owner screen. Its form is
+   `https://preview.calternal.cloud/ai/?server=1#setup=SETUP_CODE`, with the
+   code from the file below in the fragment. You can also open
+   [the preview](https://preview.calternal.cloud/ai/?server=1) and paste the
+   code into the form.
 2. Create your passkey and stay signed in. The server creates your Personal
    space during setup. In the browser’s developer tools,
    open storage for `https://preview.calternal.cloud` and copy the value of
@@ -160,8 +166,10 @@ in Settings.
 The fresh server starts without `--development` and writes the one-use
 token to `/home/claude/calternal-e2e/browser/appdata/setup.token` while its
 account directory is empty. Only the coordinator opens the private file
-as `claude` and enters the token in the HTTPS setup screen. Keep it out of
-the URL, console, and logs. An unredeemed token expires after 24 hours.
+as `claude` and transfers it privately to the owner. Use the form or the
+link’s `#setup=` fragment, which the browser keeps out of HTTP requests.
+Keep the code out of query strings, the console, and logs. An unredeemed
+token expires after 24 hours.
 Restarting the empty installation replaces the unused token. The file path
 is safe to report. After setup, check `GET /api/v1/auth/status`; the used
 file can remain and its value is invalid. The post-setup script discovers
@@ -220,7 +228,16 @@ data: {"seq":4,"data":{"version":1,"seq":2,"event":{"type":"text_delta","text":"
 ```
 
 The two sequence numbers are independent. Placement and notice chunks
-carry a plain `data.type` without a provider envelope. `snapshot` carries
+carry a plain `data.type` without a provider envelope. A changed provider
+or selected machine emits a notice on the same stream, for example:
+
+```text
+event: chunk
+data: {"seq":5,"data":{"type":"notice","message":"Starting a new provider session because the machine changed."}}
+
+```
+
+`snapshot` carries
 `{"job":{…},"epoch":"…"}`, `state` carries `{"job":{…},"requests":[]}`,
 and `end` carries `{"job":{…}}`. The `state` and `end` payloads expose
 the job’s lifecycle. Live text and steps come from `chunk.data.event`.
@@ -236,9 +253,10 @@ and [job stream implementation](../crates/server/src/plugins/job_api.rs).
 | Older CLI documentation lists a single directory for machine administration | The enrollment script supplies all three root flags and the pinned installation ID, as required by the current CLI. |
 | Fixture output, Stop and file placement | The first send finished and streamed. The second streamed while running and `threads.stop` drove it to `cancelled`. The Markdown included both user messages and provider output. |
 | The workspace container test reported discard failure | Its three-second test lease expired during a successful Podman Stop that took 12.1 seconds. The container test now uses the standard server timing. Synthetic-machine tests keep their short timeouts. |
-| Second send omitted `--resume` | Fresh `threads.send` jobs do not carry over the previous Claude session. The fixture check verifies this against actual process arguments. This matches the open turn-engine item in [Threads](threads.md#bounds-and-remaining-integration). |
-| Threads decoded a flat provider chunk | The job stream sends a nested provider envelope. The wire shape above is ready for the UI lane’s decoder. |
-| Browser setup and sign-in need their own first owner | The browser service starts with a separate private setup token. Browser ceremony UI and coordinator Caddy configuration remain pending. |
+| Second send omitted `--resume` | The thread persists a session binding. The live fixture verifies `--resume` in the second Podman process. The real two-message check requires confirmed sign-in for the current seeded account. |
+| Threads decoded a flat provider chunk | The merged browser adapter reads `chunk.data.event` for provider output. Rendering the separate placement and session notices remains a UI follow-up. |
+| Browser setup and sign-in need their own first owner | Caddy reaches the separate browser server. The post-setup script passed with a fresh software passkey and its provisioned Personal space. The preview’s actual owner ceremony remains to be exercised. |
+| Podman startup exhausted the dev-01 account’s kernel keyring quota | The instrumented worker test saw `crun` reject 14 starts with exit 126. Individual failures took 301–1,912 ms, and the test surfaced a 10-second worker-drain timeout. Adjusting a test deadline would leave the sandbox startup fault in place. |
 
 See [Forgejo #34](https://git.kayg.org/kayg/calternal-ai/issues/34) for the
 active qualification status.
