@@ -9,11 +9,19 @@ const capabilities = new Set(["space.read", "content.write", "plugins.use", "plu
 export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "request_secret_handle";
 const hostCalls = new Set(["read_item", "write_item", "list_collection", "emit_event", "start_job", "request_secret_handle"]);
 function fail(): never { throw new Error("invalid manifest v1"); }
-function record(v: unknown, keys: string[]): Record<string, unknown> {
+function record(v: unknown, keys: string[], optional: string[] = []): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return fail();
   const r = v as Record<string, unknown>;
-  if (Object.keys(r).length !== keys.length || keys.some(k => !Object.hasOwn(r, k))) return fail();
+  if (keys.some(k => !Object.hasOwn(r, k)) || Object.keys(r).some(k => !keys.includes(k) && !optional.includes(k))) return fail();
   return r;
+}
+/** An operation target names a kind and a required string property of the input schema. */
+function target(v: unknown, input: unknown): void {
+  if (v === undefined || v === null) return;
+  const t = record(v, ["kind", "field"]); identifier(t.kind);
+  const field = t.field;
+  const s = input as { type?: unknown; properties?: Record<string, { type?: unknown }>; required?: unknown };
+  if (typeof field !== "string" || !/^[a-z0-9_]{1,64}$/.test(field) || field === "space_id" || !s || typeof s !== "object" || s.type !== "object" || s.properties?.[field]?.type !== "string" || !Array.isArray(s.required) || !s.required.includes(field)) fail();
 }
 function identifier(v: unknown): string { if (typeof v !== "string" || !id.test(v)) return fail(); return v; }
 function text(v: unknown, max = 256): string { if (typeof v !== "string" || !v.trim() || new TextEncoder().encode(v).length > max) return fail(); return v; }
@@ -28,10 +36,10 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"]);
   identifier(m.id); identifier(m.icon); text(m.name); text(m.version, 80);
   if (m.api_version !== 1) fail();
-  function rows(key: string, keys: string[], visit: (r: Record<string, unknown>) => void): void {
+  function rows(key: string, keys: string[], visit: (r: Record<string, unknown>) => void, optional: string[] = []): void {
     const list = m[key]; if (!Array.isArray(list) || list.length > 128) return fail();
     const seen = new Set<string>();
-    for (const v of list) { const r = record(v, keys); const key = identifier(r.id); if (seen.has(key)) fail(); seen.add(key); visit(r); }
+    for (const v of list) { const r = record(v, keys, optional); const key = identifier(r.id); if (seen.has(key)) fail(); seen.add(key); visit(r); }
   }
   const operations = new Set<string>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
@@ -46,7 +54,8 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency"], r => {
     operations.add(identifier(r.id)); schema(r.input_schema); schema(r.output_schema);
     if (!capabilities.has(String(r.required_capability)) || typeof r.mutates !== "boolean" || !["read_only", "request_id", "never"].includes(String(r.idempotency)) || r.mutates === (r.idempotency === "read_only") || (r.mutates && r.required_capability === "space.read")) fail();
-  });
+    target(r.target, r.input_schema);
+  }, ["target"]);
   const op = (r: Record<string, unknown>): void => { if (!operations.has(String(r.operation))) fail(); };
   rows("collections", ["id", "kind", "name"], r => { identifier(r.kind); text(r.name); });
   rows("views", ["id", "region", "component"], r => { identifier(r.component); if (!["sidebar", "main", "right_card"].includes(String(r.region))) fail(); });

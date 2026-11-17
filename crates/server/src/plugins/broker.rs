@@ -175,7 +175,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
 /// and refuses everything else, so a preview never touches user data or effects.
 /// The caller checks the requester's space access before the preview starts.
 pub struct PreviewHost {
-    /// Kind the previewed operation reads (from its item binding).
+    /// Kind the previewed operation reads (its manifest `target` kind).
     pub kind: String,
 }
 

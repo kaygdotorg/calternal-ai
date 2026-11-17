@@ -155,8 +155,7 @@ impl Fixture {
         let plugin = support::plugin(
             support::insights_manifest(),
             Some(&worker),
-            true,
-            &[("notes-insights.summarize", "notes", "note_id")],
+            true
         );
         let mut store = Store::open(&root.join("data")).unwrap();
         let note = serde_json::to_value(

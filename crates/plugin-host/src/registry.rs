@@ -41,6 +41,24 @@ fn visible_folders(m: &ManifestV1) -> BTreeSet<String> {
 fn schema(value: &serde_json::Value) -> bool {
     (value.is_object() || value.is_boolean()) && jsonschema::validator_for(value).is_ok()
 }
+/// An operation target names an identifier kind and a top-level input property that
+/// the input schema declares as a required string, so the host can always find the
+/// item ID before running plugin code. Cost: O(required list), no allocation.
+fn target(t: &ManifestTarget, input: &serde_json::Value) -> bool {
+    let field = t.field.as_str();
+    identifier(&t.kind)
+        && !field.is_empty()
+        && field.len() <= 64
+        && field
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        && field != "space_id"
+        && input["type"] == "object"
+        && input["properties"][field]["type"] == "string"
+        && input["required"]
+            .as_array()
+            .is_some_and(|r| r.iter().any(|v| v == field))
+}
 /// Cost: O(manifest bytes + schema compilation), bounded allocations, no I/O or locks.
 /// Parse a bounded manifest with strict unknown-field rejection, without executing code.
 pub fn parse_manifest(bytes: &[u8]) -> Result<ManifestV1, Error> {
@@ -94,7 +112,8 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
                 ManifestPlacement::Hidden { hidden } => *hidden,
             }
     }) || m.operations.iter().any(|x| {
-        !schema(&x.input_schema)
+        !x.target.as_ref().is_none_or(|t| target(t, &x.input_schema))
+            || !schema(&x.input_schema)
             || !schema(&x.output_schema)
             || x.mutates == (x.idempotency == ManifestIdempotency::ReadOnly)
             || (x.mutates && x.required_capability == ManifestCapability::SpaceRead)

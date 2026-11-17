@@ -27,7 +27,8 @@ use std::sync::Arc;
 
 use calternal_content::{FileFormat, Placement};
 use calternal_core::{
-    False, ManifestCapability, ManifestPlacement, ManifestV1, PluginManifest, PluginOperation,
+    False, ManifestCapability, ManifestOperation, ManifestPlacement, ManifestTarget, ManifestV1,
+    PluginManifest, PluginOperation,
 };
 use calternal_plugin_host as host;
 use serde::Deserialize;
@@ -65,29 +66,6 @@ pub struct TrustedEntry {
     pub worker_sha256: Option<String>,
     /// Whether a space with no stored activation row treats the plugin as enabled.
     pub default_enabled: bool,
-    /// Interim wire bindings for operations that target one item. See [`ItemOperation`].
-    #[serde(default)]
-    pub item_operations: Vec<ItemOperation>,
-}
-
-/// Interim host-owned wire binding for an item-targeted plugin operation.
-///
-/// Manifest v1 does not yet say which input field names a target item, so the host
-/// cannot resolve its owning space generically. Until that contract exists, the
-/// trusted entry says so: the wire input is `{ "id": <uuid>, "space_id"?: <hint> }`,
-/// the host resolves `(kind, id)` to its space with the existence-hiding resolver,
-/// and the plugin receives `{ <field>: <id> }`. Operations without a binding are
-/// space-scoped: the wire input carries `space_id`, which is removed before the
-/// remaining object is passed to the plugin.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ItemOperation {
-    /// Declared operation identifier.
-    pub operation: String,
-    /// Item kind the operation targets, such as `notes`.
-    pub kind: String,
-    /// Plugin input property that receives the item ID.
-    pub field: String,
 }
 
 /// A trusted plugin whose manifest passed validation and registration.
@@ -107,8 +85,8 @@ pub struct Plugin {
 
 impl Plugin {
     /// Build a plugin from an in-memory manifest, as trusted startup does after
-    /// reading the file. Validates the manifest and the entry's item bindings; does
-    /// not check the worker digest (callers set [`Self::unavailable`] if it fails).
+    /// reading the file. Validates the manifest; does not check the worker digest
+    /// (callers set [`Self::unavailable`] if it fails).
     /// Cost: manifest validation and schema compilation; no I/O.
     pub fn new(
         entry: TrustedEntry,
@@ -122,18 +100,6 @@ impl Plugin {
                 manifest.id, manifest.version, entry.id, entry.version
             ));
         }
-        for binding in &entry.item_operations {
-            let declared = manifest
-                .operations
-                .iter()
-                .any(|op| op.id == binding.operation);
-            if !declared || binding.kind.is_empty() || binding.field.is_empty() {
-                return Err(format!(
-                    "item binding {} does not name a declared operation",
-                    binding.operation
-                ));
-            }
-        }
         let wire = wire_manifest(&manifest);
         Ok(Self {
             entry,
@@ -144,13 +110,16 @@ impl Plugin {
         })
     }
 
-    /// The interim item binding of a declared operation, if it targets one item.
-    /// Cost: O(bindings), no allocation.
-    pub fn item_operation(&self, operation: &str) -> Option<&ItemOperation> {
-        self.entry
-            .item_operations
-            .iter()
-            .find(|b| b.operation == operation)
+    /// The declared operation `id`, if this plugin declares it.
+    /// Cost: O(operations), no allocation.
+    pub fn operation(&self, id: &str) -> Option<&ManifestOperation> {
+        self.manifest.operations.iter().find(|op| op.id == id)
+    }
+
+    /// The item a declared operation targets, or `None` for a space-scoped one.
+    /// Cost: O(operations), no allocation.
+    pub fn target(&self, operation: &str) -> Option<&ManifestTarget> {
+        self.operation(operation).and_then(|op| op.target.as_ref())
     }
 
     /// Content registrations for every kind this plugin declares, in manifest order.
@@ -269,7 +238,7 @@ impl Registry {
             let Some(slot) = out.plugins.iter().position(|p| p.manifest.id == row.plugin) else {
                 continue;
             };
-            let item = out.plugins[slot].item_operation(&row.operation.id).is_some();
+            let item = row.operation.target.is_some();
             let Some(required) = host_capability(row.operation.required_capability) else {
                 continue;
             };

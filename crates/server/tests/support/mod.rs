@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use calternal_core::ManifestV1;
-use calternal_server::plugins::{ItemOperation, Plugin, TrustedEntry, file_sha256};
+use calternal_server::plugins::{Plugin, TrustedEntry, file_sha256};
 use serde_json::json;
 
 /// The shipped notes-insights manifest, parsed by the real host library.
@@ -28,14 +28,8 @@ pub fn manifest(extra: serde_json::Value) -> ManifestV1 {
     serde_json::from_value(base).unwrap()
 }
 
-/// Trusted entry for `manifest` whose worker is `worker` (digest pinned), with
-/// item bindings `(operation, kind, field)`.
-pub fn plugin(
-    manifest: ManifestV1,
-    worker: Option<&Path>,
-    default_enabled: bool,
-    items: &[(&str, &str, &str)],
-) -> Plugin {
+/// Trusted entry for `manifest` whose worker is `worker` (digest pinned).
+pub fn plugin(manifest: ManifestV1, worker: Option<&Path>, default_enabled: bool) -> Plugin {
     let entry = TrustedEntry {
         id: manifest.id.clone(),
         version: manifest.version.clone(),
@@ -43,14 +37,6 @@ pub fn plugin(
         worker: worker.map(|_| "worker.js".into()),
         worker_sha256: worker.map(|w| file_sha256(w).unwrap()),
         default_enabled,
-        item_operations: items
-            .iter()
-            .map(|(operation, kind, field)| ItemOperation {
-                operation: (*operation).into(),
-                kind: (*kind).into(),
-                field: (*field).into(),
-            })
-            .collect(),
     };
     Plugin::new(entry, manifest, worker.map(|w| std::fs::canonicalize(w).unwrap())).unwrap()
 }
@@ -82,7 +68,7 @@ rl.on('line',l=>{{const f=JSON.parse(l);const m=f.message;
 }
 
 /// Default behaviour: read the note through the broker, then return its statistics.
-pub const READ_NOTE: &str = "call(f,'read_item',{kind:'notes',item_id:m.input.note_id})";
+pub const READ_NOTE: &str = "call(f,'read_item',{kind:'notes',item_id:m.input.id})";
 /// Default reply handler: complete with statistics of the item's text.
 pub const COMPLETE: &str = "done(f,stats(m.ok?m.data.text:''))";
 /// Reply handler that waits for a `go` file next to the worker before completing.

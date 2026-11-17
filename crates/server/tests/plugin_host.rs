@@ -39,12 +39,10 @@ fn tmp(tag: &str) -> PathBuf {
     std::env::temp_dir().join(format!("calternal-plugin-host-{tag}-{}", uuid::Uuid::new_v4()))
 }
 
-const SUMMARIZE: &[(&str, &str, &str)] = &[("notes-insights.summarize", "notes", "note_id")];
-
 /// Insights plugin (enabled by default) whose worker runs `on_invoke`/`on_reply`.
 fn insights(dir: &Path, on_invoke: &str, on_reply: &str) -> Plugin {
     let worker = support::worker(dir, on_invoke, on_reply);
-    support::plugin(support::insights_manifest(), Some(&worker), true, SUMMARIZE)
+    support::plugin(support::insights_manifest(), Some(&worker), true)
 }
 
 /// A plugin with its own hidden kind, a standard collection and a mutating
@@ -69,7 +67,7 @@ fn tagger(dir: &Path) -> Plugin {
         }],
         "host_calls": ["write_item"]
     }));
-    support::plugin(manifest, Some(&worker), false, &[])
+    support::plugin(manifest, Some(&worker), false)
 }
 
 async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixture {
@@ -148,13 +146,11 @@ fn policy_rows_are_derived_from_manifests() {
         support::manifest(json!({"id": "shadow", "operations": op("notes.list", "space.read")})),
         None,
         false,
-        &[],
     );
     let account = support::plugin(
         support::manifest(json!({"id": "account", "operations": op("account.make", "spaces.create")})),
         None,
         false,
-        &[],
     );
     let registry = Registry::from_plugins(vec![shadow, account]);
     assert!(registry.plugins().is_empty());
@@ -223,7 +219,7 @@ async fn one_long_lived_worker_per_plugin_and_space() {
     let dir = tmp("reuse-worker");
     let plugin = insights(
         &dir,
-        "globalThis.n=(globalThis.n||0)+1;call(f,'read_item',{kind:'notes',item_id:m.input.note_id})",
+        "globalThis.n=(globalThis.n||0)+1;call(f,'read_item',{kind:'notes',item_id:m.input.id})",
         "const r=stats(m.data.text);r.stats.words=globalThis.n;done(f,r)",
     );
     let f = fixture("reuse", vec![plugin], None).await;
@@ -314,5 +310,56 @@ async fn tampered_bundle_is_refused_before_start() {
     let e = f.summarize(&id).await.unwrap_err();
     assert_eq!((e.code, e.message.as_str()), (ErrorCode::Unavailable, "plugin bundle failed verification"));
     assert_eq!(f.state.workers.live(), 0);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn manifest_target_names_the_item_field_and_hides_foreign_items() {
+    // The manifest, not the trusted entry, says `note` holds the target item ID; the
+    // plugin receives its own input unchanged (minus the resolved space).
+    let dir = tmp("target-worker");
+    let worker = support::worker(
+        &dir,
+        "call(f,'read_item',{kind:'notes',item_id:m.input.note})",
+        "const r=stats(m.ok?m.data.text:'');r.view.root.children[0].value=JSON.stringify(inv.get(f.invocation_id).input);done(f,r)",
+    );
+    let mut manifest = support::insights_manifest();
+    manifest.id = "targeted".into();
+    let op = &mut manifest.operations[0];
+    op.id = "targeted.count".into();
+    op.input_schema = json!({"type": "object", "required": ["note", "mode"], "additionalProperties": false,
+        "properties": {"note": {"type": "string"}, "mode": {"type": "string"}}});
+    op.target = Some(calternal_core::ManifestTarget { kind: "notes".into(), field: "note".into() });
+    let plugin = support::plugin(manifest, Some(&worker), true);
+    let f = fixture("target", vec![plugin], None).await;
+    assert_eq!(f.state.registry.policy("targeted.count").unwrap().scope, Scope::Note);
+    let own = f.note("personal", "one two three\n").await;
+    let r = f
+        .op("owner", "t1", "targeted.count", json!({"note": own, "mode": "fast"}))
+        .await
+        .unwrap();
+    assert_eq!(r["stats"]["words"], 3);
+    assert_eq!(
+        r["view"]["root"]["children"][0]["value"],
+        json!({"note": own, "mode": "fast"}).to_string()
+    );
+    // A note in a space the caller cannot read answers exactly like a missing one.
+    let missing = uuid::Uuid::now_v7().to_string();
+    let absent = f
+        .op("guest", "t2", "targeted.count", json!({"note": missing, "mode": "fast"}))
+        .await
+        .unwrap_err();
+    let foreign = f
+        .op("guest", "t3", "targeted.count", json!({"note": own, "mode": "fast"}))
+        .await
+        .unwrap_err();
+    assert_eq!(absent.code, ErrorCode::NotFound);
+    assert_eq!((foreign.code, foreign.message), (absent.code, absent.message));
+    // The ID must be in the declared field; `id` is not a fallback.
+    let wrong = f
+        .op("owner", "t4", "targeted.count", json!({"id": own, "mode": "fast"}))
+        .await
+        .unwrap_err();
+    assert_eq!(wrong.code, ErrorCode::InvalidInput);
     let _ = std::fs::remove_dir_all(dir);
 }

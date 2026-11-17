@@ -36,8 +36,7 @@ async fn disable_during_invocation_discards_result() {
     let plugin = support::plugin(
         support::insights_manifest(),
         Some(&worker),
-        false,
-        &[("notes-insights.summarize", "notes", "note_id")],
+        false
     );
     let data = root.0.join("data");
     let node = resolve_node(None).await.expect("node >= 22.13");

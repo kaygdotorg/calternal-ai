@@ -456,23 +456,26 @@ pub async fn dispatch<D: Directory>(
         .policy(op)
         .is_some_and(|p| p.scope == authz::Scope::Note);
     if op == "resolve" || item_scoped {
+        // A plugin operation names its target in the manifest; host item operations
+        // and `resolve` carry the item ID in `id`.
+        let target = state
+            .registry
+            .owner_of_operation(op)
+            .and_then(|p| p.target(op));
+        let field = target.map_or("id", |t| t.field.as_str());
         if calternal_core::is_known_operation(op) {
             calternal_core::validate_operation_input(op, &input)?;
         } else {
-            validate_item_input(&input)?;
+            validate_item_input(&input, field)?;
         }
         let kind = if op == "resolve" {
             input.get("kind").and_then(Value::as_str).unwrap_or("")
         } else {
-            state
-                .registry
-                .owner_of_operation(op)
-                .and_then(|p| p.item_operation(op))
-                .map_or("notes", |b| b.kind.as_str())
+            target.map_or("notes", |t| t.kind.as_str())
         }
         .to_owned();
         let id = input
-            .get("id")
+            .get(field)
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_owned();
@@ -774,15 +777,16 @@ fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, 
     })
 }
 
-/// Wire shape of an item-targeted plugin operation without a core-contract entry:
-/// exactly `{ "id": <string>, "space_id"?: <string> }`. Cost: O(keys).
-fn validate_item_input(input: &JsonObject) -> Result<(), HostError> {
+/// Host-checked part of an item-targeted plugin operation without a core-contract
+/// entry: `field` holds a bounded string ID and the optional `space_id` hint is a
+/// string. Every other property is checked by the declared input schema before the
+/// worker sees it. Cost: O(1) map lookups.
+fn validate_item_input(input: &JsonObject, field: &str) -> Result<(), HostError> {
     let shape = HostError::invalid_input("input does not match operation schema");
-    if input.keys().any(|k| k != "id" && k != "space_id")
-        || !input
-            .get("id")
-            .and_then(Value::as_str)
-            .is_some_and(|id| !id.is_empty() && id.len() <= 128)
+    if !input
+        .get(field)
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty() && id.len() <= 128)
         || input.get("space_id").is_some_and(|v| !v.is_string())
     {
         return Err(shape);
@@ -842,13 +846,8 @@ async fn invoke_plugin<D: Directory>(
         Some(Value::String(space)) => space,
         _ => return Err(HostError::invalid_input("input does not match operation schema")),
     };
-    let plugin_input = match plugin.item_operation(op) {
-        Some(binding) => {
-            let id = input.remove("id").unwrap_or(Value::Null);
-            serde_json::json!({ binding.field.clone(): id })
-        }
-        None => Value::Object(input.into_iter().collect()),
-    };
+    // The resolved space travels separately; the plugin sees only its declared input.
+    let plugin_input = Value::Object(input.into_iter().collect());
     let (space_key, plugin2, account) = (space.clone(), plugin.clone(), p.id.clone());
     let (generation, (account_id, space_id)) = blocking(&state, move |s| {
         let row = activation(s, &space_key, &plugin2)?;
@@ -908,7 +907,7 @@ async fn invoke_plugin<D: Directory>(
 }
 
 /// Preview a plugin without activating it or touching user data: its first
-/// item-targeted operation runs against the fixed fixture item, served by a
+/// item-targeted operation (manifest `target`) runs against the fixed fixture item, served by a
 /// broker that refuses every other host call. A plugin with no worker or no
 /// item-targeted operation has nothing to preview (not found).
 async fn preview<D: Directory>(
@@ -917,13 +916,13 @@ async fn preview<D: Directory>(
     plugin: Arc<Plugin>,
     space: &str,
 ) -> Result<Value, HostError> {
-    let binding = plugin
-        .entry
-        .item_operations
-        .first()
+    let (operation, target) = plugin
+        .manifest
+        .operations
+        .iter()
+        .find_map(|op| Some((op.id.clone(), op.target.clone()?)))
         .filter(|_| plugin.entry.worker.is_some())
-        .ok_or_else(|| HostError::not_found("plugin has no views"))?
-        .clone();
+        .ok_or_else(|| HostError::not_found("plugin has no views"))?;
     let (space_key, account) = (space.to_owned(), p.id.clone());
     let (account_id, space_id) =
         blocking(&state, move |s| s.worker_ids(&account, &space_key)).await?;
@@ -941,10 +940,10 @@ async fn preview<D: Directory>(
             space,
             space_id,
             Call {
-                operation: binding.operation.clone(),
-                input: serde_json::json!({ binding.field.clone(): PREVIEW_ITEM_ID }),
+                operation,
+                input: serde_json::json!({ target.field: PREVIEW_ITEM_ID }),
                 account: account_id,
-                host: Arc::new(PreviewHost { kind: binding.kind }),
+                host: Arc::new(PreviewHost { kind: target.kind }),
             },
         )
         .await;

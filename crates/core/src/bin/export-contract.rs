@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ManifestSettingType,
         ManifestPlacement,
         ManifestKind,
+        ManifestTarget,
         ManifestOperation,
         ManifestCollection,
         ManifestView,

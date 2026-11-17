@@ -66,6 +66,22 @@ id: string,
  */
 schema: unknown, };
 /**
+ * The single item an operation acts on. The host reads the item ID from the named
+ * input field, resolves its owning space with the existence-hiding resolver and
+ * authorizes the caller in that space before any plugin code runs.
+ */
+
+export type ManifestTarget = {
+/**
+ * Kind of the target item, such as `notes`; it may belong to another plugin.
+ */
+kind: string,
+/**
+ * Top-level input property holding the item ID; the input schema must require it
+ * as a string.
+ */
+field: string, };
+/**
  * Public operation declaration consumed by host policy.
  */
 
@@ -93,7 +109,12 @@ mutates: boolean,
 /**
  * Retry and host receipt contract.
  */
-idempotency: ManifestIdempotency, };
+idempotency: ManifestIdempotency,
+/**
+ * Item the operation targets; absent (or null) for a space-scoped operation,
+ * whose wire input names its space in `space_id`.
+ */
+target?: ManifestTarget, };
 /**
  * Provisioning template; the host allocates a fresh Collection UUID per enable.
  */
@@ -223,7 +244,8 @@ id: string,
  */
 stylesheet: string, };
 /**
- * Plugin menu read without running plugin code; all fields are required.
+ * Plugin menu read without running plugin code. Every top-level field is required;
+ * only the documented optional fields inside declarations may be omitted.
  */
 
 export type ManifestV1 = {

@@ -46,7 +46,7 @@ fn invoke(s: &mut WorkerSession, h: &mut FakeHost, id: &str) {
     s.invoke(
         id.into(),
         "notes-insights.summarize".into(),
-        json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+        json!({"id":"01932910-0000-7000-8000-000000000003"}),
         authority(),
         h,
     )
@@ -95,6 +95,12 @@ fn manifest_validation_vectors() {
         ("/operations/0/mutates", json!(true)),
         ("/operations/0/idempotency", json!("never")),
         ("/operations/0/id", json!("")),
+        // A target must name a required string property of the input schema.
+        ("/operations/0/target", json!({"kind":"notes","field":"missing"})),
+        ("/operations/0/target", json!({"kind":"notes","field":"space_id"})),
+        ("/operations/0/target", json!({"kind":"Notes!","field":"id"})),
+        ("/operations/0/target", json!({"kind":"notes","field":"id","extra":1})),
+        ("/operations/0/target/field", json!("Id")),
         ("/kinds", json!([{"id":"notes","schema":null}])),
         (
             "/collections",
@@ -573,7 +579,7 @@ fn required_capability_is_checked_before_admission() {
         s.invoke(
             "denied".into(),
             "notes-insights.summarize".into(),
-            json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+            json!({"id":"01932910-0000-7000-8000-000000000003"}),
             authority(),
             &mut h
         ),
@@ -598,7 +604,7 @@ fn oversized_callback_output_is_redacted_without_repeating_the_effect() {
     s.invoke(
         "inv-1".into(),
         "notes-insights.summarize".into(),
-        json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+        json!({"id":"01932910-0000-7000-8000-000000000003"}),
         authority(),
         &mut h,
     )
@@ -649,7 +655,7 @@ fn a_secret_value_response_is_never_forwarded_as_a_handle() {
     s.invoke(
         "inv-1".into(),
         "notes-insights.summarize".into(),
-        json!({"note_id":"01932910-0000-7000-8000-000000000003"}),
+        json!({"id":"01932910-0000-7000-8000-000000000003"}),
         authority(),
         &mut h,
     )

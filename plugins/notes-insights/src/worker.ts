@@ -34,8 +34,8 @@ function view(stats: Stats): GenUiView {
 
 const runtime = new WorkerRuntimeV2(manifest as ManifestV1, {
   "notes-insights.summarize": async (input, context) => {
-    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || !("note_id" in input) || typeof input.note_id !== "string") throw new Error("invalid input");
-    const item = await context.call("read_item", { kind: "notes", item_id: input.note_id });
+    if (!input || typeof input !== "object" || Array.isArray(input) || Object.keys(input).length !== 1 || !("id" in input) || typeof input.id !== "string") throw new Error("invalid input");
+    const item = await context.call("read_item", { kind: "notes", item_id: input.id });
     if (!item || typeof item !== "object" || !("text" in item) || typeof item.text !== "string") throw new Error("invalid item");
     const stats = summarize(item.text);
     return { stats, view: view(stats) };
