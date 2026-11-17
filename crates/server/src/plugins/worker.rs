@@ -333,7 +333,10 @@ impl WorkerPool {
                 // cancelled, the detached task's output (and the slot) is dropped
                 // when the start finishes, never leaked.
                 let spawned = tokio::task::spawn_blocking(move || {
-                    (reservation, spawn(&node, &plugin2, &bundle2, space, in_flight))
+                    (
+                        reservation,
+                        spawn(&node, &plugin2, &bundle2, space, in_flight),
+                    )
                 })
                 .await;
                 let (reservation, worker) = match spawned {

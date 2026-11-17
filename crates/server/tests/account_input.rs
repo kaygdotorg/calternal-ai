@@ -190,9 +190,13 @@ async fn pending_stable_id_retry_edit_confirm_and_cancel() {
     f.op(false, "pending.edit", edited.clone()).await.unwrap();
     assert!(f.op(true, "pending.edit", edited.clone()).await.is_err());
     assert!(
-        f.op(true, "pending.submit", json!({"space_id":f.spaces[0],"id":"send-once"}))
-            .await
-            .is_err()
+        f.op(
+            true,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"send-once"})
+        )
+        .await
+        .is_err()
     );
     f.client()
         .drain_pending(&CancellationToken::new())
@@ -200,7 +204,11 @@ async fn pending_stable_id_retry_edit_confirm_and_cancel() {
         .unwrap();
     // The terminal reply survives removal of the pending record, without a second result log.
     let retried = f
-        .op(false, "pending.submit", json!({"space_id":f.spaces[0],"id":"send-once"}))
+        .op(
+            false,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"send-once"}),
+        )
         .await
         .unwrap();
     assert!(retried["result"]["note"]["id"].is_string());
@@ -222,29 +230,49 @@ async fn pending_stable_id_retry_edit_confirm_and_cancel() {
     let old = f.queue("old", 8 * 24 * 60 * 60 * 1000);
     f.op(false, "pending.queue", old).await.unwrap();
     let held = f
-        .op(false, "pending.submit", json!({"space_id":f.spaces[0],"id":"old"}))
+        .op(
+            false,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"old"}),
+        )
         .await
         .unwrap();
     assert_eq!(held["record"]["state"], "confirmation_required");
     assert!(
-        f.op(true, "pending.confirm", json!({"space_id":f.spaces[0],"id":"old"}))
-            .await
-            .is_err()
-    );
-    f.op(false, "pending.confirm", json!({"space_id":f.spaces[0],"id":"old"}))
+        f.op(
+            true,
+            "pending.confirm",
+            json!({"space_id":f.spaces[0],"id":"old"})
+        )
         .await
-        .unwrap();
+        .is_err()
+    );
+    f.op(
+        false,
+        "pending.confirm",
+        json!({"space_id":f.spaces[0],"id":"old"}),
+    )
+    .await
+    .unwrap();
     f.op(false, "pending.queue", f.queue("cancel", 0))
         .await
         .unwrap();
     assert!(
-        f.op(true, "pending.cancel", json!({"space_id":f.spaces[0],"id":"cancel"}))
-            .await
-            .is_err()
-    );
-    f.op(false, "pending.cancel", json!({"space_id":f.spaces[0],"id":"cancel"}))
+        f.op(
+            true,
+            "pending.cancel",
+            json!({"space_id":f.spaces[0],"id":"cancel"})
+        )
         .await
-        .unwrap();
+        .is_err()
+    );
+    f.op(
+        false,
+        "pending.cancel",
+        json!({"space_id":f.spaces[0],"id":"cancel"}),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         f.op(false, "pending.list", json!({})).await.unwrap()["records"],
         json!([])
@@ -295,9 +323,13 @@ async fn pending_cap_age_transition_and_revocation_cleanup() {
     .await
     .unwrap();
     assert!(
-        f.op(false, "pending.submit", json!({"space_id":f.spaces[0],"id":"one"}))
-            .await
-            .is_err()
+        f.op(
+            false,
+            "pending.submit",
+            json!({"space_id":f.spaces[0],"id":"one"})
+        )
+        .await
+        .is_err()
     );
     assert_eq!(
         f.op(false, "pending.list", json!({})).await.unwrap()["records"],
