@@ -19,7 +19,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 /// Current schema version (`PRAGMA user_version`).
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS draining (
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS leases (
     image TEXT,
     machine TEXT,
     last_machine TEXT,
+    pinned_machine TEXT,
     fence INTEGER NOT NULL,
     state TEXT NOT NULL,
     reason TEXT,
@@ -178,6 +179,8 @@ pub struct LeaseRow {
     pub machine: Option<Uuid>,
     /// Machine that last held it (placement affinity).
     pub last_machine: Option<Uuid>,
+    /// Mandatory placement for a turn returning from a person request.
+    pub pinned_machine: Option<Uuid>,
     /// Fencing token; increases on every (re)assignment and on end.
     pub fence: u64,
     /// `waiting`, `assigned`, `running` or `ended`.
@@ -192,8 +195,8 @@ pub struct LeaseRow {
 pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     let now = now_ms();
     c.execute(
-        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)
+        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, pinned_machine)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)
          ON CONFLICT(id) DO UPDATE SET machine=excluded.machine, last_machine=excluded.last_machine,
            fence=excluded.fence, state=excluded.state, reason=excluded.reason, updated_ms=excluded.updated_ms",
         params![
@@ -208,7 +211,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
             l.state,
             l.reason,
             l.created_ms,
-            now
+            now,
+            l.pinned_machine.map(|machine| machine.to_string())
         ],
     )?;
     Ok(())
@@ -238,11 +242,11 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         state: r.get(8)?,
         reason: r.get(9)?,
         created_ms: r.get(10)?,
+        pinned_machine: uuid(r.get(11)?),
     })
 }
 
-const LEASE_COLUMNS: &str =
-    "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, pinned_machine";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {

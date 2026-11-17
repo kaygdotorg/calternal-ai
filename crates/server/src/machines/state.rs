@@ -345,7 +345,10 @@ impl State {
             let best = self
                 .machines
                 .values()
-                .filter(|m| self.may_use(m, l.row.account))
+                .filter(|m| {
+                    l.row.pinned_machine.is_none_or(|id| id == m.row.id)
+                        && self.may_use(m, l.row.account)
+                })
                 .map(|m| (m, self.free(m)))
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {

@@ -306,11 +306,28 @@ impl MachineService {
         thread: Uuid,
         image: Option<String>,
     ) -> Result<RunView, Error> {
+        self.request_run_on(space, account, thread, image, None)
+    }
+
+    /// Admit a lease optionally pinned to the machine that last ran the turn
+    /// before its person request. A missing or busy pin waits for that machine.
+    /// Cost: the normal lease admission commit and placement pass.
+    pub(crate) fn request_run_on(
+        &self,
+        space: SpaceId,
+        account: AccountId,
+        thread: Uuid,
+        image: Option<String>,
+        pinned_machine: Option<Uuid>,
+    ) -> Result<RunView, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         if let Some(id) = st.threads.get(&thread).copied() {
             let l = &st.leases[&id];
-            if l.row.account != account || l.row.space != space {
+            if l.row.account != account
+                || l.row.space != space
+                || l.row.pinned_machine != pinned_machine
+            {
                 return Err(Error::conflict("thread is running for another context"));
             }
             return Ok(st.view(id));
@@ -323,6 +340,7 @@ impl MachineService {
             image,
             machine: None,
             last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
+            pinned_machine,
             fence: 0,
             state: LeaseState::Waiting.as_str().into(),
             reason: None,
