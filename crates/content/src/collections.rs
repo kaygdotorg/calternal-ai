@@ -169,6 +169,8 @@ impl Content {
             ],
         )
         .map_err(internal)?;
+        // Account-owned collections are rare (one per created list): the catalog
+        // writer is locked for this one insert.
         lock(&self.index)
             .execute(
                 "INSERT INTO account_items VALUES(?1,?2,'collections')",

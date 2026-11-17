@@ -12,9 +12,8 @@
 //!   `SecretStore::use_value` at a named consumer.
 //!
 //! Responses and errors never contain a value; [`calternal_secrets::Error`] text is
-//! fixed. Each call takes the host's store lock only to clone the secret store's
-//! `Arc` (no I/O under it), then runs the owner's I/O on a blocking task; the
-//! secret store itself has no installation-wide lock or connection.
+//! fixed. Each call clones the secret store's `Arc` and runs the owner's I/O on a
+//! blocking task; the secret store has no installation-wide lock or connection.
 //! Spaces are named by UUID only.
 
 #![deny(missing_docs)]
@@ -98,11 +97,7 @@ fn owner<D: Directory>(
 }
 
 fn store<D: Directory>(state: &Shared<D>) -> Result<std::sync::Arc<LocalStore>, Error> {
-    Ok(state
-        .store
-        .lock()
-        .map_err(|_| Error::internal("store poisoned"))?
-        .secrets())
+    Ok(state.store.secrets())
 }
 
 fn decode<T: serde::de::DeserializeOwned>(input: JsonObject) -> Result<T, Error> {

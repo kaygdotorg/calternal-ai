@@ -21,8 +21,6 @@ mod shared;
 mod token;
 mod writer;
 
-mod pool;
-pub use pool::SpaceStores;
 mod contracts;
 mod types;
 pub use contracts::{JournalEntry, SyncToken, TokenProof};

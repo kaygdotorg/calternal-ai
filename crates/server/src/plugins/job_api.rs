@@ -91,11 +91,7 @@ async fn visible<D: Directory>(
         let Some(plugin) = st.registry.get(&plugin) else {
             return Ok(false);
         };
-        let store = st
-            .store
-            .lock()
-            .map_err(|_| Error::internal("store poisoned"))?;
-        let row = activation(&store, space, plugin)?;
+        let row = activation(&st.store, space, plugin)?;
         Ok(caps.is_some_and(|c| c.contains(required))
             && row.enabled
             && row.generation == generation)

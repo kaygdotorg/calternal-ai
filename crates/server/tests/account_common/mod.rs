@@ -14,7 +14,7 @@ use calternal_server::{
 };
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tower::ServiceExt;
 use url::Url;
 use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};
@@ -37,7 +37,7 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
     let store = Store::open(dir.path()).unwrap();
     let router = api::router(
         Arc::new(AppState {
-            store: Mutex::new(store),
+            store,
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),

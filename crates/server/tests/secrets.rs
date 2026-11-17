@@ -15,7 +15,7 @@ use calternal_server::{
 };
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tower::ServiceExt;
 
 const CANARY: &str = "sk-canary-server-5d2e81-never-stored-in-clear";
@@ -78,7 +78,7 @@ impl Fixture {
             }
             .unwrap();
             let state = Arc::new(AppState {
-                store: Mutex::new(Store::open(&root).unwrap()),
+                store: Store::open(&root).unwrap(),
                 tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),

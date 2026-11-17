@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use calternal_server::api::{self, AppState};
 use calternal_server::auth::TokenTable;
@@ -386,7 +386,7 @@ async fn serve(
     };
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
-        store: Mutex::new(store),
+        store,
         tokens,
         registry,
         workers: plugins::WorkerPool::new(node),

@@ -9,7 +9,7 @@
 //! No old shared-content schema is migrated or adopted.
 use crate::fault::{self, FaultPoint};
 use calternal_types::Error;
-use calternal_content::{Content, Item, Request};
+use calternal_content::{Content, Item, ReadPool, Request};
 use calternal_types::{AccountId, SpaceId};
 use calternal_core::{Note, NoteSummary, NoteVersion};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -17,13 +17,23 @@ use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
     path::{Path, PathBuf},
+    sync::Mutex,
     time::Duration,
 };
 use uuid::Uuid;
 
-/// Locked host adapter; Notes content is owned by the generic per-space service.
+/// Host adapter over the generic per-space content service, shared by every request
+/// thread without an outer lock: its methods take `&self`.
+///
+/// Locks: content work takes only the target space's lock (see
+/// [`calternal_content`]). `state.sqlite3` (plugin activation and the control
+/// outbox) has one writer connection, locked only for an enable/disable transaction
+/// or an outbox delete; every read goes through a [`ReadPool`] and never waits for it.
+/// Enable/disable are rare manager actions, so this installation-wide writer (held
+/// across that transaction's fsync) is not on any content read or write path.
 pub struct Store {
-    conn: Connection,
+    writer: Mutex<Connection>,
+    readers: ReadPool,
     content: Content,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     _lock: File,
@@ -77,6 +87,19 @@ fn stored_id<T: std::str::FromStr>(text: &str) -> Result<T, Error> {
     text.parse()
         .map_err(|_| Error::internal("corrupt plugin publication"))
 }
+/// One space's stored activation row for `plugin_id`. Cost: one indexed read.
+fn plugin_row(
+    c: &Connection,
+    space_id: SpaceId,
+    plugin_id: &str,
+) -> rusqlite::Result<Option<PluginRow>> {
+    c.query_row(
+        "SELECT enabled, generation FROM plugin_state WHERE space_id = ?1 AND plugin_id = ?2",
+        params![space_id.to_string(), plugin_id],
+        |r| Ok(PluginRow { enabled: r.get::<_, i64>(0)? != 0, generation: r.get(1)? }),
+    )
+    .optional()
+}
 fn item_id(id: &str) -> Result<Uuid, Error> {
     Uuid::parse_str(id).map_err(|_| Error::not_found("item not found"))
 }
@@ -91,8 +114,13 @@ fn note(item: &Item) -> Note {
     }
 }
 impl Store {
+    /// The `state.sqlite3` writer. Held for one short transaction; never across
+    /// content or journal work.
+    fn writer(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.writer.lock().unwrap_or_else(|e| e.into_inner())
+    }
     /// Shared secret store under this appdata root. Cost: one reference-count
-    /// increment, so callers can release the store lock before secret I/O.
+    /// increment.
     pub fn secrets(&self) -> std::sync::Arc<calternal_secrets::LocalStore> {
         self.secrets.clone()
     }
@@ -131,7 +159,7 @@ impl Store {
         let path = root.join("state.sqlite3");
         calternal_fsio::private::file(&path)
             .map_err(|e| io_err("prepare plugin database", e))?;
-        let conn = Connection::open(path).map_err(db_err)?;
+        let conn = Connection::open(&path).map_err(db_err)?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
         conn.pragma_update(None, "synchronous", "FULL")
@@ -156,23 +184,22 @@ impl Store {
         let secrets = calternal_secrets::LocalStore::open(&root)
             .map_err(|e| Error::unavailable(e.to_string()))?;
         let store = Self {
-            conn,
+            writer: Mutex::new(conn),
+            readers: ReadPool::new(path),
             content,
             secrets: std::sync::Arc::new(secrets),
             _lock: lock,
         };
-        let mut statement = store
-            .conn
-            .prepare("SELECT principal,space_id,request_id FROM plugin_outbox ORDER BY rowid")
-            .map_err(db_err)?;
-        let pending = statement
-            .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        let pending = store
+            .readers
+            .read(|c| {
+                c.prepare("SELECT principal,space_id,request_id FROM plugin_outbox ORDER BY rowid")?
+                    .query_map([], |r| {
+                        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()
             })
-            .map_err(db_err)?
-            .collect::<Result<Vec<_>, _>>()
             .map_err(db_err)?;
-        drop(statement);
         for (principal, space, request) in pending {
             store.publish_plugin_pending(stored_id(&principal)?, stored_id(&space)?, &request)?;
         }
@@ -287,7 +314,7 @@ impl Store {
     }
     fn publish_plugins_for_space(&self, space_id: SpaceId) -> Result<(), Error> {
         loop {
-            let first=self.conn.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(db_err)?;
+            let first=self.readers.read(|c| c.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional()).map_err(db_err)?;
             let Some((principal, request)) = first else {
                 return Ok(());
             };
@@ -300,7 +327,7 @@ impl Store {
         space: SpaceId,
         request_id: &str,
     ) -> Result<(), Error> {
-        let pending=self.conn.query_row("SELECT operation,fingerprint,result_json FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",params![principal.to_string(),space.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional().map_err(db_err)?;
+        let pending=self.readers.read(|c| c.query_row("SELECT operation,fingerprint,result_json FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",params![principal.to_string(),space.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional()).map_err(db_err)?;
         if let Some((operation, fingerprint, json)) = pending {
             let result = serde_json::from_str(&json)
                 .map_err(|_| Error::internal("corrupt plugin publication"))?;
@@ -316,7 +343,7 @@ impl Store {
                     result,
                 )
                 ?;
-            self.conn
+            self.writer()
                 .execute(
                     "DELETE FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",
                     params![principal.to_string(), space.to_string(), request_id],
@@ -330,7 +357,7 @@ impl Store {
     /// journal commits, fsio file+directory fsync, placement/outbox SQL commits.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
-        &mut self,
+        &self,
         principal: AccountId,
         request_id: &str,
         operation: &str,
@@ -376,7 +403,7 @@ impl Store {
     /// exclusive rename and parent fsync; no directory scan on warm Linux name caches.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
-        &mut self,
+        &self,
         principal: AccountId,
         request_id: &str,
         operation: &str,
@@ -411,7 +438,7 @@ impl Store {
     }
     /// Finishes checked placement before retry replay. Cost: catalog lookup and
     /// generic materialization locks/reads, with file+directory fsync only if pending.
-    pub fn materialize(&mut self, id: &str) -> Result<(), Error> {
+    pub fn materialize(&self, id: &str) -> Result<(), Error> {
         let space = self
             .locate("notes", id)?
             .ok_or_else(|| Error::not_found("item not found"))?;
@@ -539,19 +566,15 @@ impl Store {
         Ok(())
     }
     /// Read one space's plugin state without inheriting another space's enablement.
-    /// Cost: one indexed read on the plugin connection; no content I/O or fsync.
+    /// Cost: one indexed read on a pooled read connection; no lock wait, content I/O
+    /// or fsync.
     pub fn plugin_row(
         &self,
         space_id: SpaceId,
         plugin_id: &str,
     ) -> Result<Option<PluginRow>, Error> {
-        self.conn
-            .query_row(
-                "SELECT enabled, generation FROM plugin_state WHERE space_id = ?1 AND plugin_id = ?2",
-                params![space_id.to_string(), plugin_id],
-                |r| Ok(PluginRow { enabled: r.get::<_, i64>(0)? != 0, generation: r.get(1)? }),
-            )
-            .optional()
+        self.readers
+            .read(|c| plugin_row(c, space_id, plugin_id))
             .map_err(db_err)
     }
 
@@ -564,7 +587,7 @@ impl Store {
     /// FULL journal durability, then outbox retirement. No user file access.
     #[allow(clippy::too_many_arguments)]
     pub fn set_plugin_enabled(
-        &mut self,
+        &self,
         principal: AccountId,
         request_id: &str,
         operation: &str,
@@ -576,7 +599,14 @@ impl Store {
         result: impl FnOnce(&PluginRow) -> serde_json::Value,
     ) -> Result<(PluginRow, serde_json::Value), Error> {
         self.publish_plugins_for_space(space_id)?;
-        let current = self.plugin_row(space_id, plugin_id)?.unwrap_or(default);
+        let mut writer = self.writer();
+        let tx = writer
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(db_err)?;
+        // Read inside the write transaction so concurrent toggles see each other.
+        let current = plugin_row(&tx, space_id, plugin_id)
+            .map_err(db_err)?
+            .unwrap_or(default);
         let next = if current.enabled == enabled {
             current
         } else {
@@ -586,10 +616,6 @@ impl Store {
             }
         };
         let value = result(&next);
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_err)?;
         tx.execute(
             "INSERT INTO plugin_state (space_id, plugin_id, enabled, generation) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(space_id, plugin_id) DO UPDATE SET enabled = excluded.enabled, generation = excluded.generation",
@@ -609,6 +635,7 @@ impl Store {
         )
         .map_err(db_err)?;
         tx.commit().map_err(db_err)?;
+        drop(writer);
         self.publish_plugin_pending(principal, space_id, request_id)?;
         Ok((next, value))
     }

@@ -152,12 +152,7 @@ async fn execute<D: Directory>(
         {
             return Err(refused());
         }
-        let store = st
-            .store
-            .lock()
-            .map_err(|_| Error::internal("store poisoned"))?;
-        let row = activation(&store, space, &p2)?;
-        drop(store);
+        let row = activation(&st.store, space, &p2)?;
         Ok(((row.enabled, row.generation), st.jobs.children(&sp, &jid)?))
     })
     .await?;

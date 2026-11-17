@@ -61,20 +61,20 @@ space ID and has no account-owner alternative. No account ID is substituted for
 a space ID. Account-profile recovery remains the host's responsibility.
 
 Main modules are `types` (plain boundary values), `db` (bound metadata/history),
-`files` (registered placement and checked materialization), `journal` (bounded
-bridge to the inherited store), `collections` (collection records) and `lib`
-(service/cache/publication coordination). Connections are capped at 64 active
-spaces, released after 600 idle seconds in the server, with a 30-second background
-sweep. Returned connections pin their journal handles; the journal pool releases
-unused handles. Name caches are capped by directory count, and inherited name
+`files` (registered placement and checked materialization), `journal` (direct
+calls into each space's inherited journal store), `pool` (pooled read connections),
+`collections` (collection records) and `lib` (service/cache/publication
+coordination). At most 64 spaces are open, released after 600 idle seconds in the
+server, with a 30-second background sweep; each open space owns its journal store. Name caches are capped by directory count, and inherited name
 watchers avoid warm Linux directory rescans; their byte size is not separately
 metered. There is no performance qualification claim.
 
 Every public operation documents its allocations, locks, I/O and durability cost.
 Lists seek an index and load bounded metadata pages. Item/history reads select
-one physical database. Resolution and request namespace checks use indexed global
-identifier routes, never membership/content scans. Writes pay FULL content,
-catalog and journal commits plus file/directory syncs. The host's existing mutex
-still serializes server operations; independent library space operations use
-separate space mutexes. The bridge queue holds at most 32 commands and request
-coordination uses 64 fixed stripes.
+one physical database. Resolution uses indexed global identifier routes read through
+a connection pool, never membership/content scans. Request IDs are unique per
+(account, space) and checked in that space's journal. Writes pay FULL content and
+journal commits plus file/directory syncs, and a FULL catalog insert only when an
+item is created. Work in one space never waits for another: each space has its own
+lock, the cache map lock covers lookups only, and journal calls run on the caller's
+thread.

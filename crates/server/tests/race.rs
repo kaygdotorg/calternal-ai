@@ -5,7 +5,7 @@
 mod support;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use calternal_server::api::{AppState, allowed_hosts, dispatch};
@@ -37,7 +37,7 @@ async fn disable_during_invocation_discards_result() {
     let data = root.0.join("data");
     let node = resolve_node(None).await.expect("node >= 22.13");
     let state = Arc::new(AppState {
-        store: Mutex::new(Store::open(&data).unwrap()),
+        store: Store::open(&data).unwrap(),
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(vec![plugin]),
         workers: WorkerPool::new(Some(node)),

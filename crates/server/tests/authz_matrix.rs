@@ -160,7 +160,7 @@ impl Fixture {
             },
         );
         let plugin = support::plugin(support::insights_manifest(), Some(&worker), true);
-        let mut store = Store::open(&root.join("data")).unwrap();
+        let store = Store::open(&root.join("data")).unwrap();
         let tokens = MutableDirectory::new(role);
         let note = serde_json::to_value(
             store
@@ -177,7 +177,7 @@ impl Fixture {
         )
         .unwrap();
         let state = Arc::new(AppState {
-            store: Mutex::new(store),
+            store,
             tokens,
             registry: Registry::from_plugins(vec![plugin]),
             workers: WorkerPool::new(Some(
@@ -487,10 +487,7 @@ async fn role_changes_and_revocation_apply_to_next_request_and_receipt_replay() 
 async fn cross_space_note_ids_are_bound_to_the_authorized_space() {
     let fixture = Fixture::new(3, false).await;
     let other = fixture
-        .state
-        .store
-        .lock()
-        .unwrap()
+        .state.store
         .create(
             AccountId::new(),
             "other",

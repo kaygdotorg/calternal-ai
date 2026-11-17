@@ -7,7 +7,7 @@ use calternal_server::{
     store::Store,
 };
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -24,7 +24,7 @@ impl Fixture {
         let (owner, guest) = (dev.owner, dev.guest);
         let store = Store::open(dir.path()).unwrap();
         let state = Arc::new(AppState {
-            store: Mutex::new(store),
+            store,
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),

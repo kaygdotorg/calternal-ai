@@ -13,22 +13,30 @@
 //! recovery, external-editor reconciliation and tier moves remain separate work.
 //!
 //! Callers must retain installation root locks and enforce current authority.
-//! The cache is capped at 64 active spaces with a configurable idle deadline;
-//! a background sweep runs every 30 seconds even with no requests. The journal
-//! bridge has a bounded 32-command queue. SQL and file work belong on blocking
-//! host threads, never on async executor workers.
+//! SQL and file work belong on blocking host threads, never on async executor workers.
+//!
+//! Locks: work in one space never waits for another space. The space cache map
+//! lock is held only to find or insert an entry (no I/O). Each space has its own
+//! lock, held for that space's whole operation, including its SQLite, journal and
+//! file fsyncs; it serializes work within the space only. Catalog reads use a
+//! [`ReadPool`]; the one catalog writer connection is locked only when an item is
+//! first routed (a create), for one insert. The cache keeps at most 64 open spaces
+//! and closes idle ones after a configurable deadline; a background thread sweeps
+//! every 30 seconds even with no requests.
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 use crate::types::{internal, missing};
 mod collections;
 mod db;
 mod files;
 mod journal;
+mod pool;
 mod types;
+pub use pool::ReadPool;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
 use db::Space;
-use journal::{Journals, Shared, lock};
+use journal::{Journals, lock};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -45,27 +53,55 @@ pub use types::{
 };
 use uuid::Uuid;
 
-struct Entry {
-    space: Shared<Space>,
-    last_used: Instant,
+/// One cached space: opened on first use under its own lock, so a cold open in
+/// one space never blocks another.
+struct Slot {
+    space: Mutex<Option<Space>>,
+    last_used: Mutex<Instant>,
 }
-type Cache = Arc<Mutex<HashMap<SpaceId, Entry>>>;
+type Cache = Arc<Mutex<HashMap<SpaceId, Arc<Slot>>>>;
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
     roots: Roots,
     index: Mutex<Connection>,
+    catalog: ReadPool,
+    // Declared before `journals`: open stores drain before the driver stops.
     spaces: Cache,
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),
-    admission: Mutex<()>,
 }
+/// Closes idle spaces nobody holds. Closing drops the space's journal store, which
+/// drains its writer, outside the map lock.
 fn sweep(spaces: &Cache, idle: Duration) -> usize {
-    let mut spaces = lock(spaces);
-    let before = spaces.len();
-    spaces.retain(|_, e| Arc::strong_count(&e.space) > 1 || e.last_used.elapsed() < idle);
-    before - spaces.len()
+    let mut closed = Vec::new();
+    {
+        let mut map = lock(spaces);
+        map.retain(|_, slot| {
+            let keep = Arc::strong_count(slot) > 1 || lock(&slot.last_used).elapsed() < idle;
+            if !keep {
+                closed.push(slot.clone());
+            }
+            keep
+        });
+    }
+    closed.len()
+}
+/// Sweeps `spaces` every 30 seconds until the cache is dropped.
+fn spawn_sweeper(spaces: &Cache, idle: Duration) -> Result<()> {
+    let weak = Arc::downgrade(spaces);
+    std::thread::Builder::new()
+        .name("content-sweep".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(30));
+                let Some(spaces) = weak.upgrade() else { return };
+                sweep(&spaces, idle);
+            }
+        })
+        .map(drop)
+        .map_err(internal)
 }
 pub(crate) fn sha256(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
@@ -84,7 +120,8 @@ impl Content {
     /// Roots must have been validated/locked by the host. `secrets` is the journal
     /// witness root, outside production state backups. Fault callbacks are trusted
     /// test hooks; production callers pass a no-op.
-    /// Cost: directory/catalog I/O and FULL schema syncs, one journal-runtime thread;
+    /// Cost: directory/catalog I/O and FULL schema syncs, two journal-driver threads
+    /// and one sweeper thread;
     /// startup visits existing space databases, then reads only pending intents.
     /// Each recovered revision has [`Self::write`] publication/placement costs.
     pub fn open(
@@ -100,18 +137,17 @@ impl Content {
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(HashMap::new()));
-        let cache = spaces.clone();
-        let journals = Journals::open(roots.appdata.clone(), secrets, move || {
-            sweep(&cache, idle_after);
-        })?;
+        spawn_sweeper(&spaces, idle_after)?;
+        let journals = Journals::open(roots.appdata.clone(), secrets)?;
+        let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
             roots,
             index: Mutex::new(index),
+            catalog,
             spaces,
             idle_after,
             journals,
             fault,
-            admission: Mutex::new(()),
         };
         let dir = content.roots.appdata.join("spaces");
         if dir.exists() {
@@ -156,43 +192,46 @@ impl Content {
         }
         Ok(content)
     }
+    /// Runs `f` on space `id` under that space's lock, opening the space first if it
+    /// is not cached. Cost: map lock for a lookup or insert (no I/O); a cold space
+    /// opens SQLite and its journal under its own lock only. Refuses with
+    /// unavailable when 64 spaces are open and all are in use.
     fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
-        let cached = {
+        let slot = {
             let mut map = lock(&self.spaces);
-            map.get_mut(&id).map(|e| {
-                e.last_used = Instant::now();
-                e.space.clone()
-            })
-        };
-        let held = if let Some(held) = cached {
-            held
-        } else {
-            // Bound cold admissions before opening SQLite/writer handles. Never
-            // hold the map mutex across journal round trips or database I/O.
-            let _admission=lock(&self.admission);
-            let again={lock(&self.spaces).get(&id).map(|e|e.space.clone())};
-            if let Some(held)=again {held} else {
-                {
-                    let mut map=lock(&self.spaces);
-                    if map.len()>=64 {
-                        if let Some(old)=map.iter().filter(|(_,e)|Arc::strong_count(&e.space)==1).min_by_key(|(_,e)|e.last_used).map(|(k,_)|*k){map.remove(&old);}
-                        else {return Err(Error::new(ErrorCode::Unavailable,"content cache is busy"));}
+            match map.get(&id) {
+                Some(slot) => slot.clone(),
+                None => {
+                    if map.len() >= 64 {
+                        let idle = map
+                            .iter()
+                            .filter(|(_, s)| Arc::strong_count(s) == 1)
+                            .min_by_key(|(_, s)| *lock(&s.last_used))
+                            .map(|(k, _)| *k)
+                            .ok_or_else(|| Error::unavailable("content cache is busy"))?;
+                        map.remove(&idle);
                     }
+                    let slot = Arc::new(Slot {
+                        space: Mutex::new(None),
+                        last_used: Mutex::new(Instant::now()),
+                    });
+                    map.insert(id, slot.clone());
+                    slot
                 }
-                let opened=Arc::new(Mutex::new(Space::open(&self.roots.appdata,&self.roots.userdata_ssd,id,self.journals.handle(id)?)?));
-                lock(&self.spaces).insert(id,Entry {space:opened.clone(),last_used:Instant::now()});
-                opened
             }
         };
-        let result = f(&mut lock(&held));
-        if let Some(entry) = lock(&self.spaces).get_mut(&id) {
-            entry.last_used = Instant::now();
+        let mut held = lock(&slot.space);
+        if held.is_none() {
+            let journal = self.journals.open_store(id)?;
+            *held = Some(Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?);
         }
+        let result = f(held.as_mut().expect("opened above"));
+        *lock(&slot.last_used) = Instant::now();
         result
     }
-    /// Releases idle unpinned connections, also performed by the background worker.
-    /// Cost: O(active spaces), at most 64, under the cache mutex; closing SQLite may
-    /// checkpoint WAL. No directory scan or unrelated item/history read.
+    /// Releases idle unpinned spaces, also performed by the background sweeper.
+    /// Cost: O(open spaces), at most 64, under the cache map lock; closing happens
+    /// after it is released and may checkpoint WAL and drain the journal writer.
     pub fn sweep(&self) -> usize {
         sweep(&self.spaces, self.idle_after)
     }
@@ -239,13 +278,15 @@ impl Content {
     /// The returned space grants no authority; the host must check current membership.
     /// Cost: catalog mutex and one indexed lookup, allocating one UUID string; no fsync.
     pub fn locate(&self, kind: &str, id: Uuid) -> Result<Option<SpaceId>> {
-        lock(&self.index)
-            .query_row(
-                "SELECT space FROM items WHERE id=?1 AND kind=?2",
-                params![id.to_string(), kind],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
+        self.catalog
+            .read(|c| {
+                c.query_row(
+                    "SELECT space FROM items WHERE id=?1 AND kind=?2",
+                    params![id.to_string(), kind],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()
+            })
             .map_err(internal)?
             .map(|s| s.parse().map_err(internal))
             .transpose()
@@ -276,8 +317,8 @@ impl Content {
         self.with_space(space, |s| s.history(id, limit, cursor))
     }
     /// Reads an account-qualified receipt from the selected space's inherited store.
-    /// Current authority must be checked before replay. Cost: one bounded bridge
-    /// round trip, lazy journal open, indexed receipt read and payload allocation;
+    /// Current authority must be checked before replay. Cost: the space's lock,
+    /// a lazy journal open, indexed receipt read and payload allocation;
     /// unfinished local outbox intents are republished before replay, with the
     /// write path's journal/catalog fsync costs. No other-space content is read.
     pub fn receipt(
@@ -288,30 +329,30 @@ impl Content {
     ) -> Result<Option<Receipt>> {
         self.with_space(space, |s| {
             self.publish_pending(s)?;
-            self.journals.receipt(space, account, request)
+            self.journals.receipt(&s.journal, account, request)
         })
     }
     /// Publishes a receipt for a host-owned control mutation, such as plugin
     /// enablement. The host must commit its own mutation plus a replayable outbox
     /// before calling, and retire that outbox only after success. No item bytes or
     /// metadata are stored in the global catalog. Repeated publication is idempotent.
-    /// Cost: cache/space locks, identifier-only catalog write and one journal bridge
-    /// round trip with receipt/event transaction followed by a FULL durability barrier.
+    /// Cost: the space's lock and one receipt/event transaction followed by a FULL
+    /// durability barrier on the space's journal writer.
     pub fn record_receipt(
         &self,
         space: SpaceId,
         request: Request<'_>,
         result: Value,
     ) -> Result<()> {
-        self.with_space(space,|_| {
-            self.journals.publish(space,request.account,request.id.into(),request.operation.into(),request.fingerprint.into(),None,"control".into(),result)
+        self.with_space(space,|s| {
+            self.journals.publish(&s.journal,request.account,request.id,request.operation,request.fingerprint,None,"control",result)
         })
     }
     /// Returns a bounded journal page for host diagnostics and conformance tests.
-    /// Cost: one bridge round trip and indexed read allocating at most 10,000 events;
+    /// Cost: the space's lock and one indexed read allocating at most 10,000 events;
     /// a cold journal opens its database/witness. No content reads or normal fsync.
     pub fn journal(&self, space: SpaceId) -> Result<Vec<calternal_store::JournalEntry>> {
-        self.with_space(space, |_| self.journals.entries(space))
+        self.with_space(space, |s| self.journals.entries(&s.journal))
     }
     /// Returns the stored ID-to-path mapping in the selected SSD tree.
     /// `kind` must match; callers must authorize the selected space first.
@@ -344,6 +385,33 @@ impl Content {
     pub fn materialize(&self, space: SpaceId, id: Uuid) -> Result<()> {
         self.with_space(space, |s| s.place(id, self.fault))
     }
+    /// Records the global route of item `id`, once. An existing route (every update)
+    /// is a pooled read only; a new item takes the catalog writer for one FULL insert.
+    fn route(&self, space: SpaceId, id: &str, kind: &str) -> Result<()> {
+        let read = |c: &Connection| {
+            c.query_row("SELECT space,kind FROM items WHERE id=?1", [id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })
+            .optional()
+        };
+        let existing = match self.catalog.read(read).map_err(internal)? {
+            Some(existing) => existing,
+            None => {
+                let index = lock(&self.index);
+                index
+                    .execute(
+                        "INSERT INTO items VALUES(?1,?2,?3) ON CONFLICT(id) DO NOTHING",
+                        params![id, space.to_string(), kind],
+                    )
+                    .map_err(internal)?;
+                read(&index).map_err(internal)?.ok_or_else(|| internal("route missing"))?
+            }
+        };
+        if existing != (space.to_string(), kind.to_owned()) {
+            return Err(internal("global item collision"));
+        }
+        Ok(())
+    }
     fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
             let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
@@ -351,31 +419,15 @@ impl Content {
                 return Ok(());
             };
             let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
-            {
-                let index = lock(&self.index);
-                index
-                    .execute(
-                        "INSERT INTO items VALUES(?1,?2,?3) ON CONFLICT(id) DO NOTHING",
-                        params![id, space.id.to_string(), item.kind],
-                    )
-                    .map_err(internal)?;
-                let existing: (String, String) = index
-                    .query_row("SELECT space,kind FROM items WHERE id=?1", [&id], |r| {
-                        Ok((r.get(0)?, r.get(1)?))
-                    })
-                    .map_err(internal)?;
-                if existing != (space.id.to_string(), item.kind.clone()) {
-                    return Err(internal("global item collision"));
-                }
-            }
+            self.route(space.id, &id, &item.kind)?;
             self.journals.publish(
-                space.id,
+                &space.journal,
                 account.parse().map_err(internal)?,
-                request.clone(),
-                op,
-                fp,
+                &request,
+                &op,
+                &fp,
                 Some(item.id),
-                revision,
+                &revision,
                 serde_json::from_str(&result).map_err(internal)?,
             )?;
             space
@@ -392,8 +444,8 @@ impl Content {
     /// supplies the operation response encoder and checks authority before calling.
     /// Request IDs are unique per (account, space); a reused one is a conflict.
     /// Cost: cache/space locks, bounded metadata/byte
-    /// allocations, indexed head/name checks, one FULL content transaction, catalog
-    /// routing writes, two journal queue round trips (receipt/event then FULL barrier),
+    /// allocations, indexed head/name checks, one FULL content transaction, a catalog
+    /// route insert for a new item, two journal commits (receipt/event then FULL barrier),
     /// checked file I/O with file+directory fsync, and FULL placement/outbox updates.
     /// First name allocation loads the directory-name cache; warm Linux allocations
     /// drain inherited name-watch events. Other platforms rescan that one directory.
@@ -422,7 +474,7 @@ impl Content {
             self.publish_pending(s)?;
             // Request IDs are unique per (account, space): the host replays a matching
             // receipt before calling, so any receipt here is a reuse.
-            if self.journals.receipt(space,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
+            if self.journals.receipt(&s.journal,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
             let (id,seq,old_path,expected)=if let Some(id)=id {
                 let current=s.get(id)?;if current.kind!=kind{return Err(missing());}
                 s.place(id,self.fault)?;s.check_file(id)?;

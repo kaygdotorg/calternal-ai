@@ -1,216 +1,203 @@
-//! Synchronous bridge to the inherited asynchronous per-space journal pool.
-//! A dedicated runtime keeps synchronous host callers independent from their executor.
+//! Direct calls into each space's journal store ([`calternal_store::SpaceStore`])
+//! from the caller's own blocking thread.
+//!
+//! The store's API is async. Rather than funnel every space through one bridge
+//! thread, each call runs its future to completion on the calling thread while a
+//! small private runtime (two workers) drives the store's timers, blocking reads
+//! and witness flusher. Calls for different spaces therefore run concurrently;
+//! calls for one space are already serialized by that space's lock in
+//! [`crate::Content`].
 use crate::types::internal;
 use crate::{Error, Receipt, Result};
+use calternal_store::{Commit, IdemWrite, JournalEntry, Options, SpaceStore, StampedEvent};
 use calternal_types::{AccountId, SpaceId};
-use calternal_store::{
-    Commit, IdemWrite, JournalEntry, Options, SpaceStore, SpaceStores,
-    StampedEvent,
-};
 use serde_json::Value;
 use std::{
+    future::Future,
     path::PathBuf,
-    sync::{Arc, Mutex, mpsc},
-    thread,
-    time::Duration,
+    sync::Arc,
+    task::{Context, Poll, Wake, Waker},
 };
 use uuid::Uuid;
 
-type Job = Box<dyn FnOnce(&tokio::runtime::Runtime, &SpaceStores) + Send>;
+/// The journal side of [`crate::Content`]: roots, store options and the runtime
+/// that drives store background work.
 pub(crate) struct Journals {
     appdata: PathBuf,
     secrets: PathBuf,
-    sender: Option<mpsc::SyncSender<Job>>,
-    thread: Option<thread::JoinHandle<()>>,
+    options: Options,
+    runtime: Option<tokio::runtime::Runtime>,
 }
+
 impl Journals {
-    pub(crate) fn open(
-        appdata: PathBuf,
-        secrets: PathBuf,
-        sweep: impl Fn() + Send + 'static,
-    ) -> Result<Self> {
-        let (sender, receiver) = mpsc::sync_channel::<Job>(32);
+    /// Starts the two-worker driver runtime. Cost: two threads; no I/O.
+    pub(crate) fn open(appdata: PathBuf, secrets: PathBuf) -> Result<Self> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+            .worker_threads(2)
+            .thread_name("content-journal")
             .enable_all()
             .build()
-            .map_err(internal)?;
-        let journal_appdata = appdata.clone();
-        let journal_secrets = secrets.clone();
-        let thread = thread::Builder::new()
-            .name("content-journals".into())
-            .spawn(move || {
-                // Keep preview request replay permanent, matching the previous store contract.
-                let options = Options {
-                    idempotency_retention: Duration::from_millis(i64::MAX as u64),
-                    ..Options::default()
-                };
-                let pool =
-                    SpaceStores::new(journal_appdata, journal_secrets, options, Duration::ZERO);
-                loop {
-                    match receiver.recv_timeout(Duration::from_secs(30)) {
-                        Ok(job) => job(&runtime, &pool),
-                        Err(mpsc::RecvTimeoutError::Timeout) => {}
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    }
-                    sweep();
-                    pool.sweep();
-                }
-                // Pool shutdown drains writers before its runtime is dropped.
-                drop(pool);
-            })
             .map_err(internal)?;
         Ok(Self {
             appdata,
             secrets,
-            sender: Some(sender),
-            thread: Some(thread),
+            // Request replay stays permanent, as before; bounding it is an open owner
+            // question (review finding 11, checklist item 7).
+            options: Options {
+                idempotency_retention: std::time::Duration::from_millis(i64::MAX as u64),
+                ..Options::default()
+            },
+            runtime: Some(runtime),
         })
     }
-    fn prepare(&self, space: SpaceId) -> Result<()> {
+
+    /// Runs one store future on the calling thread. Must not be called from inside
+    /// an async task: callers are blocking host threads (or startup).
+    fn run<F: Future>(&self, future: F) -> F::Output {
+        let _context = self.runtime.as_ref().expect("journal runtime").enter();
+        block_on(future)
+    }
+
+    /// Opens one space's journal: private directories, then [`SpaceStore::open_with`].
+    /// Cost: directory preparation and the store's open (SQLite, key and witness reads).
+    pub(crate) fn open_store(&self, space: SpaceId) -> Result<SpaceStore> {
         let dir = self.appdata.join("spaces").join(space.to_string());
         calternal_fsio::private::directory(&dir).map_err(internal)?;
         calternal_fsio::private::file(&dir.join("index.db")).map_err(internal)?;
         calternal_fsio::private::directory(&self.secrets.join("spaces").join(space.to_string()))
             .map_err(internal)?;
-        Ok(())
+        self.run(SpaceStore::open_with(
+            &self.appdata,
+            space,
+            &self.secrets,
+            self.options,
+        ))
+        .map_err(internal)
     }
-    pub(crate) fn handle(&self, space: SpaceId) -> Result<SpaceStore> {
-        self.prepare(space)?;
-        self.run(move |rt, pool| {
-            rt.block_on(async { pool.get(space).await.map_err(internal) })
-        })
-    }
-    fn run<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&tokio::runtime::Runtime, &SpaceStores) -> Result<T> + Send + 'static,
-    ) -> Result<T> {
-        let (sender, receiver) = mpsc::sync_channel(1);
-        self.sender
-            .as_ref()
-            .ok_or_else(|| internal("stopped"))?
-            .send(Box::new(move |rt, pool| {
-                let _ = sender.send(f(rt, pool));
-            }))
-            .map_err(internal)?;
-        receiver.recv().map_err(internal)?
-    }
+
+    /// The account's receipt for a request in this space. Cost: one indexed read on
+    /// a short-lived read connection; no writer queue.
     pub(crate) fn receipt(
         &self,
-        space: SpaceId,
+        store: &SpaceStore,
         account: AccountId,
         id: &str,
     ) -> Result<Option<Receipt>> {
-        let id = id.to_owned();
-        self.run(move |rt, pool| {
-            rt.block_on(async {
-                let store = pool.get(space).await.map_err(internal)?;
-                store
-                    .idempotency(account, &id)
-                    .await
-                    .map_err(internal)?
-                    .map(|r| {
-                        let item = r
-                            .result
-                            .get("content_item")
-                            .and_then(Value::as_str)
-                            .map(Uuid::parse_str)
-                            .transpose()
-                            .map_err(internal)?;
-                        Ok(Receipt {
-                            operation: r.action,
-                            fingerprint: r.payload_hash,
-                            result: r.result["payload"].clone(),
-                            item,
-                        })
-                    })
+        self.run(store.idempotency(account, id))
+            .map_err(internal)?
+            .map(|r| {
+                let item = r
+                    .result
+                    .get("content_item")
+                    .and_then(Value::as_str)
+                    .map(Uuid::parse_str)
                     .transpose()
+                    .map_err(internal)?;
+                Ok(Receipt {
+                    operation: r.action,
+                    fingerprint: r.payload_hash,
+                    result: r.result["payload"].clone(),
+                    item,
+                })
             })
-        })
+            .transpose()
     }
+
+    /// Records the receipt and journal event of one mutation, idempotently, then
+    /// makes it durable. A different operation or input under the same request ID is
+    /// a conflict. Cost: one indexed read, one NORMAL writer transaction and one FULL
+    /// writer transaction (the durability barrier) on the space's writer thread.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn publish(
         &self,
-        space: SpaceId,
+        store: &SpaceStore,
         account: AccountId,
-        id: String,
-        operation: String,
-        fingerprint: String,
+        id: &str,
+        operation: &str,
+        fingerprint: &str,
         item: Option<Uuid>,
-        revision: String,
+        revision: &str,
         result: Value,
     ) -> Result<()> {
-        self.run(move |rt, pool| {
-            rt.block_on(async {
-                let store = pool.get(space).await.map_err(internal)?;
-                let prior = store
-                    .idempotency(account, &id)
-                    .await
-                    .map_err(internal)?;
-                if let Some(prior) = prior {
-                    if prior.action != operation || prior.payload_hash != fingerprint {
-                        return Err(Error::request_reused());
-                    }
-                } else {
-                    store
-                        .commit(Commit {
-                            events: vec![StampedEvent {
-                                author: account,
-                                kind: operation.clone(),
-                                item: item.map(|id| id.to_string()).unwrap_or_default(),
-                                data: serde_json::json!({"revision":revision}),
-                                installation: None,
-                                request_id: Some(id.clone()),
-                            }],
-                            idempotency: Some(IdemWrite {
-                                account,
-                                key: id.clone(),
-                                action: operation,
-                                payload_hash: fingerprint.clone(),
-                                result: serde_json::json!({"payload":result,"content_item":item}),
-                            }),
-                        })
-                        .await
-                        .map_err(internal)?;
+        self.run(async {
+            let prior = store.idempotency(account, id).await.map_err(internal)?;
+            if let Some(prior) = prior {
+                if prior.action != operation || prior.payload_hash != fingerprint {
+                    return Err(Error::request_reused());
                 }
-                // A new FULL-synchronous permanent publication transaction makes the
-                // preceding receipt/event WAL durable before the outbox can retire.
+            } else {
                 store
-                    .commit_once(
-                        account,
-                        format!("content/{id}/{revision}"),
-                        fingerprint,
-                        vec![],
-                    )
+                    .commit(Commit {
+                        events: vec![StampedEvent {
+                            author: account,
+                            kind: operation.to_owned(),
+                            item: item.map(|id| id.to_string()).unwrap_or_default(),
+                            data: serde_json::json!({ "revision": revision }),
+                            installation: None,
+                            request_id: Some(id.to_owned()),
+                        }],
+                        idempotency: Some(IdemWrite {
+                            account,
+                            key: id.to_owned(),
+                            action: operation.to_owned(),
+                            payload_hash: fingerprint.to_owned(),
+                            result: serde_json::json!({ "payload": result, "content_item": item }),
+                        }),
+                    })
                     .await
                     .map_err(internal)?;
-                Ok(())
-            })
+            }
+            // A FULL-synchronous publication makes the preceding NORMAL receipt and
+            // event durable before the caller retires its outbox row.
+            store
+                .commit_once(
+                    account,
+                    format!("content/{id}/{revision}"),
+                    fingerprint.to_owned(),
+                    vec![],
+                )
+                .await
+                .map_err(internal)?;
+            Ok(())
         })
     }
-    pub(crate) fn entries(&self, space: SpaceId) -> Result<Vec<JournalEntry>> {
-        self.run(move |rt, pool| {
-            rt.block_on(async {
-                pool.get(space)
-                    .await
-                    .map_err(internal)?
-                    .since(0, 10_000)
-                    .await
-                    .map_err(internal)
-            })
-        })
+
+    /// The first 10,000 journal entries. Cost: one read connection and page query.
+    pub(crate) fn entries(&self, store: &SpaceStore) -> Result<Vec<JournalEntry>> {
+        self.run(store.since(0, 10_000)).map_err(internal)
     }
 }
+
 impl Drop for Journals {
+    /// Stops the driver without blocking, so dropping content inside an async task
+    /// is allowed. Stores are dropped first by [`crate::Content`].
     fn drop(&mut self) {
-        drop(self.sender.take());
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
+        if let Some(runtime) = self.runtime.take() {
+            runtime.shutdown_background();
         }
     }
 }
 
-pub(crate) fn lock<T>(value: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+/// Polls `future` on this thread, parking between wake-ups. Cost: one Arc per call.
+fn block_on<F: Future>(future: F) -> F::Output {
+    struct Unpark(std::thread::Thread);
+    impl Wake for Unpark {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+    let waker = Waker::from(Arc::new(Unpark(std::thread::current())));
+    let mut context = Context::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        if let Poll::Ready(value) = future.as_mut().poll(&mut context) {
+            return value;
+        }
+        std::thread::park();
+    }
+}
+
+/// Locks a mutex, recovering from poisoning (state is validated by its users).
+pub(crate) fn lock<T>(value: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     value.lock().unwrap_or_else(|e| e.into_inner())
 }
-pub(crate) type Shared<T> = Arc<Mutex<T>>;

@@ -4,7 +4,7 @@
 mod support;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use calternal_core::{ErrorCode, JsonObject};
@@ -81,7 +81,7 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
         None => WorkerPool::new(Some(node)),
     };
     let state = Arc::new(AppState {
-        store: Mutex::new(Store::open(&data).unwrap()),
+        store: Store::open(&data).unwrap(),
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(plugins),
         workers,
@@ -226,10 +226,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
         .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
     let item = f
-        .state
-        .store
-        .lock()
-        .unwrap()
+        .state.store
         .read_item(f.dev.shared, "tags", &id)
         .unwrap();
     assert_eq!(item.bytes, b"urgent");
@@ -563,10 +560,7 @@ async fn non_text_kind_is_enabled_and_stored_under_its_extension() {
         .unwrap();
     let id = r["id"].as_str().unwrap().to_owned();
     let item = f
-        .state
-        .store
-        .lock()
-        .unwrap()
+        .state.store
         .read_item(f.dev.shared, "shapes", &id)
         .unwrap();
     assert_eq!(
@@ -862,7 +856,7 @@ async fn secret_handle_requests_are_owned_by_the_space_uuid() {
     assert_eq!(r, json!({"ok": false}));
     f.op("owner", "k2", "keyed.use", json!({"space_id": f.dev.shared})).await.unwrap();
     let owner = Owner::Space(f.dev.shared);
-    let secrets = f.state.store.lock().unwrap().secrets();
+    let secrets = f.state.store.secrets();
     let pending = secrets.pending(&owner).unwrap();
     assert_eq!(pending.len(), 1, "a repeated request must not queue a second prompt");
     assert_eq!(pending[0].name, "plugin:keyed:api-key");

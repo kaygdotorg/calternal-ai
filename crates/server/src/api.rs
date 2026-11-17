@@ -6,7 +6,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -45,8 +45,9 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = TokenTable> {
-    /// Serialized durable preview store; authorization precedes taking this lock.
-    pub store: Mutex<Store>,
+    /// Durable preview store, shared without an outer lock: work in one space never
+    /// waits for another (see [`Store`] for the locks it takes).
+    pub store: Store,
     /// Identity and membership directory (legacy field name preserves startup callers).
     pub tokens: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
@@ -443,16 +444,10 @@ fn fingerprint(op: &str, input: &JsonObject) -> String {
 
 async fn blocking<D: Directory, T: Send + 'static>(
     state: &Shared<D>,
-    f: impl FnOnce(&mut Store) -> Result<T, Error> + Send + 'static,
+    f: impl FnOnce(&Store) -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
     let state = state.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut store = state
-            .store
-            .lock()
-            .map_err(|_| Error::internal("store poisoned"))?;
-        f(&mut store)
-    })
+    tokio::task::spawn_blocking(move || f(&state.store))
     .await
     .map_err(|_| Error::internal("storage task failed"))?
 }
@@ -518,11 +513,7 @@ pub async fn dispatch<D: Directory>(
         let st = state.clone();
         let account = p.clone();
         let resolved = tokio::task::spawn_blocking(move || {
-            let store = st
-                .store
-                .lock()
-                .map_err(|_| Error::internal("store poisoned"))?;
-            crate::resolve::resolve_for(&st.tokens, &store, &account, &kind, &id, op_required)
+            crate::resolve::resolve_for(&st.tokens, &st.store, &account, &kind, &id, op_required)
         })
         .await
         .map_err(|_| Error::internal("resolver task failed"))??;
@@ -739,7 +730,7 @@ async fn dispatch_checked<D: Directory>(
 /// stored result (finishing any pending materialization); a different fingerprint
 /// is a conflict. Another account or space never sees this receipt.
 fn replay_receipt(
-    s: &mut Store,
+    s: &Store,
     principal: AccountId,
     space: SpaceId,
     rid: &str,

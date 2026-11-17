@@ -12,7 +12,7 @@ use calternal_server::{
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 use tower::ServiceExt;
 
@@ -100,7 +100,7 @@ impl Fixture {
             )
             .unwrap();
             let state = Arc::new(AppState {
-                store: Mutex::new(Store::open(&root).unwrap()),
+                store: Store::open(&root).unwrap(),
                 tokens,
                 registry: Registry::empty(),
                 workers: calternal_server::plugins::WorkerPool::new(None),

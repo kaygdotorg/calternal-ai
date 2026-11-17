@@ -12,7 +12,7 @@ use calternal_types::{Capability, CapabilitySet, Error};
 
 /// Resolves a kind and global item UUID to its owning space and current access.
 /// Wrong kind, absent item and missing read access have identical refusals.
-/// The caller holds the host store lock. Cost: one indexed global route lookup,
+/// Takes no lock beyond the catalog read pool. Cost: one indexed global route lookup,
 /// two current capability checks, and one bounded capability-vector allocation;
 /// no content reads, membership scans or fsyncs.
 pub fn resolve(

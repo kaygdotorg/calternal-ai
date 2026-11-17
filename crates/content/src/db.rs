@@ -11,7 +11,8 @@ use uuid::Uuid;
 
 pub(crate) struct Space {
     pub(crate) id: SpaceId,
-    pub(crate) _journal: calternal_store::SpaceStore,
+    /// This space's journal and receipts; dropped (and drained) with the space.
+    pub(crate) journal: calternal_store::SpaceStore,
     pub(crate) conn: Connection,
     pub(crate) files: PathBuf,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
@@ -74,7 +75,7 @@ impl Space {
         }
         Ok(Self {
             id,
-            _journal: journal,
+            journal,
             conn,
             files: userdata_ssd.join("spaces").join(id.to_string()),
             names: HashMap::new(),

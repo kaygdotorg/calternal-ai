@@ -42,7 +42,7 @@ pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample tex
 pub const PREVIEW_ITEM_ID: &str = "00000000-0000-7000-8000-000000000000";
 
 /// Per-invocation trusted adapter called from the worker thread, never by plugin code.
-/// Both methods may block on directory and store locks.
+/// Both methods may block on the directory and on the target space's lock.
 pub trait InvocationHost: Send + Sync {
     /// Recheck current authority for `required`: grants, plugin activation and generation.
     fn authorize(&self, required: ManifestCapability) -> bool;
@@ -178,12 +178,7 @@ impl<D: Directory> SpaceHost<D> {
         let object = exact(input, &["name"])?;
         let name = str_field(object, "name")?.ok_or(Error::Invalid)?;
         let (space, account) = (self.space, self.identity.id);
-        let secrets = self
-            .state
-            .store
-            .lock()
-            .map_err(|_| Error::Refused)?
-            .secrets();
+        let secrets = self.state.store.secrets();
         let actor = Actor {
             account,
             via: Via::Plugin(self.plugin.manifest.id.clone()),
@@ -226,8 +221,9 @@ impl<D: Directory> SpaceHost<D> {
 
     fn read_item(&self, input: &Value) -> Result<Value, Error> {
         let (kind, id) = item_target(input, &["kind", "item_id"])?;
-        let store = self.state.store.lock().map_err(|_| Error::Refused)?;
-        let item = store
+        let item = self
+            .state
+            .store
             .read_item(self.space, kind, id)
             .map_err(|_| Error::Refused)?;
         Ok(item_json(&item))
@@ -261,8 +257,9 @@ impl<D: Directory> SpaceHost<D> {
         let n = self.writes.fetch_add(1, Ordering::Relaxed);
         let receipt = format!("plugin/{}/{}/{n}", self.plugin.manifest.id, self.scope());
         let fingerprint = sha256_hex(input.to_string().as_bytes());
-        let store = self.state.store.lock().map_err(|_| Error::Refused)?;
-        let item = store
+        let item = self
+            .state
+            .store
             .write_item(
                 self.identity.id,
                 &receipt,
@@ -281,7 +278,7 @@ impl<D: Directory> SpaceHost<D> {
 
 impl<D: Directory> InvocationHost for SpaceHost<D> {
     /// Cost: one session check (see [`Session::is_live`]), one directory capability
-    /// read, one store lock and indexed activation read; no content I/O. The worker
+    /// read and one pooled activation read; no content I/O. The worker
     /// session calls this up to four times per host call.
     fn authorize(&self, required: ManifestCapability) -> bool {
         let Some(required) = host_capability(required) else {
@@ -295,15 +292,12 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
         {
             return false;
         }
-        let Ok(store) = self.state.store.lock() else {
-            return false;
-        };
-        activation(&store, self.space, &self.plugin)
+        activation(&self.state.store, self.space, &self.plugin)
             .is_ok_and(|row| row.enabled && row.generation == self.generation)
     }
 
-    /// Cost: `read_item` takes the store lock for one catalog route lookup and one
-    /// item read; `write_item` adds a durable content write (journal, file and
+    /// Cost: `read_item` is one pooled catalog route read and one item read under
+    /// the space's lock; `write_item` adds a durable content write (journal, file and
     /// directory fsync); `start_job` and `checkpoint_job` are one FULL transaction on
     /// the space's job file; `request_secret_handle` one secret-database read (plus one
     /// fsync'd insert when it records a request). Other methods are refused.
