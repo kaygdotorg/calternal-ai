@@ -1,12 +1,13 @@
 <script lang="ts">
   // Routing: the first path segment is the kind (docs/addresses.md); the app that owns that kind fills the shell, the second segment is
   // the item. `/` goes to Threads. A kind no app handles shows the same not-found answer for missing and forbidden things.
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { appFor, type AppDef } from "./apps/registry";
   import { navigate, route, segments, setQuery } from "./lib/route.svelte";
   import { Toasts } from "@calternal/ui";
   import Shell from "./shell/Shell.svelte";
   import { shell } from "./shell/shell.svelte";
+  import { spaces } from "./shell/spaces.svelte";
   import Unknown from "./shell/Unknown.svelte";
   import SettingsSheet from "./appearance/SettingsSheet.svelte";
   import FirstRun from "./appearance/FirstRun.svelte";
@@ -22,8 +23,10 @@
   // An app starts (loads its data and its code) the first time it is opened; Threads always, since its attention list shows in every app.
   const started = new Set<string>();
   $effect(() => { for (const a of [appFor("threads"), app]) if (a && !started.has(a.kind)) { started.add(a.kind); void a.start?.(); } });
+  // Opening a thread of another space (from the palette, a link) makes that space current, so the sidebar lists it. Addresses never name a space.
+  $effect(() => { const t = seg[0] === "threads" && seg[1] ? store.get(seg[1]) : undefined; if (t && t.spaceId !== untrack(() => spaces.current.id)) spaces.switchTo(t.spaceId); });
   // The commands, registered once. Each also exists as a button, a menu entry or a sheet, so a shortcut is never the only way.
-  const threadIds = () => [...store.threads].filter((t) => !t.parentId).sort((x, y) => y.updatedAt - x.updatedAt).map((t) => t.id);
+  const threadIds = () => [...store.threads].filter((t) => !t.parentId && t.spaceId === spaces.current.id).sort((x, y) => y.updatedAt - x.updatedAt).map((t) => t.id);
   const step = (by: 1 | -1): boolean => {
     const ids = threadIds();
     const cur = segments()[0] === "threads" ? segments()[1] : undefined;

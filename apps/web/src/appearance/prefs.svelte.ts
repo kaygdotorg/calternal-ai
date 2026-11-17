@@ -9,7 +9,8 @@ import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "js
 import { accentFor } from "./accent";
 import { PRESETS, presetById } from "./presets";
 import { applyTheme } from "./theme";
-import { onWallpaperColours, setFlags, setWallpaper, updateVeil, type WallpaperColours } from "./wallpaper";
+import { setFloor } from "./veil";
+import { onWallpaperColours, setCraftLight, setFlags, setWallpaper, updateVeil, type WallpaperColours } from "./wallpaper";
 
 /** How the accent colour is chosen. */
 export type AccentMode = "wallpaper" | "custom" | "theme";
@@ -40,6 +41,13 @@ export interface Prefs {
   /** Whether an agent's message streams in as it is written. Off by default: a working state and the steps show, then the finished message appears at once. */
   streamText: boolean;
   fonts: FontPrefs;
+  /** Whether the interface animates. The system's reduce-motion setting is always honoured (the motion tokens shorten); this is the person's own off switch on top of it. */
+  motion: boolean;
+  /**
+   * TEMPORARY, for the owner's side-by-side comparison (Settings, Appearance, Compare); removed once decided. `floor`: the readability floor the veil is solved to (`current` 7:1 with text that
+   * flips, or `low` 4.5:1 that shows more wallpaper). `light`: the light scheme's surfaces (`derived`: the lighter photo with the solved veil, or `craft`: the unchanged photo under 0.92 white).
+   */
+  compare: { floor: "current" | "low"; light: "derived" | "craft" };
 }
 
 /** The defaults, after the plugin's: a lightly blurred wallpaper behind the sidebars, a heavily blurred, deeper card. */
@@ -56,6 +64,8 @@ export const DEFAULTS: Prefs = {
   brand: "Calternal",
   streamText: false,
   fonts: DEFAULT_FONTS,
+  motion: true,
+  compare: { floor: "current", light: "derived" },
 };
 
 /** What Blur turns on: the blur radii (px) of the sidebars' and the card's copies of the picture. Tint and Dim have no fixed strength: the veil is solved (veil.ts). */
@@ -65,7 +75,7 @@ const KEY = "cal.appearance";
 function read(): Prefs {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<Prefs> | null;
-    return s ? { ...DEFAULTS, ...s, materials: { ...DEFAULTS.materials, ...s.materials }, fonts: { ...DEFAULTS.fonts, ...s.fonts } } : structuredClone(DEFAULTS);
+    return s ? { ...DEFAULTS, ...s, materials: { ...DEFAULTS.materials, ...s.materials }, fonts: { ...DEFAULTS.fonts, ...s.fonts }, compare: { ...DEFAULTS.compare, ...s.compare } } : structuredClone(DEFAULTS);
   } catch {
     return structuredClone(DEFAULTS);
   }
@@ -117,8 +127,14 @@ class Appearance {
     const look = { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 };
     const mine = ++this.applySeq;
     const scheme = currentScheme();
+    if (p.motion) delete document.documentElement.dataset.motion; else document.documentElement.dataset.motion = "off";
+    // The comparison: a lower readability floor, and Craft's light surfaces on the unchanged photograph (a photo's unchanged rendition is its dark-scheme file).
+    setFloor(p.compare.floor);
+    const craft = p.compare.light === "craft" && scheme === "light";
+    setCraftLight(craft);
+    const picture = w && !w.recipe && craft ? "dark" : scheme;
     if (!w) setWallpaper(null, look);
-    else void (this.library.resolve?.(w, scheme) ?? Promise.resolve(scheme === "dark" && w.urlDark ? w.urlDark : w.url)).then((src) => { if (mine === this.applySeq) setWallpaper(src, look); });
+    else void (this.library.resolve?.(w, picture) ?? Promise.resolve(picture === "dark" && w.urlDark ? w.urlDark : w.url)).then((src) => { if (mine === this.applySeq) setWallpaper(src, look); });
     applyTheme(p.themeId ? (presetById(p.themeId)?.theme ?? null) : null, currentScheme());
     updateVeil(m);
     this.applyAccent();
