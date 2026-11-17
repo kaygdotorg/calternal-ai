@@ -7,9 +7,10 @@
  * same data paints it (scripts/build-tokens.mjs) and answers "how bright is it here?" by interpolating the mesh at a few
  * points inside the surface's rectangle: no canvas, no readback, no per-frame work.
  *
- * Cost: one `getBoundingClientRect` per registered surface per change (resize, scheme change, mount), batched in a single
- * animation frame (all reads, then all writes, so there is no layout thrash), and one 9-point interpolation each. Nothing runs on
- * scroll, because the background is fixed to the viewport and cards do not move over it.
+ * Cost: one `getBoundingClientRect` per surface that needs it, batched in a single animation frame (all reads, then all writes, so there is no layout
+ * thrash), and one 9-point interpolation each. A surface is measured once, when it registers; every registered surface is measured again only when
+ * the backdrop or its geometry can have changed (resize, scheme change, a new wallpaper) - mounting one surface (a popover opening on a key) never
+ * re-reads the others. Nothing runs on scroll, because the background is fixed to the viewport and cards do not move over it.
  */
 import tokens from "../../tokens/tokens.json" with { type: "json" };
 import { currentForm, currentScheme, onScheme, type Form, type Scheme } from "./theme";
@@ -153,21 +154,34 @@ type Entry = { role: Role };
 const surfaces = new Map<HTMLElement, Entry>();
 let frame = 0;
 let installed = false;
+/** Surfaces waiting to be measured for the first time (or after a role change); `all` when the backdrop or the geometry changed and every surface is. */
+const fresh = new Set<HTMLElement>();
+let all = false;
 
-/** Re-samples every registered surface in the next animation frame (coalesced). */
+/** Re-samples every registered surface in the next animation frame (coalesced): the backdrop changed (a wallpaper, the scheme) or the window did. */
 export function scheduleMaterial(): void {
+  all = true;
+  flushLater();
+}
+
+function flushLater(): void {
   if (frame || typeof requestAnimationFrame === "undefined") return;
   frame = requestAnimationFrame(() => {
     frame = 0;
+    const todo = all ? surfaces.keys() : fresh.values();
+    all = false;
     const scheme = currentScheme();
     const form = currentForm();
     const w = innerWidth || 1;
     const h = innerHeight || 1;
     const reads: [HTMLElement, Entry, Frac][] = [];
-    for (const [el, e] of surfaces) {
+    for (const el of todo) {
+      const e = surfaces.get(el);
+      if (!e) continue;
       const r = el.getBoundingClientRect();
       reads.push([el, e, { x0: r.left / w, y0: r.top / h, x1: r.right / w, y1: r.bottom / h }]);
     }
+    fresh.clear();
     for (const [el, e, f] of reads) {
       const behind = behindLuminance(scheme, f);
       const m = material(scheme, behind, e.role, form);
@@ -189,14 +203,17 @@ function install(): void {
 export function adaptive(node: HTMLElement, role: Role = "glass") {
   install();
   surfaces.set(node, { role });
-  scheduleMaterial();
+  fresh.add(node);
+  flushLater();
   return {
     update(next: Role) {
       surfaces.set(node, { role: next });
-      scheduleMaterial();
+      fresh.add(node);
+      flushLater();
     },
     destroy() {
       surfaces.delete(node);
+      fresh.delete(node);
     },
   };
 }

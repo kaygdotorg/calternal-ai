@@ -1,10 +1,11 @@
 // A/B of composer typing at 4x CPU between two builds in one session, alternating runs. Reports, over all runs, the first key, the key that opens the picker, and key-to-next-frame p50/p95.
-// Usage: node e2e/ab-composer.mjs <appDirA> <appDirB> [rounds]
+// Usage: node e2e/ab-composer.mjs <distDirA> <distDirB> [rounds]  (two builds of apps/web, each a built `dist`; run from apps/web; ports from AB_PORT_A and AB_PORT_B)
 import { spawn } from "node:child_process";
 import { launch } from "./lib.mjs";
 const [DA, DB, R = "8"] = process.argv.slice(2);
-const urls = { A: "http://127.0.0.1:4191", B: "http://127.0.0.1:4192" };
-const servers = [[DA, 4191], [DB, 4192]].map(([cwd, port]) => spawn("npx", ["vite", "preview", "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { cwd, stdio: "ignore", detached: true }));
+const PA = +(process.env.AB_PORT_A ?? 4191), PB = +(process.env.AB_PORT_B ?? 4192);
+const urls = { A: `http://127.0.0.1:${PA}`, B: `http://127.0.0.1:${PB}` };
+const servers = [[DA, PA], [DB, PB]].map(([cwd, port]) => spawn("npx", ["vite", "preview", "--outDir", cwd, "--port", String(port), "--strictPort", "--host", "127.0.0.1"], { stdio: "ignore", detached: true }));
 const stopAll = () => { for (const p of servers) { try { process.kill(-p.pid); } catch { /* gone */ } } };
 for (const base of Object.values(urls)) for (let i = 0; i < 60; i++) { try { if ((await fetch(base)).ok) break; } catch { /* not yet */ } await new Promise((r) => setTimeout(r, 250)); }
 const b = await launch();

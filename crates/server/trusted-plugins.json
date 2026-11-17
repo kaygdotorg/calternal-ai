@@ -1,19 +1,19 @@
 {
   "plugins": [
     {
-      "id": "notes",
+      "id": "calternal-notes",
       "version": "0.1.0",
-      "manifest": "notes/manifest.json",
+      "manifest": "calternal-notes/manifest.json",
       "worker": null,
       "worker_sha256": null,
       "default_enabled": true
     },
     {
-      "id": "notes-insights",
+      "id": "calternal-notes-insights",
       "version": "0.1.0",
-      "manifest": "notes-insights/manifest.json",
-      "worker": "notes-insights/dist/worker.js",
-      "worker_sha256": "8c6af5b31bff39dafe983090ef044e0fc23cd5965285f6245f9c731f2cfd2ae6",
+      "manifest": "calternal-notes-insights/manifest.json",
+      "worker": "calternal-notes-insights/dist/worker.js",
+      "worker_sha256": "ce9ec5b040859b7d398178b147d6811ea5988a08a577027657f8ff9c01a220a4",
       "default_enabled": false
     },
     {
