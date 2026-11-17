@@ -5,7 +5,7 @@
  *
  * Rules kept here (B1): only a task, or a block something links to, has an ID, so `markerFor` is called for those and for nothing else. The view side (hiding, typing next to a marker, new tasks,
  * pasted copies) is `ids-view.ts`, a lazy chunk loaded when a note holds a marker or a task. Never in a note's visible text: `visibleText` is what search, copy and accessibility use.
- * Not here yet (the server is the authority, B5): retiring IDs, aliases on join, and Home-wide uniqueness. This module only guarantees uniqueness inside one note.
+ * Not here yet (the server is the authority, B5): retiring IDs, aliases on join, and uniqueness across spaces. This module only guarantees uniqueness inside one note.
  */
 import type { EditorState } from "@codemirror/state";
 

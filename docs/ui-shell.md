@@ -52,6 +52,22 @@ Not a card: it sits directly on the tinted background.
 - Tabs at the bottom switch between AI chat and the current app's panels. The app's
   plugin decides which panels exist (for Notes: the inspector and style sheet).
 
+## Phone navigation (2026-11-17)
+
+On a phone the list (the sidebar) and the side panel lie under or over the middle card, and each is a **history entry**: showing one pushes an entry (the address does not change), hiding it goes Back, and Forward shows it again. The button, a swipe, a tap on the strip of card that stays visible, the scrim and the platform's own back gesture are all the same step. Choosing something in the list opens it, closes the list without a history step, and Back from there brings the list back over the note or thread you came from. Code: `shell.over`/`shell.dismiss` in `shell/shell.svelte.ts`, gestures in `shell/Shell.svelte`, proof in `e2e/phone-nav.mjs` (15 checks).
+
+**Dragging the card away.** A touch starts a drag from the left edge (24 px) with nothing showing, from the visible strip of card or anywhere on the list while the list shows, from the right edge to bring in the side panel, and from the scrim or the panel to send it away. A row swipe, a sheet drag, a text field and a code block are not panel gestures.
+
+Motion, in order, from the motion tokens (`touch` set):
+
+1. **Following the finger**: the card (or the panel) is at the finger's position one to one, no transition; the panel's scrim fades with its progress and the card scales to 0.96 under it. Frame budget: transform and opacity only.
+2. **Release**: it settles to the rest state the position and speed point at: faster than 0.4 px/ms (measured over the last 80 ms) decides by direction, otherwise past halfway commits. The state changes through `shell.over`, so history is updated at the same moment.
+3. **Settle**: `transform` over `--dur-sheet` (340 ms) on `--ease-sheet` (cubic-bezier 0.45, 0.6, 0.2, 0.8), starting from wherever the finger left it. The scrim uses `--dur-base` (220 ms) on `--ease-out`. Reduced motion shortens these through the tokens.
+
+**Interruptible.** A touch while the card or panel is still settling takes hold of it where it is (its current transform, read from the computed style), stops the transition, and carries on as a drag; releasing decides again. `e2e/phone-nav.mjs` checks the hand-over does not jump.
+
+Measured: drag and settle at 4x CPU in Chromium: 56 frames, every one 16.7 ms (no frame over 33 ms), three runs. **Not yet checked on a real phone** (the Simulator cannot be driven with touch from here): the fluidity rule asks for that before this counts as done.
+
 ## Backgrounds and fonts
 
 - The background behind both sidebars is a wallpaper: the person's own picture, one from

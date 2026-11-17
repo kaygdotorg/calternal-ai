@@ -30,7 +30,7 @@ function sync(): void {
 export function navigate(to: string, replace = false): void {
   const full = href(to);
   if (full === location.pathname + location.search) return;
-  history[replace ? "replaceState" : "pushState"](null, "", full);
+  history[replace ? "replaceState" : "pushState"](replace ? history.state : null, "", full); // a query change keeps the entry's state (the shell marks entries that show the list or the side panel)
   sync();
 }
 

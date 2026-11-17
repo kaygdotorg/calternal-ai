@@ -11,7 +11,7 @@
 <div class="rs">
   <header>
     <h2>{panel.label}</h2>
-    {#if shell.narrow}<Pill icon="close" label="Close the side panel" onclick={() => shell.closeOver()} />{/if}
+    {#if shell.narrow}<Pill icon="close" label="Close the side panel" onclick={() => shell.dismiss()} />{/if}
   </header>
   <div class="content edge-fade" role="tabpanel" id="panel" aria-label={panel.label}>
     {#key panel.id}<panel.component {id} {...panel.props} />{/key}
