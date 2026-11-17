@@ -321,10 +321,10 @@ impl Server {
 pub fn enrol(server: &str, code: &str, dir: &Path) -> i32 {
     Command::new(BIN)
         .args([
-            "machine", "enroll", "--server", server, "--code", code, "--name", "test", "--direct",
-            "--dir",
+            "machine", "enroll", "--server", server, "--name", "test", "--direct", "--dir",
         ])
         .arg(dir)
+        .env("CALTERNAL_ENROLL_CODE", code)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()

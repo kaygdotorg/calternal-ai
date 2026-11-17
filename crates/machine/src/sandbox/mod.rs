@@ -64,8 +64,28 @@ pub struct ExecRequest {
     pub argv: Vec<String>,
     /// Input delivered once and closed; callers enforce the 128 KiB budget.
     pub stdin: String,
-    /// Environment on top of the sandbox's minimal one.
+    /// Environment on top of the sandbox's minimal one. Names must be POSIX
+    /// identifiers; values must travel through child environment, never host argv.
     pub env: Vec<(String, String)>,
+}
+
+impl ExecRequest {
+    /// Refuse names that could be interpreted as an inline value or option by a
+    /// container CLI. Linear in name bytes, no I/O; values are never inspected.
+    pub(super) fn validate_env_names(&self) -> SandboxResult<()> {
+        if self.env.iter().any(|(name, _)| {
+            let mut bytes = name.bytes();
+            !bytes
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                || !bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        }) {
+            return Err(SandboxError(
+                "environment names must be POSIX identifiers".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// One output event of a running exec.

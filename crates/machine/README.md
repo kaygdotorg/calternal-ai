@@ -68,3 +68,10 @@ The machine owner can stop the role and use `calternal machine discard
 live role. Never-sent requests are durable; interrupted in-flight deletion asks
 for inspection/retry. Automatic cleanup of preserved work and plan disk accounting
 are follow-ups. There is no timed expiry of unpreserved work.
+
+Exec environment names must be POSIX identifiers. Podman receives name-only
+`--env NAME` arguments and resolves values from its child environment; credentials
+never appear in the engine argv. Direct execution sets environment values with
+the process API, and configured execution delegates to those same backends.
+Enrollment codes travel over HTTP; use `CALTERNAL_ENROLL_CODE` or `--code -` with
+stdin when invoking the machine CLI so the code stays out of the caller argv.

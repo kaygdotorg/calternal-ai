@@ -43,11 +43,19 @@ fn spec(limits: Limits) -> SandboxSpec {
 }
 
 async fn sh(sb: &Arc<dyn Sandbox>, script: &str) -> (String, i32) {
+    command(sb, vec!["sh".into(), "-c".into(), script.into()], vec![]).await
+}
+
+async fn command(
+    sb: &Arc<dyn Sandbox>,
+    argv: Vec<String>,
+    env: Vec<(String, String)>,
+) -> (String, i32) {
     let exec = sb
         .exec(ExecRequest {
             stdin: String::new(),
-            argv: vec!["sh".into(), "-c".into(), script.into()],
-            env: vec![],
+            argv,
+            env,
         })
         .await
         .unwrap();
@@ -120,6 +128,17 @@ async fn threads_are_isolated_and_limited() {
         sh(&c, "cat /sys/fs/cgroup/memory.max").await.0.trim(),
         (1u64 << 30).to_string()
     );
+    // Name-only Podman flags still deliver the requested value inside the container.
+    let received = command(
+        &a,
+        vec!["printenv".into(), "CALTERNAL_AGENT_TOKEN".into()],
+        vec![(
+            "CALTERNAL_AGENT_TOKEN".into(),
+            "synthetic-private-token".into(),
+        )],
+    )
+    .await;
+    assert_eq!(received, ("synthetic-private-token\n".into(), 0));
     // The machine's environment does not leak in.
     assert!(!sh(&a, "env").await.0.contains("CARGO"));
 

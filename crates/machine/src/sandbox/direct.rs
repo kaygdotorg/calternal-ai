@@ -107,6 +107,7 @@ impl Sandbox for DirectSandbox {
                 return Err(SandboxError("empty command".into()));
             };
             let mut cmd = tokio::process::Command::new(program);
+            request.validate_env_names()?;
             let mut paths = vec![self.home.join(".local/bin")];
             if let Some(exe) = super::cli_program().await
                 && let Some(parent) = exe.parent()
