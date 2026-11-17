@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 /// The single account or space a secret belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Owner {
-    /// Personal: provider logins and the account's own plugin secrets.
+    /// Personal credentials owned only by the account. Provider CLI logins stay on machines.
     Account(AccountId),
     /// Shared by a space; authority comes from the space's capability sets.
     Space(SpaceId),
@@ -114,7 +114,7 @@ pub struct Handle {
 
 /// Opaque wire handle: `sh-` followed by 40 lowercase hex digits (a keyed BLAKE3
 /// MAC of owner, name and version). Reveals nothing and cannot be forged without
-/// the server key. Fits the plugin host's identifier rule.
+/// the owner’s key. Fits the plugin host's identifier rule.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HandleToken(pub(crate) String);
 

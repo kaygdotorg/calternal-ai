@@ -478,12 +478,12 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         ),
         entry::<SecretsListInput, SecretsListResult>(
             "secrets.list",
-            "List secret metadata and pending requests, never values",
+            "List personal secret metadata and requests; space metadata requires secrets.manage",
             false,
         ),
         entry::<SecretsRevokeInput, SecretsRevokeResult>(
             "secrets.revoke",
-            "Destroy a secret or withdraw a pending request",
+            "Destroy a personal secret or request; space management requires secrets.manage",
             true,
         ),
     ];

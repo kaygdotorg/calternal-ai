@@ -397,6 +397,17 @@ async fn serve(
                 ));
             }
         };
+    {
+        let keys = store.secrets();
+        let spaces = directory.spaces.clone();
+        let root = data_dir.clone();
+        tokio::task::spawn_blocking(move || {
+            calternal_server::secrets::configure_keys(&keys, spaces, &root)
+        })
+        .await
+        .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
+        .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    }
     // Machine authority shares auth.db and its recovery barrier.
     let machines = {
         let dir = data_dir.clone();

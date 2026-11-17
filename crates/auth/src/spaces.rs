@@ -35,7 +35,7 @@ pub struct Member {
 /// Independent opens are serialized by SQLite's IMMEDIATE transactions.
 #[derive(Clone)]
 pub struct Spaces {
-    db: crate::db::Db,
+    pub(crate) db: crate::db::Db,
     receipt_retention: std::time::Duration,
 }
 /// How long a directory receipt is kept by default: seven days, the same as space

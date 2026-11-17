@@ -87,6 +87,7 @@ fn roles() -> [CapabilitySet; 4] {
             MembersInvite,
             MembersManage,
             SpaceSettings,
+            SecretsManage,
         ],
         &[
             SpaceRead,
@@ -96,6 +97,7 @@ fn roles() -> [CapabilitySet; 4] {
             MembersInvite,
             MembersManage,
             SpaceSettings,
+            SecretsManage,
             ManagersManage,
             SpaceTransfer,
             SpaceDelete,

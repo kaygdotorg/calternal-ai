@@ -149,10 +149,10 @@ const ROLES: [Option<&str>; 5] = [
     Some("manager"),
     Some("owner"),
 ];
-// request needs plugins.use, list needs space.read, revoke needs space.settings.
+// request needs plugins.use; management requires secrets.manage.
 const MATRIX: &[(&str, [bool; 5])] = &[
     ("secrets.request", [false, false, true, true, true]),
-    ("secrets.list", [false, true, true, true, true]),
+    ("secrets.list", [false, false, false, true, true]),
     ("secrets.revoke", [false, false, false, true, true]),
 ];
 
@@ -419,4 +419,73 @@ async fn provide_needs_a_fresh_passkey_session() {
         (0, 1)
     );
     assert!(scan(app.dir.path()).is_empty());
+}
+
+#[tokio::test]
+async fn protected_key_records_refuse_missing_keys_and_finish_erasure() {
+    let f = Fixture::new(Some("manager")).await;
+    let state = f.state.clone();
+    let root = f.root.clone();
+    let space = calternal_types::SpaceId::parse(&f.shared).unwrap();
+    tokio::task::spawn_blocking(move || {
+        use calternal_secrets::{LocalStore, Owner, SecretName, SecretStore, SecretValue};
+        let keys = state.store.secrets();
+        let owner = Owner::Space(space);
+        let actor = calternal_types::Actor::account(calternal_types::AccountId::new());
+        calternal_server::secrets::configure_keys(&keys, state.directory.spaces.clone(), &root)
+            .unwrap();
+        let h = keys
+            .put(
+                &owner,
+                &SecretName::new("key").unwrap(),
+                "Key",
+                SecretValue::new(b"secret".to_vec()).unwrap(),
+                &actor,
+            )
+            .unwrap();
+        let path = root
+            .join("spaces")
+            .join(space.to_string())
+            .join("secret.key");
+        let original = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let reopened = LocalStore::open(&root).unwrap();
+        assert!(
+            calternal_server::secrets::configure_keys(
+                &reopened,
+                state.directory.spaces.clone(),
+                &root
+            )
+            .is_err()
+        );
+        assert!(!path.exists());
+        std::fs::write(&path, original).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        // Simulate a crash after the erasing record is acknowledged but before unlink.
+        let fingerprint = calternal_secrets::key_fingerprint(&path).unwrap();
+        state
+            .directory
+            .spaces
+            .record_secret_key("space", space.as_uuid(), fingerprint, true)
+            .unwrap();
+        let reopened = LocalStore::open(&root).unwrap();
+        calternal_server::secrets::configure_keys(&reopened, state.directory.spaces.clone(), &root)
+            .unwrap();
+        assert!(!path.exists());
+        assert!(reopened.handle(&owner, &h.name).is_err());
+        assert!(
+            reopened
+                .put(
+                    &owner,
+                    &h.name,
+                    "Key",
+                    SecretValue::new(b"new".to_vec()).unwrap(),
+                    &actor
+                )
+                .is_err()
+        );
+    })
+    .await
+    .unwrap();
 }

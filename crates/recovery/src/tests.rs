@@ -73,6 +73,17 @@ impl Fixture {
     }
     fn mutate(&self, c: &Connection, mutation: &str) {
         match mutation {
+            "secret-key" => {
+                c.execute(
+                    "INSERT INTO owner_secret_keys VALUES('space',?1,?2,0)",
+                    rusqlite::params![self.space.to_string(), &[42u8; 32][..]],
+                )
+                .unwrap();
+            }
+            "secret-erase" => {
+                c.execute("UPDATE owner_secret_keys SET erasing=1", [])
+                    .unwrap();
+            }
             "grant" => {
                 c.execute(
                     "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
@@ -134,9 +145,25 @@ fn injected(root: &Path, install: Uuid, target: Step) -> Coordinator {
 
 #[test]
 fn every_crash_boundary_preserves_the_transaction_decision() {
-    for mutation in ["grant", "revoke", "role", "transfer", "passkey"] {
+    for mutation in [
+        "grant",
+        "revoke",
+        "role",
+        "transfer",
+        "passkey",
+        "secret-key",
+        "secret-erase",
+    ] {
         for &step in STEPS {
             let f = Fixture::new();
+            if mutation == "secret-erase" {
+                f.connection()
+                    .execute(
+                        "INSERT INTO owner_secret_keys VALUES('space',?1,?2,0)",
+                        rusqlite::params![f.space.to_string(), &[42u8; 32][..]],
+                    )
+                    .unwrap();
+            }
             let old = f.baseline();
             let coordinator = injected(&f.root, f.install, step);
             let mut db = f.connection();
@@ -169,7 +196,15 @@ fn every_crash_boundary_preserves_the_transaction_decision() {
 
 #[test]
 fn crashes_at_each_replay_publication_boundary_are_idempotent() {
-    for mutation in ["grant", "revoke", "role", "transfer", "passkey"] {
+    for mutation in [
+        "grant",
+        "revoke",
+        "role",
+        "transfer",
+        "passkey",
+        "secret-key",
+        "secret-erase",
+    ] {
         for committed in [false, true] {
             for step in [
                 Step::Replay,
@@ -181,6 +216,14 @@ fn crashes_at_each_replay_publication_boundary_are_idempotent() {
                 Step::AfterCompletion,
             ] {
                 let f = Fixture::new();
+                if mutation == "secret-erase" {
+                    f.connection()
+                        .execute(
+                            "INSERT INTO owner_secret_keys VALUES('space',?1,?2,0)",
+                            rusqlite::params![f.space.to_string(), &[42u8; 32][..]],
+                        )
+                        .unwrap();
+                }
                 let old = f.baseline();
                 let c = f.coordinator();
                 let mut db = f.connection();
@@ -1399,5 +1442,42 @@ fn failed_prepare_reconciles_only_after_the_authority_transaction_rolls_back() {
     assert_eq!(
         sink.validate_and_read().unwrap().tables,
         capture(&f.connection(), f.install, 1).unwrap().tables
+    );
+}
+
+#[test]
+fn secret_key_lifecycle_is_protected_idempotent_and_cannot_revive() {
+    let f = Fixture::new();
+    f.baseline();
+    let coordinator = Arc::new(f.coordinator());
+    let spaces = Spaces::open(&f.db).unwrap();
+    spaces.configure_recovery(coordinator.clone()).unwrap();
+    let id = f.space.as_uuid();
+    for erasing in [false, false, true, true] {
+        spaces
+            .record_secret_key("space", id, [42; 32], erasing)
+            .unwrap();
+    }
+    assert!(
+        spaces
+            .record_secret_key("space", id, [42; 32], false)
+            .is_err()
+    );
+    assert!(
+        spaces
+            .record_secret_key("space", id, [43; 32], true)
+            .is_err()
+    );
+    let snapshot = coordinator.validate_and_read().unwrap();
+    let table = &snapshot.tables["owner_secret_keys"];
+    let erasing = table.columns.iter().position(|c| c == "erasing").unwrap();
+    assert_eq!(table.rows[0][erasing], Cell::Integer(1));
+    spaces.delete(f.owner, f.space).unwrap();
+    spaces
+        .record_secret_key("space", id, [42; 32], true)
+        .unwrap();
+    assert_eq!(
+        coordinator.validate_and_read().unwrap().tables["owner_secret_keys"].rows[0][erasing],
+        Cell::Integer(1)
     );
 }

@@ -42,7 +42,7 @@ use calternal_types::Error;
 /// Path of the trusted endpoint that supplies a value for a pending request.
 pub const PROVIDE_PATH: &str = "/api/v1/auth/secrets/provide";
 /// Capability a member needs to supply a space secret's value.
-pub const PROVIDE_CAPABILITY: Capability = Capability::SpaceSettings;
+pub const PROVIDE_CAPABILITY: Capability = Capability::SecretsManage;
 /// Largest provide body: a 64 KiB value plus JSON escaping and the other fields.
 const PROVIDE_BODY_MAX: usize = 400 * 1024;
 
@@ -301,7 +301,9 @@ pub fn plugin_handle(
     use calternal_plugin_host::Error as E;
     let full = SecretName::for_plugin(plugin, name).map_err(|_| E::Invalid)?;
     match secrets.handle(owner, &full) {
-        Ok(handle) => Ok(json!({"handle": secrets.token(&handle).as_str()})),
+        Ok(handle) => {
+            Ok(json!({"handle": secrets.token(&handle).map_err(|_| E::Refused)?.as_str()}))
+        }
         Err(calternal_secrets::Error::NotFound) => {
             let pending = secrets.pending(owner).map_err(|_| E::Refused)?;
             if !pending.iter().any(|r| r.name == full.as_str()) {
@@ -314,4 +316,65 @@ pub fn plugin_handle(
         }
         Err(_) => Err(E::Refused),
     }
+}
+
+/// Attach protected owner-key recovery and reconcile deletions before admission.
+/// Missing live keys and fingerprint mismatches refuse startup; erasing records
+/// finish unlinking after an interrupted deletion. Runs on a blocking thread.
+/// Cost: one metadata scan and one key-file read per live owner, directory fsync
+/// per interrupted erasure; ordinary requests do not scan this registry.
+pub fn configure_keys(
+    store: &LocalStore,
+    spaces: calternal_auth::spaces::Spaces,
+    appdata: &std::path::Path,
+) -> Result<(), Error> {
+    struct Lifecycle(calternal_auth::spaces::Spaces);
+    impl calternal_secrets::KeyLifecycle for Lifecycle {
+        fn record(
+            &self,
+            owner: &Owner,
+            fingerprint: &[u8; 32],
+            erasing: bool,
+        ) -> calternal_secrets::Result<()> {
+            self.0
+                .record_secret_key(owner.kind(), owner.uuid(), *fingerprint, erasing)
+                .map_err(|error| {
+                    tracing::error!(?error, "owner key recovery publication failed");
+                    calternal_secrets::Error::KeyUnusable
+                })
+        }
+    }
+    store
+        .configure_lifecycle(std::sync::Arc::new(Lifecycle(spaces.clone())))
+        .map_err(host_error)?;
+    for (kind, id, fingerprint, erasing) in spaces
+        .secret_key_records()
+        .map_err(|_| Error::unavailable("secret key registry unavailable"))?
+    {
+        let dir = appdata
+            .join(if kind == "account" {
+                "accounts"
+            } else {
+                "spaces"
+            })
+            .join(id.to_string());
+        let path = dir.join("secret.key");
+        if erasing {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(Error::unavailable("secret key erase failed")),
+            }
+            if dir.exists() {
+                calternal_fsio::sync_dir(&dir)
+                    .map_err(|_| Error::unavailable("secret key erase failed"))?;
+            }
+            continue;
+        }
+        let actual = calternal_secrets::key_fingerprint(&path).map_err(host_error)?;
+        if actual.as_slice() != fingerprint.as_slice() {
+            return Err(host_error(calternal_secrets::Error::KeyUnusable));
+        }
+    }
+    Ok(())
 }

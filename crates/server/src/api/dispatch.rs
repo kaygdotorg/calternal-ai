@@ -190,6 +190,12 @@ pub async fn dispatch<D: Directory>(
             if result.is_ok()
                 && let Some(space) = space
             {
+                if operation == "spaces.delete" {
+                    st.store
+                        .secrets()
+                        .erase_owner(&calternal_secrets::Owner::Space(space))
+                        .map_err(|e| Error::unavailable(e.to_string()))?;
+                }
                 for account in removed {
                     st.inputs.erase_space(account, space)?;
                 }

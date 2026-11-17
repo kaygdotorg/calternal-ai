@@ -111,7 +111,7 @@ INSERT INTO space_role_capabilities VALUES
  ('reader','space.read'),
  ('editor','space.read'),('editor','content.write'),('editor','plugins.use'),
  ('manager','space.read'),('manager','content.write'),('manager','plugins.use'),
- ('manager','plugins.manage'),('manager','members.invite'),('manager','members.manage'),('manager','space.settings');
+ ('manager','plugins.manage'),('manager','members.invite'),('manager','members.manage'),('manager','space.settings'),('manager','secrets.manage');
 INSERT INTO space_role_capabilities SELECT 'owner',capability FROM space_role_capabilities WHERE role='manager';
 INSERT INTO space_role_capabilities VALUES('owner','managers.manage'),('owner','space.transfer'),('owner','space.delete');
 CREATE TABLE spaces(
@@ -176,3 +176,17 @@ BEGIN SELECT RAISE(ABORT,'space and account identities must differ'); END;
 CREATE TRIGGER account_identity_separate BEFORE INSERT ON users
 WHEN EXISTS(SELECT 1 FROM spaces WHERE id=NEW.id)
 BEGIN SELECT RAISE(ABORT,'account and space identities must differ'); END;
+
+-- Fingerprints only. No key bytes may enter auth.db or recovery. Tombstones
+-- survive deletion so restoring an old ciphertext database cannot revive it.
+CREATE TABLE owner_secret_keys(
+ kind TEXT NOT NULL CHECK(kind IN ('account','space')),
+ owner_id TEXT NOT NULL,
+ fingerprint BLOB NOT NULL CHECK(length(fingerprint)=32),
+ erasing INTEGER NOT NULL CHECK(erasing IN (0,1)),
+ PRIMARY KEY(kind,owner_id)
+) STRICT;
+CREATE TRIGGER erase_space_secret_key AFTER DELETE ON spaces
+BEGIN UPDATE owner_secret_keys SET erasing=1 WHERE kind='space' AND owner_id=OLD.id; END;
+CREATE TRIGGER erase_account_secret_key AFTER DELETE ON users
+BEGIN UPDATE owner_secret_keys SET erasing=1 WHERE kind='account' AND owner_id=OLD.id; END;
