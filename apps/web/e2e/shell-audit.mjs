@@ -109,6 +109,20 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok(pages.some((p) => /Machines/i.test(p)), "Machines have a page (added through a guided flow)");
   await ctx.close();
 }
+// ---------- a member without the server-admin capability ----------
+{
+  const { ctx, page } = await fresh(DEVICES.desktop, "/settings/appearance?firstrun=0&as=member");
+  const groups = await page.locator("aside.side nav h2").allInnerTexts();
+  ok(groups.length === 2 && !groups.some((g) => /^Admin/.test(g)), "The Admin section shows only to someone holding the server-admin capability (a member sees two sections)", groups.join(" / "));
+  await page.goto(BASE + "/settings/storage?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500);
+  ok((await page.getByText("The three roots and their health").count()) === 0, "…and an Admin page's address shows nothing to them");
+  await page.keyboard.press("Control+k"); await page.waitForSelector(".pal-input"); await page.locator(".pal-input").fill("storage roots"); await page.waitForTimeout(400);
+  ok((await page.locator(".r.command").filter({ hasText: /Storage/ }).count()) === 0, "…and the palette does not offer Admin pages");
+  await page.keyboard.press("Escape");
+  await page.goto(BASE + "/settings/appearance?firstrun=0&as=operator"); await page.waitForSelector("html[data-ready]");
+  ok((await page.locator("aside.side nav h2").count()) === 3, "An operator sees all three");
+  await ctx.close();
+}
 // ---------- wallpapers ----------
 {
   const doc = readFileSync("../../docs/settings.md", "utf8");
@@ -141,6 +155,25 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok((await page.getByRole("button", { name: "Show threads" }).count()) === 1, "Phone: a button shows the sidebar");
   const mid = await page.evaluate(() => { const c = document.querySelector(".mid-card").getBoundingClientRect(); return c.left === 0 && c.right === innerWidth; });
   ok(mid, "Phone: the middle card fills the screen");
+  await ctx.close();
+}
+// ---------- phone: what was added on 2026-11-18 ----------
+{
+  const { ctx, page } = await fresh(DEVICES.phone, "/threads/t-idle?firstrun=0");
+  await page.getByRole("button", { name: "Show threads" }).click(); await page.waitForTimeout(600);
+  const dots = await page.locator("aside.side footer [aria-label='Spaces'] [role=radio]").evaluateAll((e) => e.map((d) => { const r = d.getBoundingClientRect(); return [r.width, r.height]; }));
+  ok(dots.length === 2 && dots.every(([w, h]) => w >= 24 && h >= 36), "Phone: the space dots are in the sidebar footer with a touch-sized target", JSON.stringify(dots));
+  ok((await page.locator(".grip").count()) === 0, "Phone: no resize handles");
+  const f = await page.evaluate(() => { const r = document.querySelector("aside.side footer").getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
+  ok(f, "Phone: the footer is in view");
+  await page.getByRole("radio", { name: "Infra" }).tap().catch(() => page.getByRole("radio", { name: "Infra" }).click()); await page.waitForTimeout(500);
+  ok((await page.locator("aside.side .slide").count()) > 0 && (await page.locator("aside.side .slide").allInnerTexts()).every((t) => /Mesh|rollout/i.test(t)), "Phone: choosing a space changes the list");
+  await page.goto(BASE + "/settings/appearance?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
+  ok((await page.getByRole("button", { name: "Show the sidebar" }).count()) === 1, "Phone: the Settings page has a button for its sidebar");
+  await page.getByRole("button", { name: "Show the sidebar" }).click(); await page.waitForTimeout(600);
+  ok((await page.locator("aside.side nav h2").allInnerTexts()).some((t) => /^Space/.test(t)), "Phone: the Settings sidebar has the current space's section");
+  await page.goto(BASE + "/settings/appearance?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(500);
+  ok((await page.getByText("Compare (temporary").count()) === 1 && (await page.getByText("Clear to tinted").count()) === 1, "Phone: the Compare group (with Clear to tinted) is on the Appearance page");
   await ctx.close();
 }
 await b.close(); stop();

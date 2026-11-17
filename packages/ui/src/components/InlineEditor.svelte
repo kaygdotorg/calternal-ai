@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { FieldEditor } from "../../../editor/src/index";
+  import { FieldEditor, type FieldTrigger, type TextKind, type TriggerKind } from "../../../editor/src/index";
   // The one text-input surface for typing inline: the composer, side chat, rename fields. It is a thin contract (value, submit, cancel, focus)
   // over a native field so that the Notes block editor's input can replace it by changing this file alone; callers never touch the DOM node
   // except through `focus()`. Enter submits (Shift+Enter is a new line in `multiline`), Escape cancels, IME composition is never interrupted.
@@ -19,11 +19,15 @@
     onkeydown,
     autoselect = false,
     editor = $bindable(),
+    kind = "prose",
+    triggers,
     marks,
     onselect,
     el = $bindable(),
   }: {
     /** Focus and select all on mount (rename fields). */ autoselect?: boolean;
+    /** What the field holds: `prose` (spelling and capitals), or `search`, `code`, `secret`, `url` (left as typed). */ kind?: TextKind;
+    /** Picker triggers to watch for at the caret (`@`, `[[`, `#`, `/`: the editor package's one set of rules); `on` is called with the trigger, or null, whenever it changes. */ triggers?: { kinds: readonly TriggerKind[]; on: (t: FieldTrigger | null) => void };
     /** The editor behind the field (`packages/editor`): apply a change from code as one undo step (`editor.apply({from, to, insert})`), undo, redo. */ editor?: FieldEditor;
     /** Words to highlight behind the text, as ranges of `value` (the recognised words); drawn on a mirror layer, never in the field. */ marks?: { start: number; end: number; kind: string }[];
     /** Called when the caret or the selection moves (for pickers that follow the caret). */ onselect?: () => void;
@@ -41,7 +45,7 @@
   }
   function key(e: KeyboardEvent) {
     onkeydown?.(e);
-    if (e.defaultPrevented || e.isComposing) return;
+    if (e.defaultPrevented || editor?.composing(e) || e.isComposing) return; // a key that confirms an input-method composition is never Enter, Escape or Tab
     if (e.key === "Enter" && !(multiline && e.shiftKey)) { e.preventDefault(); onsubmit?.(value); }
     else if (e.key === "Escape" && oncancel) { e.preventDefault(); oncancel(); }
   }
@@ -86,7 +90,8 @@
   // The field editor (docs/editor-port-plan.md, stage 1): history of the person's own changes across typed and programmatic edits, the input-method gate and the keystroke probe.
   $effect(() => {
     if (!el) return;
-    const fe = new FieldEditor(el);
+    // Escape means "cancel" when the host has a cancel handler; otherwise it collapses a selection, as in the note editor.
+    const fe = new FieldEditor(el, { kind, escapeCollapses: !oncancel, triggers });
     editor = fe;
     return () => { fe.destroy(); editor = undefined; };
   });

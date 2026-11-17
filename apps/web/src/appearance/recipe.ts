@@ -76,8 +76,10 @@ export function sample(r: Recipe, scheme: "light" | "dark", u: number, v: number
 }
 
 /** The quiet default, "haze": the shell's own token mesh (warm grey to cool grey) blended in OKLab, scheme by scheme. */
+const meshes: Partial<Record<"light" | "dark", ReturnType<typeof labOf>[]>> = {};
 export function haze(scheme: "light" | "dark", u: number, v: number): Rgb {
-  const mesh = tokens.backdrop[scheme].map((c) => labOf(hexRgb(c)));
+  // The mesh in OKLab, converted once per scheme (it used to be converted again for every pixel: about 20,000 times for one look).
+  const mesh = (meshes[scheme] ??= tokens.backdrop[scheme].map((c) => labOf(hexRgb(c))));
   const gx = Math.min(Math.max(u * 2, 0), 1.999), gy = Math.min(Math.max(v * 2, 0), 1.999);
   const i = Math.floor(gx), j = Math.floor(gy), fx = gx - i, fy = gy - j;
   const at = (x: number, y: number) => mesh[y * 3 + x]!;
@@ -88,7 +90,7 @@ export function haze(scheme: "light" | "dark", u: number, v: number): Rgb {
 /** Renders a recipe (or "haze") into a canvas of `w` by `h`, computed on a coarse grid and scaled up (it is blurred anyway), and exports a JPEG blob URL. */
 export async function renderRecipe(id: string, scheme: "light" | "dark", w: number, h: number): Promise<string> {
   const r = RECIPES.find((x) => x.id === id);
-  const gw = 192, gh = Math.round((192 * h) / w);
+  const gw = w <= 400 ? 64 : 192, gh = Math.round((gw * h) / w); // a thumbnail needs a coarser grid than a wallpaper
   const small = document.createElement("canvas");
   small.width = gw;
   small.height = gh;

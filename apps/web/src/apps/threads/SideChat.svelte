@@ -47,5 +47,8 @@
   .empty { color: var(--ink-3); font-size: var(--text-label); }
   .m.user { justify-self: end; max-width: 90%; padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.07); }
   .in { flex: none; display: flex; align-items: flex-end; gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); }
+  /* The ring is drawn by the rounded box that holds the field, so it follows that box's radius (the field itself shows none). */
+  :global(:root[data-input="key"]) .in:has(:global(:focus-visible)) { outline: 2px solid var(--accent); outline-offset: -2px; }
+  :global(:root[data-input="key"]) .in :global(.side-input:focus-visible) { outline: none; }
   :global(.side-input) { flex: 1; padding: var(--s-3); font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
 </style>
