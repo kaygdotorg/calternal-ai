@@ -197,15 +197,15 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
 
     const pluginsBefore = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
     assert.equal(pluginsBefore.status, 200, JSON.stringify(pluginsBefore.body));
-    const notesPlugin = pluginsBefore.body.data.plugins.find((plugin) => plugin.manifest.id === "notes");
-    const insightsPlugin = pluginsBefore.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights");
+    const notesPlugin = pluginsBefore.body.data.plugins.find((plugin) => plugin.manifest.id === "calternal-notes");
+    const insightsPlugin = pluginsBefore.body.data.plugins.find((plugin) => plugin.manifest.id === "calternal-notes-insights");
     assert.equal(notesPlugin.enabled, true);
     assert.equal(insightsPlugin.enabled, false);
 
     // Preview uses fixed fixture text and remains available before activation.
     const preview = await operation(server, server.ownerToken, "plugins.preview", {
       space_id: server.personal,
-      plugin_id: "notes-insights",
+      plugin_id: "calternal-notes-insights",
     });
     assert.equal(preview.status, 200, JSON.stringify(preview.body));
     assert.equal(preview.body.data.preview, true);
@@ -213,14 +213,14 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.match(preview.body.data.view.source, /^Row\(\[Metric\("Words"/);
 
     const stillDisabled = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
-    assert.equal(stillDisabled.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights").enabled, false);
+    assert.equal(stillDisabled.body.data.plugins.find((plugin) => plugin.manifest.id === "calternal-notes-insights").enabled, false);
     const summarizeDenied = await operation(server, server.ownerToken, "notes-insights.summarize", { space_id: server.personal, id: note.id });
     assert.equal(summarizeDenied.status, 403);
     assert.equal(summarizeDenied.body.error.code, "forbidden");
 
     const enable = await operation(server, server.ownerToken, "plugins.enable", {
       space_id: server.personal,
-      plugin_id: "notes-insights",
+      plugin_id: "calternal-notes-insights",
     });
     assert.equal(enable.status, 200, JSON.stringify(enable.body));
     assert.equal(enable.body.data.plugin.enabled, true);
@@ -240,7 +240,7 @@ test("Notes and the trusted TypeScript extension work through a disposable real 
     assert.equal(afterRestart.body.data.note.title, "Renamed integration note");
     assert.equal(afterRestart.body.data.note.markdown, "Hello world\n");
     const enabledAfterRestart = await operation(server, server.ownerToken, "plugins.list", { space_id: server.personal });
-    assert.equal(enabledAfterRestart.body.data.plugins.find((plugin) => plugin.manifest.id === "notes-insights").enabled, true);
+    assert.equal(enabledAfterRestart.body.data.plugins.find((plugin) => plugin.manifest.id === "calternal-notes-insights").enabled, true);
     const historyAfterRestart = await operation(server, server.ownerToken, "notes.history", { space_id: server.personal, id: note.id });
     assert.equal(historyAfterRestart.body.data.versions.length, 2);
   } finally {

@@ -71,7 +71,7 @@ fn agent_tokens_modes_grants_and_discards_publish_before_acknowledgement() {
         space: space.clone(),
         job: id.clone(),
         mode: AgentMode::LeastAccess,
-        source_app: "notes".into(),
+        source_app: "calternal-notes".into(),
         grants: vec![],
     };
     count.store(0, Ordering::SeqCst);

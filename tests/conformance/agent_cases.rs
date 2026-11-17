@@ -63,8 +63,8 @@ async fn agent_operations_hide_foreign_jobs_spaces_and_machine_settings() {
                     json!({"job_id":missing,"retry_settings":{"provider_errors":false,"subscription_limits":false}}),
                 ),
                 "access.request" => (
-                    json!({"job_id":job,"app":"notes"}),
-                    json!({"job_id":missing,"app":"notes"}),
+                    json!({"job_id":job,"app":"calternal-notes"}),
+                    json!({"job_id":missing,"app":"calternal-notes"}),
                 ),
                 "access.approve" => (
                     json!({"job_id":job,"approval_id":missing}),
@@ -104,7 +104,7 @@ async fn access_approval_requires_the_person_and_rotates_into_explicit_resume() 
         .op(
             1,
             "access.request",
-            json!({"job_id":job,"app":"notes","write":false}),
+            json!({"job_id":job,"app":"calternal-notes","write":false}),
         )
         .await;
     request.ok();
@@ -194,8 +194,8 @@ async fn source_app_requires_an_enabled_plugin_or_a_native_operation_group() {
     let f = Fixture::new().await;
     for (source, status) in [
         ("invented-app", 400),
-        ("notes-insights", 403),
-        ("notes", 200),
+        ("calternal-notes-insights", 403),
+        ("calternal-notes", 200),
         ("spaces", 200),
     ] {
         let answer=f.op(1,"agent.run",json!({"space_id":f.spaces[0],"thread_id":uuid::Uuid::now_v7(),"source_app":source,"prompt":"source scope probe"})).await;

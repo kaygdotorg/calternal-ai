@@ -25,4 +25,4 @@ if (!output || output.imports.length !== 0) {
 const bundle = await readFile("dist/worker.js");
 const digest = createHash("sha256").update(bundle).digest("hex");
 await writeFile("dist/worker.js.sha256", `${digest}\n`, "utf8");
-console.log(`notes-insights worker sha256: ${digest}`);
+console.log(`calternal-notes-insights worker sha256: ${digest}`);

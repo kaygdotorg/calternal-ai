@@ -8,10 +8,10 @@ use calternal_core::ManifestV1;
 use calternal_server::plugins::{Plugin, TrustedEntry, file_sha256};
 use serde_json::json;
 
-/// The shipped notes-insights manifest, parsed by the real host library.
+/// The shipped calternal-notes-insights manifest, parsed by the real host library.
 pub fn insights_manifest() -> ManifestV1 {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../plugins/notes-insights/manifest.json");
+        .join("../../plugins/calternal-notes-insights/manifest.json");
     calternal_plugin_host::parse_manifest(&std::fs::read(path).unwrap()).unwrap()
 }
 
@@ -52,7 +52,7 @@ pub fn plugin(manifest: ManifestV1, worker: Option<&Path>, default_enabled: bool
 /// `on_invoke` runs with `f` (the frame), `m` (its message) and `send(frame)`;
 /// `on_reply` additionally sees the stored invoke message as `inv`. Helpers:
 /// `call(f, method, input)` sends a host call; `done(f, data)` completes;
-/// `stats(text)` builds a notes-insights result for `text`.
+/// `stats(text)` builds a calternal-notes-insights result for `text`.
 pub fn worker(dir: &Path, on_invoke: &str, on_reply: &str) -> PathBuf {
     std::fs::create_dir_all(dir).unwrap();
     let path = dir.join("worker.js");

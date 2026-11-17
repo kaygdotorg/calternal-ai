@@ -43,7 +43,7 @@ This first runs both gates, builds Rust documentation without dependencies, then
 - `reference-docs/rust/doc/calternal_bindings/index.html` for synchronous UniFFI validation scaffolding.
 - `reference-docs/rust/doc/cl/index.html` for the CLI crate.
 - `reference-docs/typescript/plugin-sdk/index.html` for the SDK's exported API.
-- `reference-docs/typescript/notes-insights/index.html` for the worker module (no named public API today).
+- `reference-docs/typescript/calternal-notes-insights/index.html` for the worker module (no named public API today).
 
 Rustdoc also emits pages for the contract exporter and optional bindings generator. Delete `reference-docs/` to clean all generated documentation and its Cargo cache. Do not check generated reference HTML into Git.
 

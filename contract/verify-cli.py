@@ -118,7 +118,7 @@ def smoke(data_dir, spawn):
         assert len(history) == 2 and {v['markdown'] for v in history} == {'Initial Markdown\n', 'Updated Markdown\n'}
         cl('notes', 'get', note_id, principal='guest', error='not_found')
         cl('notes', 'create', '--space', shared, '--title', 'Forbidden', '--markdown', 'read only', principal='guest', error='forbidden')
-        cl('plugins', 'enable', 'notes-insights', '--space', shared, principal='guest', error='forbidden')
+        cl('plugins', 'enable', 'calternal-notes-insights', '--space', shared, principal='guest', error='forbidden')
         assert cl('notes', 'list', '--space', shared, principal='guest')['ok']
         assert cl('plugins', 'list', '--space', private)['ok']
         saved = cl('drafts', 'save', note_id, '--space', private, '--text', 'Private unsent text')['data']['record']

@@ -337,7 +337,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g6",
         "plugins.enable",
-        json!({"space_id": srv.shared, "plugin_id": "notes-insights"}),
+        json!({"space_id": srv.shared, "plugin_id": "calternal-notes-insights"}),
     );
     assert_eq!(r.status, 403);
     // Caller ids in input are rejected as unknown fields.
@@ -722,15 +722,15 @@ fn static_dir_serves_files_without_spa_fallback() {
 #[test]
 fn plugin_enable_disable_receipts_survive_opposite_mutation() {
     let d = TempDir::new("plugrcpt");
-    let root = d.0.join("plugins/notes");
+    let root = d.0.join("plugins/calternal-notes");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(
         root.join("manifest.json"),
-        r#"{"id":"notes","name":"Notes","icon":"note","version":"0.1.0","api_version":1,"kinds":[{"id":"notes","storage":{"folder":"Notes"},"claimed_text":true,"schema":{"type":"object"}}],"operations":[],"collections":[],"views":[],"attention":[],"settings":[],"schedules":[],"webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls":[]}"#,
+        r#"{"id":"calternal-notes","name":"Notes","icon":"note","version":"0.1.0","api_version":1,"kinds":[{"id":"notes","storage":{"folder":"Notes"},"claimed_text":true,"schema":{"type":"object"}}],"operations":[],"collections":[],"views":[],"attention":[],"settings":[],"schedules":[],"webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls":[]}"#,
     )
     .unwrap();
     let srv = start_full(&d.0.join("data"), None, None, Some(&d.0.join("plugins")));
-    let inp = json!({"space_id": srv.personal, "plugin_id": "notes"});
+    let inp = json!({"space_id": srv.personal, "plugin_id": "calternal-notes"});
     let e1 = op(&srv, &srv.owner, "e1", "plugins.enable", inp.clone());
     assert_eq!(e1.status, 200, "{}", e1.body);
     assert_eq!(e1.body["data"]["plugin"]["enabled"], true);

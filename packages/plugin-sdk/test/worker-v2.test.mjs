@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { validateManifestV1, WorkerRuntimeV2, encodeWorkerFrameV2, parseWorkerFrameV2, MAX_V2_FRAME_BYTES } from '../dist/index.js';
-const manifest = JSON.parse(await readFile(new URL('../../../plugins/notes-insights/manifest.json', import.meta.url)));
+const manifest = JSON.parse(await readFile(new URL('../../../plugins/calternal-notes-insights/manifest.json', import.meta.url)));
 const authority = { account_id:'01932910-0000-7000-8000-000000000001', space_id:'01932910-0000-7000-8000-000000000002', grant:'host-reference' };
 const frame = (id,message) => ({protocol_version:2,invocation_id:id,message});
 const invoke = id => frame(id,{type:'invoke',operation:'notes-insights.summarize',input:{id:'x'},authority});

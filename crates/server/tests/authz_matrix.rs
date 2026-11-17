@@ -246,7 +246,7 @@ impl Fixture {
             "notes.get" | "notes.history" | "notes-insights.summarize" => {
                 json!({"space_id":space,"id":self.note["id"]})
             }
-            _ => json!({"space_id":space,"plugin_id":"notes-insights"}),
+            _ => json!({"space_id":space,"plugin_id":"calternal-notes-insights"}),
         }
     }
 

@@ -251,7 +251,7 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn undeclared_host_call_is_refused_before_any_effect() {
-    // notes-insights declares only read_item; this worker tries to write a note.
+    // calternal-notes-insights declares only read_item; this worker tries to write a note.
     let dir = tmp("undeclared-worker");
     let plugin = insights(
         &dir,
