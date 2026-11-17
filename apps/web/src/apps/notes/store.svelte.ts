@@ -77,9 +77,10 @@ class NotesStore {
       else if (this.saveState !== "saving") { this.conflict = latest; this.saveState = "conflict"; }
     } catch { /* gone or away: the list refresh and the banner tell it */ }
   }
-  private show(n: Note): void { this.view = { id: n.id, text: n.markdown, seq: this.view.seq + 1 }; }
+  private show(n: Note): void { this.typing = false; this.view = { id: n.id, text: n.markdown, seq: this.view.seq + 1 }; }
   /** The person typed: the note is no longer in step with the server. */
-  touch(): void { if (this.saveState === "saved" || this.saveState === "failed" || this.saveState === "waiting") this.saveState = "dirty"; }
+  touch(): void {
+    this.typing = true; if (this.saveState === "saved" || this.saveState === "failed" || this.saveState === "waiting") this.saveState = "dirty"; }
   async refresh(): Promise<void> {
     if (!this.space) return;
     this.list = await this.client.list(this.space.id);
@@ -93,13 +94,20 @@ class NotesStore {
   }
   /** Reloads the private snapshot (the open note's draft, the pending writes): at start and whenever the account feed says it changed. */
   async reloadInput(): Promise<void> {
+    const mine = ++this.inputSeq; // only the newest read may set the state: an older one finishing late must not bring back a draft that was just dropped
     try {
-      this.waiting = await this.input.pending();
+      const waiting = await this.input.pending();
       const n = this.note;
       const d = n ? await this.input.draft(n.spaceId, n.id) : null;
-      this.draft = d && d.text !== n?.markdown ? d : null;
+      if (mine !== this.inputSeq) return;
+      this.waiting = waiting;
+      // A draft is offered only when it is not this editor's own (text kept while typing, dropped by the save) and differs from the saved text.
+      this.draft = d && d.text !== n?.markdown && this.saveState === "saved" && this.view.id === n?.id && !this.typing ? d : null;
     } catch { /* the server is away: what is shown stays */ }
   }
+  private inputSeq = 0;
+  /** True from the first keystroke of this open until the note is opened again: drafts written meanwhile are this editor's own. */
+  typing = false;
   /** Keeps the text being edited as the note's draft (a complete replacement), so a closed tab or a dropped connection loses nothing. */
   async keepDraft(markdown: string): Promise<void> {
     const n = this.note;
@@ -111,7 +119,7 @@ class NotesStore {
     if (!id || !this.space) { this.note = null; return; }
     try {
       this.note = await this.client.get(this.space.id, id);
-      this.show(this.note); this.saveState = "saved"; this.conflict = null;
+      this.show(this.note); this.saveState = "saved"; this.conflict = null; this.typing = false;
       this.error = ""; this.errorCode = "";
       if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
     } catch (e) { this.note = null; this.error = say(e, "open the note"); this.errorCode = e instanceof ServerError ? e.code : ""; }

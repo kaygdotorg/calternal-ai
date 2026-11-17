@@ -42,6 +42,10 @@ try {
   const id = list[0].id;
   let note = (await api("notes.get", { space_id: space, id })).data.note;
   ok(/Hello from the browser/.test(note.markdown), "the server has the saved text");
+  await page.waitForTimeout(800);
+  const drafts = await api("drafts.list", {});
+  console.log("drafts after save:", JSON.stringify(drafts).slice(0, 300));
+  ok(!(drafts.data?.records ?? []).length && !(await page.getByText("unsent draft").isVisible()), "after a save there is no unsent draft left, on the server or on screen");
   // Rename: the heading is the title.
   await page.locator(".cm-h1").first().click(); await page.keyboard.press("End"); await page.keyboard.type(" renamed");
   await page.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
