@@ -116,6 +116,14 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   provider's program in the person's own sandbox home, a persistent volume that follows
   them, so they sign in once. The server process never reads, copies or stores it. Evidence and provider wording:
   `docs/reviews/provider-terms-2026-11-17.md`.
+- One way to run untrusted code (2026-11-17, measured in
+  `docs/measurements/plugin-workers-in-sandboxes.md`): plugin workers run in containers
+  started through the machine role, like agents; about 0.3 ms extra per operation, no
+  network. Plugins never run directly on the server, first-party ones included.
+- In the cloud each person has one microVM, with a container per thread
+  (`docs/measurements/sandbox-hybrid.md`). CPU is shared by weights at both levels.
+- Drafts live until sent or erased, capped by count and size per account. A message queued
+  while offline stays until sent or cancelled; after 7 days it asks before sending.
 
 ## Open
 

@@ -8,8 +8,9 @@ move to the decision record they belong to and leave this list. Terms: see
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| 1 | Sandbox boundary: one microVM per person per space, per workspace, or per person? | Decide from the hybrid measurement (issue #7, report being written) | Cloud agents |
-| 2 | Containers now and microVMs before public sign-up, or containers inside a per-person microVM from the start? | Follow #7's numbers | Cloud agents |
+| 1 | How a plugin reaches the internet: fetch through the server to declared destinations, or filtered network access from its container? | Fetch through the server | Plugin network access |
+| 2 | When to rewrite git history to drop old images | At the next quiet point | Repo size |
+| 3 | Where per-person files live (personal instructions, starred prompts) | The personal space's `.calternal/` folder | Personal instructions |
 
 ## Design rounds
 
