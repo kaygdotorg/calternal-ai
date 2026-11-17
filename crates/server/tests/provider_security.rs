@@ -92,11 +92,30 @@ fn agent_tokens_modes_grants_and_discards_publish_before_acknowledgement() {
     assert_eq!(count.load(Ordering::SeqCst), 2, "mode not protected");
     assert!(jobs.agent_authenticate(&token).unwrap().is_none());
     let approval = jobs.agent_request(&a, "tasks", true).unwrap();
+    support::park_request(&jobs, &space, &id, &approval);
     fail.store(true, Ordering::SeqCst);
-    assert!(jobs.agent_approve(&mut a, &approval).is_err());
+    assert!(
+        jobs.agent_decide(
+            a.actor.account,
+            &approval,
+            "approve",
+            "this_thread",
+            None,
+            |_| Ok(())
+        )
+        .is_err()
+    );
     assert!(jobs.agent_scope(&space, &id).unwrap().grants.is_empty());
     count.store(0, Ordering::SeqCst);
-    jobs.agent_approve(&mut a, &approval).unwrap();
+    jobs.agent_decide(
+        a.actor.account,
+        &approval,
+        "approve",
+        "this_thread",
+        None,
+        |_| Ok(()),
+    )
+    .unwrap();
     assert_eq!(count.load(Ordering::SeqCst), 2, "grant not protected");
     let lease = Uuid::now_v7();
     let machines = directory.spaces.machines();

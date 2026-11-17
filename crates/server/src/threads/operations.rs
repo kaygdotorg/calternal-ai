@@ -35,8 +35,8 @@ pub(super) fn apply<D: Directory>(
         if let Some(item) = saved.item {
             content.materialize(space, item)?;
         }
-        if operation == "threads.delete" {
-            return finish_delete(
+        if matches!(operation, "threads.delete" | "threads.archive") {
+            return finish_lifecycle(
                 st,
                 space,
                 id.ok_or_else(|| Error::not_found("item not found"))?,
@@ -151,7 +151,7 @@ pub(super) fn apply<D: Directory>(
     if item.metadata["deleted"] == true {
         if operation == "threads.delete" {
             content.materialize(space, item.id)?;
-            return finish_delete(st, space, item.id, request, document::view(&item));
+            return finish_lifecycle(st, space, item.id, request, document::view(&item));
         }
         return Err(Error::not_found("item not found"));
     }
@@ -321,45 +321,57 @@ pub(super) fn apply<D: Directory>(
                 Ok(())
             },
         )?;
-        finish_delete(st, space, deleted.id, request, document::view(&deleted))
+        finish_lifecycle(st, space, deleted.id, request, document::view(&deleted))
     } else {
-        content
-            .write(
-                space,
-                Some(item.id),
-                "threads",
-                Some(&item.revision),
-                item.metadata.clone(),
-                bytes.as_bytes(),
-                request,
-                document::view,
-            )
-            .map(|i| document::view(&i))
+        let archived = content.write(
+            space,
+            Some(item.id),
+            "threads",
+            Some(&item.revision),
+            item.metadata.clone(),
+            bytes.as_bytes(),
+            request,
+            document::view,
+        )?;
+        finish_lifecycle(st, space, archived.id, request, document::view(&archived))
     }
 }
 
-/// Cleanup follows the durable tombstone. A failed content commit must never
+/// Cleanup follows the durable archive marker or tombstone. A failed content commit must never
 /// forget a saved mode. Receipt replay and a fresh delete of an existing
 /// tombstone both finish cleanup, even after the original receipt expires.
-fn finish_delete<D: Directory>(
+fn finish_lifecycle<D: Directory>(
     st: &Shared<D>,
     space: SpaceId,
     id: Uuid,
     request: Request<'_>,
     result: Value,
 ) -> Result<Value, Error> {
-    st.store
+    let mut recipients = Vec::new();
+    let result = st
+        .store
         .content()
         .admit_item(space, id, request, |current, saved| {
             if current.kind != "threads" {
                 return Err(Error::not_found("item not found"));
             }
-            if current.metadata["deleted"] != true {
+            if current.metadata["deleted"] != true && current.metadata["archived"] != true {
                 return saved
                     .ok_or_else(|| Error::conflict("thread changed before deletion cleanup"));
             }
-            st.jobs
+            if current.metadata["archived"] == true
+                && let Some(job) = st.jobs.thread_latest(&space.to_string(), &id.to_string())?
+                && !job.state.is_final()
+            {
+                st.jobs.cancel(&job.space, &job.id)?;
+            }
+            recipients = st
+                .jobs
                 .agent_delete_thread(&space.to_string(), &id.to_string())?;
             Ok(saved.unwrap_or(result))
-        })
+        })?;
+    for account in recipients {
+        st.inputs.invalidate(account)?;
+    }
+    Ok(result)
 }

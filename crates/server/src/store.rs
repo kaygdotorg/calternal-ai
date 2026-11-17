@@ -100,13 +100,6 @@ fn note(item: &Item) -> Note {
     }
 }
 impl Store {
-    /// Clone the validated userdata root for bounded instruction reads without holding
-    /// a content lock. The caller must authorize the UUID-selected space.
-    /// Cost: one path clone; no file I/O or SQLite.
-    pub fn instruction_root(&self) -> std::path::PathBuf {
-        self.content.userdata_root()
-    }
-
     /// The pinned installation UUID the root markers carry. Cost: a copy.
     pub fn installation(&self) -> Uuid {
         self.installation

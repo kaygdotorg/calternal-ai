@@ -129,6 +129,7 @@ pub async fn dispatch<D: Directory>(
                 let id = secrets
                     .request(&owner, &name, &i.label, &i.reason, &actor)
                     .map_err(host_error)?;
+                state.inputs.invalidate(p.id)?;
                 to_value(SecretsRequestResult {
                     request_id: id.0.to_string(),
                 })
@@ -144,7 +145,14 @@ pub async fn dispatch<D: Directory>(
                 if i.name.is_empty() {
                     let id = uuid::Uuid::parse_str(&i.request_id)
                         .map_err(|_| Error::not_found("secret not found"))?;
-                    secrets.cancel(&owner, &RequestId(id), &actor)
+                    let recipient = secret_recipient(&*secrets, &owner, id)?;
+                    secrets
+                        .cancel(&owner, &RequestId(id), &actor)
+                        .map_err(host_error)?;
+                    if let Some(account) = recipient {
+                        state.inputs.invalidate(account)?;
+                    }
+                    Ok(())
                 } else {
                     let name = SecretName::new(&i.name).map_err(host_error)?;
                     secrets.delete(&owner, &name, &actor)
@@ -262,11 +270,15 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
         )?;
         let request = uuid::Uuid::parse_str(&input.request_id)
             .map_err(|_| Error::not_found("secret not found"))?;
+        let recipient = secret_recipient(&*store(&state)?, &owner, request)?;
         let value = SecretValue::new(input.value.into_bytes()).map_err(host_error)?;
         let actor = Actor { account, via: None };
         let handle = store(&state)?
             .provide(&owner, &RequestId(request), value, &actor)
             .map_err(host_error)?;
+        if let Some(account) = recipient {
+            state.inputs.invalidate(account)?;
+        }
         Ok::<_, Error>(SecretsProvideResult {
             name: handle.name.as_str().to_owned(),
             version: handle.version,
@@ -280,6 +292,40 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
     }
 }
 
+/// Resolve the stable account attribution of a stored secret prompt.
+pub(crate) fn request_actor(
+    text: &str,
+) -> Option<(calternal_types::AccountId, Option<uuid::Uuid>)> {
+    if let Some((account, thread)) = text
+        .strip_prefix("an agent for ")
+        .and_then(|v| v.split_once(", in thread "))
+    {
+        return Some((
+            calternal_types::AccountId::parse(account).ok()?,
+            Some(uuid::Uuid::parse_str(thread).ok()?),
+        ));
+    }
+    let account = text
+        .strip_prefix("plugin ")
+        .and_then(|v| v.rsplit_once(" for "))
+        .map_or(text, |(_, account)| account);
+    Some((calternal_types::AccountId::parse(account).ok()?, None))
+}
+
+fn secret_recipient(
+    store: &dyn SecretStore,
+    owner: &Owner,
+    id: uuid::Uuid,
+) -> Result<Option<calternal_types::AccountId>, Error> {
+    Ok(store
+        .pending(owner)
+        .map_err(host_error)?
+        .into_iter()
+        .find(|r| r.id == id)
+        .and_then(|request| request_actor(&request.requested_by))
+        .map(|(account, _)| account))
+}
+
 /// Adapter for the plugin host's `request_secret_handle` call. Its caller is the
 /// broker in `plugins::broker` (plugin-host lane, issue #9 records the hand-off),
 /// which must pass the space's UUID owner, not the content-space key.
@@ -289,13 +335,15 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
 /// `owner`. Returns `{"handle": "sh-…"}` when the secret exists. Otherwise it
 /// records one pending request (unless one is already pending) for the trusted
 /// prompt and refuses, so the plugin retries after the person supplies it.
-/// Cost: one owner-database read; one fsync'd insert when a request is created.
+/// Cost: one handle lookup, a pending-owner scan on a miss, and a protected
+/// secret-store insert plus account invalidation when creating a prompt.
 pub fn plugin_handle(
     secrets: &dyn SecretStore,
     owner: &Owner,
     actor: &Actor,
     plugin: &str,
     name: &str,
+    invalidate: impl FnOnce() -> Result<(), calternal_plugin_host::Error>,
 ) -> Result<Value, calternal_plugin_host::Error> {
     use calternal_plugin_host::Error as E;
     let full = SecretName::for_plugin(plugin, name).map_err(|_| E::Invalid)?;
@@ -305,11 +353,16 @@ pub fn plugin_handle(
         }
         Err(calternal_secrets::Error::NotFound) => {
             let pending = secrets.pending(owner).map_err(|_| E::Refused)?;
-            if !pending.iter().any(|r| r.name == full.as_str()) {
+            if !pending.iter().any(|r| {
+                r.name == full.as_str()
+                    && request_actor(&r.requested_by)
+                        .is_some_and(|(account, _)| account == actor.account)
+            }) {
                 let reason = format!("The {plugin} plugin asks for its \"{name}\" secret.");
                 secrets
                     .request(owner, &full, name, &reason, actor)
                     .map_err(|_| E::Refused)?;
+                invalidate()?;
             }
             Err(E::Refused)
         }

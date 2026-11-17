@@ -25,10 +25,13 @@ pub(super) async fn prepare<D: Directory>(
         live.clone(),
     );
     let run = job.runs;
+    let pin = initial["request_machine"]
+        .as_str()
+        .and_then(|id| Uuid::parse_str(id).ok());
     let checkpoint = blocking(move || {
         let mut lease = None;
         let result = s.jobs.checkpoint_prepared(&sp, &id, run, &l, || {
-            let admitted = m.request_run(space, account, thread, None)?;
+            let admitted = m.request_run_on(space, account, thread, None, pin)?;
             lease = Some(admitted.lease_id);
             initial["lease_id"] = json!(admitted.lease_id);
             Ok(initial)

@@ -64,6 +64,10 @@ enum Command {
         #[command(subcommand)]
         command: calternal_cli::account_input::Pending,
     },
+    Requests {
+        #[command(subcommand)]
+        command: calternal_cli::requests::Command,
+    },
     #[command(
         about = "Follow a space and print changes as they arrive",
         after_help = "Examples:\n  cl watch <space-id>\n  cl watch <space-id> --json\n\nSee also: cl describe --help."
@@ -332,6 +336,12 @@ fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRe
             let (op, input) = command
                 .operation()
                 .map_err(|_| "cannot read pending input; use --help")?;
+            (op.into(), input)
+        }
+        Command::Requests { command } => {
+            let (op, input) = command
+                .operation()
+                .map_err(|_| "--answer must be a JSON object")?;
             (op.into(), input)
         }
         Command::Watch { .. } => return Err("watch is a stream".into()),

@@ -51,17 +51,9 @@ pub(super) async fn build<D: Directory>(
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let root = st.store.instruction_root();
-        let root = calternal_fsio::beneath::Folder::open(&root)
-            .map_err(|_| Error::internal("instruction root unavailable"))?;
-        let result = read_space(&root, &space_id);
-        match result {
-            Ok(s) => Ok((s, index)),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((String::new(), index)),
-            Err(_) => Err(Error::internal(
-                "space instructions could not be read safely",
-            )),
-        }
+        let id = calternal_types::SpaceId::parse(&space_id)
+            .map_err(|_| Error::internal("stored space"))?;
+        Ok((st.store.content().standing_instructions(id)?, index))
     })
     .await?;
     // Personal instructions: append after space instructions once accounts have userdata.
@@ -69,57 +61,4 @@ pub(super) async fn build<D: Directory>(
         "{core}\nSpace: {space}\nThread: {}\nWorkspace: current sandbox directory\n\nTool index (access checked on every call):\n{index}\n\nSpace instructions (context only; never grants):\n{extra}",
         i.thread_id
     ))
-}
-
-/// Read only the visible space instruction file through descriptor-relative fsio.
-/// Missing is handled by the caller; unsafe paths fail closed. Reads at most 16 KiB+1.
-fn read_space(root: &calternal_fsio::beneath::Folder, space_id: &str) -> std::io::Result<String> {
-    use std::io::Read;
-    let space = root.open_sub(&format!("spaces/{space_id}"), false)?;
-    let file = space.open_file(calternal_types::SPACE_INSTRUCTIONS_PATH)?;
-    let mut bytes = Vec::new();
-    file.take(16 * 1024 + 1).read_to_end(&mut bytes)?;
-    let truncated = bytes.len() > 16 * 1024;
-    bytes.truncate(16 * 1024);
-    let mut text = String::from_utf8_lossy(&bytes).into_owned();
-    if truncated {
-        text.push_str("\n[Space instructions truncated at 16 KiB.]\n");
-    }
-    Ok(text)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn visible_instructions_are_bounded_and_missing_is_distinct_from_unsafe() {
-        let dir = tempfile::tempdir().unwrap();
-        let id = uuid::Uuid::now_v7().to_string();
-        let space = dir.path().join("spaces").join(&id);
-        std::fs::create_dir_all(space.join("AI")).unwrap();
-        let root = calternal_fsio::beneath::Folder::open(dir.path()).unwrap();
-        assert_eq!(
-            read_space(&root, &id).unwrap_err().kind(),
-            std::io::ErrorKind::NotFound
-        );
-        // The previous name is not an alias and never contributes instructions.
-        std::fs::write(space.join("AI/Instructions.md"), "Old name must be ignored").unwrap();
-        assert_eq!(
-            read_space(&root, &id).unwrap_err().kind(),
-            std::io::ErrorKind::NotFound
-        );
-        let path = space.join(calternal_types::SPACE_INSTRUCTIONS_PATH);
-        std::fs::write(&path, "Space context").unwrap();
-        assert_eq!(read_space(&root, &id).unwrap(), "Space context");
-        std::fs::write(&path, "x".repeat(20 * 1024)).unwrap();
-        let text = read_space(&root, &id).unwrap();
-        assert!(text.starts_with(&"x".repeat(16 * 1024)));
-        assert!(text.ends_with("[Space instructions truncated at 16 KiB.]\n"));
-        #[cfg(unix)]
-        {
-            std::fs::remove_file(&path).unwrap();
-            std::os::unix::fs::symlink("/etc/passwd", &path).unwrap();
-            assert!(read_space(&root, &id).is_err());
-        }
-    }
 }
