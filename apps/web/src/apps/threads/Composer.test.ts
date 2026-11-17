@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import Composer from "./Composer.svelte";
 import type { ProviderOption, ThreadSummary } from "./model";
 
-const thread: ThreadSummary = { id: "t", title: "T", parentId: null, state: "idle", workspace: "w", updatedAt: 0, provider: "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "dev-02", mode: "sandboxed" }, messageCount: 0 };
+const thread: ThreadSummary = { id: "t", spaceId: "s", title: "T", parentId: null, state: "idle", workspace: "w", updatedAt: 0, provider: "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "dev-02", mode: "sandboxed" }, messageCount: 0 };
 const providers: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "sonnet-5-5", name: "Sonnet 5.5" }, { id: "opus-5-5", name: "Opus 5.5" }] }];
 const props = (o = {}) => ({ thread, providers, machines: ["dev-02", "laptop"], onsend() {}, onstop() {}, onprovider() {}, onpermission() {}, onrunson() {}, ...o });
 

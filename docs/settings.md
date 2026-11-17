@@ -6,9 +6,11 @@ Decided with kayg, 2026-11-17. Terms: [glossary](glossary.md).
 
 - Settings is a plugin and an app in the app switcher, with the same layout as every
   other app: sections in the sidebar, the page in the middle card.
-- Two groups: **User** (yours, follows you) and **Admin** (the space, and the server for
-  its operator). The model is a modern Apple settings window such as Xcode's, not Notes'
-  or Reminders'.
+- Three sections (2026-11-18): **User** (yours, follows you), **Admin** (the server, for its
+  operator) and, after them, **the current space** (members, invites, secrets, instructions
+  in `AI/AGENTS.md`, plugins; its name is the section's heading). The model is a modern Apple settings window such as Xcode's, not Notes'
+  or Reminders'. On a desktop there is no sheet for settings: the account picture and the
+  app switcher open this app, and every page, wallpaper and fonts included, is a page of it.
 - No search box inside Settings; the palette finds every setting.
 - Every setting is an operation. An agent changing one follows the same rules as Approve
   for me: reversible changes such as appearance and shortcuts just happen; anything about
@@ -84,3 +86,18 @@ Each is at `https://unsplash.com/photos/<Photo ID>`. The default is Geronimo Giq
 
 - The app switcher as a three-item capsule at the bottom of the middle card, always
   visible by default, which frees the sidebar's footer for an app's own tabs.
+
+## Decided 2026-11-18
+
+- Everyone has a personal space from sign-up; the fixtures start with one (and a second, to
+  show the switcher). A space's standing instructions are `AI/AGENTS.md` (only Managers and
+  the Owner may edit it).
+- The default wallpaper is painted on the first paint from tiny pre-blurred renditions that
+  `index.html` carries, from the defaults and with no stored setting; the blurred picture
+  replaces it when ready.
+- **Being compared before deciding (temporary, Settings > Appearance > Compare, removed after
+  the decision):** the readability floor over the wallpaper, 7:1 with text that flips (current)
+  against 4.5:1 that shows more wallpaper; and light mode, the derived lighter photo (current)
+  against Craft's nearly opaque surface, 0.92 white over blur, on the unchanged photo. Each
+  flips live on all eight wallpapers.
+- Motion follows the system's reduce-motion setting, plus an **Animations** off switch.

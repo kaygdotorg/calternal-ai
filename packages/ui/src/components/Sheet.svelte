@@ -1,9 +1,9 @@
 <script lang="ts">
-  // A modal sheet: slides up from the bottom (a phone), in from the side, or down from the top edge (`top`, the palette). A real dialog: `label` is required, focus moves in and is
+  // A modal sheet: slides up from the bottom (a phone), in from the side, down from the top edge (`top`, the palette), or centred in the window (`center`, onboarding: it belongs to no region). A real dialog: `label` is required, focus moves in and is
   // trapped, Escape and the scrim close it, and focus returns to where it came from. The scrim dims the page; the sheet is glass.
   import type { Snippet } from "svelte";
   import Panel from "./Panel.svelte";
-  let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right" | "top"; children: Snippet } = $props();
+  let { open, label, onclose, side = "bottom", children }: { open: boolean; label: string; onclose: () => void; side?: "bottom" | "right" | "top" | "center"; children: Snippet } = $props();
   let box = $state<HTMLElement>();
   // Drawn at the end of <body>, outside every stacking context of the app (a card with a transform would otherwise trap the sheet beneath the bottom bar).
   const portal = (node: HTMLElement) => {
@@ -66,6 +66,9 @@
   :global(.sheet.right) { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
   /* The palette: centred under the top edge. */
   :global(.sheet.top) { top: 10dvh; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: top center; translate: -50% 0; max-height: 80dvh; }
+  /* Centred: a window-level dialog that sits over the whole app, not in a sidebar. */
+  :global(.sheet.center) { top: 50%; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: center; translate: -50% -50%; max-height: 88dvh; }
+  :global(.sheet.center[data-surface]:not([data-ready])) { translate: -50% calc(-50% + var(--s-8)); }
   :global(.sheet.top[data-surface]:not([data-ready])) { translate: -50% calc(var(--s-8) * -1); }
   :global(.sheet[data-surface]:not([data-ready])) { translate: 0 var(--s-8); }
   :global(.sheet.right[data-surface]:not([data-ready])) { translate: var(--s-8) 0; }

@@ -50,7 +50,10 @@ const GAIN: Record<Scheme, number> = { light: 0.25, dark: 0.33 };
 const C_CAP = 0.05, A_MAX = 0.9, MARGIN = 0.02, FLIP_GAIN = 0.12;
 /** Headroom over each target for what the model does not see: the grain, the JPEG, and pixels between the 48 by 48 samples. */
 const HEAD = 0.35;
-export const TARGET = { ink: 7, ink2: 5.5, ink3: 4.5 } as const;
+export const TARGET: { ink: number; ink2: number; ink3: number } = { ink: 7, ink2: 5.5, ink3: 4.5 };
+/** The readability floors the veil is solved to: `current` (7, 5.5, 4.5) or `low` (4.5, 4, 3), which shows more of the picture. `low` exists for the owner's side-by-side comparison only (Settings, Appearance, Compare). */
+export const FLOORS = { current: { ink: 7, ink2: 5.5, ink3: 4.5 }, low: { ink: 4.5, ink2: 4, ink3: 3 } } as const;
+export function setFloor(f: keyof typeof FLOORS): void { Object.assign(TARGET, FLOORS[f]); }
 
 // ---- OKLCH, for the veil's hue ----
 const toOk = ([r, g, b]: RGB): { L: number; c: number; h: number } => {
