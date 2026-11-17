@@ -7,6 +7,8 @@
   import MentionPicker from "../../palette/MentionPicker.svelte";
   import { blockPool, mentionPool, notePool, pick, tagPool, type Mention } from "../../palette/mentions";
   import { onMount } from "svelte";
+  import { serverMode } from "../../server/client";
+  import { notes as store } from "./store.svelte";
   import type { BlockEditor, Block, Trigger } from "../../../../../packages/editor/src/block/index";
   let { id, text, onedit, onheadings, label = "Note", notes = [], threads = [], agents = [], tags = [] }: { id: string; text: string; onedit: (text: string) => void; onheadings?: (h: { level: number; text: string; from: number }[]) => void; label?: string; notes?: { id: string; title: string }[]; threads?: { id: string; title: string }[]; agents?: string[]; tags?: string[] } = $props();
   let host = $state<HTMLElement>();
@@ -19,8 +21,24 @@
   let sel = $state(0);
   let dismissed = $state<number | null>(null); // the trigger position the person closed with Escape
   const others = $derived(notes.filter((n) => n.id !== id));
+  // In server mode `[[` and `#` ask the space's index as the person types (title and tag lookups, one request per pause), so the list is never capped by what the sidebar holds; the answer replaces the list.
+  let remote = $state<Mention[]>([]);
+  $effect(() => {
+    const t = trig;
+    if (!serverMode() || !t || (t.kind !== "link" && t.kind !== "tag") || !store.space) { remote = []; return; }
+    const space = store.space.id, q = t.query, kind = t.kind;
+    const h = setTimeout(async () => {
+      try {
+        remote = kind === "link"
+          ? (await store.client.lookupNotes(space, q)).filter((n) => n.id !== id).map((n): Mention => ({ id: `i:${n.id}`, kind: "item", label: n.title, sub: "Note", insert: n.target ? `[${n.title}](<${n.target}>)` : `[[${n.title}]]` }))
+          : tagPool((await store.client.lookupTags(space, q)).map((x) => x.name), q);
+      } catch { remote = []; }
+    }, 120);
+    return () => clearTimeout(h);
+  });
   const groups = $derived.by(() => {
     if (!trig || trig.from === dismissed) return [];
+    if (serverMode() && (trig.kind === "link" || trig.kind === "tag")) return pick(remote, trig.query, 8);
     const pool = trig.kind === "mention" ? mentionPool(agents, threads, others) : trig.kind === "link" ? notePool(others) : trig.kind === "tag" ? tagPool(tags, trig.query) : blockPool();
     return pick(pool, trig.query, trig.kind === "mention" ? 4 : 8);
   });

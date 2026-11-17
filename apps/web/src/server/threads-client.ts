@@ -47,7 +47,7 @@ export class ServerThreads implements ThreadsClient {
   /** The shell's space list is the server's, once: until it is, the current space is a fixture id the server has never heard of. */
   private spacesLoaded: Promise<void> | null = null;
   private loadSpaces(): Promise<void> {
-    return (this.spacesLoaded ??= this.server.spaces.list().then((r) => { spaces.setList(r.spaces.map((s) => ({ id: s.id, name: s.name }))); if (!spaces.list.some((s) => s.id === spaces.currentId)) spaces.switchTo(spaces.list[0]!.id); }).catch(() => { this.spacesLoaded = null; }));
+    return (this.spacesLoaded ??= spaces.load().then(() => { if (!spaces.list.some((s) => s.id === spaces.currentId)) spaces.switchTo(spaces.list[0]!.id); }).catch(() => { this.spacesLoaded = null; }));
   }
 
   private known(id: string): Choices { return this.choices.get(id) ?? {}; }

@@ -2,18 +2,13 @@
   // The Machines page on the real server: your machines with their state, where threads run on each (sandboxed or direct: `machines.set`), stop sending work (drain) and revoke, and "Add a machine", which
   // makes a one-use enrollment code to give to that machine (`calternal machine enroll --server <this server> --code <code>`). Adding by SSH has no server operation, so that flow is not offered.
   import { Button, Capsule } from "@calternal/ui";
-  import { ServerError, server } from "../../server/client";
+  import { server } from "../../server/client";
   import { say } from "../../server/say";
   import "./panel.css";
   interface Machine { id: string; name: string; os: string; arch: string; direct: boolean; state: "online" | "draining" | "offline" | "revoked" }
   let loaded = $state(false), machines = $state<Machine[]>([]), error = $state(""), code = $state<{ code: string; expires_ms: number } | null>(null), busy = $state(false);
   const STATE: Record<string, string> = { online: "Online", draining: "Not taking new work", offline: "Offline", revoked: "Revoked" };
-  async function call<T>(path: string, body?: unknown): Promise<T> {
-    const res = await server.request(`/api/v1/machines${path}`, { method: body === undefined ? "GET" : "POST", headers: body === undefined ? {} : { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-    const j = (await res.json().catch(() => ({}))) as { error?: { message?: string } } & T;
-    if (!res.ok) throw new ServerError(res.status === 401 ? "unauthorized" : res.status === 403 ? "forbidden" : res.status === 404 ? "not_found" : res.status === 409 ? "conflict" : res.status < 500 ? "invalid_input" : "internal", j.error?.message ?? "", res.status);
-    return j;
-  }
+  const call = <T,>(path: string, body?: unknown): Promise<T> => server.json<T>(`/api/v1/machines${path}`, { body });
   async function load() { try { machines = (await call<{ machines: Machine[] }>("")).machines.filter((m) => m.state !== "revoked"); error = ""; loaded = true; } catch (e) { error = say(e); } }
   async function act(f: () => Promise<unknown>) { busy = true; try { await f(); error = ""; } catch (e) { error = say(e); } await load(); busy = false; }
   void load();

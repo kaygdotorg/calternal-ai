@@ -352,23 +352,16 @@ Shell states: **reconnecting** (any call or stream that cannot reach the server:
 
 | Page | Control | Operation needed |
 | --- | --- | --- |
-| Account | Name (edit) | `account.set_profile` (name) |
 | Account | Connected provider accounts | an operation listing and disconnecting provider accounts |
 | Agents | Every control (retry, snooze, sandbox idle time, decision service, defaults) | `agent.settings` exists but its fields do not map to these controls yet; needs the list of settings and their bounds |
 | Plugins (user) | Installed / available catalogue, per-plugin options | `plugins.install`, `plugins.uninstall`, a plugin's declared settings read and write |
-| Members and roles | Names (rows show an id prefix) | `spaces.members` returning display names |
-| Members and roles | Add a person, Add a group | `spaces.add_member` (by person), group membership operations (ADR 0060) |
-| Members and roles | Roles (the capability sets) | `roles.list` (ADR 0058) |
 | Members and roles | Transfer ownership | none in the UI yet (`spaces.transfer` exists; no control built) |
-| Invites | Whole page: create, open, revoke, revoke all | `invites.create`, `invites.list`, `invites.revoke` (ADR 0059) |
 | Secrets | Delete one, delete all | `secrets.revoke` exists; no control yet for space secrets by name |
 | Instructions and defaults | Instructions (AI/AGENTS.md), default look | space file read/write, space settings |
 | Space plugins | Turn off every plugin | none needed; not built (one `plugins.disable` per plugin) |
 | Machines | Add by SSH (guided flow) | server-side SSH enrollment; the enrollment code replaces it |
-| Admin | Groups and plans | `groups.list/create/delete`, group limits |
 | Admin | Machine pool | `pool.list`, `pool.drain` |
 | Admin | Storage | `storage.status` for the three roots |
-| Admin | Server settings, people, invites by the operator | `people.invite`, `people.manage`, `server.settings` operations |
 | Shell | Personal space | server creates it at sign-up (then delete `withPersonal` in `spaces.svelte.ts`) |
 
 ## First use, failures, accessibility, light wallpapers (2026-11-18)
@@ -386,8 +379,28 @@ Development-host numbers (dev-02, debug server, Chromium): typing in the 10,000-
 
 | Page | Control | Operation needed |
 | --- | --- | --- |
-| Notes | Delete to trash, restore, empty trash | `notes.delete`, `notes.restore`, `notes.trash.list` (a note is a file; trash is `.trash`) |
-| Notes | Rename from the list (without opening) | `notes.rename` (today renaming is editing the first heading) |
-| Notes | `#` tag picker | `notes.tags` (tags in use in the space); hidden in server mode |
 | Notes | `@` people | a members-with-names operation (also needed for Members); only agents and threads are offered |
 | Notes | Live co-editing | rooms; until then saves are whole-note with a revision check |
+
+## Start-up, people, Notes lists, adapter clean-up (2026-11-18)
+
+**Start-up in server mode (`apps/web/e2e/startup-server.mjs`, dev-02, median of 9 loads, ready = `data-ready`, the shell painted).** The shell now paints at once from a small record of what this device knows (account, capability names, spaces; `server/cache.ts`, under a day old, cleared by sign-out and by a refused session) and the server's answer confirms it a round trip later; a first visit, a signed-out device or an old record still waits for the server (no flash of the wrong screen). The four checks (session, protocol, who, spaces) run in parallel, not one after another, and begin before the fonts finish.
+
+| | before | after |
+| --- | --- | --- |
+| warm, no added latency | 254 ms | 63 ms |
+| cold, no added latency | 316 ms | 200 ms |
+| warm, +100 ms each way | 851 ms | 62 ms |
+| cold, +100 ms each way | 1428 ms | 943 ms |
+
+Fixtures are unchanged (first paint 108 vs 108-112 ms, interleaved). Known limit: a device whose session was revoked elsewhere paints the app from its record for one round trip, then turns into the sign-in screen; signing out clears the record, so that case is a remote revoke only.
+
+**People (`server/people.ts`, generated contract types).** Members with names and roles, role change, remove, ownership transfer, add a person or a group with a role, the Roles page, Invites (make with a role and a length of time, copy the link, revoke), the join page for an invited person (`/invites/<secret>`: name and passkey, lands in their own space with the invited one added; an existing account opens the link and joins), account name edit, Admin People (disable) and Groups (make, rename, delete, put people in and out), each by capability. Tested in `e2e/people-server.mjs` against a server built from this tree.
+
+**Notes (server mode).** Delete to Trash with Undo, a Trash view with Restore and Delete for good, rename from the list, a tag filter, and the `[[` and `#` pickers asking the space's index (title and tag lookups, one request per pause).
+
+**Typing cost found on the way.** After keys typed in a field stopped switching the page to keyboard mode, typing in a 10,000-line note cost about 7 ms a key more (median 3.4 to 10 ms): keyboard mode had been switching every animation off, hiding the editor caret's blink animation restarting at every key. The caret now holds still while keys are typed (`packages/ui/src/styles/base.css`, with the other typing pauses). Back to a 3 ms median.
+
+**Adapter clean-up (`apps/web/src/server`).** One request path in `ServerClient` (`send`, `stream`, `json`) instead of eight `fetch` wrappers; one error type (`ServerError`, with `AuthError` removed) worded by `say.ts` everywhere; the account, passkey, machines and people routes all use `server.json`; `spaces.load()` is the only place the space list is read (the Threads adapter had its own); `capabilities` is reactive. Size: `auth.ts` 20 lines shorter, the machines panel 5, `say.ts` 1; `client.ts` gains the shared helpers (26 net), so the total is about the same with one path instead of eight, not a large cut.
+
+Missing now: delete-for-everyone accounts, directory groups from outside (shown read-only), the invite link's address on the preview host (the server builds it from its own origin: `/invites/<secret>` at the root, which Caddy must route to the app under `/ai/`).

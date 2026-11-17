@@ -1,8 +1,7 @@
 /**
  * Failures in plain words with the next step, in one place (the CLI rule for errors: say what happened, then what to do). A server `ServerError` is told by its stable `code`, never by its message; a
- * sign-in `AuthError` by its code too. `doing` is the thing that was being attempted, in the lowercase ("load the members"), for the cases that need it.
+ * sign-in one by the same field (`ServerError` carries both). `doing` is the thing that was being attempted, in the lowercase ("load the members"), for the cases that need it.
  */
-import { AuthError } from "./auth";
 import { ServerError } from "./client";
 
 const BY_CODE: Record<string, string> = {
@@ -26,6 +25,6 @@ const BY_CODE: Record<string, string> = {
 
 /** What to tell the person about a failed `doing`. */
 export function say(e: unknown, doing = "do that"): string {
-  const code = e instanceof ServerError || e instanceof AuthError ? e.code : e instanceof TypeError ? "unavailable" : "";
+  const code = e instanceof ServerError ? e.code : e instanceof TypeError ? "unavailable" : "";
   return BY_CODE[code] ?? `Could not ${doing}. Try again.`;
 }

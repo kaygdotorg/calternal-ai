@@ -7,10 +7,6 @@
 
 /** The server's answer to `GET /api/v1/auth/status`. */
 export interface AuthStatus { setup: boolean; signed_in: boolean }
-/** A refusal or transport failure; `code` is the server's stable category (`setup_token_invalid`, `passkey_failed`, …) or `unavailable` or `cancelled`. */
-export class AuthError extends Error {
-  constructor(public code: string, message: string) { super(message); }
-}
 
 const b64 = {
   /** base64url text → bytes. */
@@ -31,32 +27,18 @@ const b64 = {
 };
 export const base64url = b64;
 
+import { clearCache } from "./cache";
+import { server, ServerError } from "./client";
+
 type Json = Record<string, unknown>;
-/** The bearer in development token mode, nothing for a cookie session. */
-const authHeaders = (): Record<string, string> => { try { const t = localStorage.getItem("cal.devtoken"); return t ? { authorization: `Bearer ${t}` } : {}; } catch { return {}; } };
 interface Descriptor { id: string; type: string; transports?: string[] }
 
-async function post(path: string, body: Json = {}, method = "POST"): Promise<Json> {
-  let res: Response;
-  try { res = await fetch(`/api/v1/auth/${path}`, method === "GET" ? { headers: authHeaders() } : { method, headers: { "content-type": "application/json", ...authHeaders() }, body: JSON.stringify(body) }); }
-  catch (e) { throw new AuthError("unavailable", "The server did not answer. Check the connection and try again."); }
-  if (res.status === 204) return {};
-  let data: Json = {};
-  try { data = (await res.json()) as Json; } catch { /* no body */ }
-  if (!res.ok) {
-    const err = (data.error ?? {}) as { code?: string; message?: string };
-    throw new AuthError(err.code ?? "internal", err.message ?? `The server refused (${res.status}).`);
-  }
-  return data;
-}
+/** A POST to an account route. Ceremonies and sign-in stay out of the session-ended logic (`link: false`); changes after sign-in (`link: true`) and the reads (`get`) report like any other call. */
+const post = (path: string, body: Json = {}, link = false): Promise<Json> => server.json(`/api/v1/auth/${path}`, { body, link });
+const get = (path: string): Promise<Json> => server.json(`/api/v1/auth/${path}`);
 
 /** Whether the installation still needs its first owner, and whether this browser has a session. */
-export async function status(): Promise<AuthStatus> {
-  let res: Response;
-  try { res = await fetch("/api/v1/auth/status"); } catch { throw new AuthError("unavailable", "The server did not answer."); }
-  if (!res.ok) throw new AuthError("unavailable", `The server answered ${res.status}.`);
-  return (await res.json()) as AuthStatus;
-}
+export const status = (): Promise<AuthStatus> => server.json<AuthStatus>("/api/v1/auth/status", { link: false });
 
 const descriptors = (l: Descriptor[] | undefined): PublicKeyCredentialDescriptor[] | undefined =>
   l?.map((d) => ({ ...d, id: b64.toBytes(d.id) }) as PublicKeyCredentialDescriptor);
@@ -89,14 +71,14 @@ async function ceremony(kind: "create" | "get", options: Json): Promise<PublicKe
   const d = decodeOptions(options);
   try {
     const c = (kind === "create" ? await navigator.credentials.create({ publicKey: d.create! }) : await navigator.credentials.get({ publicKey: d.get! })) as PublicKeyCredential | null;
-    if (!c) throw new AuthError("cancelled", "No passkey was chosen.");
+    if (!c) throw new ServerError("cancelled", "No passkey was chosen.");
     return c;
   } catch (e) {
-    if (e instanceof AuthError) throw e;
+    if (e instanceof ServerError) throw e;
     const name = (e as Error).name;
-    if (name === "NotAllowedError" || name === "AbortError") throw new AuthError("cancelled", "The passkey prompt was closed or timed out. Try again.");
-    if (name === "InvalidStateError") throw new AuthError("passkey_failed", "This device already has a passkey here. Sign in instead.");
-    throw new AuthError("passkey_failed", "This browser could not use a passkey.");
+    if (name === "NotAllowedError" || name === "AbortError") throw new ServerError("cancelled", "The passkey prompt was closed or timed out. Try again.");
+    if (name === "InvalidStateError") throw new ServerError("passkey_failed", "This device already has a passkey here. Sign in instead.");
+    throw new ServerError("passkey_failed", "This browser could not use a passkey.");
   }
 }
 
@@ -123,7 +105,7 @@ export async function signIn(): Promise<void> {
 }
 
 /** Ends this browser's session on the server. */
-export async function signOut(): Promise<void> { await post("logout"); }
+export async function signOut(): Promise<void> { clearCache(); await post("logout"); }
 
 /** Who is signed in: the account (`name`, `role`, `capabilities`) and this browser's installation id. */
 export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string }
@@ -141,18 +123,18 @@ async function reverify(): Promise<void> {
 /** Runs a change that may ask for a fresh passkey: if the server says so, verifies once and tries again. */
 async function fresh<T>(f: () => Promise<T>): Promise<T> {
   try { return await f(); } catch (e) {
-    if (e instanceof AuthError && e.code === "passkey_reverification_required") { await reverify(); return f(); }
+    if (e instanceof ServerError && e.code === "passkey_reverification_required") { await reverify(); return f(); }
     throw e;
   }
 }
 /** The account endpoints behind Settings, Account. */
 export const account = {
-  me: () => post("me", {}, "GET") as unknown as Promise<Me>,
-  passkeys: async () => ((await post("passkeys", {}, "GET")).passkeys ?? []) as Passkey[],
-  installations: async () => ((await post("installations", {}, "GET")).installations ?? []) as InstallationRow[],
-  rename: (id: string, name: string) => fresh(() => post("passkeys/rename", { id, name })),
-  remove: (id: string) => fresh(() => post("passkeys/remove", { id })),
-  revokeInstallation: (installation: string) => fresh(() => post("installations/revoke", { installation })),
+  me: () => get("me") as unknown as Promise<Me>,
+  passkeys: async () => ((await get("passkeys")).passkeys ?? []) as Passkey[],
+  installations: async () => ((await get("installations")).installations ?? []) as InstallationRow[],
+  rename: (id: string, name: string) => fresh(() => post("passkeys/rename", { id, name }, true)),
+  remove: (id: string) => fresh(() => post("passkeys/remove", { id }, true)),
+  revokeInstallation: (installation: string) => fresh(() => post("installations/revoke", { installation }, true)),
   /** Creates a passkey on this device and adds it to the account. */
   async addPasskey(name: string): Promise<void> {
     await fresh(async () => {
