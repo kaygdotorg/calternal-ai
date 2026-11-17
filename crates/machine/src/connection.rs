@@ -127,7 +127,8 @@ async fn session_loop(
                             runner.handle(env.message).await;
                         }
                     }
-                    runner.park_idle(lease_ttl).await;
+                    let runner = runner.clone();
+                    tokio::spawn(async move { runner.park_idle(lease_ttl).await });
                 }
                 Err(Error::Revoked) => return Err(Error::Revoked),
                 Err(e) if e.status() == Some(401) => {

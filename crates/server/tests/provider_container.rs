@@ -11,6 +11,10 @@ use std::{
 };
 use uuid::Uuid;
 
+// A loaded engine can take longer than a machine poll to remove a container.
+// Both checks must still finish before the standard 90-second local lease expiry.
+const REMOVAL_LIMIT: Duration = Duration::from_secs(60);
+
 #[tokio::test(flavor = "multi_thread")]
 async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     let Ok(image) = std::env::var("CALTERNAL_TEST_PROVIDER_IMAGE") else {
@@ -88,7 +92,7 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     assert!(frames.iter().any(|v| v["event"]["type"] == "tool_finished"));
     let job = &frames.last().unwrap()["job"];
     assert_eq!(job["state"], "done");
-    wait_container_removed(account, thread, Duration::from_secs(20)).await;
+    wait_container_removed(account, thread, REMOVAL_LIMIT).await;
     let root = mdir.join(&format!("sandboxes/accounts/{account}"));
     assert!(root.join("threads").join(thread.to_string()).exists());
     let id = job["id"].as_str().unwrap();
@@ -109,11 +113,8 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
     let live_thread = Uuid::new_v4();
     let run = server.request_run(&server.owner, &space, live_thread).await;
     let lease = run["lease_id"].as_str().unwrap();
-    server
-        .wait_run(&server.owner, lease, Duration::from_secs(20), |v| {
-            v["state"] == "running"
-        })
-        .await;
+    // The exec itself waits for sandbox startup and proves the lease was usable.
+    // Waiting for a separate capacity report ties this test to the poll phase.
     let exec = server
         .exec(
             &server.owner,
@@ -121,11 +122,12 @@ async fn fake_provider_streams_through_podman_and_the_mounted_operation_cli() {
             &["sh", "-c", "echo retained > marker"],
         )
         .await;
-    server
-        .output(&server.owner, &exec, Duration::from_secs(20))
+    let (_, _, exit) = server
+        .output(&server.owner, &exec, Duration::from_secs(35))
         .await;
+    assert_eq!(exit["code"], 0, "{exit}");
     server.proc.signal("-TERM");
-    wait_container_removed(account, live_thread, Duration::from_secs(20)).await;
+    wait_container_removed(account, live_thread, REMOVAL_LIMIT).await;
     assert_eq!(
         std::fs::read_to_string(
             root.join("threads")

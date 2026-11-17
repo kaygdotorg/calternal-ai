@@ -85,6 +85,7 @@ pub struct Runner {
     max_sandboxes: u32,
     slots: Mutex<HashMap<Uuid, Arc<Slot>>>,
     discards: Mutex<HashMap<Uuid, bool>>,
+    parking: tokio::sync::Mutex<()>,
 }
 
 impl Runner {
@@ -96,6 +97,7 @@ impl Runner {
             max_sandboxes,
             slots: Mutex::new(HashMap::new()),
             discards: Mutex::new(HashMap::new()),
+            parking: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -430,6 +432,11 @@ impl Runner {
         if self.backend.name() == "direct" {
             return;
         }
+        // Slow engine cleanup can outlast a poll. Keep at most one idle sweep
+        // in progress while the connection continues to renew its leases.
+        let Ok(_parking) = self.parking.try_lock() else {
+            return;
+        };
         for slot in self.all() {
             if slot.spec.worker.is_some() || slot.removed.load(Ordering::Acquire) {
                 continue;
