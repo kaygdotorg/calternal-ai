@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 mod admin_cli;
 mod startup_io;
+mod transport;
 use admin_cli::MachinesCmd;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
@@ -581,7 +582,7 @@ async fn serve(
     );
 
     let served = axum::serve(
-        listener,
+        transport::listener(listener),
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
