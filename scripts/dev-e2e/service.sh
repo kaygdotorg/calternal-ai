@@ -38,15 +38,23 @@ stop_unit() {
 # Only rotate a binary while both roles are stopped. Start reuses the last
 # installed binary after the build target has been removed.
 build() {
-  ! active server && ! active machine || die 'Stop the installation before rebuilding.'
+  local destination=$binary
+  case ${1:-fixture} in
+    fixture) ! active server && ! active machine || die 'Stop the installation before rebuilding.' ;;
+    browser)
+      ! active browser-server || die 'Stop the browser installation before rebuilding.'
+      destination=$root/browser/bin/calternal
+      ;;
+    *) die 'Choose fixture or browser.' ;;
+  esac
   nix develop -c bash -c '
     set -e
     npm ci --ignore-scripts --no-audit --no-fund
     npm run build:plugins
     cargo build --locked -j6 -p calternal-server
   '
-  install -d -m 0700 "$root/bin"
-  install -m 0700 "${CARGO_TARGET_DIR:-target}/debug/calternal" "$binary"
+  install -d -m 0700 "$(dirname -- "$destination")"
+  install -m 0700 "${CARGO_TARGET_DIR:-target}/debug/calternal" "$destination"
 }
 
 cal() {
@@ -72,9 +80,23 @@ machine_ready() {
       jq -e --arg id "$machine_id" '.machines[] | select(.id == $id and .state == "online")'
 }
 relay_ready() {
-  active relay &&
+  active "$1" &&
     ss -ltnH "sport = :$peer_port" |
       awk -v listener="$address%wt0:$peer_port" '$4 == listener { found = 1 } END { exit !found }'
+}
+
+netbird_address() {
+  local address
+  address=$(ip -4 -o addr show dev wt0 scope global | awk '{split($4,a,"/"); print a[1]}')
+  [[ $address =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'Expected one IPv4 address on NetBird wt0.'
+  printf '%s\n' "$address"
+}
+
+start_relay() {
+  start_unit "$1" "$(command -v socat)" \
+    "TCP4-LISTEN:$peer_port,bind=$address,so-bindtodevice=wt0,reuseaddr,fork,max-children=64" \
+    "TCP4:127.0.0.1:$local_port"
+  wait_for relay_ready "$1"
 }
 
 start() {
@@ -82,8 +104,7 @@ start() {
   [[ -x $binary ]] || die 'Run service.sh build first.'
   podman image exists "localhost/calternal-e2e-$mode:dev" ||
     die "Build the $mode image with image.sh $mode first."
-  address=$(ip -4 -o addr show dev wt0 scope global | awk '{split($4,a,"/"); print a[1]}')
-  [[ $address =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die 'Expected one IPv4 address on NetBird wt0.'
+  address=$(netbird_address)
   node=$(nix develop -c which node)
   start_unit server "$binary" serve --appdata "$root/appdata" --userdata-ssd "$root/userdata-ssd" \
     --userdata-hdd "$root/userdata-hdd" --installation-id "$installation" --create --development \
@@ -113,12 +134,30 @@ start() {
   start_unit machine "$binary" machine run --dir "$root/machine" --backend podman \
     --podman "$(command -v podman)" --image "localhost/calternal-e2e-$mode:dev" --max-sandboxes 2
   wait_for machine_ready
-  start_unit relay "$(command -v socat)" \
-    "TCP4-LISTEN:$peer_port,bind=$address,so-bindtodevice=wt0,reuseaddr,fork,max-children=64" \
-    "TCP4:127.0.0.1:$local_port"
-  wait_for relay_ready
+  start_relay relay
   printf 'NetBird listener  %s:%s\nAccount           %s\nSandbox home      %s\n' \
     "$address" "$peer_port" "$account" "$root/machine/sandboxes/accounts/$account/home"
+}
+
+browser_ready() {
+  active browser-server &&
+    curl -fsS --noproxy '*' --max-time 2 "http://127.0.0.1:$local_port/api/v1/auth/status"
+}
+
+# Start with an empty protected account directory. Only the operator redeems
+# the resulting setup token with their actual browser authenticator.
+start_browser() {
+  local browser=$root/browser local_port=34136 peer_port=34137 address
+  [[ -x $browser/bin/calternal ]] || die 'Run service.sh build browser first.'
+  address=$(netbird_address)
+  start_unit browser-server "$browser/bin/calternal" serve --appdata "$browser/appdata" \
+    --userdata-ssd "$browser/userdata-ssd" --userdata-hdd "$browser/userdata-hdd" \
+    --installation-id 825bd622-44d8-4171-b5f7-c90a8702b34e --create \
+    --port "$local_port" --origin "$origin" --plugin-root "$checkout/plugins"
+  wait_for browser_ready
+  start_relay browser-relay
+  printf 'NetBird listener  %s:%s\nSetup token path  %s\n' \
+    "$address" "$peer_port" "$browser/appdata/setup.token"
 }
 
 stop() {
@@ -151,7 +190,7 @@ reset() {
 }
 
 case ${1:-} in
-  build) build ;;
+  build) build "${2:-fixture}" ;;
   start)
     case ${2:-fixture} in
       fixture|claude) start "${2:-fixture}" ;;
@@ -159,12 +198,17 @@ case ${1:-} in
     esac
     ;;
   stop) stop ;;
+  start-browser) start_browser ;;
+  stop-browser)
+    stop_unit browser-relay
+    stop_unit browser-server
+    ;;
   reset) reset "${2:-}" ;;
   logs)
-    journalctl --user --no-pager -n 100 -u calternal-e2e-server -u calternal-e2e-machine -u calternal-e2e-relay
+    journalctl --user --no-pager -n 100 -u 'calternal-e2e-*.service'
     ;;
   status)
     systemctl --user --no-pager status calternal-e2e-{server,machine,relay}.service
     ;;
-  *) die 'Usage: service.sh build|start [fixture|claude]|stop|reset --yes|logs|status' ;;
+  *) die 'Usage: service.sh build [fixture|browser]|start [fixture|claude]|stop|start-browser|stop-browser|reset --yes|logs|status' ;;
 esac
