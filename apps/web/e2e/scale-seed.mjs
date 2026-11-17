@@ -38,8 +38,10 @@ log(`${SPACES} spaces`);
 // Members: each joins by an invitation in its own context.
 for (let i = 1; i < MEMBERS; i++) {
   const inv = await op("invites.create", { space_id: space, role: "editor" });
-  const list = await op("invites.list", { space_id: space });
-  const link = list.data.invites.find((x) => x.invite_id === inv.data.invite_id)?.link;
+  let link, cursor;
+  for (let page = 0; page < 30 && !link; page++) { const list = await op("invites.list", { space_id: space, ...(cursor ? { cursor } : {}) }); link = list.data.invites.find((x) => x.invite_id === inv.data.invite_id)?.link; cursor = list.data.next_cursor; if (!cursor) break; }
+  if (!link) throw new Error(`no link for invitation ${i}`);
+  await new Promise((r) => setTimeout(r, 3200)); // the server admits about 20 sign-ups a minute from one address
   let joined = false;
   for (let attempt = 0; attempt < 4 && !joined; attempt++) {
     const g = await mk();
