@@ -29,4 +29,25 @@ await page.evaluate(([x, y]) => { const el = document.querySelectorAll(".slide")
 await page.waitForTimeout(650);
 await page.screenshot({ path: "/tmp/swipe-long.png" });
 ok("a long press opens the context menu as a sheet of 42 px rows", (await page.getByRole("menu").count()) > 0 && (await page.getByRole("menuitem").first().evaluate((e) => e.getBoundingClientRect().height)) >= 42);
+// Edge swipe: from the left edge opens the sidebar; a swipe left closes it. A sheet's grabber drags it away.
+await page.keyboard.press("Escape").catch(() => {});
+await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: true }).catch(() => {});
+await page.waitForTimeout(500);
+const touch = (type, x, y, sel = "body") => page.evaluate(([t, x, y, sel]) => { const el = document.elementFromPoint(x, y) ?? document.querySelector(sel); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 9, clientX: x, clientY: y })); }, [type, x, y, sel]);
+await touch("pointerdown", 6, 400); await touch("pointermove", 80, 405); await touch("pointerup", 90, 405);
+await page.waitForTimeout(500);
+ok("a swipe from the left edge opens the sidebar", (await page.locator(".shell").getAttribute("data-sidebar")) === "true");
+await touch("pointerdown", 300, 400); await touch("pointerup", 150, 402);
+await page.waitForTimeout(500);
+ok("a swipe left closes it", (await page.locator(".shell").getAttribute("data-sidebar")) === "false");
+await page.keyboard.press("Escape"); await page.waitForTimeout(300);
+await page.goto(page.url().replace(/\/threads.*$/, "/threads/t-run")); await page.waitForSelector("h1");
+await page.locator(".chip.prov button").click();
+await page.waitForSelector(".sheet.bottom");
+await page.waitForTimeout(500);
+const grab = page.locator(".grab").last();
+const gb = await grab.boundingBox();
+await page.evaluate(([x, y]) => { const g = [...document.querySelectorAll(".grab")].pop(); const ev = (t, yy) => g.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 10, clientX: x, clientY: yy })); ev("pointerdown", y); ev("pointermove", y + 60); ev("pointermove", y + 140); ev("pointerup", y + 140); }, [gb.x + gb.width / 2, gb.y + 10]);
+await page.waitForTimeout(500);
+ok("dragging a sheet's grabber down dismisses it", (await page.locator(".sheet.bottom").count()) === 0);
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);

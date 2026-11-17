@@ -1,6 +1,6 @@
 # The composer and the palette in the web shell (plan and status)
 
-Status 2026-11-17: the engine and the palette surface are built on fixtures and tested (`palette/*.test.ts`, `e2e/palette.mjs`); the thread composer does not use the engine yet.
+Status 2026-11-17: the engine, the palette surface and the composer integration are built on fixtures and tested (`palette/*.test.ts`, `e2e/palette.mjs`); the thread composer uses it too (`marksOf`, the `@` and `/` pickers in `palette/mentions.ts`, context chips; `e2e/composer.mjs`).
 
 Plan for bringing the existing app's composer and palette across, following `docs/composer.md` (decisions) and `docs/reviews/composer-map-2026-11-17.md` (how the existing app does it). Built on fixtures in `apps/web/src/palette/`.
 
@@ -36,7 +36,6 @@ Plan for bringing the existing app's composer and palette across, following `doc
 
 ## Not built yet
 
-- The thread composer using the same engine (highlighting, `@` picker for people, agents, threads and items, `/` for skills). The engine exports what it needs; wiring is the next step.
 - Filter tokens, previews, frecency, recents. (The existing app has them; they come with the real search service.)
 - Plugin manifests from the server: the data shape is fixed in `manifest.ts`; the fixture registers the built-in apps.
 - The decision service (optional, off): only after Enter, never while typing.

@@ -152,14 +152,9 @@ Design choices the documents do not settle. I chose the first option in each cas
 
 ## Unfinished
 
-- The plugin's edge fades (scroll-driven per-row fades under floating bars), the title pill, the wordmark row, paste-a-wallpaper-link, the storage list
-  with sizes, and pill-contrast "hazards" (media scrolling under pills) are not built.
-- Phone gestures (edge swipe to open the sidebar, drag to dismiss a sheet); the sidebar opens from the header button.
-- Offline pending submissions (visible, editable, cancellable) and drafts that sync; drafts are kept in memory per thread.
-- Editing a sent message and forking a thread from a message.
-- The adaptive material is unit tested and wired to every glass surface, but with this background (calm on
-  purpose) it barely moves; it needs a user wallpaper or a darker mesh to be seen.
-- Skills, automations, plugin management screens.
+- Not built: paste-a-wallpaper-link, the storage list with sizes, and pill-contrast "hazards" (media scrolling under pills).
+- Offline pending submissions (visible, editable, cancellable) and drafts that sync; drafts are kept in memory per thread (the server has `drafts.*` and `pending.*`, not wired).
+- Phone gestures built: swipe actions and long press on rows, edge swipe to open and close the sidebar and the side panel, drag a sheet's grabber to dismiss. Not built: swipe back, pull to refresh, interactive card dismissal.
 
 ## Simplification opportunities
 
@@ -191,7 +186,7 @@ phone composer hit target fixed to 44 px. `e2e/interact.mjs` checks these (10 of
 
 Fixture-only: `unarchive` and `rename` are fixture client methods; the backend must provide both (undo of archive needs a stable, reversible archive).
 
-Open: whether deleting a section should offer Undo (not done); the composer palette (`docs/ui-composer-palette.md`) is planned, not built.
+Open: the composer palette is built (see the table below).
 
 ## The owner's four lists, item by item (2026-11-17)
 
@@ -215,7 +210,7 @@ Screenshots are attached to issue #15 (review set: `desktop-light`, `desktop-dar
 | Thread rows one line, one state signal, provider mark | yes | `sidebar-sections`, `interact.mjs` |
 | Toasts ported; Undo for Archive and for deleting a section | yes | `toast-archive-undo`, `toast-*.test.ts`, `layout.test.ts` |
 | Warm tooltip, pill bounce, title rename, InlineEditor | yes | `interact.mjs`, tooltip comparison in `docs/ui-design-system.md` |
-| Composer as a command palette | no | planned in `docs/ui-composer-palette.md` (next) |
+| Composer on the palette's engine (highlighted words, @ picker, / skills, context chips, Comment quotes) | yes | `e2e/composer.mjs` (8 checks), `palette/mentions.test.ts` |
 | Settings is an app (User and Admin sections, empty pages) | yes | `settings-app`, `apps/settings/` |
 | Materials: three checkboxes (Blur, Dim, Tint), strength computed from the wallpaper | yes | `settings-appearance-sheet`, `SettingsSheet.test.ts`, `washFor` for the sidebars and for the card |
 | One UI size slider scales type, spacing and controls | yes | `--ui-scale` in `build-tokens.mjs`, `SettingsSheet.test.ts` |
@@ -240,7 +235,7 @@ Notes (2026-11-17): the default photographs are fetched when the app is built (`
 | Stray underline: the active-children bar drawn bare; now a glass pill | yes | #15 comment |
 | First-run gallery reachable with `?firstrun=1`, tested | yes | `e2e/firstrun.mjs` |
 | Auto-hide setting for the card switcher (off by default) | yes | `appearance.app-switcher-auto-hide` |
-| Composer palette: plan, ported recogniser, search, palette surface | yes (composer itself not yet) | `docs/ui-composer-palette.md`, `e2e/palette.mjs` |
+| Composer palette: plan, ported recogniser, search, palette surface | yes (the thread composer now uses the engine) | `docs/ui-composer-palette.md`, `e2e/palette.mjs` |
 | Veil from the study's function, on rendered pixels | yes | `e2e/veil-pixels.mjs` 16 of 16 |
 | Settings pages with stable ids, in the palette | yes | `apps/settings/registry.ts`, `settings-*` shots |
 | Documentation site themed with the design system | yes | `apps/docs/`, `/docs/` |
