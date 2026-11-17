@@ -152,9 +152,8 @@ Design choices the documents do not settle. I chose the first option in each cas
 
 ## Unfinished
 
-- Not built: paste-a-wallpaper-link, the storage list with sizes, and pill-contrast "hazards" (media scrolling under pills).
-- Offline pending submissions (visible, editable, cancellable) and drafts that sync; drafts are kept in memory per thread (the server has `drafts.*` and `pending.*`, not wired).
-- Phone gestures built: swipe actions and long press on rows, edge swipe to open and close the sidebar and the side panel, drag a sheet's grabber to dismiss. Not built: swipe back, pull to refresh, interactive card dismissal.
+- Not built: swipe back as a navigation stack on a phone (the edge swipe reveals the list under the card and the card follows the finger; there is no history stack), interactive dismissal of the middle card, drafts and pending submissions for **threads** (only notes have server items to attach them to; the Notes app uses them).
+- Built in this round: drafts and pending submissions on the server adapter (Notes), pull to refresh on the sidebar lists, the card following the finger on the edge swipe, sheet dismissal by dragging its grabber, paste-a-wallpaper-link, the storage list with sizes, pill-contrast hazards.
 
 ## Simplification opportunities
 
@@ -263,8 +262,8 @@ a wrong token is refused. The jobs stream is covered by unit tests on a mocked r
 | `machines` | none as an operation (machines are managed by the `calternal machines` CLI and the machine protocol) |
 | `requests`, `watchRequests`, `answer` (questions, approvals) | none; secret requests have `secrets.request` / `secrets.list` / `secrets.revoke` and `POST /api/v1/auth/secrets/provide`, not wired yet |
 | `changes`, `run`, files for the right panel | none |
-| the composer's drafts (in memory) | `drafts.save` / `list` / `get` / `delete` exist, not wired yet |
-| queued sends | `pending.*` exist, not wired yet |
+| the thread composer's drafts (in memory) | `drafts.*` need an item UUID; threads are not server items yet. **Notes drafts are wired** (`apps/notes/input.ts`) |
+| queued thread sends | `pending.*` need a server write operation to queue. **Notes updates are queued and sent** (`pending.queue`, `pending.submit`, the account feed) |
 | palette search over spaces | no search operation (only `notes.list`); the palette searches fixtures |
 | appearance, shortcuts and the other Settings values (localStorage) | no settings operation; `plugins.list` / `enable` / `disable` exist for the Plugins page, not wired yet |
 | account, passkeys | `/api/v1/auth/*` exists; the web sign-in flow is not built |
