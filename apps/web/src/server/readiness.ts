@@ -1,18 +1,16 @@
 /**
  * Machine and provider readiness (docs/agent-turns.md, "Machine and provider readiness"): per machine of the signed-in account, whether it is connected, how it runs turns, and for each provider whether it is installed and
  * signed in there, with the provider program's own sign-in command (shown, never run here). `agent.readiness` reads the server's cache; `agent.check` refreshes one provider on one machine, and the account feed
- * (`account/live?readiness=true`) says when to read again. The types are the contract's, copied until the generated ones arrive with the merge.
+ * (`account/live?readiness=true`) says when to read again. The types are the generated ones from `packages/contracts`.
  */
+import type { PersonalMachineReadiness, ProviderCheck, ProviderReadiness, ReadinessResult } from "../../../../packages/contracts/src/index";
 import { server } from "./client";
 
-/** What the provider program's own check reported. */
-export interface ProviderCheck { installed: boolean; sign_in_command: string; signed_in: boolean }
-/** One provider on one machine in a space. `check` is null until a fresh observation exists (they expire after `check_ttl_ms`). */
-export interface ProviderReadiness { enabled: boolean; ready: boolean; check: ProviderCheck | null }
+export type { ProviderCheck, ProviderReadiness };
 /** One of the person's machines. */
-export interface MachineState { machine_id: string; name: string; enrolled: boolean; connected: boolean; available: boolean; execution: "sandboxed" | "direct"; last_seen_ms: number | null; providers: Record<string, ProviderReadiness> }
+export type MachineState = PersonalMachineReadiness;
 /** The cached readiness read. */
-export interface Readiness { machines: MachineState[]; check_ttl_ms: number }
+export type Readiness = ReadinessResult;
 
 /** Reads the cache for a space (no machine traffic). */
 export const readiness = (space_id: string): Promise<Readiness> => server.operate<Readiness>("agent.readiness", { space_id });
@@ -31,7 +29,7 @@ export function watchReadiness(onChange: () => void): () => void {
   void (async () => {
     onChange();
     while (!ac.signal.aborted) {
-      try { await server.accountLive((f) => { if (f === "Readiness") onChange(); }, { readiness: true, signal: ac.signal }); } catch { /* the feed dropped */ }
+      try { await server.accountLive((f) => { if (f === "ReadinessChanged") onChange(); }, { readiness: true, signal: ac.signal }); } catch { /* the feed dropped */ }
       if (ac.signal.aborted) break;
       await new Promise((r) => setTimeout(r, 3000));
       onChange(); // a snapshot after a reconnect: frames in between are not replayed
