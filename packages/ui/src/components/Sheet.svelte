@@ -11,10 +11,17 @@
     return { destroy: () => node.remove() };
   };
   let from: HTMLElement | null = null;
+  // Where focus was before any sheet: the last element focused outside a sheet. (A caller may move focus into a field of the sheet in the same turn it opens, before this sheet looks at `activeElement`, and Escape would then return focus to that field, gone with the sheet.)
+  let outside: HTMLElement | null = null;
+  $effect(() => {
+    const on = (e: FocusEvent) => { const t = e.target as HTMLElement | null; if (t && t !== document.body && !t.closest?.(".sheet")) outside = t; };
+    document.addEventListener("focusin", on);
+    return () => document.removeEventListener("focusin", on);
+  });
   const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])';
   $effect(() => {
     if (!open || !box) return;
-    from = document.activeElement as HTMLElement | null;
+    from = outside ?? (document.activeElement as HTMLElement | null);
     if (!box.contains(document.activeElement)) box.focus(); // (a field inside that took focus keeps it) the dialog itself: announced by name, and no focus ring until the person presses Tab
     return () => from?.focus?.();
   });
