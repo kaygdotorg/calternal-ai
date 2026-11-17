@@ -40,7 +40,8 @@ struct Slot {
     frozen: AtomicBool,
     /// Set when the slot left the map; whoever then sees a started sandbox stops it.
     removed: AtomicBool,
-    stopped: AtomicBool,
+    stop: OnceCell<()>,
+    keep_files: AtomicBool,
     execs: Mutex<HashSet<Uuid>>,
 }
 
@@ -49,10 +50,19 @@ impl Slot {
     async fn stop_if_removed(&self) {
         if self.removed.load(Ordering::Acquire)
             && let Some(Ok(sb)) = self.sandbox.get()
-            && !self.stopped.swap(true, Ordering::AcqRel)
-            && let Err(e) = sb.stop().await
         {
-            tracing::warn!(lease = %self.lease_id, error = %e, "sandbox stop failed");
+            self.stop
+                .get_or_init(|| async {
+                    let result = if self.keep_files.load(Ordering::Acquire) {
+                        sb.release().await
+                    } else {
+                        sb.stop().await
+                    };
+                    if let Err(e) = result {
+                        tracing::warn!(lease=%self.lease_id,error=%e,"sandbox stop failed");
+                    }
+                })
+                .await;
         }
     }
 }
@@ -74,6 +84,19 @@ impl Runner {
             max_sandboxes,
             slots: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Active backend name for server-side direct-execution policy admission.
+    pub fn backend_name(&self) -> &'static str {
+        self.backend.preference()
+    }
+
+    /// Install the server-authorized execution setting before assignments arrive.
+    /// This changes only future sandbox starts; old fenced objects keep their backend.
+    pub fn configure_backend(&self, mode: &str) -> Result<(), crate::Error> {
+        self.backend
+            .configure(mode)
+            .map_err(|e| crate::Error::Protocol(e.0))
     }
 
     /// Current capacity. Reads `/proc/meminfo` on Linux (a few µs).
@@ -111,8 +134,9 @@ impl Runner {
     }
 
     /// Apply one message. Starting sandboxes and execs run on their own tasks, so
-    /// this returns at once and the long-poll loop is never held up.
-    pub fn handle(self: &Arc<Self>, message: Down) {
+    /// assignments and execs return at once. Stop awaits cleanup before a later
+    /// assignment can adopt the same thread, preventing stop/start races.
+    pub async fn handle(self: &Arc<Self>, message: Down) {
         match message {
             Down::Assign {
                 lease_id,
@@ -132,7 +156,8 @@ impl Runner {
                                 sandbox: OnceCell::new(),
                                 frozen: AtomicBool::new(false),
                                 removed: AtomicBool::new(false),
-                                stopped: AtomicBool::new(false),
+                                stop: OnceCell::new(),
+                                keep_files: AtomicBool::new(false),
                                 execs: Mutex::new(HashSet::new()),
                             })
                         })
@@ -153,8 +178,11 @@ impl Runner {
                 fence,
                 exec_id,
                 argv,
-                env,
+                stdin,
+                mut env,
             } => {
+                env.retain(|(key, _)| key != "CALTERNAL_URL");
+                env.push(("CALTERNAL_URL".into(), self.link.base().to_owned()));
                 let me = self.clone();
                 tokio::spawn(async move {
                     let slot = me
@@ -169,7 +197,7 @@ impl Runner {
                             match me.sandbox(s).await {
                                 Err(reason) => failed_exec(reason),
                                 Ok(sb) => sb
-                                    .exec(ExecRequest { argv, env })
+                                    .exec(ExecRequest { argv, stdin, env })
                                     .await
                                     .unwrap_or_else(|e| failed_exec(e.0)),
                             }
@@ -178,13 +206,20 @@ impl Runner {
                     me.upload(lease_id, fence, exec_id, exec).await;
                 });
             }
-            Down::Stop { lease_id, reason } => {
+            Down::Stop {
+                lease_id,
+                reason,
+                keep_files,
+            } => {
                 let slot = self.slots.lock().expect("slots").remove(&lease_id);
                 if let Some(slot) = slot {
                     tracing::info!(lease = %lease_id, %reason, "stopping sandbox");
+                    slot.keep_files.store(keep_files, Ordering::Release);
                     slot.removed.store(true, Ordering::Release);
                     // A start still in flight stops the sandbox when it finishes.
-                    tokio::spawn(async move { slot.stop_if_removed().await });
+                    // Join any start already in flight, then join cleanup itself.
+                    let _ = self.sandbox(&slot).await;
+                    slot.stop_if_removed().await;
                 }
             }
         }
@@ -194,6 +229,9 @@ impl Runner {
         let result = slot
             .sandbox
             .get_or_init(|| async {
+                if slot.removed.load(Ordering::Acquire) {
+                    return Err("lease ended before sandbox start".into());
+                }
                 self.backend.start(&slot.spec).await.map_err(|e| {
                     tracing::warn!(lease = %slot.lease_id, error = %e, "sandbox start failed");
                     e.0

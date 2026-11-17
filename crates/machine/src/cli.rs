@@ -15,8 +15,8 @@ use crate::connection::{self, Config};
 use crate::identity::Credentials;
 use crate::protocol::Owner;
 use crate::sandbox::Backend;
+use crate::sandbox::direct::DirectBackend;
 use crate::sandbox::podman::PodmanBackend;
-use crate::sandbox::process::ProcessBackend;
 use crate::{Error, enroll};
 
 /// Exit code when the server revoked this machine.
@@ -25,15 +25,28 @@ pub const EXIT_REVOKED: i32 = 3;
 /// Which sandbox backend to run threads in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum BackendKind {
+    /// Follow the machine owner's server-stored execution setting (default).
+    Auto,
     /// One rootless Podman container per thread.
     Podman,
-    /// Plain processes; tests and development only, not isolation.
-    Process,
+    /// Direct processes as the machine user; owner consent required, no isolation.
+    Direct,
 }
 
 /// Machine-role subcommands.
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Choose direct or sandboxed execution on a machine you own.
+    Set {
+        /// Machine UUID to configure.
+        machine_id: String,
+        /// Explicit direct execution, or false for sandboxes; never accepted for pool machines.
+        #[arg(long, action=clap::ArgAction::Set)]
+        direct: bool,
+        /// Person session used to verify machine ownership.
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+    },
     /// Enroll this computer with a server using a one-time code.
     Enroll {
         /// Server base URL, for example `https://cal.example.org`.
@@ -49,6 +62,9 @@ pub enum Command {
         /// Label shown to the owner; defaults to the host name.
         #[arg(long)]
         name: Option<String>,
+        /// Explicitly choose direct execution; accepted only with your own account code.
+        #[arg(long)]
+        direct: bool,
     },
     /// Connect to the server and run assigned threads until stopped.
     Run {
@@ -56,7 +72,7 @@ pub enum Command {
         #[arg(long)]
         dir: Option<PathBuf>,
         /// Sandbox backend.
-        #[arg(long, value_enum, default_value_t = BackendKind::Podman)]
+        #[arg(long, value_enum, default_value_t = BackendKind::Auto)]
         backend: BackendKind,
         /// Default base image for Podman sandboxes.
         #[arg(long, default_value = "docker.io/library/alpine:3")]
@@ -79,6 +95,20 @@ pub enum Command {
 /// Run a machine-role command, print its result through `out`, and return the
 /// process exit code. `out` must be built before this starts any thread.
 pub fn main(cmd: Command, out: &Output) -> i32 {
+    if let Command::Set {
+        machine_id,
+        direct,
+        connection,
+    } = cmd
+    {
+        return calternal_cli::agent::invoke(
+            connection,
+            Some("machines.set".into()),
+            json!({"machine_id":machine_id,"direct":direct}).to_string(),
+            out,
+        );
+    }
+
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -154,11 +184,13 @@ fn identity(c: &Credentials, dir: &std::path::Path) -> Reply {
 
 async fn run(cmd: Command) -> Result<Reply, CliError> {
     match cmd {
+        Command::Set { .. } => unreachable!("handled before runtime"),
         Command::Enroll {
             server,
             code,
             dir,
             name,
+            direct,
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let name = name.unwrap_or_else(enroll::host_name);
@@ -172,7 +204,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             } else {
                 code
             };
-            let creds = enroll::enroll(&server, &code, &dir, &name)
+            let creds = enroll::enroll(&server, &code, &dir, &name, direct)
                 .await
                 .map_err(|e| fail("machine enroll", e))?;
             Ok(identity(&creds, &dir))
@@ -199,14 +231,17 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let root = dir.join("sandboxes");
             let backend: Arc<dyn Backend> = match backend {
-                BackendKind::Process => Arc::new(ProcessBackend::new(root)),
+                BackendKind::Auto => Arc::new(crate::sandbox::configured::ConfiguredBackend::new(
+                    root, podman, image,
+                )),
+                BackendKind::Direct => Arc::new(DirectBackend::new(root)),
                 BackendKind::Podman => {
                     if !PodmanBackend::available(&podman).await {
                         return Err(CliError::new(
                             "unavailable",
                             format!("podman is not available ({})", podman.display()),
                         )
-                        .hint("Install rootless Podman, or pass --podman PATH; --backend process is for development only."));
+                        .hint("Install rootless Podman, or pass --podman PATH; --backend direct requires the owner to enable direct execution."));
                     }
                     Arc::new(PodmanBackend::new(podman, root, image))
                 }

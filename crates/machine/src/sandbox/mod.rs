@@ -9,9 +9,9 @@
 //!   image by reference, the container's own writable layer and a work directory
 //!   at `/work`. Measured fresh start about 0.63 s p50 alone and 3 s p50 with ten
 //!   in parallel (`docs/measurements/sandbox-containers-vs-microvms.md`).
-//! - [`process::ProcessBackend`]: plain child processes in a per-thread directory.
-//!   For tests and development only: it isolates environment, working directory and
-//!   process groups, not the file system, network or resources.
+//! - [`direct::DirectBackend`]: plain child processes in a per-thread directory.
+//!   Direct processes as the machine user; owner consent is required.
+//!   It provides no filesystem, network or resource isolation.
 //!
 //! A future microVM backend (a VM per thread, containers inside) fits the same
 //! trait: `start` boots or adopts the VM, `exec` runs through its agent, `freeze`
@@ -21,8 +21,9 @@
 //! chunks of at most [`CHUNK_BYTES`]. When the consumer stops reading, the reader
 //! task stops, the pipe fills and the process blocks on its next write.
 
+pub mod configured;
+pub mod direct;
 pub mod podman;
-pub mod process;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -61,6 +62,8 @@ pub type SandboxResult<T> = std::result::Result<T, SandboxError>;
 pub struct ExecRequest {
     /// Program and arguments; no shell is implied.
     pub argv: Vec<String>,
+    /// Input delivered once and closed; callers enforce the 128 KiB budget.
+    pub stdin: String,
     /// Environment on top of the sandbox's minimal one.
     pub env: Vec<(String, String)>,
 }
@@ -84,6 +87,21 @@ pub struct Exec {
 pub trait Backend: Send + Sync + 'static {
     /// Short name for logs and capacity reports.
     fn name(&self) -> &'static str;
+    /// Backend request in the machine handshake. `auto` follows the owner's stored setting.
+    fn preference(&self) -> &'static str {
+        self.name()
+    }
+    /// Apply the server-authorized selection before accepting assignments.
+    /// Fixed backends refuse another selection; the default configured backend switches.
+    fn configure(&self, mode: &str) -> SandboxResult<()> {
+        if mode == self.name() {
+            Ok(())
+        } else {
+            Err(SandboxError(
+                "server backend does not match this machine configuration".into(),
+            ))
+        }
+    }
     /// Start the thread's sandbox, or adopt the one left by an earlier run of the
     /// machine role (same thread id), resuming it if it was frozen.
     fn start<'a>(&'a self, spec: &'a SandboxSpec)
@@ -111,14 +129,22 @@ pub trait Sandbox: Send + Sync {
 /// waiter task per exec; reads are at most [`CHUNK_BYTES`].
 pub(crate) fn spawn_streaming(
     mut cmd: tokio::process::Command,
+    input: String,
 ) -> SandboxResult<(Exec, Option<u32>)> {
-    cmd.stdin(Stdio::null())
+    cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = cmd
         .spawn()
         .map_err(|e| SandboxError(format!("cannot start command: {}", e.kind())))?;
     let pid = child.id();
+    if let Some(mut stdin) = child.stdin.take() {
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let _ = stdin.write_all(input.as_bytes()).await;
+            let _ = stdin.shutdown().await;
+        });
+    }
     let (tx, rx) = mpsc::channel(OUTPUT_CHANNEL);
     let out = child
         .stdout
@@ -204,4 +230,24 @@ pub(crate) async fn collect(mut exec: Exec) -> (Vec<u8>, Vec<u8>, ExitInfo) {
             ..ExitInfo::default()
         },
     )
+}
+
+/// Immutable machine-role executable metadata. Resolved once on a blocking task;
+/// never includes a tenant path or credential. Tests without the real binary omit it.
+pub(crate) async fn cli_program() -> Option<std::path::PathBuf> {
+    static PROGRAM: tokio::sync::OnceCell<Option<std::path::PathBuf>> =
+        tokio::sync::OnceCell::const_new();
+    PROGRAM
+        .get_or_init(|| async {
+            tokio::task::spawn_blocking(|| {
+                std::env::current_exe()
+                    .ok()
+                    .filter(|p| p.file_name().is_some_and(|n| n == "calternal"))
+            })
+            .await
+            .ok()
+            .flatten()
+        })
+        .await
+        .clone()
 }

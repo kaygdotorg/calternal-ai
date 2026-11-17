@@ -46,6 +46,7 @@
 pub mod admin;
 pub mod db;
 pub mod http;
+pub mod provider;
 mod sessions;
 mod state;
 
@@ -110,6 +111,8 @@ pub enum LeaseState {
     Assigned,
     /// The machine reported the sandbox up.
     Running,
+    /// Fenced after machine silence; only explicit resume returns it to placement.
+    Interrupted,
     /// Over; see the reason.
     Ended,
 }
@@ -122,6 +125,7 @@ impl LeaseState {
             Self::Assigned => "assigned",
             Self::Running => "running",
             Self::Ended => "ended",
+            Self::Interrupted => "interrupted",
         }
     }
     /// Parse the stored form; anything unknown reads as ended (fail closed).
@@ -130,6 +134,7 @@ impl LeaseState {
             "waiting" => Self::Waiting,
             "assigned" => Self::Assigned,
             "running" => Self::Running,
+            "interrupted" => Self::Interrupted,
             _ => Self::Ended,
         }
     }
@@ -165,6 +170,8 @@ pub struct MachineView {
     pub os: String,
     /// CPU architecture.
     pub arch: String,
+    /// Owner-selected default execution policy; pool machines always report false.
+    pub direct: bool,
     /// Owner.
     pub owner: Owner,
     /// `online`, `draining`, `offline` or `revoked`.
@@ -280,7 +287,7 @@ impl MachineService {
             thread,
             image,
             machine: None,
-            last_machine: None,
+            last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
             fence: 0,
             state: LeaseState::Waiting.as_str().into(),
             reason: None,
@@ -355,6 +362,22 @@ impl MachineService {
         argv: Vec<String>,
         env: Vec<(String, String)>,
     ) -> Result<Uuid, HostError> {
+        self.exec_input(account, lease, argv, env, String::new())
+    }
+
+    /// Queue bounded stdin with an exec; input is memory-only and delivered once.
+    /// Cost: one registry lock; no I/O. At most 128 KiB of UTF-8 input per exec.
+    pub fn exec_input(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        argv: Vec<String>,
+        env: Vec<(String, String)>,
+        stdin: String,
+    ) -> Result<Uuid, HostError> {
+        if stdin.len() > 128 * 1024 {
+            return Err(HostError::invalid_input("exec input exceeds 128 KiB"));
+        }
         if argv.is_empty() || argv.len() > 4096 || argv.iter().any(|a| a.len() > 65_536) {
             return Err(HostError::invalid_input(
                 "argv must have 1 to 4096 arguments of at most 64 KiB",
@@ -370,8 +393,9 @@ impl MachineService {
             _ => return Err(HostError::not_found("run not found")),
         }
         let id = Uuid::new_v4();
-        st.execs
-            .insert(id, Exec::new(lease, account, argv, env, ExecState::Queued));
+        let mut exec = Exec::new(lease, account, argv, env, ExecState::Queued);
+        exec.stdin = stdin;
+        st.execs.insert(id, exec);
         st.send_execs(lease);
         Ok(id)
     }
@@ -542,7 +566,7 @@ impl MachineService {
     }
 
     /// Pick up operator CLI changes, mark silent machines offline, fence and
-    /// re-place their leases after `lease_ttl`, drop finished exec buffers after
+    /// interrupt their leases after `lease_ttl`, drop finished exec buffers after
     /// ten minutes and ended lease rows after `ended_lease_retention`. Blocks: one
     /// `PRAGMA data_version` read per tick; writes only when something changed.
     pub fn sweep(&self) -> Result<(), HostError> {
@@ -581,8 +605,8 @@ impl MachineService {
                 .map(|l| l.row.id)
                 .collect();
             for lease in leases {
-                tracing::info!(%lease, %machine, "lease expired; placing it again");
-                st.requeue(lease, "the machine stopped responding");
+                tracing::info!(%lease, %machine, "lease expired; explicit resume required");
+                st.interrupt(lease, "the machine stopped responding");
             }
         }
         st.execs.retain(|_, e| {

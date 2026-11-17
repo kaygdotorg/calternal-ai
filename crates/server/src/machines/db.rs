@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS machines (
     arch TEXT NOT NULL,
     enrolled_ms INTEGER NOT NULL,
     revoked_ms INTEGER,
+    direct INTEGER NOT NULL DEFAULT 0,
     draining INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS pool_grants (
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS leases (
     created_ms INTEGER NOT NULL,
     updated_ms INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS leases_thread_history ON leases(account,thread,created_ms DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE state != 'ended';
 ";
 
@@ -158,6 +160,8 @@ pub struct MachineRow {
     pub revoked: bool,
     /// Draining machines receive no new placements.
     pub draining: bool,
+    /// Account owner explicitly permitted direct processes; never true in the pool.
+    pub direct: bool,
 }
 
 /// Use a code and create the machine in one transaction. `None` when the code
@@ -169,6 +173,7 @@ pub fn redeem_code(
     name: &str,
     os: &str,
     arch: &str,
+    direct: bool,
 ) -> rusqlite::Result<Option<MachineRow>> {
     let tx = c.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let now = now_ms();
@@ -183,6 +188,9 @@ pub fn redeem_code(
     let Some(owner) = owner.as_deref().and_then(parse_owner) else {
         return Ok(None);
     };
+    if direct && owner == calternal_machine::protocol::Owner::Pool {
+        return Ok(None);
+    }
     let row = MachineRow {
         id: Uuid::new_v4(),
         owner,
@@ -192,10 +200,11 @@ pub fn redeem_code(
         arch: arch.to_owned(),
         revoked: false,
         draining: false,
+        direct,
     };
     tx.execute(
-        "INSERT INTO machines (id, owner, public_key, name, os, arch, enrolled_ms) VALUES (?1,?2,?3,?4,?5,?6,?7)",
-        params![row.id.to_string(), owner_text(owner), row.public_key, row.name, row.os, row.arch, now],
+        "INSERT INTO machines (id, owner, public_key, name, os, arch, enrolled_ms, direct) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![row.id.to_string(), owner_text(owner), row.public_key, row.name, row.os, row.arch, now, direct],
     )?;
     tx.commit()?;
     Ok(Some(row))
@@ -204,7 +213,7 @@ pub fn redeem_code(
 /// Every machine, revoked ones included.
 pub fn machines(c: &Connection) -> rusqlite::Result<Vec<MachineRow>> {
     let mut st = c.prepare(
-        "SELECT id, owner, public_key, name, os, arch, revoked_ms IS NOT NULL, draining FROM machines",
+        "SELECT id, owner, public_key, name, os, arch, revoked_ms IS NOT NULL, draining, direct FROM machines",
     )?;
     let rows = st.query_map([], |r| {
         Ok((
@@ -216,11 +225,12 @@ pub fn machines(c: &Connection) -> rusqlite::Result<Vec<MachineRow>> {
             r.get(5)?,
             r.get(6)?,
             r.get::<_, i64>(7)? != 0,
+            r.get::<_, i64>(8)? != 0,
         ))
     })?;
     let mut out = Vec::new();
     for row in rows {
-        let (id, owner, public_key, name, os, arch, revoked, draining) = row?;
+        let (id, owner, public_key, name, os, arch, revoked, draining, direct) = row?;
         if let (Ok(id), Some(owner)) = (Uuid::parse_str(&id), parse_owner(&owner)) {
             out.push(MachineRow {
                 id,
@@ -231,6 +241,7 @@ pub fn machines(c: &Connection) -> rusqlite::Result<Vec<MachineRow>> {
                 arch,
                 revoked,
                 draining,
+                direct,
             });
         }
     }
@@ -377,4 +388,15 @@ pub fn lease(c: &Connection, id: Uuid) -> rusqlite::Result<Option<LeaseRow>> {
         lease_from,
     )
     .optional()
+}
+
+/// Last machine for this account's thread, used only as a placement preference
+/// after explicit resume or a later turn. Cost: one indexed history read.
+pub(crate) fn last_thread_machine(
+    c: &Connection,
+    account: AccountId,
+    thread: Uuid,
+) -> rusqlite::Result<Option<Uuid>> {
+    let id:Option<String>=c.query_row("SELECT last_machine FROM leases WHERE account=?1 AND thread=?2 AND last_machine IS NOT NULL ORDER BY created_ms DESC LIMIT 1",params![account.to_string(),thread.to_string()],|r|r.get(0)).optional()?;
+    Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }

@@ -40,6 +40,7 @@ fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
         name: "m".into(),
         os: "linux".into(),
         arch: "x86_64".into(),
+        direct: false,
     };
     let resp = svc.enrol(&req).unwrap();
     assert_eq!(
@@ -57,7 +58,8 @@ fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
         signature: key.sign_session(id, &challenge),
         challenge,
         boot_id: boot,
-        protocol: 1,
+        protocol: 2,
+        backend: "podman".into(),
     };
     let token = svc.session_finish(&finish).unwrap().token;
     assert_eq!(
@@ -111,7 +113,8 @@ async fn sessions_need_the_machine_key() {
         signature: wrong.sign_session(id, &challenge),
         challenge,
         boot_id: Uuid::new_v4(),
-        protocol: 1,
+        protocol: 2,
+        backend: "podman".into(),
     };
     assert_eq!(
         svc.session_finish(&forged).unwrap_err().code,
@@ -182,14 +185,15 @@ async fn stale_fence_and_wrong_machine_are_refused() {
         ErrorCode::Conflict
     );
 
-    // A goes silent past the TTL: the lease is fenced and moves to B.
+    // A goes silent past the TTL: the lease is fenced and stays interrupted.
     tokio::time::sleep(Duration::from_millis(400)).await;
     svc.sweep().unwrap();
     assert_eq!(
         svc.run(owner, lease_id).unwrap().state,
-        calternal_server::machines::LeaseState::Waiting
+        calternal_server::machines::LeaseState::Interrupted
     );
     let b = connect(&svc, b_id, b_key, Uuid::new_v4());
+    svc.resume_run(owner, lease_id).unwrap();
     let to_b = sync(&svc, &b, vec![]).await;
     let Some(Down::Assign {
         fence: new_fence, ..
@@ -251,4 +255,58 @@ async fn stale_fence_and_wrong_machine_are_refused() {
         )
         .unwrap();
     assert_eq!(ack.acked, 1);
+}
+
+#[tokio::test]
+async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_direct() {
+    let dir = tempfile::tempdir().unwrap();
+    let svc = service(dir.path());
+    let owner = AccountId::new();
+    let (id, key) = enrol(&svc, owner);
+    let handshake = |backend: &str| {
+        let challenge = svc.session_start(id).unwrap();
+        svc.session_finish(&SessionFinish {
+            machine_id: id,
+            signature: key.sign_session(id, &challenge),
+            challenge,
+            boot_id: Uuid::new_v4(),
+            protocol: 2,
+            backend: backend.into(),
+        })
+    };
+    assert_eq!(handshake("auto").unwrap().backend, "podman");
+    assert_eq!(
+        svc.set_direct(AccountId::new(), id, true).unwrap_err().code,
+        ErrorCode::NotFound
+    );
+    svc.set_direct(owner, id, true).unwrap();
+    assert_eq!(handshake("auto").unwrap().backend, "direct");
+    svc.set_direct(owner, id, false).unwrap();
+    assert_eq!(handshake("auto").unwrap().backend, "podman");
+    assert_eq!(handshake("direct").unwrap_err().code, ErrorCode::Forbidden);
+    let (code, _) = svc.issue_code(Owner::Pool).unwrap();
+    let pool_key = MachineKey::generate().unwrap();
+    let pool = svc
+        .enrol(&EnrolRequest {
+            code,
+            public_key: pool_key.public_key_b64(),
+            name: "pool".into(),
+            os: "linux".into(),
+            arch: "x86_64".into(),
+            direct: false,
+        })
+        .unwrap()
+        .machine_id;
+    let challenge = svc.session_start(pool).unwrap();
+    let grant = svc
+        .session_finish(&SessionFinish {
+            machine_id: pool,
+            signature: pool_key.sign_session(pool, &challenge),
+            challenge,
+            boot_id: Uuid::new_v4(),
+            protocol: 2,
+            backend: "auto".into(),
+        })
+        .unwrap();
+    assert_eq!(grant.backend, "podman");
 }

@@ -3,12 +3,12 @@
 //! - Base image by reference (`docker.io/library/alpine:3` or a digest); the image
 //!   must already be present or pullable by the machine user.
 //! - The container's own overlay upper layer is the thread's private writable layer.
-//! - `<root>/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
+//! - `<root>/accounts/<account-id>/threads/<thread-id>/work` is bind-mounted at `/work` and is the working directory.
 //! - Limits map to `--memory`, `--cpus` and `--pids-limit`; defaults are 1 GiB and
 //!   256 processes, the configuration measured on perf-01.
 //! - Freeze and resume are `podman pause` / `unpause` (about 0.1 s each, memory
 //!   stays resident). Stop is `podman rm -f -t 0` plus removing the work directory.
-//! - Containers are named `calternal-thread-<thread-id>` and labelled
+//! - Containers are named `calternal-account-<account-id>-thread-<thread-id>` and labelled
 //!   `org.calternal.thread`, so a restarted machine role adopts them.
 //!
 //! The server never runs any of this: only the machine role calls Podman.
@@ -62,9 +62,10 @@ impl PodmanBackend {
             .is_ok_and(|s| s.success())
     }
 
-    /// Container name of a thread.
-    pub fn container_name(thread_id: Uuid) -> String {
-        format!("calternal-thread-{thread_id}")
+    /// Account-qualified container name, so a caller reusing another account's
+    /// thread UUID can never adopt its mounts or login home.
+    pub fn container_name(account_id: Uuid, thread_id: Uuid) -> String {
+        format!("calternal-account-{account_id}-thread-{thread_id}")
     }
 }
 
@@ -103,8 +104,17 @@ impl Backend for PodmanBackend {
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
-            let name = Self::container_name(spec.thread_id);
-            let dir = self.root.join(spec.thread_id.to_string());
+            let name = Self::container_name(spec.account_id, spec.thread_id);
+            let account = self.root.join("accounts").join(spec.account_id.to_string());
+            let home = account.join("home");
+            let dir = account.join("threads").join(spec.thread_id.to_string());
+            tokio::fs::create_dir_all(&home)
+                .await
+                .map_err(SandboxError::new)?;
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
+                .await
+                .map_err(SandboxError::new)?;
             let work = dir.join("work");
             tokio::fs::create_dir_all(&work)
                 .await
@@ -136,6 +146,7 @@ impl Backend for PodmanBackend {
                     } = spec.limits;
                     let image = spec.image.as_deref().unwrap_or(&self.default_image);
                     let label = format!("org.calternal.thread={}", spec.thread_id);
+                    let home_mount = format!("{}:/home/agent", home.display());
                     let mount = format!("{}:/work", work.display());
                     let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
                     let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
@@ -153,14 +164,27 @@ impl Backend for PodmanBackend {
                         &pids,
                         "--volume",
                         &mount,
+                        "--volume",
+                        &home_mount,
                         "--workdir",
                         "/work",
                         "--env",
-                        "HOME=/work",
+                        "HOME=/home/agent",
                     ]
                     .iter()
                     .map(|s| s.to_string())
                     .collect();
+                    // The same operation CLI is available to an agent, read-only.
+                    // Nix builds retain immutable store references for their libraries.
+                    if let Some(exe) = super::cli_program().await {
+                        args.extend([
+                            "--volume".into(),
+                            format!("{}:/usr/local/bin/calternal:ro", exe.display()),
+                        ]);
+                        if tokio::fs::try_exists("/nix/store").await.unwrap_or(false) {
+                            args.extend(["--volume".into(), "/nix/store:/nix/store:ro".into()]);
+                        }
+                    }
                     if let Some(m) = cpu_millis {
                         args.push("--cpus".into());
                         args.push(format!("{}.{:03}", m / 1000, m % 1000));
@@ -196,13 +220,13 @@ impl Sandbox for PodmanSandbox {
                 return Err(SandboxError("empty command".into()));
             }
             let mut cmd = tokio::process::Command::new(&self.podman);
-            cmd.args(["exec", "--workdir", "/work"]);
+            cmd.args(["exec", "-i", "--workdir", "/work"]);
             for (k, v) in &request.env {
                 cmd.arg("--env").arg(format!("{k}={v}"));
             }
             cmd.arg(&self.name).args(&request.argv);
             cmd.as_std_mut().process_group(0);
-            let (exec, pid) = super::spawn_streaming(cmd)?;
+            let (exec, pid) = super::spawn_streaming(cmd, request.stdin)?;
             let mut clients = self.clients.lock().expect("clients");
             clients
                 .retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
@@ -243,6 +267,9 @@ impl Sandbox for PodmanSandbox {
 
     fn release(&self) -> BoxFuture<'_, SandboxResult<()>> {
         Box::pin(async move {
+            // Stop the container's processes while retaining its layer and mounts.
+            // Killing only the local podman exec client can leave the CLI running.
+            podman(&self.podman, &["stop", "--time", "0", &self.name]).await?;
             for &g in self.clients.lock().expect("clients").iter() {
                 if let Some(pid) = Pid::from_raw(g) {
                     let _ = kill_process_group(pid, Signal::KILL);

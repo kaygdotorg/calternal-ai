@@ -229,8 +229,28 @@ async fn pool_machines_serve_only_granted_accounts() {
     let issued: Value = serde_json::from_slice(&out.stdout).unwrap();
     let code = issued["data"]["code"].as_str().unwrap();
     let mdir = TempDir::new("pool-m");
-    assert_eq!(enrol(&server.url(), code, &mdir.0), 0);
-    let _m = machine(&mdir.0, 4);
+    let status = std::process::Command::new(BIN)
+        .args([
+            "machine",
+            "enroll",
+            "--server",
+            &server.url(),
+            "--code",
+            code,
+            "--dir",
+        ])
+        .arg(&mdir.0)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let _m = machines_common::Proc(
+        std::process::Command::new(BIN)
+            .args(["machine", "run", "--backend", "podman", "--dir"])
+            .arg(&mdir.0)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let space = server.owned_space(&server.owner).await;
     let run = server
         .request_run(&server.owner, &space, Uuid::new_v4())
@@ -334,10 +354,22 @@ async fn a_machine_that_lost_its_lease_cannot_deliver() {
     let code = server.code(&server.owner).await;
     assert_eq!(enrol(&server.url(), &code, &b_dir.0), 0);
     let _b = machine(&b_dir.0, 2);
-    let after = server
+    let interrupted = server
         .wait_run(&server.owner, &lease, Duration::from_secs(20), |v| {
-            v["state"] == "running" && v["machine_id"] != before["machine_id"]
+            v["state"] == "interrupted"
         })
+        .await;
+    assert!(interrupted["machine_id"].is_null());
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(
+        server.run(&server.owner, &lease).await["state"],
+        "interrupted",
+        "silent work moved automatically"
+    );
+    let(status,resumed)=server.call(&server.owner,"/api/v1/operations",Some(json!({"request_id":"explicit-resume","operation":"machines.resume","input":{"lease_id":lease}}))).await;
+    assert_eq!(status, 200, "{resumed}");
+    let after = server
+        .wait_run(&server.owner, &lease, T, |v| v["state"] == "running")
         .await;
     assert_ne!(after["machine_id"], before["machine_id"]);
 

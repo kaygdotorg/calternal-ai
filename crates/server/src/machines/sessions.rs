@@ -10,7 +10,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use calternal_auth::token::{hash32, normalize_setup_token, random32};
 use calternal_machine::protocol::{
-    Capacity, ChunkEvent, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost,
+    Capacity, ChunkEvent, EnrolRequest, EnrolResponse, Envelope, OutputAck, OutputPost, Owner,
     PROTOCOL_VERSION, SessionFinish, SessionGranted, SyncRequest, session_message,
 };
 use tokio::sync::Notify;
@@ -55,6 +55,7 @@ impl MachineService {
             &clean(&req.name, 64),
             &clean(&req.os, 32),
             &clean(&req.arch, 32),
+            req.direct,
         )
         .map_err(sql)?
         .ok_or_else(invalid)?;
@@ -115,6 +116,24 @@ impl MachineService {
         ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &machine.row.public_key)
             .verify(&session_message(f.machine_id, &f.challenge), &sig)
             .map_err(|_| denied())?;
+        if f.backend == "direct" && (!machine.row.direct || machine.row.owner == Owner::Pool) {
+            return Err(HostError::forbidden(
+                "the owner must enable direct execution with calternal machine set",
+            ));
+        }
+        if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
+            return Err(HostError::invalid_input("unsupported machine backend"));
+        }
+        let backend = if f.backend == "auto" {
+            if machine.row.direct && machine.row.owner != Owner::Pool {
+                "direct"
+            } else {
+                "podman"
+            }
+        } else {
+            f.backend.as_str()
+        }
+        .to_owned();
         let (token, hash) = new_token()?;
         if let Some(old) = machine.live.take() {
             st.sessions.remove(&old.session);
@@ -150,6 +169,7 @@ impl MachineService {
             st.send_execs(lease);
         }
         Ok(SessionGranted {
+            backend,
             token,
             lease_ttl_ms: self.settings.lease_ttl.as_millis() as u64,
             poll_hold_ms: self.settings.poll_hold.as_millis() as u64,

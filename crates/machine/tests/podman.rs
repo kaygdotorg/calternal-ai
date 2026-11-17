@@ -35,6 +35,7 @@ async fn backend(root: &std::path::Path) -> Option<PodmanBackend> {
 
 fn spec(limits: Limits) -> SandboxSpec {
     SandboxSpec {
+        account_id: Uuid::new_v4(),
         thread_id: Uuid::new_v4(),
         image: None,
         limits,
@@ -44,6 +45,7 @@ fn spec(limits: Limits) -> SandboxSpec {
 async fn sh(sb: &Arc<dyn Sandbox>, script: &str) -> (String, i32) {
     let exec = sb
         .exec(ExecRequest {
+            stdin: String::new(),
             argv: vec!["sh".into(), "-c".into(), script.into()],
             env: vec![],
         })
@@ -86,6 +88,9 @@ async fn threads_are_isolated_and_limited() {
     );
     assert!(
         root.path()
+            .join("accounts")
+            .join(sa.account_id.to_string())
+            .join("threads")
             .join(sa.thread_id.to_string())
             .join("work/note")
             .exists()
@@ -125,7 +130,7 @@ async fn threads_are_isolated_and_limited() {
         .args([
             "container",
             "exists",
-            &PodmanBackend::container_name(sa.thread_id),
+            &PodmanBackend::container_name(sa.account_id, sa.thread_id),
         ])
         .status()
         .await
@@ -153,4 +158,29 @@ async fn freeze_resume_and_adoption_after_restart() {
     again.resume().await.unwrap();
     assert_eq!(sh(&again, "echo ok").await.1, 0);
     again.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn persistent_homes_are_shared_only_with_the_same_account() {
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let first = spec(Limits::default());
+    let mut same = spec(Limits::default());
+    same.account_id = first.account_id;
+    let mut other = spec(Limits::default());
+    other.thread_id = first.thread_id;
+    let a = backend.start(&first).await.unwrap();
+    assert_eq!(sh(&a, "echo account-a > \"$HOME/login-marker\"").await.1, 0);
+    let b = backend.start(&same).await.unwrap();
+    assert_eq!(sh(&b, "cat \"$HOME/login-marker\"").await.0, "account-a\n");
+    let c = backend.start(&other).await.unwrap();
+    assert_eq!(sh(&c, "test ! -e \"$HOME/login-marker\"").await.1, 0);
+    assert_eq!(sh(&c, "echo account-b > \"$HOME/login-marker\"").await.1, 0);
+    assert_eq!(sh(&b, "cat \"$HOME/login-marker\"").await.0, "account-a\n");
+    a.stop().await.unwrap();
+    assert_eq!(sh(&b, "cat \"$HOME/login-marker\"").await.0, "account-a\n");
+    b.stop().await.unwrap();
+    c.stop().await.unwrap();
 }
