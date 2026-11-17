@@ -73,16 +73,25 @@ pub enum Pending {
     List,
     /// Cancel an envelope that has not been attempted.
     Cancel {
+        /// Space UUID the queued write targets.
+        #[arg(long)]
+        space: String,
         /// Stable request ID of the queued write.
         id: String,
     },
     /// Confirm and send input held for more than seven days.
     Confirm {
+        /// Space UUID the queued write targets.
+        #[arg(long)]
+        space: String,
         /// Stable request ID of the queued write.
         id: String,
     },
     /// Attempt delivery with current access and the original request ID.
     Submit {
+        /// Space UUID the queued write targets.
+        #[arg(long)]
+        space: String,
         /// Stable request ID of the queued write.
         id: String,
     },
@@ -135,9 +144,9 @@ impl Pending {
             Self::Queue { file } => ("pending.queue", read(file)?),
             Self::Edit { file } => ("pending.edit", read(file)?),
             Self::List => ("pending.list", json!({})),
-            Self::Cancel { id } => ("pending.cancel", json!({"id":id})),
-            Self::Confirm { id } => ("pending.confirm", json!({"id":id})),
-            Self::Submit { id } => ("pending.submit", json!({"id":id})),
+            Self::Cancel { space, id } => ("pending.cancel", json!({"space_id":space,"id":id})),
+            Self::Confirm { space, id } => ("pending.confirm", json!({"space_id":space,"id":id})),
+            Self::Submit { space, id } => ("pending.submit", json!({"space_id":space,"id":id})),
         })
     }
 }

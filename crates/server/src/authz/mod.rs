@@ -5,19 +5,12 @@
 //! only when constructing the existing wire error. Resource IDs are always bound
 //! to the authorized space by the storage APIs; possession of an ID grants nothing.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
 use std::borrow::Cow;
 
 use calternal_core::JsonObject;
 
-pub mod capabilities;
-
-pub use capabilities::{BUILTIN_ROLES, Capability, CapabilitySet, RoleSet};
-
 use crate::auth::{Directory, Identity};
-use crate::error::HostError;
+use calternal_types::{Capability, CapabilitySet, Error, SpaceId};
 
 /// Input scope whose space must be authorized before any resource lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +21,7 @@ pub enum Scope {
     Space,
     /// The global item resolver derives the owning space before policy admission.
     /// Missing membership and cross-space IDs return the same not-found error.
-    Note,
+    Item,
     /// The job store derives the job's owning space before policy admission; a job
     /// the caller cannot see answers exactly like a missing one.
     Job,
@@ -132,13 +125,13 @@ pub const POLICIES: &[Policy] = &[
     Policy {
         operation: Cow::Borrowed("notes.get"),
         required: Capability::SpaceRead,
-        scope: Scope::Note,
+        scope: Scope::Item,
         constraint: Constraint::None,
     },
     Policy {
         operation: Cow::Borrowed("notes.history"),
         required: Capability::SpaceRead,
-        scope: Scope::Note,
+        scope: Scope::Item,
         constraint: Constraint::None,
     },
     Policy {
@@ -150,7 +143,7 @@ pub const POLICIES: &[Policy] = &[
     Policy {
         operation: Cow::Borrowed("notes.update"),
         required: Capability::ContentWrite,
-        scope: Scope::Note,
+        scope: Scope::Item,
         constraint: Constraint::None,
     },
     Policy {
@@ -242,15 +235,26 @@ impl Policy {
         directory: &impl Directory,
         principal: &Identity,
         input: &JsonObject,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         if self.scope == Scope::Account {
             return Ok(());
         }
         let space = input
             .get("space_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| HostError::invalid_input("input does not match operation schema"))?;
+            .ok_or_else(|| Error::invalid_input("input does not match operation schema"))?;
+        // A malformed ID names no space: the same answer as one the caller cannot see.
+        let space = SpaceId::parse(space).map_err(|_| self.hidden())?;
         self.authorize_space(directory, principal, space)
+    }
+
+    /// The not-found answer for this scope, identical for absent and inaccessible targets.
+    fn hidden(&self) -> Error {
+        match self.scope {
+            Scope::Item => Error::not_found("item not found"),
+            Scope::Job => Error::not_found("job not found"),
+            _ => Error::not_found("space not found"),
+        }
     }
 
     /// Recheck the already extracted scope, including before asynchronous delivery.
@@ -262,22 +266,26 @@ impl Policy {
         &self,
         directory: &impl Directory,
         principal: &Identity,
-        space: &str,
-    ) -> Result<(), HostError> {
-        match directory.capabilities(&principal.id, space) {
-            None if self.scope == Scope::Note => Err(HostError::not_found("item not found")),
-            None if self.scope == Scope::Job => Err(HostError::not_found("job not found")),
-            None => Err(HostError::not_found("space not found")),
+        space: SpaceId,
+    ) -> Result<(), Error> {
+        self.check(directory.capabilities(principal.id, space))
+    }
+
+    /// Applies this policy to an already looked-up capability set (`None`: no
+    /// membership), so one lookup can serve admission. Cost: a few bit tests.
+    pub fn check(&self, granted: Option<CapabilitySet>) -> Result<(), Error> {
+        match granted {
+            None => Err(self.hidden()),
             Some(set)
-                if self.scope == Scope::Note
+                if self.scope == Scope::Item
                     && !set.contains(Capability::SpaceRead)
                     && !set.contains(self.required) =>
             {
-                Err(HostError::not_found("item not found"))
+                Err(Error::not_found("item not found"))
             }
             Some(set) if !set.contains(self.required) => {
                 // Preserve the development wire error text for existing clients.
-                Err(HostError::forbidden("insufficient role for this space"))
+                Err(Error::forbidden("insufficient role for this space"))
             }
             Some(_) => Ok(()),
         }

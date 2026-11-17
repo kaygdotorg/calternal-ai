@@ -14,9 +14,6 @@
 //!
 //! Workers are NOT an OS security sandbox; see [`worker`] for what one can still reach.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
 pub mod broker;
 pub mod job_api;
 pub mod job_sql;
@@ -33,15 +30,15 @@ use std::sync::Arc;
 
 use calternal_content::{FileFormat, Placement};
 use calternal_core::{
-    False, ManifestCapability, ManifestOperation, ManifestPlacement, ManifestTarget, ManifestV1,
-    PluginManifest, PluginOperation,
+    ManifestCapability, ManifestOperation, ManifestPlacement, ManifestTarget, ManifestV1,
 };
 use calternal_plugin_host as host;
 use serde::Deserialize;
 
-use crate::authz::{self, Capability, Constraint, Policy, Scope};
-use crate::error::HostError;
+use crate::authz::{self, Constraint, Policy, Scope};
 use crate::store::{PluginRow, Store, sha256_hex};
+use calternal_types::Error;
+use calternal_types::{Capability, SpaceId};
 
 pub use broker::{InvocationHost, PREVIEW_FIXTURE, PREVIEW_ITEM_ID, PreviewHost};
 pub use jobs::Jobs;
@@ -84,12 +81,12 @@ pub struct Plugin {
     pub entry: TrustedEntry,
     /// Validated manifest v1; immutable for the server's lifetime.
     pub manifest: ManifestV1,
-    /// Compatibility projection served by `plugins.list`/`enable`/`disable`, built once.
-    pub wire: PluginManifest,
     /// Canonical absolute worker path, when the plugin has a built worker.
     pub worker: Option<PathBuf>,
     /// Why the plugin cannot execute or be enabled, if it cannot (digest mismatch etc).
     pub unavailable: Option<String>,
+    /// Operation schemas compiled once, shared by every (plugin, space) worker.
+    pub schemas: Arc<host::CompiledSchemas>,
 }
 
 impl Plugin {
@@ -102,20 +99,22 @@ impl Plugin {
         manifest: ManifestV1,
         worker: Option<PathBuf>,
     ) -> Result<Self, String> {
-        host::validate_manifest(&manifest).map_err(|e| format!("manifest invalid: {e}"))?;
+        let schemas = Arc::new(
+            host::CompiledSchemas::compile(&manifest)
+                .map_err(|e| format!("manifest invalid: {e}"))?,
+        );
         if manifest.id != entry.id || manifest.version != entry.version {
             return Err(format!(
                 "manifest id/version {}@{} does not match registry {}@{}",
                 manifest.id, manifest.version, entry.id, entry.version
             ));
         }
-        let wire = wire_manifest(&manifest);
         Ok(Self {
             entry,
             manifest,
-            wire,
             worker,
             unavailable: None,
+            schemas,
         })
     }
 
@@ -283,7 +282,7 @@ impl Registry {
             let policy = Policy {
                 operation: Cow::Owned(row.operation.id.clone()),
                 required,
-                scope: if item { Scope::Note } else { Scope::Space },
+                scope: if item { Scope::Item } else { Scope::Space },
                 constraint: Constraint::PluginInvocation,
             };
             out.operations.insert(row.operation.id, (slot, policy));
@@ -338,52 +337,10 @@ fn check_operations(plugin: &Plugin) -> Result<(), String> {
     Ok(())
 }
 
-/// Compatibility projection of a v1 manifest onto the v0 discovery DTO the web
-/// client still reads. It carries no authority. Lossy by design until the discovery
-/// contract switches: v1 has no description or dependencies, its views are component
-/// references rather than inline portable views (so none are projected), and the v0
-/// operation shape cannot express mutating operations (so those are omitted).
-/// Capabilities list each distinct required capability, then each host call.
-/// Cost: O(operations + host calls) small allocations, once per plugin at startup.
-pub fn wire_manifest(manifest: &ManifestV1) -> PluginManifest {
-    let mut capabilities: Vec<String> = Vec::new();
-    for op in &manifest.operations {
-        let name = capability_name(op.required_capability);
-        if !capabilities.contains(&name) {
-            capabilities.push(name);
-        }
-    }
-    for call in &manifest.host_calls {
-        if let Ok(serde_json::Value::String(name)) = serde_json::to_value(call) {
-            capabilities.push(name);
-        }
-    }
-    PluginManifest {
-        id: manifest.id.clone(),
-        version: manifest.version.clone(),
-        api_version: manifest.api_version,
-        name: manifest.name.clone(),
-        description: String::new(),
-        dependencies: vec![],
-        capabilities,
-        operations: manifest
-            .operations
-            .iter()
-            .filter(|op| !op.mutates)
-            .map(|op| PluginOperation {
-                id: op.id.clone(),
-                description: String::new(),
-                mutates: False,
-            })
-            .collect(),
-        views: vec![],
-    }
-}
-
 /// Effective activation of `plugin` in one content space: the stored row, or the
 /// trusted default, and never enabled while the plugin is unavailable.
 /// Cost: one indexed plugin-state read; no content I/O.
-pub fn activation(store: &Store, space: &str, plugin: &Plugin) -> Result<PluginRow, HostError> {
+pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<PluginRow, Error> {
     let mut row = store
         .plugin_row(space, &plugin.manifest.id)?
         .unwrap_or_else(|| default_row(plugin));

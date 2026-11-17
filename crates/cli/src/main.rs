@@ -113,8 +113,8 @@ enum Command {
 }
 #[derive(Args)]
 struct Space {
-    /// Space UUID; defaults to the signed-in account's personal space.
-    #[arg(long, alias = "space-id", default_value = "personal")]
+    /// Space UUID, as listed by `describe`.
+    #[arg(long, alias = "space-id")]
     space: String,
 }
 #[derive(Args)]
@@ -497,7 +497,9 @@ mod tests {
     }
     #[test]
     fn no_hints_is_global_and_command_help_has_examples_and_see_also() {
-        let cli = Cli::try_parse_from(["cl", "notes", "list", "--no-hints"]).unwrap();
+        let space = calternal_types::SpaceId::new().to_string();
+        let cli =
+            Cli::try_parse_from(["cl", "notes", "list", "--space", &space, "--no-hints"]).unwrap();
         assert!(cli.no_hints);
         let commands: &[&[&str]] = &[
             &["cl", "--help"],

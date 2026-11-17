@@ -28,17 +28,17 @@ async fn private_input_operations_isolate_accounts_and_hide_revoked_space(){
     edit["item_id"]=list.body["data"]["records"][0]["item_id"].clone();
     edit["request"]["input"]["markdown"]=json!("edited private pending");
     f.op(1,"pending.edit",edit.clone()).await.ok();assert_eq!(f.op(2,"pending.edit",edit).await.status,404);
-    for name in ["pending.cancel","pending.confirm","pending.submit"] {assert_eq!(f.op(2,name,json!({"id":"private-send"})).await.status,404);}
+    for name in ["pending.cancel","pending.confirm","pending.submit"] {assert_eq!(f.op(2,name,json!({"space_id":space,"id":"private-send"})).await.status,404);}
     let other=f.op(2,"pending.list",json!({})).await;other.ok();assert_eq!(other.body["data"]["records"],json!([]));
-    f.op(1,"pending.submit",json!({"id":"private-send"})).await.ok();
+    f.op(1,"pending.submit",json!({"space_id":space,"id":"private-send"})).await.ok();
     f.op(1,"pending.queue",queued(space,"old-send",8*24*60*60*1000)).await.ok();
-    let held=f.op(1,"pending.submit",json!({"id":"old-send"})).await;held.ok();assert_eq!(held.body["data"]["record"]["state"],"confirmation_required");
-    f.op(1,"pending.confirm",json!({"id":"old-send"})).await.ok();
-    f.op(1,"pending.queue",queued(space,"cancel",0)).await.ok();f.op(1,"pending.cancel",json!({"id":"cancel"})).await.ok();
+    let held=f.op(1,"pending.submit",json!({"space_id":space,"id":"old-send"})).await;held.ok();assert_eq!(held.body["data"]["record"]["state"],"confirmation_required");
+    f.op(1,"pending.confirm",json!({"space_id":space,"id":"old-send"})).await.ok();
+    f.op(1,"pending.queue",queued(space,"cancel",0)).await.ok();f.op(1,"pending.cancel",json!({"space_id":space,"id":"cancel"})).await.ok();
     f.op(1,"drafts.delete",key).await.ok();
     f.op(1,"pending.queue",queued(space,"revoked",0)).await.ok();
     f.op(1,"spaces.delete",json!({"space_id":space})).await.ok();
-    assert_eq!(f.op(1,"pending.submit",json!({"id":"revoked"})).await.status,404);
+    assert_eq!(f.op(1,"pending.submit",json!({"space_id":space,"id":"revoked"})).await.status,404);
     assert_eq!(f.op(1,"pending.list",json!({})).await.body["data"]["records"],json!([]));
 }
 #[tokio::test]

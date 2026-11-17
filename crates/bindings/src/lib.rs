@@ -25,7 +25,7 @@ pub fn contract_schema_json() -> String {
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn validate_request_json(request_json: String) -> String {
     let result = serde_json::from_str::<OperationRequest>(&request_json)
-        .map_err(|_| ValidationError::invalid("malformed operation envelope"))
+        .map_err(|_| calternal_types::Error::invalid_input("malformed operation envelope"))
         .and_then(|r| {
             validate_client_request(&r)?;
             Ok(r)
@@ -37,12 +37,20 @@ pub fn validate_request_json(request_json: String) -> String {
         }
     }
 }
-/// Validate a JSON portable view synchronously without rendering or dispatch. Returns JSON with `valid` and a safe `error` on failure. Enforces tree budgets after decoding; allocates O(input bytes).
+/// Validate a JSON generated-UI view (`{genui_version: 2, source}`) synchronously without rendering or dispatch: version, size, and a compile of the source with no diagnostics. Returns JSON with `valid` and a safe `error` on failure. Allocates O(source bytes).
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn validate_genui_json(view_json: String) -> String {
     let result = serde_json::from_str::<GenUiView>(&view_json)
-        .map_err(|_| ValidationError::invalid("malformed GenUI tree"))
-        .and_then(|view| validate_genui(&view));
+        .map_err(|_| calternal_types::Error::invalid_input("malformed GenUI view"))
+        .and_then(|view| {
+            validate_genui(&view)?;
+            let compiled =
+                calternal_genui::compile(&view.source, calternal_genui::Budgets::default());
+            match compiled.diagnostics.first() {
+                None => Ok(()),
+                Some(d) => Err(calternal_types::Error::invalid_input(d.message.clone())),
+            }
+        });
     match result {
         Ok(()) => json!({"valid":true}).to_string(),
         Err(error) => {
@@ -60,7 +68,7 @@ mod tests {
     }
     #[test]
     fn exports_real_schema() {
-        assert!(contract_schema_json().contains("WorkerRequest"));
+        assert!(contract_schema_json().contains("OperationRequest"));
     }
 }
 

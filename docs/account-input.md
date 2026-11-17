@@ -16,7 +16,7 @@ All calls use `/api/v1/operations` and its ordinary envelope.
 | `drafts.get`, `drafts.delete` | `space_id`, `item_id` | `record` or null after deletion |
 | `pending.queue`, `pending.edit` | `space_id`, `item_id`, `created_at_ms`, `request` | `record` |
 | `pending.list` | `{}` | `records` |
-| `pending.cancel`, `pending.confirm`, `pending.submit` | `id` (underlying request ID) | `record`, `result` |
+| `pending.cancel`, `pending.confirm`, `pending.submit` | `space_id`, `id` (underlying request ID) | `record`, `result` |
 
 Single-record replies always contain both `record` and `result`; absent values
 are null. List replies contain `records`. Queue and submit retries of completed
@@ -26,13 +26,19 @@ checked before replay. Reusing an underlying request ID with different input is
 a conflict. No terminal replay promise is added to cancel or draft replacement.
 
 A draft key is the account and target item UUID, with the target's space UUID
-checked on each operation. Item IDs are globally unique. A save is a complete
+checked on each operation. Item IDs are globally unique, and a draft's space is
+fixed when it is first saved: saving the same item under another space is refused
+until that draft is deleted. The stored record is the one copy of a draft's or
+envelope's space and item; the lookup columns are generated from it, so revocation
+cleanup and delivery can never disagree. A save is a complete
 replacement: the last server-accepted write wins and returns a new opaque revision.
 There is no merge engine, base-revision check or time expiry. A draft requires
 current space read access and remains private even from other members of that space.
 
 Pending envelopes carry their original creation time in Unix milliseconds and
-stable write request ID. They must contain their full space UUID in the nested
+stable write request ID. Request IDs are scoped to (account, space), so a pending
+envelope is identified by its space and request ID: the same ID may be queued in
+two spaces, and submit, confirm and cancel name both. They must contain their full space UUID in the nested
 input; an item-scoped write's `id` must match `item_id`. The normal dispatcher
 resolves the real item and checks its scope again before writing. Only content-write
 operations may be queued; account-input, directory and secrets operations cannot
@@ -142,7 +148,7 @@ calternal drafts save <item-uuid> --space <space-uuid> --text 'Unsent text' --to
 calternal drafts list --token-file <private-file> --json
 calternal pending queue pending.json --token-file <private-file>
 calternal pending list --token-file <private-file> --json
-calternal pending confirm <request-id> --token-file <private-file>
+calternal pending confirm <request-id> --space <space-uuid> --token-file <private-file>
 ```
 
 A queue/edit input file holds the four fields in the operation table. `request`

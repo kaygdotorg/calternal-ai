@@ -1,17 +1,14 @@
-//! The `index.db` schema and its migrations.
-//!
-//! Migrations are additive only: new tables, new columns, new indexes.
-//! The new space schema is not an importer for old per-account databases.
+//! The `index.db` schema (one current definition) and its opening rules.
 
 use crate::token::entry_check;
 use crate::{Error, Result};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::Path;
 
-/// Every migration, in order. Never edit one that has shipped; add a new one.
-const MIGRATIONS: &[&str] = &[
-    // 1: the change journal and idempotency records.
-    "CREATE TABLE meta (
+/// The whole `index.db` schema at [`VERSION`]: the change journal and its
+/// expiring request receipts (nothing outlives a receipt). No migration chain:
+/// preview data is disposable, and a database at another version is refused.
+const SCHEMA: &str = "CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
     ) STRICT;
@@ -22,7 +19,8 @@ const MIGRATIONS: &[&str] = &[
         item         TEXT NOT NULL,
         data         TEXT NOT NULL,
         installation TEXT,
-        request_id   TEXT
+        request_id   TEXT,
+        author       TEXT NOT NULL
     ) STRICT;
     CREATE TABLE idempotency (
         key          TEXT PRIMARY KEY,
@@ -31,14 +29,10 @@ const MIGRATIONS: &[&str] = &[
         result       TEXT NOT NULL,
         seq          INTEGER NOT NULL,
         at_ms        INTEGER NOT NULL
-    ) STRICT;",
-    // 2: lets the retention sweep find old records without a full scan.
-    "CREATE INDEX idempotency_at ON idempotency (at_ms);",
-    // Permanent receipts are separate from expiring action responses.
-    "CREATE TABLE publication_receipts (key TEXT PRIMARY KEY, digest TEXT NOT NULL, seq INTEGER NOT NULL) STRICT;",
-    // New layout has no deployed data; legacy account trees are never adopted.
-    "ALTER TABLE journal ADD COLUMN author TEXT NOT NULL;",
-];
+    ) STRICT;
+    CREATE INDEX idempotency_at ON idempotency (at_ms);";
+/// The schema version [`SCHEMA`] creates.
+const VERSION: i64 = 2;
 
 /// Validates the explicit space binding before exposing an opened journal.
 pub(crate) fn open_bound_writer(
@@ -47,8 +41,7 @@ pub(crate) fn open_bound_writer(
     space: crate::SpaceId,
 ) -> Result<OpenState> {
     let value = space.to_string();
-    // Validate an existing domain before migrations or epoch/key initialization.
-    // A populated unbound database requires a reviewed importer, never adoption.
+    // Refuse a journal bound to another space before touching its schema or epoch.
     if path.exists() {
         let conn = open_reader(path)?;
         let has_meta: bool = conn
@@ -70,17 +63,6 @@ pub(crate) fn open_bound_writer(
                     crate::ErrorCode::InvalidInput,
                     "journal belongs to another space",
                 ));
-            }
-            if existing.is_none() {
-                let populated: bool = conn
-                    .query_row("SELECT EXISTS(SELECT 1 FROM journal)", [], |r| r.get(0))
-                    .map_err(Error::internal)?;
-                if populated {
-                    return Err(Error::new(
-                        crate::ErrorCode::InvalidInput,
-                        "unbound legacy journal requires explicit import",
-                    ));
-                }
             }
         }
     }
@@ -123,8 +105,8 @@ pub(crate) struct OpenState {
     pub highwater_initialized: bool,
 }
 
-/// Ordinary journal writes retain NORMAL sync. The publication writer uses
-/// FULL for its permanent receipt transaction before acknowledging the space.
+/// Ordinary journal writes retain NORMAL sync; a [`crate::Commit::durable`]
+/// commit switches to FULL for its one transaction.
 fn tune(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA journal_mode = WAL;
@@ -205,23 +187,25 @@ pub(crate) fn open_reader(path: &Path) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Creates [`SCHEMA`] in an empty database; refuses any other version.
 fn migrate(conn: &mut Connection) -> Result<()> {
-    let version: usize = conn
-        .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
-        .map_err(Error::internal)? as usize;
-    if version > MIGRATIONS.len() {
-        // A newer build made this database. Additive migrations mean we can
-        // still run; we just ignore what we don't know about.
-        return Ok(());
+    let version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .map_err(Error::internal)?;
+    match version {
+        0 => {
+            let tx = conn.transaction().map_err(Error::internal)?;
+            tx.execute_batch(SCHEMA).map_err(Error::internal)?;
+            tx.pragma_update(None, "user_version", VERSION)
+                .map_err(Error::internal)?;
+            tx.commit().map_err(Error::internal)
+        }
+        VERSION => Ok(()),
+        _ => Err(Error::new(
+            crate::ErrorCode::InvalidInput,
+            "index.db schema version is not this build's; use fresh disposable data",
+        )),
     }
-    for (i, sql) in MIGRATIONS.iter().enumerate().skip(version) {
-        let tx = conn.transaction().map_err(Error::internal)?;
-        tx.execute_batch(sql).map_err(Error::internal)?;
-        tx.pragma_update(None, "user_version", (i + 1) as i64)
-            .map_err(Error::internal)?;
-        tx.commit().map_err(Error::internal)?;
-    }
-    Ok(())
 }
 
 /// The journal's generation id and, for signed stores, its restore metadata.

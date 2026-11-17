@@ -9,10 +9,7 @@
 //! A session is identified by its installation ID, never by its token, so it can be
 //! stored in a job record without storing a secret.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
-use calternal_auth::InstallationId;
+use calternal_types::{AccountId, InstallationId};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 
@@ -30,19 +27,19 @@ pub enum Session {
     /// while that installation is neither revoked nor expired.
     Installation {
         /// Account the installation belongs to.
-        account: String,
+        account: AccountId,
         /// Installation ID; not a secret.
-        installation: String,
+        installation: InstallationId,
     },
 }
 
 impl Session {
     /// Build an installation session from the account service's identify result.
-    /// Cost: two UUID formats.
-    pub fn installation(account: impl ToString, installation: InstallationId) -> Self {
+    /// Cost: two 16-byte copies.
+    pub fn installation(account: AccountId, installation: InstallationId) -> Self {
         Self::Installation {
-            account: account.to_string(),
-            installation: installation.0.to_string(),
+            account,
+            installation,
         }
     }
 
@@ -58,17 +55,14 @@ impl Session {
                 account,
                 installation,
             } => {
-                let (Some(service), Some(account)) = (
-                    directory.http_auth(),
-                    calternal_auth::AccountId::parse(account),
-                ) else {
+                let Some(service) = directory.http_auth() else {
                     return false;
                 };
                 service
                     .auth
-                    .installations(account)
+                    .installations(*account)
                     .await
-                    .is_ok_and(|live| live.iter().any(|i| i.id.0.to_string() == *installation))
+                    .is_ok_and(|live| live.iter().any(|i| i.id == *installation))
             }
         }
     }

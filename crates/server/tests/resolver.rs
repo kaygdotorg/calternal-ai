@@ -1,34 +1,39 @@
 //! Addresses resolve only through current stored space authority.
+mod support;
 use calternal_server::{
     api::{AppState, Shared, dispatch},
-    auth::{Directory, Identity, TokenTable},
+    auth::{Identity, StoredDirectory},
     plugins::Registry,
     store::Store,
 };
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 struct Fixture {
     _dir: tempfile::TempDir,
     state: Shared,
     owner: Identity,
     guest: Identity,
+    dev: support::Dev,
 }
 impl Fixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let tokens = TokenTable::load_or_create(dir.path()).unwrap();
-        let identity = |name: &str| {
-            let token = std::fs::read(dir.path().join(format!("dev-tokens/{name}.token"))).unwrap();
-            tokens.authenticate(&token).unwrap()
-        };
-        let owner = identity("owner");
-        let guest = identity("guest");
-        let store = Store::open(dir.path()).unwrap();
+        let roots = support::roots(dir.path());
+        let store = Store::open(
+            &roots,
+            uuid::Uuid::from_u128(1),
+            true,
+            calternal_content::DEFAULT_RECEIPT_RETENTION,
+        )
+        .unwrap();
+        let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
+        let dev = support::dev(&tokens);
+        let (owner, guest) = (dev.owner, dev.guest);
         let state = Arc::new(AppState {
             inputs: store.account_inputs(),
-            store: Mutex::new(store),
-            tokens,
+            store,
+            directory: tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
             workers: calternal_server::plugins::WorkerPool::new(None),
             jobs: calternal_server::plugins::Jobs::disabled(),
@@ -39,6 +44,7 @@ impl Fixture {
             state,
             owner,
             guest,
+            dev,
         }
     }
     async fn run(
@@ -47,7 +53,7 @@ impl Fixture {
         key: &str,
         op: &str,
         input: Value,
-    ) -> Result<Value, calternal_server::error::HostError> {
+    ) -> Result<Value, calternal_types::Error> {
         dispatch(
             self.state.clone(),
             account.clone(),
@@ -58,7 +64,7 @@ impl Fixture {
         )
         .await
     }
-    async fn create(&self, space: &str) -> Value {
+    async fn create(&self, space: calternal_types::SpaceId) -> Value {
         self.run(
             &self.owner,
             &uuid::Uuid::now_v7().to_string(),
@@ -73,7 +79,7 @@ impl Fixture {
 #[tokio::test]
 async fn no_access_wrong_kind_and_nonexistent_are_indistinguishable() {
     let f = Fixture::new();
-    let note = f.create("personal").await;
+    let note = f.create(f.dev.personal).await;
     let mut errors = Vec::new();
     for (kind, id) in [
         ("notes", note["id"].as_str().unwrap().to_owned()),
@@ -108,8 +114,8 @@ async fn no_access_wrong_kind_and_nonexistent_are_indistinguishable() {
 #[tokio::test]
 async fn one_account_resolves_two_spaces_without_a_space_hint() {
     let f = Fixture::new();
-    let a = f.create("personal").await;
-    let b = f.create("shared").await;
+    let a = f.create(f.dev.personal).await;
+    let b = f.create(f.dev.shared).await;
     for note in [&a, &b] {
         let resolved = f
             .run(
@@ -138,7 +144,7 @@ async fn one_account_resolves_two_spaces_without_a_space_hint() {
 #[tokio::test]
 async fn revocation_hides_resolution_and_reads_on_the_next_request() {
     let f = Fixture::new();
-    let note = f.create("shared").await;
+    let note = f.create(f.dev.shared).await;
     f.run(
         &f.guest,
         "r",
@@ -151,7 +157,7 @@ async fn revocation_hides_resolution_and_reads_on_the_next_request() {
         &f.owner,
         "remove",
         "spaces.remove_member",
-        json!({"space_id":note["space_id"],"account_id":f.guest.id.as_ref()}),
+        json!({"space_id":note["space_id"],"account_id":f.guest.id}),
     )
     .await
     .unwrap();
@@ -167,7 +173,7 @@ async fn revocation_hides_resolution_and_reads_on_the_next_request() {
 #[tokio::test]
 async fn notes_update_and_history_derive_space_and_reject_wrong_hints() {
     let f = Fixture::new();
-    let note = f.create("personal").await;
+    let note = f.create(f.dev.personal).await;
     let updated = f
         .run(
             &f.owner,
@@ -193,7 +199,7 @@ async fn notes_update_and_history_derive_space_and_reject_wrong_hints() {
             &f.owner,
             "wrong",
             "notes.get",
-            json!({"id":note["id"],"space_id":"shared"}),
+            json!({"id":note["id"],"space_id":f.dev.shared}),
         )
         .await
         .unwrap_err();

@@ -131,6 +131,7 @@ pub struct Coordinator {
     installation: Uuid,
     store: Storage,
     gate: Mutex<Option<Loaded>>,
+    serial: Mutex<()>,
     threshold: u64,
 }
 impl Coordinator {
@@ -164,6 +165,7 @@ impl Coordinator {
             installation,
             store,
             gate: Mutex::new(None),
+            serial: Mutex::new(()),
             threshold,
         };
         if empty {
@@ -497,6 +499,9 @@ impl Coordinator {
     }
 }
 impl RecoverySink for Coordinator {
+    fn serial(&self) -> &Mutex<()> {
+        &self.serial
+    }
     fn reconcile(&self, c: &Connection) -> calternal_auth::Result<()> {
         let run = || -> Result<()> {
             if !c.is_autocommit() {

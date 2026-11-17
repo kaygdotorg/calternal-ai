@@ -82,6 +82,7 @@ async fn put(s: &SpaceStore, tag: &str, n: usize) -> Vec<JournalEntry> {
             .commit(Commit {
                 events: vec![ev("t.a", &format!("{tag}{i}"))],
                 idempotency: None,
+                durable: false,
             })
             .await
             .unwrap();
@@ -639,6 +640,7 @@ async fn a_store_commit_does_not_update_flush_activity() {
     s.commit(Commit {
         events: vec![ev("t.a", "one")],
         idempotency: None,
+        durable: false,
     })
     .await
     .unwrap();
@@ -648,19 +650,18 @@ async fn a_store_commit_does_not_update_flush_activity() {
     assert_eq!(after.last_save_ns, before.last_save_ns);
 }
 
-/// A once-only publication does not do witness bookkeeping in the commit path.
+/// A durable commit does not do witness bookkeeping in the commit path.
 #[tokio::test]
-async fn a_once_commit_does_not_update_flush_activity() {
+async fn a_durable_commit_does_not_update_flush_activity() {
     let site = Site::new();
     let s = site.open().await;
     let before = s.inner.shared.flush_activity.snapshot();
 
-    s.commit_once(
-        test_account(),
-        "notes:one".into(),
-        "digest".into(),
-        vec![ev("t.a", "one")],
-    )
+    s.commit(Commit {
+        events: vec![ev("t.a", "one")],
+        idempotency: None,
+        durable: true,
+    })
     .await
     .unwrap();
 
@@ -689,18 +690,19 @@ async fn commits_leave_the_witness_check_cache_for_the_flush_worker() {
         .commit(Commit {
             events: vec![ev("t.a", "direct")],
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();
     let once = s
-        .commit_once(
-            test_account(),
-            "notes:once".into(),
-            "digest".into(),
-            vec![ev("t.a", "once")],
-        )
+        .commit(Commit {
+            events: vec![ev("t.a", "once")],
+            idempotency: None,
+            durable: true,
+        })
         .await
-        .unwrap();
+        .unwrap()
+        .remove(0);
 
     assert_eq!(s.inner.shared.last_check(entries[0].seq), None);
     assert_eq!(s.inner.shared.last_check(once.seq), None);
@@ -731,6 +733,7 @@ async fn direct_commit_without_activity_is_flushed_by_the_worker() {
     s.commit(Commit {
         events: vec![ev("t.a", "direct")],
         idempotency: None,
+        durable: false,
     })
     .await
     .unwrap();

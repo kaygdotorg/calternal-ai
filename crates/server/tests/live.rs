@@ -3,12 +3,12 @@ use calternal_client::{BookmarkStorage, CancellationToken, Client, MemoryBookmar
 use calternal_core::LiveFrame;
 use calternal_server::{
     api::{self, AppState, Shared},
-    auth::{Directory, Identity, TokenTable},
+    auth::{Directory, Identity, StoredDirectory},
     plugins::{Jobs, Registry, Session, WorkerPool},
     store::Store,
 };
 use serde_json::{Value, json};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 struct Fixture {
     _dir: tempfile::TempDir,
@@ -25,11 +25,25 @@ impl Fixture {
         let (dir, tokens, token, guest_token, owner, spaces, store) =
             tokio::task::spawn_blocking(|| {
                 let dir = tempfile::tempdir().unwrap();
-                let tokens = TokenTable::load_or_create(dir.path()).unwrap();
+                let roots = calternal_roots::Roots {
+                    appdata: dir.path().join("appdata"),
+                    userdata_ssd: dir.path().join("userdata-ssd"),
+                    userdata_hdd: dir.path().join("userdata-hdd"),
+                };
+                let store = Store::open(
+                    &roots,
+                    uuid::Uuid::from_u128(1),
+                    true,
+                    calternal_content::DEFAULT_RECEIPT_RETENTION,
+                )
+                .unwrap();
+                let tokens = StoredDirectory::load_or_create(&roots.appdata).unwrap();
                 let token =
-                    std::fs::read_to_string(dir.path().join("dev-tokens/owner.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/owner.token"))
+                        .unwrap();
                 let guest_token =
-                    std::fs::read_to_string(dir.path().join("dev-tokens/guest.token")).unwrap();
+                    std::fs::read_to_string(dir.path().join("appdata/dev-tokens/guest.token"))
+                        .unwrap();
                 let owner = tokens.authenticate(token.as_bytes()).unwrap();
                 let spaces = tokens
                     .describe(&owner)
@@ -37,7 +51,6 @@ impl Fixture {
                     .into_iter()
                     .map(|s| s.id)
                     .collect();
-                let store = Store::open(dir.path()).unwrap();
                 (dir, tokens, token, guest_token, owner, spaces, store)
             })
             .await
@@ -46,8 +59,8 @@ impl Fixture {
         let port = listener.local_addr().unwrap().port();
         let state = Arc::new(AppState {
             inputs: store.account_inputs(),
-            store: Mutex::new(store),
-            tokens,
+            store,
+            directory: tokens,
             registry: Registry::load(std::path::Path::new("/missing")),
             workers: WorkerPool::new(None),
             jobs: Jobs::disabled(),
@@ -280,17 +293,15 @@ async fn lagged_broadcast_recovers_from_database_without_skipping() {
     let state = f.state.clone();
     let sp = space.clone();
     let (journal, mut witness) = tokio::task::spawn_blocking(move || {
-        let store = state.store.lock().unwrap();
-        let content = store.shared_content();
+        let content = state.store.shared_content();
         let space = sp.parse().unwrap();
-        drop(store);
         let journal = content.live_journal(space).unwrap();
         let receiver = journal.subscribe();
         (journal, receiver)
     })
     .await
     .unwrap();
-    let author = f.owner.id.parse().unwrap();
+    let author = f.owner.id;
     let count = calternal_store::LIVE_BUFFER + 20;
     // A single committed batch exceeds the broadcast ring before any receiver
     // can poll. The reader must use the database, not treat Lagged as a close.
@@ -308,6 +319,7 @@ async fn lagged_broadcast_recovers_from_database_without_skipping() {
         .commit(calternal_store::Commit {
             events,
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();
@@ -407,10 +419,8 @@ async fn foreign_item_entries_are_filtered_without_advancing_over_unread_visible
     let state = f.state.clone();
     let sp = shared.clone();
     let journal = tokio::task::spawn_blocking(move || {
-        let store = state.store.lock().unwrap();
-        let content = store.shared_content();
+        let content = state.store.shared_content();
         let space = sp.parse().unwrap();
-        drop(store);
         content.live_journal(space).unwrap()
     })
     .await
@@ -418,7 +428,7 @@ async fn foreign_item_entries_are_filtered_without_advancing_over_unread_visible
     journal
         .commit(calternal_store::Commit {
             events: vec![calternal_store::StampedEvent {
-                author: f.owner.id.parse().unwrap(),
+                author: f.owner.id,
                 kind: "notes.update".into(),
                 item: private_note["note"]["id"].as_str().unwrap().into(),
                 data: json!({"secret":"must not be delivered"}),
@@ -426,6 +436,7 @@ async fn foreign_item_entries_are_filtered_without_advancing_over_unread_visible
                 request_id: None,
             }],
             idempotency: None,
+            durable: false,
         })
         .await
         .unwrap();

@@ -27,6 +27,7 @@
 #![allow(clippy::disallowed_methods)] // This crate is the one allowed place.
 
 pub mod paced;
+pub mod private;
 pub mod usage;
 
 #[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]

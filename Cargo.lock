@@ -366,16 +366,7 @@ dependencies = [
  "cc",
  "cfg-if",
  "constant_time_eq",
- "cpufeatures 0.3.1",
-]
-
-[[package]]
-name = "block-buffer"
-version = "0.10.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
-dependencies = [
- "generic-array",
+ "cpufeatures",
 ]
 
 [[package]]
@@ -409,6 +400,7 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "calternal-fsio",
+ "calternal-types",
  "getrandom 0.4.3",
  "rusqlite",
  "serde",
@@ -433,6 +425,8 @@ version = "0.1.0"
 dependencies = [
  "calternal-client",
  "calternal-core",
+ "calternal-genui",
+ "calternal-types",
  "schemars",
  "serde_json",
  "thiserror 2.0.21",
@@ -447,6 +441,7 @@ dependencies = [
  "calternal-cli",
  "calternal-client",
  "calternal-core",
+ "calternal-types",
  "clap",
  "rustix",
  "serde_json",
@@ -461,6 +456,7 @@ version = "0.1.0"
 dependencies = [
  "calternal-core",
  "calternal-fsio",
+ "calternal-types",
  "reqwest",
  "serde",
  "serde_json",
@@ -473,16 +469,14 @@ dependencies = [
 name = "calternal-content"
 version = "0.1.0"
 dependencies = [
- "calternal-auth",
- "calternal-core",
+ "blake3",
  "calternal-fsio",
  "calternal-roots",
  "calternal-store",
- "hex",
+ "calternal-types",
  "rusqlite",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "time",
  "tokio",
@@ -494,10 +488,10 @@ dependencies = [
 name = "calternal-core"
 version = "0.1.0"
 dependencies = [
+ "calternal-types",
  "schemars",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
  "ts-rs",
  "uuid",
 ]
@@ -524,9 +518,10 @@ dependencies = [
 name = "calternal-machine"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "calternal-cli",
  "calternal-fsio",
+ "calternal-types",
  "clap",
  "reqwest",
  "ring",
@@ -547,11 +542,11 @@ version = "0.1.0"
 dependencies = [
  "calternal-core",
  "calternal-fsio",
+ "calternal-types",
  "jsonschema",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "uuid",
 ]
 
 [[package]]
@@ -561,6 +556,7 @@ dependencies = [
  "blake3",
  "calternal-auth",
  "calternal-fsio",
+ "calternal-types",
  "rusqlite",
  "rustix",
  "serde",
@@ -587,8 +583,8 @@ name = "calternal-secrets"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "calternal-auth",
  "calternal-fsio",
+ "calternal-types",
  "getrandom 0.4.3",
  "openssl",
  "rusqlite",
@@ -604,29 +600,32 @@ name = "calternal-server"
 version = "0.1.0"
 dependencies = [
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "calternal-auth",
  "calternal-cli",
  "calternal-client",
  "calternal-content",
  "calternal-core",
  "calternal-fsio",
+ "calternal-genui",
  "calternal-machine",
  "calternal-plugin-host",
+ "calternal-recovery",
  "calternal-roots",
  "calternal-secrets",
  "calternal-store",
+ "calternal-types",
  "clap",
  "futures-util",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "hex",
  "http-body-util",
  "reqwest",
  "ring",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
- "sha2",
  "subtle",
  "tempfile",
  "time",
@@ -647,6 +646,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "calternal-fsio",
+ "calternal-types",
  "rusqlite",
  "serde",
  "serde_json",
@@ -654,6 +654,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "calternal-types"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "ts-rs",
  "uuid",
 ]
 
@@ -718,7 +729,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65c35e4b699c7e15ccbe7ee35c005e4fc0a278d22238a2857e6ce2dadeda1b06"
 dependencies = [
  "cfg-if",
- "cpufeatures 0.3.1",
+ "cpufeatures",
  "rand_core 0.10.1",
 ]
 
@@ -776,15 +787,6 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
-dependencies = [
- "libc",
-]
-
-[[package]]
-name = "cpufeatures"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ca28b0ae3115b884660db4118d803791fd6756b6e88f39c0f3f7859060d7566"
@@ -797,16 +799,6 @@ name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
-
-[[package]]
-name = "crypto-common"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
-dependencies = [
- "generic-array",
- "typenum",
-]
 
 [[package]]
 name = "data-encoding"
@@ -833,16 +825,6 @@ name = "deranged"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
-
-[[package]]
-name = "digest"
-version = "0.10.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
-dependencies = [
- "block-buffer",
- "crypto-common",
-]
 
 [[package]]
 name = "displaydoc"
@@ -1067,16 +1049,6 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "generic-array"
-version = "0.14.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
-dependencies = [
- "typenum",
- "version_check",
 ]
 
 [[package]]
@@ -2398,17 +2370,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha2"
-version = "0.10.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.2.17",
- "digest",
-]
-
-[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2921,12 +2882,6 @@ dependencies = [
  "syn 2.0.119",
  "termcolor",
 ]
-
-[[package]]
-name = "typenum"
-version = "1.20.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "unicase"

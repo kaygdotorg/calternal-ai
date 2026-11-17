@@ -7,25 +7,26 @@ license.workspace = true
 description = "Legacy-compatible auth database worker and bounded identity primitives"
 
 [dependencies]
+calternal-types.workspace = true
 calternal-fsio.workspace = true
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 thiserror.workspace = true
 uuid = { workspace = true, features = ["v7"] }
-blake3 = "1.8.7"
-getrandom = "0.4.3"
-webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
+blake3.workspace = true
+getrandom.workspace = true
+webauthn-rs.workspace = true
 
 serde.workspace = true
 serde_json.workspace = true
-url = "2.5.8"
-base64 = "0.23.1"
-tracing = "0.1.44"
-unicode-normalization = "0.1.25"
+url.workspace = true
+base64.workspace = true
+tracing.workspace = true
+unicode-normalization.workspace = true
 unicode-security = "0.1.2"
 unicode-casefold = "0.2.0"
 unicode-general-category = "0.6.0"
 
 [dev-dependencies]
-webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
-tempfile = "3.27"
+webauthn-authenticator-rs.workspace = true
+tempfile.workspace = true

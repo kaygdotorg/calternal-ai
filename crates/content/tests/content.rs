@@ -1,12 +1,14 @@
 //! Physical separation and restart recovery on disposable roots.
-use calternal_content::{
-    AccountId, Content, ErrorCode, FaultPoint, FileFormat, Placement, Request, SpaceId,
-};
+use calternal_content::{Content, FaultPoint, FileFormat, Placement, Request};
 use calternal_roots::Roots;
+use calternal_types::{AccountId, ErrorCode, SpaceId};
 use serde_json::json;
 use std::{path::Path, time::Duration};
 
 fn open(path: &Path, fault: fn(FaultPoint)) -> Content {
+    open_retaining(path, fault, calternal_content::DEFAULT_RECEIPT_RETENTION)
+}
+fn open_retaining(path: &Path, fault: fn(FaultPoint), retention: Duration) -> Content {
     Content::open(
         Roots {
             appdata: path.join("appdata"),
@@ -15,6 +17,7 @@ fn open(path: &Path, fault: fn(FaultPoint)) -> Content {
         },
         path.join("secrets"),
         Duration::ZERO,
+        retention,
         fault,
     )
     .unwrap()
@@ -339,4 +342,132 @@ fn collections_retain_ids_membership_and_account_separation() {
             .members,
         vec![member]
     );
+}
+
+/// Work in one space never waits for another: while a write in space A is stalled
+/// inside its commit (holding A's lock), a read in an open space B and the cold open
+/// of a third space C both finish promptly.
+#[test]
+fn a_slow_write_in_one_space_does_not_delay_other_spaces() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static STALL: AtomicBool = AtomicBool::new(false);
+    static STALLED: AtomicBool = AtomicBool::new(false);
+    fn stall(point: FaultPoint) {
+        if point == FaultPoint::AfterCommit && STALL.swap(false, Ordering::SeqCst) {
+            STALLED.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_secs(3));
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), stall);
+    let (a, b, c, actor) = (
+        SpaceId::new(),
+        SpaceId::new(),
+        SpaceId::new(),
+        AccountId::new(),
+    );
+    let notes = || Placement::Visible {
+        folder: "Notes".into(),
+    };
+    for space in [a, b, c] {
+        content
+            .register_kind(space, "notes", notes(), FileFormat::Markdown)
+            .unwrap();
+    }
+    let in_b = content
+        .write(
+            b,
+            None,
+            "notes",
+            None,
+            json!({"title":"B"}),
+            b"b\n",
+            request(actor, "b"),
+            |_| json!({}),
+        )
+        .unwrap();
+    // Close C so the probe below has to open it again.
+    drop(content);
+    let content = open(dir.path(), stall);
+    content.list(b, "notes", 10).unwrap();
+    std::thread::scope(|scope| {
+        STALL.store(true, Ordering::SeqCst);
+        let slow = scope.spawn(|| {
+            content
+                .write(
+                    a,
+                    None,
+                    "notes",
+                    None,
+                    json!({"title":"A"}),
+                    b"a\n",
+                    request(actor, "a"),
+                    |_| json!({}),
+                )
+                .unwrap()
+        });
+        while !STALLED.load(Ordering::SeqCst) {
+            std::thread::yield_now();
+        }
+        let started = std::time::Instant::now();
+        assert_eq!(content.get(b, in_b.id).unwrap().bytes, b"b\n");
+        assert!(content.list(c, "notes", 10).unwrap().is_empty());
+        let waited = started.elapsed();
+        assert!(
+            !slow.is_finished(),
+            "the stalled write must still be running"
+        );
+        assert!(
+            waited < Duration::from_secs(1),
+            "other spaces waited {waited:?}"
+        );
+        slow.join().unwrap();
+    });
+}
+
+/// Receipts are bounded: within the retention a reused request ID is refused; once
+/// its receipt has been pruned (at the latest when the space next opens), the same
+/// ID runs as a new request.
+#[test]
+fn a_request_id_is_new_again_after_receipt_retention() {
+    let dir = tempfile::tempdir().unwrap();
+    let (space, actor) = (SpaceId::new(), AccountId::new());
+    let retention = Duration::from_millis(50);
+    let write = |content: &Content, text: &[u8]| {
+        content.write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title": "T"}),
+            text,
+            Request {
+                account: actor,
+                id: "same",
+                operation: "example.create",
+                fingerprint: std::str::from_utf8(text).unwrap(),
+            },
+            |_| json!({}),
+        )
+    };
+    let content = open_retaining(dir.path(), |_| {}, retention);
+    content
+        .register_kind(
+            space,
+            "notes",
+            Placement::Visible {
+                folder: "Notes".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    write(&content, b"first\n").unwrap();
+    assert_eq!(
+        write(&content, b"second\n").unwrap_err().code,
+        ErrorCode::Conflict
+    );
+    drop(content);
+    std::thread::sleep(retention * 4);
+    let content = open_retaining(dir.path(), |_| {}, retention);
+    write(&content, b"second\n").expect("a pruned receipt makes the ID new again");
 }

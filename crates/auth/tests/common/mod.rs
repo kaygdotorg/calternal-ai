@@ -1,6 +1,7 @@
 //! Disposable account-library fixtures and the source software passkey helper.
 #![allow(dead_code)]
-use calternal_auth::{AccountId, Auth, AuthConfig, InstallationId, LoginPurpose, Result};
+use calternal_auth::{Auth, AuthConfig, LoginPurpose, Result};
+use calternal_types::{AccountId, InstallationId};
 use serde_json::{Value, json};
 use url::Url;
 use webauthn_authenticator_rs::{WebauthnAuthenticator, softpasskey::SoftPasskey};

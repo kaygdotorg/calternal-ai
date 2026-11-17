@@ -4,9 +4,6 @@
 //! Cost: every operation takes the stream's own lock for a buffer update or copy;
 //! none performs I/O.
 
-#![deny(missing_docs)]
-#![deny(rustdoc::broken_intra_doc_links)]
-
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

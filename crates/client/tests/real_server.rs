@@ -31,14 +31,20 @@ async fn real_server_operations_receipts_and_authority() {
             .as_nanos()
     ));
     let child = Command::new(binary)
-        .args(["serve", "--development", "--port", "0", "--data-dir"])
-        .arg(&data)
+        .args(["serve", "--development", "--create", "--port", "0"])
+        .args(["--installation-id", "00000000-0000-0000-0000-000000000001"])
+        .arg("--appdata")
+        .arg(data.join("appdata"))
+        .arg("--userdata-ssd")
+        .arg(data.join("userdata-ssd"))
+        .arg("--userdata-hdd")
+        .arg(data.join("userdata-hdd"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
     let mut server = Server { child, data };
-    let startup = server.data.join("startup.json");
+    let startup = server.data.join("appdata/startup.json");
     for _ in 0..300 {
         if startup.exists() {
             break;

@@ -30,6 +30,30 @@ struct Server {
     port: u16,
     owner: String,
     guest: String,
+    /// The owner's space the guest cannot see, read from `describe`.
+    personal: String,
+    /// The space both fixture accounts belong to, read from `describe`.
+    shared: String,
+}
+
+/// Space UUIDs listed by `describe` for one bearer token.
+fn described_spaces(port: u16, token: &str) -> Vec<String> {
+    let auth = format!("Bearer {token}");
+    let r = raw(
+        port,
+        "GET",
+        "/api/v1/describe",
+        &[("Authorization", &auth)],
+        None,
+    )
+    .unwrap();
+    assert_eq!(r.status, 200, "{}", r.body);
+    r.body["principal"]["spaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| g["id"].as_str().unwrap().to_owned())
+        .collect()
 }
 
 impl Drop for Server {
@@ -53,11 +77,11 @@ fn start_full(
     web: Option<&Path>,
     plugins: Option<&Path>,
 ) -> Server {
-    let startup = data.join("startup.json");
+    let startup = data.join("appdata/startup.json");
     let _ = std::fs::remove_file(&startup);
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
-    cmd.args(["serve", "--development", "--port", "0", "--data-dir"])
-        .arg(data)
+    cmd.args(["serve", "--development", "--port", "0"])
+        .args(roots(data))
         .arg("--plugin-root")
         .arg(plugins.unwrap_or(Path::new("/nonexistent-test-plugins")))
         .env("RUST_LOG", "warn")
@@ -87,11 +111,18 @@ fn start_full(
                     let guest =
                         std::fs::read_to_string(v["token_files"]["guest"].as_str().unwrap())
                             .unwrap();
+                    let shared = described_spaces(port, &guest).remove(0);
+                    let personal = described_spaces(port, &owner)
+                        .into_iter()
+                        .find(|s| *s != shared)
+                        .unwrap();
                     return Server {
                         child,
                         port,
                         owner,
                         guest,
+                        personal,
+                        shared,
                     };
                 }
             }
@@ -106,6 +137,27 @@ fn start_full(
         std::thread::sleep(Duration::from_millis(25));
     }
 }
+
+/// Serve arguments for three sibling roots under `data`; `--create` pairs them on
+/// first start and is harmless afterwards.
+fn roots(data: &Path) -> Vec<std::ffi::OsString> {
+    let mut args = Vec::new();
+    for (flag, dir) in [
+        ("--appdata", "appdata"),
+        ("--userdata-ssd", "userdata-ssd"),
+        ("--userdata-hdd", "userdata-hdd"),
+    ] {
+        args.push(flag.into());
+        args.push(data.join(dir).into_os_string());
+    }
+    args.push("--create".into());
+    args.push("--installation-id".into());
+    args.push(INSTALLATION.into());
+    args
+}
+
+/// The installation ID every fixture's server configuration pins.
+const INSTALLATION: &str = "00000000-0000-0000-0000-000000000001";
 
 struct Resp {
     status: u16,
@@ -203,31 +255,12 @@ fn create(srv: &Server, rid: &str, space: &str, md: &str) -> Value {
     r.body["data"]["note"].clone()
 }
 
-fn space_uuid(data: &Path, space: &str) -> String {
-    if uuid::Uuid::parse_str(space).is_ok() {
-        return space.to_owned();
-    }
-    let auth = rusqlite::Connection::open_with_flags(
-        data.join("system/auth.db"),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    auth.query_row(
-        "SELECT id FROM development_directory WHERE name=?1",
-        [space],
-        |r| r.get(0),
-    )
-    .unwrap()
-}
 fn note_dir(data: &Path, space: &str) -> PathBuf {
-    data.join("userdata-ssd/spaces")
-        .join(space_uuid(data, space))
-        .join("Notes")
+    data.join("userdata-ssd/spaces").join(space).join("Notes")
 }
 fn note_file(data: &Path, space: &str, id: &str) -> PathBuf {
-    let space = space_uuid(data, space);
     let conn = rusqlite::Connection::open_with_flags(
-        data.join("spaces").join(&space).join("content.db"),
+        data.join("appdata/spaces").join(&space).join("content.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
@@ -250,15 +283,15 @@ fn note_body(path: PathBuf) -> String {
 fn permissions_two_principals() {
     let d = TempDir::new("perm");
     let srv = start(&d.0, None);
-    let personal = create(&srv, "c1", "personal", "secret\n");
-    let shared = create(&srv, "c2", "shared", "hello\n");
+    let personal = create(&srv, "c1", &srv.personal, "secret\n");
+    let shared = create(&srv, "c2", &srv.shared, "hello\n");
     // Guest cannot touch personal.
     let r = op(
         &srv,
         &srv.guest,
         "g1",
         "notes.list",
-        json!({"space_id": "personal"}),
+        json!({"space_id": srv.personal}),
     );
     assert_eq!(
         (r.status, r.body["error"]["code"].as_str()),
@@ -269,7 +302,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g2",
         "notes.get",
-        json!({"space_id": "personal", "id": personal["id"]}),
+        json!({"space_id": srv.personal, "id": personal["id"]}),
     );
     assert_eq!(r.status, 404);
     // Cross-space id binding: personal id via shared space is not found.
@@ -278,7 +311,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g3",
         "notes.get",
-        json!({"space_id": "shared", "id": personal["id"]}),
+        json!({"space_id": srv.shared, "id": personal["id"]}),
     );
     assert_eq!(r.status, 404);
     // Guest reads shared, cannot write it.
@@ -287,7 +320,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g4",
         "notes.get",
-        json!({"space_id": "shared", "id": shared["id"]}),
+        json!({"space_id": srv.shared, "id": shared["id"]}),
     );
     assert_eq!(r.status, 200);
     assert_eq!(r.body["request_id"], "g4");
@@ -296,7 +329,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g5",
         "notes.create",
-        json!({"space_id": "shared", "title": "x", "markdown": ""}),
+        json!({"space_id": srv.shared, "title": "x", "markdown": ""}),
     );
     assert_eq!(r.status, 403);
     let r = op(
@@ -304,7 +337,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g6",
         "plugins.enable",
-        json!({"space_id": "shared", "plugin_id": "notes-insights"}),
+        json!({"space_id": srv.shared, "plugin_id": "notes-insights"}),
     );
     assert_eq!(r.status, 403);
     // Caller ids in input are rejected as unknown fields.
@@ -313,7 +346,7 @@ fn permissions_two_principals() {
         &srv.guest,
         "g7",
         "notes.list",
-        json!({"space_id": "shared", "principal": "owner"}),
+        json!({"space_id": srv.shared, "principal": "owner"}),
     );
     assert_eq!(r.status, 400);
     // Unknown space.
@@ -331,14 +364,14 @@ fn permissions_two_principals() {
 fn stale_revision_conflicts_and_history() {
     let d = TempDir::new("stale");
     let srv = start(&d.0, None);
-    let n = create(&srv, "c1", "personal", "one\n");
+    let n = create(&srv, "c1", &srv.personal, "one\n");
     let id = n["id"].as_str().unwrap();
     let r1 = op(
         &srv,
         &srv.owner,
         "u1",
         "notes.update",
-        json!({"space_id": "personal", "id": id, "base_revision": n["revision"], "markdown": "two\n"}),
+        json!({"space_id": srv.personal, "id": id, "base_revision": n["revision"], "markdown": "two\n"}),
     );
     assert_eq!(r1.status, 200, "{}", r1.body);
     let r2 = op(
@@ -346,7 +379,7 @@ fn stale_revision_conflicts_and_history() {
         &srv.owner,
         "u2",
         "notes.update",
-        json!({"space_id": "personal", "id": id, "base_revision": n["revision"], "markdown": "stale\n"}),
+        json!({"space_id": srv.personal, "id": id, "base_revision": n["revision"], "markdown": "stale\n"}),
     );
     assert_eq!(r2.status, 409);
     assert_eq!(r2.body["error"]["details"]["reason"], "stale_revision");
@@ -354,13 +387,13 @@ fn stale_revision_conflicts_and_history() {
         r2.body["error"]["details"]["current_revision"],
         r1.body["data"]["note"]["revision"]
     );
-    assert_eq!(note_body(note_file(&d.0, "personal", id)), "two\n");
+    assert_eq!(note_body(note_file(&d.0, &srv.personal, id)), "two\n");
     let h = op(
         &srv,
         &srv.owner,
         "h1",
         "notes.history",
-        json!({"space_id": "personal", "id": id, "limit": 1}),
+        json!({"space_id": srv.personal, "id": id, "limit": 1}),
     );
     assert_eq!(h.body["data"]["versions"].as_array().unwrap().len(), 1);
     assert_eq!(h.body["data"]["versions"][0]["markdown"], "two\n");
@@ -370,7 +403,7 @@ fn stale_revision_conflicts_and_history() {
         &srv.owner,
         "h2",
         "notes.history",
-        json!({"space_id": "personal", "id": id, "cursor": cur}),
+        json!({"space_id": srv.personal, "id": id, "cursor": cur}),
     );
     assert_eq!(h2.body["data"]["versions"][0]["markdown"], "one\n");
     assert!(h2.body["data"]["next_cursor"].is_null());
@@ -380,15 +413,15 @@ fn stale_revision_conflicts_and_history() {
 fn retries_are_idempotent() {
     let d = TempDir::new("retry");
     let srv = start(&d.0, None);
-    let a = create(&srv, "same", "personal", "x\n");
-    let b = create(&srv, "same", "personal", "x\n");
+    let a = create(&srv, "same", &srv.personal, "x\n");
+    let b = create(&srv, "same", &srv.personal, "x\n");
     assert_eq!(a, b);
     let l = op(
         &srv,
         &srv.owner,
         "l",
         "notes.list",
-        json!({"space_id": "personal"}),
+        json!({"space_id": srv.personal}),
     );
     assert_eq!(l.body["data"]["notes"].as_array().unwrap().len(), 1);
     let r = op(
@@ -396,13 +429,13 @@ fn retries_are_idempotent() {
         &srv.owner,
         "same",
         "notes.create",
-        json!({"space_id": "personal", "title": "T", "markdown": "y\n"}),
+        json!({"space_id": srv.personal, "title": "T", "markdown": "y\n"}),
     );
     assert_eq!(r.status, 409);
     assert_eq!(r.body["error"]["details"]["reason"], "request_id_reused");
     // Retry of an update after the base moved on still returns the original result.
     let id = a["id"].as_str().unwrap();
-    let up = json!({"space_id": "personal", "id": id, "base_revision": a["revision"], "markdown": "z\n"});
+    let up = json!({"space_id": srv.personal, "id": id, "base_revision": a["revision"], "markdown": "z\n"});
     let u1 = op(&srv, &srv.owner, "u", "notes.update", up.clone());
     let u2 = op(&srv, &srv.owner, "u", "notes.update", up);
     assert_eq!(u1.status, 200);
@@ -412,7 +445,7 @@ fn retries_are_idempotent() {
         &srv.owner,
         "h",
         "notes.history",
-        json!({"space_id": "personal", "id": id}),
+        json!({"space_id": srv.personal, "id": id}),
     );
     assert_eq!(h.body["data"]["versions"].as_array().unwrap().len(), 2);
     // Another principal's identical request_id is a separate request.
@@ -421,7 +454,7 @@ fn retries_are_idempotent() {
         &srv.guest,
         "same",
         "notes.list",
-        json!({"space_id": "shared"}),
+        json!({"space_id": srv.shared}),
     );
     assert_eq!(g.status, 200);
 }
@@ -435,13 +468,17 @@ fn crash_points_recover_without_duplicates() {
         "before_reply",
     ] {
         let d = TempDir::new(point);
-        let (id, base) = {
+        let (id, base, personal) = {
             let srv = start(&d.0, None);
-            let n = create(&srv, "c", "personal", "before\n");
-            (n["id"].as_str().unwrap().to_string(), n["revision"].clone())
+            let n = create(&srv, "c", &srv.personal, "before\n");
+            (
+                n["id"].as_str().unwrap().to_string(),
+                n["revision"].clone(),
+                srv.personal.clone(),
+            )
         };
         let input =
-            json!({"space_id": "personal", "id": id, "base_revision": base, "markdown": "after\n"});
+            json!({"space_id": personal, "id": id, "base_revision": base, "markdown": "after\n"});
         {
             let mut srv = start(&d.0, Some(point));
             let r = try_op(&srv, &srv.owner.clone(), "u", "notes.update", input.clone());
@@ -452,7 +489,7 @@ fn crash_points_recover_without_duplicates() {
         let srv = start(&d.0, None);
         // Startup replay placed the committed revision.
         assert_eq!(
-            note_body(note_file(&d.0, "personal", &id)),
+            note_body(note_file(&d.0, &srv.personal, &id)),
             "after\n",
             "{point}"
         );
@@ -464,7 +501,7 @@ fn crash_points_recover_without_duplicates() {
             &srv.owner,
             "h",
             "notes.history",
-            json!({"space_id": "personal", "id": id}),
+            json!({"space_id": srv.personal, "id": id}),
         );
         assert_eq!(
             h.body["data"]["versions"].as_array().unwrap().len(),
@@ -472,7 +509,7 @@ fn crash_points_recover_without_duplicates() {
             "{point}: duplicate history"
         );
         // No temp files left behind.
-        let leftovers: Vec<_> = std::fs::read_dir(note_dir(&d.0, "personal"))
+        let leftovers: Vec<_> = std::fs::read_dir(note_dir(&d.0, &srv.personal))
             .unwrap()
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
@@ -485,16 +522,16 @@ fn crash_points_recover_without_duplicates() {
 fn external_edit_blocks_overwrite() {
     let d = TempDir::new("ext");
     let srv = start(&d.0, None);
-    let n = create(&srv, "c", "personal", "ours\n");
+    let n = create(&srv, "c", &srv.personal, "ours\n");
     let id = n["id"].as_str().unwrap();
-    let path = note_file(&d.0, "personal", id);
+    let path = note_file(&d.0, &srv.personal, id);
     std::fs::write(&path, "theirs\n").unwrap();
     let r = op(
         &srv,
         &srv.owner,
         "u",
         "notes.update",
-        json!({"space_id": "personal", "id": id, "base_revision": n["revision"], "markdown": "new\n"}),
+        json!({"space_id": srv.personal, "id": id, "base_revision": n["revision"], "markdown": "new\n"}),
     );
     assert_eq!(r.status, 409);
     assert_eq!(r.body["error"]["details"]["reason"], "external_change");
@@ -505,14 +542,14 @@ fn external_edit_blocks_overwrite() {
         &srv.owner,
         "g",
         "notes.get",
-        json!({"space_id": "personal", "id": id}),
+        json!({"space_id": srv.personal, "id": id}),
     );
     assert_eq!(g.body["data"]["note"]["markdown"], "ours\n");
 
     // Deleted file also blocks; symlinked file is never followed.
-    let m = create(&srv, "c2", "personal", "a\n");
+    let m = create(&srv, "c2", &srv.personal, "a\n");
     let mid = m["id"].as_str().unwrap();
-    let mpath = note_file(&d.0, "personal", mid);
+    let mpath = note_file(&d.0, &srv.personal, mid);
     std::fs::remove_file(&mpath).unwrap();
     std::os::unix::fs::symlink("/etc/hostname", &mpath).unwrap();
     let r = op(
@@ -520,7 +557,7 @@ fn external_edit_blocks_overwrite() {
         &srv.owner,
         "u2",
         "notes.update",
-        json!({"space_id": "personal", "id": mid, "base_revision": m["revision"], "markdown": "b\n"}),
+        json!({"space_id": srv.personal, "id": mid, "base_revision": m["revision"], "markdown": "b\n"}),
     );
     assert_eq!(r.status, 409);
     assert!(
@@ -536,8 +573,8 @@ fn exclusive_data_dir_lock() {
     let d = TempDir::new("lock");
     let _srv = start(&d.0, None);
     let st = Command::new(env!("CARGO_BIN_EXE_calternal"))
-        .args(["serve", "--development", "--port", "0", "--data-dir"])
-        .arg(&d.0)
+        .args(["serve", "--development", "--port", "0"])
+        .args(roots(&d.0))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
@@ -643,7 +680,7 @@ fn host_origin_and_bearer_checks() {
     assert_eq!(r.map(|r| r.status), Some(413));
     // Token files are owner-only and never printed (stdout checked in startup).
     use std::os::unix::fs::PermissionsExt;
-    let mode = std::fs::metadata(d.0.join("dev-tokens/owner.token"))
+    let mode = std::fs::metadata(d.0.join("appdata/dev-tokens/owner.token"))
         .unwrap()
         .permissions()
         .mode();
@@ -693,7 +730,7 @@ fn plugin_enable_disable_receipts_survive_opposite_mutation() {
     )
     .unwrap();
     let srv = start_full(&d.0.join("data"), None, None, Some(&d.0.join("plugins")));
-    let inp = json!({"space_id": "personal", "plugin_id": "notes"});
+    let inp = json!({"space_id": srv.personal, "plugin_id": "notes"});
     let e1 = op(&srv, &srv.owner, "e1", "plugins.enable", inp.clone());
     assert_eq!(e1.status, 200, "{}", e1.body);
     assert_eq!(e1.body["data"]["plugin"]["enabled"], true);
@@ -708,7 +745,7 @@ fn plugin_enable_disable_receipts_survive_opposite_mutation() {
         &srv.owner,
         "l",
         "plugins.list",
-        json!({"space_id": "personal"}),
+        json!({"space_id": srv.personal}),
     );
     let notes = &l.body["data"]["plugins"][0];
     assert_eq!(
@@ -724,7 +761,7 @@ fn plugin_enable_disable_receipts_survive_opposite_mutation() {
         &srv.guest,
         "gl",
         "plugins.list",
-        json!({"space_id": "shared"}),
+        json!({"space_id": srv.shared}),
     );
     assert_eq!(l.body["data"]["plugins"][0]["enabled"], true);
     // Preview of a view-less plugin is not_found, never an activation.
@@ -735,15 +772,16 @@ fn plugin_enable_disable_receipts_survive_opposite_mutation() {
 #[test]
 fn startup_cleanup_only_removes_owned_temp_files() {
     let d = TempDir::new("tmpclean");
-    let id = {
+    let (id, personal) = {
         let srv = start(&d.0, None);
-        create(&srv, "c", "personal", "x\n")["id"]
+        let id = create(&srv, "c", &srv.personal, "x\n")["id"]
             .as_str()
             .unwrap()
-            .to_string()
+            .to_string();
+        (id, srv.personal.clone())
     };
-    let dir = note_dir(&d.0, "personal");
-    let final_name = note_file(&d.0, "personal", &id)
+    let dir = note_dir(&d.0, &personal);
+    let final_name = note_file(&d.0, &personal, &id)
         .file_name()
         .unwrap()
         .to_string_lossy()
@@ -766,11 +804,11 @@ fn development_tokens_require_an_explicit_startup_flag() {
     let d = TempDir::new("explicit-development");
     // A normal start must not create fixture identities or token files.
     let start_default = || {
-        let startup = d.0.join("startup.json");
+        let startup = d.0.join("appdata/startup.json");
         let _ = std::fs::remove_file(&startup);
         let child = Command::new(env!("CARGO_BIN_EXE_calternal"))
-            .args(["serve", "--port", "0", "--data-dir"])
-            .arg(&d.0)
+            .args(["serve", "--port", "0"])
+            .args(roots(&d.0))
             .arg("--plugin-root")
             .arg("/nonexistent-test-plugins")
             .stdout(Stdio::null())
@@ -799,6 +837,8 @@ fn development_tokens_require_an_explicit_startup_flag() {
                     port,
                     owner: String::new(),
                     guest: String::new(),
+                    personal: String::new(),
+                    shared: String::new(),
                 };
             }
             assert!(child.try_wait().unwrap().is_none(), "default server exited");
@@ -810,13 +850,13 @@ fn development_tokens_require_an_explicit_startup_flag() {
         }
     };
     let normal = start_default();
-    assert!(!d.0.join("dev-tokens").exists());
+    assert!(!d.0.join("appdata/dev-tokens").exists());
     let status = raw(normal.port, "GET", "/api/v1/auth/status", &[], None).unwrap();
     assert_eq!(status.status, 200);
     assert_eq!(status.body, json!({"setup":true,"signed_in":false}));
     assert_eq!(
         std::os::unix::fs::PermissionsExt::mode(
-            &std::fs::metadata(d.0.join("setup.token"))
+            &std::fs::metadata(d.0.join("appdata/setup.token"))
                 .unwrap()
                 .permissions()
         ) & 0o777,
@@ -843,12 +883,12 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
     use std::os::unix::fs::MetadataExt;
     let d = TempDir::new("content-separation");
     let srv = start(&d.0, None);
-    let a = create(&srv, "a", "personal", "private body");
-    let b = create(&srv, "b", "shared", "shared body");
+    let a = create(&srv, "a", &srv.personal, "private body");
+    let b = create(&srv, "b", &srv.shared, "shared body");
     let aid = a["space_id"].as_str().unwrap();
     let bid = b["space_id"].as_str().unwrap();
-    let pa = d.0.join("spaces").join(aid).join("content.db");
-    let pb = d.0.join("spaces").join(bid).join("content.db");
+    let pa = d.0.join("appdata/spaces").join(aid).join("content.db");
+    let pb = d.0.join("appdata/spaces").join(bid).join("content.db");
     assert!(pa.is_file() && pb.is_file());
     assert_ne!(
         std::fs::metadata(&pa).unwrap().ino(),
@@ -875,22 +915,8 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
             .unwrap()
         );
     }
-    let global = rusqlite::Connection::open_with_flags(
-        d.0.join("state.sqlite3"),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    for name in ["notes", "versions", "items", "outbox"] {
-        assert!(
-            !global
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
-                    [name],
-                    |r| r.get::<_, bool>(0)
-                )
-                .unwrap()
-        );
-    }
+    // No installation-wide state database holds content or plugin state.
+    assert!(!d.0.join("appdata/state.sqlite3").exists());
     let path = note_file(&d.0, aid, a["id"].as_str().unwrap());
     assert_eq!(path.file_name().unwrap(), "T.md");
     let bytes = std::fs::read_to_string(path).unwrap();
@@ -898,7 +924,12 @@ fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
         "---\ncalternal-id: {}\n---\n",
         a["id"].as_str().unwrap()
     )));
-    assert!(d.0.join("spaces").join(aid).join("index.db").is_file());
+    assert!(
+        d.0.join("appdata/spaces")
+            .join(aid)
+            .join("index.db")
+            .is_file()
+    );
 }
 
 #[test]
@@ -912,30 +943,30 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
                 &srv.owner.clone(),
                 "create",
                 "notes.create",
-                json!({"space_id":"personal","title":"First","markdown":"one"}),
+                json!({"space_id": srv.personal,"title":"First","markdown":"one"}),
             );
             assert!(response.is_none());
             assert!(!srv.child.wait().unwrap().success());
         }
-        let (id, revision) = {
+        let (id, revision, personal) = {
             let srv = start(&d.0, None);
             let response = op(
                 &srv,
                 &srv.owner,
                 "create",
                 "notes.create",
-                json!({"space_id":"personal","title":"First","markdown":"one"}),
+                json!({"space_id": srv.personal,"title":"First","markdown":"one"}),
             );
             assert_eq!(response.status, 200, "{}", response.body);
             let note = &response.body["data"]["note"];
             let id = note["id"].as_str().unwrap().to_owned();
             assert_eq!(
-                note_file(&d.0, "personal", &id).file_name().unwrap(),
+                note_file(&d.0, &srv.personal, &id).file_name().unwrap(),
                 "First.md"
             );
-            (id, note["revision"].clone())
+            (id, note["revision"].clone(), srv.personal.clone())
         };
-        let input = json!({"space_id":"personal","id":id,"base_revision":revision,"title":"FIRST","markdown":"two"});
+        let input = json!({"space_id": personal,"id":id,"base_revision":revision,"title":"FIRST","markdown":"two"});
         {
             let mut srv = start(&d.0, Some(point));
             assert!(
@@ -953,7 +984,7 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
         let srv = start(&d.0, None);
         let response = op(&srv, &srv.owner, "rename", "notes.update", input);
         assert_eq!(response.status, 200, "{}", response.body);
-        let path = note_file(&d.0, "personal", &id);
+        let path = note_file(&d.0, &srv.personal, &id);
         assert_eq!(path.file_name().unwrap(), "FIRST.md");
         assert!(!path.with_file_name("First.md").exists());
         assert_eq!(note_body(path), "two");
@@ -962,11 +993,130 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
             &srv.owner,
             "history",
             "notes.history",
-            json!({"space_id":"personal","id":id}),
+            json!({"space_id": srv.personal,"id":id}),
         );
         assert_eq!(
             history.body["data"]["versions"].as_array().unwrap().len(),
             2
         );
     }
+}
+
+/// Starts `serve` on explicit roots and returns its exit status, or `None` if it
+/// was still serving after five seconds (then it is killed).
+fn serve_status(
+    installation: Option<&str>,
+    appdata: &Path,
+    ssd: &Path,
+    hdd: &Path,
+    create: bool,
+) -> Option<i32> {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_calternal"));
+    cmd.env_remove("CALTERNAL_INSTALLATION_ID");
+    cmd.args(["serve", "--development", "--port", "0", "--appdata"])
+        .arg(appdata)
+        .arg("--userdata-ssd")
+        .arg(ssd)
+        .arg("--userdata-hdd")
+        .arg(hdd)
+        .arg("--plugin-root")
+        .arg("/nonexistent-test-plugins")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if create {
+        cmd.arg("--create");
+    }
+    if let Some(id) = installation {
+        cmd.args(["--installation-id", id]);
+    }
+    let mut child = cmd.spawn().unwrap();
+    let t0 = Instant::now();
+    while t0.elapsed() < Duration::from_secs(5) {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status.code();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+/// The roots guard runs before anything is created, against the installation ID
+/// pinned in configuration: a missing pin, empty roots without `--create`, swapped
+/// roots, a different pin and a root of another installation are all refused, and a
+/// refused start leaves no database behind.
+#[test]
+fn server_refuses_empty_swapped_or_foreign_roots() {
+    let d = TempDir::new("roots");
+    let (appdata, ssd, hdd) = (
+        d.0.join("appdata"),
+        d.0.join("userdata-ssd"),
+        d.0.join("userdata-hdd"),
+    );
+    for dir in [&appdata, &ssd, &hdd] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let pin = Some(INSTALLATION);
+    assert_eq!(
+        serve_status(None, &appdata, &ssd, &hdd, true),
+        Some(1),
+        "no pin"
+    );
+    assert_eq!(
+        serve_status(pin, &appdata, &ssd, &hdd, false),
+        Some(1),
+        "empty roots"
+    );
+    assert!(
+        !appdata.join("system").exists(),
+        "a refused start created state"
+    );
+    // First setup, then a normal restart, both serve.
+    drop(start(&d.0, None));
+    assert_eq!(
+        serve_status(pin, &appdata, &ssd, &hdd, false),
+        None,
+        "paired restart"
+    );
+    let other_pin = Some("00000000-0000-0000-0000-000000000002");
+    assert_eq!(
+        serve_status(other_pin, &appdata, &ssd, &hdd, false),
+        Some(1),
+        "different pin"
+    );
+    // Swapped userdata roots carry the wrong role markers.
+    assert_eq!(
+        serve_status(pin, &appdata, &hdd, &ssd, false),
+        Some(1),
+        "swapped roots"
+    );
+    assert_eq!(
+        serve_status(pin, &appdata, &hdd, &ssd, true),
+        Some(1),
+        "--create cannot repair"
+    );
+    // A userdata root of another installation carries another installation ID.
+    let other = TempDir::new("roots-other");
+    let (oa, os, oh) = (
+        other.0.join("appdata"),
+        other.0.join("userdata-ssd"),
+        other.0.join("userdata-hdd"),
+    );
+    assert_eq!(
+        serve_status(other_pin, &oa, &os, &oh, true),
+        None,
+        "other first setup"
+    );
+    assert_eq!(
+        serve_status(pin, &appdata, &os, &hdd, false),
+        Some(1),
+        "foreign root"
+    );
+    // The recovery log lives in userdata-ssd, owner-only.
+    let log = ssd.join(".calternal/recovery");
+    assert!(
+        log.join("snapshot.json").is_file(),
+        "recovery log provisioned"
+    );
 }

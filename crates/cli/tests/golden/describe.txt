@@ -1,5 +1,5 @@
 protocol:   1
-genui:      1
+genui:      2
 principal:  acct-1
 
 SPACE    ROLE

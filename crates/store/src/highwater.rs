@@ -25,7 +25,6 @@ pub(crate) const PAGE_BYTES: usize = 4096;
 const SLOT_BYTES: usize = 64;
 const SLOT_OFFSETS: [u64; 2] = [0, (PAGE_BYTES / 2) as u64];
 const SLOT_MAGIC: &[u8; 4] = b"CHW2";
-const LEGACY_MAGIC: &str = "calternal-head-1";
 const CHECKSUM_END: usize = 41;
 const CHECKSUM_START: usize = CHECKSUM_END;
 const CHECKSUM_BYTES: usize = 16;
@@ -75,19 +74,11 @@ impl Writer {
         let (mark, sequence, active_slot) = if length == PAGE_BYTES as u64 {
             read_slots(&bytes).unwrap_or((None, 0, None))
         } else {
-            let mark = read_legacy(&bytes);
-            let (sequence, active_slot) = match mark.as_ref() {
-                Some(mark) if encode_slot(1, mark).is_ok() => (1, Some(0)),
-                _ => (0, None),
-            };
-            let mut page = [0; PAGE_BYTES];
-            if let Some(mark) = mark.as_ref().filter(|_| sequence > 0) {
-                page[..SLOT_BYTES].copy_from_slice(&encode_slot(sequence, mark)?);
-            }
+            // Not a witness page (a new, empty file): start one with no mark.
             file.set_len(PAGE_BYTES as u64)?;
-            write_all_at(&file, &page, 0)?;
+            write_all_at(&file, &[0; PAGE_BYTES], 0)?;
             file.sync_data()?;
-            (mark.filter(|_| sequence > 0), sequence, active_slot)
+            (None, 0, None)
         };
 
         Ok((
@@ -295,7 +286,7 @@ pub(crate) fn read(path: &Path) -> Option<Mark> {
     if length == PAGE_BYTES as u64 {
         read_slots(&bytes)?.0
     } else {
-        read_legacy(&bytes)
+        None
     }
 }
 
@@ -333,26 +324,6 @@ fn read_slots(bytes: &[u8]) -> Option<(Option<Mark>, u64, Option<usize>)> {
     newest
         .map(|(sequence, mark, slot)| (Some(mark), sequence, Some(slot)))
         .or(Some((None, 0, None)))
-}
-
-/// Decodes an old one-line record so upgrades preserve the existing witness.
-fn read_legacy(bytes: &[u8]) -> Option<Mark> {
-    if bytes.len() > 64 {
-        return None;
-    }
-    let text = std::str::from_utf8(bytes).ok()?;
-    let line = text.strip_suffix('\n')?;
-    let mut fields = line.split(' ');
-    if fields.next()? != LEGACY_MAGIC {
-        return None;
-    }
-    let epoch = fields.next()?.to_owned();
-    let seq = fields.next()?.parse().ok()?;
-    let check = u32::from_str_radix(fields.next()?, 16).ok()?;
-    if fields.next().is_some() || epoch.is_empty() || seq < 0 {
-        return None;
-    }
-    Some(Mark { epoch, seq, check })
 }
 
 /// Encodes a record into its fixed 64-byte slot.
@@ -434,7 +405,6 @@ mod tests {
 
     use super::*;
     use std::fs::OpenOptions;
-    use std::io::Write;
     use std::path::PathBuf;
 
     /// A private scratch directory for one witness file test.
@@ -592,31 +562,6 @@ mod tests {
 
         writer.write(&next).unwrap();
         assert_eq!(read(&path), Some(next));
-    }
-
-    /// The earlier text format keeps its current mark through first-open migration.
-    #[test]
-    fn a_legacy_witness_is_migrated_into_the_page() {
-        let dir = TestDir::new();
-        let path = dir.head();
-        let previous = mark(7, 0x1234);
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .unwrap();
-        writeln!(
-            file,
-            "{LEGACY_MAGIC} {} {} {:08x}",
-            previous.epoch, previous.seq, previous.check
-        )
-        .unwrap();
-
-        let (_writer, migrated) = Writer::open(&path).unwrap();
-
-        assert_eq!(migrated, Some(previous.clone()));
-        assert_eq!(std::fs::metadata(&path).unwrap().len(), PAGE_BYTES as u64);
-        assert_eq!(read(&path), Some(previous));
     }
 
     /// A partial slot from a process that stopped during pwrite cannot hide the prior slot.

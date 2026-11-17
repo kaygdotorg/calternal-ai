@@ -9,8 +9,6 @@
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
-    authz::Capability,
-    error::HostError,
     plugins::Session,
 };
 use axum::{
@@ -21,6 +19,8 @@ use axum::{
 };
 use calternal_core::{LiveFrame, LiveSubscription};
 use calternal_store::{JournalEntry, SpaceStore};
+use calternal_types::Error;
+use calternal_types::{Capability, SpaceId};
 use futures_util::future::select_all;
 use serde::Deserialize;
 use std::{collections::VecDeque, sync::Arc, time::Duration};
@@ -38,7 +38,7 @@ struct Follow {
     after: i64,
     ready: bool,
     content: Arc<calternal_content::Content>,
-    content_space: calternal_content::SpaceId,
+    content_space: SpaceId,
 }
 struct Stream<D: Directory> {
     state: Shared<D>,
@@ -50,30 +50,30 @@ struct Stream<D: Directory> {
     next_space: usize,
     done: bool,
 }
-fn hidden() -> HostError {
-    HostError::not_found("space not found")
+fn hidden() -> Error {
+    Error::not_found("space not found")
 }
 async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, HostError> + Send + 'static,
-) -> Result<T, HostError> {
+    f: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     tokio::task::spawn_blocking(f)
         .await
-        .map_err(|_| HostError::internal("live task failed"))?
+        .map_err(|_| Error::internal("live task failed"))?
 }
 async fn authorized<D: Directory>(
     state: &Shared<D>,
     identity: &Identity,
     session: &Session,
-    space: &str,
+    space: SpaceId,
 ) -> bool {
-    if !session.is_live(&state.tokens).await {
+    if !session.is_live(&state.directory).await {
         return false;
     }
-    let (state, identity, space) = (state.clone(), identity.clone(), space.to_owned());
+    let (state, account) = (state.clone(), identity.id);
     blocking(move || {
         Ok(state
-            .tokens
-            .capabilities(&identity.id, &space)
+            .directory
+            .capabilities(account, space)
             .is_some_and(|c| c.contains(Capability::SpaceRead)))
     })
     .await
@@ -106,36 +106,31 @@ pub(crate) async fn events<D: Directory>(
     let Some(subscriptions) =
         subscriptions.filter(|s| !s.is_empty() && s.len() <= state.inputs.limits().live_spaces)
     else {
-        return crate::api::error_response(HostError::invalid_input(
+        return crate::api::error_response(Error::invalid_input(
             "live subscriptions exceed CALTERNAL_LIVE_SPACES or are empty",
         ));
     };
     let mut follows = Vec::new();
-    let changes = state.tokens.changes();
-    for mut sub in subscriptions {
-        let Ok(space) = uuid::Uuid::parse_str(&sub.space_id) else {
-            return crate::api::error_response(HostError::invalid_input(
+    let changes = state.directory.changes();
+    for sub in subscriptions {
+        let Ok(content_space) = SpaceId::parse(&sub.space_id) else {
+            return crate::api::error_response(Error::invalid_input(
                 "distinct space UUIDs required",
             ));
         };
-        sub.space_id = space.to_string();
         if follows.iter().any(|f: &Follow| f.space == sub.space_id) {
-            return crate::api::error_response(HostError::invalid_input(
+            return crate::api::error_response(Error::invalid_input(
                 "distinct space UUIDs required",
             ));
         }
-        if !authorized(&state, &identity, &session, &sub.space_id).await {
+        if !authorized(&state, &identity, &session, content_space).await {
             return crate::api::error_response(hidden());
         }
-        let content_space = match sub.space_id.parse::<calternal_content::SpaceId>() {
-            Ok(space) => space,
-            Err(_) => return crate::api::error_response(hidden()),
-        };
         let service = content.clone();
         let journal = match blocking(move || {
             service
                 .live_journal(content_space)
-                .map_err(|_| HostError::internal("journal open failed"))
+                .map_err(|_| Error::internal("journal open failed"))
         })
         .await
         {
@@ -145,7 +140,7 @@ pub(crate) async fn events<D: Directory>(
         let receiver = match journal.subscribe_bounded(state.inputs.limits().listeners) {
             Ok(receiver) => receiver,
             Err(_) => {
-                return crate::api::error_response(HostError::unavailable(
+                return crate::api::error_response(Error::unavailable(
                     "space live subscriber limit reached",
                 ));
             }
@@ -210,7 +205,9 @@ impl<D: Directory> Stream<D> {
             // Check all followed spaces on every wake, including an idle revoke.
             if self.page.is_empty() {
                 for f in &self.follows {
-                    if !authorized(&self.state, &self.identity, &self.session, &f.space).await {
+                    if !authorized(&self.state, &self.identity, &self.session, f.content_space)
+                        .await
+                    {
                         return None;
                     }
                 }
@@ -223,7 +220,14 @@ impl<D: Directory> Stream<D> {
                         space_id: follow.space.clone(),
                     }));
                 }
-                if !authorized(&self.state, &self.identity, &self.session, &follow.space).await {
+                if !authorized(
+                    &self.state,
+                    &self.identity,
+                    &self.session,
+                    follow.content_space,
+                )
+                .await
+                {
                     return None;
                 }
                 if !entry.item.is_empty() {
@@ -234,7 +238,7 @@ impl<D: Directory> Stream<D> {
                     let visible = blocking(move || {
                         content
                             .contains(space, &kind, id)
-                            .map_err(|_| HostError::internal("item check failed"))
+                            .map_err(|_| Error::internal("item check failed"))
                     })
                     .await
                     .ok()?;

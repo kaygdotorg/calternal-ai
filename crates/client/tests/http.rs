@@ -72,7 +72,7 @@ async fn typed_notes_and_sensitive_header() {
 }
 #[tokio::test]
 async fn discovery_is_bare_and_versions_checked() {
-    let (url,task)=server(200,json!({"protocol_version":1,"genui_version":1,"principal":{"id":"owner","spaces":[]},"operations":[]})).await;
+    let (url,task)=server(200,json!({"protocol_version":1,"genui_version":2,"principal":{"id":"owner","spaces":[]},"operations":[]})).await;
     assert_eq!(
         Client::new(&url, "token")
             .unwrap()

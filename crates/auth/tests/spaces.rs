@@ -1,9 +1,10 @@
 //! Stored space invariants and source people-action projections, using only temp DBs.
 use calternal_auth::{
-    AccountId, ErrorCode, SpaceId,
+    ErrorCode,
     db::open_conn,
     spaces::{DevelopmentIds, SpaceChange, Spaces},
 };
+use calternal_types::{AccountId, SpaceId};
 use rusqlite::params;
 
 struct Fixture {
@@ -67,7 +68,7 @@ fn first_owner_has_capabilities_and_cannot_be_demoted_or_removed() {
         "space.transfer",
         "space.delete",
     ] {
-        assert!(caps.iter().any(|c| c == cap));
+        assert!(caps.iter().any(|c| c.name() == cap));
     }
     for change in [
         SpaceChange::Leave,
@@ -381,10 +382,10 @@ fn database_requires_owner_membership_and_existing_accounts() {
 fn identifiers_are_fresh_v7_and_memberships_are_space_scoped() {
     let f = Fixture::new();
     let ids = [
-        f.ids.owner.0,
-        f.ids.guest.0,
-        f.ids.personal.0,
-        f.ids.shared.0,
+        f.ids.owner.as_uuid(),
+        f.ids.guest.as_uuid(),
+        f.ids.personal.as_uuid(),
+        f.ids.shared.as_uuid(),
     ];
     for id in ids {
         assert_eq!(id.get_version_num(), 7);
@@ -411,14 +412,14 @@ fn identifiers_are_fresh_v7_and_memberships_are_space_scoped() {
             .capabilities(f.ids.guest, s)
             .unwrap()
             .unwrap()
-            .contains(&"space.delete".into())
+            .contains(calternal_types::Capability::from_name("space.delete").unwrap())
     );
     assert!(
         !f.spaces
             .capabilities(f.ids.guest, f.ids.shared)
             .unwrap()
             .unwrap()
-            .contains(&"space.delete".into())
+            .contains(calternal_types::Capability::from_name("space.delete").unwrap())
     );
     forbidden(f.change(f.ids.guest, f.ids.shared, SpaceChange::Delete));
     forbidden(f.spaces.members(f.ids.guest, f.ids.personal));

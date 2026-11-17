@@ -22,7 +22,7 @@
   4. No blocking call on an async thread (file I/O, hashing, process spawn, SQLite, a std mutex held across I/O).
   5. Parse once, load once; the lane states the read and flush counts of its hot path.
   6. Constant work (schemas, catalogs, validators) is built once and cached.
-  7. Everything stored has a stated bound or retention; "forever" needs the owner's sign-off.
+  7. Everything stored has a stated bound or retention; "forever" needs the owner's sign-off. Request receipts are bounded (owner decision, 2026-11-17): 7 days by default, set by the operator (`CALTERNAL_RECEIPT_RETENTION_DAYS`); a retry after that is a new request.
   8. No compatibility code: no migration chains, legacy readers, aliases, interim projections, or ignored tests kept for old behaviour.
   9. Spaces only, by UUID: no names standing in for IDs, no "Home", no app-specific names in generic code.
   10. One place per fact: an operation, capability or role is declared once and the rest derived.
