@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 // Written by scripts/prepare.mjs; an empty list before it has run, so `astro` alone still starts.
 let presets = [];
 try { presets = JSON.parse(readFileSync(new URL('./src/presets.generated.json', import.meta.url), 'utf8')); } catch { /* not prepared yet */ }
-const early = `(function(){try{var id=localStorage.getItem('cal-docs-preset');if(!id)return;var P=${JSON.stringify(presets)};var p=P.find(function(x){return x.id===id});if(!p)return;var t=localStorage.getItem('starlight-theme');var dark=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;var pal=dark?p.dark:p.light;if(!pal)return;var s=document.documentElement.style;s.setProperty('--cal-paper',pal.paper);s.setProperty('--cal-ink',pal.ink);s.setProperty('--cal-accent',pal.accent)}catch(e){}})()`;
+const early = `(function(){try{var id=localStorage.getItem('cal-docs-preset');if(!id)return;var P=${JSON.stringify(presets)};var p=P.find(function(x){return x.id===id});if(!p)return;var t=localStorage.getItem('starlight-theme');var dark=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;var pal=dark?p.dark:p.light;if(!pal)return;var s=document.documentElement.style;s.setProperty('--cal-paper',pal.paper);s.setProperty('--cal-ink',pal.ink);s.setProperty('--cal-accent',pal.accent);s.setProperty('--cal-wall','none')}catch(e){}})()`;
 
 export default defineConfig({
   site: process.env.DOCS_SITE_URL || 'https://preview.calternal.cloud',

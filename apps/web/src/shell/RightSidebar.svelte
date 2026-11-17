@@ -31,5 +31,5 @@
   .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) var(--foot-inset); }
   .tabs :global(.cap) { width: 100%; }
   /* Four tabs, each with its icon and its label: a tab keeps the width of its content and the capsule shares what is left. */
-  .tabs :global(.cap .seg) { flex: 1 0 auto; padding-inline: var(--s-4); }
+  .tabs :global(.cap .seg) { flex: 1 1 auto; min-width: 0; padding-inline: var(--s-3); } /* shrinks with the sidebar (its labels end in an ellipsis): the capsule never runs out of the sidebar */
 </style>

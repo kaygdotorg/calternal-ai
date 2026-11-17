@@ -119,3 +119,42 @@ The lazy pieces (`packages/editor/src/block/features.ts` detects what a note nee
 | code grammars | 5.6 KB + one chunk per language (JavaScript 5.7 KB) | `@codemirror/language-data` loads a fence's grammar when a note names it; the fences on screen are parsed on their own (cached by language and text) and coloured from the design tokens. Not CodeMirror's nested-language parse: that re-walks the whole tree on every edit (about 1 ms per key at 4x in the long note) |
 
 Not done, and why: cut-and-paste does not keep a block's ID (clipboard text is marker-free, which makes every paste a fresh copy); retiring IDs, aliases on join and uniqueness across spaces belong to the server (B2, B3, B5); a task already in a loaded note gets its ID the first time it is edited, not on load; table cells are not editable in the grid (edit the raw rows) and column widths are not read from the frontmatter yet.
+
+## One text implementation (2026-11-18)
+
+Owner rule: every text field behaves like the note editor, and the two are one implementation, one extending the other. The base is `packages/editor/src/text` (pure, no DOM): `doc.ts` (a string or CodeMirror's document as one `Doc`), `commands.ts` (move, copy and delete lines, select a line, indent, collapse), `keys.ts` (the shared shortcuts as data), `grouping.ts` (how input groups for undo), `triggers.ts` (`[[`, `@`, `#`, `/`), `picker.ts` (a picker's keys), `attrs.ts` (spelling and capitals). A text field (`FieldEditor`, behind `InlineEditor` and `use:textField`) applies them to a native `<input>` or `<textarea>`; the block editor (`block/keys.ts`, `block/grouping.ts`, `block/triggers.ts`, `block/editor.ts`) builds its CodeMirror keymap, undo grouping, triggers and attributes from the same modules, and adds only what a note has and a field has not: Markdown drawing, blocks, list continuation, Tab on a list item, the block handle and menu, the lazy pieces. The shared commands are checked against CodeMirror's own (`test/text.test.ts`) and the two surfaces against each other (`e2e/text-parity.mjs`: ten scenarios, same text and same caret).
+
+### Differences found (short native field against the block editor, before) and what was done
+
+| Behaviour | Short field before | Block editor | Now |
+| --- | --- | --- | --- |
+| Move, copy, delete a line; select a line (Alt-Up/Down, Shift-Alt-Up/Down, Shift-Mod-K, Alt-L) | None | CodeMirror's | One implementation in `text/commands.ts`, both run it (many-line fields only) |
+| Indent and outdent lines (Mod-] and Mod-[) | None | CodeMirror's | Shared |
+| Escape with a selection | Cancelled or nothing | Collapsed the selection | Collapses where Escape is not "cancel" in the host; shared |
+| Several cursors, toggle comment, syntax-aware movement, selection history, select parent syntax | None | CodeMirror's defaults | Taken off the block editor: a field cannot do them |
+| Enter | A plain newline (Shift-Enter in a field that submits) | Newline that keeps the previous line's indentation | Plain newline in both; a list continues it in a note (an extension) |
+| Backspace in leading spaces | One character | Deleted a whole indent unit | One character in both |
+| Redo | Shift-Mod-Z, Mod-Y | Mod-Y, and Shift-Mod-Z on a Mac only | Shift-Mod-Z everywhere in both |
+| Undo of typed text | Broken in the composer: a framework's `input` listener ran first and made the field forget its history | Worked | Fixed (the field listens first); typed, pasted and picked text all undo |
+| Undo grouping: typing and deleting | Joined within 600 ms | Joined within 600 ms | Same |
+| Undo grouping: paste, drop, spelling replacement | Joined the typing | A step of its own, but typing after a paste joined it | A step of its own, and the typing after it is another, in both |
+| Undo grouping: a drop that moves text | Two steps | One | One step in the field |
+| Redo after several quick undos | One step each | The undos within the group delay were one step | The same in both |
+| After undo or redo | The caret after the text | The text it brought back is selected | Selected, in both |
+| Paste with line breaks into a one-line field | Browser-dependent (dropped or kept) | n/a (many lines) | Line breaks become spaces, as a step of its own |
+| Picker triggers (`@`, `[[`, `#`, `/`) | `@` and `/` only, in the palette module's own copy of the rules | All four, its own copy | One set of rules in `text/triggers.ts`; a field accepts `triggers` and reports them |
+| Picker keys (Up, Down, Enter, Tab, Escape) | Written in the composer | Written in Notes | `text/picker.ts`, used by Notes; the composer can use it |
+| Spelling, capitals, autocorrect | Browser default (spelling on, capitals off) | Spelling and capitals on | One table by kind (`text/attrs.ts`); prose on, search, code, secret and address fields off |
+| IME: Enter, Escape or Tab that confirms a composition | Submitted or cancelled in Safari (the key arrives after `compositionend`) | CodeMirror ignores it | `composingKey` ignores it for 80 ms after composition ends |
+| IME: changes from elsewhere during composition | Held until it ends | Held until it ends | Same |
+| Drag and drop of text | The browser's | CodeMirror's | Both move text; the field records it as one step |
+| Plain `<input>` fields outside `InlineEditor` (menu search, wallpaper and font search, picture link, names in Appearance) | Native, no history rules, no shared shortcuts | n/a | `use:textField` gives them the same layer |
+| Not identical, and why | | | |
+| Word movement and double-click selection | The platform's | CodeMirror's character classes | The platform's rules live in the browser's text layer for a native field; reimplementing them would break its input methods |
+| Home and End on a wrapped or indented line | Visual line, no indentation rule | Visual line, with an indentation toggle | A field cannot see where its text wraps; left native |
+| Caret and selection drawing, spelling underline, context menu, autofill | The browser's | Drawn by CodeMirror (selection) and the browser (the rest) | Only the colours are shared |
+| Enter and Mod-Enter in a field that sends | Send | Newline | By design: submitting is the field's job (a note has none) |
+| Plain fields that stay native | Password, number, file, colour, range, checkbox | n/a | Their editing is the browser's |
+| Fields in other lanes | The composer, the machine search, generated-UI inputs | | The composer can adopt the base as it is: `InlineEditor` takes `triggers` and `kind`, `FieldEditor.composing(e)`, `pickerKey`, `triggerAt` in `palette/mentions.ts` already uses the shared rules |
+
+Gate (2026-11-18, dev-02, 4x CPU, same session, alternating): first load of the Threads page, scripts 292.4 KB raw (105.6 gzip) before, 299.6 KB (108.3 gzip) after (the text layer is in the main chunk; CodeMirror is not); typing in the long note, script per key 5.85 ms before and 6.20 after (the whole session ran slower than earlier ones), median key to frame 8.7 and 9.5 ms; composer, first key 12.1 against 9.4 ms, p95 15.4 against 15.4, median 3.5 against 3.8 ms.

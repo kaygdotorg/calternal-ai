@@ -19,6 +19,7 @@
   // Anchored to `trigger` (a button) or to `anchor` (a point, for a context menu). `label` names the menu.
   import Icon from "./Icon.svelte";
   import Popover from "./Popover.svelte";
+  import { textField } from "../lib/textfield";
   import Sheet from "./Sheet.svelte";
   import { currentForm } from "../lib/theme";
   import { roving } from "../lib/roving";
@@ -32,8 +33,9 @@
     trigger,
     anchor,
     search = false,
+    morph = false,
     placement = "top",
-  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; placement?: "top" | "bottom" } = $props();
+  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; morph?: boolean; placement?: "top" | "bottom" } = $props();
   let q = $state("");
   let list = $state<HTMLElement>();
   const radio = $derived(items.some((i) => i.checked !== undefined));
@@ -63,9 +65,9 @@
 
 {#snippet content()}
   {#if search}
-    <div class="s">
+    <div class="s" data-ring-host>
       <Icon inline name="search" />
-      <input type="search" placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" spellcheck="false" onkeydown={fromSearch} />
+      <input type="search" use:textField={{ kind: "search", cancels: true }} placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" onkeydown={fromSearch} />
     </div>
   {/if}
   <div bind:this={list} class="menu" role="presentation" use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
@@ -84,7 +86,7 @@
 {#if currentForm() === "touch"}
   <Sheet {open} {label} onclose={onclose}><div class="sh" role="menu" aria-label={label}>{@render content()}</div></Sheet>
 {:else}
-  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {trigger} onclose={onclose}>{@render content()}</Popover>
+  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>
 {/if}
 
 <style>

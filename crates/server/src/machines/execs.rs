@@ -39,6 +39,9 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         match st.leases.get(&lease) {
+            Some(l) if l.row.account == account && l.row.worker => {
+                return Err(Error::forbidden("plugin worker execs are host-controlled"));
+            }
             Some(l) if l.row.account == account && l.state != LeaseState::Ended => {}
             Some(l) if l.row.account == account => {
                 return Err(Error::conflict("run has ended"));

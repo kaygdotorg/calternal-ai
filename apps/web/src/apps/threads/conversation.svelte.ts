@@ -46,8 +46,11 @@ export class Conversation {
       onStep: (s) => {
         if (this.stream) this.stream.steps = [...this.stream.steps, s];
       },
-      onSummary: (s) => (this.summary = s),
+      onSummary: (s) => { this.summary = s; if (s.messageCount > this.count) { this.count = s.messageCount; this.rev++; } },
+      onStreamEnd: () => (this.stream = null),
     });
+    // The list does not know a thread's message count: ask once (the fixtures answer at once, the server reads the file).
+    void client.getThread(id).then((s) => { if (!s) return; this.summary = s; this.count = Math.max(this.count, s.messageCount); this.rev++; });
   }
 
   /** A message if it has been read, else undefined (and the caller shows a placeholder until `rev` changes). Reads `rev` so the row redraws. */

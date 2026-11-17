@@ -29,3 +29,6 @@
 
 /* A picture scrolls under this floating bar (lib/hazard.ts): the fill rises so the glyphs hold their contrast. */
 [data-hazard] > .glass, [data-hazard] > .glass.dense { background: rgb(var(--tint) / 0.9); transition: background-color var(--dur-base) var(--ease-out); }
+
+/* The button a morphing popover grows from is hidden while the popover covers it (lib/clip-morph.ts brings it back with a swell). No transition: the popover's glass takes its place in the same frame. */
+[data-morph-open] { opacity: 0; transition: none !important; }

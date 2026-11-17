@@ -59,9 +59,12 @@
   .grip { position: absolute; z-index: 5; top: 0; bottom: 0; width: var(--s-7); display: grid; place-items: center; cursor: col-resize; touch-action: none; }
   .grip.left { left: calc(var(--inset) / 2 - var(--s-7) / 2); }
   .grip.right { right: calc(var(--inset) / 2 - var(--s-7) / 2); }
-  .grip i { display: block; width: var(--s-2); height: var(--s-10); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.4); opacity: 0; transition: opacity var(--dur-base) var(--ease-out), height var(--dur-base) var(--ease-out), background-color var(--dur-base) var(--ease-out); }
+  .grip i { display: block; width: var(--s-2); height: calc(var(--s-10) + var(--s-6)); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.4); opacity: 0; transition: opacity var(--dur-base) var(--ease-out), background-color var(--dur-base) var(--ease-out); }
   .grip:hover i, .grip:focus-visible i, .grip.drag i { opacity: 1; }
-  .grip.drag i { height: calc(var(--s-10) + var(--s-4)); background: var(--accent); }
-  .grip:focus-visible { outline: none; }
+  .grip.drag i { background: var(--accent); }
+  /* Touch has no hover and no precise pointer: the handles are not offered (a phone has no sidebars to resize at all). */
+  @media (pointer: coarse) { .grip { display: none; } }
+  /* The slim bar draws the ring (round, like the bar); the hit area around it shows none. */
+  .grip:focus-visible { outline: none !important; }
   .grip:focus-visible i { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>

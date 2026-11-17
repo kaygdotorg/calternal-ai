@@ -2,7 +2,8 @@
 
 Development preview with protected account sign-in and stored space authority.
 Use disposable data. The preview content store does not provide inherited tiering,
-a rebuild from the recovery log, or a production plugin sandbox.
+a rebuild from the recovery log, or production readiness. Plugin workers use
+the machine role’s confined worker profile; see [worker execution](../../docs/plugin-workers.md).
 
 ## Run
 
@@ -148,10 +149,10 @@ Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-pl
 - **Policy.** Plugin operation rows are derived from the manifests (`required_capability`), never hand-written. Host rows (`authz::POLICIES`) and plugin rows go through the same `Registry::policy` lookup and the same `Policy::authorize` path. An operation with no row answers like a hidden target (`item not found` / `space not found`), so registration is not observable to non-members.
 - **Operation targets.** A manifest operation may declare `target: { kind, field }`: `field` is a required string property of its input schema holding the item ID. The existence-hiding resolver finds the item's space from `(kind, id)` and the caller is authorized there; a missing, foreign or wrong-kind ID answers the same not-found. The plugin receives its own input (the optional `space_id` hint is removed). Operations without a target are space-scoped: the wire input carries `space_id`, which is removed before the rest is passed to the plugin.
 - **Digest.** Each worker bundle's SHA-256 is pinned and verified at startup and before every worker start.
-- **Workers (protocol v2).** One long-lived Node process per (plugin, space), driven by the library's `WorkerSession`:
-  - `node --permission --allow-fs-read=<bundle dir> --disallow-code-generation-from-strings --max-old-space-size=128 worker.js`, environment cleared except `LANG`, stderr discarded
-  - at most 8 live workers (an idle one is evicted; all busy → 503 `worker_capacity`), 32 in-flight invocations and 32 queued frames per direction per worker, 256 KiB frames, 3 s per invocation, retired after 4096 invocations, exit after 60 s idle
-  - a protocol violation, output overflow or missed deadline kills the process and fails its in-flight calls
+- **Workers (protocol v2).** One long-lived Node process per (plugin, space), driven by the library's `WorkerSession` over enrolled machines and their existing sandbox/exec channel. The server starts no worker process. [Worker execution](../../docs/plugin-workers.md) specifies the profile and lifecycle:
+  - read-only code/root, no network or socket creation, no appdata/userdata mounts, 256 MiB, one CPU, 64 PIDs and 128 MiB V8 heap
+  - eight physical workers including startup and teardown, 32 in-flight invocations, 256 KiB frames, three-second operations (including cold launch after admission), 600-second job runs, 4096-call retirement and 60-second idle shutdown
+  - a protocol violation, output overflow or missed deadline fails its callers; replacement waits for authenticated teardown proof
 - **Host calls.** Only manifest-declared calls are accepted; each is brokered with the invocation's authority rechecked (current capability, plugin still enabled at the admitted generation) before and after the effect and before delivery. `read_item` reads any kind in the invocation's space only; `write_item` writes only the plugin's own kinds and needs `content.write`. Both go through `crates/content`. `start_job` and `checkpoint_job` go to the job service and `request_secret_handle` to `calternal-secrets` (owner: the space UUID). The other declared calls are refused until their host services exist.
 - **Enable.** `plugins.enable` registers each declared kind (visible folder or `.calternal/<plugin>/<kind>/`; claimed text as Markdown; any other kind stored unparsed under its declared `extension`) and creates each standard collection with a stable ID, before activation commits.
 - **Delivery.** After the worker answers, the host checks the plugin is still enabled at the same generation (409 `plugin_generation_changed`, `tests/race.rs`) and rechecks the caller's space access; the HTTP guard rechecks the session. A result's GenUI view must pass `validate_extension_view`.
@@ -161,7 +162,7 @@ Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-pl
 - **Job bounds.** 64 active jobs per space, 32 children per parent, 64 KiB checkpoints/inputs/results, 64 runs per job, 4 concurrent runs server-wide (10 min deadline each), 8 subscribers per job and 256 in total, 64 open job files; final jobs are kept 7 days and at most 1024 per space.
 - **Sign-in.** Every host call, job run and delivery rechecks that the caller's installation is still live (not signed out, revoked or expired); a job is bound to the installation that started it.
 - **Test plugins.** `tests/plugins/jobs-demo` is trusted only by a build with the `test-plugins` feature and `--test-plugin-root tests/plugins`.
-- **This is not a security sandbox.** A worker can still open network connections (Node 22's permission model does not restrict sockets), use CPU until its deadline, allocate up to its heap cap plus native memory, read its own bundle directory, and keep in-memory state across invocations in the same (plugin, space).
+- **Boundary.** Container probes establish this development profile’s OS restrictions; they do not qualify multi-tenant microVM placement or production readiness. Explicit direct development mode has no OS isolation. Workers retain in-memory state within their (plugin, space).
 
 ## Machines
 
