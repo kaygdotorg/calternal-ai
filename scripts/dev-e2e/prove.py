@@ -84,7 +84,7 @@ def require_image(mode):
 
 def create(title):
     spaces = op("spaces.list")["spaces"]
-    space, = (s["id"] for s in spaces if s["role"] == "owner" and s["name"] == "personal")
+    space, = (s["id"] for s in spaces if s["role"] == "owner" and s["personal"])
     thread = op("threads.create", space_id=space, title=title)["thread"]["id"]
     return space, thread
 
@@ -181,22 +181,20 @@ def run_fixture():
     print("Fixture second turn resumed the first Claude session")
 
 
-def run_real():
+def real_turn(thread, prompt, expected):
     start = time.monotonic()
     first_text = None
     text_prefix = ""
     text_size = 0
     state = "stream_failed"
-    job = None
+    job = session = None
     try:
-        require_image("claude")
-        _, thread = create(f"Claude e2e {uuid.uuid4().hex[:12]}")
         # Take one attempt, then restore the defaults for later turns.
         settings = op("agent.settings")["retry_settings"]
         op("agent.settings", retry_settings={"provider_errors": False, "subscription_limits": False})
         try:
             start = time.monotonic()
-            job = op("threads.send", id=thread, message="reply with the single word ready")["job"]["id"]
+            job = op("threads.send", id=thread, message=prompt)["job"]["id"]
         finally:
             op("agent.settings", retry_settings=settings)
         for event, payload in stream(job):
@@ -208,6 +206,7 @@ def run_real():
                 text_size += len(text)
             if event == "end":
                 state = payload["job"]["state"]
+                session = (payload["job"].get("checkpoint") or {}).get("session_id")
     except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError):
         if job is not None:
             try:
@@ -216,13 +215,41 @@ def run_real():
                 state = "stop_failed"
     outcome = state
     if state == "done":
-        outcome = "ready" if text_size <= 128 and text_prefix.strip() == "ready" else "unexpected_reply"
-    print(json.dumps({
+        outcome = "matched" if text_size <= 128 and text_prefix.strip() == expected else "unexpected_reply"
+    return {
         "outcome": outcome,
         "first_text_ms": first_text,
         "elapsed_ms": round((time.monotonic() - start) * 1000),
-    }))
-    return outcome == "ready"
+    }, session
+
+
+def run_real(continuation=False):
+    try:
+        require_image("claude")
+        _, thread = create(f"Claude e2e {uuid.uuid4().hex[:12]}")
+    except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError):
+        print(json.dumps({"outcome": "setup_failed"}))
+        return False
+
+    word = uuid.uuid4().hex[:12]
+    prompt = (f"Remember this code for my next message: {word}. Reply with the single word ready."
+              if continuation else "reply with the single word ready")
+    first, session = real_turn(thread, prompt, "ready")
+    if first["outcome"] != "matched" or not continuation:
+        if first["outcome"] == "matched":
+            first["outcome"] = "ready"
+        print(json.dumps(first))
+        return first["outcome"] == "ready"
+
+    second, next_session = real_turn(
+        thread, "Reply with only the code I asked you to remember.", word,
+    )
+    resumed = bool(session) and session == next_session
+    first["outcome"] = "ready"
+    if second["outcome"] == "matched":
+        second["outcome"] = "continued" if resumed else "session_changed"
+    print(json.dumps({"first_turn": first, "second_turn": second}))
+    return second["outcome"] == "continued"
 
 
 if __name__ == "__main__":
@@ -234,7 +261,7 @@ if __name__ == "__main__":
                 after_owner_setup()
         except (OSError, HTTPException, RuntimeError, ValueError, KeyError, subprocess.CalledProcessError) as error:
             sys.exit(str(error))
-    elif sys.argv[1:] == ["claude"]:
-        sys.exit(0 if run_real() else 1)
+    elif sys.argv[1:] in (["claude"], ["claude-continuation"]):
+        sys.exit(0 if run_real(continuation=sys.argv[1] == "claude-continuation") else 1)
     else:
-        sys.exit("Usage: prove.py fixture|claude|after-owner-setup")
+        sys.exit("Usage: prove.py fixture|claude|claude-continuation|after-owner-setup")

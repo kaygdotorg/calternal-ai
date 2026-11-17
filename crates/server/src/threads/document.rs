@@ -40,6 +40,7 @@ pub(super) fn encode(metadata: &Value, body: &str) -> String {
         "last_activity_at",
         "archived",
         "deleted",
+        super::provider_session::KEY,
     ] {
         if let Some(value) = metadata.get(key) {
             out.push_str(&format!("{}: {}\n", key.replace('_', "-"), value));
