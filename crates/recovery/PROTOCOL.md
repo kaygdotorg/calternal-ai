@@ -37,7 +37,7 @@ Last-used/last-seen telemetry, rolling session-expiry touches and rate limits do
 not publish. Recovered expiry is the last protected capture's absolute value;
 rebuilding must enforce wall-clock expiry, preserve revocation and force all
 devices to resync under current authority. Stored schema text is descriptive, never SQL to execute blindly.
-The write audit and regression inventory are in [REVIEW.md](REVIEW.md).
+The write audit and regression inventory are in [the dated review](../../docs/reviews/recovery-review-2026-11-17.md).
 
 Publication and proof
 ---------------------

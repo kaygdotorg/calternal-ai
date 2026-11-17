@@ -21,7 +21,7 @@ and a journal-witness root outside appdata backups.
 | userdata-ssd/spaces/<space-uuid>/<registered folder>/ | Current real files, with human-readable names |
 | userdata-ssd/spaces/<space-uuid>/.calternal/<registered plugin>/<kind>/ | Hidden internal files, when the kind registration chooses hidden placement |
 | appdata/accounts/<account-uuid>/content.db | Protected account-owned Collection definitions and membership |
-| appdata/state.sqlite3 | Plugin enablement/generations, unfinished plugin-control publication intents and synthetic-fixture UUID bindings; no note content/history or canonical request receipts |
+| appdata/state.sqlite3 | Plugin enablement/generations and unfinished plugin-control publication intents; no note content/history or request receipts |
 
 A kind must be registered before its first write. Registration declares visible
 placement (including a safe visible subtree) or hidden placement, plus Markdown

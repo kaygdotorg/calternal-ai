@@ -546,7 +546,7 @@ fn missing_versions_and_partial_directory_trees_refuse_without_repair() {
 }
 
 // Independent review regressions: these deliberately express the required safety
-// contract; REVIEW.md records their original failures before implementation.
+// contract; docs/reviews/recovery-review-2026-11-17.md records their original failures before implementation.
 #[test]
 fn deleting_newest_generation_must_not_resurrect_revoked_membership() {
     let f = Fixture::new();

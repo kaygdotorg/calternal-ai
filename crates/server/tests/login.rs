@@ -81,7 +81,7 @@ async fn sign_out_ends_the_session_immediately() {
     assert_eq!(api.status, 401);
 }
 
-// Source live-feed cases are deferred; see ../PORTING.md.
+// Source live-feed cases are deferred; see docs/reviews/server-porting-2026-11-17.md.
 
 #[tokio::test]
 async fn sessions_expire_when_unused() {

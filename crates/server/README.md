@@ -81,7 +81,7 @@ revocation checks come from the ported auth library. Cookies are
 Domain. Duplicate host cookies are refused across the merged router. No legacy cookie is recognized or cleared; delayed logout/refusal never expires
 a newer host cookie. Native clients may send a session bearer. DAV/app passwords are not
 accepted. Account mutation receipt replay and private live event feeds are not
-yet integrated (see PORTING.md and the ignored source test).
+yet integrated (see docs/reviews/server-porting-2026-11-17.md).
 
 `GET /api/v1/describe` returns `DescribeResult`. `POST /api/v1/operations` takes
 `{request_id, operation, input}` and returns the shared operation envelope. A
@@ -103,11 +103,11 @@ There are no CORS headers. `--web-dir` serves a plain static directory with no
 SPA fallback; unknown paths and API routes return 404.
 Core operation bodies remain capped at 2 MiB, Markdown at 1 MiB. The server
 supports the settled addresses; the current web router still needs Claude-owned
-changes listed in HTTP-VALIDATION.md.
+changes listed in docs/reviews/server-http-validation-2026-11-17.md.
 
 ## Durability profile (preview)
 
-SQLite (`state.sqlite3`, WAL, `synchronous=FULL`) is authoritative for revisions, receipts and plugin state. Reads always come from SQLite. `spaces/<space>/Notes/<uuid>.md` is a checked, portable copy of each note's head revision.
+Each space's `appdata/spaces/<space-uuid>/content.db` (WAL, `synchronous=FULL`) is authoritative for its revisions and history, and its `index.db` journal for its request receipts; `appdata/state.sqlite3` holds only plugin activation. Reads come from SQLite. `userdata-ssd/spaces/<space-uuid>/Notes/<title>.md` is a checked, portable copy of each note's head revision, named from its title, with the item ID in its frontmatter.
 
 A write proceeds as follows:
 

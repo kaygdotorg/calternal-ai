@@ -1,3 +1,6 @@
+> **Historical (2026-11-16 overnight handoff).** Point-in-time record; counts, branches
+> and commands below are not maintained. Current state: README.md and the issues.
+
 # Overnight implementation handoff — 2026-11-16
 
 The bounded localhost preview is implemented and verified on Linux with disposable data. It is not the full orchestrator or a production migration.

@@ -57,7 +57,7 @@ Every public code change includes matching reference comments. Run `npm run chec
 
 ## Scope and limitations
 
-- SQLite is the preview's authoritative revision/receipt store. Markdown files are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
+- Each space's SQLite databases in appdata are authoritative for its revisions and request receipts; Markdown files in userdata are checked materialized copies. **Do not import existing Calternal data:** inherited file-only recovery, tiering, external-edit import and production migrations are not proven here. Detected external edits block writes; concurrent external writers are unsupported.
 - Only repository-shipped, digest-pinned plugin bundles run. Node permission flags and cleared environments are defense in depth, **not an OS sandbox**. No arbitrary community plugin installation or provider credentials.
 - Notes uses a textarea, without collaborative CRDT editing or offline support. Activity is limited to the current browser session. There is no real AI conversation, machine pairing, provider login, voice or memory integration yet.
 - UniFFI exposes generated contract/validation scaffolding. This is not a finished native networking/sync core or a working Apple app.
