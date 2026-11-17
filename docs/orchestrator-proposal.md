@@ -242,6 +242,12 @@ early.
 - Agent sandboxes have outbound network access (they must reach the provider and install
   packages); a space can restrict it to an allow-list. Plugin workers have none.
 
+- When a turn fails with a provider or network error it retries automatically: 5 attempts,
+  waiting 30, 60, 120, 240 and 480 seconds. After that, on API-key billing it checks every
+  3 hours whether the provider is back; on a subscription it snoozes the thread until the
+  limit's reset time and resumes by itself. Both are on by default and configurable.
+- The right side is a flat sidebar like the left, not a card.
+
 ## Requirements from kayg's use of bb
 
 Keep:
