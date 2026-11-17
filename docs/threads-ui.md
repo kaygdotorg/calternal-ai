@@ -30,3 +30,21 @@ serves from separate operations: `ChoicesClient` (provider and model, permission
 `PanelsClient` (Changes and Run). The split is type-level, with no change in behaviour; the server adapter delegates requests to its own small class and the fixtures implement all four in one.
 A further step, not taken because it would only add code today: components taking the narrow interface they use (the request bar takes `RequestsClient`, the composer `ChoicesClient`), so a screen can run
 on a server that serves only part of it.
+
+## Empty, missing and failed states
+
+For a fresh real account, each in plain words with the next step and no placeholder art (`ThreadNotices.svelte`, `Notice.svelte`, the sidebar's empty block, the thread's blank view). Fixture scenarios show them: `?scenario=empty|no-machine|offline|signin|failed|retrying|interrupted` (`e2e/states.mjs`).
+
+| Situation | Says | Next step |
+| --- | --- | --- |
+| No thread yet (sidebar) | A thread is a conversation with an agent that works on your files and notes, with only the access you allow | **Start a thread** |
+| Empty thread | Nothing sent yet; the agent shows its steps and asks before anything not allowed | **Write a message** (focuses the box) |
+| No machine enrolled | Agents work on a computer you add, or one from the pool | **Open Machines** (Settings > Machines) |
+| Machine offline | Names the machine; the message is safe and waits; nothing moves to another machine by itself | **Open Machines** |
+| Provider not signed in on the machine | Names provider and machine; sign in once on that machine; Calternal never sees the login | **Copy the command** (`claude auth login`) |
+| Turn failed | What failed; Calternal already retried five times (30 s up to 8 min) | **Try again** |
+| Turn waiting to retry | Counts down; attempt n of 5; keeps checking afterwards or waits for the plan's limit to reset | **Try now** |
+| Turn interrupted | The machine stopped answering; stopped at its last saved step; nothing moved | **Resume** |
+| Request bar | Question: the agent waits and continues once answered. Approval: nothing runs until you decide; "for this thread" lasts until the thread is deleted. Secret: where the value goes | the buttons already on the bar |
+
+What the server can tell today: a failed or interrupted turn comes from the turn state (`failed`, `interrupted`) with generic words; "no machine", "machine offline" and "provider not signed in" need a machine-readiness read the server does not offer yet (the real adapter shows none of them rather than guess), and the retry countdown needs the retry fields of the job checkpoint. Resume is `agent.resume` on the thread's last job.

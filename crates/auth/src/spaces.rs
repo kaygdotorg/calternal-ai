@@ -67,7 +67,7 @@ fn role(c: &Connection, actor: AccountId, space: SpaceId) -> Result<Option<Strin
     .optional()
     .map_err(sql)
 }
-fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
+pub(crate) fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
     c.query_row("SELECT EXISTS(SELECT 1 FROM space_memberships m JOIN spaces s ON s.id=m.space_id
         JOIN space_role_capabilities rc ON rc.role=CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
         WHERE m.account_id=?1 AND s.id=?2 AND rc.capability=?3)", params![actor.to_string(),space.to_string(),cap], |r|r.get(0)).map_err(sql)

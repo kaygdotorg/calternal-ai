@@ -4,6 +4,7 @@ mod document;
 mod index;
 mod operations;
 pub(crate) mod persistence;
+pub(crate) mod provider_session;
 pub(crate) mod turn_events;
 mod turn_status;
 use crate::turns::blocking;

@@ -71,6 +71,13 @@ enum Cmd {
         #[command(subcommand)]
         cmd: calternal_cli::account_input::Pending,
     },
+    /// List, answer, approve or deny the requests waiting on you.
+    Requests {
+        #[command(flatten)]
+        connection: calternal_cli::account_input::Connection,
+        #[command(subcommand)]
+        cmd: calternal_cli::requests::Command,
+    },
     /// Follow a space journal; --json prints one compact JSON object per event.
     Watch {
         space: String,
@@ -206,6 +213,9 @@ fn main() {
             ))
         }
         Cmd::Pending { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
+            calternal_cli::account_input::run(connection, op, input, &out)
+        })),
+        Cmd::Requests { connection, cmd } => out.finish(cmd.operation().and_then(|(op, input)| {
             calternal_cli::account_input::run(connection, op, input, &out)
         })),
         Cmd::Watch {
@@ -524,6 +534,7 @@ async fn serve(
     let jobs = plugins::Jobs::open(&data_dir)
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
         .with_security(directory.spaces.agents())
+        .with_receipt_retention(store.content().receipt_retention())
         .with_thread_events(store.shared_content());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {

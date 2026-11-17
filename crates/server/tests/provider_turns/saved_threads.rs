@@ -64,19 +64,28 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     .unwrap();
     assert!(text.contains(&format!("calternal-id: {thread_id}")));
     assert!(text.contains("Hello 🌏"));
+    let jobs =
+        rusqlite::Connection::open(data.join(&format!("appdata/spaces/{space}/jobs.db"))).unwrap();
+    assert_eq!(
+        jobs.execute(
+            "DELETE FROM jobs WHERE id=?1",
+            [finished["id"].as_str().unwrap()]
+        )
+        .unwrap(),
+        1
+    );
+    drop(jobs);
     // A send applies wider and narrower modes without a fresh passkey ceremony.
     let auth = rusqlite::Connection::open(data.join("appdata/system/auth.db")).unwrap();
     for mode in ["full_access", "least_access", "approve_for_me"] {
         let turn = op(
             server,
             "threads.send",
-            json!({"id":thread_id,"message":"apply the chosen mode","mode":mode}),
+            json!({"id":thread_id,"message":"require-resume and apply the chosen mode","mode":mode}),
         )
         .await;
-        until(server, turn["job"]["id"].as_str().unwrap(), |j| {
-            j["state"] == "done"
-        })
-        .await;
+        let (job, _) = until(server, turn["job"]["id"].as_str().unwrap(), terminal).await;
+        assert_eq!(job["state"], "done", "follow-up must resume: {job}");
         let scope: String = auth
             .query_row(
                 "SELECT scope FROM agent_access WHERE space=?1 AND thread=?2",
@@ -141,4 +150,104 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
         retained, 0,
         "thread deletion retained its saved permission mode"
     );
+}
+
+fn terminal(job: &Value) -> bool {
+    matches!(
+        job["state"].as_str(),
+        Some("done" | "failed" | "outcome_unknown")
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn saved_sessions_do_not_follow_a_thread_to_another_machine_or_account() {
+    require_adapter_build();
+    let data = TempDir::new("thread-session-data");
+    let plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let server = Server::start_with_plugins(&data.0, free_port(), &plugins);
+    let bin = plugins.join("calternal-claude-code/test");
+    let fixture = TempDir::new("thread-session-fixture");
+    std::os::unix::fs::symlink(bin.join("fake-claude.mjs"), fixture.join("claude")).unwrap();
+    let first = TempDir::new("thread-session-first");
+    let code = server.code(&server.owner).await;
+    assert_eq!(enrol(&server.url(), &code, &first.0), 0);
+    let _first = machine_with_adapter(&first.0, &fixture.0);
+    wait_online(&server, &server.owner, 1).await;
+
+    let (guest, spaces) = server.principal(&server.guest).await;
+    let (space, _) = spaces
+        .into_iter()
+        .find(|(_, role)| role == "reader")
+        .unwrap();
+    op(
+        &server,
+        "spaces.set_role",
+        json!({"space_id":space,"account_id":guest,"role":"editor"}),
+    )
+    .await;
+    let thread = op(
+        &server,
+        "threads.create",
+        json!({"space_id":space,"title":"Session boundaries"}),
+    )
+    .await;
+    let id = thread["thread"]["id"].as_str().unwrap();
+    let turn = op(
+        &server,
+        "threads.send",
+        json!({"id":id,"message":"require-fresh first turn"}),
+    )
+    .await;
+    let (job, _) = until(&server, turn["job"]["id"].as_str().unwrap(), terminal).await;
+    assert_eq!(job["state"], "done");
+    let first_machine = job["checkpoint"]["machine_id"].as_str().unwrap();
+    let (status, _) = server
+        .call(
+            &server.owner,
+            &format!("/api/v1/machines/{first_machine}/drain"),
+            Some(json!({"draining":true})),
+        )
+        .await;
+    assert_eq!(status, 200);
+
+    let next = TempDir::new("thread-session-next");
+    let code = server.code(&server.owner).await;
+    assert_eq!(enrol(&server.url(), &code, &next.0), 0);
+    let _next = machine_with_adapter(&next.0, &fixture.0);
+    wait_online(&server, &server.owner, 1).await;
+    let turn = op(
+        &server,
+        "threads.send",
+        json!({"id":id,"message":"require-fresh on the second machine"}),
+    )
+    .await;
+    let (job, events) = until(&server, turn["job"]["id"].as_str().unwrap(), terminal).await;
+    assert_eq!(job["state"], "done");
+    assert_ne!(job["checkpoint"]["machine_id"], first_machine);
+    assert!(events.iter().any(|e| {
+        e["type"] == "notice"
+            && e["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("machine changed"))
+    }));
+
+    let guest_machine = TempDir::new("thread-session-guest");
+    let code = server.code(&server.guest).await;
+    assert_eq!(enrol(&server.url(), &code, &guest_machine.0), 0);
+    let _guest_machine = machine_with_adapter(&guest_machine.0, &fixture.0);
+    wait_online(&server, &server.guest, 1).await;
+    let turn = op_as(
+        &server,
+        &server.guest,
+        "threads.send",
+        json!({"id":id,"message":"require-fresh different account"}),
+    )
+    .await;
+    let (guest_job, events) = until(&server, turn["job"]["id"].as_str().unwrap(), terminal).await;
+    assert_eq!(guest_job["state"], "done");
+    assert_ne!(
+        guest_job["checkpoint"]["machine_id"],
+        job["checkpoint"]["machine_id"]
+    );
+    assert!(!events.iter().any(|e| e["type"] == "notice"));
 }

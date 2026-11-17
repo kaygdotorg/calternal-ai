@@ -1,0 +1,21 @@
+{
+  "data": {
+    "requests": [
+      {
+        "detail": {
+          "action": {
+            "operation": "notes.create"
+          },
+          "app": "notes",
+          "kind": "approval",
+          "write": true
+        },
+        "id": "019a8c00-0000-7000-8000-000000000001",
+        "space_id": "019a8c00-0000-7000-8000-000000000002",
+        "thread_id": null
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "fixture-request"
+}

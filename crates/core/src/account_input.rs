@@ -225,6 +225,7 @@ pub fn parse_account_input(
             crate::validate_resource_id(&i.space_id)?;
             crate::validate_resource_id(&i.item_id)?;
             if is_account_input_operation(&i.request.operation)
+                || crate::request_operation(&i.request.operation).is_some()
                 || i.request.operation.starts_with("spaces.")
                 || i.request.operation.starts_with("secrets.")
             {

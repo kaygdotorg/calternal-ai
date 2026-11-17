@@ -25,6 +25,8 @@
 /* A menu or popover is on screen in one frame once its material is ready (the native menus open in one frame); it leaves with a short fade. A sheet moves
    on the form's sheet motion (the spring on touch, the 190 ms Mac curve on a desktop). */
 [data-surface][data-leaving] { opacity: 0; transition: opacity var(--dur-leave) var(--ease-out); pointer-events: none; }
+/* While keys are typed (lib/input.ts) a surface that closes (the picker after the space that ends its word) is gone at once: a 200 ms fade of a blurred panel costs every key typed during it. */
+:root[data-typing] [data-surface][data-leaving] { transition-duration: 0s; }
 [data-surface].sheet { transition: opacity var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet), translate var(--dur-sheet) var(--ease-sheet); }
 
 /* A picture scrolls under this floating bar (lib/hazard.ts): the fill rises so the glyphs hold their contrast. */
