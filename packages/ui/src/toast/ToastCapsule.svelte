@@ -141,7 +141,8 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    inset: auto;
+    right: auto;
+    bottom: auto;
     translate: -50% -50%;
     z-index: 0;
     width: 12px;
