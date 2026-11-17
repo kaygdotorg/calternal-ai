@@ -13,7 +13,7 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Design rounds
 
-- **Automatic review in Approve for me** (open): what does the reviewing: fixed rules, a model, or both. See `agent-instructions.md`.
+- The Settings screen: its own round (retry and snooze, permission defaults, fonts, wallpapers, machines).
 - Composer and chat experience: mentions, commands, context chips, the request bar.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.

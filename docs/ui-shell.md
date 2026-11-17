@@ -41,11 +41,30 @@ Not a card: it sits directly on the tinted background.
 - Notes default: a narrow centred column with no inner card, and a thin rail at the card's
   left edge that expands into a small table-of-contents card.
 
-### Right card
+### Right sidebar
 
+- Flat, directly on the tinted background like the left sidebar. It is not a card; only
+  the middle is a card.
 - AI chat by default.
-- Tabs at the bottom of the card switch between AI chat and the current app's panels.
-  The app's plugin decides which panels exist (for Notes: the inspector and style sheet).
+- Tabs at the bottom switch between AI chat and the current app's panels. The app's
+  plugin decides which panels exist (for Notes: the inspector and style sheet).
+
+## Backgrounds and fonts
+
+- The background behind both sidebars is a wallpaper: the person's own picture, one from
+  a good built-in set, or one from Unsplash. It is blurred once when chosen, never per
+  frame, so scrolling stays smooth.
+- Fonts are a personal choice with a polished default (Google Sans Flex, Maple Mono):
+  from Google Fonts, Fontsource, Fontshare, the person's own files, or the system font.
+  Chosen fonts and wallpapers are stored on the server; pages never load from those
+  services while in use.
+- The reference for both, and for the overall polish, is kayg's bb plugin `calternal-ui`
+  (`/home/kayg/Developer/bb-plugins/calternal-ui`). Calternal must be at least that good.
+
+## Preview
+
+The web UI is deployed for review at `https://preview.calternal.cloud/ai/` (served from
+`~cua/preview/ai` on `calternal-dev-02-std`, NetBird only).
 
 ## Order of work
 
