@@ -13,10 +13,13 @@ type Senders = Arc<Mutex<HashMap<AccountId, Weak<broadcast::Sender<()>>>>>;
 #[derive(Clone, Default)]
 pub(super) struct Wakes(Senders);
 
+/// One active feed retains its account sender and releases the registry entry
+/// when the last listener drops; at most one empty hint is buffered.
 pub(super) struct Listener {
     account: AccountId,
     map: Senders,
     sender: Arc<broadcast::Sender<()>>,
+    /// Coalesced hints carry no content; lag triggers durable bookmark replay.
     pub(super) receiver: broadcast::Receiver<()>,
 }
 impl Wakes {

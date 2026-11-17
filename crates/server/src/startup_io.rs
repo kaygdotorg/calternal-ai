@@ -1,6 +1,8 @@
 //! Durable startup files use blocking workers rather than the async root task.
 use std::path::Path;
 
+/// Publish an owner-only startup file durably on a blocking worker. Returns I/O
+/// and worker failures; costs one byte copy, one task and file/directory syncs.
 pub(super) async fn write_private_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let (path, bytes) = (path.to_owned(), bytes.to_owned());
     tokio::task::spawn_blocking(move || calternal_fsio::write_atomic_mode(&path, &bytes, 0o600))
@@ -8,6 +10,7 @@ pub(super) async fn write_private_atomic(path: &Path, bytes: &[u8]) -> std::io::
         .map_err(std::io::Error::other)?
 }
 
+/// Fixed next step for startup storage errors; borrowed text with no I/O.
 pub(super) const DATA_HINT: &str =
     "Check that --appdata exists (or can be created) and that you can write to it.";
 

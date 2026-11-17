@@ -3,6 +3,9 @@ use crate::http::Result;
 use serde_json::Value;
 use std::{collections::BTreeMap, path::Path};
 
+/// Parse bounded arm logs once and correlate stages with observed request IDs.
+/// Plain releases have no markers. Malformed markers or reversed clocks fail the
+/// arm; allocations scale with the harness-bounded log and sample count.
 pub(crate) fn collect(
     log: &Path,
     deliveries: &BTreeMap<String, i64>,

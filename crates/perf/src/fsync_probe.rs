@@ -8,6 +8,8 @@ use std::{
     time::Duration,
 };
 
+/// Trace one real warmed update in disposable roots. Refuses reused work or a
+/// failed tracer; costs fixture setup plus a four-second, separately timed trace.
 pub(crate) fn run(a: &Args) -> Result<i32> {
     if a.work.exists() {
         return Err("choose a fresh fsync probe directory".into());

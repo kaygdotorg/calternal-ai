@@ -74,6 +74,7 @@ impl Server {
             std::thread::sleep(Duration::from_millis(2));
         }
     }
+    /// Child identity for the separate syscall diagnostic; one field read, no I/O.
     pub(crate) fn pid(&self) -> u32 {
         self.child.id()
     }

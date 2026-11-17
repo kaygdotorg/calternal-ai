@@ -124,3 +124,8 @@ and later agent scope review. Lookup includes its per-space lock and pending
 outbox check; cold recovery is visible rather than subtracted. Commit/delivery
 uses the shared millisecond clock, so its precision is 1 ms. These instrumented
 debug observations stay separate from plain-release latency qualification.
+
+`--startup-only` uses the same seeded fixtures, alternating binaries, cache-drop
+conditioning, first-use writer evidence and first-list timing, then stops the
+scenario before subscriptions and write loops. Use it for a focused startup
+comparison; it cannot qualify update, delivery or idle-memory budgets.

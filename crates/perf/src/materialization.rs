@@ -7,8 +7,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// One read-only observer for the selected space; never changes product state.
 pub(crate) struct Probe(Connection);
 impl Probe {
+    /// Open one read-only SQLite connection; refuse absent/unreadable state.
     pub(crate) fn open(root: &Path, space: &str) -> Result<Self> {
         Ok(Self(Connection::open_with_flags(
             root.join("appdata/spaces").join(space).join("content.db"),

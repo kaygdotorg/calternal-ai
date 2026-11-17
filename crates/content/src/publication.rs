@@ -33,6 +33,9 @@ impl Content {
         }
         Ok(())
     }
+    /// Publish durable outbox intents in order, retaining failed work for retry.
+    /// Per entry: indexed intent/kind/route/receipt reads, one FULL journal commit
+    /// when new, and one FULL retirement; no content-body reread or file placement.
     pub(crate) fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
             let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;

@@ -52,6 +52,8 @@ struct Args {
     #[arg(long)]
     fsync_probe: bool,
     #[arg(long)]
+    startup_only: bool,
+    #[arg(long)]
     jobs_only: bool,
     #[arg(long)]
     prepare_only: bool,
@@ -84,14 +86,20 @@ fn run(a: &Args) -> Result<i32> {
     if a.samples > 10_000 || a.pairs > 20 || a.cold_pairs > 5 {
         return Err("limit samples to 10000, warm pairs to 20 and cold pairs to 5".into());
     }
-    if [a.prepare_only, a.jobs_only, a.idle_only, a.fsync_probe]
-        .into_iter()
-        .filter(|v| *v)
-        .count()
+    if [
+        a.prepare_only,
+        a.jobs_only,
+        a.idle_only,
+        a.fsync_probe,
+        a.startup_only,
+    ]
+    .into_iter()
+    .filter(|v| *v)
+    .count()
         > 1
     {
         return Err(
-            "choose one of --prepare-only, --jobs-only, --idle-only or --fsync-probe".into(),
+            "choose one of --prepare-only, --jobs-only, --idle-only, --fsync-probe or --startup-only".into(),
         );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
@@ -319,6 +327,9 @@ fn scenario(
     )?;
     let (_, ms) = h.op("notes.list", json!({"space_id":space}))?;
     samples.insert("space.process_cold_open".into(), vec![ms]);
+    if a.startup_only {
+        return Ok(samples);
+    }
     let mut live = live::Live::open(
         &h,
         "/api/v1/live",
@@ -390,10 +401,14 @@ fn scenario(
     }
     for i in 0..a.samples {
         let t = std::time::Instant::now();
-        h.op(
+        let (_, save_ack_ms) = h.op(
             "drafts.save",
             json!({"space_id":space,"item_id":first["id"],"text":format!("draft {i}")}),
         )?;
+        samples
+            .entry("account.draft_save_ack".into())
+            .or_default()
+            .push(save_ack_ms);
         account.wait_type("changed")?;
         samples
             .entry("account.draft_write_to_feed".into())

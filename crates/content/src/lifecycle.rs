@@ -9,7 +9,9 @@ use std::{
 /// One cached space: opened on first use under its own lock, so a cold open in
 /// one space never blocks another.
 pub(crate) struct Slot {
+    /// Lazily opened stores, serialized only within this space.
     pub(crate) space: Mutex<Option<Space>>,
+    /// Idle-retirement clock, updated after each completed operation.
     pub(crate) last_used: Mutex<Instant>,
 }
 impl Slot {
@@ -25,7 +27,9 @@ impl Slot {
         }
     }
 }
+/// The host root locks; a worker clones their Arc only for active placement.
 pub(crate) type RootGuard = Arc<Mutex<Option<Arc<calternal_roots::RootLocks>>>>;
+/// The existing cache holds at most 64 slots; its map lock never spans I/O.
 pub(crate) type Cache = Arc<Mutex<HashMap<SpaceId, Arc<Slot>>>>;
 /// Closes idle spaces nobody holds. Closing drops the space's journal store, which
 /// drains its writer, outside the map lock.
