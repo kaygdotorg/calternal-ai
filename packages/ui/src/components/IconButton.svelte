@@ -1,0 +1,35 @@
+<script lang="ts">
+  // A round button holding one icon. `label` is required: it is the accessible name and the tooltip.
+  import type { HTMLButtonAttributes } from "svelte/elements";
+  import Icon from "./Icon.svelte";
+  import type { IconName } from "../icons";
+  let {
+    icon,
+    label,
+    pressed,
+    tone = "quiet",
+    class: klass,
+    ...rest
+  }: { icon: IconName; label: string; pressed?: boolean; tone?: "quiet" | "tint" | "accent"; class?: string } & Omit<HTMLButtonAttributes, "aria-label" | "title"> = $props();
+</script>
+
+<button type="button" class={["ib", tone, klass]} aria-label={label} title={label} aria-pressed={pressed} {...rest}>
+  <Icon name={icon} />
+</button>
+
+<style>
+  .ib {
+    position: relative; flex: none; display: inline-grid; place-items: center;
+    width: max(var(--ib, var(--pill-h)), var(--hit-min)); height: max(var(--ib, var(--pill-h)), var(--hit-min));
+    border-radius: var(--r-pill); color: var(--ink-2);
+    transition: scale var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  }
+  .ib:active:not(:disabled) { scale: var(--press-scale); }
+  .ib:disabled { opacity: 0.4; }
+  .tint { background: rgb(var(--ink-rgb) / 0.065); }
+  .accent { background: var(--accent-base); color: #fff; }
+  @media (hover: hover) and (pointer: fine) {
+    .ib.quiet:not(:disabled):hover, .ib.tint:not(:disabled):hover { background: rgb(var(--ink-rgb) / 0.09); color: var(--ink); }
+  }
+  .ib[aria-pressed="true"] { background: rgb(var(--ink-rgb) / 0.12); color: var(--ink); }
+</style>

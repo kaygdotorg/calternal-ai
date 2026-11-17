@@ -1,0 +1,19 @@
+/* The one glass material (mockup glass.css). A surface puts <Glass/> inside itself as its first child; the glass never holds the
+   surface's contents, so a hover tint never repaints the blur. The surface must not set filter, opacity below 1, a mask or will-change
+   (that makes it a backdrop root and the glass blurs nothing).
+   Adaptive: lib/material.ts writes --mat-a (tint alpha) and --mat-blur (px) on a surface from the backdrop mesh behind it, once per
+   layout change. Without them the scheme's defaults apply. Touch forms scale the blur down by --blur-scale (cheaper on a phone). */
+.glass {
+  position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: rgb(var(--tint) / var(--mat-a, var(--glass-a)));
+  -webkit-backdrop-filter: blur(calc(var(--mat-blur, var(--glass-blur)) * var(--blur-scale, 1))) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+  backdrop-filter: blur(calc(var(--mat-blur, var(--glass-blur)) * var(--blur-scale, 1))) saturate(var(--glass-sat)) brightness(var(--glass-bright));
+  box-shadow: var(--glass-edge), var(--shadow-float);
+  z-index: -1;
+}
+.glass.flat { box-shadow: var(--glass-edge); }
+.glass.dense { background: rgb(var(--tint) / calc(var(--mat-a, var(--glass-a)) + 0.16)); }
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: color-mix(in oklab, var(--paper) 90%, transparent); }
+}
