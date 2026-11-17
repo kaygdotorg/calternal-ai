@@ -1,7 +1,32 @@
 # Plugin manifest and host library verification — 2026-11-17
 
-Library work is complete within this lane's ownership. Server integration and OS
-confinement are not implemented or certified. No commit or push was made.
+Library work is complete within this lane's ownership. OS confinement is not
+implemented or certified. Server wiring was done afterwards; see the next section.
+
+## Server wiring — 2026-11-17 (thread thr_shzpwcep67, branch `lane/plugin-host`)
+
+The server now loads manifests through this registry, derives its plugin policy
+rows from them, and runs long-lived protocol-v2 workers per (plugin, space) with
+brokered host calls (`crates/server/src/plugins/`, summarized in
+`crates/server/README.md`). notes-insights returns its portable view again and
+reads `text` from `read_item`; the Notes manifest is v1. The "Unfinished
+integration" items below about the server loader, launcher and pin are done;
+OS confinement, scheduler, webhooks, themes, jobs and secrets are still not.
+
+All runs on `claude@calternal-dev-01-compute02` in `~/Developer/lanes/plugin-wiring`
+(the aarch64 rebuild on `ubuntu@calternal-dev-02-std`):
+
+| Command | Result |
+| --- | --- |
+| `nix develop -c cargo test -j6 --workspace --no-fail-fast` | all pass (server: 8 new `plugin_host` tests; ported `race`, `authz_matrix`, `http`) |
+| conformance command from `tests/conformance/README.md` (`--test-threads=1`) | **27 passed** |
+| `nix develop -c npm run test:integration` | 1 passed |
+| `nix develop -c npm run test:plugins` | SDK 14 + notes-insights 2 passed |
+| `nix develop -c ./scripts/check-docs.sh` | pass |
+| clean rebuild (`rm -rf node_modules */dist`; `npm ci`; `npm run build:plugins`) ×2 on x86_64, ×1 on aarch64 | identical `4679760879291e11ed71c4371073bc1c43b01bff84d2b53bcb3466968737a922`, pinned; `calternal plugin-digest` reports `pinned` |
+
+`tests/verify-v1-worker.mjs` was not rerun: it needs the hand-placed legacy source
+described below and proves only the retired v1 path.
 
 ## Changed paths
 

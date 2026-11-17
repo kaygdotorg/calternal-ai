@@ -117,26 +117,27 @@ Recovery and retries:
 
 ## Plugins
 
-- **Registry.** Only entries in the compiled-in `trusted-plugins.json` load. Manifests are read once at startup, checked against the frozen shape, the core validators, the registry's id and version, and exact dependency versions. They stay immutable in memory.
-- **Digest.** Each worker bundle's SHA-256 is pinned and verified both at startup and before every spawn. The browser can never supply code, paths or URLs.
-- **Worker process.** Every invocation gets a fresh process:
-  - `node --permission --allow-fs-read=<bundle dir> --disallow-code-generation-from-strings worker.js`
-  - the environment is cleared except `LANG`, and the working directory is the bundle directory
-  - limits: stdin 2 MiB, stdout 256 KiB, stderr 16 KiB (stderr content is never logged), timeout 3 s
-  - the process is killed and reaped on overflow (immediately), timeout or a nonzero exit
-- **Concurrency.** A global cap of 4 workers is enforced with a nonblocking permit. When it is full, calls get 503 with `reason: worker_capacity`.
-- **Result checks.**
-  - The output must be exactly one protocol object with a matching version and invocation id, and no trailing data.
-  - Its GenUI view must pass `validate_extension_view`, so buttons may call only the plugin's declared read-only operations.
-  - Before delivery, the host checks that the plugin is still enabled at the same generation. Otherwise it returns 409 `plugin_generation_changed` (`tests/race.rs`).
-- **Preview.** Preview runs the real worker on fixed fixture text, works while the plugin is disabled, and never activates it.
-- **This is not a security sandbox.** Node's permission model is defense in depth for repository-shipped trusted bundles only.
+Code: `src/plugins/` (registry, `broker.rs`, `worker.rs`) over the `calternal-plugin-host` library.
+
+- **Registry.** Only entries in the compiled-in `trusted-plugins.json` load. Each manifest (v1) is read once at startup, parsed and validated by the host library without running plugin code, checked against the entry's id and version, and registered atomically: kind, operation, collection and visible-folder collisions are refused. A plugin operation that would shadow a host operation, or that needs an account-level capability, keeps the plugin out.
+- **Policy.** Plugin operation rows are derived from the manifests (`required_capability`), never hand-written. Host rows (`authz::POLICIES`) and plugin rows go through the same `Registry::policy` lookup and the same `Policy::authorize` path. An operation with no row answers like a hidden target (`item not found` / `space not found`), so registration is not observable to non-members.
+- **Wire binding (interim).** Manifest v1 does not say which input names a target item. A trusted entry's `item_operations` does (`notes-insights.summarize` → kind `notes`, field `note_id`): the wire input stays `{id, space_id?}`, the existence-hiding resolver finds the space, and the plugin receives `{note_id}`. Operations without a binding are space-scoped: `space_id` is removed and the rest is the plugin input.
+- **Digest.** Each worker bundle's SHA-256 is pinned and verified at startup and before every worker start.
+- **Workers (protocol v2).** One long-lived Node process per (plugin, space), driven by the library's `WorkerSession`:
+  - `node --permission --allow-fs-read=<bundle dir> --disallow-code-generation-from-strings --max-old-space-size=128 worker.js`, environment cleared except `LANG`, stderr discarded
+  - at most 8 live workers (an idle one is evicted; all busy → 503 `worker_capacity`), 32 in-flight invocations and 32 queued frames per direction per worker, 256 KiB frames, 3 s per invocation, retired after 4096 invocations, exit after 60 s idle
+  - a protocol violation, output overflow or missed deadline kills the process and fails its in-flight calls
+- **Host calls.** Only manifest-declared calls are accepted; each is brokered with the invocation's authority rechecked (current capability, plugin still enabled at the admitted generation) before and after the effect and before delivery. `read_item` reads any kind in the invocation's space only; `write_item` writes only the plugin's own kinds and needs `content.write`. Both go through `crates/content`. The other declared calls are refused until their host services exist.
+- **Enable.** `plugins.enable` registers each declared kind (visible folder or `.calternal/<plugin>/<kind>/`; claimed text as Markdown; other kinds fail closed) and creates each standard collection with a stable ID, before activation commits.
+- **Delivery.** After the worker answers, the host checks the plugin is still enabled at the same generation (409 `plugin_generation_changed`, `tests/race.rs`) and rechecks the caller's space access; the HTTP guard rechecks the session. A result's GenUI view must pass `validate_extension_view`.
+- **Preview.** Runs the plugin's first item operation against a fixed fixture item served by a broker that refuses everything else; works while the plugin is disabled and never activates it.
+- **This is not a security sandbox.** A worker can still open network connections (Node 22's permission model does not restrict sockets), use CPU until its deadline, allocate up to its heap cap plus native memory, read its own bundle directory, and keep in-memory state across invocations in the same (plugin, space).
 
 ## Tests
 
 `scripts/with-toolchain.sh cargo test -p calternal-server -j4` runs these suites. They need Node 22.13 or later on PATH.
 
-- **Worker unit tests (`src/plugins.rs`):** cleared environment, filesystem confinement, malformed and hostile output, timeout and overflow, admission cap, digest tampering.
+- **`tests/plugin_host.rs`:** manifest-derived policy rows, enable provisioning of kinds and collections, an undeclared host call refused before any effect, one long-lived worker per (plugin, space), cross-space reads, cleared environment and filesystem confinement, deadline/overflow/malformed/schema-violating output, pool capacity, digest tampering.
 - **`tests/http.rs` (black-box tests of the real binary):** two principals, stale writes and history, retries, crash points, external edits, the lock, Host/Origin/bearer/CSP checks, static fallback, plugin receipts, temp-file cleanup.
 - **`tests/race.rs`:** disabling a plugin while a call is in flight.
 
