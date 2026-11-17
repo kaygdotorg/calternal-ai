@@ -199,6 +199,7 @@ export function updateVeil(want: Flags): void {
   const out: Record<string, Veil> = {};
   for (const [k, role, pixels] of jobs) {
     const v: Veil = craftLight && scheme === "light" ? { scheme: "light", tint: { a: 0.92, rgb: [255, 255, 255] }, dim: { a: 0, rgb: [0, 0, 0] }, ink2: T.ink2, ink3: T.ink3, total: 0.92, ratio: 99 } : solve(scheme, role, flags, pixels, T, other);
+    if (veilScale !== 1 && !(craftLight && scheme === "light")) { v.tint = { ...v.tint, a: Math.min(0.92, v.tint.a * veilScale) }; v.dim = { ...v.dim, a: Math.min(0.92, v.dim.a * veilScale) }; }
     out[k] = v;
     const ink2 = v.scheme === scheme ? v.ink2 : v.ink2, ink3 = v.ink3;
     root().setProperty(`--${k}-tint`, rgbCss(v.tint.rgb));
@@ -267,6 +268,10 @@ function schedule(ms = 60): void {
 let flagsNow: Flags = { blur: true, dim: true, tint: true };
 /** The three boxes as currently chosen; the veil is solved with them whenever the pictures are re-read. */
 /** The comparison of the owner's: in the light scheme, every surface is Craft's nearly opaque white (0.92) over the blurred, unchanged picture instead of the solved veil. Temporary. */
+/** Clear to tinted: the solved veil's strength is scaled by this (1 leaves it as solved; below 1 shows more wallpaper and may fall under the readability floor; above 1 is denser). */
+let veilScale = 1;
+/** Sets the clear-to-tinted position, 0 (clear) to 1 (tinted); 0.5 is the solved veil. Temporary, with the comparison. */
+export function setClarity(t: number): void { veilScale = t <= 0.5 ? 0.3 + 1.4 * t : 1 + 1.6 * (t - 0.5); }
 let craftLight = false;
 export function setCraftLight(b: boolean): void { craftLight = b; }
 export function setFlags(f: Flags): void {
