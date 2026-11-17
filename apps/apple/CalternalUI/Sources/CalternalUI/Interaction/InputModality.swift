@@ -40,6 +40,8 @@ public struct InteractionEvent: Equatable, Sendable {
     public var ring = false
     /// How many press-bounces have been played (only pointer and touch bounce).
     public var bounces = 0
+
+    public init(hovered: Bool = false, pressed: Bool = false, ring: Bool = false, bounces: Int = 0) { (self.hovered, self.pressed, self.ring, self.bounces) = (hovered, pressed, ring, bounces) }
 }
 
 private struct InteractionProbeKey: EnvironmentKey { static let defaultValue: (@Sendable (String, InteractionEvent) -> Void)? = nil }

@@ -25,7 +25,8 @@ public struct ShellView: View {
 
     public var body: some View {
         GeometryReader { geo in
-            let size = geo.size
+            let insets = geo.safeAreaInsets
+            let size = CGSize(width: geo.size.width + insets.leading + insets.trailing, height: geo.size.height + insets.top + insets.bottom)
             let wide = size.width >= 760
             let m = d.metrics
             let chosen = palette ?? WallpaperFixtures.automatic(dark: d.scheme == .dark)
@@ -37,16 +38,17 @@ public struct ShellView: View {
                 if wide {
                     DesktopLayout(fixture: fixture, state: state, model: model)
                 } else {
-                    PhoneLayout(fixture: fixture, state: state, model: model, size: size, insets: geo.safeAreaInsets)
+                    PhoneLayout(fixture: fixture, state: state, model: model, size: size, insets: insets)
                 }
             }
             .frame(width: size.width, height: size.height)
+            .ignoresSafeArea()
             .coordinateSpace(name: ShellSpace.window)
             .environment(\.wallpaperContext, model.context)
             .environment(\.accentBase, model.accent ?? Tokens.accentBase)
             .task(id: input) { await model.refresh(input, palette: chosen) }
+            .onChange(of: wide, initial: true) { _, w in state.sidebarOpen = w; state.rightOpen = w }
         }
-        .ignoresSafeArea()
     }
 }
 
@@ -96,6 +98,7 @@ private struct DesktopLayout: View {
             Card(label: fixture.appName, variant: .pane) {
                 ThreadView(fixture: fixture, state: state, showsSidebarButton: !state.sidebarOpen, showsRightButton: true)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, m.inset)
             if state.rightOpen {
                 RightSidebarView(fixture: fixture, state: state)
@@ -148,7 +151,7 @@ private struct PhoneLayout: View {
             .offset(x: state.sidebarOpen ? size.width - peek : 0)
             .overlay { if state.sidebarOpen { Color.clear.contentShape(Rectangle()).onTapGesture { withAnimation(slide) { state.sidebarOpen = false } }.accessibilityLabel("Close the sidebar").accessibilityAddTraits(.isButton) } }
             if state.rightOpen { d.theme.scrim.ignoresSafeArea().onTapGesture { withAnimation(slide) { state.rightOpen = false } }.transition(.opacity).accessibilityHidden(true) }
-            RightSidebarView(fixture: fixture, state: state, showsCloseButton: true)
+            RightSidebarView(fixture: fixture, state: state, showsCloseButton: true, showsTabs: false)
                 .padding(.top, insets.top)
                 .frame(width: rightW, height: size.height)
                 .background { if let w = model.context.wallpaper { WallpaperBackdropFlat(wallpaper: w, veil: model.rightVeil, size: size, offsetX: size.width - rightW) } }

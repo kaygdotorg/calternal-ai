@@ -6,11 +6,12 @@ struct RightSidebarView: View {
     let fixture: ShellFixture
     @Bindable var state: ShellState
     var showsCloseButton = false
+    var showsTabs = true
     @Design private var d
 
     var body: some View {
         let m = d.metrics
-        let footer = m.tierCap + m.space(8)
+        let footer = showsTabs ? m.tierCap + m.space(8) : m.tierCap + m.capOffset + m.space(4)
         let panel = fixture.panels.first { $0.id == state.panel } ?? fixture.panels[0]
         ZStack(alignment: .top) {
             ScrollView {
@@ -34,8 +35,8 @@ struct RightSidebarView: View {
                 if showsCloseButton { Pill(label: "Close the side panel", icon: .close) { withAnimation(d.motion.sheet()) { state.rightOpen = false } } }
             }
             .padding(.horizontal, m.space(6)).frame(height: m.barHeight)
-            SegmentedCapsule(label: "\(fixture.appName) panels", items: fixture.panels.map { CapsuleItem(id: $0.id, label: $0.label, icon: $0.icon) }, selection: $state.panel)
-                .padding(.horizontal, m.space(4)).padding(.bottom, m.space(4)).frame(maxHeight: .infinity, alignment: .bottom)
+            if showsTabs { SegmentedCapsule(label: "\(fixture.appName) panels", items: fixture.panels.map { CapsuleItem(id: $0.id, label: $0.label, icon: $0.icon) }, selection: $state.panel)
+                .padding(.horizontal, m.space(4)).padding(.bottom, m.space(4)).frame(maxHeight: .infinity, alignment: .bottom) }
         }
         .accessibilityElement(children: .contain).accessibilityLabel("\(fixture.appName) side panel").accessibilityIdentifier("shell.right")
     }

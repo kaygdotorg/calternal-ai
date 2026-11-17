@@ -88,6 +88,7 @@ struct ThreadView: View {
             }
             .padding(.horizontal, m.space(5)).padding(.bottom, m.space(5)).frame(maxHeight: .infinity, alignment: .bottom)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("shell.card")
     }
 }

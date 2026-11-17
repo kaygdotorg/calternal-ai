@@ -137,7 +137,7 @@ struct GenNodeView: View {
         case "Toggle":
             Toggle(isOn: Binding(get: { value(node).bool ?? false }, set: { if let b = node.binding { host.set(b.name, .bool($0)) } })) {
                 Text(node.text("label")).textRole(.ui)
-            }.frame(minHeight: m.pillHeight)
+            }.tint(t.accent).frame(minHeight: m.pillHeight)
         case "Checklist": ChecklistView(node: node, current: value(node).list?.map(\.text) ?? [], host: host)
         case "Button":
             ActionButton(text: node.text("label"), variant: node.text("variant") == "primary" ? .primary : node.text("variant") == "destructive" ? .destructive : .secondary) { perform(node.actions) }

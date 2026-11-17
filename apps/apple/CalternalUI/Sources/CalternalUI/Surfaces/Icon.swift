@@ -32,7 +32,7 @@ public enum IconName: String, CaseIterable, Sendable {
         case .code: "chevron.left.forwardslash.chevron.right"
         case .table: "tablecells"
         case .pulse: "waveform.path.ecg"
-        case .changes: "arrow.triangle.pull"
+        case .changes: "plus.forwardslash.minus"
         case .branch: "arrow.triangle.branch"
         case .spark: "sparkles"
         case .send: "arrow.up"

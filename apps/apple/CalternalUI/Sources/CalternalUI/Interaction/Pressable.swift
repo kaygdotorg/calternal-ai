@@ -16,6 +16,16 @@ public struct PressableLook {
     }
 }
 
+/// The interaction decisions as pure functions, so they are unit-tested without a window or a keyboard.
+enum InteractionRules {
+    /// A focus ring is for the keyboard: the control is focused and, on a Mac where a click also focuses, the last input was a key.
+    /// On iOS focus only ever comes from a hardware keyboard, so focus alone decides.
+    static func showsRing(focused: Bool, keyboardMode: Bool, isMac: Bool) -> Bool { focused && (!isMac || keyboardMode) }
+
+    /// A control animates (press-in, rebound) when driven by pointer or touch, never from the keyboard, and never under Reduce Motion.
+    static func animates(reducedMotion: Bool, keyboardDriven: Bool) -> Bool { !reducedMotion && !keyboardDriven }
+}
+
 /// The one interaction style of every control, defined once (like `lib/bounce.ts` on the web):
 /// - **Hover** (Mac and iPad pointer): a quiet wash.
 /// - **Press and bounce**: on pointer or touch the control presses to 0.96 over `dur-fast`, and on release rebounds to 1.035 and settles over `dur-slow`
@@ -45,26 +55,14 @@ private struct PressableBody: View {
     private var modality: InputModality { .shared }
 
     /// A ring is for the keyboard: focused and (on a Mac) the last input was a key. On iOS focus only ever comes from a hardware keyboard.
-    private var ring: Bool {
-        #if os(macOS)
-        focused && modality.isKeyboard
-        #else
-        focused
-        #endif
-    }
+    private var ring: Bool { InteractionRules.showsRing(focused: focused, keyboardMode: modality.isKeyboard, isMac: Form.current == .desktop) }
 
     /// True when this activation came from the keyboard: no animation (a focused control on iOS, the last event a key on a Mac).
-    private var fromKeyboard: Bool {
-        #if os(macOS)
-        modality.isKeyboard
-        #else
-        focused
-        #endif
-    }
+    private var fromKeyboard: Bool { Form.current == .desktop ? modality.isKeyboard : focused }
 
     var body: some View {
         let pressed = configuration.isPressed
-        let animated = !d.motion.reduced && !fromKeyboard
+        let animated = InteractionRules.animates(reducedMotion: d.motion.reduced, keyboardDriven: fromKeyboard)
         configuration.label
             .background {
                 RoundedRectangle(cornerRadius: look.cornerRadius, style: .continuous)
@@ -106,6 +104,6 @@ private struct PressableBody: View {
 extension Button {
     /// Applies the design's one interaction style. `probeLabel` names the control to the optional interaction probe.
     func pressable(_ look: PressableLook, probe label: String) -> some View {
-        buttonStyle(PressableStyle(look: look, probeLabel: label)).focusEffectDisabled()
+        buttonStyle(PressableStyle(look: look, probeLabel: label)).focusable(true, interactions: .activate).focusEffectDisabled()
     }
 }

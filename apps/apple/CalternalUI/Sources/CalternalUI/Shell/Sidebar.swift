@@ -129,3 +129,17 @@ struct AppSwitcherMenu: View {
         .accessibilityLabel("Switch app").accessibilityValue(current.label).accessibilityIdentifier("switcher.app")
     }
 }
+
+/// The sidebar's scrolling column on its own (attention card and sections), with no other shell surface: what the long-list measurement isolates.
+public struct SidebarListView: View {
+    private let fixture: ShellFixture
+    @State private var state = ShellState()
+    @Design private var d
+
+    public init(fixture: ShellFixture) { self.fixture = fixture }
+
+    public var body: some View {
+        ThreadList(fixture: fixture, state: state, topInset: d.metrics.barHeight, bottomInset: d.metrics.barHeight)
+            .frame(width: d.metrics.sidebarWidth)
+    }
+}
