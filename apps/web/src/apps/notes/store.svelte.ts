@@ -32,6 +32,8 @@ class NotesStore {
   /** Saving took this long the last time, in milliseconds (shown nowhere; the performance report reads it). */
   lastSaveMs = 0;
   error = $state("");
+  /** The stable code of the failure behind `error` (`unavailable`, `not_found`, `forbidden`, …), so the screen can offer the right next step. */
+  errorCode = $state("");
   private stop: (() => void) | null = null;
   private stopInput: (() => void) | null = null;
   private started = false;
@@ -49,7 +51,7 @@ class NotesStore {
       await this.reloadInput();
       this.stopInput = this.input.watch(() => void this.reloadInput());
     } catch (e) {
-      this.error = say(e, "load the notes");
+      this.error = say(e, "load the notes"); this.errorCode = e instanceof ServerError ? e.code : "";
     }
   }
   /** Follows the shell's current space: the list is that space's notes. The open note stays open. */
@@ -82,6 +84,13 @@ class NotesStore {
     if (!this.space) return;
     this.list = await this.client.list(this.space.id);
   }
+  /** Tries again after a failed load (the start-up, or the open note). */
+  async retry(id?: string): Promise<void> {
+    this.error = ""; this.errorCode = "";
+    if (!this.space) { this.started = false; await this.start(); }
+    else await this.refresh().catch((e) => { this.error = say(e, "load the notes"); });
+    if (id) await this.open(id);
+  }
   /** Reloads the private snapshot (the open note's draft, the pending writes): at start and whenever the account feed says it changed. */
   async reloadInput(): Promise<void> {
     try {
@@ -103,9 +112,9 @@ class NotesStore {
     try {
       this.note = await this.client.get(this.space.id, id);
       this.show(this.note); this.saveState = "saved"; this.conflict = null;
-      this.error = "";
+      this.error = ""; this.errorCode = "";
       if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
-    } catch (e) { this.note = null; this.error = say(e, "open the note"); }
+    } catch (e) { this.note = null; this.error = say(e, "open the note"); this.errorCode = e instanceof ServerError ? e.code : ""; }
     await this.reloadInput();
   }
   /**

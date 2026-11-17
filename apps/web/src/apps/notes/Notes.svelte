@@ -77,8 +77,9 @@
       {/if}
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     {:else}
-      <h1>{id ? "Note not found" : "Notes"}</h1>
+      <h1>{notes.error ? (notes.errorCode === "unavailable" ? "Can't reach the server" : notes.errorCode === "forbidden" ? "You can't open this note" : id ? "Note not found" : "Notes") : id ? "Note not found" : "Notes"}</h1>
       <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : notes.list.length ? "Choose a note on the left, or make a new one." : "A note is a page of Markdown that you and your agents can read and edit. This space has none yet.")}</p>
+      {#if notes.error}<p class="first"><Button variant="primary" text="Try again" onclick={() => notes.retry(id)} /></p>{/if}
       {#if !id && !notes.list.length && !notes.error}<p class="first"><Button variant="primary" text="Write the first note" onclick={async () => { const n = await notes.create("Untitled"); if (n) navigate(`/notes/${n.id}`); }} /></p>{/if}
     {/if}
   </article>

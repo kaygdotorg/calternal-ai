@@ -73,6 +73,10 @@ try {
   note = (await api("notes.get", { space_id: space, id })).data.note;
   ok(/Offline text\./.test(note.markdown), "back online: the text typed offline is saved", "");
 
+  // A note that is not there says so and offers the way back.
+  await page.goto(`${url}/notes/00000000-0000-7000-8000-000000000000?server=1`); await page.waitForSelector("html[data-ready]");
+  await page.getByRole("heading", { name: /Note not found|You can't open/ }).waitFor({ timeout: 8000 });
+  ok(await page.getByRole("button", { name: "Try again" }).isVisible(), "a missing note says so and offers Try again");
   // 10,000 lines: make it through the API, open it in the UI, type with the probe while saves run.
   const lines = Array.from({ length: 10000 }, (_, i) => i % 50 === 0 ? `## Section ${i / 50}` : `Line ${i}: the quick brown fox jumps over the lazy dog, then naps in the sun.`).join("\n");
   const big = (await api("notes.create", { space_id: space, title: "Big", markdown: `# Big\n\n${lines}\n` })).data.note;
