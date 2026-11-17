@@ -1,6 +1,7 @@
 # The orchestrator plugin: proposal
 
-Status: proposal for kayg to grill, 2026-11-17. Nothing here is built. Terms are in the
+Status: grilled with kayg on 2026-11-17; the section "Decided in the grill" at the end
+records the answers and overrides anything above that conflicts. Nothing here is built. Terms are in the
 [glossary](glossary.md). Earlier accepted decisions are kept and cited from
 `architecture-proposal.md` section 8 and `feature-gap-assessment.md`; where today's
 decisions changed one, this says so.
@@ -207,3 +208,49 @@ early.
 5. **Subagent workspaces.** Default for a coding subagent: its own worktree, or the
    parent's checkout read-only?
 6. **What from bb do you most want kept exactly, and what annoys you most?**
+
+## Decided in the grill (2026-11-17)
+
+- The plugin's ID is `calternal-orchestrator`. Every official plugin is `calternal-<name>`.
+- Child threads are visible in the sidebar under their parent and archive automatically
+  when they finish.
+- A request can carry a list of questions: it is a form described with the generated-UI
+  components and drawn by the app. Approvals and secret entry stay fixed, trusted forms.
+- The CLI is non-interactive; there is no TUI. The web UI is built at the same time as the
+  orchestrator so there is a surface to plug it into and test.
+- Offline sending is queued after all: a message sent while offline is a visible pending
+  submission on the account that can be edited or cancelled, and is submitted on
+  reconnect with its request ID, re-checking access first. (Restores the 2026-11-16
+  decision.)
+- Work does not move between machines by itself, on the pool or anywhere. If a machine
+  goes silent, the turn shows as interrupted and the person is told; Resume starts it
+  again from its last checkpoint, on that machine if it is back or on another one.
+  (Restores the 2026-11-16 decision; the automatic re-placement built in the machine
+  role becomes resume-on-request.)
+- Cals come after plain threads.
+- One file per thread; long tool output is kept outside the file and linked. Long threads
+  are the UI's speed test.
+- On a person's own machine they choose per machine: sandboxed, or direct access.
+- A space's permissions apply to every plugin in it, the orchestrator included. A thread
+  in a shared space is visible to members who can read the space.
+- A coding subagent gets its own worktree.
+- Agent sandboxes have outbound network access (they must reach the provider and install
+  packages); a space can restrict it to an allow-list. Plugin workers have none.
+
+## Requirements from kayg's use of bb
+
+Keep:
+
+- Agents know what Calternal is and can do anything in the app through the CLI. Every
+  operation a screen uses is available to an agent.
+- Agents are told to prefer Calternal's tools over their own where both exist.
+- Agents can extend Calternal: the plugin API guide ships as a skill, so an agent asked to
+  change the app knows how.
+
+Fix:
+
+- Polish and taste by default. The component library, tokens and a design check steer
+  agent-made UI toward good results; bad taste should take effort.
+- Switching between Claude and Codex happens inside the same thread. No new thread, no
+  visible handover message; the handover is internal.
+- The phone app is native, not the web app in a container.

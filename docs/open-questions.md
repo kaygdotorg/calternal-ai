@@ -13,7 +13,7 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Design rounds
 
-- **The orchestrator plugin** (next): threads, turns, subagents, review.
+- macOS sandboxing for agents on a person's own Mac: which mechanism, tested on the macOS VM.
 - Composer and chat experience: mentions, commands, context chips, the request bar.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
@@ -24,7 +24,9 @@ move to the decision record they belong to and leave this list. Terms: see
 - State lives on the server; clients subscribe to it and cache what they need, as the existing app does. There is no sync protocol to design. A client whose bookmark is too old reloads.
 - Agent questions and approvals share the sticky bar with secret requests and do not expire.
 - Warm pool of pre-started sandboxes on each cloud machine: yes.
-- Offline: cached reading and drafts only; nothing is queued to run later.
+- Offline: a sent message is queued as a visible pending submission and goes out on reconnect.
+- Work never moves between machines by itself; an interrupted turn is resumed on request.
+- The orchestrator round is held: see `orchestrator-proposal.md`, "Decided in the grill".
 - Drafts sync across a person's devices and stay until sent or erased.
 - After sign-out, unsent edits are kept as drafts. After revocation, the device offers an export of what it holds and then deletes it; revocation itself is immediate and never waits for that.
 - A plugin's secrets belong to the space that enabled it. Plugins declare the secrets they need in their manifest.

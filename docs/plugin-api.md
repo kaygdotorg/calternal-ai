@@ -9,8 +9,8 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - No compatibility with bb plugins.
 - A plugin fills the three shell regions (`docs/ui-shell.md`) and contributes kinds and
   collections addressed per `docs/addresses.md`.
-- Starting an agent run needs a connection. Offline, a client can read cached threads and
-  keep drafts; nothing is queued to run later.
+- A message sent while offline is queued as a visible pending submission that can be
+  edited or cancelled, and is submitted on reconnect after access is re-checked.
 - UI: the product ships a rich library of native components that plugins use by default.
   A plugin or an agent may also bring its own components written in HTML and CSS, created
   dynamically. This supersedes "portable GenUI only" as the early scope.
@@ -88,8 +88,8 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   Limits are not arbitrary constants: product limits come from the plan and from real
   capacity; the server keeps only high, operator-configurable safety ceilings against a
   runaway plugin.
-- Machines: when a machine goes silent mid-run the work moves to another machine and the
-  person is told; while waiting for capacity they see their queue position.
+- Machines: when a machine goes silent mid-run the turn shows as interrupted and the
+  person is told; work never moves by itself, and Resume restarts it from its checkpoint; while waiting for capacity they see their queue position.
 - Jobs: a running job stops only when its account loses access to the space, not when a
   device signs out; any member who can read the space can watch its output; the person
   who started it or a Manager can cancel.
