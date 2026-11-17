@@ -5,59 +5,108 @@ Issue: `kayg/calternal-ai#30`
 Branch: `lane/plugin-rename`
 
 Renamed the official plugin IDs and folders to `calternal-notes` and
-`calternal-notes-insights`. The Notes kind (`notes`), operation names (including
-`notes-insights.summarize`), and `/notes/<id>` address remain unchanged. No old-ID
-alias or compatibility path was added. Npm package names remain `@calternal/notes`
-and `@calternal/notes-insights`, matching the existing `@calternal/claude-code`
-package naming pattern.
+`calternal-notes-insights`. The Notes kind (`notes`), operations (including
+`notes-insights.summarize`), agent-access app namespaces, and `/notes/<id>`
+address remain unchanged. No old-ID alias or compatibility path was added.
+Npm package names remain `@calternal/notes` and `@calternal/notes-insights`,
+matching the existing `@calternal/claude-code` package convention.
+
+The trusted worker digest is `ce9ec5b040859b7d398178b147d6811ea5988a08a577027657f8ff9c01a220a4`.
+The rename changed the worker's protocol-failure diagnostic string, so the built
+bundle bytes changed from the digest supplied on `origin/dev`; the digest above
+was recomputed by `npm run build:plugins` and matches the renamed worker.
 
 ## Commands and results
 
-All build and test commands below ran on `ubuntu@calternal-dev-02-std` in
+All build and test commands ran on `claude@calternal-dev-01-compute02` in
 `~/Developer/lanes/plugin-rename`, under `nix develop`.
 
-- `nix develop -c npm ci --ignore-scripts --no-audit --no-fund` — passed.
-- `nix develop -c npm run build:plugins` — passed; rebuilt all plugin bundles.
-- `nix develop -c cargo build --locked -j6 -p calternal-server --features test-plugins` — passed.
-- `nix develop -c sh -c 'umask 022; CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" CONFORMANCE_RESULTS="$PWD/tests/conformance/corrected-results" cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1'` — passed, 48 tests.
-- `nix develop -c npm run test:plugins` — passed: SDK 12, Notes Insights 2, Claude Code 6; its signed-in Claude test was skipped because it is opt-in.
-- `nix develop -c npm run test:integration` — passed, 1 test.
-- `nix develop -c cargo run --locked -j6 -p calternal-core --bin export-contract` — passed and regenerated the contract artifacts.
-- `nix develop -c cargo run --locked -j6 -p calternal-core --bin export-contract -- --check` — passed: contract artifacts match Rust models.
-- `UPDATE_GOLDEN=1 cargo test --locked -j6 -p calternal-server --test cli_golden` — passed and regenerated the plugin digest CLI goldens.
-- `UPDATE_GOLDEN=1 cargo test --locked -j6 -p calternal-server --bin calternal cli_output_tests::machine_and_plugin_list_goldens_cover_120_80_and_40_columns -- --exact` — passed and regenerated the binary CLI goldens.
-- `sha256sum -c tests/conformance/binaries.sha256` — passed after updating the server, worker, and conformance source checksums.
-- `nix develop -c sh scripts/check-docs.sh` — passed. Rustdoc emitted existing warnings in `content::pool` and actor documentation; SDK and plugin TypeDoc checks passed.
+- `nix develop -c npm run build:plugins` — passed; rebuilt the worker with SHA-256
+  `ce9ec5b040859b7d398178b147d6811ea5988a08a577027657f8ff9c01a220a4`.
+- `nix develop -c cargo test --locked -j6 --workspace --no-fail-fast -- --test-threads=1`
+  — passed: 533 passed, 0 failed, 1 ignored across 77 result groups. Both provider
+  access regressions reported by the parent passed.
+- `nix develop -c cargo build --locked -j6 -p calternal-server --features test-plugins`
+  — passed.
+- `nix develop -c env CALTERNAL_SERVER_BIN=$PWD/target/debug/calternal cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1`
+  — passed: 53 tests. A prior run under concurrent VM load passed 52 tests and
+  failed only the `jobs.get` median timing assertion; the full rerun passed.
+- `nix develop -c npm run test:plugins` — passed: SDK 14, Notes Insights 2,
+  Claude Code 6; the signed-in Claude test was skipped because it is opt-in.
+- `nix develop -c npm run test:integration` — passed: 1 test.
+- `nix develop -c cargo run --locked -j6 -p calternal-core --bin export-contract`
+  — passed and regenerated the contract artifacts.
+- `nix develop -c cargo run --locked -j6 -p calternal-core --bin export-contract -- --check`
+  — passed: contract artifacts match Rust models.
+- `nix develop -c env UPDATE_GOLDEN=1 cargo test --locked -j6 -p calternal-server --test cli_golden`
+  — passed: 8 tests and regenerated CLI goldens.
+- `nix develop -c env UPDATE_GOLDEN=1 cargo test --locked -j6 -p calternal-server --bin calternal cli_output_tests::machine_and_plugin_list_goldens_cover_120_80_and_40_columns -- --exact`
+  — passed: 1 test and regenerated binary CLI goldens.
+- `sha256sum -c tests/conformance/binaries.sha256` — passed for the server,
+  renamed worker, `Cargo.lock`, and conformance isolation source.
+- `nix develop -c sh scripts/check-docs.sh` — passed. Rustdoc reported existing
+  warnings in actor and content pool documentation; SDK and plugin TypeDoc checks
+  passed.
 - `nix develop -c cargo fmt --all -- --check` — passed.
-- `nix develop -c npm run docs:site` — passed; generated and checked 220 pages. Only the regenerated plugin digest page was retained; unrelated stale generated pages were discarded.
-- `rg -c '@esbuild/' package-lock.json` — `78`; lockfile edits only changed workspace path keys.
-- `git grep -n -F '"notes-insights"' -- ':!docs/reviews/**'` — no matches.
-- `git grep -n -E 'plugin_id[[:space:]]*:[[:space:]]*"(notes|notes-insights)"|source_app[[:space:]]*:[[:space:]]*"(notes|notes-insights)"' -- ':!docs/reviews/**'` — no matches.
-- `git grep -n -E 'plugins/(notes|notes-insights)(/|[[:space:]"`]|$)' -- ':!docs/reviews/**'` — no matches.
-- `nix develop -c cargo test --locked -j6 --workspace` — one environment-bound failure: `pool_machines_serve_only_granted_accounts` timed out because rootless Podman cannot create a user namespace on this VM (`newuidmap: write to uid_map failed: Operation not permitted`). The remaining workspace test output passed. Retrying the test serially produced the same environment error; host-level user namespace settings were left untouched.
+- `git diff --check` — passed.
+- `rg -c '@esbuild/' package-lock.json` — `78`; lockfile edits only changed
+  workspace path keys.
+- `git grep -n -E 'plugin_id[[:space:]]*:[[:space:]]*"(notes|notes-insights)"|"plugin_id"[[:space:]]*:[[:space:]]*"(notes|notes-insights)"' HEAD -- ':!docs/reviews/**'`
+  — no matches.
+- `git grep -n -E '^  "id": "(notes|notes-insights)"' HEAD -- 'plugins/**'`
+  and `git grep -n -E '^      "id": "(notes|notes-insights)"' HEAD -- 'crates/server/trusted-plugins.json'`
+  — no matches.
+- `git grep -n -E 'plugins/(notes|notes-insights)(/|[[:space:]"`]|$)' HEAD -- ':!docs/reviews/**'`
+  and `git grep -n -E '"(manifest|worker)"[[:space:]]*:[[:space:]]*"(notes|notes-insights)/' HEAD -- ':!docs/reviews/**'`
+  — no matches.
+- `git grep -n -F '("notes-insights", 403)' HEAD -- tests/conformance/agent_cases.rs`
+  — matches the intended denied agent-access app namespace case; this is not a
+  plugin ID. The operation namespace remains `notes-insights.summarize`.
 
-## Simplification review
+## Review gate
 
-1. **Shared types:** No types or shared helpers were added or copied.
-2. **Dependency direction:** No crate or dependency was added; only existing npm workspace paths changed.
+1. **Shared types:** No shared types or helpers were added or copied.
+2. **Dependency direction:** No crate or dependency was added; existing npm
+   workspace paths changed in place.
 3. **Request-path globals:** No request-path state or locks changed.
-4. **Async blocking:** No async or I/O behavior changed.
-5. **Parse/load counts:** No hot path changed; read and flush counts are unchanged.
+4. **Async blocking:** No async, file, database, process, or locking behavior
+   changed.
+5. **Parse/load counts:** No hot path changed; read and flush counts are
+   unchanged.
 6. **Cached constants:** No schemas, catalogs, or validators changed.
-7. **Bounds and retention:** No stored data, retention, or request receipts changed.
-8. **Compatibility:** Old plugin ID aliases were not added. Tests and registry use the new IDs; operation names retain their existing namespace.
-9. **Space identity:** Plugin IDs changed only; space UUIDs, the `notes` kind, and note addresses remain unchanged.
-10. **Single source of truth:** Plugin IDs and worker paths were updated in the existing manifests and trusted registry; test, generated, and documentation references follow them.
+7. **Bounds and retention:** No stored data, retention, or request receipts
+   changed.
+8. **Compatibility:** No old-ID alias or compatibility path was added.
+9. **Space identity:** Space UUIDs, the `notes` kind, operation names, and note
+   addresses remain unchanged.
+10. **Single source of truth:** Existing manifests and trusted registry entries
+    hold the canonical plugin IDs; tests, fixtures, goldens, and docs reference
+    those IDs where they represent plugins.
 11. **Wiring:** No public items or operations were added.
-12. **Reuse:** Existing manifests, trusted registry, worker builder, and docs package list were updated in place; no new persistence, locking, or validation primitive was needed.
+12. **Reuse:** Existing manifests, registry, worker builder, and docs package
+    list were updated in place; no persistence, locking, or validation primitive
+    was needed.
 13. **Docs gate:** `scripts/check-docs.sh` passed; no public API was introduced.
-14. **Documentation:** Source docs, the plugin digest page, generated CLI goldens, and this dated report reflect the rename.
-15. **Formatting and file size:** `cargo fmt --all -- --check` passed; no source file grew from this rename.
+14. **Documentation:** Source docs, generated CLI goldens, and this dated report
+    reflect the rename.
+15. **Formatting and file size:** `cargo fmt --all -- --check` passed. Several
+    pre-existing Rust test files exceed 600 lines:
+    `crates/plugin-host/tests/contracts.rs` (758),
+    `crates/server/tests/authz_matrix.rs` (601),
+    `crates/server/tests/http.rs` (1,122),
+    `crates/server/tests/plugin_host.rs` (914), and
+    `tests/conformance/isolation.rs` (2,994). These counts match `origin/dev`;
+    this lane only changed ID literals in those files. Splitting them is a
+    separate follow-up recorded on issue #30, outside this mechanical rename.
 
 ## Unfinished and questions
 
-The full workspace test command remains blocked by the dev VM's rootless Podman user-namespace restriction described above. No product or design question is open.
+The plugin rename and its gates are complete. The separate test-file split
+follow-up for Review gate 15 is recorded on issue #30. No product or design
+question is open.
 
 ## Simplification opportunities
 
-The existing short npm package names already separate package naming from canonical plugin IDs. Keeping that convention avoids adding another package-name migration while the plugin folders and manifest IDs use their official `calternal-*` names.
+Keeping the existing short npm package names separate from canonical plugin IDs
+avoids an additional package-name and lockfile migration while matching the
+established Claude Code package convention.
