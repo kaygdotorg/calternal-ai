@@ -22,8 +22,8 @@ pub struct Authority {
 }
 
 /// A person-approved app scope, optionally bound to one exact action digest.
-/// App grants cover ordinary reads/reversible changes; high-risk effects require
-/// the action digest regardless of mode. All grants currently last one turn.
+/// App grants cover ordinary reads/reversible changes; sensitive effects in
+/// approval modes require the action digest. All grants currently last one turn.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Grant {
@@ -83,14 +83,20 @@ pub fn risk_allowed(
     input: &JsonObject,
 ) -> bool {
     use calternal_core::OperationRisk::*;
-    // An app grant or a permissive mode never authorizes a high-risk effect.
-    // Reviewer advice is reserved for the trusted approval surface; it cannot
-    // substitute for an exact person-approved action here.
-    let _ = (reviewer, op, input);
+    if risk == WidensAccess {
+        return false;
+    }
+    if mode == AgentMode::FullAccess {
+        return true;
+    }
     match risk {
-        Irreversible | External => approved_scope,
-        WidensAccess => false,
+        Irreversible => {
+            approved_scope
+                || (mode == AgentMode::ApproveForMe && reviewer.allows_irreversible(op, input))
+        }
+        External => approved_scope,
         Read | Reversible => mode != AgentMode::LeastAccess || in_default_scope || approved_scope,
+        WidensAccess => false,
     }
 }
 
@@ -159,20 +165,14 @@ impl Authority {
         let exact_grant = matching
             .into_iter()
             .any(|g| g.action_hash.as_deref() == Some(action.as_str()));
-        let allowed = match risk {
+        let approved = match risk {
             calternal_core::OperationRisk::Irreversible
             | calternal_core::OperationRisk::External
             | calternal_core::OperationRisk::WidensAccess => exact_grant,
-            _ => risk_allowed(
-                self.mode,
-                risk,
-                default,
-                app_grant || exact_grant,
-                &RulesOnly,
-                op,
-                input,
-            ),
+            _ => app_grant || exact_grant,
         };
+        let allowed = exact_grant && risk == calternal_core::OperationRisk::WidensAccess
+            || risk_allowed(self.mode, risk, default, approved, &RulesOnly, op, input);
         if allowed {
             Ok(())
         } else {
@@ -187,6 +187,23 @@ impl Authority {
 mod tests {
     use super::*;
     use calternal_core::OperationRisk::*;
+    #[test]
+    fn reviewer_only_allows_irreversible_in_approve_for_me() {
+        struct Allow;
+        impl Reviewer for Allow {
+            fn allows_irreversible(&self, _: &str, _: &JsonObject) -> bool {
+                true
+            }
+        }
+        for mode in [AgentMode::LeastAccess, AgentMode::ApproveForMe] {
+            for risk in [Irreversible, External, WidensAccess] {
+                assert_eq!(
+                    risk_allowed(mode, risk, true, false, &Allow, "test", &JsonObject::new()),
+                    mode == AgentMode::ApproveForMe && risk == Irreversible,
+                );
+            }
+        }
+    }
     #[test]
     fn permission_risk_matrix() {
         for risk in [Read, Reversible, Irreversible, External, WidensAccess] {
@@ -203,7 +220,7 @@ mod tests {
             };
             assert_eq!(
                 check(AgentMode::FullAccess, false, false),
-                matches!(risk, Read | Reversible)
+                risk != WidensAccess
             );
             assert_eq!(
                 check(AgentMode::ApproveForMe, false, false),

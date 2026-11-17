@@ -89,13 +89,17 @@ machine session and its leases before new work can start.
 | --- | --- |
 | Least access | Thread, workspace and originating app prefix; outside scopes ask |
 | Approve for me (default) | Person's current space access; read/reversible proceed, irreversible asks, external asks per scope, widening asks for each action |
-| Full access | Person's current space access; irreversible/external/widening effects still require an exact action approval |
+| Full access | Person's current space access; read, reversible, irreversible and external operations proceed without approval |
 
 Every operation rechecks person capabilities, token scope, the admitting sign-in
 and declared risk. Revocation or expiry of that sign-in stops thread credentials
-and execution. In every mode, irreversible/external effects require an exact
-action grant; an app grant or originating app never substitutes for it. Least
-access also asks outside its originating app or approved scopes.
+and execution. In Least access and Approve for me, irreversible/external effects
+require an exact action grant; an app grant or originating app never substitutes
+for it. Approve for me also exposes the irreversible-only reviewer hook; the
+current rules-only reviewer asks. Full access allows these effects without
+approval. Access widening is never authorized by mode alone; it keeps the existing
+exact-action approval path. Least access also asks outside its originating app
+or approved scopes.
 One grant shape contains an app prefix, read/write permission and an optional
 action hash. Approvals created by denials use that hash in every mode. Sensitive
 action approvals conservatively bind canonical operation input; an

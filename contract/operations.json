@@ -5918,7 +5918,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -6122,7 +6122,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -6326,7 +6326,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -6530,7 +6530,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -6734,7 +6734,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -6938,7 +6938,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -7142,7 +7142,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -7346,7 +7346,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -7550,7 +7550,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -7754,7 +7754,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -7958,7 +7958,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],
@@ -8162,7 +8162,7 @@
               "type": "string"
             },
             {
-              "description": "Current space access; high-risk effects require exact approval, independently of sandboxing.",
+              "description": "Current space access without approvals, independently of sandboxing.",
               "enum": [
                 "full_access"
               ],

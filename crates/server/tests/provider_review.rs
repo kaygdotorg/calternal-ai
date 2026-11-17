@@ -135,6 +135,31 @@ fn least_access_asks_for_high_risk_operations_that_approve_for_me_asks_for() {
     }
 }
 
+/// Full access executes irreversible and external effects without an action
+/// approval; both approval modes refuse those same effects under RulesOnly.
+#[test]
+fn full_access_runs_irreversible_and_external_without_approval() {
+    for (op, risk) in [
+        ("spaces.delete", OperationRisk::Irreversible),
+        ("mail.send", OperationRisk::External),
+    ] {
+        let full = scope(AgentMode::FullAccess, "", vec![]);
+        let input = obj(json!({"space_id": full.space}));
+        assert!(full.check_operation(op, &input, "r1", true, risk).is_ok());
+        for mode in [AgentMode::LeastAccess, AgentMode::ApproveForMe] {
+            let restricted = Authority {
+                mode,
+                ..full.clone()
+            };
+            assert!(
+                restricted
+                    .check_operation(op, &input, "r1", true, risk)
+                    .is_err()
+            );
+        }
+    }
+}
+
 /// A Least-access denial creates an exact-action approval request. Once the
 /// person approves that request, the same action must be allowed; otherwise the
 /// agent cannot make progress in Least access through the request it was given.
