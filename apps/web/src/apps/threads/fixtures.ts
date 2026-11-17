@@ -178,10 +178,22 @@ export class FixtureClient implements ThreadsClient {
   }
   async archive(threadId: string): Promise<void> {
     const gone = new Set([threadId, ...this.threadList.filter((t) => t.parentId === threadId && t.state === "done").map((t) => t.id)]);
+    this.archived.set(threadId, { threads: this.threadList.filter((t) => gone.has(t.id)), requests: this.requestList.filter((r) => gone.has(r.threadId)) });
     this.threadList = this.threadList.filter((t) => !gone.has(t.id));
     this.requestList = this.requestList.filter((r) => !gone.has(r.threadId));
     for (const w of this.threadWatchers) w(this.threadList);
     for (const w of this.requestWatchers) w(this.requestList);
+  }
+  private archived = new Map<string, { threads: ThreadSummary[]; requests: Request[] }>();
+  async unarchive(threadId: string): Promise<boolean> {
+    const a = this.archived.get(threadId);
+    if (!a) return false;
+    this.archived.delete(threadId);
+    this.threadList = [...this.threadList, ...a.threads];
+    this.requestList = [...this.requestList, ...a.requests];
+    for (const w of this.threadWatchers) w(this.threadList);
+    for (const w of this.requestWatchers) w(this.requestList);
+    return true;
   }
   async setPermission(threadId: string, permission: Permission): Promise<void> {
     this.patch(threadId, { permission });

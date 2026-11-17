@@ -25,6 +25,7 @@
   let { id }: { id: string; closeToast?: () => void } = $props();
 
   // Keep the last thing it said while it leaves (the view is gone by then).
+  // svelte-ignore state_referenced_locally
   let last = $state<ToastView | undefined>(views.get(id));
   $effect(() => {
     const v = views.get(id);

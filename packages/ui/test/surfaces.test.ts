@@ -9,10 +9,9 @@ const html = (s: string) => createRawSnippet(() => ({ render: () => s }));
 const audit = async (node: HTMLElement) => (await axe.run(node, { rules: { "color-contrast": { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`);
 
 describe("buttons carry their name", () => {
-  it("IconButton uses its label as name and title", () => {
+  it("IconButton uses its label as its name", () => {
     render(IconButton, { icon: "search", label: "Search" });
     const b = screen.getByRole("button", { name: "Search" });
-    expect(b.getAttribute("title")).toBe("Search");
     expect(b.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
   });
   it("IconButton reports pressed state", () => {

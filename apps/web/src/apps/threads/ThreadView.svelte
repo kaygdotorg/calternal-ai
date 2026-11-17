@@ -2,7 +2,7 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
-  import { Panel, Pill } from "@calternal/ui";
+  import { InlineEditor, Panel, Pill } from "@calternal/ui";
   import VirtualList from "../../lib/VirtualList.svelte";
   import { href } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -55,6 +55,15 @@
     if (sid && sid !== streamId) list?.scrollToBottom();
     streamId = sid;
   });
+  let renaming = $state(false);
+  let draftTitle = $state("");
+  function startRename() { if (!summary) return; draftTitle = summary.title; renaming = true; }
+  function commitTitle() {
+    if (!renaming || !summary) return;
+    renaming = false;
+    const t = draftTitle.trim();
+    if (t && t !== summary.title) void client.rename(summary.id, t);
+  }
 </script>
 
 <div class="thread">
@@ -63,9 +72,13 @@
     <Panel class="title" radius="pill">
       <div class="tt">
         {#if parent}<a class="crumb" href={href(`/threads/${parent.id}`)}>{parent.title}</a>{/if}
-        <h1>{summary?.title ?? "Thread"}</h1>
+        {#if renaming}
+          <InlineEditor class="title-edit" label="Rename thread" bind:value={draftTitle} autoselect onsubmit={commitTitle} oncancel={() => (renaming = false)} onblur={commitTitle} />
+        {:else}
+          <h1 ondblclick={startRename}>{summary?.title ?? "Thread"}</h1>
+        {/if}
       </div>
-      {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} />{/if}
+      {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} form="word" />{/if}
     </Panel>
     <span class="grow"></span>
     {#if !shell.narrow}<Pill icon="sidebar-right" label={shell.rightOpen ? "Hide the side panel" : "Show the side panel"} aria-pressed={shell.rightOpen} onclick={() => shell.toggleRight()} />{/if}
@@ -107,6 +120,7 @@
   .grow { flex: 1; pointer-events: none; }
   :global(.title) { display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }
   .tt { min-width: 0; display: grid; }
+  :global(.title-edit) { font-size: var(--text-ui); font-weight: var(--strong-weight); width: 100%; min-width: 12ch; }
   h1 { font-size: var(--text-ui); font-weight: var(--strong-weight); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb { font-size: var(--text-section); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }
   .list { position: absolute; inset: 0; }

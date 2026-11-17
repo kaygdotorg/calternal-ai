@@ -2,6 +2,8 @@
   // A round button holding one icon. `label` is required: it is the accessible name and the tooltip.
   import type { HTMLButtonAttributes } from "svelte/elements";
   import Icon from "./Icon.svelte";
+  import { bounce } from "../lib/bounce";
+  import { tip } from "../lib/tooltip";
   import type { IconName } from "../icons";
   let {
     icon,
@@ -13,7 +15,7 @@
   }: { icon: IconName; label: string; pressed?: boolean; tone?: "quiet" | "tint" | "accent"; class?: string } & Omit<HTMLButtonAttributes, "aria-label" | "title"> = $props();
 </script>
 
-<button type="button" class={["ib", tone, klass]} aria-label={label} title={label} aria-pressed={pressed} {...rest}>
+<button type="button" class={["ib", tone, klass]} aria-label={label} use:bounce use:tip={{ label }} aria-pressed={pressed} {...rest}>
   <Icon name={icon} />
 </button>
 

@@ -8,7 +8,7 @@
   //   phone     provider icon only          "Approve for me"  machine icon only
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
-  import { Button, Icon, IconButton, Menu, Panel, Pill, Popover, Sheet, currentForm, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, Popover, Sheet, currentForm, type MenuItem } from "@calternal/ui";
   import RunsOnPicker from "./RunsOnPicker.svelte";
   import { bridge } from "./compose.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -37,7 +37,7 @@
 
   const drafts = new Map<string, string>();
   let text = $state("");
-  let field = $state<HTMLTextAreaElement>();
+  let field = $state<HTMLInputElement | HTMLTextAreaElement>();
   let menuOpen = $state(false);
   let permOpen = $state(false);
   let whereOpen = $state(false);
@@ -60,7 +60,6 @@
     queueMicrotask(() => {
       field?.focus();
       field?.setSelectionRange(text.length, text.length);
-      grow();
     });
   });
   const running = $derived(thread.state === "running");
@@ -72,31 +71,18 @@
   const sheet = $derived(shell.narrow || currentForm() === "touch");
   const PERM_ICON = $derived(PERMISSIONS.find((p) => p.id === thread.permission)!.icon);
 
-  function grow() {
-    if (!field) return;
-    field.style.height = "auto";
-    field.style.height = `${field.scrollHeight}px`;
-  }
   function send() {
     const v = text.trim();
     if (!v) return;
     onsend(v);
     text = "";
     drafts.delete(thread.id);
-    queueMicrotask(grow);
-  }
-  function key(e: KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      send();
-    }
   }
 </script>
 
 <Panel class="composer" radius="pane">
   <div class="field">
-    <label class="visually-hidden" for="composer-field">Message</label>
-    <textarea id="composer-field" bind:this={field} bind:value={text} rows="1" oninput={grow} onkeydown={key} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`}></textarea>
+    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:value={text} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if running && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}
@@ -136,14 +122,8 @@
   .field { display: flex; align-items: flex-end; gap: var(--s-3); }
   /* The caret, the placeholder and the typed text are one box: same font, same line height, same inset, so the caret sits exactly on the text's baseline.
      The height is a whole number of lines plus the vertical padding, never a fixed pixel height that leaves the text off centre. */
-  textarea {
-    flex: 1; min-width: 0; margin: 0; padding: var(--s-3) 0; border: 0; border-radius: 0; background: none; resize: none; overflow-y: auto; scrollbar-width: none;
-    font: inherit; font-size: var(--text-ui); line-height: 1.5; letter-spacing: inherit; color: var(--ink); caret-color: var(--accent);
-    min-height: calc(1lh + 2 * var(--s-3)); max-height: 9.5rem;
-  }
-  textarea::placeholder { color: var(--ink-3); opacity: 1; }
-  textarea:focus, textarea:focus-visible { outline: none; }
-  :global(:root[data-input="key"] .composer:has(textarea:focus-visible)) { outline: 2px solid var(--accent); outline-offset: 2px; }
+  :global(.field-input) { flex: 1; padding: var(--s-3) 0; overflow-y: auto; scrollbar-width: none; font-size: var(--text-ui); min-height: max(calc(1lh + 2 * var(--s-3)), var(--pill-h)); max-height: 9.5rem; }
+  :global(:root[data-input="key"] .composer:has(.field-input:focus-visible)) { outline: 2px solid var(--accent); outline-offset: 2px; }
   .chips { display: flex; flex-wrap: nowrap; gap: var(--s-2); min-width: 0; padding-right: var(--s-3); }
   .chip { position: relative; flex: 0 1 auto; min-width: var(--pill-h); }
   .chip :global(.pill) { max-width: 100%; overflow: hidden; }

@@ -4,6 +4,7 @@
   import { onMount } from "svelte";
   import { APPS, appFor, type AppDef } from "./apps/registry";
   import { navigate, route, segments, setQuery } from "./lib/route.svelte";
+  import { Toasts } from "@calternal/ui";
   import Shell from "./shell/Shell.svelte";
   import { shell } from "./shell/shell.svelte";
   import Unknown from "./shell/Unknown.svelte";
@@ -54,5 +55,6 @@
 </script>
 
 {#if route.path !== "/"}<Shell {app} id={settings ? undefined : seg[1]} />{/if}
+<Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
 <SettingsSheet open={settings} onclose={() => navigate("/threads")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

@@ -55,6 +55,7 @@
   {#each visible() as id (id)}
     <div
       class="item"
+      role="group"
       data-toast
       use:mounted={id}
       onpointerdown={(e) => down(e, id)}

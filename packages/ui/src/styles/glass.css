@@ -20,5 +20,9 @@
 
 /* A floating surface appears only once its material is ready (lib/ready.ts): hidden and a little small until `data-ready`, then it eases in. The
    transition names its properties (never `all`), uses the spring token, and ends at once under the keyboard or reduced motion. */
-[data-surface] { transition: opacity var(--dur-base) var(--ease-out), scale var(--dur-slow) var(--spring), translate var(--dur-slow) var(--spring); transform-origin: var(--origin, center); }
+[data-surface] { transform-origin: var(--origin, center); }
 [data-surface]:not([data-ready]) { opacity: 0; scale: var(--enter-scale); pointer-events: none; }
+/* A menu or popover is on screen in one frame once its material is ready (the native menus open in one frame); it leaves with a short fade. A sheet moves
+   on the form's sheet motion (the spring on touch, the 190 ms Mac curve on a desktop). */
+[data-surface][data-leaving] { opacity: 0; transition: opacity var(--dur-leave) var(--ease-out); pointer-events: none; }
+[data-surface].sheet { transition: opacity var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet), translate var(--dur-sheet) var(--ease-sheet); }

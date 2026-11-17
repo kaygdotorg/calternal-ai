@@ -41,6 +41,8 @@ export interface ThreadsClient {
   rename(threadId: string, title: string): Promise<void>;
   /** Archives a thread (and its finished children): it leaves the list and keeps its file. */
   archive(threadId: string): Promise<void>;
+  /** Takes back the last archive of this thread (and the finished children that went with it). Resolves false if it cannot. */
+  unarchive(threadId: string): Promise<boolean>;
   /** How much the agent may do without asking, for the next message. */
   setPermission(threadId: string, permission: Permission): Promise<void>;
   /** The machines this person can run a thread on (their own, and the pool if their group allows it). */
