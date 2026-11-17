@@ -44,10 +44,10 @@ try {
   await w.page.waitForSelector('[role="radiogroup"][aria-label="Wallpaper"] [role="radio"]');
   await w.page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-side").length > 0);
   const picks = [];
-  for (const name of ["Aurora", "Ember", "Moss", "Slate", "Lagoon"]) {
+  for (const name of ["Dusk", "Sage", "Slate", "Dune", "Fjord"]) {
     const before = await w.page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--wash"));
     const t0 = Date.now();
-    await w.page.getByRole("radio", { name, exact: true }).click();
+    await w.page.getByRole("radiogroup", { name: "Wallpaper" }).getByRole("radio", { name, exact: true }).click();
     await w.page.waitForFunction((b) => getComputedStyle(document.documentElement).getPropertyValue("--wash") !== b, before, { polling: "raf", timeout: 5000 });
     picks.push(Date.now() - t0);
   }

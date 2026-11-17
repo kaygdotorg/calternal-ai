@@ -63,6 +63,7 @@ ${decl(t.touch)}
 ${decl(t.light)}
 ${springs}
   --backdrop: ${backdrop(t.backdrop.light)};
+  --grain-a: ${t.appearance["grain-a"]};
 }
 @media (min-width: 760px) and (hover: hover) and (pointer: fine) {
   :root {
@@ -80,7 +81,7 @@ ${decl(t.dark)}
 }
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-fast: 1ms; --dur-base: 1ms; --dur-slow: 1ms;
+    --dur-fast: 1ms; --dur-sheet: 1ms; --dur-leave: 1ms; --dur-base: 1ms; --dur-slow: 1ms;
     --spring: linear;
   }
 }

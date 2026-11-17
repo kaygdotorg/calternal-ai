@@ -27,8 +27,8 @@ try {
   await shot("desktop-light-brand-crop", "desktop", "light", "/threads/t-run", async () => {}, { x: 0, y: 0, width: 340, height: 72 });
   await shot("desktop-light-settings", "desktop", "light", "/settings/appearance");
   await shot("desktop-dark-settings-fonts", "desktop", "dark", "/settings/appearance", async (p) => { await p.getByRole("button", { name: /Interface/ }).click(); await p.waitForTimeout(400); });
-  await shot("desktop-dark-wallpaper-aurora", "desktop", "dark", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "ember" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
-  await shot("desktop-light-wallpaper-slate", "desktop", "light", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "slate" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
+  await shot("desktop-dark-wallpaper-dusk", "desktop", "dark", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "dusk" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
+  await shot("desktop-light-wallpaper-dune", "desktop", "light", "/threads/t-run", async (p) => { await p.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "dune" }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200); });
   await shot("phone-light-settings", "phone", "light", "/settings/appearance");
   await shot("phone-dark-settings", "phone", "dark", "/settings/appearance");
   await shot("phone-light-thread", "phone", "light", "/threads/t-run");

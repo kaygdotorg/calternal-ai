@@ -19,6 +19,16 @@
     ...rest
   }: { open: boolean; anchor: Anchor | null | undefined; label: string; role?: "dialog" | "menu" | "listbox"; prefer?: PlaceOptions["prefer"]; dense?: boolean; trigger?: HTMLElement | null; onclose: () => void; children: Snippet } & Record<string, unknown> = $props();
   let box = $state<HTMLElement>();
+  // Closing keeps the panel for one short fade (`data-leaving`, glass.css) so it does not vanish in a frame; opening is instant once the material is ready.
+  let leaving = $state(false);
+  let present = $state(false);
+  $effect(() => {
+    if (open) { present = true; leaving = false; return; }
+    if (!present) return;
+    leaving = true;
+    const t = setTimeout(() => { present = false; leaving = false; }, 200);
+    return () => clearTimeout(t);
+  });
   const portal = (node: HTMLElement) => {
     document.body.append(node);
     return { destroy: () => node.remove() };
@@ -49,8 +59,8 @@
   });
 </script>
 
-{#if open}
-  <div class="pop" use:portal use:ready bind:this={box} {role} aria-label={label} {...rest}>
+{#if present}
+  <div class="pop" use:portal use:ready bind:this={box} data-leaving={leaving ? "" : undefined} {role} aria-label={label} {...rest}>
     <Panel radius="card" {dense}>{@render children()}</Panel>
   </div>
 {/if}

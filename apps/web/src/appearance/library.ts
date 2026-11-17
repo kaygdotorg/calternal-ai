@@ -11,6 +11,8 @@ export interface Wallpaper {
   name: string;
   source: "builtin" | "upload" | "unsplash";
   url: string;
+  /** For a generated look, the dark scheme's rendition (the same recipe with lightness remapped); `url` is the light one. */
+  urlDark?: string;
   /** A small version for the picker. */
   thumb: string;
   /** For an Unsplash photo: who took it and where it is, as their licence asks. */
@@ -95,6 +97,7 @@ function stockDef(q: string, i: number): Def {
 }
 
 import { all, tx } from "./idb";
+import { RECIPES, renderRecipe } from "./recipe";
 
 interface Stored { id: string; name: string; blob: Blob; source: "upload" | "unsplash"; credit?: { author: string; link: string } }
 
@@ -103,15 +106,18 @@ export class FixtureLibrary implements WallpaperLibrary {
   private built: Promise<Wallpaper[]> | null = null;
 
   private async builtins(): Promise<Wallpaper[]> {
-    this.built ??= fetch(`${BASE}wallpapers/credits.json`)
-      .then((r) => r.json() as Promise<{ id: string; author: string; link: string }[]>)
-      .catch(() => [])
-      .then((credits) =>
-        BUILTIN.map((d) => {
-          const c = credits.find((x) => x.id === d.id);
-          return { id: d.id, name: d.name, source: "builtin" as const, url: `${BASE}wallpapers/${d.id}.jpg`, thumb: `${BASE}wallpapers/${d.id}-thumb.jpg`, credit: c ? { author: c.author, link: c.link } : undefined };
-        }),
+    this.built ??= (async () => {
+      // Generated looks first (the default set), rendered once per scheme; then the photo shelf.
+      const looks = await Promise.all(
+        [{ id: "haze", name: "Haze" }, ...RECIPES].map(async (r) => ({ id: r.id, name: r.name, source: "builtin" as const, url: await renderRecipe(r.id, "light", 1600, 900), urlDark: await renderRecipe(r.id, "dark", 1600, 900), thumb: await renderRecipe(r.id, "light", 240, 150) })),
       );
+      const credits: { id: string; author: string; link: string }[] = await fetch(`${BASE}wallpapers/credits.json`).then((r) => r.json()).catch(() => []);
+      const photos = BUILTIN.map((d) => {
+        const c = credits.find((x) => x.id === d.id);
+        return { id: d.id, name: d.name, source: "builtin" as const, url: `${BASE}wallpapers/${d.id}.jpg`, thumb: `${BASE}wallpapers/${d.id}-thumb.jpg`, credit: c ? { author: c.author, link: c.link } : undefined };
+      });
+      return [...looks, ...photos];
+    })();
     return this.built;
   }
 

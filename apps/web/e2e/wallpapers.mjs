@@ -4,7 +4,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { launch, open, serve } from "./lib.mjs";
 
-const IDS = ["dune", "lagoon", "aurora", "ember", "orchid", "moss", "slate", "paper"];
+const IDS = ["haze", "dusk", "sage", "slate", "dune", "lagoon", "moss", "orchid", "golden-field", "storm-sea", "fjord", "green-hills", "calm-sea", "pine-lake", "night-bridge", "sunrise-farm"];
 const stop = await serve();
 const browser = await launch();
 let bad = 0;

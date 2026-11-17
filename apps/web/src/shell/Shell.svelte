@@ -38,7 +38,7 @@
   .side { min-width: 0; overflow: hidden; }
   /* Opening or closing a sidebar changes the columns at once (animating them would re-lay-out the whole thread every frame); the sidebar's content eases in
      and out with transform and opacity only, which stay on the compositor. */
-  .side > :global(.side), .right > :global(.rs) { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--spring); }
+  .side > :global(.side), .right > :global(.rs) { transition: opacity var(--dur-sheet) var(--ease-sheet), translate var(--dur-sheet) var(--ease-sheet); }
   .shell[data-sidebar="false"] .side > :global(.side) { opacity: 0; translate: calc(var(--s-8) * -1) 0; }
   .shell[data-right="false"] .right > :global(.rs) { opacity: 0; translate: var(--s-8) 0; }
   .side > :global(.side) { width: var(--side-w); }
@@ -52,16 +52,16 @@
   .shell.narrow { --peek: calc(var(--s-10) + var(--s-4)); display: block; --bottom-inset: calc(var(--tier-cap) + var(--cap-offset) + var(--s-4) + var(--safe-bottom)); }
   .narrow .side { position: fixed; inset: 0; width: 100%; z-index: 1; padding-top: var(--safe-top); visibility: visible; }
   .narrow .side > :global(.side) { width: calc(100% - var(--peek)); }
-  .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--dur-slow); }
-  .narrow .mid { position: fixed; inset: 0; z-index: 2; padding: 0; transition: transform var(--dur-slow) var(--spring), scale var(--dur-slow) var(--spring); transform-origin: left center; }
+  .narrow[data-sidebar="false"] .side { visibility: hidden; transition: visibility 0s var(--dur-sheet); }
+  .narrow .mid { position: fixed; inset: 0; z-index: 2; padding: 0; transition: transform var(--dur-sheet) var(--ease-sheet), scale var(--dur-sheet) var(--ease-sheet); transform-origin: left center; }
   .narrow[data-sidebar="true"] .mid { transform: translateX(calc(100% - var(--peek))); }
   .narrow[data-right="true"] .mid { scale: 0.96; }
-  .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-slow) var(--spring); }
+  .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-sheet) var(--ease-sheet); }
   .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-pane); }
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); }
   .scrim { position: fixed; inset: 0; z-index: 3; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
   /* Slid over the app, the flat sidebar needs a ground of its own: the same wallpaper copy and wash, aligned to the viewport. */
-  .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); transform: translateX(110%); transition: transform var(--dur-slow) var(--spring); border-radius: var(--r-pane) 0 0 var(--r-pane); box-shadow: var(--shadow-card); background: linear-gradient(rgb(var(--tint) / var(--wash, var(--side-tint-a))) 0 0), var(--wall-side, var(--backdrop)) center / cover no-repeat fixed; }
+  .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); transform: translateX(110%); transition: transform var(--dur-sheet) var(--ease-sheet); border-radius: var(--r-pane) 0 0 var(--r-pane); box-shadow: var(--shadow-card); background: linear-gradient(rgb(var(--tint) / var(--wash, var(--side-tint-a))) 0 0), var(--wall-side, var(--backdrop)) center / cover no-repeat fixed; }
   .narrow[data-right="true"] .right { transform: none; }
   .narrow .right > :global(.rs) { width: 100%; }
   @keyframes fade { from { opacity: 0; } }

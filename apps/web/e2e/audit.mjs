@@ -8,13 +8,14 @@ let bad = 0;
 const paths = ["/threads/t-wait", "/threads/t-run", "/notes/n-1"];
 try {
   for (const device of ["desktop", "phone"]) {
-    const seen = { fonts: new Set(), sizes: new Map(), weights: new Set(), spacing: new Map(), small: [] };
+    const seen = { fonts: new Set(), sizes: new Map(), weights: new Set(), spacing: new Map(), small: [], icons: new Map() };
     for (const path of paths) for (const scheme of ["light", "dark"]) {
       const { page, ctx } = await open(browser, device, scheme, path);
       const r = await page.evaluate((isPhone) => {
         const root = getComputedStyle(document.documentElement);
         const scale = ["--s-1", "--s-2", "--s-3", "--s-4", "--s-5", "--s-6", "--s-7", "--s-8", "--s-9", "--s-10"].map((n) => parseFloat(root.getPropertyValue(n)));
-        const out = { fonts: [], sizes: {}, weights: [], spacing: {}, small: [], scale };
+        const out = { fonts: [], sizes: {}, weights: [], spacing: {}, small: [], scale, icons: {} };
+        for (const v of document.querySelectorAll("svg[data-icon]")) { const r = v.getBoundingClientRect(); if (!r.width) continue; const sw = parseFloat(getComputedStyle(v).strokeWidth) * r.width / 24; const k = `${Math.round(r.width)}px / ${sw.toFixed(1)}px line`; out.icons[k] = (out.icons[k] ?? 0) + 1; }
         const px = (v) => (v.endsWith("px") ? parseFloat(v) : NaN);
         for (const el of document.body.querySelectorAll("*")) {
           const cs = getComputedStyle(el);
@@ -38,6 +39,7 @@ try {
       for (const [k, n] of Object.entries(r.sizes)) seen.sizes.set(k, (seen.sizes.get(k) ?? 0) + n);
       r.weights.forEach((w) => seen.weights.add(w));
       for (const [k, n] of Object.entries(r.spacing)) seen.spacing.set(+k, (seen.spacing.get(+k) ?? 0) + n);
+      for (const [k, n] of Object.entries(r.icons)) seen.icons.set(k, (seen.icons.get(k) ?? 0) + n);
       seen.scale = r.scale;
       for (const s of r.small) seen.small.push(`${path} ${scheme} ${s}`);
       await ctx.close();
@@ -49,6 +51,7 @@ try {
     console.log("fonts drawn:", [...seen.fonts].join(", "), wrongFonts.length ? `   OFF-LIST: ${wrongFonts.join(", ")}` : "");
     console.log("font sizes (px:count):", [...seen.sizes].sort((a, b) => parseFloat(a[0]) - parseFloat(b[0])).map(([k, n]) => `${parseFloat(k).toFixed(1)}:${n}`).join("  "));
     console.log("weights:", [...seen.weights].sort().join(", "));
+    console.log("icon sizes / rendered line (count):", [...seen.icons].map(([k, n]) => `${k} (${n})`).join("   "));
     console.log("spacing off the s-1..s-10 scale (px:count):", off.map(([v, n]) => `${v}:${n}`).join("  ") || "none");
     if (device === "phone") console.log("hit targets under 44 px:", seen.small.length ? "\n  " + [...new Set(seen.small)].join("\n  ") : "none");
     bad += wrongFonts.length + (device === "phone" ? new Set(seen.small).size : 0);
