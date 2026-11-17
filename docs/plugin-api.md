@@ -63,7 +63,8 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Userdata layout: each space has a hidden `.trash/` folder of its own. Collections, space
   and plugin settings, skills, automations, themes and custom components are files in the
   space's userdata (shape in `docs/storage-layout.md` once agreed), not database-only.
-- File formats follow the existing app: settings are `.calternal/settings.json`;
+- File formats follow the existing app: settings are `.calternal/settings.json` (plain
+  key/value; Markdown would add nothing, so this is the recorded JSON exception);
   collections and saved views are Markdown, as in ADR 0066 ("Views are Collections"): one
   human-readable Views file with a `## Name` section per view and `key: value` lines
   (including the view's `id`); unknown keys are kept. Skills and automations live hidden
