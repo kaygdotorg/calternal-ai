@@ -203,11 +203,47 @@ fn create(srv: &Server, rid: &str, space: &str, md: &str) -> Value {
     r.body["data"]["note"].clone()
 }
 
-fn note_file(data: &Path, space: &str, id: &str) -> PathBuf {
-    data.join("spaces")
-        .join(space)
+fn space_uuid(data: &Path, space: &str) -> String {
+    if uuid::Uuid::parse_str(space).is_ok() {
+        return space.to_owned();
+    }
+    let auth = rusqlite::Connection::open_with_flags(
+        data.join("system/auth.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    auth.query_row(
+        "SELECT id FROM development_directory WHERE name=?1",
+        [space],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+fn note_dir(data: &Path, space: &str) -> PathBuf {
+    data.join("userdata-ssd/spaces")
+        .join(space_uuid(data, space))
         .join("Notes")
-        .join(format!("{id}.md"))
+}
+fn note_file(data: &Path, space: &str, id: &str) -> PathBuf {
+    let space = space_uuid(data, space);
+    let conn = rusqlite::Connection::open_with_flags(
+        data.join("spaces").join(&space).join("content.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let relative: String = conn
+        .query_row("SELECT path FROM items WHERE id=?1", [id], |r| r.get(0))
+        .unwrap();
+    data.join("userdata-ssd/spaces").join(space).join(relative)
+}
+fn note_body(path: PathBuf) -> String {
+    let text = std::fs::read_to_string(path).unwrap();
+    let (_, body) = text
+        .strip_prefix("---\n")
+        .unwrap()
+        .split_once("\n---\n")
+        .unwrap();
+    body.into()
 }
 
 #[test]
@@ -318,10 +354,7 @@ fn stale_revision_conflicts_and_history() {
         r2.body["error"]["details"]["current_revision"],
         r1.body["data"]["note"]["revision"]
     );
-    assert_eq!(
-        std::fs::read_to_string(note_file(&d.0, "personal", id)).unwrap(),
-        "two\n"
-    );
+    assert_eq!(note_body(note_file(&d.0, "personal", id)), "two\n");
     let h = op(
         &srv,
         &srv.owner,
@@ -419,7 +452,7 @@ fn crash_points_recover_without_duplicates() {
         let srv = start(&d.0, None);
         // Startup replay placed the committed revision.
         assert_eq!(
-            std::fs::read_to_string(note_file(&d.0, "personal", &id)).unwrap(),
+            note_body(note_file(&d.0, "personal", &id)),
             "after\n",
             "{point}"
         );
@@ -439,7 +472,7 @@ fn crash_points_recover_without_duplicates() {
             "{point}: duplicate history"
         );
         // No temp files left behind.
-        let leftovers: Vec<_> = std::fs::read_dir(d.0.join("spaces/personal/Notes"))
+        let leftovers: Vec<_> = std::fs::read_dir(note_dir(&d.0, "personal"))
             .unwrap()
             .flatten()
             .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
@@ -715,8 +748,13 @@ fn startup_cleanup_only_removes_owned_temp_files() {
             .unwrap()
             .to_string()
     };
-    let dir = d.0.join("spaces/personal/Notes");
-    let owned = dir.join(format!(".{id}.0123456789ab.tmp"));
+    let dir = note_dir(&d.0, "personal");
+    let final_name = note_file(&d.0, "personal", &id)
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let owned = dir.join(format!(".calternal-tmp-0123456789ab-{final_name}"));
     let foreign = [".editor-swap.tmp", ".notauuid.0123456789ab.tmp", "user.tmp"];
     std::fs::write(&owned, "partial").unwrap();
     for f in foreign {
@@ -804,4 +842,137 @@ fn development_tokens_require_an_explicit_startup_flag() {
     )
     .unwrap();
     assert_eq!(response.status, 401);
+}
+
+#[test]
+fn note_storage_is_physically_per_space_and_files_have_frontmatter_identity() {
+    use std::os::unix::fs::MetadataExt;
+    let d = TempDir::new("content-separation");
+    let srv = start(&d.0, None);
+    let a = create(&srv, "a", "personal", "private body");
+    let b = create(&srv, "b", "shared", "shared body");
+    let aid = a["space_id"].as_str().unwrap();
+    let bid = b["space_id"].as_str().unwrap();
+    let pa = d.0.join("spaces").join(aid).join("content.db");
+    let pb = d.0.join("spaces").join(bid).join("content.db");
+    assert!(pa.is_file() && pb.is_file());
+    assert_ne!(
+        std::fs::metadata(&pa).unwrap().ino(),
+        std::fs::metadata(&pb).unwrap().ino()
+    );
+    for (path, own, foreign) in [(&pa, &a, &b), (&pb, &b, &a)] {
+        let db =
+            rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        assert!(
+            db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1)",
+                [own["id"].as_str().unwrap()],
+                |r| r.get::<_, bool>(0)
+            )
+            .unwrap()
+        );
+        assert!(
+            !db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM items WHERE id=?1)",
+                [foreign["id"].as_str().unwrap()],
+                |r| r.get::<_, bool>(0)
+            )
+            .unwrap()
+        );
+    }
+    let global = rusqlite::Connection::open_with_flags(
+        d.0.join("state.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    for name in ["notes", "versions", "items", "outbox"] {
+        assert!(
+            !global
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+                    [name],
+                    |r| r.get::<_, bool>(0)
+                )
+                .unwrap()
+        );
+    }
+    let path = note_file(&d.0, aid, a["id"].as_str().unwrap());
+    assert_eq!(path.file_name().unwrap(), "T.md");
+    let bytes = std::fs::read_to_string(path).unwrap();
+    assert!(bytes.starts_with(&format!(
+        "---\ncalternal-id: {}\n---\n",
+        a["id"].as_str().unwrap()
+    )));
+    assert!(d.0.join("spaces").join(aid).join("index.db").is_file());
+}
+
+#[test]
+fn interrupted_create_and_title_rename_recover_fixed_paths() {
+    for point in ["after_commit", "before_placement", "after_placement"] {
+        let d = TempDir::new(&format!("create-{point}"));
+        {
+            let mut srv = start(&d.0, Some(point));
+            let response = try_op(
+                &srv,
+                &srv.owner.clone(),
+                "create",
+                "notes.create",
+                json!({"space_id":"personal","title":"First","markdown":"one"}),
+            );
+            assert!(response.is_none());
+            assert!(!srv.child.wait().unwrap().success());
+        }
+        let (id, revision) = {
+            let srv = start(&d.0, None);
+            let response = op(
+                &srv,
+                &srv.owner,
+                "create",
+                "notes.create",
+                json!({"space_id":"personal","title":"First","markdown":"one"}),
+            );
+            assert_eq!(response.status, 200, "{}", response.body);
+            let note = &response.body["data"]["note"];
+            let id = note["id"].as_str().unwrap().to_owned();
+            assert_eq!(
+                note_file(&d.0, "personal", &id).file_name().unwrap(),
+                "First.md"
+            );
+            (id, note["revision"].clone())
+        };
+        let input = json!({"space_id":"personal","id":id,"base_revision":revision,"title":"FIRST","markdown":"two"});
+        {
+            let mut srv = start(&d.0, Some(point));
+            assert!(
+                try_op(
+                    &srv,
+                    &srv.owner.clone(),
+                    "rename",
+                    "notes.update",
+                    input.clone()
+                )
+                .is_none()
+            );
+            assert!(!srv.child.wait().unwrap().success());
+        }
+        let srv = start(&d.0, None);
+        let response = op(&srv, &srv.owner, "rename", "notes.update", input);
+        assert_eq!(response.status, 200, "{}", response.body);
+        let path = note_file(&d.0, "personal", &id);
+        assert_eq!(path.file_name().unwrap(), "FIRST.md");
+        assert!(!path.with_file_name("First.md").exists());
+        assert_eq!(note_body(path), "two");
+        let history = op(
+            &srv,
+            &srv.owner,
+            "history",
+            "notes.history",
+            json!({"space_id":"personal","id":id}),
+        );
+        assert_eq!(
+            history.body["data"]["versions"].as_array().unwrap().len(),
+            2
+        );
+    }
 }

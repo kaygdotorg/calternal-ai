@@ -415,6 +415,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-content"
+version = "0.1.0"
+dependencies = [
+ "calternal-auth",
+ "calternal-core",
+ "calternal-fsio",
+ "calternal-roots",
+ "calternal-store",
+ "hex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "time",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "calternal-core"
 version = "0.1.0"
 dependencies = [
@@ -470,8 +491,10 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "calternal-auth",
+ "calternal-content",
  "calternal-core",
  "calternal-fsio",
+ "calternal-roots",
  "clap",
  "getrandom 0.3.4",
  "hex",

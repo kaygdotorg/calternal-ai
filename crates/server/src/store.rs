@@ -1,143 +1,122 @@
-//! Development-preview persistence.
+//! Notes adapter over generic, physically per-space content storage.
 //!
-//! SQLite is the single authoritative store for committed revisions, request
-//! receipts and plugin state. Each note's head revision is also *materialized*
-//! as a portable Markdown file at `spaces/<space>/Notes/<uuid>.md`. The file is
-//! a checked copy, never parsed back as truth:
-//!
-//! 1. One SQLite transaction (WAL, `synchronous=FULL`) commits the full new
-//!    revision, the canonical request fingerprint + result receipt and
-//!    `mat_state='pending'`.
-//! 2. Materialization compares the file on disk with the SHA-256 recorded at
-//!    the last placement. A file that is missing or differs (an external edit
-//!    or delete) is never overwritten; the note becomes `blocked`.
-//! 3. Otherwise the new bytes go to a temp file in the same directory, are
-//!    fsynced, renamed over the target and the directory is fsynced.
-//! 4. The note is marked `materialized` with the new hash and only then is
-//!    the write acknowledged.
-//!
-//! On open the data directory is exclusively locked and every `pending` note
-//! is replayed through step 2–4 before serving.
-//!
-//! Limits: the SHA-256 check detects external edits/deletes/symlinks that
-//! exist *before* a write. It does not lock against an external writer racing
-//! the hash check and rename; concurrent external editing is out of scope for
-//! the preview. Detected bytes are preserved and the note is reported as
-//! `conflict` with `details.reason = "external_change"`; there is no import or
-//! automatic unblock tonight.
-//!
-//! This is NOT the inherited file-only recovery / tiering guarantee. It is a
-//! disposable-data preview profile.
-
-use std::fs::{self, File};
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
-
+//! `state.sqlite3` retains plugin enablement and unfinished control publication intents only;
+//! it has no item, content or history tables. `system/content-index.db` holds
+//! identifier-only item/request routes. The content crate owns each UUID space's
+//! `content.db`, inherited `index.db` journal/receipts and SSD-tree files.
+//! `open` selects separate `userdata-ssd`/`userdata-hdd` subdirectories for disposable preview data;
+//! production callers must supply validated and locked roots through `open_roots`.
+//! No old shared-content schema is migrated or adopted.
+use crate::{
+    error::HostError,
+    fault::{self, FaultPoint},
+};
+use calternal_content::{AccountId, Content, Item, Request, SpaceId};
 use calternal_core::{Note, NoteSummary, NoteVersion};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
+use std::{
+    fs::{self, File},
+    path::{Path, PathBuf},
+    time::Duration,
+};
 use uuid::Uuid;
 
-use crate::error::HostError;
-use crate::fault::{self, FaultPoint};
-
-const SCHEMA_VERSION: i64 = 1;
-
-/// Locked disposable preview database, including checked Markdown materialization.
+/// Locked host adapter; Notes content is owned by the generic per-space service.
 pub struct Store {
     conn: Connection,
     root: PathBuf,
+    content: Content,
     _lock: File,
 }
-
-/// A request receipt as stored at commit time.
+/// Replayable account-qualified result; note responses live in their space journal.
 pub struct Receipt {
-    /// Operation whose committed result is retained.
+    /// Operation that committed the response.
     pub operation: String,
-    /// Canonical operation/input digest used to reject mismatched retries.
+    /// Canonical operation/input digest.
     pub fingerprint: String,
-    /// Previously committed operation payload, private to its acting account.
+    /// Previously committed response, private to its acting account.
     pub result: serde_json::Value,
-    /// Materialized note that must be completed before replay, if applicable.
+    /// Item whose file placement must finish before replay.
     pub note_id: Option<String>,
 }
-
-/// Relationship between a committed note head and its portable Markdown copy.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MatState {
-    /// The committed head still requires placement or replay.
-    Pending,
-    /// Checked bytes have been durably placed at the note's current path.
-    Materialized,
-    /// External file changes prevent automatic placement.
-    Blocked,
-}
-
-impl MatState {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Materialized => "materialized",
-            Self::Blocked => "blocked",
-        }
-    }
-    fn parse(s: &str) -> Self {
-        match s {
-            "pending" => Self::Pending,
-            "materialized" => Self::Materialized,
-            _ => Self::Blocked,
-        }
-    }
-}
-
-/// Persisted enablement and invalidation generation of a space's plugin.
+/// Placement bookkeeping shared with the generic content layer.
+pub use calternal_content::Materialization as MatState;
+/// Persisted plugin enablement and asynchronous-result invalidation generation.
 #[derive(Debug, Clone)]
 pub struct PluginRow {
-    /// Whether this plugin is enabled in the owning space.
+    /// Whether the plugin is enabled in its owning space.
     pub enabled: bool,
-    /// Monotonic generation checked before asynchronous result delivery.
+    /// Monotonic generation checked before asynchronous delivery.
     pub generation: u32,
 }
-
-/// Current UTC timestamp with millisecond precision for preview records.
+/// Current UTC commit timestamp. Cost: clock read and string allocation; no I/O or locks.
 pub fn now_rfc3339() -> String {
-    let now = time::OffsetDateTime::now_utc();
-    let fmt = time::macros::format_description!(
-        "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
-    );
-    now.format(&fmt).expect("timestamp format")
+    calternal_content::now_rfc3339()
 }
-
-/// Lowercase SHA-256 digest for materialized-byte and request comparisons.
+/// SHA-256 request/byte digest. Cost: O(bytes) CPU and one hex allocation; no locks or I/O.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
-
-fn random_hex(n_bytes: usize) -> String {
-    let mut buf = vec![0u8; n_bytes];
-    getrandom::fill(&mut buf).expect("os randomness");
-    hex::encode(buf)
-}
-
 fn db_err(e: rusqlite::Error) -> HostError {
-    tracing::error!(error = %e, "sqlite error");
+    tracing::error!(error=%e,"sqlite error");
     HostError::internal("storage error")
 }
-
 fn io_err(context: &'static str, e: std::io::Error) -> HostError {
-    tracing::error!(error = %e, context, "io error");
+    tracing::error!(error=%e,context,"io error");
     HostError::internal("storage io error")
 }
-
+fn content_error(e: calternal_content::Error) -> HostError {
+    HostError {
+        code: e.code,
+        message: e.message,
+        details: e.details,
+    }
+}
+fn content_fault(point: calternal_content::FaultPoint) {
+    fault::hit(match point {
+        calternal_content::FaultPoint::AfterCommit => FaultPoint::AfterCommit,
+        calternal_content::FaultPoint::BeforePlacement => FaultPoint::BeforePlacement,
+        calternal_content::FaultPoint::AfterPlacement => FaultPoint::AfterPlacement,
+    });
+}
+fn item_id(id: &str) -> Result<Uuid, HostError> {
+    Uuid::parse_str(id).map_err(|_| HostError::not_found("item not found"))
+}
+fn note(item: &Item, space: &str) -> Note {
+    Note {
+        id: item.id.to_string(),
+        space_id: space.into(),
+        title: item.metadata["title"].as_str().unwrap_or("").into(),
+        markdown: String::from_utf8_lossy(&item.bytes).into_owned(),
+        revision: item.revision.clone(),
+        updated_at: item.updated_at.clone(),
+    }
+}
 impl Store {
-    /// Open (creating if needed) the data directory, take the exclusive lock,
-    /// migrate and replay pending materializations. The root is mode 0700;
-    /// database and lock files are mode 0600 before they can contain state.
+    /// Opens disposable preview roots under one data directory and takes its lock.
+    /// Cost: directory/lock/plugin SQLite I/O, generic catalog startup and replay;
+    /// recovered writes fsync their database, journal, current file and directory.
+    /// This helper is not production three-root validation or witness provisioning.
     pub fn open(root: &Path) -> Result<Self, HostError> {
-        calternal_auth::private_fs::directory(root).map_err(|e| io_err("create data dir", e))?;
-        let lock_path = root.join(".calternal.lock");
-        let lock =
-            calternal_auth::private_fs::file(&lock_path).map_err(|e| io_err("open lock", e))?;
+        Self::open_roots(
+            calternal_roots::Roots {
+                state: root.into(),
+                ssd_space: root.join("userdata-ssd"),
+                hdd_space: root.join("userdata-hdd"),
+            },
+            root.join("secrets"),
+        )
+    }
+    /// Opens caller-validated, externally locked three-root storage plus a separate
+    /// journal witness root. The host must retain the roots guards for this lifetime.
+    /// Cost: one installation lock, plugin/catalog database opens and schema fsyncs,
+    /// then startup-only pending publication/materialization recovery per space.
+    pub fn open_roots(roots: calternal_roots::Roots, secrets: PathBuf) -> Result<Self, HostError> {
+        let root = roots.state.clone();
+        calternal_auth::private_fs::directory(&root).map_err(|e| io_err("create data dir", e))?;
+        let lock = calternal_auth::private_fs::file(&root.join(".calternal.lock"))
+            .map_err(|e| io_err("open lock", e))?;
         match lock.try_lock() {
             Ok(()) => {}
             Err(fs::TryLockError::WouldBlock) => {
@@ -147,216 +126,179 @@ impl Store {
             }
             Err(fs::TryLockError::Error(e)) => return Err(io_err("lock data dir", e)),
         }
-        let db_path = root.join("state.sqlite3");
-        calternal_auth::private_fs::file(&db_path).map_err(|e| io_err("prepare database", e))?;
-        let conn = Connection::open(db_path).map_err(db_err)?;
+        let path = root.join("state.sqlite3");
+        calternal_auth::private_fs::file(&path)
+            .map_err(|e| io_err("prepare plugin database", e))?;
+        let conn = Connection::open(path).map_err(db_err)?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
         conn.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
-        conn.pragma_update(None, "foreign_keys", "ON")
-            .map_err(db_err)?;
-        conn.busy_timeout(std::time::Duration::from_secs(5))
-            .map_err(db_err)?;
-        let mut store = Store {
-            conn,
-            root: root.to_path_buf(),
-            _lock: lock,
-        };
-        store.migrate()?;
-        store.cleanup_temp_files();
-        store.replay_pending()?;
-        Ok(store)
-    }
-
-    fn migrate(&mut self) -> Result<(), HostError> {
-        let version: i64 = self
-            .conn
+        conn.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
+        let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(db_err)?;
-        if version == SCHEMA_VERSION {
-            return Ok(());
-        }
-        if version != 0 {
+        if version != 0 && version != 2 {
             return Err(HostError::unavailable(
-                "unsupported preview data schema version; use a fresh disposable data dir",
+                "unsupported preview schema; use fresh disposable data",
             ));
         }
-        self.conn
-            .execute_batch(
-                "BEGIN;
-                CREATE TABLE notes (
-                    id TEXT PRIMARY KEY,
-                    space_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    head_revision TEXT NOT NULL,
-                    head_seq INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    mat_state TEXT NOT NULL,
-                    file_sha256 TEXT
-                );
-                CREATE INDEX notes_space ON notes(space_id, updated_at);
-                CREATE TABLE versions (
-                    note_id TEXT NOT NULL REFERENCES notes(id),
-                    seq INTEGER NOT NULL,
-                    revision TEXT NOT NULL UNIQUE,
-                    title TEXT NOT NULL,
-                    markdown TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    author TEXT NOT NULL,
-                    PRIMARY KEY (note_id, seq)
-                );
-                CREATE TABLE receipts (
-                    principal TEXT NOT NULL,
-                    request_id TEXT NOT NULL,
-                    operation TEXT NOT NULL,
-                    fingerprint TEXT NOT NULL,
-                    result_json TEXT NOT NULL,
-                    note_id TEXT,
-                    created_at TEXT NOT NULL,
-                    PRIMARY KEY (principal, request_id)
-                );
-                CREATE TABLE plugin_state (
-                    space_id TEXT NOT NULL,
-                    plugin_id TEXT NOT NULL,
-                    enabled INTEGER NOT NULL,
-                    generation INTEGER NOT NULL,
-                    PRIMARY KEY (space_id, plugin_id)
-                );
-                PRAGMA user_version = 1;
-                COMMIT;",
-            )
-            .map_err(db_err)
-    }
-
-    fn notes_dir(&self, space_id: &str) -> PathBuf {
-        self.root.join("spaces").join(space_id).join("Notes")
-    }
-
-    fn note_path(&self, space_id: &str, id: &str) -> PathBuf {
-        self.notes_dir(space_id).join(format!("{id}.md"))
-    }
-
-    /// Remove our own orphaned temp files left by a crash before rename.
-    /// Only recognized preview/fsio temporary names inside real
-    /// `spaces/<known space>/Notes` directories are removed. UUID spaces come
-    /// from the content database; seeded development roots remain explicit.
-    fn cleanup_temp_files(&self) {
-        let mut spaces: Vec<String> = crate::auth::SPACES.iter().map(|s| s.to_string()).collect();
-        if let Ok(mut statement) = self.conn.prepare("SELECT DISTINCT space_id FROM notes") {
-            if let Ok(rows) = statement.query_map([], |r| r.get::<_, String>(0)) {
-                spaces.extend(rows.filter_map(Result::ok));
-            }
-        }
-        spaces.sort_unstable();
-        spaces.dedup();
-        for space in spaces {
-            let dir = self.notes_dir(&space);
-            match fs::symlink_metadata(&dir) {
-                Ok(m) if m.file_type().is_dir() => {}
-                _ => continue,
-            }
-            let Ok(entries) = fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let name = entry.file_name();
-                let Some(name) = name.to_str() else { continue };
-                if is_owned_temp_name(name)
-                    && entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-                {
-                    let _ = fs::remove_file(entry.path());
-                }
-            }
-        }
-    }
-
-    fn replay_pending(&mut self) -> Result<(), HostError> {
-        let ids: Vec<String> = {
-            let mut stmt = self
-                .conn
-                .prepare("SELECT id FROM notes WHERE mat_state = 'pending'")
-                .map_err(db_err)?;
-            stmt.query_map([], |r| r.get(0))
-                .map_err(db_err)?
-                .collect::<Result<_, _>>()
-                .map_err(db_err)?
+        conn.execute_batch("BEGIN;
+            CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
+            CREATE TABLE IF NOT EXISTS plugin_outbox(principal TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(principal,request_id));
+            CREATE INDEX IF NOT EXISTS plugin_outbox_space ON plugin_outbox(space_id);
+            CREATE TABLE IF NOT EXISTS fixture_bindings(domain TEXT NOT NULL,name TEXT NOT NULL,id TEXT NOT NULL UNIQUE,PRIMARY KEY(domain,name));
+            PRAGMA user_version=2;COMMIT;").map_err(db_err)?;
+        let content = Content::open(roots, secrets, Duration::from_secs(600), content_fault)
+            .map_err(content_error)?;
+        let store = Self {
+            conn,
+            root,
+            content,
+            _lock: lock,
         };
-        for id in ids {
-            match self.materialize(&id) {
-                Ok(()) => tracing::info!(note = %id, "replayed pending materialization"),
-                Err(e) => {
-                    tracing::warn!(note = %id, error = %e.message, "pending materialization not completed")
+        let mut statement = store
+            .conn
+            .prepare("SELECT principal,request_id FROM plugin_outbox ORDER BY rowid")
+            .map_err(db_err)?;
+        let pending = statement
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(db_err)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(db_err)?;
+        drop(statement);
+        for (principal, request) in pending {
+            store.publish_plugin_pending(&principal, &request)?;
+        }
+        Ok(store)
+    }
+    // Explicit preview/synthetic-fixture bindings preserve existing test directories'
+    // authority vocabulary. All real databases and trees use independently allocated
+    // UUIDv7 identifiers. These mappings never grant authority.
+    fn binding(&self, domain: &str, name: &str) -> Result<String, HostError> {
+        if let Ok(id) = Uuid::parse_str(name) {
+            return Ok(id.to_string());
+        }
+        if domain == "space" || domain == "account" {
+            let path = self.root.join("system/auth.db");
+            if path.exists() {
+                let auth =
+                    Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                        .map_err(db_err)?;
+                if let Ok(Some(id)) = auth
+                    .query_row(
+                        "SELECT id FROM development_directory WHERE name=?1",
+                        [name],
+                        |r| r.get::<_, String>(0),
+                    )
+                    .optional()
+                {
+                    return Ok(id);
                 }
             }
         }
-        Ok(())
-    }
-
-    // ---------------------------------------------------------------- reads
-
-    /// List bounded summaries within an already authorized space, newest first.
-    pub fn list(&self, space_id: &str, limit: u32) -> Result<Vec<NoteSummary>, HostError> {
-        let mut stmt = self
+        if let Some(id) = self
             .conn
-            .prepare(
-                "SELECT id, space_id, title, head_revision, updated_at FROM notes
-                 WHERE space_id = ?1 ORDER BY updated_at DESC, id LIMIT ?2",
-            )
-            .map_err(db_err)?;
-        stmt.query_map(params![space_id, limit], |r| {
-            Ok(NoteSummary {
-                id: r.get(0)?,
-                space_id: r.get(1)?,
-                title: r.get(2)?,
-                revision: r.get(3)?,
-                updated_at: r.get(4)?,
-            })
-        })
-        .map_err(db_err)?
-        .collect::<Result<_, _>>()
-        .map_err(db_err)
-    }
-
-    /// Fetch a current note only when both its item and space identifiers match.
-    /// Authentication and current membership checks remain the caller's duty.
-    pub fn get(&self, space_id: &str, id: &str) -> Result<Note, HostError> {
-        self.conn
             .query_row(
-                "SELECT n.id, n.space_id, n.title, v.markdown, n.head_revision, n.updated_at
-                 FROM notes n JOIN versions v ON v.note_id = n.id AND v.seq = n.head_seq
-                 WHERE n.id = ?1 AND n.space_id = ?2",
-                params![id, space_id],
-                |r| {
-                    Ok(Note {
-                        id: r.get(0)?,
-                        space_id: r.get(1)?,
-                        title: r.get(2)?,
-                        markdown: r.get(3)?,
-                        revision: r.get(4)?,
-                        updated_at: r.get(5)?,
-                    })
-                },
+                "SELECT id FROM fixture_bindings WHERE domain=?1 AND name=?2",
+                params![domain, name],
+                |r| r.get::<_, String>(0),
             )
             .optional()
             .map_err(db_err)?
-            .ok_or_else(|| HostError::not_found("note not found"))
-    }
-
-    /// Inspect internal placement state; never exposes authority or note content.
-    pub fn mat_state(&self, id: &str) -> Result<Option<MatState>, HostError> {
+        {
+            return Ok(id);
+        }
+        let id = Uuid::now_v7().to_string();
         self.conn
-            .query_row("SELECT mat_state FROM notes WHERE id = ?1", [id], |r| {
-                r.get::<_, String>(0)
-            })
-            .optional()
-            .map_err(db_err)
-            .map(|o| o.map(|s| MatState::parse(&s)))
+            .execute(
+                "INSERT INTO fixture_bindings VALUES(?1,?2,?3)",
+                params![domain, name, id],
+            )
+            .map_err(db_err)?;
+        Ok(id)
     }
-
-    /// Return newest versions first. An opaque `h<revision>` cursor selects
-    /// versions older than that revision of this exact note in this space.
-    /// Foreign, missing and old unbound numeric cursors are invalid input.
+    fn space(&self, name: &str) -> Result<SpaceId, HostError> {
+        self.binding("space", name)?
+            .parse()
+            .map_err(|_| HostError::invalid_input("invalid space identifier"))
+    }
+    fn account(&self, name: &str) -> Result<AccountId, HostError> {
+        self.binding("account", name)?
+            .parse()
+            .map_err(|_| HostError::invalid_input("invalid account identifier"))
+    }
+    /// Returns the generic item service for trusted host integrations such as
+    /// plugin kind/standard-collection provisioning. Every caller must enforce
+    /// current authority before opening a selected account or space.
+    /// Cost: borrowed reference only; no allocation, locks, SQLite or filesystem I/O.
+    pub fn content(&self) -> &Content {
+        &self.content
+    }
+    /// Resolves identifier-only catalog routing for any stored kind. No content is read
+    /// and no authority is granted. Cost: catalog mutex/indexed read plus at most one
+    /// indexed fixture binding lookup; no membership scan or materialization/fsync.
+    pub fn locate(&self, kind: &str, id: &str) -> Result<Option<String>, HostError> {
+        let Ok(id) = Uuid::parse_str(id) else {
+            return Ok(None);
+        };
+        let Some(space) = self.content.locate(kind, id).map_err(content_error)? else {
+            return Ok(None);
+        };
+        let alias = self
+            .conn
+            .query_row(
+                "SELECT name FROM fixture_bindings WHERE domain='space' AND id=?1",
+                [space.to_string()],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(db_err)?;
+        Ok(Some(alias.unwrap_or_else(|| space.to_string())))
+    }
+    /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
+    /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
+    pub fn list(&self, space_id: &str, limit: u32) -> Result<Vec<NoteSummary>, HostError> {
+        self.content
+            .list(self.space(space_id)?, "notes", limit)
+            .map_err(content_error)
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|i| NoteSummary {
+                        id: i.id.to_string(),
+                        space_id: space_id.into(),
+                        title: i.metadata["title"].as_str().unwrap_or("").into(),
+                        revision: i.revision,
+                        updated_at: i.updated_at,
+                    })
+                    .collect()
+            })
+    }
+    /// Gets one Notes item from its selected physical database. A foreign ID is absent.
+    /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.
+    pub fn get(&self, space_id: &str, id: &str) -> Result<Note, HostError> {
+        let item = self
+            .content
+            .get(self.space(space_id)?, item_id(id)?)
+            .map_err(content_error)?;
+        if item.kind != "notes" {
+            return Err(HostError::not_found("item not found"));
+        }
+        Ok(note(&item, space_id))
+    }
+    /// Reads materialization state by trusted internal ID. Cost: one global indexed
+    /// route and one space metadata lookup; no membership scan, content file read or fsync.
+    pub fn mat_state(&self, id: &str) -> Result<Option<MatState>, HostError> {
+        let Some(space) = self.locate("notes", id)? else {
+            return Ok(None);
+        };
+        self.content
+            .materialization(self.space(&space)?, item_id(id)?)
+            .map_err(content_error)
+    }
+    /// Reads newest immutable versions using an item-bound opaque cursor. Cost:
+    /// cache/space locks, bounded indexed reads and at most 1,001 body allocations;
+    /// no other-space data, filesystem scans or fsyncs.
     pub fn history(
         &self,
         space_id: &str,
@@ -364,93 +306,89 @@ impl Store {
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<(Vec<NoteVersion>, Option<String>), HostError> {
-        // Ensures existence + space binding.
         self.get(space_id, id)?;
-        let before: i64 = match cursor {
-            None => i64::MAX,
-            Some(c) => {
-                let revision = c
-                    .strip_prefix('h')
-                    .ok_or_else(|| HostError::invalid_input("invalid history cursor"))?;
-                self.conn
-                    .query_row(
-                        "SELECT seq FROM versions WHERE note_id=?1 AND revision=?2",
-                        params![id, revision],
-                        |r| r.get(0),
-                    )
-                    .optional()
-                    .map_err(db_err)?
-                    .ok_or_else(|| HostError::invalid_input("invalid history cursor"))?
-            }
-        };
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT seq, title, markdown, revision, updated_at FROM versions
-                 WHERE note_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3",
-            )
-            .map_err(db_err)?;
-        let rows: Vec<(i64, NoteVersion)> = stmt
-            .query_map(params![id, before, limit + 1], |r| {
-                Ok((
-                    r.get(0)?,
-                    NoteVersion {
-                        title: r.get(1)?,
-                        markdown: r.get(2)?,
-                        revision: r.get(3)?,
-                        updated_at: r.get(4)?,
-                    },
-                ))
-            })
-            .map_err(db_err)?
-            .collect::<Result<_, _>>()
-            .map_err(db_err)?;
-        let more = rows.len() > limit as usize;
-        let mut versions: Vec<(i64, NoteVersion)> = rows;
-        versions.truncate(limit as usize);
-        let next = if more {
-            versions.last().map(|(_, v)| format!("h{}", v.revision))
-        } else {
-            None
-        };
-        Ok((versions.into_iter().map(|(_, v)| v).collect(), next))
+        let (versions, next) = self
+            .content
+            .history(self.space(space_id)?, item_id(id)?, limit, cursor)
+            .map_err(content_error)?;
+        Ok((
+            versions
+                .into_iter()
+                .map(|i| NoteVersion {
+                    title: i.metadata["title"].as_str().unwrap_or("").into(),
+                    markdown: String::from_utf8_lossy(&i.bytes).into_owned(),
+                    revision: i.revision,
+                    updated_at: i.updated_at,
+                })
+                .collect(),
+            next,
+        ))
     }
-
-    /// Read an account-qualified receipt after the caller rechecks current grants.
+    /// Reads an account-qualified receipt after the caller checks current grants.
+    /// All operation payloads are in per-space store receipts; this adapter uses identifier-only
+    /// routing for the existing account-wide request namespace. Pending control
+    /// intents finish publication first. Cost: indexed control/catalog reads and one
+    /// bounded journal bridge/read, with journal fsyncs only during pending replay.
     pub fn receipt(&self, principal: &str, request_id: &str) -> Result<Option<Receipt>, HostError> {
-        self.conn
-            .query_row(
-                "SELECT operation, fingerprint, result_json, note_id FROM receipts
-                 WHERE principal = ?1 AND request_id = ?2",
-                params![principal, request_id],
-                |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, String>(2)?,
-                        r.get::<_, Option<String>>(3)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(db_err)?
-            .map(|(operation, fingerprint, json, note_id)| {
-                let result = serde_json::from_str(&json)
-                    .map_err(|_| HostError::internal("corrupt receipt"))?;
-                Ok(Receipt {
-                    operation,
-                    fingerprint,
-                    result,
-                    note_id,
+        self.publish_plugin_pending(principal, request_id)?;
+        let account = self.account(principal)?;
+        let Some(space) = self
+            .content
+            .receipt_space(account, request_id)
+            .map_err(content_error)?
+        else {
+            return Ok(None);
+        };
+        self.content
+            .receipt(space, account, request_id)
+            .map_err(content_error)
+            .map(|r| {
+                r.map(|r| Receipt {
+                    operation: r.operation,
+                    fingerprint: r.fingerprint,
+                    result: r.result,
+                    note_id: r.item.map(|id| id.to_string()),
                 })
             })
-            .transpose()
     }
-
-    // --------------------------------------------------------------- writes
-
-    /// Commit a new note and materialize it. Caller has verified authorization,
-    /// input validity and that no receipt exists for (principal, request_id).
+    fn publish_plugins_for_space(&self, space_id: &str) -> Result<(), HostError> {
+        loop {
+            let first=self.conn.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(db_err)?;
+            let Some((principal, request)) = first else {
+                return Ok(());
+            };
+            self.publish_plugin_pending(&principal, &request)?;
+        }
+    }
+    fn publish_plugin_pending(&self, principal: &str, request_id: &str) -> Result<(), HostError> {
+        let pending=self.conn.query_row("SELECT operation,fingerprint,result_json,space_id FROM plugin_outbox WHERE principal=?1 AND request_id=?2",params![principal,request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(db_err)?;
+        if let Some((operation, fingerprint, json, space)) = pending {
+            let result = serde_json::from_str(&json)
+                .map_err(|_| HostError::internal("corrupt plugin publication"))?;
+            self.content
+                .record_receipt(
+                    self.space(&space)?,
+                    Request {
+                        account: self.account(principal)?,
+                        id: request_id,
+                        operation: &operation,
+                        fingerprint: &fingerprint,
+                    },
+                    result,
+                )
+                .map_err(content_error)?;
+            self.conn
+                .execute(
+                    "DELETE FROM plugin_outbox WHERE principal=?1 AND request_id=?2",
+                    params![principal, request_id],
+                )
+                .map_err(db_err)?;
+        }
+        Ok(())
+    }
+    /// Creates a globally UUIDv7-identified Notes item with a human filename and
+    /// frontmatter identity. Cost: generic write allocations/locks, FULL content and
+    /// journal commits, fsio file+directory fsync, placement/outbox SQL commits.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &mut self,
@@ -462,51 +400,41 @@ impl Store {
         title: &str,
         markdown: &str,
     ) -> Result<Note, HostError> {
-        let id = Uuid::new_v4().to_string();
-        let revision = format!("v1.{}", random_hex(8));
-        let now = now_rfc3339();
-        let note = Note {
-            id: id.clone(),
-            space_id: space_id.to_string(),
-            title: title.to_string(),
-            markdown: markdown.to_string(),
-            revision: revision.clone(),
-            updated_at: now.clone(),
-        };
-        let result = serde_json::json!({ "note": &note });
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_err)?;
-        tx.execute(
-            "INSERT INTO notes (id, space_id, title, head_revision, head_seq, updated_at, mat_state, file_sha256)
-             VALUES (?1, ?2, ?3, ?4, 1, ?5, 'pending', NULL)",
-            params![id, space_id, title, revision, now],
-        )
-        .map_err(db_err)?;
-        tx.execute(
-            "INSERT INTO versions (note_id, seq, revision, title, markdown, updated_at, author)
-             VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6)",
-            params![id, revision, title, markdown, now, principal],
-        )
-        .map_err(db_err)?;
-        insert_receipt(
-            &tx,
-            principal,
-            request_id,
+        self.content
+            .register_kind(
+                self.space(space_id)?,
+                "notes",
+                calternal_content::Placement::Visible {
+                    folder: "Notes".into(),
+                },
+                calternal_content::FileFormat::Markdown,
+            )
+            .map_err(content_error)?;
+        let request = Request {
+            account: self.account(principal)?,
+            id: request_id,
             operation,
             fingerprint,
-            &result,
-            Some(&id),
-        )?;
-        tx.commit().map_err(db_err)?;
-        fault::hit(FaultPoint::AfterCommit);
-        self.materialize(&id)?;
-        Ok(note)
+        };
+        let item = self
+            .content
+            .write(
+                self.space(space_id)?,
+                None,
+                "notes",
+                None,
+                serde_json::json!({"title":title}),
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i,space_id)}),
+            )
+            .map_err(content_error)?;
+        Ok(note(&item, space_id))
     }
-
-    /// Commit a new revision if `base_revision` is the head and the materialized
-    /// file has not been changed externally.
+    /// Updates only the current base revision, preserving external edits/deletes.
+    /// Title changes journal a fixed exclusive rename with the same mutation.
+    /// Cost: indexed head read plus generic write costs, one old-file hash, optional
+    /// exclusive rename and parent fsync; no directory scan on warm Linux name caches.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &mut self,
@@ -521,193 +449,39 @@ impl Store {
         markdown: &str,
     ) -> Result<Note, HostError> {
         let current = self.get(space_id, id)?;
-        // Finish any interrupted placement first; never stack writes on an
-        // unknown file state.
-        self.materialize(id)?;
-        self.check_file_unchanged(space_id, id)?;
-        if current.revision != base_revision {
-            return Err(
-                HostError::conflict("note has a newer revision").with_details(serde_json::json!({
-                    "reason": "stale_revision",
-                    "current_revision": current.revision,
-                })),
-            );
-        }
-        let (head_seq,): (i64,) = self
-            .conn
-            .query_row("SELECT head_seq FROM notes WHERE id = ?1", [id], |r| {
-                Ok((r.get(0)?,))
-            })
-            .map_err(db_err)?;
-        let seq = head_seq + 1;
-        let revision = format!("v{seq}.{}", random_hex(8));
-        let now = now_rfc3339();
-        let title = title.unwrap_or(&current.title).to_string();
-        let note = Note {
-            id: id.to_string(),
-            space_id: space_id.to_string(),
-            title: title.clone(),
-            markdown: markdown.to_string(),
-            revision: revision.clone(),
-            updated_at: now.clone(),
-        };
-        let result = serde_json::json!({ "note": &note });
-        let tx = self
-            .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(db_err)?;
-        tx.execute(
-            "INSERT INTO versions (note_id, seq, revision, title, markdown, updated_at, author)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, seq, revision, title, markdown, now, principal],
-        )
-        .map_err(db_err)?;
-        let changed = tx
-            .execute(
-                "UPDATE notes SET title = ?1, head_revision = ?2, head_seq = ?3, updated_at = ?4,
-                 mat_state = 'pending' WHERE id = ?5 AND head_seq = ?6",
-                params![title, revision, seq, now, id, head_seq],
-            )
-            .map_err(db_err)?;
-        if changed != 1 {
-            return Err(HostError::conflict("note changed concurrently"));
-        }
-        insert_receipt(
-            &tx,
-            principal,
-            request_id,
+        let request = Request {
+            account: self.account(principal)?,
+            id: request_id,
             operation,
             fingerprint,
-            &result,
-            Some(id),
-        )?;
-        tx.commit().map_err(db_err)?;
-        fault::hit(FaultPoint::AfterCommit);
-        self.materialize(id)?;
-        Ok(note)
-    }
-
-    /// Detect an external change to an already-materialized file before
-    /// accepting a new revision. Marks the note blocked if changed.
-    fn check_file_unchanged(&mut self, space_id: &str, id: &str) -> Result<(), HostError> {
-        let (state, sha): (String, Option<String>) = self
-            .conn
-            .query_row(
-                "SELECT mat_state, file_sha256 FROM notes WHERE id = ?1",
-                [id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .map_err(db_err)?;
-        if MatState::parse(&state) == MatState::Blocked {
-            return Err(blocked_error());
-        }
-        let path = self.note_path(space_id, id);
-        let on_disk = match file_hash(&path)? {
-            FileState::Missing => None,
-            FileState::Regular(h) => Some(h),
-            FileState::NotRegular => {
-                self.set_state(id, MatState::Blocked)?;
-                return Err(blocked_error());
-            }
         };
-        if on_disk != sha {
-            self.set_state(id, MatState::Blocked)?;
-            tracing::warn!(note = %id, "external change to materialized note; writes blocked");
-            return Err(blocked_error());
-        }
-        Ok(())
-    }
-
-    fn set_state(&self, id: &str, state: MatState) -> Result<(), HostError> {
-        self.conn
-            .execute(
-                "UPDATE notes SET mat_state = ?1 WHERE id = ?2",
-                params![state.as_str(), id],
+        let item = self
+            .content
+            .write(
+                self.space(space_id)?,
+                Some(item_id(id)?),
+                "notes",
+                Some(base_revision),
+                serde_json::json!({"title":title.unwrap_or(&current.title)}),
+                markdown.as_bytes(),
+                request,
+                |i| serde_json::json!({"note":note(i,space_id)}),
             )
-            .map_err(db_err)?;
-        Ok(())
+            .map_err(content_error)?;
+        Ok(note(&item, space_id))
     }
-
-    /// Place the head revision on disk if pending. Idempotent. Each storage
-    /// directory is owner-only (0700); fsio publishes private 0600 Markdown.
+    /// Finishes checked placement before retry replay. Cost: catalog lookup and
+    /// generic materialization locks/reads, with file+directory fsync only if pending.
     pub fn materialize(&mut self, id: &str) -> Result<(), HostError> {
-        let (space_id, state, file_sha, markdown): (String, String, Option<String>, String) = self
-            .conn
-            .query_row(
-                "SELECT n.space_id, n.mat_state, n.file_sha256, v.markdown
-                 FROM notes n JOIN versions v ON v.note_id = n.id AND v.seq = n.head_seq
-                 WHERE n.id = ?1",
-                [id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .optional()
-            .map_err(db_err)?
-            .ok_or_else(|| HostError::not_found("note not found"))?;
-        match MatState::parse(&state) {
-            MatState::Materialized => return Ok(()),
-            MatState::Blocked => return Err(blocked_error()),
-            MatState::Pending => {}
-        }
-        let new_sha = sha256_hex(markdown.as_bytes());
-        let dir = self.notes_dir(&space_id);
-        // Every path component we create must be a real directory, not a symlink.
-        for d in [
-            self.root.join("spaces"),
-            self.root.join("spaces").join(&space_id),
-            dir.clone(),
-        ] {
-            calternal_auth::private_fs::directory(&d)
-                .map_err(|e| io_err("prepare notes dir", e))?;
-            let m = fs::symlink_metadata(&d).map_err(|e| io_err("stat notes dir", e))?;
-            if !m.file_type().is_dir() {
-                tracing::error!(dir = %d.display(), "notes directory is not a real directory");
-                return Err(HostError::unavailable(
-                    "note storage directory is not a regular directory",
-                ));
-            }
-        }
-        let path = self.note_path(&space_id, id);
-        let on_disk = match file_hash(&path)? {
-            FileState::Missing => None,
-            FileState::Regular(h) => Some(h),
-            FileState::NotRegular => {
-                self.set_state(id, MatState::Blocked)?;
-                tracing::warn!(note = %id, "note path is not a regular file; blocked");
-                return Err(blocked_error());
-            }
-        };
-        if on_disk.as_deref() == Some(new_sha.as_str()) {
-            // Bytes were placed before a crash, but the rename / directory
-            // entry may not be durable yet: sync file and directory before
-            // marking, exactly as a fresh placement would.
-            File::open(&path)
-                .and_then(|f| f.sync_all())
-                .map_err(|e| io_err("fsync placed file", e))?;
-            File::open(&dir)
-                .and_then(|d| d.sync_all())
-                .map_err(|e| io_err("fsync dir", e))?;
-        } else if on_disk == file_sha {
-            fault::hit(FaultPoint::BeforePlacement);
-            atomic_write(&dir, &path, id, markdown.as_bytes())?;
-            fault::hit(FaultPoint::AfterPlacement);
-        } else {
-            // Missing-after-placed, or bytes we did not write: preserve them.
-            self.set_state(id, MatState::Blocked)?;
-            tracing::warn!(note = %id, "external change before placement; preserved file, blocked");
-            return Err(blocked_error());
-        }
-        self.conn
-            .execute(
-                "UPDATE notes SET mat_state = 'materialized', file_sha256 = ?1 WHERE id = ?2",
-                params![new_sha, id],
-            )
-            .map_err(db_err)?;
-        Ok(())
+        let space = self
+            .locate("notes", id)?
+            .ok_or_else(|| HostError::not_found("item not found"))?;
+        self.content
+            .materialize(self.space(&space)?, item_id(id)?)
+            .map_err(content_error)
     }
-
-    // -------------------------------------------------------------- plugins
-
     /// Read one space's plugin state without inheriting another space's enablement.
+    /// Cost: one indexed read on the plugin connection; no content I/O or fsync.
     pub fn plugin_row(
         &self,
         space_id: &str,
@@ -724,8 +498,12 @@ impl Store {
     }
 
     /// Set enabled (bump generation on change) and record the request
-    /// receipt in the same transaction, so a retried old enable can never
+    /// publication intent in the same transaction, then durably publish its receipt
+    /// through the owning space store, so a retried old enable can never
     /// undo a newer disable.
+    /// Cost: plugin connection reads and one FULL SQLite transaction, with result
+    /// serialization and WAL fsync, followed by per-space receipt publication and
+    /// FULL journal durability, then outbox retirement. No user file access.
     #[allow(clippy::too_many_arguments)]
     pub fn set_plugin_enabled(
         &mut self,
@@ -739,6 +517,7 @@ impl Store {
         enabled: bool,
         result: impl FnOnce(&PluginRow) -> serde_json::Value,
     ) -> Result<(PluginRow, serde_json::Value), HostError> {
+        self.publish_plugins_for_space(space_id)?;
         let current = self.plugin_row(space_id, plugin_id)?.unwrap_or(default);
         let next = if current.enabled == enabled {
             current
@@ -759,91 +538,26 @@ impl Store {
             params![space_id, plugin_id, next.enabled as i64, next.generation],
         )
         .map_err(db_err)?;
-        insert_receipt(
-            &tx,
-            principal,
-            request_id,
-            operation,
-            fingerprint,
-            &value,
-            None,
-        )?;
+        tx.execute(
+            "INSERT INTO plugin_outbox VALUES(?1,?2,?3,?4,?5,?6)",
+            params![
+                principal,
+                request_id,
+                operation,
+                fingerprint,
+                value.to_string(),
+                space_id
+            ],
+        )
+        .map_err(db_err)?;
         tx.commit().map_err(db_err)?;
+        self.publish_plugin_pending(principal, request_id)?;
         Ok((next, value))
     }
 }
-
-enum FileState {
-    Missing,
-    Regular(String),
-    /// Symlink, directory, device...: never followed or replaced.
-    NotRegular,
-}
-
-fn file_hash(path: &Path) -> Result<FileState, HostError> {
-    match fs::symlink_metadata(path) {
-        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(FileState::Missing),
-        Err(e) => return Err(io_err("stat note file", e)),
-        Ok(m) if !m.file_type().is_file() => return Ok(FileState::NotRegular),
-        Ok(_) => {}
-    }
-    let bytes = fs::read(path).map_err(|e| io_err("read note file", e))?;
-    Ok(FileState::Regular(sha256_hex(&bytes)))
-}
-
-/// Recognize exact preview temporary names and fsio's hex nonce plus UUID
-/// Markdown name; unrelated files are never treated as cleanup candidates.
-fn is_owned_temp_name(name: &str) -> bool {
-    if let Some(rest) = name.strip_prefix(calternal_fsio::TEMP_PREFIX) {
-        let Some((nonce, note)) = rest.split_once('-') else {
-            return false;
-        };
-        return !nonce.is_empty()
-            && nonce.len() <= 32
-            && nonce.bytes().all(|b| b.is_ascii_hexdigit())
-            && note
-                .strip_suffix(".md")
-                .is_some_and(|id| Uuid::parse_str(id).is_ok_and(|u| u.to_string() == id));
-    }
-    let Some(inner) = name.strip_prefix('.').and_then(|n| n.strip_suffix(".tmp")) else {
-        return false;
-    };
-    let Some((id, suffix)) = inner.rsplit_once('.') else {
-        return false;
-    };
-    suffix.len() == 12
-        && suffix
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        && Uuid::parse_str(id)
-            .map(|u| u.to_string() == id)
-            .unwrap_or(false)
-}
-
-/// Caller-safe conflict indicating that external bytes prevented materialization.
+/// External bytes prevented checked placement. Cost: short error/JSON allocations;
+/// no I/O, locks or fsync. The generic content materializer uses the same reason.
 pub fn blocked_error() -> HostError {
     HostError::conflict("note file was changed outside Calternal; writes are blocked")
-        .with_details(serde_json::json!({ "reason": "external_change" }))
-}
-
-fn insert_receipt(
-    tx: &rusqlite::Transaction<'_>,
-    principal: &str,
-    request_id: &str,
-    operation: &str,
-    fingerprint: &str,
-    result: &serde_json::Value,
-    note_id: Option<&str>,
-) -> Result<(), HostError> {
-    tx.execute(
-        "INSERT INTO receipts (principal, request_id, operation, fingerprint, result_json, note_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![principal, request_id, operation, fingerprint, result.to_string(), note_id, now_rfc3339()],
-    )
-    .map_err(db_err)?;
-    Ok(())
-}
-
-fn atomic_write(_dir: &Path, target: &Path, _id: &str, bytes: &[u8]) -> Result<(), HostError> {
-    calternal_fsio::write_atomic_mode(target, bytes, 0o600).map_err(|e| io_err("place note", e))
+        .with_details(serde_json::json!({"reason":"external_change"}))
 }
