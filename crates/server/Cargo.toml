@@ -30,7 +30,7 @@ calternal-machine.workspace = true
 calternal-cli.workspace = true
 calternal-secrets.workspace = true
 serde.workspace = true
-serde_json.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }

@@ -16,7 +16,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use calternal_core::{
-    DescribeResult, ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult,
+    ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult,
     NotesCreateInput, NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
     NotesListResult, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
     PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
@@ -302,13 +302,33 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
         Ok(p) => p,
         Err(_) => return failure(None, Error::internal("directory task failed")),
     };
-    let result = DescribeResult {
+    let result = DescribeReply {
         protocol_version: PROTOCOL_VERSION,
         genui_version: GENUI_VERSION,
         principal,
-        operations: operation_catalog(),
+        operations: operation_catalog_json(),
     };
     json_response(StatusCode::OK, &result)
+}
+
+/// The wire form of [`calternal_core::DescribeResult`], with the operation catalog
+/// spliced in pre-serialized: the same JSON, without rebuilding 38 schemas per call.
+#[derive(serde::Serialize)]
+struct DescribeReply {
+    protocol_version: u32,
+    genui_version: u32,
+    principal: calternal_core::Principal,
+    operations: &'static serde_json::value::RawValue,
+}
+
+/// The operation catalog serialized once per process; it depends only on the build.
+/// Cost: first call generates every schema (milliseconds); later calls are free.
+fn operation_catalog_json() -> &'static serde_json::value::RawValue {
+    static CATALOG: std::sync::OnceLock<Box<serde_json::value::RawValue>> =
+        std::sync::OnceLock::new();
+    CATALOG.get_or_init(|| {
+        serde_json::value::to_raw_value(&operation_catalog()).expect("catalog serializes")
+    })
 }
 
 async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) -> Response {
