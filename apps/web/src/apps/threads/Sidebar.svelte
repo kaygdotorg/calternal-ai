@@ -66,7 +66,7 @@
       if (id === "srename") edit("section", s.id, s.name);
       else if (id === "up") layout.shift(s.id, -1);
       else if (id === "down") layout.shift(s.id, 1);
-      else if (id === "delete") layout.remove(s.id);
+      else if (id === "delete") { const undo = layout.remove(s.id); if (undo) undoable("section.delete", s.id, `Deleted \u201c${s.name}\u201d`, undo); }
     }
   }
   const openCtx = (e: MouseEvent, v: { thread?: ThreadSummary; section?: string }) => { e.preventDefault(); ctx = { x: e.clientX, y: e.clientY, ...v }; };

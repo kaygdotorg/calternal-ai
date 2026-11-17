@@ -82,13 +82,21 @@ class Layout {
     if (s) s.collapsed = !s.collapsed;
     this.save();
   }
-  /** Deletes a section; its threads go back to the unlabelled list. */
-  remove(id: string): void {
-    const s = this.sections.find((x) => x.id === id);
-    if (!s) return;
+  /** Deletes a section; its threads go back to the unlabelled list. Returns the undo: it puts the section back where it was with the same threads (false if it is already back). */
+  remove(id: string): (() => boolean) | null {
+    const at = this.sections.findIndex((x) => x.id === id);
+    if (at < 0) return null;
+    const s = { ...this.sections[at], threadIds: [...this.sections[at].threadIds] };
     this.loose = [...s.threadIds, ...this.loose];
     this.sections = this.sections.filter((x) => x.id !== id);
     this.save();
+    return () => {
+      if (this.sections.some((x) => x.id === id)) return false;
+      this.loose = this.loose.filter((i) => !s.threadIds.includes(i));
+      this.sections = [...this.sections.slice(0, at), s, ...this.sections.slice(at)];
+      this.save();
+      return true;
+    };
   }
   /** Moves a section up or down among the sections. */
   shift(id: string, by: -1 | 1): void {
