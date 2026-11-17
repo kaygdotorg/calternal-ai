@@ -23,11 +23,12 @@ export function triggerAt(state: EditorState): Omit<Trigger, "rect"> | null {
   if (!sel.empty) return null;
   const line = state.doc.lineAt(sel.head);
   const before = line.text.slice(0, sel.head - line.from);
-  const node = syntaxTree(state).resolveInner(sel.head, -1);
-  if (/Code|URL/.test(node.name)) return null;
+  // Most keys are in prose with none of the trigger characters before the caret: answer without touching the parse tree (the tree walk is the costly part).
+  if (!/[@#/[]/.test(before)) return null;
   for (const [kind, re] of RULES) {
     const m = re.exec(kind === "skill" ? `\n${before}` : before);
     if (m) {
+      if (/Code|URL/.test(syntaxTree(state).resolve(sel.head, -1).name)) return null; // not inside code or a link address
       const q = m[1]!;
       const lead = kind === "link" ? 2 : 1;
       return { kind, query: q, from: sel.head - q.length - lead, to: sel.head };

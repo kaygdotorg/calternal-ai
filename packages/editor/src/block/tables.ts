@@ -5,6 +5,7 @@
  * Cost: one walk of the top-level blocks when the parse tree or the selection changes (no walk into paragraphs, code or cells), one small DOM per drawn table.
  */
 import { syntaxTree } from "@codemirror/language";
+import { IterMode } from "@lezer/common";
 import { type EditorState, type Extension, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 
@@ -59,6 +60,7 @@ function build(state: EditorState): DecorationSet {
   const sel = state.selection.main;
   const ranges: ReturnType<Decoration["range"]>[] = [];
   syntaxTree(state).iterate({
+    mode: IterMode.IgnoreMounts, // never walk into a code fence's own grammar: nothing here looks at it, and a nested tree is many more nodes per key
     enter(n) {
       if (n.name === "Table") {
         // The raw rows stay while the caret or selection touches the table.
