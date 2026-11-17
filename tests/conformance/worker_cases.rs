@@ -112,8 +112,10 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
         return;
     }
     let mut f = Fixture::new().await;
-    let measure = std::env::var_os("CALTERNAL_MEASURE_WORKERS").is_some();
-    let machine = f.worker_machine(!measure).await;
+    // The optional fault injection proves the deadline boundary separately from
+    // the standard conformance run, where it would consume the startup allowance.
+    let delay_launch = std::env::var_os("CALTERNAL_TEST_DELAY_WORKER_LAUNCH").is_some();
+    let machine = f.worker_machine(delay_launch).await;
     jobs_cases::enable(&f, 1, &f.spaces[0]).await;
     let write = || json!({"space_id":f.spaces[0],"text":"worker-private-space-one"});
     let end = Instant::now() + Duration::from_secs(10);
@@ -125,10 +127,15 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
             cold_ms = started.elapsed().as_secs_f64() * 1000.0;
             break;
         }
-        if !measure {
+        assert_ne!(
+            first.body["error"]["message"], "extension timed out",
+            "first invocation timed out during a cold launch: {}",
+            first.body
+        );
+        if delay_launch {
             assert!(
                 machine.dir.join("first-launch").is_file(),
-                "first invocation timed out during a cold launch: {}",
+                "first invocation failed after starting a cold launch: {}",
                 first.body
             );
         }
@@ -140,9 +147,10 @@ async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death
         assert_eq!(first.body["error"]["code"], "unavailable");
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    if !measure {
+    if delay_launch {
         assert!(cold_ms >= 3200.0, "first launch was not delayed");
-    } else {
+    }
+    if std::env::var_os("CALTERNAL_MEASURE_WORKERS").is_some() {
         let mut samples = Vec::new();
         for _ in 0..10 {
             let started = Instant::now();
