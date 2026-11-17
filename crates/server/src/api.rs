@@ -45,6 +45,8 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = TokenTable> {
+    /// Account-local input databases; no shared request-path lock or connection.
+    pub inputs: crate::account_input::Inputs,
     /// Serialized durable preview store; authorization precedes taking this lock.
     pub store: Mutex<Store>,
     /// Identity and membership directory (legacy field name preserves startup callers).
@@ -80,6 +82,10 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .shared_content();
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
+        .route(
+            "/api/v1/account/live",
+            get(crate::account_input::events::<D>),
+        )
         .route("/api/v1/live", get(crate::live::events::<D>))
         .route("/api/v1/operations", post(operations::<D>))
         .route(
@@ -409,7 +415,8 @@ fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, HostError> {
         .map_err(|_| HostError::invalid_input("input does not match operation schema"))
 }
 
-fn fingerprint(op: &str, input: &JsonObject) -> String {
+/// Canonical ordinary-operation identity digest; reused by private pending replay.
+pub(crate) fn fingerprint(op: &str, input: &JsonObject) -> String {
     sha256_hex(format!("{op}\n{}", canonical_request_input(input)).as_bytes())
 }
 
@@ -449,6 +456,9 @@ pub async fn dispatch<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, HostError> {
     let p = p.into();
+    if calternal_core::is_account_input_operation(op) {
+        return crate::account_input::dispatch(state, p, session, op, input).await;
+    }
     let mut input = input;
     let item_scoped = state
         .registry
@@ -564,7 +574,18 @@ pub async fn dispatch<D: Directory>(
                     "request_id was already used with different input",
                 ));
             }
-            st.tokens.space_operation(&p, &rid, &operation, &input)
+            let removed =
+                crate::account_input::revoked_targets(&st.tokens, &p, &operation, &input)?;
+            let result = st.tokens.space_operation(&p, &rid, &operation, &input);
+            drop(store);
+            if result.is_ok()
+                && let Some(space) = input.get("space_id").and_then(Value::as_str)
+            {
+                for account in removed {
+                    st.inputs.erase_space(&account, space)?;
+                }
+            }
+            result
         })
         .await
         .map_err(|_| HostError::internal("directory task failed"))?;
@@ -591,7 +612,8 @@ pub async fn dispatch<D: Directory>(
 }
 
 // Expose UUIDs while the development store retains its explicit root bindings.
-fn wire_spaces(directory: &impl Directory, mut value: Value) -> Value {
+/// Rewrite private receipt payloads through the same canonical UUID boundary.
+pub(crate) fn wire_spaces(directory: &impl Directory, mut value: Value) -> Value {
     match &mut value {
         Value::Object(object) => {
             for (key, item) in object {

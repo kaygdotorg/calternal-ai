@@ -28,13 +28,16 @@ only ephemeral bookmarks, and the platform persists state before accepting event
 
 Each live connection owns an `OfflineOutbox`, drained after authorized reconnect
 before publishing events. It retains ordered immutable request envelopes in memory, with stable
-request IDs and no local merge. Draining uses ordinary server operations, which
-recheck current access and replay receipts. Any refusal or uncertain transport
+request IDs and no local merge. Draining first queues visible server pending submissions and then submits them
+through ordinary operations, rechecking access and replaying receipts. Any refusal or uncertain transport
 outcome retains the head and stops the drain. Platform code owns durable offline
 input retention and visible pending rendering. Never transfer an outbox into a
 different account/session. A sent envelope's identity/input cannot be edited after
-an uncertain result. Server drafts, pending submission operations and an account
-stream remain blocked on the account-state retention decision in issue #17.
+an uncertain result. Server drafts and pending submissions now use explicit-delete retention;
+input older than seven days needs confirmation. `subscribe_account` follows
+content-free invalidations; reload authorized drafts/pending records before
+accepting each bookmark. See [account input](../../docs/account-input.md) for
+ceilings, target scoping, native support and platform persistence limitations.
 
 Bounds: 16 bookmarks per memory store, 4 KiB per bookmark file and 1024 files per exclusively owned file cache root,
 2 MiB SSE buffer,

@@ -97,14 +97,17 @@ pub(crate) async fn events<D: Directory>(
     let Some(session) = req.extensions().get::<Session>().cloned() else {
         return crate::api::error_response(hidden());
     };
-    let subscriptions = if query.subscriptions.len() <= 16 * 2048 {
-        serde_json::from_str::<Vec<LiveSubscription>>(&query.subscriptions).ok()
-    } else {
-        None
-    };
-    let Some(subscriptions) = subscriptions.filter(|s| !s.is_empty() && s.len() <= 16) else {
+    let subscriptions =
+        if query.subscriptions.len() <= state.inputs.limits().live_spaces.saturating_mul(2048) {
+            serde_json::from_str::<Vec<LiveSubscription>>(&query.subscriptions).ok()
+        } else {
+            None
+        };
+    let Some(subscriptions) =
+        subscriptions.filter(|s| !s.is_empty() && s.len() <= state.inputs.limits().live_spaces)
+    else {
         return crate::api::error_response(HostError::invalid_input(
-            "provide 1 to 16 live subscriptions",
+            "live subscriptions exceed CALTERNAL_LIVE_SPACES or are empty",
         ));
     };
     let mut follows = Vec::new();
@@ -139,7 +142,7 @@ pub(crate) async fn events<D: Directory>(
             Ok(journal) => journal,
             Err(e) => return crate::api::error_response(e),
         };
-        let receiver = match journal.subscribe_bounded(128) {
+        let receiver = match journal.subscribe_bounded(state.inputs.limits().listeners) {
             Ok(receiver) => receiver,
             Err(_) => {
                 return crate::api::error_response(HostError::unavailable(

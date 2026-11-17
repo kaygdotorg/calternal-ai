@@ -26,6 +26,7 @@ impl Fixture {
         let guest = identity("guest");
         let store = Store::open(dir.path()).unwrap();
         let state = Arc::new(AppState {
+            inputs: store.account_inputs(),
             store: Mutex::new(store),
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),

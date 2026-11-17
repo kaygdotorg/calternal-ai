@@ -91,6 +91,7 @@ impl LiveConnection {
         }
         let cancellation = self.cancellation.clone();
         tokio::select! {
+            biased;
             _ = cancellation.cancelled() => Err(ClientError::Cancelled),
             result = self.receive() => result,
         }
@@ -139,6 +140,7 @@ impl LiveConnection {
                     return Err(ClientError::Protocol("expected event stream"));
                 }
                 self.response = Some(response);
+                self.client.drain_pending(&self.cancellation).await?;
                 if let Err(error) = self
                     .outbox
                     .lock()

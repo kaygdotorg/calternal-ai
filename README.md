@@ -37,9 +37,10 @@ Space changes can be followed with `calternal watch <space-uuid> --token-file
 <credential-file>` (`--json` emits one event per line). The shared client follows
 one SSE connection, retains accepted bookmarks, invalidates bounded item caches,
 and drains ordered offline input after reconnect. Swift exposes a cancellable
-async stream. Server drafts, pending submission operations and the account feed
-remain unbuilt pending [retention policy](docs/morning-decisions.md); see the
-[live lane report](docs/reviews/live-2026-11-17.md) for evidence and limitations.
+async stream. [Private drafts, pending submissions and the account feed](docs/account-input.md)
+use per-account storage, explicit-delete retention and seven-day confirmation
+for old offline input. See the [drafts lane report](docs/reviews/drafts-2026-11-17.md)
+for qualification and remaining platform work.
 
 ## Verification
 

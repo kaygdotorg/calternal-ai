@@ -15,7 +15,7 @@ async fn outbox_drains_in_order_stops_on_refusal_and_retains_identity() {
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
         let mut ids = Vec::new();
-        for status in [200, 403] {
+        for status in [200, 200, 403] {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut buf = Vec::new();
             let offset = loop {
@@ -38,8 +38,8 @@ async fn outbox_drains_in_order_stops_on_refusal_and_retains_identity() {
             };
             let request: Value = serde_json::from_slice(&buf[offset..]).unwrap();
             let id = request["request_id"].as_str().unwrap().to_owned();
-            ids.push(id.clone());
-            let body=if status==200 {json!({"ok":true,"request_id":id,"data":{"accepted":true}})} else {json!({"ok":false,"request_id":id,"error":{"code":"forbidden","message":"access removed"}})}.to_string();
+            ids.push(request["operation"].as_str().unwrap().to_owned());
+            let body=if status==200 {json!({"ok":true,"request_id":id,"data":{"record":null,"result":{"accepted":true}}})} else {json!({"ok":false,"request_id":id,"error":{"code":"forbidden","message":"access removed"}})}.to_string();
             socket.write_all(format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
         }
         ids
@@ -48,7 +48,14 @@ async fn outbox_drains_in_order_stops_on_refusal_and_retains_identity() {
     let mut outbox = OfflineOutbox::default();
     for id in ["one", "two", "three"] {
         outbox
-            .enqueue(Client::pending("fixture.send", &json!({"text":id}), Some(id.into())).unwrap())
+            .enqueue(
+                Client::pending(
+                    "fixture.send",
+                    &json!({"space_id":"11111111-1111-4111-8111-111111111111","text":id}),
+                    Some(id.into()),
+                )
+                .unwrap(),
+            )
             .unwrap();
     }
     let error = outbox
@@ -56,7 +63,10 @@ async fn outbox_drains_in_order_stops_on_refusal_and_retains_identity() {
         .await
         .unwrap_err();
     assert!(matches!(error, ClientError::Api { status: 403, .. }));
-    assert_eq!(server.await.unwrap(), ["one", "two"]);
+    assert_eq!(
+        server.await.unwrap(),
+        ["pending.queue", "pending.submit", "pending.queue"]
+    );
     assert_eq!(
         outbox
             .pending()
@@ -69,7 +79,7 @@ async fn outbox_drains_in_order_stops_on_refusal_and_retains_identity() {
             .enqueue(
                 Client::pending(
                     "fixture.send",
-                    &json!({"text":"changed"}),
+                    &json!({"space_id":"11111111-1111-4111-8111-111111111111","text":"changed"}),
                     Some("two".into())
                 )
                 .unwrap()
@@ -168,7 +178,8 @@ async fn reconnect_uses_only_the_accepted_bookmark() {
     let addr = listener.local_addr().unwrap();
     let space = "00000000-0000-7000-8000-000000000001";
     let task = tokio::spawn(async move {
-        for attempt in 0..2 {
+        for step in 0..4 {
+            let attempt = step / 2;
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = Vec::new();
             loop {
@@ -179,6 +190,28 @@ async fn reconnect_uses_only_the_accepted_bookmark() {
                 if request.windows(4).any(|w| w == b"\r\n\r\n") {
                     break;
                 }
+            }
+            if step % 2 == 1 {
+                let offset = request.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                let head = String::from_utf8_lossy(&request[..offset]).to_lowercase();
+                let len = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length: "))
+                    .unwrap()
+                    .parse::<usize>()
+                    .unwrap();
+                while request.len() < offset + len {
+                    let mut bytes = [0; 1024];
+                    let n = socket.read(&mut bytes).await.unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&bytes[..n]);
+                }
+                let req: Value = serde_json::from_slice(&request[offset..]).unwrap();
+                assert_eq!(req["operation"], "pending.list");
+                let body = json!({"ok":true,"request_id":req["request_id"],"data":{"records":[]}})
+                    .to_string();
+                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await.unwrap();
+                continue;
             }
             let request = String::from_utf8(request).unwrap();
             assert_eq!(request.contains("accepted-bookmark"), attempt == 1);

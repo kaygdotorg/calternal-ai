@@ -83,6 +83,7 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
         None => WorkerPool::new(Some(node)),
     };
     let state = Arc::new(AppState {
+        inputs: calternal_server::account_input::Inputs::new(&data, Default::default()),
         store: Mutex::new(Store::open(&data).unwrap()),
         tokens: TokenTable::load_or_create(&data).unwrap(),
         registry: Registry::from_plugins(plugins),

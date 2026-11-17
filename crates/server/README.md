@@ -183,4 +183,7 @@ auth changes wake idle streams; a one-second fallback checks expiry and director
 changes through separately opened handles. This is a development preview; no
 cross-process instantaneous revocation guarantee is asserted. Each space has a
 128-subscriber safety ceiling and each connection buffers one 64-entry page.
-The account-state feed and draft/pending operations remain unbuilt (issue #17).
+Account-private drafts, pending submissions and `/api/v1/account/live` are
+implemented in separate owner-local modules; see [account input](../../docs/account-input.md).
+The live space/subscriber defaults above are operator-configurable through
+`CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.

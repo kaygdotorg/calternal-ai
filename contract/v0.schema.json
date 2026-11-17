@@ -4,6 +4,7 @@
   "description": "Schema export root grouping all operation and worker types; never an HTTP request body.",
   "type": "object",
   "required": [
+    "account_frame",
     "describe",
     "live_frame",
     "live_subscription",
@@ -47,6 +48,14 @@
     "worker_response"
   ],
   "properties": {
+    "account_frame": {
+      "description": "Schema representative for the private account invalidation stream.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/AccountFrame"
+        }
+      ]
+    },
     "describe": {
       "description": "Schema export representative for `describe`; not a field accepted by operation dispatch.",
       "allOf": [
@@ -378,6 +387,69 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "AccountFrame": {
+      "description": "Account feed uses the space feed's explicit acceptance/reset rules.",
+      "oneOf": [
+        {
+          "description": "Invalidate and reload account input; carries no private content after revocation.",
+          "type": "object",
+          "required": [
+            "bookmark",
+            "type"
+          ],
+          "properties": {
+            "bookmark": {
+              "description": "Account-bound unpredictable bookmark, persisted only after reload completes.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "changed"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Backlog exhausted at this account-bound bookmark.",
+          "type": "object",
+          "required": [
+            "bookmark",
+            "type"
+          ],
+          "properties": {
+            "bookmark": {
+              "description": "Current accepted position.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "ready"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Foreign, expired or rolled-back bookmark: reload before reopening.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "reset"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "ApiError": {
       "description": "Safe error payload for all operations; messages must not contain credentials or private diagnostics.",
       "type": "object",

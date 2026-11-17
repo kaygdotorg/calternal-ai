@@ -790,6 +790,8 @@ pub struct Contract {
     pub live_subscription: crate::LiveSubscription,
     /// SSE data payload including explicit bookmark resets.
     pub live_frame: crate::LiveFrame,
+    /// Schema representative for the private account invalidation stream.
+    pub account_frame: crate::AccountFrame,
     /// Common address resolution input.
     pub resolve_input: ResolveInput,
     /// Current visible address resolution.

@@ -70,6 +70,9 @@ impl FileBookmarks {
         }
     }
     fn path(&self, space: &str) -> Result<PathBuf, ClientError> {
+        if space == "account" {
+            return Ok(self.root.join("account.md"));
+        }
         let id = uuid::Uuid::parse_str(space)
             .map_err(|_| ClientError::Configuration("space UUID required"))?;
         Ok(self.root.join(format!("{id}.md")))

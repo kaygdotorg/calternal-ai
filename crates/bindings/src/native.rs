@@ -114,6 +114,17 @@ pub struct NativeClient {
 }
 #[cfg_attr(feature = "uniffi", uniffi::export(async_runtime = "tokio"))]
 impl NativeClient {
+    /// Follow this signed-in account's drafts, pending input and confirmation
+    /// requests. Cost: bounded memory bookmark load; next opens the socket.
+    /// A reset requires authorized reload and a new stream with no bookmark.
+    pub async fn subscribe_account(
+        &self,
+        bookmark: Option<String>,
+        cancellation: Arc<NativeCancellation>,
+    ) -> Result<Arc<crate::NativeAccountLive>, NativeError> {
+        crate::NativeAccountLive::open(&self.client, bookmark, cancellation).await
+    }
+
     /// Follow up to 16 spaces with platform-restored bookmarks (`{spaceUUID: token}`).
     /// Returns a pull-based async stream with shared cancellation. Loads bounded
     /// memory state, then next opens the socket. No platform persistence occurs.
