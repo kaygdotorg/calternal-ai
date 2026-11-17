@@ -430,7 +430,12 @@ impl Fixture {
         for i in [0, 3] {
             let s = f.op(i, "spaces.list", json!({})).await;
             s.ok();
-            assert_eq!(s.body["data"]["spaces"], json!([]));
+            let spaces = s.body["data"]["spaces"].as_array().unwrap();
+            assert_eq!(spaces.len(), 1);
+            assert_eq!(spaces[0]["personal"], true);
+            assert_eq!(spaces[0]["role"], "owner");
+            assert_eq!(spaces[0]["owner"], f.ids[i]);
+            assert_ne!(spaces[0]["id"], f.ids[i]);
         }
         f
     }

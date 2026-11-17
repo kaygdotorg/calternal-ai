@@ -111,11 +111,12 @@ fn start_full(
                     let guest =
                         std::fs::read_to_string(v["token_files"]["guest"].as_str().unwrap())
                             .unwrap();
-                    let shared = described_spaces(port, &guest).remove(0);
-                    let personal = described_spaces(port, &owner)
+                    let owner_spaces = described_spaces(port, &owner);
+                    let shared = described_spaces(port, &guest)
                         .into_iter()
-                        .find(|s| *s != shared)
+                        .find(|s| owner_spaces.contains(s))
                         .unwrap();
+                    let personal = owner_spaces.into_iter().find(|s| *s != shared).unwrap();
                     return Server {
                         child,
                         port,

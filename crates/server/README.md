@@ -57,11 +57,16 @@ grants no content access.
 bearer files; this flag is **off by default**, including after restart. Existing
 token files do not grant authority without this flag. Development `base_url`
 retains the preview's numeric loopback URL for existing bearer clients; use
-`passkey_origin` for browser passkey sign-in. The `owner` fixture owns
-two spaces named `personal` and `shared`; `guest` reads only `shared`. Each account
-and each space has an independent UUIDv7, and requests name spaces only by UUID:
-clients read them from `describe`. Token files are 0600 under a 0700 `dev-tokens`
-directory.
+`passkey_origin` for browser passkey sign-in. Each fixture account owns its
+personal space. The `owner` also owns `shared`, where `guest` is a Reader. All
+account and space UUIDv7s are independent. Clients identify the personal space
+by the caller-relative `personal` flag on a `spaces.list` row. Token files are
+0600 under a 0700 `dev-tokens` directory.
+
+First-owner enrollment and privileged account creation insert the account,
+personal space and Owner membership in one protected authority transaction.
+Passkey recovery attaches a credential to the existing account and space.
+The preview has no invite-redemption route.
 
 ## HTTP
 

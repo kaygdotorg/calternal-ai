@@ -73,11 +73,10 @@ async function startServer(dataDir) {
   const spaces = async (token) => {
     const response = await fetch(`${startup.base_url}/api/v1/describe`, { headers: { authorization: `Bearer ${token}` } });
     assert.equal(response.status, 200);
-    return (await response.json()).principal.spaces.map((grant) => grant.id);
+    return (await response.json()).principal.spaces;
   };
-  // Fixture spaces come from describe: the guest sees only the shared one.
-  const [shared] = await spaces(guestToken);
-  const personal = (await spaces(ownerToken)).find((id) => id !== shared);
+  const shared = (await spaces(guestToken)).find((grant) => grant.role === "reader").id;
+  const personal = (await spaces(ownerToken)).find((grant) => grant.id !== shared).id;
   return {
     child,
     startup,

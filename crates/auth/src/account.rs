@@ -72,8 +72,9 @@ impl Auth {
         crate::setup::first_owner_token(&self.inner).await
     }
 
-    /// Creates identity records and a first-passkey enrollment token atomically.
-    /// Requires privileged host authorization. Creates no content or directory.
+    /// Creates identity records, an owned personal space, and a first-passkey
+    /// enrollment token in one protected commit. Requires privileged host
+    /// authorization. No content store opens during enrollment.
     pub async fn create(&self, name: &str) -> Result<crate::Created> {
         let name = name.to_owned();
         let ttl = self.inner.config.setup_ttl.as_millis() as i64;

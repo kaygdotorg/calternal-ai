@@ -70,12 +70,7 @@ impl Fixture {
                 .unwrap()
                 .id
                 .to_string();
-            let personal = spaces
-                .iter()
-                .find(|s| s.name == "personal")
-                .unwrap()
-                .id
-                .to_string();
+            let personal = spaces.iter().find(|s| s.personal).unwrap().id.to_string();
             let c = rusqlite::Connection::open(root.join("system/auth.db")).unwrap();
             match role.as_deref() {
                 None => {

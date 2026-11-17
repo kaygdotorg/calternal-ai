@@ -110,7 +110,9 @@ async fn session_authenticates_an_account_and_never_implies_space_authority() {
     let (cookie, _) = first_owner(&app, "Owner").await;
     let discovery = get(&app, "/api/v1/describe", Some(&cookie)).await;
     assert_eq!(discovery.status, 200);
-    assert_eq!(discovery.body["principal"]["spaces"], json!([]));
+    let grants = discovery.body["principal"]["spaces"].as_array().unwrap();
+    assert_eq!(grants.len(), 1);
+    assert_eq!(grants[0]["role"], "owner");
     let me = get(&app, "/api/v1/auth/me", Some(&cookie)).await;
     assert_eq!(me.body["user"]["role"], "admin");
     let request = json!({"request_id":"denied","operation":"notes.list","input":{"space_id":calternal_types::SpaceId::new()}});

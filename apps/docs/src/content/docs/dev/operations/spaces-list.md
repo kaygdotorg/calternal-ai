@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "read",
   "id": "spaces.list",
   "description": "List current account memberships",
   "mutates": false
@@ -93,6 +94,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "description": "Account UUID of the sole owner.",
           "type": "string"
         },
+        "personal": {
+          "description": "Whether this is the personal space provisioned for the caller.",
+          "type": "boolean"
+        },
         "role": {
           "allOf": [
             {
@@ -107,6 +112,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "id",
         "name",
         "owner",
+        "personal",
         "role"
       ],
       "type": "object"
