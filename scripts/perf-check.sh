@@ -18,7 +18,11 @@ ssh "$dev" 'cd ~/Developer/lanes/perf-budgets && nix develop -c bash -s' <<'REMO
 set -euo pipefail
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build:plugins
-cargo build --release -j6 -p calternal-server -p calternal-perf
+cargo build --release -j6 -p calternal-server
+cargo build --release -j6 -p calternal-perf
+cp target/release/calternal target/release/calternal-production
+cargo build --release -j6 -p calternal-server --features test-plugins
+cp target/release/calternal target/release/calternal-test
 REMOTE
 ssh "$perf" "mkdir -p ~/calternal-ai-perf/$run/bin"
 # A Nix-built executable needs its runtime closure, not a build on the perf VM.
@@ -26,15 +30,16 @@ ssh "$perf" "mkdir -p ~/calternal-ai-perf/$run/bin"
 ssh "$dev" 'bash -s' <<'REMOTE'
 set -euo pipefail
 cd ~/Developer/lanes/perf-budgets
-ldd target/release/calternal target/release/calternal-perf | sed -nE 's@.*(/nix/store/[^/ ]+).*@\1@p' | sort -u > runtime-paths.txt
+ldd target/release/calternal-production target/release/calternal-test target/release/calternal-perf | sed -nE 's@.*(/nix/store/[^/ ]+).*@\1@p' | sort -u > runtime-paths.txt
 nix-store -qR $(cat runtime-paths.txt) > runtime-closure.txt
 REMOTE
 ssh "$dev" 'cd ~/Developer/lanes/perf-budgets && nix-store --export $(cat runtime-closure.txt)' | ssh "$perf" 'nix-store --import >/dev/null'
-scp -3 -q "$dev:Developer/lanes/perf-budgets/target/release/calternal" "$perf:calternal-ai-perf/$run/bin/calternal"
+scp -3 -q "$dev:Developer/lanes/perf-budgets/target/release/calternal-production" "$perf:calternal-ai-perf/$run/bin/calternal"
 scp -3 -q "$dev:Developer/lanes/perf-budgets/target/release/calternal-perf" "$perf:calternal-ai-perf/$run/bin/calternal-perf"
+scp -3 -q "$dev:Developer/lanes/perf-budgets/target/release/calternal-test" "$perf:calternal-ai-perf/$run/bin/calternal-test"
 # Only source manifests and built workers are transferred, not node_modules.
-ssh "$dev" 'cd ~/Developer/lanes/perf-budgets && tar --exclude=node_modules -cf - plugins' | ssh "$perf" "cd ~/calternal-ai-perf/$run && tar xf -"
-scp -q perf/budgets.json "$perf:calternal-ai-perf/$run/budgets.json"
+ssh "$dev" 'cd ~/Developer/lanes/perf-budgets && tar --exclude=node_modules -cf - plugins tests/plugins' | ssh "$perf" "cd ~/calternal-ai-perf/$run && tar xf -"
+scp -q perf/budgets.json perf/repeat-plan.py "$perf:calternal-ai-perf/$run/"
 set +e
 ssh "$perf" /usr/local/bin/perf-lock.sh bash -s -- "$run" "$head_commit" "$PERF_BASELINE_BIN" "$PERF_BASELINE_COMMIT" > "/tmp/perf-budgets-$run.log" <<'REMOTE'
 set -uo pipefail
@@ -44,9 +49,28 @@ cd "$root"
 ./bin/calternal-perf --bin "$root/bin/calternal" --baseline "$baseline"   --work "$root/work" --plugins "$root/plugins" --budgets budgets.json   --commit "$commit" --baseline-commit "$baseline_commit" --json > full-output.json
 full_status=$?
 [[ -f "$root/work/summary.json" ]] || exit 2
+python3 repeat-plan.py "$root/work/summary.json" > repeat-plan.txt || exit 2
+while read -r spaces notes cold; do
+  [[ -n "$spaces" ]] || continue
+  sizes=''
+  if [[ "$spaces" == 1 ]]; then sizes=$notes; fi
+  cold_pairs=0
+  if [[ "$cold" == 1 ]]; then cold_pairs=3; fi
+  ./bin/calternal-perf --bin "$root/bin/calternal" --baseline "$baseline" \
+    --work "$root/repeat-${spaces}x${notes}" --plugins "$root/plugins" --budgets budgets.json \
+    --commit "$commit" --baseline-commit "$baseline_commit" --sizes "$sizes" --spaces "$spaces" \
+    --pairs 3 --cold-pairs "$cold_pairs" --json > "repeat-${spaces}x${notes}-output.json"
+  [[ -f "$root/repeat-${spaces}x${notes}/summary.json" ]] || exit 2
+done < repeat-plan.txt
 ./bin/calternal-perf --bin "$root/bin/calternal" --baseline "$baseline"   --work "$root/idle" --plugins "$root/plugins" --budgets budgets.json   --commit "$commit" --baseline-commit "$baseline_commit" --idle-only --json > idle-output.json
 idle_status=$?
-printf 'Full suite: %s\nIdle suite: %s\n' "$full_status" "$idle_status"
+for repeat in 0 1 2; do
+  ./bin/calternal-perf --bin "$root/bin/calternal-test" --baseline "$root/bin/calternal-test" \
+    --work "$root/jobs-$repeat" --plugins "$root/plugins" --test-plugin-root "$root/tests/plugins" \
+    --budgets budgets.json --commit "$commit" --baseline-commit "$commit" --jobs-only --json > "jobs-$repeat-output.json"
+  [[ -f "$root/jobs-$repeat/jobs-summary.json" ]] || exit 2
+done
+printf 'Full suite: %s\nIdle suite: %s\n'  "$full_status" "$idle_status"
 if [[ "$full_status" == 1 || "$idle_status" == 1 ]]; then exit 1; fi
 exit 2 # Mandatory instrumentation gaps remain explicit, never silently green.
 REMOTE

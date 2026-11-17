@@ -540,12 +540,15 @@ dependencies = [
 name = "calternal-perf"
 version = "0.1.0"
 dependencies = [
+ "calternal-cli",
  "clap",
  "reqwest",
  "serde",
  "serde_json",
  "tempfile",
+ "time",
  "url",
+ "uuid",
  "webauthn-authenticator-rs",
  "webauthn-rs",
 ]

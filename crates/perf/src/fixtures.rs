@@ -8,7 +8,13 @@ pub(crate) struct Fixture {
     pub(crate) first: Value,
 }
 pub(crate) fn build(a: &Args, root: &Path, notes: usize, spaces: usize) -> Result<Fixture> {
-    let (_server, mut h, _) = Server::start(&a.bin, root, &a.plugins)?;
+    let (_server, mut h, _) = Server::start(
+        &a.bin,
+        root,
+        &a.plugins,
+        a.test_plugin_root.as_deref(),
+        a.startup_timeout_seconds,
+    )?;
     h.enroll(&std::fs::read_to_string(root.join("appdata/setup.token"))?)?;
     let mut ids = Vec::new();
     let mut first = Value::Null;
@@ -63,4 +69,29 @@ pub(crate) fn remove_roots(root: &Path) -> Result<()> {
         std::fs::remove_dir_all(root.join(d))?;
     }
     Ok(())
+}
+
+// Build disposable roots for startup-only profiling; no cookie or passkey is exported.
+pub(crate) fn prepare(a: &Args) -> Result<i32> {
+    let notes: usize = a.sizes.parse()?;
+    let spaces: usize = a.spaces.parse()?;
+    if notes == 0
+        || notes > 100_000
+        || spaces == 0
+        || spaces > 1000
+        || notes.checked_mul(spaces).is_none_or(|n| n > 100_000)
+    {
+        return Err("prepare at most 100000 notes across at most 1000 spaces".into());
+    }
+    if a.work.exists() {
+        return Err("prepared roots already exist".into());
+    }
+    let staging = tempfile::Builder::new()
+        .prefix("calternal-perf-prepare-")
+        .tempdir_in("/dev/shm")?;
+    build(a, staging.path(), notes, spaces)?;
+    copy(staging.path(), &a.work)?;
+    let report = serde_json::json!({"prepared":a.work,"spaces":spaces,"notes_per_space":notes,"timed":false});
+    crate::report::print(a, &report, &a.work);
+    Ok(0)
 }

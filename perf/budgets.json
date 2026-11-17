@@ -9,7 +9,8 @@
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
       "measurement": "authenticated HTTP notes.get through full response body",
-      "reference": "open.api_get p95 50"
+      "reference": "open.api_get p95 50",
+      "p50_budget": null
     },
     {
       "metric": "notes.update",
@@ -18,7 +19,8 @@
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
       "measurement": "HTTP notes.update through durable acknowledgement",
-      "reference": "sync.save_ack p95 40; different API, inherited ceiling"
+      "reference": "sync.save_ack p95 40; different API, inherited ceiling",
+      "p50_budget": null
     },
     {
       "metric": "notes.list.first100",
@@ -27,34 +29,8 @@
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
       "measurement": "HTTP notes.list; current API returns up to 100 rows with no cursor; reference returns 50",
-      "reference": "home.page p95 50; reference page is bounded to 50"
-    },
-    {
-      "metric": "notes.get",
-      "percentile": "p50",
-      "budget": null,
-      "unit": "ms",
-      "fixture": "1k,10k,100k notes",
-      "measurement": "p50 observation; proposed budget awaits first complete run",
-      "reference": null
-    },
-    {
-      "metric": "notes.update",
-      "percentile": "p50",
-      "budget": null,
-      "unit": "ms",
-      "fixture": "1k,10k,100k notes",
-      "measurement": "p50 observation; proposed budget awaits first complete run",
-      "reference": null
-    },
-    {
-      "metric": "notes.list.first100",
-      "percentile": "p50",
-      "budget": null,
-      "unit": "ms",
-      "fixture": "1k,10k,100k notes",
-      "measurement": "p50 observation; proposed budget awaits first complete run",
-      "reference": null
+      "reference": "home.page p95 50; reference page is bounded to 50",
+      "p50_budget": null
     },
     {
       "metric": "space.process_cold_open",
@@ -62,7 +38,7 @@
       "budget": 300,
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
-      "measurement": "first notes.list after restarting populated roots; OS page cache remains warm",
+      "measurement": "first notes.list after restart; cold pairs drop caches, warm pairs do not; eager startup may already open the space",
       "reference": "home.first_page p95 300"
     },
     {
@@ -106,8 +82,8 @@
       "percentile": "p95",
       "budget": null,
       "unit": "ms",
-      "fixture": "1k,10k,100k notes",
-      "measurement": "start job until first SSE stream chunk; provider lane pending",
+      "fixture": "one space with 100 notes; existing jobs-demo worker",
+      "measurement": "start job to buffered or live first SSE chunk, zero artificial delay; first-cold separated from subsequent warm jobs; not provider startup",
       "reference": null
     },
     {

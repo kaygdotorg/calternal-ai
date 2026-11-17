@@ -12,6 +12,9 @@ pub(crate) struct Http {
     pub(crate) base: String,
     pub(crate) cookie: String,
     counter: u64,
+    // A fresh namespace prevents copied fixture receipts from colliding with
+    // subsequent client mutations whose local counter starts at zero.
+    nonce: uuid::Uuid,
 }
 impl Http {
     pub(crate) fn new(port: u16) -> Result<Self> {
@@ -23,6 +26,7 @@ impl Http {
             base: format!("http://127.0.0.1:{port}"),
             cookie: String::new(),
             counter: 0,
+            nonce: uuid::Uuid::new_v4(),
         })
     }
     pub(crate) fn request(&self, path: &str, body: Option<Value>) -> Result<(Value, String, f64)> {
@@ -70,7 +74,7 @@ impl Http {
         self.op_id(
             name,
             input,
-            &format!("perf-{}-{}", std::process::id(), self.counter),
+            &format!("perf-{}-{}", self.nonce, self.counter),
         )
     }
     // Port of the conformance software passkey fixture: signed registration and login,

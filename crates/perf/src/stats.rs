@@ -1,9 +1,19 @@
 //! Nearest-rank quantiles and a repeated-breach rule, adapted from the reference harness.
 use serde::{Deserialize, Serialize};
+/// Accepted quantiles; malformed catalog values fail parsing instead of falling back.
+#[derive(Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Percentile {
+    P50,
+    P95,
+    P99,
+    Max,
+}
 #[derive(Deserialize)]
 pub(crate) struct Budget {
     pub(crate) metric: String,
-    pub(crate) percentile: String,
+    pub(crate) percentile: Percentile,
+    pub(crate) p50_budget: Option<f64>,
     pub(crate) budget: Option<f64>,
 }
 #[derive(Deserialize)]
@@ -29,7 +39,22 @@ pub(crate) fn summarize(metric: &str, mut samples: Vec<f64>, budgets: &Budgets) 
     let p95 = quantile(&samples, 0.95);
     let p99 = quantile(&samples, 0.99);
     let max = *samples.last().unwrap();
-    let breached=budgets.entries.iter().filter(|b|b.metric==metric).any(|b|b.budget.is_some_and(|limit|match b.percentile.as_str(){"p50"=>p50,"max"=>max,_=>p95}>limit));
+    let breached = budgets
+        .entries
+        .iter()
+        .filter(|b| b.metric == metric)
+        .any(|b| {
+            b.p50_budget.is_some_and(|limit| p50 > limit)
+                || b.budget.is_some_and(|limit| {
+                    let value = match b.percentile {
+                        Percentile::P50 => p50,
+                        Percentile::P95 => p95,
+                        Percentile::P99 => p99,
+                        Percentile::Max => max,
+                    };
+                    value > limit
+                })
+        });
     Summary {
         metric: metric.into(),
         p50,

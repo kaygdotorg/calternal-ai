@@ -58,9 +58,11 @@ and results will be recorded with the first matrix summary.
 - Three host calls: a digest-pinned benchmark worker/operation in the trusted test
   registry that calls the existing broker exactly three times. The shipped Notes
   worker performs one call, so repeating it three times is not an equivalent test.
-- Job start to first chunk: a trusted, deterministic worker emitting a first chunk
-  through the actual job stream; provider startup needs separate provider-lane
-  qualification. The fixture must not contact a paid provider.
+- Job/provider distinction: `--jobs-only` uses the existing digest-pinned
+  conformance worker with zero delay and one chunk through the real stream. It
+  records first-cold and subsequent warm observations, in three independent runs.
+  Provider startup still needs the provider lane; this fixture contacts no paid
+  provider. There is no need for a new product hook for the fixture job path.
 - Idle-released memory: `--idle-only` observes three replicas each at 1, 100 and
   1,000 spaces, after 632 seconds. It checks that all per-space store writer
   threads exited. A read-only open-space count would make the cache-map release

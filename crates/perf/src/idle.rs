@@ -6,7 +6,15 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
     std::fs::create_dir_all(&a.work)?;
     let budgets: crate::stats::Budgets = serde_json::from_slice(&std::fs::read(&a.budgets)?)?;
     let mut servers = Vec::new();
-    for spaces in [1, 100, 1000] {
+    let cases: Vec<usize> = a
+        .spaces
+        .split(',')
+        .map(str::parse)
+        .collect::<std::result::Result<_, _>>()?;
+    if cases.is_empty() || cases.len() > 3 || cases.iter().any(|n| ![1, 100, 1000].contains(n)) {
+        return Err("idle spaces must select from 1,100,1000".into());
+    }
+    for spaces in cases.iter().copied() {
         let staging = tempfile::Builder::new()
             .prefix("calternal-perf-idle-")
             .tempdir_in("/dev/shm")?;
@@ -17,7 +25,13 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
                 return Err("idle roots already exist; choose fresh --work".into());
             }
             fixtures::copy(staging.path(), &root)?;
-            let (server, mut h, _) = Server::start(&a.bin, &root, &a.plugins)?;
+            let (server, mut h, _) = Server::start(
+                &a.bin,
+                &root,
+                &a.plugins,
+                a.test_plugin_root.as_deref(),
+                a.startup_timeout_seconds,
+            )?;
             h.cookie = fixture.cookie.clone();
             for space in &fixture.spaces {
                 h.op("notes.list", json!({"space_id":space}))?;
@@ -29,7 +43,8 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         drop(staging);
     }
     // All subscriptions and HTTP clients were dropped. No latency comparisons run
-    // here: nine independent servers share one idle observation interval.
+    // here: independent servers share one idle observation interval.
+    let server_count = servers.len();
     let idle = Instant::now();
     std::thread::sleep(Duration::from_secs(632));
     let mut rows = Vec::new();
@@ -52,18 +67,11 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         fixtures::remove_roots(&root)?;
     }
     let breach = breaches.values().any(|n| *n >= 2);
-    let report = json!({"commit":a.commit,"servers":9,"simultaneous_idle_only":true,"reproduced":breach,"observations":rows,"breach":breach,"limitation":"three independent servers per size idle concurrently; no latency samples are taken here"});
+    let report = json!({"commit":a.commit,"servers":server_count,"space_cases":cases,"simultaneous_idle_only":true,"reproduced":breach,"observations":rows,"breach":breach,"limitation":"three independent servers per size idle concurrently; no latency samples are taken here"});
     std::fs::write(
         a.work.join("idle-summary.json"),
         serde_json::to_vec_pretty(&report)?,
     )?;
-    if a.json {
-        println!("{report}");
-    } else {
-        println!(
-            "Idle memory report: {}\nNext: repeat any breach under the perf lock.",
-            a.work.join("idle-summary.json").display()
-        );
-    }
+    crate::report::print(a, &report, &a.work.join("idle-summary.json"));
     Ok(if breach { 1 } else { 2 })
 }

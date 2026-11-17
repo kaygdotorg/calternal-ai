@@ -14,3 +14,9 @@ webauthn-authenticator-rs.workspace = true
 webauthn-rs.workspace = true
 url.workspace = true
 tempfile.workspace = true
+uuid.workspace = true
+calternal-cli.workspace = true
+
+[dev-dependencies]
+calternal-cli = { workspace = true, features = ["testing"] }
+time.workspace = true

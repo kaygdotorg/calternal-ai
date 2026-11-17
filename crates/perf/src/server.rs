@@ -15,15 +15,26 @@ impl Drop for Server {
     }
 }
 impl Server {
-    pub(crate) fn start(bin: &Path, work: &Path, plugins: &Path) -> Result<(Self, Http, f64)> {
+    pub(crate) fn start(
+        bin: &Path,
+        work: &Path,
+        plugins: &Path,
+        test_plugins: Option<&Path>,
+        startup_timeout_seconds: u64,
+    ) -> Result<(Self, Http, f64)> {
         std::fs::create_dir_all(work)?;
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
         drop(listener);
+        let _ = std::fs::remove_file(work.join("appdata/startup.json"));
         let log = std::fs::File::create(work.join("server.log"))?;
         let t = Instant::now();
-        let child = Command::new(bin)
-            .arg("serve")
+        let mut command = Command::new(bin);
+        command.arg("serve");
+        if let Some(root) = test_plugins {
+            command.arg("--test-plugin-root").arg(root);
+        }
+        let child = command
             .args([
                 "--port",
                 &port.to_string(),
@@ -52,7 +63,10 @@ impl Server {
             if http.request("/api/v1/auth/status", None).is_ok() {
                 return Ok((server, http, t.elapsed().as_secs_f64() * 1000.));
             }
-            if server.child.try_wait()?.is_some() || t.elapsed() > Duration::from_secs(30) {
+            // Observe slow startup without relaxing the independent 300 ms budget.
+            if server.child.try_wait()?.is_some()
+                || t.elapsed() > Duration::from_secs(startup_timeout_seconds)
+            {
                 return Err(
                     format!("startup failed; see {}", work.join("server.log").display()).into(),
                 );

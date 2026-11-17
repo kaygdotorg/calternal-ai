@@ -7,10 +7,11 @@ fi
 suite=${1:?Usage: profile.sh /absolute/suite-directory commit}
 commit=${2:?Supply measured product commit}
 [[ "$suite" =~ ^/[a-zA-Z0-9_./-]+$ && "$commit" =~ ^[a-f0-9]{7,40}$ ]]
+driver_bin=${3:-$suite/bin/calternal-perf}
 tools="$HOME/calternal-ai-perf/tools/extracted"
 work="$suite/profile-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$work"
-"$suite/bin/calternal-perf" --bin "$suite/bin/calternal" \
+"$driver_bin" --bin "$suite/bin/calternal" \
   --baseline "$suite/bin/calternal" --work "$work/run" \
   --plugins "$suite/plugins" --budgets "$suite/budgets.json" \
   --commit "$commit" --baseline-commit "$commit" \
@@ -21,14 +22,18 @@ driver=$!
 startup=''
 for ((i=0;i<600;i++)); do
   startup=$(find "$work/run" -path '*-0-baseline/appdata/startup.json' -print -quit 2>/dev/null || true)
-  [[ -z "$startup" ]] || break
+  if [[ -n "$startup" ]]; then
+    candidate=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$startup")
+    if [[ -r "/proc/$candidate/cmdline" ]] && tr '\0' ' ' < "/proc/$candidate/cmdline" | grep -Fq "$work/run/1x1000-0-baseline/appdata"; then break; fi
+    startup=''
+  fi
   if ! kill -0 "$driver" 2>/dev/null; then wait "$driver"; exit 2; fi
   sleep 0.1
 done
 [[ -n "$startup" ]] || { echo 'No server to profile; inspect driver.log' >&2; exit 2; }
 server=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pid"])' "$startup")
 set +e
-sudo -n timeout -s INT 12 "$tools/usr/bin/strace" -f -c -w \
+sudo -n env LD_LIBRARY_PATH="$tools/usr/lib/x86_64-linux-gnu" timeout -s INT 12 "$tools/usr/bin/strace" -f -c -w \
   -e fsync,fdatasync,pread64,pwrite64,openat -p "$server" -o "$work/syscalls.txt" \
   > "$work/strace.stdout" 2> "$work/strace.stderr" &
 trace=$!
