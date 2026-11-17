@@ -12,15 +12,16 @@ Paths are plain (no `#/`), rooted at `/`.
 
 | Thing | Address |
 | --- | --- |
-| An item | `/<kind>/<item-id>` such as `/notes/<id>`, `/tasks/<id>`, `/files/<id>`, `/mail/<id>`, `/chats/<id>` |
+| An item | `/<kind>/<item-id>` such as `/notes/<id>`, `/tasks/<id>`, `/mail/<id>`, `/chats/<id>` |
+| A file or a folder | `/files/<id>`; a folder is an item of kind `files` and is never addressed by path |
 | A block in an item | `/<kind>/<item-id>/<block-id>` |
+| A collection (a list of things) | `/collections/<collection-id>` |
 | A space | `/spaces/<space-id>` |
-| A list or view inside a space | `/spaces/<space-id>/<kind>[/<view>...]` such as `/spaces/<id>/notes`, `/spaces/<id>/notes/tags/travel` |
-| Space administration | `/spaces/<space-id>/members`, `/spaces/<space-id>/plugins/<plugin-id>` |
+| Space administration | `/spaces/<space-id>/members`, `/spaces/<space-id>/plugins/<plugin-id>`, `/spaces/<space-id>/settings` |
 | A person | `/people/<account-id>` |
 | A setting | `/settings/<setting-id>` |
 | An invite | `/invites/<secret>` |
-| Cross-space views | `/activity` |
+| Your activity | `/activity` |
 
 ## Rules that follow
 
@@ -29,8 +30,17 @@ Paths are plain (no `#/`), rooted at `/`.
 - An item's address never contains its space. The item ID is globally unique; the server
   finds the owning space from it and checks the caller's current access. A wrong kind for
   an existing ID is not found.
-- `/spaces/<space-id>/<kind>` is only for a collection inside one space. There is no
-  `/spaces/<space-id>/<kind>/<item-id>` form; one thing has exactly one address.
+- A collection is a stored thing with its own ID, a kind and an owner. It is owned by a
+  space (that space's notes, its Trash, its Sent mailbox, a tag's list, a saved view) or by
+  an account (a list across all of that person's spaces). A plugin's standard collections
+  are created with their IDs when the plugin is enabled in a space, so every list has an
+  address from the start. There is no `/spaces/<space-id>/<kind>` form.
+- Opening a collection opens the app that shows it. Opening one of its rows goes to that
+  item's own address.
+- Transient parameters that are not things (a calendar date, a search query, a sort order)
+  go in the query string of the collection's address and never identify anything.
+- A tag is named in files by its text; its list is a collection, so the list's address
+  survives a rename.
 - IDs are UUIDs written in full, the same in files, API and URLs. They are never derived
   from a title or path. Accounts, spaces and items each have their own; none is shared.
 - There is no readable-name suffix. Clients show a title by looking the ID up.
