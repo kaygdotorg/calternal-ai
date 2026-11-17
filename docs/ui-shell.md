@@ -123,4 +123,7 @@ first app built, so that development can move onto it.
 - Narrow screens, to be drawn out: the sidebar and right card slide over; the current view
   slides into them; the mockup's bottom tab morph is kept. The middle card must visibly
   float above the sidebar, which it does.
-- The backdrop-sampling technique for adaptive blur and its frame cost.
+- Real-device measurement of the frame cost of backdrop blur. The adaptive technique is decided and built:
+  `docs/ui-design-system.md` (no pixel is read; brightness comes from the background's own colour mesh).
+
+Implementation and status: `docs/ui-shell-status.md`.

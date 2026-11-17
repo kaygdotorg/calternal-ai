@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f7f7" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1f1f1f" />
+    <title>Calternal</title>
+    <!-- Find the scheme before first paint and preload only its font family (no flash, no fallback face). The app paints after the same family loads. -->
+    <script>
+      (function () {
+        var d = document.documentElement, s = "light";
+        try { var v = localStorage.getItem("cal.scheme"); s = v === "dark" || v === "light" ? v : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (e) {}
+        d.dataset.scheme = s;
+        function pre(f) { var l = document.createElement("link"); l.rel = "preload"; l.as = "font"; l.type = "font/woff2"; l.crossOrigin = "anonymous"; l.href = "%BASE_URL%fonts/" + f; document.head.appendChild(l); }
+        pre("google-sans-flex-latin-" + (s === "dark" ? "opsz-grad" : "opsz") + "-normal.woff2");
+        pre("google-sans-flex-latin-rond-normal.woff2");
+        pre("maple-mono-latin-400-normal.woff2");
+      })();
+    </script>
+    <style>html:not([data-ready]) body { visibility: hidden; } html { background: #efe6dc; } html[data-scheme="dark"] { background: #25222a; }</style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

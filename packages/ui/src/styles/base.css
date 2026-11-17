@@ -1,0 +1,48 @@
+/* Reset, the page's type and the one focus ring. Import after tokens.generated.css and fonts.css. */
+*, *::before, *::after { box-sizing: border-box; }
+html { font-size: 100%; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; overscroll-behavior: none; height: 100%; }
+body {
+  margin: 0; height: 100%; overflow: hidden;
+  font-family: var(--font-ui); font-size: var(--text-ui); font-weight: var(--ui-weight);
+  /* opsz is pinned: left to the browser it follows the font size (13 px text gets opsz 13, about 5 % wider and looser than the reference look at 18 and up). */
+  font-variation-settings: "GRAD" var(--text-grad), "opsz" var(--text-opsz);
+  line-height: 1.45; color: var(--ink); background: var(--paper);
+  -webkit-font-smoothing: auto; text-rendering: optimizeLegibility;
+}
+button, input, textarea, select { font: inherit; color: inherit; letter-spacing: inherit; }
+button { appearance: none; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; -webkit-touch-callout: none; touch-action: manipulation; }
+button:disabled { cursor: default; }
+a { color: inherit; text-decoration: none; }
+h1, h2, h3, h4, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+code, kbd, pre { font-family: var(--font-mono); }
+::selection { background: color-mix(in oklab, var(--accent-base) 26%, transparent); }
+
+/* One focus ring for every interactive thing, drawn only for keyboard focus. `:focus-visible` alone is not enough: it always matches in a text field,
+   so a mouse click in the composer would draw the ring. lib/input.ts keeps `data-input` on <html>; with a pointer in use no ring is ever drawn.
+   The ring is drawn inside the element (`outline-offset: -2px`), so it can never be clipped by a scroll container or the window edge. */
+:focus { outline: none; }
+:root[data-input="key"] :focus-visible:not([role="dialog"]) { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
+
+/* Controls animate when used by pointer or touch, never from the keyboard: with the keyboard in use every transition and animation ends at once, so
+   Tab, Enter and typing apply the end state without the press or hover motion. */
+:root[data-input="key"] *, :root[data-input="key"] *::before, :root[data-input="key"] *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation-duration: 0s !important; animation-delay: 0s !important; }
+
+/* Chrome is not text: only message text, code and fields can be selected, so no stray handle or highlight appears on a title, a row or a button. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-select: text; user-select: text; }
+
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Thin scrollbars that stay out of the way. */
+* { scrollbar-width: thin; scrollbar-color: rgb(var(--ink-rgb) / 0.22) transparent; }
+
+/* Content fades out under a floating bar, progressively along an eased curve (extra stops, no visible edge, no opaque strip): set --fade-t and --fade-b
+   (the heights of the bars over the top and bottom edges) on a scroller and give it this class. Used by the message list and both sidebars. */
+.edge-fade { mask-image: linear-gradient(to bottom, transparent 0, rgb(0 0 0 / 0.06) calc(var(--fade-t, 0px) * 0.45), rgb(0 0 0 / 0.28) calc(var(--fade-t, 0px) * 0.68), rgb(0 0 0 / 0.68) calc(var(--fade-t, 0px) * 0.86), #000 var(--fade-t, 0px), #000 calc(100% - var(--fade-b, 0px)), rgb(0 0 0 / 0.68) calc(100% - var(--fade-b, 0px) * 0.86), rgb(0 0 0 / 0.28) calc(100% - var(--fade-b, 0px) * 0.68), rgb(0 0 0 / 0.06) calc(100% - var(--fade-b, 0px) * 0.45), transparent 100%); }
+
+/* The one calm pulse for things that are running: opacity eases between full and a little under half, over --dur-pulse. Paused under reduced motion (the
+   duration token becomes 1 ms there) and still in keyboard mode. */
+@keyframes pulse { 50% { opacity: 0.5; } }
+.pulse { animation: pulse var(--dur-pulse) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
