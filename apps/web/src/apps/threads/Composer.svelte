@@ -69,7 +69,7 @@
 
 <style>
   .composer { position: relative; isolation: isolate; border-radius: var(--r-panel); padding: var(--s-4) var(--s-4) var(--s-4) var(--s-6); display: grid; gap: var(--s-2); }
-  textarea { width: 100%; min-height: var(--s-9); max-height: 9.5rem; padding: var(--s-3) 0; border: 0; background: none; resize: none; font-size: var(--text-body); line-height: 1.5; color: var(--ink); overflow-y: auto; scrollbar-width: none; }
+  textarea { width: 100%; min-height: max(var(--s-9), var(--hit-min)); max-height: 9.5rem; padding: var(--s-3) 0; border: 0; background: none; resize: none; font-size: var(--text-body); line-height: 1.5; color: var(--ink); overflow-y: auto; scrollbar-width: none; }
   textarea::placeholder { color: var(--ink-3); }
   textarea:focus-visible { outline: none; }
   .composer:has(textarea:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }

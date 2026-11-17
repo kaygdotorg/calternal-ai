@@ -53,7 +53,7 @@
   p { font-size: var(--text-body); line-height: 1.65; font-weight: var(--body-weight); }
   .lede { color: var(--ink-3); }
   .rail { position: absolute; z-index: 3; top: 50%; translate: 0 -50%; left: 0; }
-  .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-4); justify-items: start; }
+  .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-5); min-width: var(--hit-min); justify-items: start; }
   .ticks i { display: block; width: var(--s-6); height: 2px; border-radius: var(--r-pill); background: var(--ink-4); }
   .ticks i:first-child { width: var(--s-8); background: var(--ink-2); }
   .tocard { position: absolute; left: var(--s-5); top: 50%; translate: 0 -50%; isolation: isolate; display: grid; min-width: 15rem; padding: var(--s-3); border-radius: var(--r-card); animation: pop var(--dur-base) var(--ease-out); transform-origin: left center; }

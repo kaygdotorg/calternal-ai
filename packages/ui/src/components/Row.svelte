@@ -32,8 +32,8 @@
 
 <style>
   .row {
-    position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: var(--row-h); text-align: start;
-    padding: 0 10px 0 calc(10px + var(--depth, 0) * 18px); border-radius: var(--r-select); color: var(--ink); font-size: var(--text-ui);
+    position: relative; display: flex; align-items: center; gap: var(--s-4); width: 100%; min-height: var(--row-h); text-align: start;
+    padding: 0 var(--s-5) 0 calc(var(--s-5) + var(--depth, 0) * var(--s-7)); border-radius: var(--r-select); color: var(--ink); font-size: var(--text-ui);
     transition: scale var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
   }
   .row:active { scale: var(--press-scale); }

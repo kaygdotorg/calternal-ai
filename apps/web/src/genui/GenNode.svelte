@@ -74,7 +74,7 @@
     <div class="radios">{#each p.options as o}{@const x = opt(o)}<button type="button" role="radio" aria-checked={String(bind?.value) === x.value} onclick={() => host.set(bind!.name, x.value)}><b>{x.label}</b>{#if x.detail}<small>{x.detail}</small>{/if}</button>{/each}</div>
   </div>
 {:else if type === "Toggle"}
-  <div class="toggle"><span id="{id}-t">{p.label}</span><button type="button" role="switch" aria-checked={!!bind?.value} aria-labelledby="{id}-t" onclick={() => host.set(bind!.name, !bind!.value)}><i></i></button></div>
+  <button type="button" class="toggle" role="switch" aria-checked={!!bind?.value} onclick={() => host.set(bind!.name, !bind!.value)}><span>{p.label}</span><i class="track"><b></b></i></button>
 {:else if type === "Checklist"}
   <fieldset class="field"><legend>{p.label}</legend>
     {#each p.options as o}{@const x = opt(o)}{@const on = ((bind?.value as string[]) ?? []).includes(x.value)}
@@ -116,11 +116,11 @@
   .choice button, .radios button { min-height: max(var(--pill-h), var(--hit-min)); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
   .choice button[aria-checked="true"], .radios button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--strong-weight); }
   .radios { display: grid; gap: var(--s-2); } .radios button { display: grid; text-align: start; border-radius: var(--r-control); padding: var(--s-3) var(--s-5); } small { font-weight: var(--ui-weight); color: var(--ink-3); }
-  .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); min-height: max(var(--pill-h), var(--hit-min)); font-size: var(--text-ui); }
-  .toggle button { position: relative; flex: none; width: calc(var(--s-9) + var(--s-4)); height: calc(var(--s-8) + var(--s-1) * 2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-fast) var(--ease-out); }
-  .toggle button i { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--spring-snap-ms) var(--spring-snap); }
-  .toggle button[aria-checked="true"] { background: var(--accent-base); }
-  .toggle button[aria-checked="true"] i { translate: calc(var(--s-9) + var(--s-4) - var(--s-8) - var(--s-1) * 2) 0; }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: max(var(--pill-h), var(--hit-min)); font-size: var(--text-ui); text-align: start; }
+  .track { position: relative; flex: none; width: calc(var(--s-9) + var(--s-4)); height: calc(var(--s-8) + var(--s-1) * 2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-fast) var(--ease-out); }
+  .track b { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--spring-snap-ms) var(--spring-snap); }
+  .toggle[aria-checked="true"] .track { background: var(--accent-base); }
+  .toggle[aria-checked="true"] .track b { translate: calc(var(--s-9) + var(--s-4) - var(--s-8) - var(--s-1) * 2) 0; }
   .check { display: flex; align-items: center; gap: var(--s-4); min-height: max(var(--pill-h), var(--hit-min)); font-weight: var(--ui-weight); color: var(--ink); font-size: var(--text-ui); }
   .check input { width: var(--s-7); height: var(--s-7); accent-color: var(--accent-base); }
 </style>

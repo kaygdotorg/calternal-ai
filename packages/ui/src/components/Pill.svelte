@@ -30,7 +30,7 @@
     color: var(--ink); font-size: var(--text-ui); font-weight: var(--strong-weight); white-space: nowrap;
     transition: scale var(--dur-press) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
   }
-  .wide { padding: 0 calc(var(--pill-h) * 0.45) 0 calc(var(--pill-h) * 0.38); }
+  .wide { padding: 0 var(--s-6) 0 var(--s-5); }
   .flat { background: rgb(var(--ink-rgb) / 0.065); }
   .pill:active:not(:disabled) { scale: var(--press-scale); }
   .pill:disabled { opacity: 0.4; }

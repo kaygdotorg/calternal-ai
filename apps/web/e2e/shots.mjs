@@ -9,7 +9,7 @@ const browser = await launch();
 const shot = async (name, device, scheme, path, act) => {
   const { ctx, page } = await open(browser, device, scheme, path);
   if (act) await act(page);
-  await page.screenshot({ path: `${out}/${name}.png` });
+  await page.screenshot({ path: `${out}/${name}.jpg`, type: "jpeg", quality: 90 });
   await ctx.close();
   console.log("shot", name);
 };
