@@ -1,5 +1,5 @@
 //! The operator commands of the `calternal` binary: `machines …` (execution
-//! machines in a data directory) and `plugin-digest`. Each builds a
+//! machines in an appdata root) and `plugin-digest`. Each builds a
 //! [`Reply`]; printing, `--json`, errors and exit codes belong to
 //! [`calternal_cli::output`] (reference: `docs/cli.md`).
 
@@ -17,18 +17,18 @@ use calternal_server::plugins;
 /// `calternal machines …`: operator administration of execution machines.
 #[derive(Subcommand)]
 #[command(
-    after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n  calternal machines code --pool --data-dir /srv/calternal\n\nSee also: calternal machines --help, calternal machine --help."
+    after_help = "Examples:\n  calternal machines list --appdata /srv/calternal/appdata\n  calternal machines code --pool --appdata /srv/calternal/appdata\n\nSee also: calternal machines --help, calternal machine --help."
 )]
 pub enum MachinesCmd {
     /// Create a one-time code to enroll a person-owned or pool machine.
     #[command(
         about = "Create a one-time machine enrollment code",
-        after_help = "Examples:\n  calternal machines code --pool --data-dir /srv/calternal\n  calternal machines code --account ACCOUNT_UUID --data-dir /srv/calternal\n\nSee also: calternal machine enroll, calternal machines list."
+        after_help = "Examples:\n  calternal machines code --pool --appdata /srv/calternal/appdata\n  calternal machines code --account ACCOUNT_UUID --appdata /srv/calternal/appdata\n\nSee also: calternal machine enroll, calternal machines list."
     )]
     Code {
-        /// Server data directory.
+        /// The server's appdata root.
         #[arg(long)]
-        data_dir: PathBuf,
+        appdata: PathBuf,
         /// Code for a pool machine the operator runs.
         #[arg(long, conflicts_with = "account")]
         pool: bool,
@@ -42,34 +42,34 @@ pub enum MachinesCmd {
     /// List enrolled machines, including revoked machines.
     #[command(
         about = "List machines enrolled with this server",
-        after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal machines code, calternal machines revoke."
+        after_help = "Examples:\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal machines code, calternal machines revoke."
     )]
     List {
-        /// Server data directory.
+        /// The server's appdata root.
         #[arg(long)]
-        data_dir: PathBuf,
+        appdata: PathBuf,
     },
     /// Revoke a machine; a running server applies it within a second.
     #[command(
         about = "Revoke a machine's access to this server",
-        after_help = "Examples:\n  calternal machines revoke MACHINE_UUID --data-dir /srv/calternal\n\nSee also: calternal machines list, calternal machines code."
+        after_help = "Examples:\n  calternal machines revoke MACHINE_UUID --appdata /srv/calternal/appdata\n\nSee also: calternal machines list, calternal machines code."
     )]
     Revoke {
-        /// Server data directory.
+        /// The server's appdata root.
         #[arg(long)]
-        data_dir: PathBuf,
+        appdata: PathBuf,
         /// Machine UUID.
         machine: String,
     },
     /// Allow an account to use pool machines, or remove that access.
     #[command(
         about = "Grant or remove an account's access to pool machines",
-        after_help = "Examples:\n  calternal machines pool-grant ACCOUNT_UUID --data-dir /srv/calternal\n  calternal machines pool-grant ACCOUNT_UUID --remove --data-dir /srv/calternal\n\nSee also: calternal machines list, calternal machines code."
+        after_help = "Examples:\n  calternal machines pool-grant ACCOUNT_UUID --appdata /srv/calternal/appdata\n  calternal machines pool-grant ACCOUNT_UUID --remove --appdata /srv/calternal/appdata\n\nSee also: calternal machines list, calternal machines code."
     )]
     PoolGrant {
-        /// Server data directory.
+        /// The server's appdata root.
         #[arg(long)]
-        data_dir: PathBuf,
+        appdata: PathBuf,
         /// Account UUID.
         account: String,
         #[arg(long)]
@@ -77,9 +77,9 @@ pub enum MachinesCmd {
     },
 }
 
-fn data_dir_error(message: impl Into<String>) -> CliError {
+fn appdata_error(message: impl Into<String>) -> CliError {
     CliError::new("failed", message)
-        .hint("Check that --data-dir is the server's data directory and that you can write to it.")
+        .hint("Check that --appdata is the server's appdata root and that you can write to it.")
 }
 
 fn bad_uuid(what: &str) -> CliError {
@@ -93,7 +93,7 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
     let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| bad_uuid("account"));
     match cmd {
         MachinesCmd::Code {
-            data_dir,
+            appdata,
             pool,
             account: acct,
             minutes,
@@ -108,7 +108,7 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
             };
             let ttl = std::time::Duration::from_secs(minutes * 60);
             let (code, expires) =
-                admin::issue_code(&data_dir, owner, ttl).map_err(|e| data_dir_error(e.message))?;
+                admin::issue_code(&appdata, owner, ttl).map_err(|e| appdata_error(e.message))?;
             Ok(Reply::new(json!({
                 "code": code,
                 "owner": owner_label(owner),
@@ -123,8 +123,8 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
             .line("This code works once. Share it with the machine's owner now.")
             .hint("Next: run `calternal machine enroll` on that computer."))
         }
-        MachinesCmd::List { data_dir } => {
-            let machines = admin::list(&data_dir).map_err(|e| data_dir_error(e.message))?;
+        MachinesCmd::List { appdata } => {
+            let machines = admin::list(&appdata).map_err(|e| appdata_error(e.message))?;
             let state = |m: &calternal_server::machines::db::MachineRow| {
                 if m.revoked {
                     "revoked"
@@ -165,9 +165,9 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                 reply
             })
         }
-        MachinesCmd::Revoke { data_dir, machine } => {
+        MachinesCmd::Revoke { appdata, machine } => {
             let id = uuid::Uuid::parse_str(&machine).map_err(|_| bad_uuid("machine"))?;
-            if admin::revoke(&data_dir, id).map_err(|e| data_dir_error(e.message))? {
+            if admin::revoke(&appdata, id).map_err(|e| appdata_error(e.message))? {
                 Ok(Reply::new(json!({"machine": id, "revoked": true}))
                     .line(format!(
                         "Revoked machine {id}. A running server applies it within a second."
@@ -175,17 +175,17 @@ pub fn machines(cmd: MachinesCmd, out: &Output) -> Result<Reply, CliError> {
                     .hint("Next: run `calternal machines list` to review machine access."))
             } else {
                 Err(CliError::new("not_found", format!("no machine {id}"))
-                    .hint("`calternal machines list --data-dir DIR` shows the machines and their ids.")
+                    .hint("`calternal machines list --appdata DIR` shows the machines and their ids.")
                     .human_message(format!("No machine with ID {id} was found.")))
             }
         }
         MachinesCmd::PoolGrant {
-            data_dir,
+            appdata,
             account: acct,
             remove,
         } => {
             let id = account(&acct)?;
-            admin::pool_grant(&data_dir, id, !remove).map_err(|e| data_dir_error(e.message))?;
+            admin::pool_grant(&appdata, id, !remove).map_err(|e| appdata_error(e.message))?;
             let granted = !remove;
             Ok(
                 Reply::new(json!({"account": acct, "pool_access": granted})).line(format!(

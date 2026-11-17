@@ -2,4 +2,4 @@ exit: 1
 --- stdout ---
 --- stderr ---
 error: No machine with ID dddddddd-dddd-4ddd-8ddd-dddddddddddd was found.
-hint: `calternal machines list --data-dir DIR` shows the machines and their ids.
+hint: `calternal machines list --appdata DIR` shows the machines and their ids.

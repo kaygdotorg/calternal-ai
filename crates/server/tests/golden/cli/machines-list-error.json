@@ -3,7 +3,7 @@ exit: 1
 {
   "error": {
     "code": "failed",
-    "hint": "Check that --data-dir is the server's data directory and that you can write to it.",
+    "hint": "Check that --appdata is the server's appdata root and that you can write to it.",
     "message": "machine database failure"
   },
   "ok": false

@@ -105,7 +105,7 @@ fn machines_code_prints_the_code_once_with_a_local_expiry() {
         };
         case(
             "machines-code-pool",
-            &["machines", "code", "--pool", "--data-dir", &dir],
+            &["machines", "code", "--pool", "--appdata", &dir],
             "calternal machines code",
             &clean,
         )
@@ -120,7 +120,7 @@ fn machines_code_prints_the_code_once_with_a_local_expiry() {
     // Error: neither --pool nor --account.
     case(
         "machines-code-error",
-        &["machines", "code", "--data-dir", &dir],
+        &["machines", "code", "--appdata", &dir],
         "error",
         &|s| s.to_owned(),
     );
@@ -178,20 +178,20 @@ fn machines_list_revoke_and_pool_grant() {
     let (_keep, dir) = enrolled_data_dir();
     case(
         "machines-list",
-        &["machines", "list", "--data-dir", &dir],
+        &["machines", "list", "--appdata", &dir],
         "calternal machines list",
         &|s| s.to_owned(),
     );
     case(
         "machines-revoke",
-        &["machines", "revoke", MACHINE_A, "--data-dir", &dir],
+        &["machines", "revoke", MACHINE_A, "--appdata", &dir],
         "calternal machines revoke",
         &|s| s.to_owned(),
     );
     // The revoked machine now shows its state.
     case(
         "machines-list-after-revoke",
-        &["machines", "list", "--data-dir", &dir],
+        &["machines", "list", "--appdata", &dir],
         "calternal machines list",
         &|s| s.to_owned(),
     );
@@ -201,7 +201,7 @@ fn machines_list_revoke_and_pool_grant() {
             "machines",
             "revoke",
             "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            "--data-dir",
+            "--appdata",
             &dir,
         ],
         "error",
@@ -209,14 +209,14 @@ fn machines_list_revoke_and_pool_grant() {
     );
     case(
         "machines-revoke-bad-id",
-        &["machines", "revoke", "nope", "--data-dir", &dir],
+        &["machines", "revoke", "nope", "--appdata", &dir],
         "error",
         &|s| s.to_owned(),
     );
     let account = "cccccccc-cccc-7ccc-8ccc-cccccccccccc";
     case(
         "machines-pool-grant",
-        &["machines", "pool-grant", account, "--data-dir", &dir],
+        &["machines", "pool-grant", account, "--appdata", &dir],
         "calternal machines pool-grant",
         &|s| s.to_owned(),
     );
@@ -227,7 +227,7 @@ fn machines_list_revoke_and_pool_grant() {
             "pool-grant",
             account,
             "--remove",
-            "--data-dir",
+            "--appdata",
             &dir,
         ],
         "calternal machines pool-grant",
@@ -235,7 +235,7 @@ fn machines_list_revoke_and_pool_grant() {
     );
     case(
         "machines-pool-grant-error",
-        &["machines", "pool-grant", "nope", "--data-dir", &dir],
+        &["machines", "pool-grant", "nope", "--appdata", &dir],
         "error",
         &|s| s.to_owned(),
     );
@@ -247,7 +247,7 @@ fn machines_list_empty_and_unusable_data_dir() {
     let dir = data(d.path());
     case(
         "machines-list-empty",
-        &["machines", "list", "--data-dir", &dir],
+        &["machines", "list", "--appdata", &dir],
         "calternal machines list",
         &|s| s.to_owned(),
     );
@@ -257,7 +257,7 @@ fn machines_list_empty_and_unusable_data_dir() {
     let clean = |s: &str| s.replace(file.to_str().unwrap(), "<FILE>");
     case(
         "machines-list-error",
-        &["machines", "list", "--data-dir", file.to_str().unwrap()],
+        &["machines", "list", "--appdata", file.to_str().unwrap()],
         "error",
         &clean,
     );

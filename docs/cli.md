@@ -56,10 +56,10 @@ Global options on every command: `--json`, `--no-hints`.
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
 | `serve --appdata DIR --userdata-ssd DIR --userdata-hdd DIR --installation-id UUID [--create] [--port N] [--web-dir DIR] [--development] [--origin URL] [--trusted-proxies CIDRS] [--plugin-root DIR] [--node PATH] [--machine-lease-ttl-ms N] [--machine-poll-hold-ms N]` | Run the server on 127.0.0.1 until stopped. The installation ID (`--installation-id`, or `CALTERNAL_INSTALLATION_ID` in the server's configuration) is required; the roots are validated and locked against it first: `--create` pairs empty or missing roots on first setup; missing, swapped or foreign roots are refused (exit 1) before anything is created. Prints one startup block, then logs to stderr. | Title line, then `url`, one `<name> token file` per development token (paths only, never tokens), `startup info`. | `profile`, `url`, `token_files` (name → path), `startup_file` |
-| `machines code (--pool \| --account UUID) --data-dir DIR [--minutes N]` | Issue a one-time machine enrollment code (default 60 minutes). | `code`, `owner`, `expires` (local), then two sentences on using it. | `code`, `owner` (`pool` or `account:<uuid>`), `expires_at` |
-| `machines list --data-dir DIR` | List enrolled machines, revoked ones included. | Table `ID OWNER NAME PLATFORM STATE` (state `enrolled`, `draining` or `revoked`), or a friendly empty result with the command to add one. | `machines[]`: `id`, `owner`, `name`, `os`, `arch`, `state` |
-| `machines revoke MACHINE --data-dir DIR` | Revoke a machine; a running server applies it within a second. | One sentence. Unknown machine: `not_found`. | `machine`, `revoked` |
-| `machines pool-grant ACCOUNT [--remove] --data-dir DIR` | Allow (or stop allowing) an account to use pool machines. | One sentence. | `account`, `pool_access` |
+| `machines code (--pool \| --account UUID) --appdata DIR [--minutes N]` | Issue a one-time machine enrollment code (default 60 minutes). | `code`, `owner`, `expires` (local), then two sentences on using it. | `code`, `owner` (`pool` or `account:<uuid>`), `expires_at` |
+| `machines list --appdata DIR` | List enrolled machines, revoked ones included. | Table `ID OWNER NAME PLATFORM STATE` (state `enrolled`, `draining` or `revoked`), or a friendly empty result with the command to add one. | `machines[]`: `id`, `owner`, `name`, `os`, `arch`, `state` |
+| `machines revoke MACHINE --appdata DIR` | Revoke a machine; a running server applies it within a second. | One sentence. Unknown machine: `not_found`. | `machine`, `revoked` |
+| `machines pool-grant ACCOUNT [--remove] --appdata DIR` | Allow (or stop allowing) an account to use pool machines. | One sentence. | `account`, `pool_access` |
 | `plugin-digest [--plugin-root DIR]` | Hash each trusted worker bundle and say whether `trusted-plugins.json` pins it. | Table `PLUGIN WORKER SHA-256 STATE` (`pinned`, `NOT PINNED`, `unreadable: …`), or a friendly empty result. | `workers[]`: `id`, `worker`, `sha256` (or null), `pinned`, `state` |
 | `machine enroll --server URL --code CODE [--dir DIR] [--name LABEL]` | Exchange a one-time code for a machine identity; saves credentials (0600). `--code` also reads `CALTERNAL_ENROLL_CODE`. | `machine`, `owner`, `server`, `credentials` (path). | `machine_id`, `owner`, `server`, `credentials_file` |
 | `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
@@ -72,12 +72,12 @@ an argument is visible in the process list for the few seconds it runs.
 Examples:
 
 ```console
-$ calternal machines list --data-dir /srv/calternal
+$ calternal machines list --appdata /srv/calternal/appdata
 ID                                    OWNER                                         NAME       PLATFORM       STATE
 aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa  pool                                          build-box  linux/x86_64   enrolled
 bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb  account:cccccccc-cccc-4ccc-8ccc-cccccccccccc  laptop     macos/aarch64  enrolled
 
-$ calternal machines code --pool --data-dir /srv/calternal
+$ calternal machines code --pool --appdata /srv/calternal/appdata
 code:     ABCD-EFGH-JKMN-PQRS
 owner:    pool
 expires:  2026-11-17 08:12:03 +01:00
@@ -85,15 +85,15 @@ expires:  2026-11-17 08:12:03 +01:00
 This code works once. Share it with the machine's owner now.
 Next: run `calternal machine enroll` on that computer.
 
-$ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --data-dir /srv/calternal
+$ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --appdata /srv/calternal/appdata
 error: No machine with ID dddddddd-dddd-4ddd-8ddd-dddddddddddd was found.
-hint: `calternal machines list --data-dir DIR` shows the machines and their ids.
+hint: `calternal machines list --appdata DIR` shows the machines and their ids.
 
-$ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --data-dir /srv/calternal --json
+$ calternal machines revoke dddddddd-dddd-4ddd-8ddd-dddddddddddd --appdata /srv/calternal/appdata --json
 {
   "error": {
     "code": "not_found",
-    "hint": "`calternal machines list --data-dir DIR` shows the machines and their ids.",
+    "hint": "`calternal machines list --appdata DIR` shows the machines and their ids.",
     "message": "no machine dddddddd-dddd-4ddd-8ddd-dddddddddddd"
   },
   "ok": false

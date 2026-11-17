@@ -2,4 +2,4 @@ exit: 1
 --- stdout ---
 --- stderr ---
 error: machine database failure
-hint: Check that --data-dir is the server's data directory and that you can write to it.
+hint: Check that --appdata is the server's appdata root and that you can write to it.

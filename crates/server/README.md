@@ -28,8 +28,7 @@ directory, lock or database is created; `--create` only pairs empty or missing
 roots. The protected security log (`calternal-recovery`) lives in
 `userdata-ssd/.calternal/recovery` and is attached to `auth.db` before any request
 or fixture seeding, so every security change is durable there before it is
-acknowledged. The operator `machines` commands take the appdata path as
-`--data-dir`.
+acknowledged. The operator `machines` commands take the same appdata root as `--appdata`.
 
 The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file

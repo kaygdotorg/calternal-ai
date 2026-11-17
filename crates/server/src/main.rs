@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "calternal",
     about = "Run a Calternal server or manage its enrolled machines",
-    after_help = "Examples:\n  calternal serve --data-dir ./calternal-data --development\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
+    after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
 )]
 struct Cli {
     /// Print one JSON document instead of text (errors too, on stdout); see docs/cli.md.
@@ -64,7 +64,7 @@ enum Cmd {
     /// Serve the development preview on 127.0.0.1.
     #[command(
         about = "Start the development-preview server",
-        after_help = "Examples:\n  calternal serve --data-dir ./calternal-data --development\n  calternal serve --data-dir /srv/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
+        after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal serve --appdata /srv/calternal/appdata --userdata-ssd /srv/calternal/ssd --userdata-hdd /mnt/hdd/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
     )]
     Serve {
         /// Protected databases and state (normally on SSD).
@@ -128,7 +128,7 @@ enum Cmd {
     /// Operator administration of execution machines in a data directory.
     #[command(
         about = "Manage machines enrolled with this server",
-        after_help = "Examples:\n  calternal machines list --data-dir /srv/calternal\n\nSee also: calternal machines code, calternal machine --help."
+        after_help = "Examples:\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal machines code, calternal machine --help."
     )]
     Machines {
         #[command(subcommand)]
@@ -605,7 +605,7 @@ mod cli_output_tests {
             let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
             let machines = admin_cli::machines(
                 MachinesCmd::List {
-                    data_dir: data_dir.clone(),
+                    appdata: data_dir.clone(),
                 },
                 &out,
             )
@@ -631,7 +631,7 @@ mod cli_output_tests {
             "calternal",
             "machines",
             "list",
-            "--data-dir",
+            "--appdata",
             "/tmp/calternal",
             "--no-hints",
         ])
@@ -645,7 +645,7 @@ mod cli_output_tests {
         let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
         let code = admin_cli::machines(
             MachinesCmd::Code {
-                data_dir: dir.path().to_path_buf(),
+                appdata: dir.path().to_path_buf(),
                 pool: true,
                 account: None,
                 minutes: 60,
@@ -666,7 +666,7 @@ mod cli_output_tests {
         let empty_dir = tempfile::tempdir().unwrap();
         let empty = admin_cli::machines(
             MachinesCmd::List {
-                data_dir: empty_dir.path().to_path_buf(),
+                appdata: empty_dir.path().to_path_buf(),
             },
             &out,
         )
