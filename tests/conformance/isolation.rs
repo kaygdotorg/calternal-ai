@@ -1250,8 +1250,9 @@ async fn concurrent_transfer_remove_and_kill_restart() {
     evidence("crash-race", json!(rows));
 }
 
-// A trusted test runtime wrapper pauses after reading the real worker request.
-// It leaves the pinned shipped worker unchanged and delegates its exact arguments.
+// A trusted test runtime wrapper pauses after reading the first worker frame (the
+// real invocation). Workers are long-lived, so it then starts the pinned shipped
+// worker unchanged with its exact arguments, replays that frame and relays the rest.
 fn gate_runtime(f: &Fixture) {
     use std::os::unix::fs::PermissionsExt;
     let find = |name: &str| {
@@ -1264,7 +1265,7 @@ fn gate_runtime(f: &Fixture) {
     let node = find("node");
     let root = f.dir.path().display();
     let script = format!(
-        "#!{}\nimport sys,subprocess,pathlib,time\nnode={:?}\nif sys.argv[1:]==['--version']:\n sys.exit(subprocess.call([node,'--version']))\ndata=sys.stdin.buffer.read()\npathlib.Path({:?}).touch()\nend=time.monotonic()+2\nwhile not pathlib.Path({:?}).exists() and time.monotonic()<end: time.sleep(.005)\nsys.exit(subprocess.run([node]+sys.argv[1:],input=data).returncode)\n",
+        "#!{}\nimport os,sys,subprocess,pathlib,time\nnode={:?}\nif sys.argv[1:]==['--version']:\n sys.exit(subprocess.call([node,'--version']))\nfirst=b''\nwhile not first.endswith(b'\\n'):\n b=os.read(0,1)\n if not b: sys.exit(1)\n first+=b\npathlib.Path({:?}).touch()\nend=time.monotonic()+2\nwhile not pathlib.Path({:?}).exists() and time.monotonic()<end: time.sleep(.005)\np=subprocess.Popen([node]+sys.argv[1:],stdin=subprocess.PIPE)\nos.write(p.stdin.fileno(),first)\nwhile True:\n b=os.read(0,65536)\n if not b: break\n os.write(p.stdin.fileno(),b)\np.stdin.close()\nsys.exit(p.wait())\n",
         python.display(),
         node.to_str().unwrap(),
         format!("{root}/worker-entered"),
