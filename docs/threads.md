@@ -116,7 +116,19 @@ job checkpoints retain their existing bounded tail. Each nonempty output flush
 loads the thread once, then uses the same content write's reads and four SQLite
 commit boundaries plus file placement; the job checkpoint adds one FULL commit.
 Checkpoint request IDs prevent duplicate text on replay; concurrent revisions
-retry at most four times. Empty checkpoints add no content write.
+retry at most four times. A provider's session event can add one content write
+before any text arrives. Other empty checkpoints add no content write.
+
+Each thread retains one `provider-session` record in its Markdown envelope.
+It contains a native session ID bound to the account that started it, the
+provider, and the enrolled machine. It follows the thread's lifetime and
+survives job pruning. It carries no credential. Admission snapshots the
+current account's record from the already loaded thread. The next send uses
+it only when placement selects that same provider and machine. A change in
+either starts a fresh session and emits a `notice` on the job stream. The
+current job checkpoint also carries the text in `session_notice` so it can
+be shown after reconnect. A different account receives a fresh session
+without a notice about the prior account's binding.
 
 ## Client reads and live updates
 
@@ -183,8 +195,8 @@ the accepted grill decision; this change does not invent an attachment format.
 
 The list operation currently returns a bounded metadata page; an addressable
 standard collection awaits the foundation's accepted Markdown Views format.
-Cross-turn provider-session continuation and transcript handoff also remain turn
-engine integration work; each send currently admits a fresh job.
+Cross-turn transcript handoff remains turn engine integration work. Each
+send admits a fresh job and can resume the native provider session.
 
 The turn engine currently refuses a send while a turn is active or interrupted.
 Live steering needs an incremental machine-input transport; the existing exec

@@ -5,6 +5,7 @@ use crate::{
     auth::{Directory, Identity},
     machines::{LeaseState, MachineService},
     plugins::jobs::{Job, RunEnd},
+    threads::provider_session::ProviderSession,
 };
 use base64::{Engine, engine::general_purpose::STANDARD as B64};
 use calternal_core::{
@@ -209,8 +210,7 @@ async fn execute<D: Directory>(
         tokio::time::sleep(Duration::from_secs(1)).await;
     };
     checkpoint["machine_id"] = json!(machine_id);
-    save(state, job, live, &mut checkpoint).await?;
-    let local_session = if previous_machine == Some(machine_id) {
+    let mut local_session = if previous_machine == Some(machine_id) {
         checkpoint
             .get("session_id")
             .and_then(Value::as_str)
@@ -218,6 +218,18 @@ async fn execute<D: Directory>(
     } else {
         None
     };
+    if job.runs == 1
+        && let Some(session) = ProviderSession::owned(&job.input, account)
+    {
+        match session.resume(provider_id, machine_id) {
+            Ok(id) => local_session = Some(id),
+            Err(message) => {
+                checkpoint["session_notice"] = json!(message);
+                live.publish(job.runs, &json!({"type":"notice","message":message}));
+            }
+        }
+    }
+    save(state, job, live, &mut checkpoint, None).await?;
     let mut context = i.context.clone();
     if job.runs > 1 && local_session.is_none() {
         context.push(calternal_core::ProviderContext {
@@ -225,6 +237,16 @@ async fn execute<D: Directory>(
             text: json!({"text_tail":checkpoint["text_tail"],"last_tool":checkpoint["last_tool"]})
                 .to_string(),
         });
+    }
+    if job.runs > 1 {
+        let (st, id) = (state.clone(), job.id.clone());
+        let outcomes = blocking(move || st.jobs.agent_request_outcomes(account, &id)).await?;
+        if !outcomes.is_empty() {
+            context.push(calternal_core::ProviderContext {
+                source: "calternal/person-request".into(),
+                text: json!(outcomes).to_string(),
+            });
+        }
     }
     let check = job.input["check"] == true;
     let instructions = super::instructions::build(state, &i, &job.space, &scope).await?;
@@ -394,9 +416,15 @@ async fn execute<D: Directory>(
                         for mut e in flush.into_iter().chain(std::iter::once(e)) {
                             published_seq += 1;
                             e.seq = published_seq;
+                            let mut thread_session = None;
                             match &e.event {
                                 ProviderEventKind::Session { session_id } => {
-                                    checkpoint["session_id"] = json!(session_id)
+                                    checkpoint["session_id"] = json!(session_id);
+                                    if job.input.get("thread_request").is_some() {
+                                        thread_session = Some(ProviderSession::new(
+                                            account, provider_id, machine_id, session_id,
+                                        ));
+                                    }
                                 }
                                 ProviderEventKind::TextDelta { text } => {
                                     if job.input.get("thread_request").is_some() {
@@ -465,7 +493,7 @@ async fn execute<D: Directory>(
                             {
                                 checkpoint["provider_seq"] = json!(provider_seq);
                                 redactor.checkpoint(&mut checkpoint);
-                                save(state, job, live, &mut checkpoint).await?;
+                                save(state, job, live, &mut checkpoint, thread_session).await?;
                                 text_flush = Instant::now();
                             }
                         }
@@ -513,13 +541,13 @@ async fn execute<D: Directory>(
                         ) {
                             checkpoint["retry"] = wait;
                             redactor.checkpoint(&mut checkpoint);
-                            save(state, job, live, &mut checkpoint).await?;
+                            save(state, job, live, &mut checkpoint, None).await?;
                             return Ok(RunEnd::RetryWaiting);
                         }
                     }
                     checkpoint["provider_seq"] = json!(provider_seq);
                     redactor.checkpoint(&mut checkpoint);
-                    save(state, job, live, &mut checkpoint).await?;
+                    save(state, job, live, &mut checkpoint, None).await?;
                     return Ok(if exit.code == Some(0) && check && checked {
                         RunEnd::Done(json!({"checked":true}))
                     } else {
@@ -541,7 +569,7 @@ async fn execute<D: Directory>(
     {
         checkpoint["provider_seq"] = json!(provider_seq);
         redactor.checkpoint(&mut checkpoint);
-        save(state, job, live, &mut checkpoint).await?;
+        save(state, job, live, &mut checkpoint, None).await?;
     }
     result
 }
@@ -551,11 +579,17 @@ async fn save<D: Directory>(
     job: &Job,
     live: &Arc<crate::plugins::live::Live>,
     checkpoint: &mut Value,
+    thread_session: Option<ProviderSession>,
 ) -> Result<(), Error> {
     let (st_output, output_job, output_checkpoint) =
         (state.clone(), job.clone(), checkpoint.clone());
     blocking(move || {
-        crate::threads::persistence::checkpoint(&st_output, &output_job, &output_checkpoint)
+        crate::threads::persistence::checkpoint(
+            &st_output,
+            &output_job,
+            &output_checkpoint,
+            thread_session,
+        )
     })
     .await?;
     checkpoint["thread_text"] = json!("");

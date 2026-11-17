@@ -40,6 +40,7 @@ pub(super) struct Buffer {
 pub struct Live {
     buffer: Mutex<Buffer>,
     changed: watch::Sender<u64>,
+    pub(crate) once_action: Arc<tokio::sync::Mutex<()>>,
 }
 
 /// What a subscriber reads from a live stream in one delivery.
@@ -67,6 +68,7 @@ impl Live {
                 retain_until: None,
             }),
             changed: watch::channel(0).0,
+            once_action: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 

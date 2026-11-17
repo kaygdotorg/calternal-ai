@@ -65,6 +65,16 @@ Global options on every command: `--json`, `--no-hints`.
 | `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
 
+| Command | Purpose | Human output | `data` (JSON) |
+|---|---|---|---|
+| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |
+| `requests answer ID --answer JSON` | Submit a question's form values. | Request ID and status. | `id`, `status` |
+| `requests approve ID --lifetime once\|this-thread` | Approve using a fresh passkey session. | Request ID and status. | `id`, `status` |
+| `requests deny ID` | Decline a pending approval. | Request ID and status. | `id`, `status` |
+
+Both `calternal requests` and `cl requests` use the same operations. See the
+[request contract](requests.md) for session and retry requirements.
+
 The `machines` commands name the installation exactly as `serve` does: the three
 roots and the installation ID (`--installation-id` or `CALTERNAL_INSTALLATION_ID`).
 Machine authority (codes, enrollment, revocation, pool grants) is recorded in the

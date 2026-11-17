@@ -373,6 +373,7 @@ impl State {
                 // Until placement has a space-owned trust contract, use only
                 // operator-enrolled pool machines and the existing pool grant.
                 .filter(|m| !l.row.worker || m.row.owner == Owner::Pool)
+                .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| self.may_use(m, l.row.account))
                 .map(|m| (m, self.free(m)))
                 .filter(|(_, free)| *free > 0)
