@@ -149,6 +149,9 @@ impl OperationRisk {
 /// This classification feeds discovery and the agent reviewer, never substitutes
 /// for current capabilities. O(operation-name bytes), no I/O.
 pub fn builtin_operation_risk(id: &str, mutates: bool) -> OperationRisk {
+    if let Some(op) = crate::note_operation(id) {
+        return op.risk;
+    }
     match id {
         "spaces.set_role" | "spaces.transfer" | "plugins.enable" | "agent.mode"
         | "access.request" | "machines.set" => OperationRisk::WidensAccess,

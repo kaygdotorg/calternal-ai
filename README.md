@@ -101,3 +101,6 @@ AGPL-3.0-only; see [LICENSE](LICENSE). Dependencies retain their respective lice
 Plugin workers execute through the machine role’s existing sandbox interface.
 See [worker execution](docs/plugin-workers.md) for the container profile, runtime
 setup, lifecycle bounds and unresolved placement/network contracts.
+
+Notes supports title and tag pickers, relative-link rename, and 30-day space
+Trash. See the [Notes operations reference](docs/notes-operations.md).

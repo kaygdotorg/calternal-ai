@@ -29,11 +29,14 @@
 use crate::types::{internal, missing};
 mod collections;
 mod db;
+mod discovery;
 mod files;
 mod instructions;
 mod journal;
+mod linked_write;
 mod mutations;
 mod pool;
+mod trash;
 mod types;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
@@ -123,13 +126,22 @@ fn spawn_sweeper(spaces: &Cache, idle: Duration) -> Result<()> {
 pub(crate) fn file_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
+/// Maximum serialized metadata bytes per content revision.
+pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 /// How long request receipts are kept by default: seven days, the store's default.
 /// A retry after that is treated as a new request.
 pub const DEFAULT_RECEIPT_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// Current UTC timestamp used by item versions and server adapters.
 /// Cost: one clock read and a short string allocation; no locks, SQLite or fsync.
 pub fn now_rfc3339() -> String {
-    time::OffsetDateTime::now_utc()
+    format_rfc3339(time::OffsetDateTime::now_utc())
+}
+
+/// Format an already captured UTC instant with the same millisecond sort key.
+/// Cost: one string allocation, no clock read or I/O.
+pub fn format_rfc3339(instant: time::OffsetDateTime) -> String {
+    instant
+        .to_offset(time::UtcOffset::UTC)
         .format(time::macros::format_description!(
             "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
         ))
@@ -341,7 +353,7 @@ impl Content {
     /// Cost: cache/space locks, O(log N + page) indexed read and page allocations;
     /// a cold space pays SQLite open cost. No fsync or per-row filesystem stats.
     pub fn list(&self, space: SpaceId, kind: &str, limit: u32) -> Result<Vec<Summary>> {
-        self.with_space(space, |s| s.list(kind, limit))
+        self.with_space(space, |s| s.list(kind, limit, false))
     }
     /// Reads a bounded immutable history page; cursors bind to this exact item.
     /// Cost: cache/space locks, two or three indexed reads and at most 1,001
@@ -353,7 +365,7 @@ impl Content {
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<(Vec<Item>, Option<String>)> {
-        self.with_space(space, |s| s.history(id, limit, cursor))
+        self.with_space(space, |s| s.history(id, limit, cursor, None))
     }
     /// Reads an account-qualified receipt from the selected space's inherited store.
     /// Current authority must be checked before replay. Cost: the space's lock,
@@ -488,18 +500,38 @@ impl Content {
     }
     fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
-            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
-            let Some((account, request, op, fp, id, revision, result)) = row else {
+            let row=space.conn.query_row(
+                "SELECT o.account,o.request,o.operation,o.fingerprint,o.item,o.revision,o.result,i.kind,i.mat_state,
+                    EXISTS(SELECT 1 FROM outbox_placement p WHERE p.account=o.account AND p.request=o.request)
+                 FROM outbox o LEFT JOIN items i ON i.id=o.item ORDER BY o.rowid LIMIT 1",
+                [], |r| Ok((
+                    r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,
+                    r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,
+                    r.get::<_,String>(6)?,r.get::<_,Option<String>>(7)?,r.get::<_,Option<String>>(8)?,r.get::<_,bool>(9)?,
+                )),
+            ).optional().map_err(internal)?;
+            let Some((account, request, op, fp, id, revision, result, kind, state, place_related)) =
+                row
+            else {
                 return Ok(());
             };
-            // Item writes route their item first; control changes have no item.
-            let item = match id {
-                Some(id) => {
-                    let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
-                    self.route(space.id, &id, &item.kind)?;
-                    Some(item.id)
+            if place_related {
+                space.place_related(&account, &request, self.fault)?;
+            }
+            let item = if let Some(id) = id {
+                if state.as_deref() == Some("purging")
+                    && !space.finish_purge(&id, &account, &request, self.fault)?
+                {
+                    continue;
                 }
-                None => None,
+                self.route(
+                    space.id,
+                    &id,
+                    &kind.ok_or_else(|| internal("outbox item missing"))?,
+                )?;
+                Some(Uuid::parse_str(&id).map_err(internal)?)
+            } else {
+                None
             };
             let payload = serde_json::from_str(&result).map_err(internal)?;
             let payload = if revision == instructions::INTENT {

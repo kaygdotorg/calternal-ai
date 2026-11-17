@@ -49,6 +49,8 @@ pub struct Summary {
     pub space: SpaceId,
     /// Stable address kind.
     pub kind: String,
+    /// Relative path in the selected space's userdata tree.
+    pub path: String,
     /// Current plugin metadata.
     pub metadata: Value,
     /// Current opaque version token.

@@ -6,7 +6,7 @@ title: "notes.list"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-List up to 100 notes
+List up to 100 live notes, optionally under a tag
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -14,8 +14,9 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "read",
   "id": "notes.list",
-  "description": "List up to 100 notes",
+  "description": "List up to 100 live notes, optionally under a tag",
   "mutates": false
 }
 ```
@@ -33,6 +34,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "maxLength": 80,
       "minLength": 1,
       "pattern": "^[a-zA-Z0-9_.:-]+$",
+      "type": "string"
+    },
+    "tag": {
+      "description": "Exact tag name (without a leading hash), including notes with descendant tags.",
       "type": "string"
     }
   },
