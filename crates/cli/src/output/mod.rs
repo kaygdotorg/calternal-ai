@@ -309,6 +309,26 @@ impl Output {
         }
         (String::new(), err)
     }
+    /// Print one streaming reply, as one compact JSON line with `--json` or the
+    /// ordinary width-aware human rendering. Flushes stdout before returning;
+    /// broken pipes and write failures return EXIT_FAILURE. O(reply bytes).
+    pub fn event(&self, reply: &Reply) -> i32 {
+        let text = if self.json {
+            format!("{}\n", serde_json::json!({"ok":true,"data":reply.json}))
+        } else {
+            self.render(reply)
+        };
+        let mut stdout = std::io::stdout().lock();
+        if stdout
+            .write_all(text.as_bytes())
+            .and_then(|_| stdout.flush())
+            .is_ok()
+        {
+            EXIT_OK
+        } else {
+            EXIT_FAILURE
+        }
+    }
     /// Print `reply` to stdout and return [`EXIT_OK`].
     pub fn success(&self, reply: &Reply) -> i32 {
         let _ = std::io::stdout().write_all(self.render(reply).as_bytes());

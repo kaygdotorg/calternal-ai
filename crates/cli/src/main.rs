@@ -48,6 +48,14 @@ struct Cli {
 }
 #[derive(Subcommand)]
 enum Command {
+    Watch {
+        space: String,
+        #[arg(
+            long,
+            help = "Bookmark cache directory exclusive to this server and account"
+        )]
+        bookmarks: Option<PathBuf>,
+    },
     Describe,
     #[command(alias = "note")]
     Notes {
@@ -222,6 +230,7 @@ fn load_token(file: Option<PathBuf>) -> Result<String, CliError> {
 }
 fn request_for(command: Command, request_id: Option<String>) -> Result<PendingRequest, String> {
     let (operation, mut input) = match command {
+        Command::Watch { .. } => return Err("watch is a stream".into()),
         Command::Describe => return Err("describe is not an operation".into()),
         Command::Invoke { operation, input } => {
             let input: Value =
@@ -301,6 +310,20 @@ fn input_error(message: impl Into<String>) -> CliError {
         .hint("Run the command with --help to see the options it needs.")
 }
 async fn run(cli: Cli, out: &Output) -> Result<Reply, CliError> {
+    if let Command::Watch { space, bookmarks } = &cli.command {
+        let token = cli
+            .token_file
+            .ok_or_else(|| input_error("--token-file is required"))?;
+        return calternal_cli::watch::run(
+            &cli.base_url,
+            token,
+            space.clone(),
+            bookmarks.clone(),
+            out,
+            CancellationToken::new(),
+        )
+        .await;
+    }
     let token = load_token(cli.token_file)?;
     let client = Client::new(&cli.base_url, &token).map_err(|e| {
         render::api_error(e.api_error(), None)

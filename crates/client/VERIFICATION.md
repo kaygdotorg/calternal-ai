@@ -1,5 +1,11 @@
 # Shared client and Swift bridge verification — 2026-11-17
 
+This is the earlier operation-client verification record. The live lane later added
+space journal transport, bounded caches, ephemeral offline input, and a passing
+XCTest run on the explicitly authorized Mac Studio. See
+[the live report](../../docs/reviews/live-2026-11-17.md) and [current behavior](SYNC.md).
+The original evidence below describes its earlier snapshot.
+
 The online client and async Swift bridge execute real operations. Full `swift test`
 is **unfinished**: the macOS VM has Command Line Tools without XCTest or a full
 Xcode installation. The same assertions passed in the Swift executable probe.

@@ -336,6 +336,7 @@ CREATE INDEX share_fanout_deliveries_recipient
 pub struct Db {
     conn: Arc<Mutex<Connection>>,
     worker: Arc<OnceLock<tokio::sync::mpsc::Sender<Job>>>,
+    changes: Arc<tokio::sync::watch::Sender<u64>>,
 }
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
@@ -361,6 +362,7 @@ impl Db {
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             worker: Arc::new(OnceLock::new()),
+            changes: Arc::new(tokio::sync::watch::channel(0).0),
         })
     }
 
@@ -438,18 +440,31 @@ impl Db {
         rx.blocking_recv().map_err(Error::internal)?
     }
 
+    /// Watches worker mutations, conservatively including rolled-back writes.
+    /// Notifications are hints: always recheck
+    /// authority before delivery. One watch value per existing database handle;
+    /// constant memory and no SQLite or additional worker on subscription.
+    pub fn changes(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.changes.subscribe()
+    }
+
     fn worker(&self) -> &tokio::sync::mpsc::Sender<Job> {
         // One dedicated worker owns the serialized database workload. Its bounded
         // queue never occupies Tokio's general blocking pool while waiting.
         self.worker.get_or_init(|| {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<Job>(64);
             let conn = self.conn.clone();
+            let changes = self.changes.clone();
             std::thread::Builder::new()
                 .name("auth-db".into())
                 .spawn(move || {
                     while let Some(job) = rx.blocking_recv() {
                         let mut conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+                        let before = conn.total_changes();
                         job(&mut conn);
+                        if conn.total_changes() != before {
+                            changes.send_modify(|n| *n = n.wrapping_add(1));
+                        }
                     }
                 })
                 .expect("could not start auth database worker");
