@@ -37,7 +37,7 @@
     if (!editing) return;
     const { kind, id } = editing;
     editing = null;
-    if (kind === "thread") void client.rename(id, draft);
+    if (kind === "thread") void client.rename(id, draft).catch((e: Error) => toast(`Not renamed: ${e.message}`));
     else if (id === LOOSE) layout.renameLoose(draft);
     else layout.rename(id, draft);
   }

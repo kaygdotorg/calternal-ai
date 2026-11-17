@@ -105,7 +105,7 @@
 {/if}
 
 <style>
-  .pop { position: fixed; z-index: 60; overscroll-behavior: contain; scrollbar-width: none; }
+  .pop { position: fixed; left: 0; top: 0; z-index: 60; overscroll-behavior: contain; scrollbar-width: none; }
   .pop :global(.panel) { min-width: 100%; }
   .w { display: block; }
   /* A morphing popover is revealed by a clip, so it does not also scale up from small when it becomes ready. */
