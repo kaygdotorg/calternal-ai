@@ -247,6 +247,7 @@ version = "0.1.0"
 dependencies = [
  "calternal-client",
  "calternal-core",
+ "calternal-types",
  "clap",
  "rustix",
  "serde_json",

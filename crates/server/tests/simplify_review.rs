@@ -308,3 +308,223 @@ fn held_space_write_does_not_stall_another_space_and_stale_base_loses() {
         assert_eq!(content.journal(b).unwrap().len(), 1);
     });
 }
+
+#[test]
+fn concurrent_first_open_and_cache_pressure_preserve_a_pinned_journal() {
+    use calternal_content::{FileFormat, Placement};
+    use std::sync::{Arc, Barrier};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(
+        &support::roots(dir.path()),
+        uuid::Uuid::new_v4(),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let content = store.shared_content();
+    let spaces = [SpaceId::new(), SpaceId::new()];
+    let account = AccountId::new();
+    let barrier = Barrier::new(16);
+    std::thread::scope(|scope| {
+        let mut writes = Vec::new();
+        for n in 0..16 {
+            let content = &content;
+            let barrier = &barrier;
+            let space = spaces[n % 2];
+            writes.push(scope.spawn(move || {
+                barrier.wait();
+                content
+                    .register_kind(
+                        space,
+                        "notes",
+                        Placement::Visible {
+                            folder: "Notes".into(),
+                        },
+                        FileFormat::Markdown,
+                    )
+                    .unwrap();
+                let id = format!("request-{}", n / 2);
+                content
+                    .write(
+                        space,
+                        None,
+                        "notes",
+                        None,
+                        json!({"title":id}),
+                        id.as_bytes(),
+                        Request {
+                            account,
+                            id: &id,
+                            operation: "notes.create",
+                            fingerprint: &id,
+                        },
+                        |_| json!({}),
+                    )
+                    .unwrap();
+            }));
+        }
+        for write in writes {
+            write.join().unwrap();
+        }
+    });
+    for space in spaces {
+        assert_eq!(content.list(space, "notes", 100).unwrap().len(), 8);
+        assert_eq!(content.journal(space).unwrap().len(), 8);
+    }
+    let pinned = content.live_journal(spaces[0]).unwrap();
+    let follower = pinned.subscribe_bounded(1).unwrap();
+    let head = pinned.head_cell();
+    for _ in 0..70 {
+        content.live_journal(SpaceId::new()).unwrap();
+    }
+    content.sweep();
+    let again = content.live_journal(spaces[0]).unwrap();
+    assert!(
+        Arc::ptr_eq(&head, &again.head_cell()),
+        "cache pressure opened a second writer for a pinned journal"
+    );
+    assert_eq!(again.listeners(), 1);
+    drop(follower);
+}
+
+#[test]
+fn held_plugin_toggle_does_not_block_another_space() {
+    use calternal_server::store::PluginRow;
+    use std::{sync::mpsc, time::Duration};
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(
+        &support::roots(dir.path()),
+        uuid::Uuid::new_v4(),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let (entered, started) = mpsc::channel();
+    let (release, wait) = mpsc::channel();
+    let (progress, other_started) = mpsc::channel();
+    let account = AccountId::new();
+    std::thread::scope(|scope| {
+        let st = &store;
+        let first = scope.spawn(move || {
+            st.set_plugin_enabled(
+                account,
+                "one",
+                "plugins.enable",
+                "one",
+                SpaceId::new(),
+                "fixture",
+                PluginRow {
+                    enabled: false,
+                    generation: 0,
+                },
+                true,
+                |_| {
+                    // The result encoder runs after the row read, inside the writer
+                    // transaction. Holding it models a stalled transaction/fsync.
+                    entered.send(()).unwrap();
+                    wait.recv_timeout(Duration::from_secs(10)).unwrap();
+                    json!({})
+                },
+            )
+        });
+        started.recv_timeout(Duration::from_secs(10)).unwrap();
+        let second = scope.spawn(|| {
+            store.set_plugin_enabled(
+                account,
+                "two",
+                "plugins.enable",
+                "two",
+                SpaceId::new(),
+                "fixture",
+                PluginRow {
+                    enabled: false,
+                    generation: 0,
+                },
+                true,
+                |_| {
+                    progress.send(()).unwrap();
+                    json!({})
+                },
+            )
+        });
+        let independent = other_started.recv_timeout(Duration::from_secs(1));
+        release.send(()).unwrap();
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+        assert!(
+            independent.is_ok(),
+            "space B's plugin transaction waited for space A's installation-wide writer"
+        );
+    });
+}
+
+#[test]
+fn manager_can_cancel_another_accounts_job_without_blocking_the_async_worker() {
+    use calternal_server::{
+        api::{AppState, allowed_hosts, dispatch},
+        auth::StoredDirectory,
+        plugins::{Jobs, Registry, Session, WorkerPool, jobs::Admission},
+    };
+    use std::sync::Arc;
+    let dir = tempfile::tempdir().unwrap();
+    let roots = support::roots(dir.path());
+    let store = Store::open(
+        &roots,
+        uuid::Uuid::new_v4(),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let directory = StoredDirectory::load_or_create(&roots.appdata).unwrap();
+    let ids = support::dev(&directory);
+    directory
+        .spaces
+        .set_role(ids.owner.id, ids.shared, ids.guest.id, "manager")
+        .unwrap();
+    let jobs = Jobs::open(&roots.appdata).unwrap();
+    let id = jobs
+        .admit(Admission {
+            space: ids.shared.to_string(),
+            plugin: "fixture".into(),
+            account: ids.owner.id,
+            session: Session::Static,
+            operation: "fixture.run".into(),
+            input: json!({}),
+            parent: None,
+            generation: 0,
+            request_key: "one-job".into(),
+        })
+        .unwrap();
+    let state = Arc::new(AppState {
+        inputs: store.account_inputs(),
+        store,
+        directory,
+        registry: Registry::from_plugins(vec![]),
+        workers: WorkerPool::new(None),
+        jobs,
+        allowed_hosts: allowed_hosts(0),
+    });
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let task = tokio::spawn(async move {
+            dispatch(
+                state,
+                ids.guest,
+                Session::Static,
+                "cancel",
+                "jobs.cancel",
+                serde_json::from_value(json!({"job_id":id})).unwrap(),
+            )
+            .await
+        });
+        let result = task
+            .await
+            .expect("manager cancellation called a blocking directory method on an async worker")
+            .unwrap();
+        assert_eq!(result["job"]["state"], "cancelled");
+    });
+}
