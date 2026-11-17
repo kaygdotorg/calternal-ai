@@ -112,8 +112,9 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   not expire.
 - Provider logins (2026-11-17): Calternal is an orchestrator, not a harness. It launches the
   providers' official, unmodified programs (Claude Code, Codex), and each person signs in
-  to them through the provider's own flow inside their own sandbox. The server never
-  collects, stores or passes on a provider login. Evidence and provider wording:
+  to them through the provider's own flow inside their own sandbox. The login is saved by the
+  provider's program in the person's own sandbox home, a persistent volume that follows
+  them, so they sign in once. The server process never reads, copies or stores it. Evidence and provider wording:
   `docs/reviews/provider-terms-2026-11-17.md`.
 
 ## Open
