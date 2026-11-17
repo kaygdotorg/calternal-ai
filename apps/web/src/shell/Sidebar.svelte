@@ -7,7 +7,6 @@
   import { APPS, type AppDef } from "../apps/registry";
   import { navigate } from "../lib/route.svelte";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
-  import AccountSheet from "./AccountSheet.svelte";
   import Attention from "./Attention.svelte";
   import Palette from "./Palette.svelte";
   import { pull } from "../lib/pull";
@@ -17,7 +16,6 @@
   // The switcher is here unless the experiment moved it under the middle card (a phone keeps it here; its bottom bar is the app's panels).
   const inFooter = $derived(shell.narrow || appearance.prefs.switcher === "sidebar");
   let menu = $state(false);
-  let account = $state(false);
   let trigger = $state<HTMLButtonElement>();
   const items = $derived<MenuItem[]>(APPS.map((a) => ({ id: a.kind, label: a.name, icon: a.icon, checked: a.kind === app.kind })));
 </script>
@@ -25,7 +23,7 @@
 <div class="side">
   <header>
     <p class="mark">{appearance.prefs.brand}</p>
-    {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" onclick={() => shell.toggleSidebar()} />{/if}
+    {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{/if}
   </header>
 
   <div class="scroll edge-fade" use:pull={{ refresh: async () => { await app.refresh?.(); } }}>
@@ -34,7 +32,7 @@
   </div>
 
   <footer>
-    <button type="button" class="avatar" aria-label="Account: Kay" onclick={() => (account = true)}><span aria-hidden="true">K</span></button>
+    <button type="button" class="avatar" aria-label="Account and settings: Kay" onclick={() => navigate("/settings/appearance")}><span aria-hidden="true">K</span></button>
     {#if inFooter}<span class="switch">
       <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
       <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
@@ -43,7 +41,6 @@
   </footer>
 </div>
 
-<AccountSheet open={account} onclose={() => (account = false)} />
 <Palette open={shell.searchOpen} onclose={() => (shell.searchOpen = false)} />
 
 <style>

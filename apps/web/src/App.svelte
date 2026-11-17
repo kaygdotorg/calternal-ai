@@ -62,5 +62,5 @@
 {#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
 <FirstRun />
-<SettingsSheet open={settings} onclose={() => navigate("/settings/appearance")} />
+<SettingsSheet open={settings && shell.narrow} onclose={() => navigate("/settings/appearance")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

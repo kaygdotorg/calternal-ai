@@ -10,9 +10,10 @@
   import { appearance as A } from "./prefs.svelte";
   import { shell } from "../shell/shell.svelte";
 
-  let { open, onclose }: { open: boolean; onclose: () => void } = $props();
+  // `inline`: the content as a page of the Settings app (a desktop has no sheet for settings, docs/settings.md); otherwise the bottom sheet a phone uses.
+  let { open, onclose, inline = false }: { open: boolean; onclose: () => void; inline?: boolean } = $props();
   const p = $derived(A.prefs);
-  $effect(() => { if (open) void A.ensureThumbs(); });
+  $effect(() => { if (open || inline) void A.ensureThumbs(); });
   let view = $state<"main" | FontRole>("main");
   let query = $state("");
   let results = $state<StockResult[]>([]);
@@ -46,7 +47,7 @@
   }
   // Pasting a picture link anywhere in the open sheet uses it (outside a text field, which keeps its own paste).
   $effect(() => {
-    if (!open) return;
+    if (!open && !inline) return;
     const onpaste = (e: ClipboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest("input, textarea")) return;
@@ -127,10 +128,10 @@
   }
 </script>
 
-<Sheet {open} label="Appearance settings" onclose={close} side={shell.narrow ? "bottom" : "right"}>
-  <div class="in">
+{#snippet body()}
+  <div class="in" class:inline>
     {#if view === "main"}
-      <header><h1>Appearance</h1><IconButton icon="close" label="Close settings" onclick={close} /></header>
+      <header><h1>Wallpaper and fonts</h1><IconButton icon="close" label={inline ? "Back to Appearance" : "Close settings"} onclick={close} /></header>
 
       {#if mine.length}
         <section aria-labelledby="s-store">
@@ -265,10 +266,18 @@
     {/if}
     {#if error}<p class="err" role="alert">{error}</p>{/if}
   </div>
-</Sheet>
+{/snippet}
+
+{#if inline}
+  <div class="inline-page">{@render body()}</div>
+{:else}
+  <Sheet {open} label="Appearance settings" onclose={close} side="bottom">{@render body()}</Sheet>
+{/if}
 
 <style>
   .in { display: grid; gap: var(--s-5); padding: var(--s-6); }
+  .in.inline { padding: 0; }
+  .inline-page { box-sizing: border-box; min-width: 0; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
   header { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); min-height: var(--bar-h); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   h2 { font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }

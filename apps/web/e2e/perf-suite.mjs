@@ -74,7 +74,7 @@ const context = async (path) => {
   await frames(page);
   const times = [];
   for (let i = 0; i < 6; i++) {
-    const t = await page.evaluate(async () => { const t0 = performance.now(); document.querySelector('button[aria-label="Account: Kay"]').click(); await new Promise((res) => { const iv = setInterval(() => { const d = document.querySelector('[role=dialog][data-ready]'); if (d) { clearInterval(iv); res(); } }, 1); }); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); const ms = performance.now() - t0; document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); return ms; }, null);
+    const t = await page.evaluate(async () => { const t0 = performance.now(); document.querySelector('button[aria-label="Search"]').click(); await new Promise((res) => { const iv = setInterval(() => { const d = document.querySelector('[role=dialog][data-ready]'); if (d) { clearInterval(iv); res(); } }, 1); }); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); const ms = performance.now() - t0; document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); return ms; }, null);
     times.push(t); await page.keyboard.press("Escape"); await page.waitForTimeout(500);
   }
   out.openSheet = { ...(await frames(page)), openToReadyMedian: +pct(times, 0.5).toFixed(0), openToReadyP95: +pct(times, 0.95).toFixed(0) };
