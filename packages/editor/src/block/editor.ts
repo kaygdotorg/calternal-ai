@@ -5,7 +5,8 @@
  * pieces (`features.ts`): call `prepare(text)` before creating an editor or replacing its text so the first draw is already right; the editor also loads one the first time its text needs it.
  */
 import { defaultKeymap, history, historyKeymap, redo, undo } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
+import { markdownLanguage } from "@codemirror/lang-markdown";
+import { LanguageSupport } from "@codemirror/language";
 import { Compartment, EditorState, Prec, type ChangeSpec, type Extension, type Transaction } from "@codemirror/state";
 import { EditorView, drawSelection, keymap } from "@codemirror/view";
 import type { Origin } from "../origins";
@@ -13,8 +14,7 @@ import { ImeGate } from "../ime";
 import { probeOn, startProbe } from "../probe";
 import { blockAt, blocksIn, deleteBlock, duplicateBlock, moveBlock, type Block, type Kinds } from "./blocks";
 import { blockChrome } from "./chrome";
-import { codeLanguage } from "./code-registry";
-import { loadedExtensions, missing, prepare } from "./features";
+import { allLoaded, loadedExtensions, missing, prepare } from "./features";
 import { ensureId } from "./ids";
 import { headingsOf, type Heading } from "./headings";
 import { drawn } from "./hidden";
@@ -68,7 +68,7 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
   const own = (tr: Transaction): Origin => tr.annotation(origin) ?? "user";
   const lazy = new Compartment(); // the lazy pieces loaded so far (features.ts)
   const extensions = (): Extension[] => [
-    markdown({ base: markdownLanguage, codeLanguages: (info) => codeLanguage(info), addKeymap: false }),
+    new LanguageSupport(markdownLanguage),
     lazy.of(loadedExtensions()),
     history({ newGroupDelay: 600 }),
     drawSelection(),
@@ -89,7 +89,12 @@ export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
       if (!u.docChanged) return;
       const tr = u.transactions.find((t) => t.docChanged)!;
       o.onchange?.(u.state.doc.toString(), own(tr));
-      // A piece the new text needs (the first table typed, a fence with a language, a task) loads now; the lines around the change are what can have made it needed.
+      // A piece the new text needs (the first table typed, a fence with a language, a task) loads now. Only a change that could have made one needed is looked at, so plain typing pays one
+      // comparison: everything already loaded, or no character in the change that a piece is made of, ends it here.
+      if (allLoaded()) return;
+      let hint = false;
+      u.changes.iterChanges((_a, _b, fb, _tb, ins) => { if (hint) return; const t = ins.toString(); if (/[|`~^\]\n-]/.test(t) || (t && /^[ \t]*(```|~~~)/.test(u.state.doc.lineAt(fb).text))) hint = true; });
+      if (!hint) return;
       let from = u.state.doc.length, to = 0;
       u.changes.iterChangedRanges((_a, _b, fb, tb) => { from = Math.min(from, fb); to = Math.max(to, tb); });
       const d = u.state.doc;

@@ -79,7 +79,7 @@
 
 <div class="thread">
   <header bind:this={headerEl}>
-    {#if shell.narrow || !shell.sidebarOpen}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
+    {#if shell.narrow}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
     <Panel class="title" radius="pill">
       <div class="tt">
         {#if parent}<a class="crumb" href={href(`/threads/${parent.id}`)}>{parent.title}</a>{/if}
@@ -92,7 +92,6 @@
       {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} form="word" />{/if}
     </Panel>
     <span class="grow"></span>
-    {#if !shell.narrow}<Pill icon="sidebar-right" label={shell.rightOpen ? "Hide the side panel" : "Show the side panel"} aria-pressed={shell.rightOpen} onclick={() => shell.toggleRight()} />{/if}
   </header>
 
   <div class="list" bind:this={listEl}>
@@ -127,7 +126,7 @@
 <style>
   .thread { position: absolute; inset: 0; }
   /* The header and the composer float over the list; the list fades out under them (VirtualList), so there is no opaque band at the top of the card. */
-  header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region); pointer-events: none; }
+  header { position: absolute; z-index: 3; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad-region) 0 calc(var(--pad-region) + var(--edge-l, 0px)); pointer-events: none; } /* --edge-l: room for the shell's button that shows the sidebar again (shell/Shell.svelte) */
   header > :global(*) { pointer-events: auto; }
   .grow { flex: 1; pointer-events: none; }
   :global(.title) { display: flex; align-items: center; gap: var(--s-3); min-width: 0; max-width: 100%; height: var(--pill-h); padding: 0 var(--s-5); }

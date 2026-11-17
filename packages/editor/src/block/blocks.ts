@@ -4,6 +4,7 @@
  * The host classifies blocks with `kinds` (the Notes app says which are tasks, say); the editor package knows no application kinds.
  */
 import { syntaxTree } from "@codemirror/language";
+import { IterMode } from "@lezer/common";
 import type { ChangeSpec, EditorState } from "@codemirror/state";
 
 export interface Block { from: number; to: number; kind: string; depth: number }
@@ -17,6 +18,7 @@ const kindOf = (name: string): string => (name.startsWith("ATXHeading") || name.
 export function blocksIn(state: EditorState, from = 0, to = state.doc.length, kinds?: Kinds): Block[] {
   const out: Block[] = [];
   syntaxTree(state).iterate({
+    mode: IterMode.IgnoreMounts, // never walk into a code fence's own grammar: nothing here looks at it, and a nested tree is many more nodes per key
     from, to,
     enter(n) {
       const name = n.name;

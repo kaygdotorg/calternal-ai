@@ -145,9 +145,9 @@ const secretsPage: Page = {
   ],
 };
 const instructionsPage: Page = {
-  id: "instructions", name: "Instructions and defaults", icon: "list", blurb: "What agents read first here, and the defaults members may override.",
+  id: "instructions", name: "Instructions and defaults", icon: "list", blurb: "What agents read first here (AI/AGENTS.md), and the defaults members may override.",
   groups: [
-    { title: "Agents", settings: [{ id: "space.instructions", label: "Instructions", help: "Read by every agent in this space.", control: { type: "text", placeholder: "For example: run tests before you commit." }, ...fx("space.instructions", "") }] },
+    { title: "Agents", settings: [{ id: "space.instructions", label: "Instructions", help: "The space's standing instructions, kept in AI/AGENTS.md and read by every agent in it. Only Managers and the Owner may edit it.", control: { type: "text", placeholder: "For example: run tests before you commit." }, ...fx("space.instructions", "") }] },
     { title: "Defaults", settings: [{ id: "space.default-preset", label: "Default look", help: "Members may override it.", control: { type: "popup", options: [{ id: "calternal", label: "Calternal" }, { id: "paper", label: "Paper" }, { id: "nord", label: "Nord" }] }, ...fx("space.default-preset", "calternal") }] },
     danger("space.delete", "Delete this space", "Everything in it is deleted after 30 days.", "Delete space…"),
   ],

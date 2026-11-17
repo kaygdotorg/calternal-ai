@@ -44,9 +44,8 @@
 
   <div class="scroll">
   <header>
-    {#if shell.narrow || !shell.sidebarOpen}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
+    {#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
-    {#if !shell.narrow}<IconButton icon="sidebar-right" label={shell.rightOpen ? "Hide the side card" : "Show the side card"} pressed={shell.rightOpen} onclick={() => shell.toggleRight()} />{/if}
   </header>
 
   <article>
@@ -67,7 +66,7 @@
 <style>
   .note { position: absolute; inset: 0; }
   .scroll { position: absolute; inset: 0; overflow-y: auto; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: calc(var(--bar-h) + var(--safe-top)); padding: var(--safe-top) var(--s-5) 0; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: calc(var(--bar-h) + var(--safe-top)); padding: var(--safe-top) var(--s-5) 0 calc(var(--s-5) + var(--edge-l, 0px)); }
   .grow { flex: 1; }
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
   .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }

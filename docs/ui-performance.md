@@ -163,3 +163,41 @@ Nothing breaches, so nothing was changed for WebKit. Playwright's WebKit does no
 ## Editor lazy pieces and pickers (2026-11-17)
 
 First paint is unchanged: the pieces are separate chunks fetched only when a note needs them (`e2e/note-pieces.mjs` checks that a plain note fetches none). Typing in the long note at 4x, key to next frame, three runs: median 12.0 to 13.9 ms, p95 18.9 to 20.3 ms (stage 2 recorded 8.2 and 9.4 median). Switching every piece off in the same session gives median 10.3 to 10.7 ms, so the pieces cost about 2 ms at 4x and the rest of the difference is the shared VM, which also moved the composer numbers today; the budget is 150 ms.
+
+## Performance and reliability pass (2026-11-17)
+
+Method for everything below: dev-02 (a shared VM; numbers move between sessions, so every comparison is an A/B inside one session with the builds alternating run by run), Chromium at 4x CPU slowdown, fresh page per run. Tools in `apps/web/e2e/`: `ab-typing.mjs` (two builds, typing in a note; key-to-frame from the probe, and main-thread script, layout and task time per key from CDP `Performance.getMetrics`, which is far steadier than frame times), `ab-composer.mjs` (the same for the composer, with a list of the keys over 8 ms), `profile-typing.mjs`, `profile-key.mjs` and `trace-key.mjs` (CPU profile and trace of one chosen key), `palette-focus.mjs`, `first-load.mjs` and `scripts/bundle-weight.mjs` (what a first load downloads, and which source files make up a chunk).
+
+**1. Palette focus (the flaky check).** Cause: Ctrl+K showed the dialog, and the field took focus one animation frame later (`requestAnimationFrame` in `Palette.svelte`). For that frame, keys went to whatever had focus before, and a check made as soon as the dialog appeared failed. Measured over fresh opens at 1x: the dialog was on screen with the field not yet focused in 4 of 30 opens (focus always arrived, median 17.5 ms after Ctrl+K). Fix: focus in the same turn the dialog appears (the frame is kept as a fallback). After: 0 of 70 opens (40 at 1x, 30 at 4x). `e2e/palette-focus.mjs [runs] [--4x]`.
+
+**2. Typing in the long note (stage 2 against now, same session, alternating, 10 rounds, 4x).**
+
+| | Stage 2 | Before the fix | After | Plain short note, after |
+| --- | --- | --- | --- | --- |
+| key to next frame, median of run medians | 6.4 ms | 7.8 ms | 6.7 ms (stage 2 6.3 in that run) | 4.5 ms (stage 2 4.5) |
+| script per key | 4.46 ms | 5.72 ms | 4.72 ms (stage 2 4.35) | 2.72 ms (stage 2 2.58) |
+| layout and style per key | 1.5 ms | 1.4 ms | 1.4 ms | 1.2 ms |
+
+The "12 to 14 ms" figure earlier in the day was a different session; in one session the gap was 1.3 ms, not 4 to 6. Now +0.4 ms in the long note and +0.14 ms in a plain note, inside the 1 ms target. Where it went (bisected with a build per commit, 7 rounds each): the composer and probe commit and the pickers commit measured equal to stage 2 (script 4.16 against 4.21, 4.31 against 4.30); the lazy pieces commit added 0.94 ms. Switching the code piece off recovered 0.4 ms and switching block IDs off recovered nothing, which pointed past the pieces' own code to how code was parsed: `markdown({codeLanguages})` makes CodeMirror run a nested-language parse (`parseMixed`) that walks the whole document tree on every edit. Fixes, each kept: code fences are coloured by parsing only the fences on screen, cached by language and text, with no mixed parse (`block/code.ts`); the pickers' trigger check looks at the line first and walks the parse tree only when a trigger character is there; every tree walk skips a fence's own grammar (`IterMode.IgnoreMounts`); the check for a newly needed lazy piece runs only for a change that contains a character a piece is made of, and not at all once every piece is loaded.
+
+**3. Composer key to next frame (stage-2-era build `f7ee3d5` against now, 12 rounds, 4x).**
+
+| Key | Before | After |
+| --- | --- | --- |
+| first key | 24.5 ms | 8.1 ms |
+| the `@` that opens the picker | 11.6 ms | 3.0 ms |
+| first letter after `@` | 12.6 ms | 9.1 ms |
+| p95 inside a run (median of runs) | 11.3 ms | 8.2 ms |
+| p95 over all keys pooled | 12.8 ms | 11.6 ms |
+
+What was on those keys, from the traces: the first key flipped the input-modality attribute on the page (a rule on every element turns transitions off for keyboard use), a 15 ms style recalculation of all 685 elements at 4x; the `@` key built the popover and the search index; the first letter after it created the highlight layer and its font metrics. Fixes: a typed character in a text field defers the modality flip to an idle moment (Tab, arrows, Enter and Escape still flip at once); the pickers' search indexes are built once per pool, warmed when the composer is idle, and the popover opens one frame after the key that asked for it; the highlight layer exists from mount (metrics copied once) and holds text only while there are marks. The p95 is not yet reliably under 8 ms: the pooled figure still includes noisy stretches of the shared VM (consecutive keys of any letter slow), and `P` after `@` is still 9 to 10 ms. The within-run figure is at the budget, not under it with margin.
+
+**4. First load (Threads page, uncompressed and gzip, as the page downloads it).**
+
+| | Stage 2 | Before this pass | After |
+| --- | --- | --- | --- |
+| scripts | 360.3 KB (121.1 gzip) | 373.6 KB at the last report (about 368 KB measured after later fixes) | 283.7 KB (102.6 gzip), 8 files |
+| styles | 77.2 KB (13.9 gzip) | 77.4 KB | 66.3 KB (13.2 gzip) |
+| fonts, images | 375.6 KB, 625.3 KB | same | same (the images are the fixture wallpaper) |
+
+Taken out of the first load: the Notes app (list, middle card, panels, its store and fixture notes) and the Settings pages load when first opened (a Notes page then fetches them with the editor chunks, 296 KB of script before paint and the rest after); the generated-UI renderer (60 KB) is fetched the first time a message holds a card or a question form is about to be drawn; the app data starts per app, Threads always and the others on first visit. Settings' registry stays in the first load because the palette finds every setting by its words before Settings has been opened. By the time the app paints, everything it asks for has arrived (the page waits for its font first), so the saving is download and parse time, not a changed paint time; a fast first paint with the rest after needs a decision about showing before the font arrives, which is not made here.

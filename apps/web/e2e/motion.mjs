@@ -64,7 +64,7 @@ const measure = async (p, name, readSrc, trigger, ms = 700) => {
   const { p, ctx } = await page("desktop", "/threads/t-run");
   const op = `() => parseFloat(getComputedStyle(document.querySelector('.side > .side')).opacity)`;
   await measure(p, "desktop: sidebar hides (content fades and slides)", op, () => p.getByRole("button", { name: "Hide the sidebar" }).click(), 500);
-  await measure(p, "desktop: sidebar shows", op, () => p.getByRole("button", { name: "Show threads" }).click(), 500);
+  await measure(p, "desktop: sidebar shows", op, () => p.getByRole("button", { name: "Show the sidebar" }).click(), 500);
   // menu: one frame to visible, fade on close
   const mo = `() => { const e = document.querySelector('[role=menu]'); return e ? parseFloat(getComputedStyle(e).opacity) : 0; }`;
   await measure(p, "desktop: menu opens (provider)", mo, () => p.getByRole("button", { name: /Sonnet/ }).first().click(), 300);
@@ -72,7 +72,7 @@ const measure = async (p, name, readSrc, trigger, ms = 700) => {
   await p.waitForTimeout(300);
   // sheet
   const so = `() => { const e = document.querySelector('.sheet'); return e ? parseFloat(getComputedStyle(e).opacity) : 0; }`;
-  await measure(p, "desktop: sheet opens (account)", so, () => p.getByRole("button", { name: /Account/ }).click(), 500);
+  await measure(p, "desktop: sheet opens (search)", so, () => p.getByRole("button", { name: "Search", exact: true }).click(), 500);
   await p.keyboard.press("Escape");
   await p.waitForTimeout(400);
   // press
