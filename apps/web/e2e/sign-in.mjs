@@ -61,17 +61,17 @@ try {
   await page.goto(`${url}/`); await page.waitForSelector("html[data-ready]");
   // Settings pages show real data in server mode.
   await go("/settings/account");
-  await page.getByText("Test Owner").first().waitFor({ timeout: 8000 });
+  await page.waitForFunction(() => document.querySelector("#acc-name")?.value === "Test Owner", null, { timeout: 8000 });
   check(await page.getByText("(this browser)").first().isVisible(), "Account: this browser listed among the installations");
   check(await page.locator('[data-setting^="account.passkey."]').count() === 1, "Account: the one passkey is listed");
   await go("/settings/members");
-  await page.getByText("Tester (you)").first().waitFor({ timeout: 8000 });
+  await page.getByText("Test Owner (you)").first().waitFor({ timeout: 8000 });
   check(await page.getByText("Owner", { exact: true }).first().isVisible(), "Members: you are the owner");
   await go("/settings/machines");
   await page.getByRole("button", { name: "Make a code" }).click();
   await page.getByText(/calternal machine enroll/).waitFor({ timeout: 8000 });
   check(true, "Machines: an enrollment code is made");
-  check(await page.getByText("Admin", { exact: true }).count() === 0, "Admin: no pages without operations, so no section");
+  check(await page.getByText("Admin", { exact: true }).count() > 0 && await page.getByText("People", { exact: true }).count() > 0, "Admin: the operator sees People and Groups, by capability");
   // The line to the server: offline shows the banner and clears when it returns.
   await go("/settings/secrets"); await page.getByText(/No secrets/).waitFor({ timeout: 8000 }); await go("/settings/account");
   await ctx.setOffline(true);

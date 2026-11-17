@@ -14,13 +14,16 @@ Open `https://preview.calternal.cloud/ai/?server=1#setup=<setup code>` in a brow
 10. **Search and commands.** Press Cmd-K (Ctrl-K elsewhere), type "notes", press Enter. Expect the palette to open, filter, and take you there; Escape closes it and returns focus.
 11. **Resize.** Drag the thin bar between the sidebar and the card. Expect the sidebar to follow; arrow keys on the bar move it too.
 12. **Account.** *Settings > Account*. Expect your name, your passkey (Remove is disabled while it is the only one), and this browser listed as "this browser". *Add a passkey* adds a second one.
-13. **Sign out, sign in.** *Sign out*. Expect the sign-in screen at the same address; *Sign in with a passkey* returns you to your note.
-14. **Phone.** Open the same link on a phone (sign in with a passkey on that device, or from a second setup). Expect a button at the top left to open the list; there, tap the app name at the bottom to switch app.
+13. **People.** *Settings > Invites* (owner or manager): make an invitation, copy the link, open it in a private window. Expect "Join Calternal", a name and a passkey, then your guest in the app; back in *Members and roles*, expect the guest by name with a role you can change, *Make owner*, and *Remove*. *Settings > Account*: edit your name and press *Save*; expect it on Members. As the operator, expect an *Admin* section with *People* and *Groups* (make a group, then *Add a group…* in a space).
+14. **Notes extras.** In the Notes list, the "…" on a note: *Rename*, *Move to Trash* (expect an Undo); *Trash* at the bottom lists it with *Restore*. Type `[[` or `#` in a note: expect the space's real notes and tags. Tags appear as chips above the list and filter it.
+15. **Sign out, sign in.** *Sign out*. Expect the sign-in screen at the same address; *Sign in with a passkey* returns you to your note.
+16. **Phone.** Open the same link on a phone (sign in with a passkey on that device, or from a second setup). Expect a button at the top left to open the list; there, tap the app name at the bottom to switch app.
 
 ## Not yet
 
 - Threads steps: the Threads lane adds them.
-- Notes: delete, restore from trash, tags (`#`), people (`@`) and list rename need server operations that are in progress.
-- Settings: profile name, provider accounts, Agents defaults, plugin install, member names and adding people, invites, space instructions, and the whole Admin section are hidden until their operations exist (`docs/ui-shell-status.md` lists each).
+- Notes: people (`@`) in a note are not offered yet.
+- Settings: provider accounts, Agents defaults, plugin install and space instructions are hidden until their operations exist (`docs/ui-shell-status.md` lists each).
+- The invitation link is built from the server's own address (`/invites/<secret>` at the root); on the preview it must be routed to the app under `/ai/`.
 - Two people editing one note at once: saves replace the whole note, with the conflict choice above.
 - Passkeys on a phone need the preview's HTTPS address; a development server on `localhost` only works in the same browser.
