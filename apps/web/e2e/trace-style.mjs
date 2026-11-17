@@ -24,6 +24,10 @@ async function trace(label, keys) {
   const ev = JSON.parse(text).traceEvents ?? JSON.parse(text);
   console.log(`\n=== ${label}`);
   for (const e of ev) if (e.name === "UpdateLayoutTree" && e.ph === "X" && e.dur > 200) console.log(`  UpdateLayoutTree ${(e.dur / 1000).toFixed(2)} ms, ${e.args?.elementCount ?? "?"} elements`);
+  for (const e of ev) if (e.name === "Layout" && e.ph === "X" && e.dur > 200) { const bd = e.args?.beginData ?? {}; console.log(`  Layout ${(e.dur / 1000).toFixed(2)} ms, ${bd.dirtyObjects ?? "?"} dirty of ${bd.totalObjects ?? "?"} objects${bd.partialLayout ? " (partial)" : ""}, root ${e.args?.endData?.root?.slice?.(0, 40) ?? ""}`); }
+  const lwhy = new Map();
+  for (const e of ev) if (e.name === "LayoutInvalidationTracking") { const d = e.args?.data ?? {}; const k = `${d.reason ?? "?"} | ${d.nodeName ?? ""}`; lwhy.set(k, (lwhy.get(k) ?? 0) + 1); }
+  console.log("  layout invalidations:\n" + ([...lwhy.entries()].sort((a, c) => c[1] - a[1]).slice(0, 10).map(([k, v]) => `   ${String(v).padStart(4)}  ${k}`).join("\n") || "   (none recorded)"));
   const why = new Map();
   for (const e of ev) if (e.name === "StyleRecalcInvalidationTracking") { const d = e.args?.data ?? {}; const k = `${d.reason ?? "?"} | ${d.nodeName ?? ""}${d.extraData ? " | " + String(d.extraData).slice(0, 60) : ""}`; why.set(k, (why.get(k) ?? 0) + 1); }
   console.log("  invalidations:\n" + [...why.entries()].sort((a, c) => c[1] - a[1]).slice(0, 14).map(([k, v]) => `   ${String(v).padStart(4)}  ${k}`).join("\n"));

@@ -122,7 +122,7 @@
     <div class="bottom" bind:this={bottomEl}>
       <div class="inner">
         <ThreadNotices thread={summary} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} />
-        <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a)} />
+        <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
         <ActiveChildren {id} />
         <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID()).catch((e: Error) => { toast(`Not sent: ${e.message}`); throw e; })} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>

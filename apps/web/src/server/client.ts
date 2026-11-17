@@ -62,6 +62,15 @@ export class ServerClient {
     if ("ok" in body && body.ok === false) throw new ServerError(body.error.code, body.error.message, res.status);
     return body as DescribeResult;
   }
+  /** A plain JSON POST to a route that is not an operation (the trusted secret endpoint). The body is sent and dropped; a failure is thrown as `ServerError` with the server's words. */
+  async post(path: string, body: Record<string, unknown>): Promise<void> {
+    let res: Response;
+    try { res = await this.f(`${this.base}${path}`, { method: "POST", headers: this.headers({ "content-type": "application/json" }), body: JSON.stringify(body) }); }
+    catch (e) { throw new ServerError("unavailable", (e as Error).message); }
+    if (res.ok) return;
+    const j = (await res.json().catch(() => null)) as { error?: { code?: ApiError["code"]; message?: string } } | null;
+    throw new ServerError(j?.error?.code ?? "internal", j?.error?.message ?? `refused (${res.status})`, res.status);
+  }
   spaces = { list: () => this.operate<SpacesListResult>("spaces.list") };
   notes = {
     list: (space_id: string) => this.operate<NotesListResult>("notes.list", { space_id }),

@@ -13,14 +13,13 @@ Response shapes and the Markdown are in `server/thread-file.ts`; `server/threads
 | Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model travel with it (the server applies them directly) |
 | Working state and steps | the job's SSE stream: provider events are nested, `chunk.data.event` (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer |
 | Stop, rename, archive, unarchive, delete | `threads.stop`, `.rename`, `.archive`, `.unarchive`, `.delete` |
-| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`): `requests.list`, `requests.answer`, `requests.approve` (`once` or `thread`), `requests.deny`; refreshed when the feed says a turn started or stopped waiting. **The wire shape is issue #32's stated goal, not yet in dev**; `requestOf` and `answerInput` are the one place to change. A server without them answers `not_found` once and the list stays empty |
+| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`) on the requests lane's operations (`docs/requests.md`): `requests.list` (account-wide, `{}`), `requests.answer` `{id, answer}`, `requests.approve` `{id, lifetime: once or this_thread}`, `requests.deny`; a secret's value goes to `POST /api/v1/auth/secrets/provide`. The bar offers "Allow for this thread" only when the approval may last (irreversible and access-widening actions are single-use: `lifetimesOf`). Approving needs a fresh passkey proof on an installation session: a development bearer is refused and the server's words are shown. Refreshed when the feed says a turn started or stopped waiting |
 
 Tested against a recorded-response double (`threads-client.test.ts`) and, end to end, against a seeded installation (`e2e/live-threads.mjs`).
 
 ## What the server still lacks
 
 - Where a thread runs: no operation names or records a machine; the choice is kept on the page and the server picks one.
-- Requests (#32) are not in dev.
 - Changes and Run tabs have no operation.
 
 ## The client interface
