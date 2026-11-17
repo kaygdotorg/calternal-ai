@@ -386,20 +386,6 @@ impl Spaces {
         tx.commit().map_err(sql)?; Ok(out)
     })
     }
-    /// Tests whether this actor has a directory mutation receipt for a request ID.
-    /// The server serializes this check with its content store to preserve the
-    /// existing principal/request-ID namespace across the two databases.
-    pub fn has_receipt(&self, actor: AccountId, request_id: &str) -> Result<bool> {
-        let request_id = request_id.to_owned();
-        self.run(move |c| {
-            c.query_row(
-                "SELECT EXISTS(SELECT 1 FROM space_receipts WHERE actor=?1 AND request_id=?2)",
-                params![actor.to_string(), request_id],
-                |r| r.get(0),
-            )
-            .map_err(sql)
-        })
-    }
 
     /// Executes a mutation with fresh capability and target checks under a write lock.
     pub fn change(

@@ -149,10 +149,7 @@ impl Journals {
                     .map_err(internal)?;
                 if let Some(prior) = prior {
                     if prior.action != operation || prior.payload_hash != fingerprint {
-                        return Err(Error::new(
-                            calternal_types::ErrorCode::Conflict,
-                            "request_id was already used with different input",
-                        ));
+                        return Err(Error::request_reused());
                     }
                 } else {
                     store

@@ -59,7 +59,6 @@ pub struct Content {
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),
-    writes: Vec<Mutex<()>>,
     admission: Mutex<()>,
 }
 fn sweep(spaces: &Cache, idle: Duration) -> usize {
@@ -99,8 +98,7 @@ impl Content {
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS requests(account TEXT NOT NULL,request TEXT NOT NULL,space TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;").map_err(internal)?;
+            CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(HashMap::new()));
         let cache = spaces.clone();
         let journals = Journals::open(roots.appdata.clone(), secrets, move || {
@@ -113,7 +111,6 @@ impl Content {
             idle_after,
             journals,
             fault,
-            writes: (0..64).map(|_| Mutex::new(())).collect(),
             admission: Mutex::new(()),
         };
         let dir = content.roots.appdata.join("spaces");
@@ -253,21 +250,6 @@ impl Content {
             .map(|s| s.parse().map_err(internal))
             .transpose()
     }
-    /// Selects a receipt's space by identifiers only, for the host's account-wide
-    /// request namespace check. Never returns a payload or grants content access.
-    /// Cost: catalog mutex, one indexed lookup and UUID allocation; no space scans.
-    pub fn receipt_space(&self, account: AccountId, request: &str) -> Result<Option<SpaceId>> {
-        lock(&self.index)
-            .query_row(
-                "SELECT space FROM requests WHERE account=?1 AND request=?2",
-                params![account.to_string(), request],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(internal)?
-            .map(|s| s.parse().map_err(internal))
-            .transpose()
-    }
     /// Reads one current item after the caller selects an authorized space.
     /// A foreign ID is absent structurally, without a space predicate.
     /// Cost: cache mutex, one space mutex, indexed metadata/head join and byte allocation;
@@ -322,12 +304,6 @@ impl Content {
         result: Value,
     ) -> Result<()> {
         self.with_space(space,|_| {
-            {
-                let index=lock(&self.index);
-                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![request.account.to_string(),request.id,space.to_string()]).map_err(internal)?;
-                let bound:String=index.query_row("SELECT space FROM requests WHERE account=?1 AND request=?2",params![request.account.to_string(),request.id],|r|r.get(0)).map_err(internal)?;
-                if bound!=space.to_string(){return Err(Error::new(ErrorCode::Conflict,"request_id was already used with different input"));}
-            }
             self.journals.publish(space,request.account,request.id.into(),request.operation.into(),request.fingerprint.into(),None,"control".into(),result)
         })
     }
@@ -391,20 +367,6 @@ impl Content {
                 if existing != (space.id.to_string(), item.kind.clone()) {
                     return Err(internal("global item collision"));
                 }
-                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![account,request,space.id.to_string()]).map_err(internal)?;
-                let bound: String = index
-                    .query_row(
-                        "SELECT space FROM requests WHERE account=?1 AND request=?2",
-                        params![account, request],
-                        |r| r.get(0),
-                    )
-                    .map_err(internal)?;
-                if bound != space.id.to_string() {
-                    return Err(Error::new(
-                        ErrorCode::Conflict,
-                        "request_id was already used with different input",
-                    ));
-                }
             }
             self.journals.publish(
                 space.id,
@@ -428,8 +390,8 @@ impl Content {
     /// Commits generic bytes/metadata and finishes journal publication and placement.
     /// `id=None` creates a UUIDv7; updates require the current base token. The host
     /// supplies the operation response encoder and checks authority before calling.
-    /// Same-account request IDs are unique across this service's spaces.
-    /// Cost: one of 64 request-stripe locks, cache/space locks, bounded metadata/byte
+    /// Request IDs are unique per (account, space); a reused one is a conflict.
+    /// Cost: cache/space locks, bounded metadata/byte
     /// allocations, indexed head/name checks, one FULL content transaction, catalog
     /// routing writes, two journal queue round trips (receipt/event then FULL barrier),
     /// checked file I/O with file+directory fsync, and FULL placement/outbox updates.
@@ -448,11 +410,6 @@ impl Content {
         request: Request<'_>,
         result: impl FnOnce(&Item) -> Value,
     ) -> Result<Item> {
-        use std::hash::{Hash, Hasher};
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
-        request.account.hash(&mut hash);
-        request.id.hash(&mut hash);
-        let _stripe = lock(&self.writes[hash.finish() as usize % self.writes.len()]);
         if bytes.len() > 2 * 1024 * 1024
             || metadata.to_string().len() > 256 * 1024
             || request.id.len() > 256
@@ -463,7 +420,9 @@ impl Content {
         self.with_space(space,|s| {
             s.validate_bytes(kind,bytes)?;
             self.publish_pending(s)?;
-            if self.receipt_space(request.account,request.id)?.is_some(){return Err(Error::new(ErrorCode::Conflict,"request_id was already used with different input"));}
+            // Request IDs are unique per (account, space): the host replays a matching
+            // receipt before calling, so any receipt here is a reuse.
+            if self.journals.receipt(space,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
             let (id,seq,old_path,expected)=if let Some(id)=id {
                 let current=s.get(id)?;if current.kind!=kind{return Err(missing());}
                 s.place(id,self.fault)?;s.check_file(id)?;

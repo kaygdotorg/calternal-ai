@@ -140,16 +140,15 @@ impl Store {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(db_err)?;
-        if version != 0 && version != 2 {
+        if version != 0 && version != 3 {
             return Err(Error::unavailable(
                 "unsupported preview schema; use fresh disposable data",
             ));
         }
         conn.execute_batch("BEGIN;
             CREATE TABLE IF NOT EXISTS plugin_state(space_id TEXT NOT NULL,plugin_id TEXT NOT NULL,enabled INTEGER NOT NULL,generation INTEGER NOT NULL,PRIMARY KEY(space_id,plugin_id));
-            CREATE TABLE IF NOT EXISTS plugin_outbox(principal TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(principal,request_id));
-            CREATE INDEX IF NOT EXISTS plugin_outbox_space ON plugin_outbox(space_id);
-            PRAGMA user_version=2;COMMIT;").map_err(db_err)?;
+            CREATE TABLE IF NOT EXISTS plugin_outbox(principal TEXT NOT NULL,request_id TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,result_json TEXT NOT NULL,space_id TEXT NOT NULL,PRIMARY KEY(principal,space_id,request_id));
+            PRAGMA user_version=3;COMMIT;").map_err(db_err)?;
         let content = Content::open(roots, secrets, Duration::from_secs(600), content_fault)
             ?;
         // Fails closed: a missing or wrong secret key stops startup instead of
@@ -164,16 +163,18 @@ impl Store {
         };
         let mut statement = store
             .conn
-            .prepare("SELECT principal,request_id FROM plugin_outbox ORDER BY rowid")
+            .prepare("SELECT principal,space_id,request_id FROM plugin_outbox ORDER BY rowid")
             .map_err(db_err)?;
         let pending = statement
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            })
             .map_err(db_err)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(db_err)?;
         drop(statement);
-        for (principal, request) in pending {
-            store.publish_plugin_pending(stored_id(&principal)?, &request)?;
+        for (principal, space, request) in pending {
+            store.publish_plugin_pending(stored_id(&principal)?, stored_id(&space)?, &request)?;
         }
         Ok(store)
     }
@@ -261,24 +262,20 @@ impl Store {
             next,
         ))
     }
-    /// Reads an account-qualified receipt after the caller checks current grants.
-    /// All operation payloads are in per-space store receipts; this adapter uses identifier-only
-    /// routing for the existing account-wide request namespace. Pending control
-    /// intents finish publication first. Cost: indexed control/catalog reads and one
-    /// bounded journal bridge/read, with journal fsyncs only during pending replay.
-    pub fn receipt(&self, principal: AccountId, request_id: &str) -> Result<Option<Receipt>, Error> {
-        self.publish_plugin_pending(principal, request_id)?;
-        let account = principal;
-        let Some(space) = self
-            .content
-            .receipt_space(account, request_id)
-            ?
-        else {
-            return Ok(None);
-        };
+    /// Reads `principal`'s receipt for `request_id` in `space`, after the caller has
+    /// checked current grants there. Request IDs are scoped to (account, space), so
+    /// another account or space never sees it. A pending control intent for the same
+    /// key finishes publication first. Cost: one indexed outbox read and one journal
+    /// receipt read; journal fsyncs only during pending replay.
+    pub fn receipt(
+        &self,
+        principal: AccountId,
+        space: SpaceId,
+        request_id: &str,
+    ) -> Result<Option<Receipt>, Error> {
+        self.publish_plugin_pending(principal, space, request_id)?;
         self.content
-            .receipt(space, account, request_id)
-            
+            .receipt(space, principal, request_id)
             .map(|r| {
                 r.map(|r| Receipt {
                     operation: r.operation,
@@ -294,17 +291,22 @@ impl Store {
             let Some((principal, request)) = first else {
                 return Ok(());
             };
-            self.publish_plugin_pending(stored_id(&principal)?, &request)?;
+            self.publish_plugin_pending(stored_id(&principal)?, space_id, &request)?;
         }
     }
-    fn publish_plugin_pending(&self, principal: AccountId, request_id: &str) -> Result<(), Error> {
-        let pending=self.conn.query_row("SELECT operation,fingerprint,result_json,space_id FROM plugin_outbox WHERE principal=?1 AND request_id=?2",params![principal.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(db_err)?;
-        if let Some((operation, fingerprint, json, space)) = pending {
+    fn publish_plugin_pending(
+        &self,
+        principal: AccountId,
+        space: SpaceId,
+        request_id: &str,
+    ) -> Result<(), Error> {
+        let pending=self.conn.query_row("SELECT operation,fingerprint,result_json FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",params![principal.to_string(),space.to_string(),request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?))).optional().map_err(db_err)?;
+        if let Some((operation, fingerprint, json)) = pending {
             let result = serde_json::from_str(&json)
                 .map_err(|_| Error::internal("corrupt plugin publication"))?;
             self.content
                 .record_receipt(
-                    stored_id(&space)?,
+                    space,
                     Request {
                         account: principal,
                         id: request_id,
@@ -316,8 +318,8 @@ impl Store {
                 ?;
             self.conn
                 .execute(
-                    "DELETE FROM plugin_outbox WHERE principal=?1 AND request_id=?2",
-                    params![principal.to_string(), request_id],
+                    "DELETE FROM plugin_outbox WHERE principal=?1 AND space_id=?2 AND request_id=?3",
+                    params![principal.to_string(), space.to_string(), request_id],
                 )
                 .map_err(db_err)?;
         }
@@ -419,10 +421,8 @@ impl Store {
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
     /// so a retry replays it through [`Self::receipt`] instead of running the plugin
-    /// again. The receipt lives in the space's journal like every other write receipt;
-    /// a request ID already bound to another space is a conflict.
-    /// Cost: one per-space journal append with FULL durability plus one indexed
-    /// request-route insert.
+    /// again. The receipt lives in the space's journal like every other write receipt.
+    /// Cost: one per-space journal append with FULL durability.
     pub fn record_plugin_receipt(
         &self,
         principal: AccountId,
@@ -609,7 +609,7 @@ impl Store {
         )
         .map_err(db_err)?;
         tx.commit().map_err(db_err)?;
-        self.publish_plugin_pending(principal, request_id)?;
+        self.publish_plugin_pending(principal, space_id, request_id)?;
         Ok((next, value))
     }
 }

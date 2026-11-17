@@ -582,20 +582,8 @@ pub async fn dispatch<D: Directory>(
         let st = state.clone();
         let rid = request_id.to_owned();
         let operation = op.to_owned();
+        // Directory changes keep their own receipts in auth.db.
         return tokio::task::spawn_blocking(move || {
-            // Serialize receipt namespace checks across directory/content DBs.
-            // Each mutation still commits its own change and receipt atomically.
-            let store = st
-                .store
-                .lock()
-                .map_err(|_| Error::internal("store poisoned"))?;
-            if !matches!(operation.as_str(), "spaces.list" | "spaces.members")
-                && store.receipt(p.id, &rid)?.is_some()
-            {
-                return Err(Error::conflict(
-                    "request_id was already used with different input",
-                ));
-            }
             st.tokens.space_operation(&p, &rid, &operation, &input)
         })
         .await
@@ -679,12 +667,7 @@ async fn dispatch_checked<D: Directory>(
                     .policy(&op)
                     .expect("bound policy")
                     .authorize_space(&st.tokens, &Identity { id: principal }, space)?;
-                if st.tokens.has_space_receipt(&Identity { id: principal }, &rid)? {
-                    return Err(Error::conflict(
-                        "request_id was already used with different input",
-                    ));
-                }
-                if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
+                if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
                     return Ok(v);
                 }
                 let plugin = st
@@ -751,24 +734,23 @@ async fn dispatch_checked<D: Directory>(
     }
 }
 
-/// Retry handling shared by every mutation: same principal + request_id with
-/// the same canonical fingerprint returns the stored result (finishing any
-/// pending materialization); a different fingerprint is a conflict.
+/// Retry handling shared by every mutation in an authorized space: the same
+/// (account, space, request_id) with the same canonical fingerprint returns the
+/// stored result (finishing any pending materialization); a different fingerprint
+/// is a conflict. Another account or space never sees this receipt.
 fn replay_receipt(
     s: &mut Store,
     principal: AccountId,
+    space: SpaceId,
     rid: &str,
     op: &str,
     fp: &str,
 ) -> Result<Option<Value>, Error> {
-    let Some(r) = s.receipt(principal, rid)? else {
+    let Some(r) = s.receipt(principal, space, rid)? else {
         return Ok(None);
     };
     if r.operation != op || r.fingerprint != fp {
-        return Err(
-            Error::conflict("request_id was already used with different input")
-                .with_details(serde_json::json!({ "reason": "request_id_reused" })),
-        );
+        return Err(Error::request_reused());
     }
     if let Some(n) = &r.note_id {
         s.materialize(n).map_err(|e| {
@@ -881,21 +863,11 @@ async fn invoke_plugin<D: Directory>(
     // The resolved space travels separately; the plugin sees only its declared input.
     let plugin_input = Value::Object(input.into_iter().collect());
     let (plugin2, account) = (plugin.clone(), p.id);
-    let (st, rid, operation, fp2) = (
-        state.clone(),
-        request_id.to_owned(),
-        op.to_owned(),
-        fp.clone(),
-    );
+    let (rid, operation, fp2) = (request_id.to_owned(), op.to_owned(), fp.clone());
     let admitted = blocking(&state, move |s| {
         // A mutating operation's retry replays its receipt and runs nothing again.
         if mutates {
-            if st.tokens.has_space_receipt(&Identity { id: account }, &rid)? {
-                return Err(Error::conflict(
-                    "request_id was already used with different input",
-                ));
-            }
-            if let Some(v) = replay_receipt(s, account, &rid, &operation, &fp2)? {
+            if let Some(v) = replay_receipt(s, account, space, &rid, &operation, &fp2)? {
                 return Ok(Err(v));
             }
         }
@@ -1045,12 +1017,7 @@ async fn mutate_note<D: Directory>(
         authz::policy(&op)
             .expect("bound policy")
             .authorize_space(&st.tokens, &Identity { id: principal }, space)?;
-        if st.tokens.has_space_receipt(&Identity { id: principal }, &rid)? {
-            return Err(Error::conflict(
-                "request_id was already used with different input",
-            ));
-        }
-        if let Some(v) = replay_receipt(s, principal, &rid, &op, &fp)? {
+        if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
             return Ok(v);
         }
         let note = if let Some(i) = create {

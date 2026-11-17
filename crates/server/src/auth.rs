@@ -50,11 +50,6 @@ pub trait Directory: Send + Sync + 'static {
     /// Build the discovery snapshot; these grants are informational, not authority.
     /// Allocation is confined to discovery, outside the operation check path.
     fn describe(&self, principal: &Identity) -> Principal;
-    /// Check the directory receipt namespace before a content mutation. The host
-    /// holds its content store lock while checking and applying either domain.
-    fn has_space_receipt(&self, _principal: &Identity, _request_id: &str) -> Result<bool, Error> {
-        Ok(false)
-    }
     /// Execute a stored-directory operation on a blocking host thread.
     /// Implementations without a stored directory fail closed.
     fn space_operation(
@@ -150,7 +145,7 @@ fn auth_error(e: calternal_auth::Error) -> Error {
             Error::forbidden("no access to this space")
         }
         calternal_auth::ErrorCode::Conflict => {
-            Error::conflict("request_id was already used with different input")
+            Error::request_reused()
         }
         _ => Error::internal("space database operation failed"),
     }
@@ -185,11 +180,6 @@ impl Directory for TokenTable {
                 .filter_map(|s| serde_json::from_value(json!({"id":s.id,"role":s.role})).ok())
                 .collect(),
         }
-    }
-    fn has_space_receipt(&self, principal: &Identity, request_id: &str) -> Result<bool, Error> {
-        self.spaces
-            .has_receipt(principal.id, request_id)
-            .map_err(auth_error)
     }
     fn space_operation(
         &self,

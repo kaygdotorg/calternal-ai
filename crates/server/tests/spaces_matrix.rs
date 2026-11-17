@@ -436,42 +436,18 @@ async fn accounts_never_replay_each_others_results_or_read_another_space() {
     assert_eq!(cross.0, StatusCode::NOT_FOUND);
 }
 
+/// Request IDs are scoped to (account, space); directory changes (`spaces.*`) keep
+/// their own receipts, so one ID used in both places gives two independent results.
 #[tokio::test]
-async fn directory_and_content_mutations_share_the_request_id_namespace() {
+async fn directory_and_content_request_ids_are_independent() {
     let f = Fixture::new(Some("editor")).await;
     let note = json!({"space_id":f.shared,"title":"note","markdown":"body"});
-    assert_eq!(
-        f.call(Some(&f.token), "note-first", "notes.create", note.clone())
-            .await
-            .0,
-        StatusCode::OK
-    );
-    assert_eq!(
-        f.call(
-            Some(&f.token),
-            "note-first",
-            "spaces.create",
-            json!({"name":"space"})
-        )
-        .await
-        .0,
-        StatusCode::CONFLICT
-    );
-    assert_eq!(
-        f.call(
-            Some(&f.token),
-            "space-first",
-            "spaces.create",
-            json!({"name":"space"})
-        )
-        .await
-        .0,
-        StatusCode::OK
-    );
-    assert_eq!(
-        f.call(Some(&f.token), "space-first", "notes.create", note)
-            .await
-            .0,
-        StatusCode::CONFLICT
-    );
+    for (op, input) in [
+        ("notes.create", note.clone()),
+        ("spaces.create", json!({"name":"space"})),
+    ] {
+        let first = f.call(Some(&f.token), "same-id", op, input.clone()).await;
+        assert_eq!(first.0, StatusCode::OK, "{op}");
+        assert_eq!(f.call(Some(&f.token), "same-id", op, input).await, first, "{op} replays");
+    }
 }
