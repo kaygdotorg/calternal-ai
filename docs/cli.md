@@ -140,3 +140,12 @@ command and an error case each: `crates/cli/src/render.rs` (all of `cl`),
 `crates/server/tests/cli_golden.rs` (the real `calternal` binary, with the time zone
 forced to UTC+1 and codes, ids, paths and ports replaced by placeholders).
 `UPDATE_GOLDEN=1` rewrites them; review the diff.
+
+`calternal watch <space-uuid> --token-file <owner-only-file>` follows the server's
+space journal over one SSE connection. `cl watch` accepts the same arguments.
+With `--json`, each event is one compact `{ "ok": true, "data": ... }` line.
+Human output uses labelled fields. Reconnect uses accepted signed bookmarks;
+`--bookmarks <directory>` retains them in atomic `bookmark: value` Markdown files.
+That directory must be exclusive to this server and signed-in account; discard it
+on sign-out or account changes. Without the option, bookmarks stay in memory.
+A reset stops watch: reload the authorized space before discarding its old bookmark.

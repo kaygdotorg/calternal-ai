@@ -11,3 +11,5 @@
 pub mod output;
 #[cfg(feature = "testing")]
 pub mod testing;
+
+pub mod watch;

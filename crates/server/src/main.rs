@@ -26,6 +26,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Follow a space journal; --json prints one compact JSON object per event.
+    Watch {
+        space: String,
+        #[arg(long, env = "CALTERNAL_URL", default_value = "http://127.0.0.1:3210")]
+        base_url: String,
+        #[arg(long, env = "CALTERNAL_TOKEN_FILE")]
+        token_file: PathBuf,
+        #[arg(
+            long,
+            help = "Bookmark cache directory exclusive to this server and account"
+        )]
+        bookmarks: Option<PathBuf>,
+    },
     /// Serve the development preview on 127.0.0.1.
     Serve {
         /// Disposable data directory (created if missing, mode 0700).
@@ -95,6 +108,26 @@ fn main() {
     // Reads the local time zone, which is only safe before any thread starts.
     let out = Output::detect(cli.json);
     let code = match cli.cmd {
+        Cmd::Watch {
+            space,
+            base_url,
+            token_file,
+            bookmarks,
+        } => {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .expect("runtime");
+            out.finish(rt.block_on(calternal_cli::watch::run(
+                &base_url,
+                token_file,
+                space,
+                bookmarks,
+                &out,
+                calternal_client::CancellationToken::new(),
+            )))
+        }
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
