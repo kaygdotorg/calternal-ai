@@ -452,6 +452,7 @@ dependencies = [
  "serde_json",
  "time",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]

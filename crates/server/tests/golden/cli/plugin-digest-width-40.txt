@@ -1,0 +1,4 @@
+PLUGIN: notes-insights
+WORKER: notes-insights/dist/worker.js
+SHA-256: -
+STATE: unreadable: worker: No such file…

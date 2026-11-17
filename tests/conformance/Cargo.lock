@@ -251,6 +251,7 @@ dependencies = [
  "serde_json",
  "time",
  "tokio",
+ "unicode-width",
 ]
 
 [[package]]
@@ -2015,6 +2016,12 @@ dependencies = [
  "unicode-normalization",
  "unicode-script",
 ]
+
+[[package]]
+name = "unicode-width"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
 name = "untrusted"
