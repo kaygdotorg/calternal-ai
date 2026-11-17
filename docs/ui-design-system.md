@@ -156,7 +156,8 @@ Tests: `npm test --workspace @calternal/ui` (names, roles, keyboard, focus trap,
 - **Nothing out of bounds.** Menus and popovers place themselves with `lib/place.ts` (flip, shift, clamp to the window); rings are inset.
 - **Surfaces are never seen before their material is ready** (`lib/ready.ts`): a popover or sheet appears only after the blur and tint are in, and leaves with a fade.
 - **One state signal.** A thread's state is an icon in a row (spinner, bell, warning) or a word in the title pill, never both (`StateMark form`). Idle and done show nothing.
-- **Thread rows are one line:** title, time (hover only), compact state, provider mark. No second line, no automatic workspace labels; people make their own sections.
+- **Thread rows are one line:** the provider mark at the left, the title, the compact state at the right. Pointing at a row swaps the state for exactly three actions (copy link, archive, three dots = the right-click menu, one definition). No second line, no automatic workspace labels; people make their own sections.
+- **Swipe rows** (`apps/web/src/lib/swipe`, ported from the existing app's `rows/`, #400, same thresholds and springs): finger on a phone, two-finger sideways scroll on a desktop. Right shows Copy link; left shows Archive (a long swipe runs it) and More. Never from the screen's left or right 24 px (the shell's), a mostly vertical or slow drag is not a swipe, one row is open at a time, a drag in progress blocks it. One change from the existing app: only a scroll of the row's own container shuts an open row. Proof: `e2e/swipe-rows.mjs`.
 
 ## Primitives
 

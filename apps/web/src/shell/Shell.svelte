@@ -23,7 +23,7 @@
   });
   // Phone gestures (docs/ui-motion.md "Panels over the card"). The middle card and the side panel follow the finger one to one; on release they settle by the sheet motion tokens
   // (`--dur-sheet` 340 ms on `--ease-sheet`), toward whichever rest state the position and the release speed point at. What a gesture decides goes through `shell.over`/`shell.dismiss`,
-  // so it is a history entry: Back, Forward and the platform's own back gesture do the same thing. Touch only; horizontal intent (more across than down); a row swipe, a sheet drag or a
+  // so it is a history entry: Back, Forward and the platform's own back gesture do the same thing. Touch only; horizontal intent (more across than down); a row swipe (`.ra`), a sheet drag or a
   // text selection is not a panel gesture. Interruptible: a touch while either is still settling takes hold of it where it is (its current transform) and carries on from there.
   type Mode = "card" | "panel";
   let mode: Mode | null = null, gx = 0, gy = 0, g0 = 0, gskip = false, gtouch = false, gmoved = false;
@@ -40,7 +40,7 @@
   function gdown(e: PointerEvent) {
     if (!shell.narrow || e.pointerType !== "touch") return;
     gtouch = true; gx = e.clientX; gy = e.clientY; gmoved = false; samples = [{ t: e.timeStamp, x: e.clientX }];
-    gskip = !!(e.target as Element).closest(".slide, [role=dialog], input, textarea, pre");
+    gskip = !!(e.target as Element).closest(".ra, [role=dialog], input, textarea, pre");
     mode = null;
     // Taking hold of a card or panel that is still settling: freeze it where it is.
     if (settling(midEl)) { mode = "card"; g0 = matrixX(midEl); dragMode = "card"; drag = g0; return; }

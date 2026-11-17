@@ -4,16 +4,19 @@
   // next or previous section). Double-click or F2 renames a thread in place; right-click (or the menu key) opens its context menu: rename, move to a
   // section, copy link, archive, stop if it is running. A thread's state shows only when it means something (running, waiting for you, failed). A thread
   // that is in the attention card above is not listed here (its children, if any, stand on their own).
-  import { Icon, IconButton, InlineEditor, Menu, Row, undoable, type MenuItem } from "@calternal/ui";
+  // A row: the provider's mark at the left, the title, then the state (only when it means something). Pointing at a row (or focusing into it) swaps the state for exactly three actions: copy link,
+  // archive and a three-dot button that opens the very menu right-click opens (`ctxItems`, one definition, two triggers). On touch, and on a trackpad, the row swipes (lib/swipe, the existing app's
+  // engine): right shows Copy link; left shows Archive (a long swipe runs it) and More (the same menu). The shell's edge swipes (24 px at each screen edge) and dragging between sections are never started by it.
+  import { Icon, IconButton, InlineEditor, Menu, Row, toast, undoable, type MenuItem } from "@calternal/ui";
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { layout, type Container } from "./layout.svelte";
   import StateMark from "./StateMark.svelte";
-  import { swipe } from "../../lib/swipe";
+  import SwipeRow, { type SwipeAction } from "../../lib/swipe/SwipeRow.svelte";
+  import { swipeRows } from "../../lib/swipe/rows";
   import type { ThreadSummary } from "./model";
   import { client, store } from "./store.svelte";
 
   const current = $derived(segments()[0] === "threads" ? segments()[1] : undefined);
-  const time = (t: number) => new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
   const hidden = $derived(new Set(store.attention.slice(0, 3).map((a) => a.thread.id)));
   const shown = $derived(store.threads.filter((t) => !hidden.has(t.id)));
   const byId = $derived(new Map(shown.map((t) => [t.id, t])));
@@ -56,9 +59,20 @@
       : [],
   );
   function archive(t: ThreadSummary) {
-    void client.archive(t.id).then(() => undoable("thread.archive", t.id, "Archived", () => client.unarchive(t.id)));
     if (current === t.id) navigate("/threads");
+    return client.archive(t.id).then(() => undoable("thread.archive", t.id, "Archived", () => client.unarchive(t.id)));
   }
+  const copyLink = (t: ThreadSummary) => void navigator.clipboard?.writeText(location.origin + href(`/threads/${t.id}`)).then(() => toast("Link copied"));
+  /** The three-dot button and the swipe's More open the same menu as right-click, under the control that asked. */
+  const menuFrom = (el: HTMLElement | undefined, t: ThreadSummary) => { const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? 0, y: r?.bottom ?? 0, thread: t }; };
+  /** The swipe buttons of a row: right shows the first list, left the second (slot 0 is the outer edge; a long swipe runs it). */
+  const swipeOf = (t: ThreadSummary): { lead: SwipeAction[]; trail: SwipeAction[] } => ({
+    lead: [{ id: "copy", label: "Copy link", icon: "link", tone: "plain", run: () => copyLink(t) }],
+    trail: [
+      { id: "archive", label: "Archive", icon: "archive", tone: "danger", full: true, leaves: true, run: () => archive(t) },
+      { id: "more", label: "More", icon: "more", tone: "plain", run: (el) => menuFrom(el, t) },
+    ],
+  });
   function pick(id: string) {
     const c = ctx;
     ctx = null;
@@ -67,7 +81,7 @@
       const t = c.thread;
       if (id === "rename") edit("thread", t.id, t.title);
       else if (id.startsWith("move:")) { const to = id.slice(5) || null; layout.move(t.id, to, idsIn(to).length, idsIn(to)); }
-      else if (id === "copy") void navigator.clipboard?.writeText(location.origin + href(`/threads/${t.id}`));
+      else if (id === "copy") copyLink(t);
       else if (id === "stop") void client.stop(t.id);
       else if (id === "archive") archive(t);
     } else if (c.section) {
@@ -118,6 +132,23 @@
   }
 </script>
 
+{#snippet line(t: ThreadSummary, depth: number, selected: boolean)}
+  {@const sw = swipeOf(t)}
+  <SwipeRow lead={sw.lead} trail={sw.trail} busy={() => dragId !== null}>
+    <div class="rw">
+      <Row {depth} title={t.title} href={href(`/threads/${t.id}`)} {selected}>
+        {#snippet leading()}<span class="mark" class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span>{/snippet}
+        {#snippet trailing()}<span class="tail"><StateMark state={t.state} /></span>{/snippet}
+      </Row>
+      <span class="acts">
+        <IconButton small icon="link" label="Copy link" onclick={() => copyLink(t)} />
+        <IconButton small icon="archive" label="Archive" onclick={() => void archive(t)} />
+        <IconButton small icon="more" label="More actions" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, t)} />
+      </span>
+    </div>
+  </SwipeRow>
+{/snippet}
+
 {#snippet thread(t: ThreadSummary, c: Container, i: number, n: number)}
   {#if editing?.kind === "thread" && editing.id === t.id}
     <li class="edit"><InlineEditor class="rename" label="Rename thread" bind:value={draft} autoselect onblur={commit} onsubmit={commit} oncancel={() => (editing = null)} /></li>
@@ -137,23 +168,8 @@
       ondblclick={(e) => { e.preventDefault(); edit("thread", t.id, t.title); }}
       onkeydown={(e) => keyRow(e, t, c, i, n)}
     >
-      <div class="swrap">
-        <div class="sw" aria-hidden={false}>
-          <button type="button" class="sb" aria-label="More actions for {t.title}" onclick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); ctx = { x: r.left, y: r.bottom, thread: t }; }}><Icon name="more" /></button>
-          <button type="button" class="sb arch" aria-label="Archive {t.title}" onclick={() => archive(t)}><Icon name="archive" /></button>
-        </div>
-        <div class="slide" use:swipe={{ reveal: 130, onlong: (x, y) => (ctx = { x, y, thread: t }) }}>
-          <Row title={t.title} href={href(`/threads/${t.id}`)} selected={current === t.id}>
-            {#snippet trailing()}<span class="tail"><span class="when">{time(t.updatedAt)}</span><StateMark state={t.state} /><span class:pulse={t.state === "running"}><Icon inline name={t.provider} /></span></span>{/snippet}
-          </Row>
-        </div>
-      </div>
-      <span class="ra"><IconButton small icon="archive" label="Archive" onclick={() => archive(t)} /></span>
-      {#each kids(t.id) as k (k.id)}
-        <Row depth={1} title={k.title} href={href(`/threads/${k.id}`)} selected={current === k.id} onclick={() => {}}>
-        {#snippet trailing()}<span class="tail"><span class="when">{time(k.updatedAt)}</span><StateMark state={k.state} /><Icon inline name={k.provider} /></span>{/snippet}
-      </Row>
-      {/each}
+      {@render line(t, 0, current === t.id)}
+      {#each kids(t.id) as k (k.id)}{@render line(k, 1, current === k.id)}{/each}
     </li>
   {/if}
 {/snippet}
@@ -165,7 +181,7 @@
   </ul>
 {/snippet}
 
-<nav aria-label="Threads">
+<nav aria-label="Threads" use:swipeRows>
   <div class="sec first" role="group" aria-label={layout.looseName}>
     <div class="sh" class:over={over?.c === null && !ids0.length} role="presentation" ondragover={(e) => { if (dragId) { e.preventDefault(); over = { c: null, index: ids0.length }; } }} ondrop={(e) => { e.preventDefault(); dropHere(null, ids0.length); }} oncontextmenu={(e) => openCtx(e, { section: LOOSE })}>
       {#if editing?.kind === "section" && editing.id === LOOSE}
@@ -204,23 +220,15 @@
 <Menu open={!!ctx} items={ctxItems} label={ctx?.thread ? `Thread: ${ctx.thread.title}` : "Section"} anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
 
 <style>
-  /* Swipe actions (touch): the row slides left 130 px over two 50 px round buttons, 10 apart, 10 from the edge (docs/native-ui-study.md 13.2). */
-  .swrap { position: relative; }
-  .slide { position: relative; z-index: 1; touch-action: pan-y; translate: var(--sx, 0px) 0; transition: translate var(--dur-sheet) var(--ease-sheet); background: transparent; }
-  .slide:global(.dragging) { transition: none; }
-  .sw { display: none; position: absolute; top: 50%; right: var(--s-4); translate: 0 -50%; gap: var(--s-3); }
-  .sb { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; background: rgb(var(--ink-rgb) / 0.12); color: var(--ink); }
-  .sb.arch { background: color-mix(in oklab, var(--danger) 18%, rgb(var(--tint) / 0.6)); color: var(--danger); }
-  .sw { opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out); }
-  .swrap:has(.slide:global(.dragging)) .sw, .swrap:has(.slide:global([data-open="true"])) .sw { opacity: 1; pointer-events: auto; }
-  @media (hover: none) { .sw { display: flex; } }
+  /* A row: the provider's mark leads; the state sits at the right; pointing at the row swaps the state for the three actions. */
+  .rw { position: relative; }
+  .mark { flex: none; display: grid; color: var(--ink-2); }
   .tail { display: inline-flex; align-items: center; gap: var(--s-3); color: var(--ink-3); }
-  .ra { position: absolute; right: var(--s-3); top: calc(var(--row-h) / 2); translate: 0 -50%; opacity: 0; pointer-events: none; transition: opacity var(--dur-base) var(--ease-out); }
-  li:hover > .ra, li:focus-within > .ra { opacity: 1; pointer-events: auto; }
-  @media (hover: none) { .ra { display: none; } }
-  li:hover :global(.tail), li:focus-within :global(.tail) { margin-right: var(--ib-small); }
-  .when { display: none; font-size: var(--text-label); font-variant-numeric: tabular-nums; }
-  :global(.row:hover) .when, :global(.row:focus-visible) .when { display: inline; }
+  .acts { position: absolute; right: var(--s-2); top: 50%; translate: 0 -50%; display: inline-flex; gap: var(--s-1); opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out); }
+  @media (hover: hover) and (pointer: fine) {
+    .rw:hover .acts, .rw:focus-within .acts { opacity: 1; pointer-events: auto; }
+    .rw:hover .tail, .rw:focus-within .tail { visibility: hidden; }
+  }
   nav { display: grid; gap: var(--s-1); padding-bottom: var(--s-6); }
   ul { display: grid; gap: var(--s-1); }
   li { position: relative; }
