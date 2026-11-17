@@ -58,7 +58,8 @@
 {/if}
 
 <style>
-  .row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: calc(var(--row-h-settings)); padding: var(--s-3) var(--s-6); position: relative; transition: background-color var(--dur-slow) var(--ease-out); }
+  .row > :global(.sw) { width: 100%; }
+  .row { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--s-6); min-height: calc(var(--row-h-settings)); padding: var(--s-3) var(--s-6); position: relative; transition: background-color var(--dur-slow) var(--ease-out); }
   .row.col { display: grid; gap: var(--s-3); justify-content: stretch; padding-block: var(--s-5); }
   .row.hl { background: var(--accent-soft); }
   .chk { cursor: pointer; }
@@ -69,6 +70,15 @@
   .ctl { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; min-width: 10rem; }
   /* A segmented control keeps each choice's full word. */
   .ctl :global(.cap .seg) { flex: 1 0 auto; padding-inline: var(--s-5); }
+  /* A phone: the control goes under the words and takes the row's width, so nothing runs past the card (found in real Safari). */
+  @media (max-width: 600px) {
+    .row { flex-direction: column; align-items: stretch; gap: var(--s-3); }
+    .ctl { min-width: 0; justify-content: flex-start; flex-wrap: wrap; }
+    .ctl :global(.cap) { width: 100%; max-width: 100%; }
+    .ctl :global(.cap .seg) { flex: 1 1 auto; min-width: 0; padding-inline: var(--s-3); font-size: var(--text-label); }
+    :global(.row .field) { width: 100%; text-align: start; }
+    .h { max-width: none; }
+  }
   .num { display: inline-flex; align-items: center; gap: var(--s-3); }
   :global(.row .field) { min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); text-align: end; width: 10rem; }
   .drill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--pill-h); }

@@ -1,0 +1,11 @@
+{
+  "name": "@calternal/editor",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "What every text field and the Notes block editor share: transactions with origins, history of the person's own changes, the input-method gate and the keystroke probe. No framework and no CodeMirror; stage 1 of docs/editor-port-plan.md.",
+  "license": "AGPL-3.0-only",
+  "exports": { ".": "./src/index.ts" },
+  "types": "./src/index.ts",
+  "scripts": { "test": "vitest run" }
+}

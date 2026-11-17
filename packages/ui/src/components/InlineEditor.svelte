@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { FieldEditor } from "../../../editor/src/index";
   // The one text-input surface for typing inline: the composer, side chat, rename fields. It is a thin contract (value, submit, cancel, focus)
   // over a native field so that the Notes block editor's input can replace it by changing this file alone; callers never touch the DOM node
   // except through `focus()`. Enter submits (Shift+Enter is a new line in `multiline`), Escape cancels, IME composition is never interrupted.
@@ -17,11 +18,13 @@
     oninput,
     onkeydown,
     autoselect = false,
+    editor = $bindable(),
     marks,
     onselect,
     el = $bindable(),
   }: {
     /** Focus and select all on mount (rename fields). */ autoselect?: boolean;
+    /** The editor behind the field (`packages/editor`): apply a change from code as one undo step (`editor.apply({from, to, insert})`), undo, redo. */ editor?: FieldEditor;
     /** Words to highlight behind the text, as ranges of `value` (the recognised words); drawn on a mirror layer, never in the field. */ marks?: { start: number; end: number; kind: string }[];
     /** Called when the caret or the selection moves (for pickers that follow the caret). */ onselect?: () => void;
     value?: string; multiline?: boolean; label?: string; placeholder?: string; maxRows?: number; id?: string; class?: string;
@@ -66,6 +69,14 @@
     return out;
   });
   $effect(() => { value; marks; queueMicrotask(syncMirror); });
+  // The field editor (docs/editor-port-plan.md, stage 1): history of the person's own changes across typed and programmatic edits, the input-method gate and the keystroke probe.
+  $effect(() => {
+    if (!el) return;
+    const fe = new FieldEditor(el);
+    editor = fe;
+    return () => { fe.destroy(); editor = undefined; };
+  });
+  $effect(() => { value; editor?.sync(); });
   $effect(() => { value; grow(); });
   $effect(() => { if (autoselect && el) { el.focus(); el.select(); } });
 </script>

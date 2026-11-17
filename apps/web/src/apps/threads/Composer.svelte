@@ -9,6 +9,7 @@
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
   import { Button, Icon, IconButton, InlineEditor, Menu, Panel, Pill, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
+  import type { FieldEditor } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
   import { fixtureItems } from "../../palette/fixtures";
   import { mentionPool, pick as pickMentions, skillPool, triggerAt, type Mention } from "../../palette/mentions";
@@ -42,6 +43,7 @@
   const drafts = new Map<string, string>();
   let text = $state("");
   let field = $state<HTMLInputElement | HTMLTextAreaElement>();
+  let editor = $state<FieldEditor | undefined>();
   let menuOpen = $state(false);
   let permOpen = $state(false);
   let whereOpen = $state(false);
@@ -83,8 +85,11 @@
     const end = caret;
     const tail = text.slice(end);
     const gap = m.kind === "skill" || /^\s/.test(tail) ? "" : " ";
-    text = text.slice(0, trig.start) + m.insert + (m.kind === "skill" ? "" : gap) + tail;
-    const at = trig.start + m.insert.length + (m.kind === "skill" ? 0 : gap.length);
+    const insert = m.insert + (m.kind === "skill" ? "" : gap);
+    // One change through the field editor: a single undo step, the caret after it.
+    if (editor) editor.apply({ from: trig.start, to: end, insert });
+    else text = text.slice(0, trig.start) + insert + tail;
+    const at = trig.start + insert.length;
     queueMicrotask(() => { field?.focus(); field?.setSelectionRange(at, at); caret = at; });
   }
   function onkey(e: KeyboardEvent) {
@@ -121,7 +126,7 @@
     {#each mentions as m}<span class="cx on"><Icon inline name={m.label === provider?.name || pool.find((p) => p.label === m.label)?.kind === "agent" ? "spark" : pool.find((p) => p.label === m.label)?.kind === "thread" ? "threads" : pool.find((p) => p.label === m.label)?.kind === "item" ? "notes" : "user"} /><span>{m.label}</span><button type="button" class="x" aria-label="Remove {m.label}" onclick={() => dropMention(m)}><Icon inline name="close" /></button></span>{/each}
   </div>
   <div class="field" bind:this={fieldBox}>
-    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:value={text} {marks} onselect={here} oninput={here} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}… (@ to mention, / for skills)`} />
+    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} onselect={here} oninput={here} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if running && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}

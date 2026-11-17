@@ -63,7 +63,8 @@ function load(src: string): Promise<HTMLImageElement> {
 
 /** Renders the picture cover-fitted to the viewport, blurred and saturated, into a small canvas. */
 function render(img: HTMLImageElement, blur: number, saturate: number): HTMLCanvasElement {
-  const k = Math.min(8, Math.max(1, blur / 8));
+  // At most 1/4 scale: real Safari upscales a smaller copy without smoothing it, which showed as blocks.
+  const k = Math.min(4, Math.max(1, blur / 8));
   const w = Math.max(16, Math.round(innerWidth / k));
   const h = Math.max(16, Math.round(innerHeight / k));
   const r = blur / k;

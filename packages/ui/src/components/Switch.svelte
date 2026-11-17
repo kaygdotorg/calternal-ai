@@ -10,8 +10,8 @@
 </button>
 
 <style>
-  .sw { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: var(--pill-h); text-align: start; font-size: var(--text-ui); }
-  .tx { display: grid; min-width: 0; }
+  .sw { box-sizing: border-box; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: var(--pill-h); text-align: start; font-size: var(--text-ui); }
+  .tx { display: grid; flex: 1; min-width: 0; }
   small { font-size: var(--text-label); color: var(--ink-3); }
   .track { position: relative; flex: none; width: calc(var(--s-9) + var(--s-4)); height: calc(var(--s-8) + var(--s-1) * 2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-fast) var(--ease-out); }
   .track b { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--dur-base) var(--spring); }

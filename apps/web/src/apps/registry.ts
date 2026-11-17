@@ -50,6 +50,8 @@ export interface AppDef {
   attention?: () => AttentionItem[];
   /** One-time loading. */
   start?: () => Promise<void>;
+  /** Reloads what the sidebar lists (pull to refresh on a phone). Absent when there is nothing to reload. */
+  refresh?: () => Promise<unknown>;
 }
 
 /** The installed apps, in switcher order. */
@@ -75,6 +77,7 @@ export const APPS: AppDef[] = [
         href: `/threads/${thread.id}`,
       })),
     start: () => threads.start(),
+    refresh: () => threads.refresh(),
   },
   {
     kind: "notes",
@@ -87,6 +90,7 @@ export const APPS: AppDef[] = [
       { id: "style", label: "Style", icon: "settings", component: NotesPanels, props: { kind: "style" } },
     ],
     start: () => notes.start(),
+    refresh: () => notes.refresh(),
   },
 ];
 

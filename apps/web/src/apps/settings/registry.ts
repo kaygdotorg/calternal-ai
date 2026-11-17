@@ -173,9 +173,9 @@ const storagePage: Page = {
   id: "storage", name: "Storage", icon: "folder", blurb: "The three roots and their health.",
   groups: [
     { title: "Roots", settings: [
-      { id: "server.storage.appdata", label: "appdata", help: "Databases and state, on the SSD.", control: { type: "info", text: () => "Healthy" } },
-      { id: "server.storage.userdata-ssd", label: "userdata-ssd", help: "People's files, on the SSD.", control: { type: "info", text: () => "Healthy" } },
-      { id: "server.storage.userdata-hdd", label: "userdata-hdd", help: "People's files, on disk.", control: { type: "info", text: () => "Healthy" } },
+      { id: "server.storage.appdata", label: "appdata", help: "Databases and state, on the SSD.", control: { type: "info", text: () => "Healthy · 412 MB of 1.8 TB" } },
+      { id: "server.storage.userdata-ssd", label: "userdata-ssd", help: "People's files, on the SSD.", control: { type: "info", text: () => "Healthy · 38 GB of 1.8 TB" } },
+      { id: "server.storage.userdata-hdd", label: "userdata-hdd", help: "People's files, on disk.", control: { type: "info", text: () => "Healthy · 1.2 TB of 14 TB" } },
     ] },
     danger("server.storage.purge-trash", "Empty every trash", "Files in trash are deleted for good.", "Empty trash…"),
   ],

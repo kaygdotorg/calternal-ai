@@ -113,3 +113,14 @@ These are development-host numbers, not benchmarks.
 **Blur and veils add no per-frame work.** The wallpaper is blurred once into small canvases and the veil is solved once per wallpaper, scheme, box or window-size change
 (`appearance/veil.ts`); while scrolling, the surfaces are plain images and gradients. At 1x the 10,000-message scroll still has 0 late frames. What remains at 4x is the message list itself
 (creating and removing rows) and the sampling profiler's own `elementsFromPoint` hit tests.
+
+## The field editor, stage 1 of the editor port (2026-11-17)
+
+`packages/editor` (transactions with origins, history of the person's own changes, the input-method gate, the keystroke probe) now sits behind `InlineEditor`, so the composer, side chat, rename fields and
+the palette field all run on it. Measured on the dev VM, Chromium at **4x CPU slowdown**, typing 74 characters in the thread composer at about 16 keys a second with the probe (`?test=1`, `e2e/field-probe.mjs`):
+
+| Measure | Result | Budget carried from the existing app |
+| --- | --- | --- |
+| Key press to the next frame after the field changed | median 7.3 ms, p95 10.1 ms, worst 31.7 ms | composer key p95 8 ms (gated there; the probe measures to paint, which includes the frame) |
+| Added to the first paint | 7.0 KB minified, **2.0 KB brotli** (the whole package) | under 3 KB |
+| Palette keystroke to painted rows (`e2e/perf-suite.mjs`) | one frame, unchanged | one frame |

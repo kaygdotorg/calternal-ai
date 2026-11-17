@@ -4,6 +4,7 @@
   // only thing that changes while it streams.
   import { cssPx, InlineEditor, Panel, Pill } from "@calternal/ui";
   import { appearance } from "../../appearance/prefs.svelte";
+  import { hazards } from "../../lib/hazard";
   import VirtualList from "../../lib/VirtualList.svelte";
   import { href } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
@@ -39,6 +40,13 @@
     matchMedia("(min-width: 760px)").addEventListener("change", read);
     return () => matchMedia("(min-width: 760px)").removeEventListener("change", read);
   });
+  // Pictures scrolling under the floating pills raise those pills' fill (pill-contrast hazards).
+  let headerEl = $state<HTMLElement>();
+  $effect(() => {
+    if (!listEl || !headerEl) return;
+    const h = headerEl;
+    return hazards(listEl, () => [...h.querySelectorAll<HTMLElement>(".pill, .title")]);
+  });
   const summary = $derived(conv?.summary ?? store.get(id));
   const parent = $derived(summary?.parentId ? store.get(summary.parentId) : undefined);
   const reqs = $derived(store.requestsFor(id));
@@ -70,7 +78,7 @@
 </script>
 
 <div class="thread">
-  <header>
+  <header bind:this={headerEl}>
     {#if shell.narrow || !shell.sidebarOpen}<Pill icon="sidebar" label="Show threads" onclick={() => shell.toggleSidebar()} />{/if}
     <Panel class="title" radius="pill">
       <div class="tt">

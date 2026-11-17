@@ -46,3 +46,5 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 @keyframes pulse { 50% { opacity: 0.5; } }
 .pulse { animation: pulse var(--dur-pulse) ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+@keyframes spin { to { rotate: 360deg; } }

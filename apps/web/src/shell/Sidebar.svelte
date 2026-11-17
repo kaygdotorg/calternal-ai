@@ -10,6 +10,7 @@
   import AccountSheet from "./AccountSheet.svelte";
   import Attention from "./Attention.svelte";
   import Palette from "./Palette.svelte";
+  import { pull } from "../lib/pull";
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
@@ -27,7 +28,7 @@
     {#if !shell.narrow}<Pill icon="sidebar" label="Hide the sidebar" onclick={() => shell.toggleSidebar()} />{/if}
   </header>
 
-  <div class="scroll edge-fade">
+  <div class="scroll edge-fade" use:pull={{ refresh: async () => { await app.refresh?.(); } }}>
     <Attention items={app.attention?.() ?? []} />
     <div class="body"><app.Sidebar /></div>
   </div>

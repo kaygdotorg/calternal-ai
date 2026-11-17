@@ -8,7 +8,7 @@
  * Every call is one `POST /api/v1/operations` with a fresh `request_id` (kept on retry), and a failure is thrown as `ServerError` with the server's safe code.
  */
 import type {
-  ApiError, DescribeResult, LiveFrame, LiveSubscription, NoteResult, NotesCreateInput, NotesHistoryResult, NotesListResult, NotesUpdateInput, OperationResponse,
+  AccountFrame, AccountInputListResult, AccountInputResult, ApiError, DescribeResult, LiveFrame, LiveSubscription, NoteResult, NotesCreateInput, NotesHistoryResult, NotesListResult, NotesUpdateInput, OperationResponse,
   SpacesListResult,
 } from "../../../../packages/contracts/src/index";
 import { events } from "./sse";
@@ -63,6 +63,22 @@ export class ServerClient {
     update: (i: NotesUpdateInput, requestId?: string) => this.operate<NoteResult>("notes.update", i as unknown as Record<string, unknown>, requestId),
     history: (space_id: string, id: string) => this.operate<NotesHistoryResult>("notes.history", { space_id, id }),
   };
+  /** Private drafts: a complete replacement per (space, item); never shared with other members. */
+  drafts = {
+    save: (space_id: string, item_id: string, text: string) => this.operate<AccountInputResult>("drafts.save", { space_id, item_id, text }),
+    list: () => this.operate<AccountInputListResult>("drafts.list"),
+    get: (space_id: string, item_id: string) => this.operate<AccountInputResult>("drafts.get", { space_id, item_id }),
+    delete: (space_id: string, item_id: string) => this.operate<AccountInputResult>("drafts.delete", { space_id, item_id }),
+  };
+  /** Pending submissions: a write queued with its original creation time; the nested request's id is the record's id. */
+  pending = {
+    queue: (space_id: string, item_id: string, created_at_ms: number, request: { request_id: string; operation: string; input: Record<string, unknown> }) => this.operate<AccountInputResult>("pending.queue", { space_id, item_id, created_at_ms, request }),
+    edit: (space_id: string, item_id: string, created_at_ms: number, request: { request_id: string; operation: string; input: Record<string, unknown> }) => this.operate<AccountInputResult>("pending.edit", { space_id, item_id, created_at_ms, request }),
+    list: () => this.operate<AccountInputListResult>("pending.list"),
+    cancel: (id: string) => this.operate<AccountInputResult>("pending.cancel", { id }),
+    confirm: (id: string) => this.operate<AccountInputResult>("pending.confirm", { id }),
+    submit: (id: string) => this.operate<AccountInputResult>("pending.submit", { id }),
+  };
   jobs = {
     get: (job_id: string) => this.operate<unknown>("jobs.get", { job_id }),
     cancel: (job_id: string) => this.operate<unknown>("jobs.cancel", { job_id }),
@@ -81,6 +97,23 @@ export class ServerClient {
       const type = typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
       const body = typeof raw.type === "string" ? raw : (Object.values(raw)[0] as Record<string, unknown>);
       onFrame(({ [type === "entry" ? "Entry" : type === "ready" ? "Ready" : "Reset"]: body } as unknown) as LiveFrame);
+    }
+  }
+
+  /**
+   * Follows the signed-in account's feed (`GET /api/v1/account/live`, SSE): `Changed` says the private snapshot (drafts, pending) is stale (reload `drafts.list` and
+   * `pending.list`, then keep the bookmark), `Ready` carries the bookmark, `Reset` says to reload and subscribe again without one.
+   */
+  async accountLive(onFrame: (f: AccountFrame) => void, o: { bookmark?: string; signal?: AbortSignal } = {}): Promise<void> {
+    const q = o.bookmark ? `?bookmark=${encodeURIComponent(o.bookmark)}` : "";
+    const res = await this.f(`${this.base}/api/v1/account/live${q}`, { headers: this.headers({ accept: "text/event-stream" }), signal: o.signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
+    if (!res.ok || !res.body) throw new ServerError("unavailable", `account stream refused (${res.status})`, res.status);
+    for await (const ev of events(res.body)) {
+      const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
+      // Internally tagged on the wire (`{"type":"changed","bookmark":...}`), externally in the generated type: accept both.
+      const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
+      const body = typeof raw === "object" && typeof raw.type !== "string" ? (Object.values(raw)[0] as Record<string, unknown>) : (raw as Record<string, unknown>);
+      onFrame(type === "reset" ? "Reset" : ({ [type === "ready" ? "Ready" : "Changed"]: { bookmark: String(body.bookmark ?? "") } } as unknown as AccountFrame));
     }
   }
 

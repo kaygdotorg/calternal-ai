@@ -60,6 +60,8 @@ const CODE = [
   "```ts\nconst compiled = compile(source);\nif (!compiled.program) throw new Error(formatDiagnostics(compiled.diagnostics));\n```",
   "```sh\nnix develop -c cargo test -j6 -p calternal-store\n```",
 ];
+// A picture, to have media under the floating bars (a generated SVG as a data URI; nothing is fetched).
+const PICTURE = "![A chart of the replay time before and after](data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='260'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd9a0'/%3E%3Cstop offset='1' stop-color='%23101820'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='640' height='260' fill='url(%23g)'/%3E%3Crect x='60' y='70' width='90' height='150' fill='%23ffffff'/%3E%3Crect x='200' y='170' width='90' height='50' fill='%23ffffff'/%3E%3C/svg%3E)";
 const CMDS: Record<StepKind, string[]> = {
   read: ["crates/store/src/journal.rs", "crates/auth/src/invite.rs", "docs/addresses.md", "crates/cli/src/main.rs"],
   edit: ["crates/store/src/journal.rs", "crates/store/src/lib.rs", "crates/auth/tests/invite.rs"],
@@ -112,7 +114,7 @@ export function messageAt(threadId: string, seed: number, index: number, baseTim
   if (index % 2 === 0) return { id, role: "user", at, blocks: [{ type: "text", text: pick(r, ASKS) }] };
   const blocks: Block[] = [{ type: "text", text: pick(r, OPENERS) }];
   if (r() < 0.8) blocks.push({ type: "steps", steps: steps(r, id, 3 + Math.floor(r() * 7), index % 250 === 1), ms: 4000 + Math.floor(r() * 90000) });
-  blocks.push({ type: "text", text: [pick(r, BODIES), r() < 0.4 ? pick(r, LISTS) : "", r() < 0.4 ? pick(r, CODE) : ""].filter(Boolean).join("\n\n") });
+  blocks.push({ type: "text", text: [pick(r, BODIES), r() < 0.4 ? pick(r, LISTS) : "", r() < 0.4 ? pick(r, CODE) : "", r() < 0.12 ? PICTURE : ""].filter(Boolean).join("\n\n") });
   if (r() < 0.12) blocks.push({ type: "card", source: TABLE_CARD });
   blocks.push({ type: "text", text: pick(r, FOLLOW) });
   return { id, role: "agent", at, blocks };

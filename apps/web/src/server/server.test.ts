@@ -71,3 +71,24 @@ describe("the jobs stream", () => {
     await expect(gone.jobEvents("x", () => {})).rejects.toMatchObject({ code: "not_found" });
   });
 });
+
+describe("drafts, pending submissions and the account feed", () => {
+  test("drafts and pending operations use the documented inputs", async () => {
+    const seen: { operation: string; input: unknown }[] = [];
+    const c = new ServerClient({ token: () => "T", fetch: (async (_u: string, init: RequestInit) => { seen.push(JSON.parse(init.body as string)); return json({ request_id: "r", ok: true, data: { record: null, result: null } }); }) as never });
+    await c.drafts.save("s", "i", "text");
+    await c.pending.queue("s", "i", 5, { request_id: "q", operation: "notes.update", input: { id: "i" } });
+    await c.pending.submit("q");
+    expect(seen.map((x) => x.operation)).toEqual(["drafts.save", "pending.queue", "pending.submit"]);
+    expect(seen[0]!.input).toEqual({ space_id: "s", item_id: "i", text: "text" });
+    expect(seen[1]!.input).toMatchObject({ space_id: "s", item_id: "i", created_at_ms: 5, request: { request_id: "q" } });
+    expect(seen[2]!.input).toEqual({ id: "q" });
+  });
+  test("the account feed delivers changed, ready and reset", async () => {
+    const frames: unknown[] = [];
+    const sse = 'data: {"type":"changed","bookmark":"b1"}\n\ndata: {"type":"ready","bookmark":"b2"}\n\ndata: {"type":"reset"}\n\n';
+    const c = new ServerClient({ token: () => "T", fetch: (async () => new Response(body(sse))) as never });
+    await c.accountLive((f) => frames.push(f));
+    expect(frames).toEqual([{ Changed: { bookmark: "b1" } }, { Ready: { bookmark: "b2" } }, "Reset"]);
+  });
+});
