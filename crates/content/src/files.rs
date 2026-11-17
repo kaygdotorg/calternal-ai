@@ -86,17 +86,18 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         let text = std::str::from_utf8(&item.bytes).map_err(Error::internal)?;
         let mut out = format!("---\ncalternal-id: {}\n", item.id);
         if let Some(rest) = text.strip_prefix("---\n")
-            && let Some((front, body)) = rest.split_once("\n---\n") {
-                for line in front.lines() {
-                    if !line.trim_start().starts_with("calternal-id:") {
-                        out.push_str(line);
-                        out.push('\n');
-                    }
+            && let Some((front, body)) = rest.split_once("\n---\n")
+        {
+            for line in front.lines() {
+                if !line.trim_start().starts_with("calternal-id:") {
+                    out.push_str(line);
+                    out.push('\n');
                 }
-                out.push_str("---\n");
-                out.push_str(body);
-                return Ok(out.into_bytes());
             }
+            out.push_str("---\n");
+            out.push_str(body);
+            return Ok(out.into_bytes());
+        }
         out.push_str("---\n");
         out.push_str(text);
         Ok(out.into_bytes())
@@ -352,26 +353,27 @@ impl Space {
                 let name = name.to_string_lossy();
                 // fsio atomic-write temps include nonce + the known item's final name.
                 if let Some(rest) = name.strip_prefix(calternal_fsio::TEMP_PREFIX)
-                    && let Some((nonce, final_name)) = rest.split_once('-') {
-                        let known: bool = self
-                            .conn
-                            .query_row(
-                                "SELECT EXISTS(SELECT 1 FROM items WHERE path=?1)",
-                                [format!(
-                                    "{}/{final_name}",
-                                    folder(&self.registration(&kind)?.0, &kind)
-                                )],
-                                |r| r.get(0),
-                            )
-                            .map_err(Error::internal)?;
-                        if known
-                            && !nonce.is_empty()
-                            && nonce.bytes().all(|c| c.is_ascii_hexdigit())
-                            && entry.file_type().is_ok_and(|t| t.is_file())
-                        {
-                            fs::remove_file(entry.path()).map_err(Error::internal)?;
-                        }
+                    && let Some((nonce, final_name)) = rest.split_once('-')
+                {
+                    let known: bool = self
+                        .conn
+                        .query_row(
+                            "SELECT EXISTS(SELECT 1 FROM items WHERE path=?1)",
+                            [format!(
+                                "{}/{final_name}",
+                                folder(&self.registration(&kind)?.0, &kind)
+                            )],
+                            |r| r.get(0),
+                        )
+                        .map_err(Error::internal)?;
+                    if known
+                        && !nonce.is_empty()
+                        && nonce.bytes().all(|c| c.is_ascii_hexdigit())
+                        && entry.file_type().is_ok_and(|t| t.is_file())
+                    {
+                        fs::remove_file(entry.path()).map_err(Error::internal)?;
                     }
+                }
             }
         }
         Ok(())
