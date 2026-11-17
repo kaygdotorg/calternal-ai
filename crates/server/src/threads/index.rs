@@ -20,20 +20,21 @@ pub(super) struct Row {
     pub(super) revision: String,
     /// Derived sidebar label for the latest retained job.
     pub(super) turn_state: &'static str,
+    /// Caller-scoped explanation from the same index seek.
+    pub(super) turn_reason: Value,
 }
 
-/// Fetch the existing bounded content index page and current job states in a
-/// single SQL statement. No message bytes, stored job payloads or file stats.
-/// Only cold attachment prepares the same-space content database and attaches
-/// its read-only handle to the cached jobs connection. Neither store writes here.
-pub(super) fn page<D: Directory>(state: &Shared<D>, space: SpaceId) -> Result<Vec<Row>, Error> {
+fn connection<D: Directory>(
+    state: &Shared<D>,
+    space: SpaceId,
+) -> Result<std::sync::Arc<JobDatabase>, Error> {
     let conn = state.jobs.conn(&space.to_string())?;
     if !is_attached(&conn.lock().unwrap_or_else(|p| p.into_inner())) {
         // Initialize the content schema before attaching. Release the jobs lock
         // above first: writer paths acquire content before jobs.
         state.store.content().live_journal(space)?;
     }
-    read(&conn)
+    Ok(conn)
 }
 
 fn is_attached(conn: &Connection) -> bool {
@@ -48,15 +49,20 @@ fn index_error(error: rusqlite::Error) -> Error {
 // The unary plus removes the content column's TEXT affinity without changing its
 // value. This lets SQLite seek the affinity-free JSON expression in jobs_thread.
 const SUMMARIES: &str = "SELECT i.id, i.metadata, i.revision, (
-         SELECT j.state FROM main.jobs j
+         SELECT json_array(j.state,j.account,__REASON__) FROM main.jobs j
          WHERE j.operation='agent.turn' AND json_extract(j.input,'$.request.thread_id') = +i.id
+         AND json_extract(j.input,'$.check') IS NOT 1
          ORDER BY j.rowid DESC LIMIT 1
      )
      FROM thread_content.items i WHERE i.kind='threads'
      ORDER BY i.updated_at DESC, i.id LIMIT 1000";
 
-fn read(conn: &JobDatabase) -> Result<Vec<Row>, Error> {
-    let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+fn summaries() -> &'static str {
+    static SQL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SQL.get_or_init(|| SUMMARIES.replace("__REASON__", &crate::turns::reason::sql("j.")))
+}
+
+fn attach(conn: &Connection) -> Result<(), Error> {
     if !is_attached(&conn) {
         let database = conn
             .path()
@@ -76,7 +82,20 @@ fn read(conn: &JobDatabase) -> Result<Vec<Row>, Error> {
         conn.execute("ATTACH DATABASE ?1 AS thread_content", [&uri])
             .map_err(index_error)?;
     }
-    let mut stmt = conn.prepare_cached(SUMMARIES).map_err(index_error)?;
+    Ok(())
+}
+
+/// List the authorized space's threads with a single indexed query and no body
+/// reads. A cold connection attaches the same-space metadata index read-only.
+pub(super) fn page<D: Directory>(
+    state: &Shared<D>,
+    space: SpaceId,
+    account: calternal_types::AccountId,
+) -> Result<Vec<Row>, Error> {
+    let conn = connection(state, space)?;
+    let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+    attach(&conn)?;
+    let mut stmt = conn.prepare_cached(summaries()).map_err(index_error)?;
     let rows = stmt
         .query_map([], |r| {
             Ok((
@@ -87,19 +106,77 @@ fn read(conn: &JobDatabase) -> Result<Vec<Row>, Error> {
             ))
         })
         .map_err(index_error)?;
+    let account = account.to_string();
     rows.map(|r| {
-        let (id, metadata, revision, state) = r.map_err(index_error)?;
+        let (id, metadata, revision, status) = r.map_err(index_error)?;
+        let status: Value = status
+            .as_deref()
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|_| Error::internal("invalid indexed turn state"))?
+            .unwrap_or_default();
+        let state = status[0].as_str().map(job_sql::parse_state);
+        let reason = crate::turns::reason::describe(state, &status[2], status[1] == account);
         Ok(Row {
             id: Uuid::parse_str(&id).map_err(|_| Error::internal("invalid indexed thread ID"))?,
             metadata: serde_json::from_str(&metadata)
                 .map_err(|_| Error::internal("invalid indexed thread metadata"))?,
             revision,
-            turn_state: state.as_deref().map_or("idle", |state| {
-                super::turn_status::label(job_sql::parse_state(state))
-            }),
+            turn_state: state.map_or("idle", |s| super::turn_status::label(s)),
+            turn_reason: reason,
         })
     })
     .collect()
+}
+
+/// Read existence, the caller's current pin, and activation controls together.
+/// One statement over the indexed thread, latest job and fixed control prefix.
+/// No content bytes, journal reads or account-private details leave the query.
+pub(crate) fn readiness_context<D: Directory>(
+    state: &Shared<D>,
+    space: SpaceId,
+    thread: Option<Uuid>,
+    account: calternal_types::AccountId,
+) -> Result<(Option<Uuid>, Value), Error> {
+    let conn = connection(state, space)?;
+    let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
+    attach(&conn)?;
+    let mut stmt = conn.prepare_cached(
+        "SELECT i.id, (
+            SELECT CASE WHEN j.account=?2 AND j.state IN ('waiting','admitted','placing','running','interrupted','retry_waiting')
+                THEN json_extract(j.checkpoint,'$.request_machine') END
+            FROM main.jobs j WHERE j.operation='agent.turn'
+                AND json_extract(j.input,'$.request.thread_id')=+i.id
+                AND json_extract(j.input,'$.check') IS NOT 1
+            ORDER BY j.rowid DESC LIMIT 1
+        ), (
+            SELECT json_group_object(key,json(value)) FROM thread_content.controls
+            WHERE key >= ?3 AND key < ?4
+        )
+        FROM (SELECT 1)
+        LEFT JOIN thread_content.items i ON i.id=?1 AND i.kind='threads'
+          AND json_extract(i.metadata,'$.deleted') IS NOT 1",
+    ).map_err(index_error)?;
+    let start = crate::store::plugin_key("");
+    let end = format!("{}0", start.trim_end_matches('/'));
+    let (found, pin, controls): (Option<String>, Option<String>, String) = stmt
+        .query_row(
+            rusqlite::params![
+                thread.map(|id| id.to_string()),
+                account.to_string(),
+                start,
+                end
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(index_error)?;
+    if thread.is_some() && found.is_none() {
+        return Err(Error::not_found("thread not found"));
+    }
+    let pin = pin.and_then(|id| Uuid::parse_str(&id).ok());
+    let controls = serde_json::from_str(&controls)
+        .map_err(|_| Error::internal("invalid indexed plugin state"))?;
+    Ok((pin, controls))
 }
 
 #[cfg(test)]
@@ -125,7 +202,7 @@ mod tests {
         .unwrap();
 
         let mut stmt = conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {SUMMARIES}"))
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", summaries()))
             .unwrap();
         let nodes: Vec<String> = stmt
             .query_map([], |row| row.get(3))

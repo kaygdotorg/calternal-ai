@@ -14,37 +14,13 @@ title: "plugin-sdk: index/type-aliases/ProviderEventKind"
 
 # Type Alias: ProviderEventKind
 
-> **ProviderEventKind** = \{ `installed`: `boolean`; `sign_in_command`: `string`; `signed_in`: `boolean`; `type`: `"check"`; \} \| \{ `session_id`: `string`; `type`: `"session"`; \} \| \{ `text`: `string`; `type`: `"text_delta"`; \} \| \{ `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_started"`; \} \| \{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `type`: `"tool_finished"`; \} \| \{ `text`: `string`; `type`: `"question"`; \} \| \{ `summary`: `string`; `type`: `"approval_request"`; \} \| \{ `input_tokens`: `number`; `output_tokens`: `number`; `type`: `"usage"`; \} \| \{ `billing`: [`ProviderBilling`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/); `class`: [`ProviderFailureClass`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/); `code`: `string`; `message`: `string`; `reset_at_ms?`: `number`; `type`: `"error"`; \} \| \{ `outcome`: `string`; `type`: `"done"`; \}
+> **ProviderEventKind** = `object` & `ProviderCheck` \| \{ `session_id`: `string`; `type`: `"session"`; \} \| \{ `text`: `string`; `type`: `"text_delta"`; \} \| \{ `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_started"`; \} \| \{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `type`: `"tool_finished"`; \} \| \{ `text`: `string`; `type`: `"question"`; \} \| \{ `summary`: `string`; `type`: `"approval_request"`; \} \| \{ `input_tokens`: `number`; `output_tokens`: `number`; `type`: `"usage"`; \} \| \{ `billing`: [`ProviderBilling`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/); `class`: [`ProviderFailureClass`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/); `code`: `string`; `message`: `string`; `reset_at_ms?`: `number`; `type`: `"error"`; \} \| \{ `outcome`: `string`; `type`: `"done"`; \}
 
 Normalized provider output. Untrusted provider text conveys no authority.
 
 ## Union Members
 
-### Type Literal
-
-\{ `installed`: `boolean`; `sign_in_command`: `string`; `signed_in`: `boolean`; `type`: `"check"`; \}
-
-#### installed
-
-> **installed**: `boolean`
-
-Official program was found.
-
-#### sign\_in\_command
-
-> **sign\_in\_command**: `string`
-
-Command the person runs in their sandbox, never run by the adapter.
-
-#### signed\_in
-
-> **signed\_in**: `boolean`
-
-Official program reports a current login.
-
-#### type
-
-> **type**: `"check"`
+`object` & `ProviderCheck`
 
 ***
 

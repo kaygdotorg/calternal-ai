@@ -1,3 +1,4 @@
-TITLE         TURN     STATE   MESSAGES  ID                    PROVIDER      MODEL   MODE          LAST ACTIVITY  PARENT
-Long conver…  waiting  active  17        019a8c00-0…000000001  calternal-c…  sonnet  least_access  2026-11-17T1…  —
+TITLE         TURN     TURN REASON   STATE   MESSAGES  ID             PROVIDER      MODEL   MODE          LAST ACTIVITY
+Long conver…  waiting  Waiting for…  active  17        019a8c…000001  calternal-c…  sonnet  least_access  2026-11-17T1…
+1 column hidden; use --json or a wider terminal.
 Next: calternal threads create --help

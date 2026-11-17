@@ -47,7 +47,7 @@ pub(super) fn apply<D: Directory>(
         return Ok(saved.result);
     }
     if operation == "threads.list" {
-        let rows = super::index::page(st, space)?;
+        let rows = super::index::page(st, space, who.id)?;
         let parent = data.get("parent_thread").and_then(Value::as_str);
         let include_archived = parent.is_some()
             || data
@@ -63,7 +63,7 @@ pub(super) fn apply<D: Directory>(
                     && parent.is_none_or(|p| r.metadata["parent_thread"] == p)
             })
             .take(limit)
-            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata,"turn_state":r.turn_state}))
+            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata,"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
             .collect();
         return Ok(json!({"threads":threads}));
     }
@@ -136,14 +136,21 @@ pub(super) fn apply<D: Directory>(
     if operation == "threads.get" {
         let mut result = document::view(&item);
         result["thread"]["turn_state"] = json!("idle");
+        result["thread"]["turn_reason"] = crate::turns::reason::describe(None, &Value::Null, false);
         if item.metadata["deleted"] != true
             && let Some(job) = st
                 .jobs
                 .thread_latest(&space.to_string(), &item.id.to_string())?
         {
+            let reason = crate::turns::reason::describe(
+                Some(job.state),
+                &job.checkpoint,
+                who.id == job.account,
+            );
             result["thread"]["turn_state"] = json!(super::turn_status::label(job.state));
+            result["thread"]["turn_reason"] = reason;
             if !job.state.is_final() {
-                result["job"] = json!(job.view());
+                result["job"] = json!(job.view_for(who.id));
             }
         }
         return Ok(result);
@@ -287,7 +294,7 @@ pub(super) fn apply<D: Directory>(
                     st.jobs
                         .get(&job.space, &job.id)?
                         .ok_or_else(|| Error::not_found("turn not found"))?
-                        .view()
+                        .view_for(who.id)
                 );
             }
             Ok(result)

@@ -105,7 +105,12 @@ impl AccountConnection {
                 let mut req = self
                     .client
                     .http
-                    .get(self.client.base.join("api/v1/account/live").expect("route"))
+                    .get(
+                        self.client
+                            .base
+                            .join("api/v1/account/live?readiness=true")
+                            .expect("route"),
+                    )
                     .timeout(Duration::from_secs(86400));
                 if let Some(b) = &self.bookmark {
                     req = req.query(&[("bookmark", b)]);
@@ -178,6 +183,7 @@ impl AccountConnection {
     pub async fn accept(&mut self, frame: &AccountFrame) -> Result<(), ClientError> {
         let bookmark = match frame {
             AccountFrame::Changed { bookmark } | AccountFrame::Ready { bookmark } => bookmark,
+            AccountFrame::ReadinessChanged => return Ok(()),
             AccountFrame::Reset => {
                 return Err(ClientError::Protocol("reload account before resubscribing"));
             }

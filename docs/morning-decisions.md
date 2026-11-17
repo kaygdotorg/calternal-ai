@@ -114,3 +114,13 @@ options, implementation costs and the placement revocation problem.
 - **Visible people picker.** A visibility-filtered picker can help non-admins
   grant access to people whose accounts they can see. Inviting by link keeps
   the directory smaller and requires no lookup by name.
+
+## Turn readiness (issue #39)
+
+- Pool refresh scope. A single anonymous pool probe has bounded setup cost. A
+  sweep across authorized pool machines gives direct coverage of every option
+  and needs a concurrency limit and a partial-result contract.
+- Visibility of provider changes made on the machine. A machine-local periodic
+  check would report them promptly and consume provider processes while idle.
+  Refresh on demand and checks during turns keep idle cost at zero, with changes
+  becoming visible at the next observation.

@@ -212,7 +212,7 @@ impl<D: Directory> Stream<D> {
                     }
                 }
             }
-            while let Some((index, entry)) = self.page.pop_front() {
+            while let Some((index, mut entry)) = self.page.pop_front() {
                 let follow = &mut self.follows[index];
                 if follow.restored.has_changed().unwrap_or(true) {
                     self.done = true;
@@ -248,6 +248,13 @@ impl<D: Directory> Stream<D> {
                         follow.after = entry.seq;
                         continue;
                     }
+                }
+                if entry.kind == crate::threads::turn_events::KIND
+                    && entry.author != self.identity.id
+                {
+                    entry.data["turn_reason"] = crate::turns::reason::public(std::mem::take(
+                        &mut entry.data["turn_reason"],
+                    ));
                 }
                 follow.after = entry.seq;
                 return Some(encode(LiveFrame::Entry {

@@ -658,6 +658,22 @@
           "additionalProperties": false
         },
         {
+          "description": "Re-read caller-scoped machine readiness. No bookmark advances.",
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "readiness_changed"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "Foreign, expired or rolled-back bookmark: reload before reopening.",
           "type": "object",
           "required": [

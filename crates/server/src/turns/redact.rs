@@ -41,9 +41,7 @@ impl Redactor {
                 }
                 *text = combined;
             }
-            Check {
-                sign_in_command, ..
-            } => self.string(sign_in_command),
+            Check(status) => self.string(&mut status.sign_in_command),
             Session { session_id } => self.string(session_id),
             ToolStarted { id, name, summary } => {
                 self.string(id);

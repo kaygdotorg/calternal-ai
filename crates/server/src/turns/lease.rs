@@ -25,9 +25,13 @@ pub(super) async fn prepare<D: Directory>(
         live.clone(),
     );
     let run = job.runs;
-    let pin = initial["request_machine"]
-        .as_str()
-        .and_then(|id| Uuid::parse_str(id).ok());
+    let check = job.input["check"] == true;
+    let pin = super::readiness::pin(&initial, &job.input);
+    if let Some(fields) = initial.as_object_mut() {
+        fields.remove("error");
+        fields.remove("interruption");
+        fields.remove("placement");
+    }
     let checkpoint = blocking(move || {
         let mut lease = None;
         let result = s.jobs.checkpoint_prepared(&sp, &id, run, &l, || {
@@ -38,7 +42,11 @@ pub(super) async fn prepare<D: Directory>(
         });
         if result.is_err() {
             if let Some(lease) = lease {
-                let _ = m.release_run(account, lease);
+                let _ = if check {
+                    m.release_probe(account, lease)
+                } else {
+                    m.release_run(account, lease)
+                };
             }
         }
         result

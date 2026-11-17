@@ -1,0 +1,98 @@
+//! Wire types for a person's machine and provider readiness.
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use ts_rs::TS;
+
+/// Read-only operation for machine and provider status.
+pub const AGENT_READINESS: &str = "agent.readiness";
+
+/// Select the space and optionally a saved thread's placement constraint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ReadinessInput {
+    /// Space UUID. The person needs the space's plugins.use capability.
+    pub space_id: String,
+    /// Saved thread UUID, if readiness should be restricted by a thread pin.
+    #[serde(default)]
+    pub thread_id: Option<String>,
+}
+
+/// A bounded observation of the official provider program's own check.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderCheck {
+    /// The provider program was found inside the machine's execution environment.
+    pub installed: bool,
+    /// The program reported an active login for this account.
+    pub signed_in: bool,
+    /// The program's own sign-in command, for display only.
+    pub sign_in_command: String,
+}
+
+/// A machine's readiness for one provider in this space.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderReadiness {
+    /// The provider and orchestrator are enabled for this space.
+    pub enabled: bool,
+    /// Recent provider status, or null until a fresh check is available.
+    pub check: Option<ProviderCheck>,
+    /// The machine has capacity and the enabled provider reports a login.
+    pub ready: bool,
+}
+
+/// The effective execution environment available on a machine.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum MachineExecution {
+    /// The machine runs turns in its configured sandbox.
+    Sandboxed,
+    /// The account chose execution without a container.
+    Direct,
+}
+
+/// An eligible personal machine or anonymous pool option.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS)]
+pub struct MachineReadiness {
+    /// The machine has an active enrollment record.
+    pub enrolled: bool,
+    /// The server has a current connection from the machine.
+    pub connected: bool,
+    /// The machine is accepting additional placements.
+    pub available: bool,
+    /// How this machine runs turns.
+    pub execution: MachineExecution,
+    /// Installed provider plugins and their account-scoped check results.
+    pub providers: BTreeMap<String, ProviderReadiness>,
+}
+
+/// Readiness for a machine owned by the caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct PersonalMachineReadiness {
+    /// Stable enrolled machine UUID.
+    pub machine_id: String,
+    /// The owner's machine label.
+    pub name: String,
+    /// Last observed contact in Unix milliseconds, when known.
+    #[ts(type = "number | null")]
+    pub last_seen_ms: Option<i64>,
+    /// Connection, execution and provider readiness.
+    #[serde(flatten)]
+    pub readiness: MachineReadiness,
+}
+
+/// One cached readiness snapshot. Pool options carry no host identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ReadinessResult {
+    /// Nonrevoked machines enrolled to the requesting account.
+    pub machines: Vec<PersonalMachineReadiness>,
+    /// Anonymous options from the entitled pool, if any.
+    pub pool: Vec<MachineReadiness>,
+    /// Lifetime of one provider observation in milliseconds.
+    #[ts(type = "number")]
+    pub check_ttl_ms: u64,
+}

@@ -32,6 +32,31 @@ impl Jobs {
             Ok(checkpoint)
         })
     }
+
+    /// Save queue progress while a native turn is placing. One fenced job
+    /// update, preserving the separate atomic transition that starts execution.
+    pub(crate) fn checkpoint_placing(
+        &self,
+        job: &Job,
+        live: &Live,
+        checkpoint: &Value,
+    ) -> Result<(), Error> {
+        let text = bounded_json(checkpoint, MAX_CHECKPOINT_BYTES)?;
+        let seq = live.next_seq() as i64;
+        self.tx(&job.space, |tx| {
+            let changed = tx
+                .execute(
+                    "UPDATE jobs SET checkpoint=?1,checkpoint_seq=?2,checkpoints=checkpoints+1
+                 WHERE id=?3 AND state='placing' AND runs=?4",
+                    params![text, seq, job.id, job.runs],
+                )
+                .map_err(db_err)?;
+            if changed != 1 {
+                return Err(Error::conflict("turn is no longer placing"));
+            }
+            Ok(())
+        })
+    }
 }
 
 impl Jobs {

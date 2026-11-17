@@ -74,15 +74,15 @@
           ],
           "properties": {
             "installed": {
-              "description": "Official program was found.",
+              "description": "The provider program was found inside the machine's execution environment.",
               "type": "boolean"
             },
             "sign_in_command": {
-              "description": "Command the person runs in their sandbox, never run by the adapter.",
+              "description": "The program's own sign-in command, for display only.",
               "type": "string"
             },
             "signed_in": {
-              "description": "Official program reports a current login.",
+              "description": "The program reported an active login for this account.",
               "type": "boolean"
             },
             "type": {

@@ -268,7 +268,7 @@ impl Jobs {
     ) -> Result<String, Error> {
         let id = self.tx(&job.space, |tx| {
             let changed = tx.execute(
-                "UPDATE jobs SET state='waiting',checkpoint=json_set(checkpoint,'$.request_machine',json_extract(checkpoint,'$.machine_id'))
+                "UPDATE jobs SET checkpoint=json_set(checkpoint,'$.request_machine',json_extract(checkpoint,'$.machine_id'))
                  WHERE id=?1 AND runs=?2 AND state='running' AND json_type(checkpoint,'$.machine_id')='text'",
                 params![job.id, job.runs],
             ).map_err(db_err)?;
@@ -276,7 +276,7 @@ impl Jobs {
                 return Err(Error::conflict("turn is no longer running on its machine"));
             }
             let request = publish()?;
-            tx.execute("UPDATE jobs SET checkpoint=json_set(checkpoint,'$.person_request',?2) WHERE id=?1",
+            tx.execute("UPDATE jobs SET state='waiting',checkpoint=json_set(checkpoint,'$.person_request',?2) WHERE id=?1",
                 params![job.id,request],
             ).map_err(db_err)?;
             Ok(request)

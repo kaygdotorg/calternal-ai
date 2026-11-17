@@ -1,0 +1,43 @@
+{
+  "data": {
+    "check_ttl_ms": 300000,
+    "machines": [
+      {
+        "available": true,
+        "connected": true,
+        "enrolled": true,
+        "execution": "sandboxed",
+        "last_seen_ms": 1760000000000,
+        "machine_id": "019a8c00-0000-7000-8000-000000000001",
+        "name": "Development",
+        "providers": {
+          "calternal-claude-code": {
+            "check": {
+              "installed": true,
+              "sign_in_command": "claude auth login",
+              "signed_in": false
+            },
+            "enabled": true,
+            "ready": false
+          }
+        }
+      }
+    ],
+    "pool": [
+      {
+        "available": false,
+        "connected": false,
+        "enrolled": true,
+        "execution": "sandboxed",
+        "providers": {
+          "calternal-claude-code": {
+            "check": null,
+            "enabled": true,
+            "ready": false
+          }
+        }
+      }
+    ]
+  },
+  "ok": true
+}

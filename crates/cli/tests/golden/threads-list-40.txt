@@ -1,5 +1,6 @@
 TITLE: Long conversation title that sho…
 TURN: waiting
+TURN REASON: Waiting for a person
 STATE: active
 MESSAGES: 17
 ID: 019a8c00-0000-7000-8000-000000000001
