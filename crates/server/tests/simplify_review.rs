@@ -1,0 +1,310 @@
+//! Independent regression probes for the simplify lane; failures block integration.
+mod support;
+
+use calternal_content::Request;
+use calternal_server::{machines::admin, store::Store};
+use calternal_types::{AccountId, SpaceId};
+use rusqlite::Connection;
+use serde_json::json;
+
+#[test]
+fn machine_cli_refuses_missing_roots_before_creating_appdata() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("unmounted-appdata");
+    let result = std::process::Command::new(env!("CARGO_BIN_EXE_calternal"))
+        .args(["machines", "list", "--appdata"])
+        .arg(&missing)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        !missing.exists(),
+        "machines list created an unpaired appdata root before validating storage"
+    );
+    assert!(!result.status.success(), "unguarded root must be refused");
+}
+
+#[test]
+fn expired_control_receipt_allows_a_new_request_after_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let roots = support::roots(dir.path());
+    let installation = uuid::Uuid::new_v4();
+    let account = AccountId::new();
+    let space = SpaceId::new();
+    let store = Store::open(
+        &roots,
+        installation,
+        true,
+        std::time::Duration::from_secs(7 * 86400),
+    )
+    .unwrap();
+    store
+        .content()
+        .record_receipt(
+            space,
+            Request {
+                account,
+                id: "reusable",
+                operation: "plugins.enable",
+                fingerprint: "old-input",
+            },
+            json!({"old":true}),
+        )
+        .unwrap();
+    // A real installation has auth.db before its next guarded open.
+    drop(calternal_auth::db::open_conn(&roots.appdata.join("system/auth.db")).unwrap());
+    drop(store);
+    // Inject an old receipt timestamp, with no wall-clock waits. Startup's normal
+    // prune removes it; permanent publication receipts deliberately remain.
+    let journal = roots
+        .appdata
+        .join("spaces")
+        .join(space.to_string())
+        .join("index.db");
+    Connection::open(journal)
+        .unwrap()
+        .execute("UPDATE idempotency SET at_ms=0", [])
+        .unwrap();
+    let store = Store::open(
+        &roots,
+        installation,
+        false,
+        std::time::Duration::from_secs(7 * 86400),
+    )
+    .unwrap();
+    assert!(store.receipt(account, space, "reusable").unwrap().is_none());
+    let result = store.content().record_receipt(
+        space,
+        Request {
+            account,
+            id: "reusable",
+            operation: "plugins.disable",
+            fingerprint: "new-input",
+        },
+        json!({"new":true}),
+    );
+    assert!(
+        result.is_ok(),
+        "expired receipt must permit a new request: {result:?}"
+    );
+}
+
+#[test]
+fn machine_pool_grant_requires_a_working_recovery_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let roots = support::roots(dir.path());
+    let installation = uuid::Uuid::new_v4();
+    let _store = Store::open(
+        &roots,
+        installation,
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let log = roots.userdata_ssd.join(".calternal/recovery");
+    std::fs::create_dir_all(log.parent().unwrap()).unwrap();
+    // A regular file cannot be opened as a recovery directory. There is no
+    // permissions or root-user dependence in this failure injection.
+    std::fs::write(&log, b"unavailable recovery directory").unwrap();
+    let account = AccountId::new();
+    let result = admin::pool_grant(&roots.appdata, account, true);
+    assert!(
+        result.is_err(),
+        "pool authority was acknowledged without a usable recovery log"
+    );
+}
+
+#[test]
+fn cancelled_worker_cold_start_releases_capacity_for_other_spaces() {
+    use calternal_server::plugins::{
+        PreviewHost, WorkerPool,
+        worker::{Call, NodeRuntime, Outcome},
+    };
+    use std::{
+        future::Future,
+        sync::Arc,
+        task::{Context, Poll, Waker},
+        time::Duration,
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = support::worker(dir.path(), "done(f,{})", "");
+        let plugin = Arc::new(support::plugin(
+            support::insights_manifest(),
+            Some(&bundle),
+            true,
+        ));
+        // Spawn failure is intentional: capacity must be released regardless of
+        // outcome. No real Node executable or timing-sensitive process is needed.
+        let pool = WorkerPool::with_capacity(
+            Some(NodeRuntime {
+                path: dir.path().join("nonexistent-node"),
+                version: "v22.13.0".into(),
+            }),
+            1,
+        );
+        let call = || Call {
+            operation: "notes-insights.summarize".into(),
+            input: json!({}),
+            account: AccountId::new(),
+            host: Arc::new(PreviewHost {
+                kind: "notes".into(),
+            }),
+            timeout: Duration::from_secs(3),
+            cancel: None,
+            job: None,
+        };
+        let (release, wait) = std::sync::mpsc::channel();
+        let (entered, started) = tokio::sync::oneshot::channel();
+        let blocker = tokio::task::spawn_blocking(move || {
+            entered.send(()).unwrap();
+            wait.recv_timeout(Duration::from_secs(10)).unwrap();
+        });
+        started.await.unwrap();
+        let space = SpaceId::new();
+        let mut first = Box::pin(pool.invoke(&plugin, space, call()));
+        assert!(matches!(
+            first.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+            Poll::Pending
+        ));
+        // Cancellation happens after reservation but before the cold-start closure
+        // can execute. Its detached blocking task still completes after release.
+        drop(first);
+        release.send(()).unwrap();
+        blocker.await.unwrap();
+        tokio::task::spawn_blocking(|| ()).await.unwrap();
+        let next = pool.invoke(&plugin, SpaceId::new(), call()).await;
+        let Outcome::Failed(error) = next else {
+            panic!("missing executable should fail");
+        };
+        assert_ne!(
+            error
+                .details
+                .as_ref()
+                .and_then(|d| d.get("reason"))
+                .and_then(|r| r.as_str()),
+            Some("worker_capacity"),
+            "a cancelled cold start permanently consumed the only pool slot"
+        );
+    });
+}
+
+#[test]
+fn held_space_write_does_not_stall_another_space_and_stale_base_loses() {
+    use calternal_content::{FileFormat, Placement};
+    use std::{
+        sync::{Arc, mpsc},
+        time::Duration,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(
+        &support::roots(dir.path()),
+        uuid::Uuid::new_v4(),
+        true,
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    )
+    .unwrap();
+    let content = Arc::clone(&store.shared_content());
+    let a = SpaceId::new();
+    let b = SpaceId::new();
+    let account = AccountId::new();
+    for space in [a, b] {
+        content
+            .register_kind(
+                space,
+                "notes",
+                Placement::Visible {
+                    folder: "Notes".into(),
+                },
+                FileFormat::Markdown,
+            )
+            .unwrap();
+    }
+    let request = |id| Request {
+        account,
+        id,
+        operation: "notes.create",
+        fingerprint: id,
+    };
+    let initial = content
+        .write(
+            a,
+            None,
+            "notes",
+            None,
+            json!({"title":"A"}),
+            b"initial",
+            request("initial"),
+            |_| json!({}),
+        )
+        .unwrap();
+    let (entered, ready) = mpsc::channel();
+    let (release, wait) = mpsc::channel();
+    let (finished, other_done) = mpsc::channel();
+    std::thread::scope(|scope| {
+        let first_content = &content;
+        let original = &initial;
+        let first = scope.spawn(move || {
+            first_content.write(
+                a,
+                Some(original.id),
+                "notes",
+                Some(&original.revision),
+                json!({"title":"A"}),
+                b"first",
+                request("first"),
+                |_| {
+                    entered.send(()).unwrap();
+                    wait.recv_timeout(Duration::from_secs(10)).unwrap();
+                    json!({})
+                },
+            )
+        });
+        ready.recv_timeout(Duration::from_secs(10)).unwrap();
+        let second = scope.spawn(|| {
+            content.write(
+                a,
+                Some(initial.id),
+                "notes",
+                Some(&initial.revision),
+                json!({"title":"A"}),
+                b"stale",
+                request("stale"),
+                |_| json!({}),
+            )
+        });
+        scope.spawn(|| {
+            finished
+                .send(content.write(
+                    b,
+                    None,
+                    "notes",
+                    None,
+                    json!({"title":"B"}),
+                    b"other",
+                    request("other"),
+                    |_| json!({}),
+                ))
+                .unwrap();
+        });
+        let progressed = other_done.recv_timeout(Duration::from_secs(5));
+        release.send(()).unwrap();
+        let first = first.join().unwrap().unwrap();
+        let second = second.join().unwrap().unwrap_err();
+        assert!(
+            progressed
+                .expect("space B waited for space A's held write")
+                .is_ok()
+        );
+        assert_eq!(second.code, calternal_types::ErrorCode::Conflict);
+        assert_eq!(content.get(a, initial.id).unwrap().revision, first.revision);
+        assert_eq!(content.journal(a).unwrap().len(), 2);
+        assert_eq!(content.journal(b).unwrap().len(), 1);
+    });
+}

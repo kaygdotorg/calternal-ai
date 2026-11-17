@@ -24,6 +24,7 @@ mod jobs_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
 mod drafts_cases;
+mod simplify_review_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
