@@ -1,10 +1,13 @@
 //! Private account input storage, following the secrets per-owner database pattern.
 //! Each call opens one account connection on a blocking worker. No connection,
-//! mutex or background thread is shared across accounts. One IMMEDIATE transaction
+//! mutation mutex or background thread is shared across accounts. A short map
+//! lookup selects an active account's wake sender, released before sending and
+//! never held over SQL, I/O or awaits. One IMMEDIATE transaction
 //! owns each state change and its invalidation event; FULL commits provide durability.
 mod db;
 mod dispatch;
 mod http;
+mod wake;
 use calternal_types::Error;
 pub(crate) use dispatch::dispatch;
 pub(crate) use http::events;
@@ -77,6 +80,7 @@ impl Limits {
 #[derive(Clone)]
 pub struct Inputs {
     root: PathBuf,
+    wakes: wake::Wakes,
     content: Option<Arc<calternal_content::Content>>,
     limits: Limits,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
@@ -114,6 +118,7 @@ impl Inputs {
     ) -> Self {
         Self {
             root: root.into(),
+            wakes: wake::Wakes::default(),
             content: None,
             limits,
             clock,

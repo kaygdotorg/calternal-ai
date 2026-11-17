@@ -27,6 +27,8 @@ struct Follow<D: Directory> {
     after: String,
     page: VecDeque<String>,
     ready: bool,
+    wake: super::wake::Listener,
+    changes: Vec<tokio::sync::watch::Receiver<u64>>,
     done: bool,
     _admission: std::fs::File,
 }
@@ -50,6 +52,9 @@ pub(crate) async fn events<D: Directory>(
     if q.bookmark.as_ref().is_some_and(|b| b.len() > 128) {
         return error_response(Error::invalid_input("invalid bookmark"));
     }
+    // Subscribe before reading the head: a concurrent commit is either in replay
+    // or leaves a wake hint. Every hint, including lag, triggers durable replay.
+    let wake = state.inputs.wakes.listen(p.id);
     let st = state.clone();
     let identity = p.clone();
     let head = tokio::task::spawn_blocking(move || {
@@ -63,6 +68,7 @@ pub(crate) async fn events<D: Directory>(
         Ok(Err(e)) => return error_response(e),
         Err(e) => return error_response(internal(e)),
     };
+    let changes = state.directory.changes();
     let follow = Follow {
         state,
         p,
@@ -70,6 +76,8 @@ pub(crate) async fn events<D: Directory>(
         after: q.bookmark.unwrap_or(head),
         page: VecDeque::new(),
         ready: false,
+        wake,
+        changes,
         done: false,
         _admission: admission,
     };
@@ -88,6 +96,10 @@ pub(crate) async fn events<D: Directory>(
                     f,
                 ));
             }
+            while matches!(
+                f.wake.receiver.try_recv(),
+                Ok(_) | Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_))
+            ) {}
             let st = f.state.clone();
             let p = f.p.clone();
             let after = f.after.clone();
@@ -113,7 +125,24 @@ pub(crate) async fn events<D: Directory>(
                 let bookmark = f.after.clone();
                 return Some((Ok(encode(AccountFrame::Ready { bookmark })), f));
             }
-            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let authority = async {
+                if f.changes.is_empty() {
+                    std::future::pending::<()>().await;
+                }
+                let _ = futures_util::future::select_all(
+                    f.changes.iter_mut().map(|c| Box::pin(c.changed())),
+                )
+                .await;
+            };
+            tokio::select! {
+                _ = f.wake.receiver.recv() => {},
+                _ = authority => {},
+                _ = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                    // Bounds session expiry and age-based confirmation checks;
+                    // commits wake immediately, independently of this keepalive.
+                    return Some((Ok(": keepalive\n\n".into()), f));
+                }
+            }
         }
     }));
     (
