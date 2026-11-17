@@ -531,6 +531,21 @@ async fn all_operations_hide_foreign_ids() {
             json!({"space_id":f.spaces[0],"plugin_id":"notes-insights"}),
             json!({"space_id":missing,"plugin_id":"notes-insights"}),
         ),
+        (
+            "secrets.request",
+            json!({"space_id":f.spaces[0],"name":"probe","label":"L","reason":"R"}),
+            json!({"space_id":missing,"name":"probe","label":"L","reason":"R"}),
+        ),
+        (
+            "secrets.list",
+            json!({"space_id":f.spaces[0]}),
+            json!({"space_id":missing}),
+        ),
+        (
+            "secrets.revoke",
+            json!({"space_id":f.spaces[0],"name":"probe"}),
+            json!({"space_id":missing,"name":"probe"}),
+        ),
     ];
     let catalog = f
         .req(
@@ -601,6 +616,167 @@ async fn all_operations_hide_foreign_ids() {
     assert!(
         failures.is_empty(),
         "no-access must be identical not-found: {failures:?}"
+    );
+}
+
+const SECRET_CANARY: &str = "sk-conformance-canary-1b7e44-never-in-clear";
+
+fn contains_canary(dir: &Path) -> Vec<PathBuf> {
+    let mut hits = vec![];
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            hits.extend(contains_canary(&path));
+        } else if std::fs::read(&path).is_ok_and(|b| {
+            b.windows(SECRET_CANARY.len())
+                .any(|w| w == SECRET_CANARY.as_bytes())
+        }) {
+            hits.push(path);
+        }
+    }
+    hits
+}
+
+#[tokio::test]
+async fn secrets_are_owner_private_and_provide_needs_a_fresh_session() {
+    let mut f = Fixture::new().await;
+    let provide = "secrets/provide";
+    let missing = uuid::Uuid::now_v7().to_string();
+    // Account A's personal request is invisible to everyone else.
+    let personal = f
+        .op(
+            1,
+            "secrets.request",
+            json!({"name":"github","label":"GitHub","reason":"push"}),
+        )
+        .await;
+    personal.ok();
+    let personal = personal.body["data"]["request_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for who in [0, 2, 3] {
+        let list = f.op(who, "secrets.list", json!({})).await;
+        list.ok();
+        assert_eq!(
+            list.body["data"],
+            json!({"secrets":[],"requests":[]}),
+            "account {who}"
+        );
+        let foreign = f
+            .op_id(
+                who,
+                "secrets.revoke",
+                json!({"request_id":personal}),
+                "probe",
+            )
+            .await;
+        let absent = f
+            .op_id(
+                who,
+                "secrets.revoke",
+                json!({"request_id":missing}),
+                "probe",
+            )
+            .await;
+        assert_eq!(
+            (foreign.status, foreign.signature()),
+            (404, absent.signature())
+        );
+        let foreign = f
+            .auth(
+                provide,
+                Some(&f.cookies[who]),
+                json!({"request_id":personal,"value":SECRET_CANARY}),
+            )
+            .await;
+        let absent = f
+            .auth(
+                provide,
+                Some(&f.cookies[who]),
+                json!({"request_id":missing,"value":SECRET_CANARY}),
+            )
+            .await;
+        assert_eq!(
+            (foreign.status, foreign.signature()),
+            (404, absent.signature())
+        );
+    }
+    // A space request cannot be answered by a non-member, an account without
+    // memberships or an admin without membership: same answer as no space.
+    let space = f
+        .op(
+            1,
+            "secrets.request",
+            json!({"space_id":f.spaces[0],"name":"smtp","label":"SMTP","reason":"mail"}),
+        )
+        .await;
+    space.ok();
+    let space = space.body["data"]["request_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for who in [0, 2, 3] {
+        let foreign = f
+            .auth(
+                provide,
+                Some(&f.cookies[who]),
+                json!({"space_id":f.spaces[0],"request_id":space,"value":SECRET_CANARY}),
+            )
+            .await;
+        let absent = f
+            .auth(
+                provide,
+                Some(&f.cookies[who]),
+                json!({"space_id":missing,"request_id":space,"value":SECRET_CANARY}),
+            )
+            .await;
+        assert_eq!(
+            (foreign.status, foreign.signature()),
+            (404, absent.signature()),
+            "account {who}"
+        );
+    }
+    // A stale session (assertion older than the freshness window) is refused
+    // before the body is read, and nothing is stored.
+    f.stop();
+    let c = Connection::open(f.dir.path().join("system/auth.db")).unwrap();
+    c.execute(
+        "UPDATE installations SET assertion_at = assertion_at - 86400000 WHERE user_id=?1",
+        params![f.ids[1]],
+    )
+    .unwrap();
+    drop(c);
+    f.start().await;
+    let stale = f
+        .auth(
+            provide,
+            Some(&f.cookies[1]),
+            json!({"request_id":personal,"value":SECRET_CANARY}),
+        )
+        .await;
+    assert_eq!(stale.status, 403, "{}", stale.body);
+    let list = f.op(1, "secrets.list", json!({})).await;
+    list.ok();
+    assert_eq!(list.body["data"]["secrets"], json!([]));
+    assert_eq!(list.body["data"]["requests"].as_array().unwrap().len(), 1);
+    // After signing in again the same request is answered; no value reaches disk.
+    let login = f.login(1).await;
+    login.ok();
+    f.cookies[1] = login.cookie();
+    let fresh = f
+        .auth(
+            provide,
+            Some(&f.cookies[1]),
+            json!({"request_id":personal,"value":SECRET_CANARY}),
+        )
+        .await;
+    fresh.ok();
+    assert!(!fresh.body.to_string().contains(SECRET_CANARY));
+    assert_eq!(contains_canary(f.dir.path()), Vec::<PathBuf>::new());
+    evidence(
+        "secrets",
+        json!({"stale":stale.signature(),"fresh":fresh.signature()}),
     );
 }
 

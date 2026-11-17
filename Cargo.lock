@@ -554,6 +554,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-secrets"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "calternal-auth",
+ "calternal-fsio",
+ "getrandom 0.4.3",
+ "openssl",
+ "rusqlite",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.21",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "calternal-server"
 version = "0.1.0"
 dependencies = [
@@ -564,6 +581,7 @@ dependencies = [
  "calternal-fsio",
  "calternal-plugin-host",
  "calternal-roots",
+ "calternal-secrets",
  "clap",
  "getrandom 0.3.4",
  "hex",

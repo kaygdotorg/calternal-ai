@@ -3146,5 +3146,214 @@
       "title": "SummarizeResult",
       "type": "object"
     }
+  },
+  {
+    "id": "secrets.request",
+    "description": "Ask for a secret; a person supplies the value through the trusted prompt",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Ask for a secret; the value is supplied later through the trusted surface.",
+      "properties": {
+        "label": {
+          "description": "Short label shown in the prompt, at most 120 characters.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Secret name: 1–96 bytes of `a-z 0-9 . _ - :`, starting with a letter or digit.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why it is needed, shown in the prompt, at most 500 characters.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal (account-owned) secret.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "name",
+        "reason"
+      ],
+      "title": "SecretsRequestInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Pending request identifier returned by `secrets.request`.",
+      "properties": {
+        "request_id": {
+          "description": "UUID of the pending request, answered by the provide endpoint.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "title": "SecretsRequestResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "secrets.list",
+    "description": "List secret metadata and pending requests, never values",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List secret metadata and pending requests of one owner.",
+      "properties": {
+        "space_id": {
+          "description": "Owning space UUID; omit for the caller's personal secrets.",
+          "type": "string"
+        }
+      },
+      "title": "SecretsListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SecretMetadata": {
+          "additionalProperties": false,
+          "description": "Everything about a stored secret except its value.",
+          "properties": {
+            "created_at": {
+              "description": "Creation time in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "label": {
+              "description": "Human label.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Secret name.",
+              "type": "string"
+            },
+            "updated_at": {
+              "description": "Last change in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "version": {
+              "description": "Current version, increased by each rotation.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "created_at",
+            "label",
+            "name",
+            "updated_at",
+            "version"
+          ],
+          "type": "object"
+        },
+        "SecretPendingRequest": {
+          "additionalProperties": false,
+          "description": "A request waiting for a value.",
+          "properties": {
+            "created_at": {
+              "description": "Request time in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "id": {
+              "description": "Request UUID.",
+              "type": "string"
+            },
+            "label": {
+              "description": "Label shown in the prompt.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Name the value will be stored under.",
+              "type": "string"
+            },
+            "reason": {
+              "description": "Reason shown in the prompt.",
+              "type": "string"
+            },
+            "requested_by": {
+              "description": "Who asked: account and route (session, plugin or agent thread).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "created_at",
+            "id",
+            "label",
+            "name",
+            "reason",
+            "requested_by"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Metadata and pending requests of one owner; never values.",
+      "properties": {
+        "requests": {
+          "description": "Pending requests, oldest first.",
+          "items": {
+            "$ref": "#/definitions/SecretPendingRequest"
+          },
+          "type": "array"
+        },
+        "secrets": {
+          "description": "Stored secrets ordered by name.",
+          "items": {
+            "$ref": "#/definitions/SecretMetadata"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "requests",
+        "secrets"
+      ],
+      "title": "SecretsListResult",
+      "type": "object"
+    }
+  },
+  {
+    "id": "secrets.revoke",
+    "description": "Destroy a secret or withdraw a pending request",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Destroy a secret (`name`) or withdraw a pending request (`request_id`); exactly one.",
+      "properties": {
+        "name": {
+          "description": "Secret to destroy, with every version.",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Pending request to withdraw.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal secret.",
+          "type": "string"
+        }
+      },
+      "title": "SecretsRevokeInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Empty success for `secrets.revoke`.",
+      "title": "SecretsRevokeResult",
+      "type": "object"
+    }
   }
 ]

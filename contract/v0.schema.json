@@ -23,6 +23,14 @@
     "resolve_input",
     "resolve_result",
     "response",
+    "secrets_list_input",
+    "secrets_list_result",
+    "secrets_provide_input",
+    "secrets_provide_result",
+    "secrets_request_input",
+    "secrets_request_result",
+    "secrets_revoke_input",
+    "secrets_revoke_result",
     "space_changed_result",
     "space_input",
     "space_member_input",
@@ -186,6 +194,70 @@
       "allOf": [
         {
           "$ref": "#/definitions/OperationResponse_for_AnyValue"
+        }
+      ]
+    },
+    "secrets_list_input": {
+      "description": "Schema representative for the secrets list input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsListInput"
+        }
+      ]
+    },
+    "secrets_list_result": {
+      "description": "Schema representative for the secrets list result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsListResult"
+        }
+      ]
+    },
+    "secrets_provide_input": {
+      "description": "Schema representative for the trusted provide endpoint's body.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsProvideInput"
+        }
+      ]
+    },
+    "secrets_provide_result": {
+      "description": "Schema representative for the trusted provide endpoint's result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsProvideResult"
+        }
+      ]
+    },
+    "secrets_request_input": {
+      "description": "Schema representative for the secrets request input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsRequestInput"
+        }
+      ]
+    },
+    "secrets_request_result": {
+      "description": "Schema representative for the secrets request result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsRequestResult"
+        }
+      ]
+    },
+    "secrets_revoke_input": {
+      "description": "Schema representative for the secrets revoke input.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsRevokeInput"
+        }
+      ]
+    },
+    "secrets_revoke_result": {
+      "description": "Schema representative for the secrets revoke result.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/SecretsRevokeResult"
         }
       ]
     },
@@ -1458,6 +1530,230 @@
           "type": "string"
         }
       },
+      "additionalProperties": false
+    },
+    "SecretMetadata": {
+      "description": "Everything about a stored secret except its value.",
+      "type": "object",
+      "required": [
+        "created_at",
+        "label",
+        "name",
+        "updated_at",
+        "version"
+      ],
+      "properties": {
+        "created_at": {
+          "description": "Creation time in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "label": {
+          "description": "Human label.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Secret name.",
+          "type": "string"
+        },
+        "updated_at": {
+          "description": "Last change in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "version": {
+          "description": "Current version, increased by each rotation.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretPendingRequest": {
+      "description": "A request waiting for a value.",
+      "type": "object",
+      "required": [
+        "created_at",
+        "id",
+        "label",
+        "name",
+        "reason",
+        "requested_by"
+      ],
+      "properties": {
+        "created_at": {
+          "description": "Request time in Unix milliseconds.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "id": {
+          "description": "Request UUID.",
+          "type": "string"
+        },
+        "label": {
+          "description": "Label shown in the prompt.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name the value will be stored under.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Reason shown in the prompt.",
+          "type": "string"
+        },
+        "requested_by": {
+          "description": "Who asked: account and route (session, plugin or agent thread).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsListInput": {
+      "description": "List secret metadata and pending requests of one owner.",
+      "type": "object",
+      "properties": {
+        "space_id": {
+          "description": "Owning space UUID; omit for the caller's personal secrets.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsListResult": {
+      "description": "Metadata and pending requests of one owner; never values.",
+      "type": "object",
+      "required": [
+        "requests",
+        "secrets"
+      ],
+      "properties": {
+        "requests": {
+          "description": "Pending requests, oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SecretPendingRequest"
+          }
+        },
+        "secrets": {
+          "description": "Stored secrets ordered by name.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SecretMetadata"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsProvideInput": {
+      "description": "Body of `POST /api/v1/auth/secrets/provide`. Not an operation: only a signed-in browser or app session with a recent passkey assertion may send it.",
+      "type": "object",
+      "required": [
+        "request_id",
+        "value"
+      ],
+      "properties": {
+        "request_id": {
+          "description": "Pending request being answered.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal secret.",
+          "type": "string"
+        },
+        "value": {
+          "description": "The secret value, 1 byte to 64 KiB of UTF-8.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsProvideResult": {
+      "description": "Which secret the provide endpoint stored; never the value or a handle.",
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "description": "Secret name.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Version now stored.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsRequestInput": {
+      "description": "Ask for a secret; the value is supplied later through the trusted surface.",
+      "type": "object",
+      "required": [
+        "label",
+        "name",
+        "reason"
+      ],
+      "properties": {
+        "label": {
+          "description": "Short label shown in the prompt, at most 120 characters.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Secret name: 1–96 bytes of `a-z 0-9 . _ - :`, starting with a letter or digit.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why it is needed, shown in the prompt, at most 500 characters.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal (account-owned) secret.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsRequestResult": {
+      "description": "Pending request identifier returned by `secrets.request`.",
+      "type": "object",
+      "required": [
+        "request_id"
+      ],
+      "properties": {
+        "request_id": {
+          "description": "UUID of the pending request, answered by the provide endpoint.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsRevokeInput": {
+      "description": "Destroy a secret (`name`) or withdraw a pending request (`request_id`); exactly one.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Secret to destroy, with every version.",
+          "type": "string"
+        },
+        "request_id": {
+          "description": "Pending request to withdraw.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning space UUID; omit for a personal secret.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SecretsRevokeResult": {
+      "description": "Empty success for `secrets.revoke`.",
+      "type": "object",
       "additionalProperties": false
     },
     "SpaceChangedResult": {
