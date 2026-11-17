@@ -156,6 +156,16 @@ impl Command {
         }
     }
 }
+fn lifecycle(metadata: &Value) -> &'static str {
+    if metadata["deleted"] == true {
+        "deleted"
+    } else if metadata["archived"] == true {
+        "archived"
+    } else {
+        "active"
+    }
+}
+
 /// Render server thread data with shared width adaptation, stable JSON and hints.
 /// Cost: O(returned rows or document bytes); no I/O. Unknown shapes fail visibly.
 pub fn reply(data: Value) -> Reply {
@@ -168,18 +178,13 @@ pub fn reply(data: Value) -> Reply {
                 vec![
                     field("title"),
                     r["turn_state"].as_str().unwrap_or("idle").into(),
+                    lifecycle(metadata).into(),
                     metadata["message_count"].as_u64().unwrap_or(0).to_string(),
                     r["id"].as_str().unwrap_or("").into(),
                     field("provider"),
                     field("model"),
                     field("mode"),
                     field("last_activity_at"),
-                    if metadata["archived"] == true {
-                        "yes"
-                    } else {
-                        "no"
-                    }
-                    .into(),
                     field("parent_thread"),
                 ]
             })
@@ -189,13 +194,13 @@ pub fn reply(data: Value) -> Reply {
                 &[
                     "TITLE",
                     "TURN",
+                    "STATE",
                     "MESSAGES",
                     "ID",
                     "PROVIDER",
                     "MODEL",
                     "MODE",
                     "LAST ACTIVITY",
-                    "ARCHIVED",
                     "PARENT",
                 ],
                 rows,
@@ -217,17 +222,7 @@ pub fn reply(data: Value) -> Reply {
             "Address",
             thread["address"].as_str().unwrap_or("").to_owned(),
         ),
-        (
-            "State",
-            if thread["metadata"]["deleted"] == true {
-                "deleted"
-            } else if thread["metadata"]["archived"] == true {
-                "archived"
-            } else {
-                "active"
-            }
-            .into(),
-        ),
+        ("State", lifecycle(&thread["metadata"]).into()),
     ];
     let mut result = Reply::new(data.clone()).fields(fields);
     let metadata = &thread["metadata"];

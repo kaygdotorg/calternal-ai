@@ -1,3 +1,3 @@
-TITLE         TURN     MESSAGES  ID                  PROVIDER      MODEL   MODE          LAST ACTIVITY  ARCHIVED  PARENT
-Long conver…  waiting  17        019a8c00-…00000001  calternal-c…  sonnet  least_access  2026-11-17T1…  no        —
+TITLE         TURN     STATE   MESSAGES  ID                    PROVIDER      MODEL   MODE          LAST ACTIVITY  PARENT
+Long conver…  waiting  active  17        019a8c00-0…000000001  calternal-c…  sonnet  least_access  2026-11-17T1…  —
 Next: calternal threads create --help

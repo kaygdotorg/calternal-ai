@@ -1,4 +1,4 @@
-TITLE         TURN     MESSAGES  ID             PROVIDER      MODEL
-Long conver…  waiting  17        019a8c…000001  calternal-c…  sonnet
-4 columns hidden; use --json or a wider terminal.
+TITLE         TURN     STATE   MESSAGES  ID             PROVIDER      MODEL
+Long conver…  waiting  active  17        019a8c…000001  calternal-c…  sonnet
+3 columns hidden; use --json or a wider terminal.
 Next: calternal threads create --help
