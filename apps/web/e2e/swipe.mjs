@@ -29,12 +29,28 @@ await page.evaluate(([x, y]) => { const el = document.querySelectorAll(".slide")
 await page.waitForTimeout(650);
 await page.screenshot({ path: "/tmp/swipe-long.png" });
 ok("a long press opens the context menu as a sheet of 42 px rows", (await page.getByRole("menu").count()) > 0 && (await page.getByRole("menuitem").first().evaluate((e) => e.getBoundingClientRect().height)) >= 42);
+// Pull to refresh on the sidebar list.
+await page.getByRole("button", { name: "Show threads" }).click().catch(() => {});
+await page.waitForTimeout(500);
+const sc = await page.locator(".scroll").first().boundingBox();
+const pt = (type, y) => page.evaluate(([t, x, y]) => { const el = document.querySelector(".scroll"); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 11, clientX: x, clientY: y })); }, [type, sc.x + 100, y]);
+await pt("pointerdown", sc.y + 120); await pt("pointermove", sc.y + 160); await pt("pointermove", sc.y + 300);
+const op = await page.locator(".pull-ind").first().evaluate((e) => +e.style.opacity);
+ok("pulling down at the top of a list shows the refresh indicator", op > 0.5, `opacity ${op}`);
+await pt("pointerup", sc.y + 300);
+await page.waitForTimeout(600);
+ok("releasing past the threshold refreshes and the indicator settles", (await page.locator(".pull-ind").first().evaluate((e) => +e.style.opacity)) === 0);
+await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: true }).catch(() => {});
+await page.waitForTimeout(400);
 // Edge swipe: from the left edge opens the sidebar; a swipe left closes it. A sheet's grabber drags it away.
 await page.keyboard.press("Escape").catch(() => {});
 await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: true }).catch(() => {});
 await page.waitForTimeout(500);
 const touch = (type, x, y, sel = "body") => page.evaluate(([t, x, y, sel]) => { const el = document.elementFromPoint(x, y) ?? document.querySelector(sel); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 9, clientX: x, clientY: y })); }, [type, x, y, sel]);
-await touch("pointerdown", 6, 400); await touch("pointermove", 80, 405); await touch("pointerup", 90, 405);
+await touch("pointerdown", 6, 400); await touch("pointermove", 60, 402); await touch("pointermove", 150, 405);
+const follow = await page.locator(".mid").evaluate((e) => new DOMMatrix(getComputedStyle(e).transform).m41);
+ok("the card follows the finger while swiping from the edge", follow > 100, `card at ${follow.toFixed(0)}`);
+await touch("pointerup", 160, 405);
 await page.waitForTimeout(500);
 ok("a swipe from the left edge opens the sidebar", (await page.locator(".shell").getAttribute("data-sidebar")) === "true");
 await touch("pointerdown", 300, 400); await touch("pointerup", 150, 402);

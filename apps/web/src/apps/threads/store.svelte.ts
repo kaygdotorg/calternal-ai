@@ -29,6 +29,11 @@ class ThreadsStore {
     client.watchRequests((x) => (this.requests = x));
   }
 
+  /** Reloads the list and the open requests (pull to refresh). */
+  async refresh(): Promise<void> {
+    [this.threads, this.requests] = await Promise.all([client.listThreads(), client.requests()]);
+  }
+
   /** One thread by id. */
   get(id: string): ThreadSummary | undefined {
     return this.threads.find((t) => t.id === id);
