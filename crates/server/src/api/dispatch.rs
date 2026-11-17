@@ -317,7 +317,9 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     Ok(value)
 }
 
-/// Private handler entry: called exclusively after the dispatch policy gate.
+/// Private handler entry after the policy gate. Invalid input, storage and worker
+/// failures propagate without bypassing authorization. Dynamic mutation inputs
+/// hash once on the blocking pool; remaining cost is the selected store operation.
 pub(super) async fn dispatch_checked<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -367,7 +369,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
             to_value(PluginsListResult { plugins })
         }
         "plugins.enable" | "plugins.disable" => {
-            let fp = fingerprint(op, &input);
+            let (fp, input) = super::request::fingerprint(op, input).await?;
             let i: PluginInput = decode(input)?;
             let space = space_of(&i.space_id)?;
             let enable = op == "plugins.enable";
@@ -470,6 +472,9 @@ pub(super) fn replay_receipt(
     Ok(Some(r.result))
 }
 
+/// Replay or commit an authorized native note edit after hashing its owned input
+/// on the blocking pool. Input, revision, worker and storage failures propagate.
+/// Cost: one hash task followed by the store's receipt/read/durability work.
 pub(super) async fn mutate_note<D: Directory>(
     state: Shared<D>,
     p: Identity,
@@ -477,7 +482,7 @@ pub(super) async fn mutate_note<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    let fp = fingerprint(op, &input);
+    let (fp, input) = super::request::fingerprint(op, input).await?;
     let (create, update) = if op == "notes.create" {
         let i: NotesCreateInput = decode(input)?;
         (Some(i), None)
