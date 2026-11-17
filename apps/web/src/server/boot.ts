@@ -5,7 +5,7 @@
  * (`auth/me`), the spaces (`spaces.list`). Each has its own failure: no session → the sign-in or first-owner screen; another protocol → a plain notice; an unreachable server on a first visit → a screen with
  * Try again; on a known device the app starts anyway and the reconnecting banner (link.svelte.ts) tells the truth.
  */
-import { applyCapabilities } from "../shell/capabilities.svelte";
+import { applyCapabilities, caps } from "../shell/capabilities.svelte";
 import { spaces } from "../shell/spaces.svelte";
 import { account, status } from "./auth";
 import { clearCache, readCache, writeCache } from "./cache";
@@ -60,5 +60,6 @@ export function start(): { paintNow: boolean; result: Promise<Boot> } {
     spaces.setList(cached.spaces);
     applyCapabilities(cached.capabilities);
   }
+  try { if (localStorage.getItem("cal.debug")) (window as unknown as Record<string, unknown>).__cal = { spaces, caps }; } catch { /* none */ } // a look at the shared state from a test or the console
   return { paintNow: !!cached, result: check() };
 }

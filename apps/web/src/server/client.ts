@@ -165,6 +165,8 @@ export function devToken(): string | null {
 /** Whether the real server is the source: `?server=1` (kept) or `cal.server` in localStorage. Fixtures are the default. */
 export function serverMode(): boolean {
   try {
+    // An invitation link is for the real server, whoever opens it (the person has no flag set).
+    if (/\/invites\/[^/?#]+/.test(location.pathname)) localStorage.setItem("cal.server", "1");
     const q = new URLSearchParams(location.search).get("server");
     if (q === "1" || q === "0") localStorage.setItem("cal.server", q);
     return localStorage.getItem("cal.server") === "1";

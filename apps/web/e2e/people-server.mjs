@@ -17,7 +17,7 @@ try {
   for (let i = 0; i < 80; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
   const token = readFileSync(join(data, "appdata", "setup.token"), "utf8").trim();
   const b = await chromium.launch();
-  const mk = async () => { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1")); const p = await ctx.newPage(); p.on("dialog", (d) => void d.accept()); const c = await ctx.newCDPSession(p); await c.send("WebAuthn.enable"); await c.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } }); return { ctx, p }; };
+  const mk = async () => { const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => { localStorage.setItem("cal.firstrun", "1"); localStorage.setItem("cal.debug", "1"); }); const p = await ctx.newPage(); p.on("dialog", (d) => void d.accept()); const c = await ctx.newCDPSession(p); await c.send("WebAuthn.enable"); await c.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } }); return { ctx, p }; };
   const go = (p, path) => p.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path);
   const { p } = await mk();
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
@@ -39,14 +39,15 @@ try {
   await go(p, "/settings/roles"); await p.getByText("Reader", { exact: true }).first().waitFor({ timeout: 8000 });
   ok(true, "Roles listed");
   // Invitation: make one, read its link, open it as a second person.
-  console.log("   roles:", JSON.stringify(await p.evaluate(async () => (await (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation: "spaces.list", input: {} }) })).json()).data.spaces.map((s) => s.role))));
+  console.log("   state:", await p.evaluate(() => JSON.stringify({ cur: window.__cal.spaces.current, list: window.__cal.spaces.list, id: window.__cal.spaces.currentId })));
   await go(p, "/settings/invites"); await p.waitForTimeout(2500); console.log("   page:", (await p.evaluate(() => document.querySelector(".page")?.innerText ?? document.body.innerText)).replace(/\n+/g, " | ").slice(0, 400)); await p.getByRole("button", { name: "Make an invitation" }).click();
   await p.locator("code.cmd").first().waitFor({ timeout: 8000 });
   const link = (await p.locator("code.cmd").first().innerText()).trim();
   ok(/\/invites\/[^/]+$/.test(link), "an invitation is made and its link shown", link.replace(/\/invites\/.*/, "/invites/…"));
   const g = await mk();
+  g.p.on("console", (m) => console.log("   guest console:", m.text().slice(0, 160))); g.p.on("pageerror", (e) => console.log("   guest error:", e.message.slice(0, 160)));
   const local = new URL(link); await g.p.goto(`${url}${local.pathname}`); await g.p.waitForSelector("html[data-ready]");
-  await g.p.getByRole("heading", { name: "Join Calternal" }).waitFor({ timeout: 8000 });
+  await g.p.getByRole("heading", { name: "Join Calternal" }).waitFor({ timeout: 8000 }).catch(async () => { console.log("   guest page:", g.p.url().slice(0, 60), JSON.stringify((await g.p.evaluate(() => document.body.innerText)).slice(0, 200))); throw new Error("no join page"); });
   ok(true, "the invitation page asks for a name and a passkey");
   await g.p.fill('input[name="name"]', "Guest Gus"); await g.p.getByRole("button", { name: "Create passkey and join" }).click();
   await g.p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Join"), null, { timeout: 15000 }); await g.p.waitForSelector("html[data-ready]"); await g.p.waitForTimeout(1500);

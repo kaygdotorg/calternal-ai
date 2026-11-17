@@ -37,6 +37,8 @@ try {
   // Typing is saved: Not saved yet -> Saving -> Saved, and the server has the text.
   await page.locator(".cm-content").click(); await page.keyboard.press("Control+End"); await page.keyboard.type("\n\nHello from the browser.");
   ok(/Not saved yet|Saving/.test(await state()), "typing shows Not saved yet or Saving");
+  const ring = await page.evaluate(() => ({ mode: document.documentElement.dataset.input, outline: getComputedStyle(document.querySelector(".cm-content")).outlineStyle }));
+  ok(ring.mode === "pointer" && ring.outline === "none", "typing in the editor draws no focus outline (keys typed in a field do not switch to keyboard mode)", JSON.stringify(ring));
   await page.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
   let list = (await api("notes.list", { space_id: space })).data.notes;
   const id = list[0].id;
