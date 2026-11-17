@@ -22,7 +22,7 @@
 <style>
   /* A glass pill of its own (a bare bar over the scrolling messages read as a stray underline): one segment per running child, brighter on hover. */
   .wrap { margin: 0 var(--s-6) var(--s-2); width: fit-content; }
-  :global(.kids) { display: inline-flex; align-items: center; gap: var(--s-2); height: var(--pill-h); padding: 0 var(--s-5); opacity: 0.8; transition: opacity var(--dur-base) var(--ease-out); }
+  :global(.kids) { background: rgb(var(--tint) / 0.92); display: inline-flex; align-items: center; gap: var(--s-2); height: var(--pill-h); padding: 0 var(--s-5); opacity: 0.8; transition: opacity var(--dur-base) var(--ease-out); }
   :global(.kids:hover), :global(.kids:focus-within) { opacity: 1; }
   /* The link is a full-size target (the pill height); the bar drawn in it is thin. */
   .n { font-size: var(--text-label); font-variant-numeric: tabular-nums; color: var(--ink-2); }
