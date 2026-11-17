@@ -28,6 +28,8 @@ Trust levels used in the tables:
 - **doc**: a documented or well-known Apple value that was *not* re-measured here. Marked so
   you can discount it.
 
+**Legend used in every table:** unmarked numbers are measured (AX or px). "(inferred)" means derived from a measured number. "(doc)" means taken from Apple's documentation and not re-measured; sources are listed in section 12. Pass 2 re-read pass 1 against the images and the JSON; the corrections are listed at the end of section 11.
+
 Windows were set to chosen sizes, so "default" below means the size the app opened at or the
 size stated. Nothing personal is on screen: demo notes written for this study on a VM with no
 accounts.
@@ -57,12 +59,11 @@ with the window edge, unframed.
 
 | App | Panel (outline) width | Row height | Section header | Row tint inset / icon column | Source |
 |---|---|---|---|---|---|
-| Finder | 173 default; **min 120**; drag below about 100 collapses it; max follows the window (761 of 1100 = 69 %) | 32 | 19 | row x=8, w=171; icon cell starts x=18 (10 in) | AX, probed with drag |
+| Finder | 173 default; **min 120**; dragging to x=80 clamps at 120, to x=10 collapses (threshold not found); max follows the window (761 of 1100 = 69 %) | 32 | 19 | row x=8, w=171; icon cell starts x=18 (10 in) | AX, probed with drag |
 | Notes | 222 default; 202 at the minimum window width (709) | 32 (folder), list row 56 | 19 | row x=8, w=220 | AX |
 | Settings | 215 | 32 | 19; profile row 54 | row x=8, w=198; text at x=23 | AX |
 
-Sidebar divider drag handle sits about 18 pt right of the outline's edge (outside the panel,
-in the gap): a hit target wider than the visible edge.
+The sidebar's resize handle is not at the visible edge: a drag started 8 pt inside the edge (x=188 of 196) did nothing, one at 198 (2 pt outside, in the gap) worked.
 
 ### 2.3 Lists, content, panes
 
@@ -120,7 +121,7 @@ Mac system sizes are smaller than iOS: the standard text is **13 pt**.
 | Grouped list (Settings) | page #F2F2F7, cards white, **17 pt** side margin (16 plus anti-alias), rows **52 pt** pitch, 1 pt separators, icon tile **28 x 28** at 13 pt inside the card, separator starts 72 pt from the card's left (icon rows) | px |
 | Row title text | digits and parentheses span 15.7 pt = 17 pt (Body) | px, fit |
 | Chevron | right end, about 9 pt wide, secondary colour | px |
-| Reminders first-run sheet | edge-to-edge sheet, top about 62 pt below the screen top, very large top corners (about 40 pt+), primary action a blue **capsule** button 326 x 51 pt with 38 pt side margins ([ios27-reminders.png](https://git.kayg.org/attachments/0e0817aa-be8d-43e6-9a31-6618d0c60fbf)) | px (approx, from the screenshot) |
+| Reminders first-run sheet | edge-to-edge sheet, top about 62 pt below the screen top, large top corners (not measured; the mockup's earlier 40 pt measurement of Safari's sheet is the better number), primary action a blue **capsule** button 326 x 51 pt with 38 pt side margins ([ios27-reminders.png](https://git.kayg.org/attachments/0e0817aa-be8d-43e6-9a31-6618d0c60fbf)) | px (approx, from the screenshot) |
 | Status bar | time at 177 to 311 px = x about 59 to 104 pt; battery right edge about 276 pt (island layout) | px |
 
 Safe areas were **not** read from the system (no accessibility tree). Known for this class of
@@ -330,6 +331,79 @@ What was created and removed:
 - Mac Studio (`kayg@std`): one simulator `native-ui-study-iphone` (created, used, **deleted**),
   directory `~/Developer/lanes/native-ui-study` (removed), a `cua-driver` daemon started by a
   probe (stopped; it listed every window once, no content kept). Nothing else was changed.
+
+## 11. Second pass (2026-11-17, later)
+
+### 11.1 What became possible and how
+
+- **Mac video.** The driver's own recorder has no video backend on this VM, so a tiny Terminal-hosted `ffmpeg -f avfoundation -framerate 60` (nix `ffmpeg.bin`) records the screen while the driver sends the input. Terminal was given Screen Recording on this disposable VM (the VM has SIP off; one row updated in the system TCC database with `sudo`, then `tccd` restarted). Frames come out at 60 fps with exact timestamps; transitions are found with `tblend`/`signalstats` frame differences and tracked edges.
+- **Mac dark mode** works through System Settings' Appearance pane by accessibility (the `defaults` route did not). The VM was set back to Light afterwards.
+- **iPhone input did not become possible.** Xcode 27.2 on the Mac Studio contains no `Simulator.app` (searched `/Applications`, the Xcode bundle and Spotlight), so there is no window to click and `simctl` has no touch command. Only headless `simctl` work was possible. See 11.5.
+
+### 11.2 Dark mode (macOS 26.5.2)
+
+Sampled from [macos26-dark-notes.png](https://git.kayg.org/attachments/011d3758-203a-4222-8b5b-115a65566cd9):
+
+| Surface | Dark value | Light value (pass 1) |
+|---|---|---|
+| Editor / content | #1E1E1E | #FFFFFF |
+| List column (translucent over the wallpaper) | #232A2C | #FFFFFF |
+| Sidebar (translucent over the wallpaper) | #282D2E | #F7F7F7 |
+| Selected list row | #464646 | #DCDCDC |
+| Selected sidebar row | #1E2324 | #F2F2F2 |
+| Hairline between list and editor | #000000 | #E6E6E6 |
+| Hairline under the toolbar | #393F41 | none |
+| Toolbar search field | #273033 | translucent grey |
+| Settings page / card (dark) | #222829 / #2A3033 | n/a |
+
+The dark sidebar and list pick up the blue-green of the wallpaper: they are real glass, not fixed greys (a different wallpaper gives different greys). Text is white-ish with secondary at lowered alpha; selection stays neutral grey in lists; the sidebar selected row accent is the app's colour (Notes yellow).
+
+**System Settings > Appearance > Liquid Glass has two options, Clear (default) and Tinted** ([macos26-dark-settings-appearance.png](https://git.kayg.org/attachments/0c72fb9c-f30a-4467-a064-f5fbd8583c8e)). The user can therefore make glass more opaque system-wide; a web glass should offer the same choice (a "Tinted" mode with a higher tint alpha is the honest analogue). The same pane has Icon and widget style, Theme colour, Folder colour and "Tint window background with wallpaper colour".
+
+### 11.3 Menus and popovers (dark, 1x)
+
+| Item | Size and metrics | Source |
+|---|---|---|
+| Context menu (right-click a Notes row, [image](https://git.kayg.org/attachments/4047614f-b64e-4ed3-9bfd-102f8cda1225)) | 247 x 256 pt, background about #262626, rows about 24 pt apart, 11 pt extra between groups (hairline separators), leading 14 pt icons, 13 pt labels, trailing chevron for submenus; the clicked row keeps the app accent as its tint while the menu is open | px |
+| Format popover (Notes "Aa", [image](https://git.kayg.org/attachments/6f50f0ba-e3b4-479c-87ec-e534d453ea8f)) | 177 x 326 pt body plus a 6 pt pointer toward the button, top row of B / I / U / S / highlighter / colour 38 pt high, then text styles each in its own style, a check mark for the current one, two hairline groups | px |
+| Popover and menu shape | corner radius about 14 to 16 (estimated from the images, not fitted); thin lighter edge; soft large shadow | inferred |
+
+Escape did not close the popover through the driver's `press_key`, and while it was open the main window's accessibility tree was not reachable; a click elsewhere or relaunch was needed. (The real keyboard path was not tested.)
+
+### 11.4 Motion measured (macOS, 60 fps)
+
+| Transition | Duration | Curve | How |
+|---|---|---|---|
+| Finder sidebar reveal (cmd-ctrl-S), a 761 pt wide panel | **about 0.19 s** (11 frames from first to last moving frame; the whole burst including content fade-in 0.22 to 0.23 s over three repeats) | speed rises then falls symmetrically (px per frame 10, 24, 48, 64, 76, 85, 85, 88, 82, 69, 43): ease-in-out. Least-squares cubic-bezier fit: **(0.4, 0, 0.6, 0.7 to 1)** over 0.18 s, rms error 0.019 | panel right edge tracked per frame, then fitted |
+| Same, the duration does not depend on the distance (the panel was 761 wide here, 173 by default) | | time-based, not speed-based | repeat of 3 |
+
+Not completed on the Mac: sheet, popover, push-like page change in Settings and selection timings. The harness ran, but the click sequence was not stable (a matching element was missing on repeat runs; frame differences from Terminal's own window changes polluted the first seconds), so those numbers are **not** reported. The measuring method is sound and cheap now (section 11.1); the remaining Mac transitions are a short follow-up.
+
+### 11.5 iPhone: what is still missing
+
+Everything that needs touches: push and sheet timing, detents, swipe actions, context menus, share sheet, pull to refresh, keyboard, reduced motion, per-row Dynamic Type for list rows with real lists, safe areas read from the system. Options:
+
+1. **XCUITest runner** driven by `xcodebuild test` against the simulator I create: a UI test bundle can tap, swipe, long-press, read every element's frame (so safe areas, navigation bar and tab bar heights come from the real accessibility tree) while `simctl io recordVideo` records at 60 fps. Cost: hand-writing a small Xcode project (no `xcodegen`/Tuist on the machine, and installing is not allowed there) and a signing-free test run; about half a day. Best fidelity.
+2. **Open Xcode.app** itself (Xcode 27 hosts the simulator window) and click with cua-driver. Cost: Xcode may be in use by other lanes; I did not open it.
+3. **Private HID client** (what `idb` uses) in a small Swift tool: fragile across OS versions. Not recommended.
+
+### 11.6 Corrections to pass 1
+
+- Finder sidebar collapse threshold: pass 1 said "about 100"; the probe only showed 80 clamps at 120 and 10 collapses. Fixed in 2.2.
+- Resize handle: pass 1 said about 18 pt outside the outline; the probe found 188 (inside the visible edge) did nothing and 198 worked. Fixed in 2.2.
+- Pass 1 said "no inspector app and no Mac dark mode": dark mode is now covered (11.2); inspector is still missing (Finder Preview pane and Preview.app were not opened in this pass).
+- Reminders first-run sheet: top corner radius removed (not measured).
+- Everything else in sections 2 to 8 was re-checked against the stored measurements and the JSON; no further numeric mismatch found. The JSON now carries a `trust` field per group.
+
+## 12. Sources for "(doc)" values
+
+Fetched from memory of Apple's published pages, **not re-fetched in this pass**; treat as pointers.
+
+- iOS and macOS text styles, Dynamic Type size tables: https://developer.apple.com/design/human-interface-guidelines/typography
+- Layout, safe areas, device sizes: https://developer.apple.com/design/human-interface-guidelines/layout
+- Liquid Glass overview and adoption: https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass and https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass
+- Motion and reduced motion: https://developer.apple.com/design/human-interface-guidelines/motion and https://developer.apple.com/design/human-interface-guidelines/accessibility
+- SF Pro tracking table: https://developer.apple.com/fonts/
 
 ## Simplification opportunities
 
