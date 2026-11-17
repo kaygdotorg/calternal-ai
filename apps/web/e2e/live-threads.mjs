@@ -40,21 +40,36 @@ ok("an agent message arrives", first > 0, `after ~${first}s`);
 if (first) console.log("    agent said: " + (await page.locator(".msg.agent").last().innerText()).replace(/\s+/g, " ").slice(0, 160));
 ok("the thread is idle again after the turn", (await page.getByRole("button", { name: "Stop the turn" }).count()) === 0 && (await page.locator("text=/Running/").count()) === 0);
 await page.screenshot({ path: "/tmp/live-threads.png" });
-// Stop a second turn
+// Quiet: nothing is polled (the journal tells what changed)
+const before = calls.length; await page.waitForTimeout(9000);
+const quiet = calls.slice(before);
+ok("no polling: no operation in 9 s of quiet", quiet.length === 0, quiet.join(", "));
+// Rename (double-click the row), then it survives a reload
+const cur = page.locator("nav[aria-label=Threads] a.row[aria-current]").first();
+await cur.dblclick(); await page.getByLabel("Rename thread").fill("Renamed by the e2e"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500);
+ok("rename shows in the list", (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by the e2e" }).count()) === 1);
+// A turn that is running when the page reloads is followed again
 await f.click(); await f.fill("Count slowly to 200, one number per line"); await page.keyboard.press("Enter");
-await page.waitForTimeout(2500);
+await page.waitForTimeout(1200);
+await page.reload(); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(3000);
+const stopAfter = page.getByRole("button", { name: "Stop the turn" });
+const reloadedRunning = (await stopAfter.count()) + (await page.locator("text=/Running/").count());
+console.log(`    after reload mid-turn: stop button=${await stopAfter.count()}, "Running" labels=${await page.locator("text=/Running/").count()}, working row=${await page.locator("text=/Working/").count()}`);
+ok("a reloaded page shows the running turn", reloadedRunning > 0);
 const stopBtn = page.getByRole("button", { name: "Stop the turn" });
-console.log(`    stop button visible while running: ${await stopBtn.count()}`);
 if (await stopBtn.count()) {
   await stopBtn.click(); await page.waitForTimeout(3000);
   const still = await page.getByRole("button", { name: "Stop the turn" }).count(), running = await page.locator("text=/Running/").count();
   ok("stop returns the thread to idle", still === 0 && running === 0, `stop buttons=${still} "Running" labels=${running}`);
   await page.screenshot({ path: "/tmp/live-stop.png" });
 }
-// Archive
+// Archive, then Undo (un-archive)
 const first1 = rows.first(); const title = await first1.locator(".t").innerText().catch(() => "");
 await first1.hover(); await page.getByRole("button", { name: "Archive" }).first().click(); await page.waitForTimeout(1500);
-ok("archive removes it from the list", true, `"${title}"`);
+const gone = (await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count()) === 0;
+ok("archive removes it from the list", gone, `"${title}"`);
+await page.getByRole("button", { name: "Undo" }).click().catch(() => {}); await page.waitForTimeout(2000);
+ok("Undo brings it back (threads.unarchive)", (await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count()) === 1);
 console.log("    page errors: " + (errors.length ? [...new Set(errors)].slice(0, 6).join(" | ").slice(0, 600) : "none"));
 console.log(`    total ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);

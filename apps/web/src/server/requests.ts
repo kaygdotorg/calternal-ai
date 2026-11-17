@@ -2,7 +2,7 @@
  * Requests on the real server: questions, approvals and secret requests (the request bar and the attention card), through the unified request operations of
  * issue #32: `requests.list`, `requests.answer`, `requests.approve` (lifetime `once` or `thread`) and `requests.deny`. The wire shape below is the lane's stated goal
  * (list / answer / approve / deny); it is NOT yet in dev, so the mapping here (`requestOf`, `answerInput`) is the one place to change when the contract lands. A secret's value leaves
- * the client in `requests.answer` and is not kept; a failure is thrown as it came (`ServerError`). The list is polled every 4 s while watched (a feed replaces the poll).
+ * the client in `requests.answer` and is not kept; a failure is thrown as it came (`ServerError`). Not polled: the thread feed calls `refresh` when a turn starts or stops waiting.
  */
 import { spaces } from "../shell/spaces.svelte";
 import type { RequestsClient } from "../apps/threads/client";
@@ -49,11 +49,8 @@ export function answerInput(id: string, a: Answer): { operation: string; input: 
   }
 }
 
-const EVERY = 4000;
-
 export class ServerRequests implements RequestsClient {
   private watchers = new Set<(r: Request[]) => void>();
-  private timer = 0;
   constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) {}
 
   /** Set when the server answered `not_found` to `requests.list`: it does not offer requests yet, so there is nothing to ask again until the page is reloaded. */
@@ -68,13 +65,14 @@ export class ServerRequests implements RequestsClient {
       throw e;
     }
   }
+  /** Watchers hear a new list whenever `refresh` runs: after an answer, and when the thread feed says a turn started or stopped waiting. Nothing is polled. */
   watchRequests(cb: (r: Request[]) => void): () => void {
     this.watchers.add(cb);
-    if (!this.timer) this.timer = window.setInterval(() => { if (!document.hidden && !this.absent) void this.refresh(); }, EVERY);
-    return () => { this.watchers.delete(cb); if (!this.watchers.size) { clearInterval(this.timer); this.timer = 0; } };
+    return () => { this.watchers.delete(cb); };
   }
   /** Re-reads and tells every watcher (after an answer, and on each tick). */
   async refresh(): Promise<void> {
+    if (this.absent || !this.watchers.size) return;
     try { const r = await this.requests(); for (const w of this.watchers) w(r); } catch { /* offline: the next tick tries again */ }
   }
   async answer(id: string, a: Answer): Promise<void> {
