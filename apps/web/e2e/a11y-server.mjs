@@ -10,7 +10,7 @@ import { chromium } from "playwright";
 const PORT = Number(process.env.CAL_A11Y_PORT ?? 3393);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
 const data = mkdtempSync(join(tmpdir(), "cal-a11y-"));
-const srv = spawn(BIN, ["serve", "--data-dir", data, "--port", String(PORT), "--web-dir", process.env.CAL_DIST ?? "dist"], { stdio: "ignore" });
+const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", join(data, "appdata"), "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"), "--port", String(PORT), "--web-dir", process.env.CAL_DIST ?? "dist"], { stdio: "ignore" });
 const url = `http://localhost:${PORT}`;
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
@@ -22,7 +22,7 @@ const axe = async (page, name) => {
 };
 try {
   for (let i = 0; i < 80; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 250)); }
-  const token = (() => { for (const f of ["setup.token", "data/setup.token"]) try { return readFileSync(join(data, f), "utf8").trim(); } catch {} return ""; })();
+  const token = (() => { for (const f of ["appdata/setup.token"]) try { return readFileSync(join(data, f), "utf8").trim(); } catch {} return ""; })();
   const b = await chromium.launch();
   const newCtx = async (dev, scheme) => {
     const ctx = await b.newContext({ ...DEV[dev], colorScheme: scheme, reducedMotion: "no-preference" });
