@@ -50,9 +50,10 @@ export class ServerClient {
   /** What the server offers and who is asking (`GET /api/v1/describe`). */
   async describe(): Promise<DescribeResult> {
     const res = await this.f(`${this.base}/api/v1/describe`, { headers: this.headers() }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
-    const body = (await res.json()) as OperationResponse<DescribeResult>;
-    if (!body.ok) throw new ServerError(body.error.code, body.error.message, res.status);
-    return body.data;
+    // Unlike an operation, discovery answers with the description itself (no envelope); a failure still arrives as a failure envelope.
+    const body = (await res.json()) as DescribeResult | OperationResponse<never>;
+    if ("ok" in body && body.ok === false) throw new ServerError(body.error.code, body.error.message, res.status);
+    return body as DescribeResult;
   }
   spaces = { list: () => this.operate<SpacesListResult>("spaces.list") };
   notes = {
@@ -116,3 +117,5 @@ export function serverMode(): boolean {
 }
 /** The shared client (development token mode). */
 export const server = new ServerClient({ token: devToken });
+// Read the token at load, before the router rewrites the address: `?token=` is stored and removed at once.
+void devToken();

@@ -246,3 +246,32 @@ Notes (2026-11-17): the default photographs are fetched when the app is built (`
 | Documentation site themed with the design system | yes | `apps/docs/`, `/docs/` |
 
 Open: the ink flip makes a sidebar light next to a dark card in the dark scheme on bright photographs (Barrow, Hoefler): the owner should judge it on the preview; turning it off is one line (`solve` in `veil.ts`, the `other` argument). The card can be almost fully transparent on light generated looks (veil 0.02), because the floor is that low there.
+
+## The real-server adapter (2026-11-17)
+
+`apps/web/src/server/` is a client for what the server on `origin/dev` already offers: `describe`, the operations catalogue (`POST /api/v1/operations`: spaces, notes, plugins, jobs, secrets, drafts, pending), the live space stream (`GET /api/v1/live`, SSE) and the jobs stream
+(`GET /api/v1/jobs/<id>/events`, SSE), with types from `packages/contracts`. The Notes app sits on a `NotesClient` interface with two implementations: fixtures (the default) and the server.
+
+**Sign-in is not wired for browsers yet, so this uses the development token mode:** start `calternal serve --data-dir <dir> --development`, then open the app with
+`?server=1&token=<contents of <dir>/dev-tokens/owner.token>` (the token is kept in localStorage and removed from the address; it is never printed). In development, `vite` and `vite preview` proxy `/api` to the server
+(`CAL_SERVER`, default `http://127.0.0.1:3210`) and present the server's own Host and Origin, which its checks require. `?server=0` goes back to fixtures. The preview host serves the static build only, so it runs on fixtures.
+
+Checked against a real server (`e2e/server-notes.mjs`, 7 of 7): the sidebar shows the server's space and notes, a new note is created, an edit is saved with `base_revision`, a note written by another client appears through the live stream, `describe` lists the 34 operations,
+a wrong token is refused. The jobs stream is covered by unit tests on a mocked response (`server/server.test.ts`), not by a real job, because running a job needs the plugin worker.
+
+**Fixture calls that still have no server equivalent** (the server has no orchestrator or thread operations yet; every one stays on fixtures):
+
+| Fixture call (`ThreadsClient`) | Server today |
+| --- | --- |
+| `listThreads`, `watchThreads`, `messages`, `watch`, `send`, `stop`, `rename`, `archive`, `unarchive` | none: no thread operations |
+| `setProvider`, `setPermission`, `setRunsOn`, `providers` | none |
+| `machines` | none as an operation (machines are managed by the `calternal machines` CLI and the machine protocol) |
+| `requests`, `watchRequests`, `answer` (questions, approvals) | none; secret requests have `secrets.request` / `secrets.list` / `secrets.revoke` and `POST /api/v1/auth/secrets/provide`, not wired yet |
+| `changes`, `run`, files for the right panel | none |
+| the composer's drafts (in memory) | `drafts.save` / `list` / `get` / `delete` exist, not wired yet |
+| queued sends | `pending.*` exist, not wired yet |
+| palette search over spaces | no search operation (only `notes.list`); the palette searches fixtures |
+| appearance, shortcuts and the other Settings values (localStorage) | no settings operation; `plugins.list` / `enable` / `disable` exist for the Plugins page, not wired yet |
+| account, passkeys | `/api/v1/auth/*` exists; the web sign-in flow is not built |
+
+Open: nothing in the adapter retries a dropped live stream beyond five attempts after a `reset`; a visible "reconnecting" state belongs with the real sign-in work.

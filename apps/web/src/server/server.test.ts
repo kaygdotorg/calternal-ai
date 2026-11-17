@@ -22,6 +22,10 @@ describe("operations", () => {
     const c = new ServerClient({ token: () => null, fetch: (async () => json({ request_id: "r", ok: false, error: { code: "conflict", message: "stale" } }, 409)) as never });
     await expect(c.notes.update({ id: "n", base_revision: "1", markdown: "x" } as never)).rejects.toMatchObject({ code: "conflict", message: "stale", status: 409 });
   });
+  test("describe answers without an envelope", async () => {
+    const c = new ServerClient({ token: () => "T", fetch: (async () => json({ protocol_version: 1, genui_version: 1, principal: { id: "p", spaces: [] }, operations: [{ id: "spaces.list" }] })) as never });
+    expect((await c.describe()).operations).toHaveLength(1);
+  });
   test("a network failure is unavailable", async () => {
     const c = new ServerClient({ token: () => null, fetch: (async () => { throw new Error("offline"); }) as never });
     await expect(c.describe()).rejects.toBeInstanceOf(ServerError);
