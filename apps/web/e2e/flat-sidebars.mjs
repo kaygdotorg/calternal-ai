@@ -16,7 +16,9 @@ const measure = async (page, band = [120, -180], dump = false) => {
     const col = (x) => { const d = ctx.getImageData(Math.round(x * sc), y0, 1, hh).data; let a = 0; for (let i = 0; i < d.length; i += 4) a += (d[i] + d[i + 1] + d[i + 2]) / 3; return a / (d.length / 4); };
     // The span from just outside the card (the card casts its own shadow in its first few pixels, which belongs to the card) across the gap and into the sidebar, both sides.
     const span = (from, to) => { let worst = 0, at = from; let prev = col(from); for (let x = from + 1 / sc; x <= to; x += 1 / sc) { const c = col(x); if (Math.abs(c - prev) > worst) { worst = Math.abs(c - prev); at = x; } prev = c; } return { worst, at }; };
-    const out = { right: span(R.card.right + 6, R.right.left + 40), left: span(R.left.right - 40, R.card.left - 6) };
+    // Rows: the mean colour of each pixel row inside a sidebar, top to bottom through the very last row; a band at the top or bottom shows as a step between neighbouring rows.
+    const rows = (x0, x1) => { const d = ctx.getImageData(Math.round(x0 * sc), 0, Math.max(1, Math.round((x1 - x0) * sc)), img.height).data, w = Math.max(1, Math.round((x1 - x0) * sc)); const m = []; for (let y = 0; y < img.height; y++) { let a = 0; for (let x = 0; x < w; x++) { const i = (y * w + x) * 4; a += (d[i] + d[i + 1] + d[i + 2]) / 3; } m.push(a / w); } let worst = 0, at = 0; for (let y = 1; y < m.length; y++) if (Math.abs(m[y] - m[y - 1]) > worst) { worst = Math.abs(m[y] - m[y - 1]); at = y / sc; } return { worst, at, last: m.at(-1), before: m.at(-12) }; };
+    const out = { right: span(R.card.right + 6, R.right.left + 40), left: span(R.left.right - 40, R.card.left - 6), rowsRight: rows(R.right.left + 30, R.right.right - 30), rowsLeft: rows(R.left.left + 30, R.left.right - 30) };
     if (R.dump) out.profile = Array.from({ length: 40 }, (_, i) => +col(R.card.right - 6 + i).toFixed(1));
     return out;
   }, [png, { ...rects, band, dump }]);
@@ -29,8 +31,8 @@ try {
     await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--c-dim-a").trim() !== "" && getComputedStyle(document.documentElement).getPropertyValue("--wall-card").includes("blob"), null, { timeout: 15000 });
     await page.waitForTimeout(500);
     const m = await measure(page);
-    const good = m.right.worst <= STEP && m.left.worst <= STEP;
-    console.log(`${good ? "PASS" : "FAIL"}  ${scheme.padEnd(5)} ${id.padEnd(12)} largest step right ${m.right.worst.toFixed(2)} (x ${m.right.at.toFixed(0)}), left ${m.left.worst.toFixed(2)} (x ${m.left.at.toFixed(0)})`);
+    const good = m.right.worst <= STEP && m.left.worst <= STEP && m.rowsRight.worst <= STEP && m.rowsLeft.worst <= STEP;
+    console.log(`${good ? "PASS" : "FAIL"}  ${scheme.padEnd(5)} ${id.padEnd(12)} largest step across: right ${m.right.worst.toFixed(2)}, left ${m.left.worst.toFixed(2)}; down the full height: right ${m.rowsRight.worst.toFixed(2)} (y ${m.rowsRight.at.toFixed(0)}), left ${m.rowsLeft.worst.toFixed(2)} (y ${m.rowsLeft.at.toFixed(0)})`);
     if (!good) bad++;
     await ctx.close();
   }

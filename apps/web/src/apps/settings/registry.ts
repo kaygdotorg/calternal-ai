@@ -62,6 +62,9 @@ const appearancePage: Page = {
       { id: "appearance.accent", label: "Accent", help: "From the wallpaper, or one colour of your own.", control: { type: "segmented", options: [{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }] }, get: () => (A.prefs.accent === "theme" ? "wallpaper" : A.prefs.accent), set: (v) => ap((p) => (p.accent = v as never)) },
       { id: "appearance.wordmark", label: "Wordmark", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
     ] },
+    { title: "Chat", settings: [
+      { id: "appearance.chat-width", label: "Chat layout", help: "Wide: messages and the composer use the whole card, yours on the right, the agent's from the left. Centred: a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
+    ] },
     { title: "Motion", settings: [
       { id: "appearance.motion", label: "Animations", help: "Follows the system's reduce-motion setting; this switch turns them off as well.", control: { type: "switch" }, get: () => A.prefs.motion, set: (v) => ap((p) => (p.motion = !!v)) },
     ] },

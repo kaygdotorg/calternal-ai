@@ -88,6 +88,8 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
 // ---------- desktop, Settings ----------
 {
   const { ctx, page } = await fresh(DEVICES.desktop, "/settings/appearance?firstrun=0");
+  const foot = await page.evaluate(() => { const f = document.querySelector("aside.side footer").getBoundingClientRect(); return f.bottom <= innerHeight + 1 && f.top > 0; });
+  ok(foot, "The sidebar's footer (account, spaces, search) is in view in the Settings app too");
   const groups = await page.locator("aside.side nav h2").allInnerTexts();
   ok(groups.length === 3 && /^User/.test(groups[0]) && /^Admin/.test(groups[1]) && /^Space/.test(groups[2]), "Settings: User, Admin, then the current space (owner decision C)", groups.join(" / "));
   ok((await page.locator("aside.side input[type=search], .page input[type=search]").count()) === 0, "No search box inside Settings");

@@ -43,6 +43,8 @@ export interface Prefs {
   fonts: FontPrefs;
   /** Whether the interface animates. The system's reduce-motion setting is always honoured (the motion tokens shorten); this is the person's own off switch on top of it. */
   motion: boolean;
+  /** The chat column on a desktop: `wide` (the default, from the calternal-ui plugin's wide chat) fills the card, `centered` keeps a readable column. */
+  chatWidth: "wide" | "centered";
   /**
    * TEMPORARY, for the owner's side-by-side comparison (Settings, Appearance, Compare); removed once decided. `floor`: the readability floor the veil is solved to (`current` 7:1 with text that
    * flips, or `low` 4.5:1 that shows more wallpaper). `light`: the light scheme's surfaces (`derived`: the lighter photo with the solved veil, or `craft`: the unchanged photo under 0.92 white).
@@ -65,6 +67,7 @@ export const DEFAULTS: Prefs = {
   streamText: false,
   fonts: DEFAULT_FONTS,
   motion: true,
+  chatWidth: "wide",
   compare: { floor: "current", light: "derived" },
 };
 
@@ -127,6 +130,7 @@ class Appearance {
     const look = { sideBlur: m.blur ? SIDE_BLUR : 0, cardBlur: m.blur ? CARD_BLUR : 0 };
     const mine = ++this.applySeq;
     const scheme = currentScheme();
+    if (p.chatWidth === "wide") document.documentElement.dataset.chatWide = ""; else delete document.documentElement.dataset.chatWide;
     if (p.motion) delete document.documentElement.dataset.motion; else document.documentElement.dataset.motion = "off";
     // The comparison: a lower readability floor, and Craft's light surfaces on the unchanged photograph (a photo's unchanged rendition is its dark-scheme file).
     setFloor(p.compare.floor);

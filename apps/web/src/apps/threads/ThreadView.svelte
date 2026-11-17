@@ -136,6 +136,6 @@
   .crumb { font-size: var(--text-section); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1; }
   .list { position: absolute; inset: 0; }
   .skeleton { height: 96px; margin: var(--s-4) var(--pad-region); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
-  .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--pad-region) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)); }
-  .inner { pointer-events: auto; display: flex; flex-direction: column; gap: var(--s-4); width: 100%; max-width: calc(var(--msg-w) - 2 * var(--pad-region)); min-width: 0; }
+  .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)) var(--msg-pad-l, var(--pad-region)); }
+  .inner { pointer-events: auto; display: flex; flex-direction: column; gap: var(--s-4); width: 100%; max-width: var(--msg-inner, calc(var(--msg-w) - 2 * var(--pad-region))); min-width: 0; }
 </style>

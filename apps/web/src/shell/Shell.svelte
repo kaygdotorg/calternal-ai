@@ -3,7 +3,7 @@
   // bottom of the viewport; the right card holds the app's panels. Wide screens put them side by side. Narrow screens (< 760 px) stack
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
-  import { Card, IconButton } from "@calternal/ui";
+  import { Card, Pill } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { appearance } from "../appearance/prefs.svelte";
@@ -13,6 +13,7 @@
   import Backdrop from "./Backdrop.svelte";
   import PhoneTabs from "./PhoneTabs.svelte";
   import RightSidebar from "./RightSidebar.svelte";
+  import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
   let { app, id }: { app: AppDef; id?: string } = $props();
@@ -111,8 +112,10 @@
   <aside class="side" bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
   <main class="mid" bind:this={midEl} style:--edge-l={showLeft ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={dragMode === "card" && drag !== null ? `translateX(${drag}px)` : undefined} style:scale={dragMode === "panel" && drag !== null ? 1 - 0.04 * (1 - drag / panelWidth()) : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
-    {#if showLeft}<div class="edge l"><IconButton icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
-    {#if showRight}<div class="edge r"><IconButton icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
+    {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
+    {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
+    {#if showLeft}<div class="edge l"><Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} /></div>{/if}
+    {#if showRight}<div class="edge r"><Pill icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
     <Card label={app.name} class="mid-card">
       <div class="col">
         <div class="app"><app.Main {id} /></div>
@@ -129,9 +132,11 @@
 {#if shell.narrow && !shell.sidebarOpen}<PhoneTabs {app} />{/if}
 
 <style>
+  /* Wide chat (the plugin's default, Settings, Appearance, Chat layout): on a desktop the thread's column is the whole card, with room on the left for a contents rail and a margin on the right. */
+  @media (min-width: 760px) { :global(html[data-chat-wide]) { --msg-w: 100%; --msg-inner: none; --msg-pad-l: 3.25rem; --msg-pad-r: 1.5rem; } }
   .shell {
     --sw: var(--side-w); --rw: var(--right-w);
-    position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw);
+    position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw); grid-template-rows: minmax(0, 1fr); /* one row exactly the window's height: a page taller than the window scrolls inside the card and never stretches the sidebars (their footer stays in view in every app) */
   }
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
