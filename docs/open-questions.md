@@ -10,8 +10,6 @@ move to the decision record they belong to and leave this list. Terms: see
 | --- | --- | --- | --- |
 | 1 | Sandbox boundary: one microVM per person per space, per workspace, or per person? | Decide from the hybrid measurement (issue #7, report being written) | Cloud agents |
 | 2 | Containers now and microVMs before public sign-up, or containers inside a per-person microVM from the start? | Follow #7's numbers | Cloud agents |
-| 3 | Client sync after a long gap: snapshot plus bookmark, or leased replay? | Snapshot plus bookmark | Client core sync |
-| 4 | Sticky request bar: should agent questions and approvals use the same bar as secret requests, and do they expire too? | Same bar; questions and approvals do not expire | Orchestrator UI |
 
 ## Design rounds
 
@@ -23,6 +21,8 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- State lives on the server; clients subscribe to it and cache what they need, as the existing app does. There is no sync protocol to design. A client whose bookmark is too old reloads.
+- Agent questions and approvals share the sticky bar with secret requests and do not expire.
 - Warm pool of pre-started sandboxes on each cloud machine: yes.
 - Offline: cached reading and drafts only; nothing is queued to run later.
 - Drafts sync across a person's devices and stay until sent or erased.

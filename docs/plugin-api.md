@@ -103,6 +103,13 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
 - Drafts sync across a person's devices and stay until sent or erased. After sign-out,
   unsent edits are kept as drafts. After revocation the device offers an export of what it
   holds, then deletes it; revocation is immediate and never waits for the export.
+- Clients do not sync. All state lives on the server; a client subscribes to a space's
+  journal over one live connection, shows it, and caches what it needs (the existing app's
+  model: `/api/v1/live`, resume with a bookmark, reload when the bookmark has expired).
+  Drafts work the same way. The only things a client holds that the server lacks are
+  edits typed while offline, which it sends on reconnect.
+- Agent questions and approvals appear in the same sticky bar as secret requests and do
+  not expire.
 
 ## Open
 
