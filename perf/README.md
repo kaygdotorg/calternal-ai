@@ -44,9 +44,12 @@ currently capped at 100 rows without pagination; its inherited page budget expos
 the responses have equivalent sizes. Session check is `/api/v1/auth/me`; address
 resolution is the `resolve` operation, not a fabricated static route.
 
-Still missing: isolated admission timing, exact server-commit-to-SSE timing,
-and a three-host-call worker. See `docs/performance.md`. Until those are implemented,
-this is a partial qualification and cannot certify the whole backend merge gate.
+Debug-only admission, receipt-lookup and post-commit/SSE stage observations are
+available as described below. Plain releases exclude those hooks, so the default
+incomplete-backend qualification label remains; debug observations do not certify
+release stage latency. A three-host-call worker is still missing. See
+`docs/performance.md` and the issue #31 follow-up report for measured coverage.
+The harness cannot certify the whole backend merge gate.
 
 Exit 1 means a reproduced numeric breach. Exit 2 means an error or incomplete
 mandatory coverage; neither is green. A summary is written before either numeric
@@ -135,3 +138,10 @@ When the baseline pins an older trusted worker digest, use
 uses `--plugins`; each measured arm validates its own pinned bundle. Both bundle
 paths are recorded in the summary. Keep this difference explicit when catalog or
 worker changes affect comparability; never bypass trusted-worker validation.
+
+The schema-6 fixture builder reuses the UUID of the personal space created during
+account enrollment, then creates the remaining spaces. Nominal fixture counts
+therefore include every space in the enrolled account. Historical schema-5
+binaries cannot read schema-6 roots; keep the pinned pre-integration comparison
+and use schema-compatible controls for an integrated release. No old-schema
+reader or migration is added to make a benchmark comparison run.
