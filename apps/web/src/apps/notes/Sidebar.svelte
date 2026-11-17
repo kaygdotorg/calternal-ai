@@ -4,18 +4,19 @@
   import { href, navigate, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import { notes } from "./store.svelte";
+  import { shell } from "../../shell/shell.svelte";
   // The list follows the space the shell is showing.
   $effect(() => { void notes.useSpace(spaces.current.id); });
   const current = $derived(segments()[0] === "notes" ? segments()[1] : undefined);
   async function create() {
     const n = await notes.create("Untitled");
-    if (n) navigate(`/notes/${n.id}`);
+    if (n) { navigate(`/notes/${n.id}`); if (shell.narrow && shell.sidebarOpen) shell.toggleSidebar(); } // a phone: the list steps aside to show the new note
   }
 </script>
 
 <nav aria-label="Notes">
-  {#if notes.space}<p class="sp">{notes.space.name}{notes.live ? " (server)" : ""}</p>{/if}
-  <ul>{#each notes.list as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">{notes.error || "No notes yet."}</li>{/each}</ul>
+  {#if notes.space}<p class="sp">{notes.space.name}</p>{/if}
+  <ul>{#each notes.list as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li>{/each}</ul>
   <button type="button" class="new" onclick={create}>New note</button>
   {#if notes.waiting.length}
     <div class="wait" role="group" aria-label="Waiting to send">
@@ -35,6 +36,7 @@
   nav { display: grid; gap: var(--s-2); }
   ul { display: grid; gap: var(--s-1); }
   .sp { padding: 0 var(--s-5); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
+  .retry { text-decoration: underline; color: var(--ink-2); }
   .none { padding: var(--s-4) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   .wait { display: grid; gap: var(--s-1); margin-top: var(--s-4); }
   .w { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-2) var(--s-5); font-size: var(--text-label); }

@@ -11,7 +11,7 @@ const PORT = Number(process.env.CAL_SIGNIN_PORT ?? 3391);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
 const DIST = process.env.CAL_DIST ?? "dist";
 const data = mkdtempSync(join(tmpdir(), "cal-signin-"));
-const srv = spawn(BIN, ["serve", "--data-dir", data, "--port", String(PORT), "--web-dir", DIST], { stdio: ["ignore", "ignore", "pipe"] });
+const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", join(data, "appdata"), "--userdata-ssd", join(data, "ssd"), "--userdata-hdd", join(data, "hdd"), "--port", String(PORT), "--web-dir", DIST], { stdio: ["ignore", "ignore", "pipe"] });
 let log = ""; srv.stderr.on("data", (d) => { log += d; });
 const stop = () => { srv.kill(); rmSync(data, { recursive: true, force: true }); };
 let failed = 0;
@@ -19,7 +19,7 @@ const check = (ok, what) => { console.log(`${ok ? "ok  " : "FAIL"} ${what}`); if
 try {
   const url = `http://localhost:${PORT}`;
   for (let i = 0; i < 80; i++) { try { if ((await fetch(`${url}/api/v1/auth/status`)).ok) break; } catch { /* not yet */ } await new Promise((r) => setTimeout(r, 250)); }
-  const setupToken = (() => { for (let i = 0; i < 40; i++) { try { return readFileSync(join(data, "setup.token"), "utf8").trim(); } catch { /* not yet */ } } return ""; })()
+  const setupToken = (() => { for (let i = 0; i < 40; i++) { try { return readFileSync(join(data, "appdata", "setup.token"), "utf8").trim(); } catch { /* not yet */ } } return ""; })()
     || (() => { try { return readFileSync(join(data, "appdata", "setup.token"), "utf8").trim(); } catch { return ""; } })();
   check(!!setupToken, "fresh installation wrote a setup token");
 
@@ -54,6 +54,8 @@ try {
 
   page.on("dialog", (d) => void d.accept());
   const go = async (path) => { await page.evaluate((p) => { history.pushState(null, "", p); dispatchEvent(new PopStateEvent("popstate")); }, path); };
+  const deep = await page.goto(`${url}/settings/account`); await page.waitForSelector("html[data-ready]");
+  check(deep.status() === 200, "deep link reload is served the shell by the server itself", String(deep.status()));
   await page.goto(`${url}/`); await page.waitForSelector("html[data-ready]");
   // Settings pages show real data in server mode.
   await go("/settings/account");

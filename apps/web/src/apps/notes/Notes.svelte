@@ -7,10 +7,16 @@
   import { notes } from "./store.svelte";
   import { store as threadStore } from "../threads/store.svelte";
   import { navigate } from "../../lib/route.svelte";
+  import { serverMode } from "../../server/client";
+  import { link } from "../../server/link.svelte";
   // Tags in use: fixture words until the server lists them (its search index will).
-  const TAGS = ["design", "journal", "release", "storage", "reading"];
+  // In server mode there is no tag list to read (no operation yet), so the # picker offers nothing rather than invented words.
+  const TAGS = serverMode() ? [] : ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
-  $effect(() => { void notes.open(id); });
+  // Leaving a note saves what is pending first (against that note), then the next one opens.
+  $effect(() => { void notes.open(id); return () => { clearTimeout(saveTimer); if (latest) void flush(); latest = ""; }; });
+  // The editor was given new text (a note opened, changed elsewhere, or the other version taken): what was typed before no longer applies.
+  $effect(() => { void notes.view.seq; latest = ""; });
   let heads = $state<{ level: number; text: string; from: number }[]>([]);
   let editor = $state<NoteEditor>();
   let latest = "";
@@ -18,15 +24,25 @@
   const titleOf = (t: string) => /^# +(.+)$/m.exec(t)?.[1]?.trim() ?? notes.note?.title ?? "Untitled";
   function edited(text: string) {
     latest = text;
+    notes.touch();
     clearTimeout(draftTimer); clearTimeout(saveTimer);
     draftTimer = window.setTimeout(() => void notes.keepDraft(text), 600);
     saveTimer = window.setTimeout(() => void flush(), 1500);
   }
+  // One save at a time; text typed while it runs is saved by the next one (the editor is never touched by a save).
+  let inflight = false, again = false;
   async function flush() {
     clearTimeout(saveTimer);
-    if (notes.note && latest && latest !== notes.note.markdown) await notes.save(titleOf(latest), latest);
+    if (!notes.note || !latest || latest === notes.note.markdown || notes.saveState === "conflict") return;
+    if (inflight) { again = true; return; }
+    inflight = true;
+    try { await notes.save(titleOf(latest), latest); } finally { inflight = false; }
+    if (again) { again = false; void flush(); }
   }
   $effect(() => () => { if (latest) void flush(); });
+  const STATE = { saved: "Saved", dirty: "Not saved yet", saving: "Saving…", conflict: "Changed elsewhere", waiting: "Can't reach the server. Your text is still here and saves when it is back", failed: "Not saved" } as const;
+  // The server is back: send what could not be sent.
+  $effect(() => { if (link.state === "ok" && notes.saveState === "waiting") void flush(); });
   let toc = $state(false);
   const uid = $props.id();
 </script>
@@ -47,6 +63,7 @@
   <header>
     {#if shell.narrow}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
+    {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={notes.saveState}>{STATE[notes.saveState]}</span>{/if}
   </header>
 
   <article>
@@ -54,11 +71,15 @@
       {#if notes.draft}
         <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
       {/if}
-      <NoteEditor bind:this={editor} id={notes.note.id} text={notes.note.markdown} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
+      <NoteEditor bind:this={editor} id={notes.view.id} text={notes.view.text} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} notes={notes.list} threads={threadStore.threads.map((t) => ({ id: t.id, title: t.title }))} agents={threadStore.providers.map((p) => p.name)} tags={TAGS} />
+      {#if notes.conflict}
+        <p class="draft" role="alert">Someone changed this note while you were editing it. Your text is kept here. <Button variant="primary" text="Keep mine" onclick={() => notes.keepMine(titleOf(editor?.current() ?? latest), editor?.current() ?? latest)} /> <Button variant="quiet" text="Use theirs" onclick={() => notes.takeTheirs()} /></p>
+      {/if}
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     {:else}
-      <h1>{id ? "Note not found" : "Notes"}</h1>
+      <h1>{notes.error ? (notes.errorCode === "unavailable" ? "Can't reach the server" : notes.errorCode === "forbidden" ? "You can't open this note" : id ? "Note not found" : "Notes") : id ? "Note not found" : "Notes"}</h1>
       <p class="lede">{notes.error || (id ? "It may have been removed, or you may not have access." : notes.list.length ? "Choose a note on the left, or make a new one." : "A note is a page of Markdown that you and your agents can read and edit. This space has none yet.")}</p>
+      {#if notes.error}<p class="first"><Button variant="primary" text="Try again" onclick={() => notes.retry(id)} /></p>{/if}
       {#if !id && !notes.list.length && !notes.error}<p class="first"><Button variant="primary" text="Write the first note" onclick={async () => { const n = await notes.create("Untitled"); if (n) navigate(`/notes/${n.id}`); }} /></p>{/if}
     {/if}
   </article>
@@ -72,6 +93,8 @@
   .grow { flex: 1; }
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
   .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+  .state { font-size: var(--text-label); color: var(--ink-3); }
+  .state[data-state="conflict"], .state[data-state="failed"] { color: var(--danger); }
   .err { color: var(--danger); font-size: var(--text-label); }
   :global(.tocard) a.l2 { padding-left: var(--s-6); } :global(.tocard) a.l3 { padding-left: var(--s-8); }
   .empty { padding: var(--s-3) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
