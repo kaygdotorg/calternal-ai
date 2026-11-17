@@ -14,14 +14,16 @@ class ThreadsStore {
   threads = $state<ThreadSummary[]>([]);
   requests = $state<Request[]>([]);
   providers = $state<ProviderOption[]>([]);
+  machines = $state<string[]>([]);
   ready = $state(false);
 
   /** Loads and subscribes. Safe to call once at start. */
   async start(): Promise<void> {
-    const [t, r, p] = await Promise.all([client.listThreads(), client.requests(), client.providers()]);
+    const [t, r, p, m] = await Promise.all([client.listThreads(), client.requests(), client.providers(), client.machines()]);
     this.threads = t;
     this.requests = r;
     this.providers = p;
+    this.machines = m;
     this.ready = true;
     client.watchThreads((x) => (this.threads = x));
     client.watchRequests((x) => (this.requests = x));

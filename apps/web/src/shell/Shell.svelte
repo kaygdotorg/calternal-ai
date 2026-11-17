@@ -54,7 +54,7 @@
   .narrow[data-sidebar="true"] .mid { transform: translateX(calc(100% - var(--peek))); }
   .narrow[data-right="true"] .mid { scale: 0.96; }
   .narrow .mid :global(.mid-card) { border-radius: 0; transition: border-radius var(--dur-slow) var(--spring); }
-  .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-frame); }
+  .narrow[data-sidebar="true"] .mid :global(.mid-card), .narrow[data-right="true"] .mid :global(.mid-card) { border-radius: var(--r-pane); }
   .peek { position: fixed; z-index: 3; top: 0; bottom: 0; right: 0; width: var(--peek); }
   .scrim { position: fixed; inset: 0; z-index: 3; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
   .narrow .right { position: fixed; z-index: 4; top: 0; bottom: 0; right: 0; width: calc(100% - var(--s-9)); padding: 0 var(--inset) 0 0; transform: translateX(110%); transition: transform var(--dur-slow) var(--spring); overflow: visible; }

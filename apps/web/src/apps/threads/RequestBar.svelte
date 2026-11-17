@@ -90,7 +90,7 @@
 {/if}
 
 <style>
-  .bar { position: relative; isolation: isolate; border-radius: var(--r-panel); color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
+  .bar { position: relative; isolation: isolate; border-radius: var(--r-pane); color: var(--ink); max-height: min(26rem, 52dvh); overflow: auto; flex: 0 1 auto; }
   .bar[data-kind="approval"], .bar[data-kind="secret"] { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
   header { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -99,9 +99,9 @@
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   p { color: var(--ink-2); font-size: var(--text-ui); }
   .trusted { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); color: var(--ink-2); }
-  pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.08); overflow-x: auto; font-size: var(--text-label); }
+  pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.08); overflow-x: auto; font-size: var(--text-label); }
   footer, form { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: var(--s-3); }
-  form input { flex: 1 1 12rem; min-height: max(var(--pill-h), var(--hit-min)); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-size: var(--text-ui); }
+  form input { flex: 1 1 12rem; min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-size: var(--text-ui); }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
   .meta code { font-size: var(--text-label); color: var(--ink-3); }
   .clock { font-size: var(--text-label); color: var(--ink-3); }

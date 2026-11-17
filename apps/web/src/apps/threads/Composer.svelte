@@ -3,21 +3,38 @@
   // send button becomes Stop. The provider control chooses who answers the next message: it changes nothing visible in the thread
   // (the handover is internal), and never creates a thread.
   import { Glass, Icon, IconButton, Menu, Pill, adaptive, type MenuItem } from "@calternal/ui";
-  import type { ProviderOption, ThreadSummary } from "./model";
+  import type { Permission, ProviderOption, RunsOn, ThreadSummary } from "./model";
+  import { PERMISSIONS, permissionLabel, runsOnLabel } from "./permissions";
 
   let {
     thread,
     providers,
+    machines,
     onsend,
     onstop,
     onprovider,
-  }: { thread: ThreadSummary; providers: ProviderOption[]; onsend: (text: string) => void; onstop: () => void; onprovider: (p: ThreadSummary["provider"], model: string) => void } = $props();
+    onpermission,
+    onrunson,
+  }: {
+    thread: ThreadSummary;
+    providers: ProviderOption[];
+    machines: string[];
+    onsend: (text: string) => void;
+    onstop: () => void;
+    onprovider: (p: ThreadSummary["provider"], model: string) => void;
+    onpermission: (p: Permission) => void;
+    onrunson: (r: RunsOn) => void;
+  } = $props();
 
   const drafts = new Map<string, string>();
   let text = $state("");
   let field = $state<HTMLTextAreaElement>();
   let menuOpen = $state(false);
+  let permOpen = $state(false);
+  let whereOpen = $state(false);
   let trigger = $state<HTMLButtonElement>();
+  let permTrigger = $state<HTMLButtonElement>();
+  let whereTrigger = $state<HTMLButtonElement>();
   $effect(() => {
     // A draft stays with its thread until sent.
     const id = thread.id;
@@ -28,6 +45,10 @@
   const provider = $derived(providers.find((p) => p.id === thread.provider));
   const modelName = $derived(provider?.models.find((m) => m.id === thread.model)?.name ?? thread.model);
   const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.name, checked: p.id === thread.provider && m.id === thread.model }))));
+
+  const permItems = $derived<MenuItem[]>(PERMISSIONS.map((p) => ({ id: p.id, label: p.label, sub: p.sub, icon: p.icon, checked: p.id === thread.permission })));
+  const whereItems = $derived<MenuItem[]>(machines.flatMap((m) => (["sandboxed", "direct"] as const).map((mode) => ({ id: `${m}|${mode}`, label: `${m} · ${mode === "sandboxed" ? "Sandboxed" : "Direct"}`, sub: mode === "sandboxed" ? "In the thread's own sandbox" : "Straight on a folder of the machine", checked: thread.runsOn.machine === m && thread.runsOn.mode === mode }))));
+  const PERM_ICON = $derived(PERMISSIONS.find((p) => p.id === thread.permission)!.icon);
 
   function grow() {
     if (!field) return;
@@ -55,10 +76,20 @@
   <label class="visually-hidden" for="composer-field">Message</label>
   <textarea id="composer-field" bind:this={field} bind:value={text} rows="1" oninput={grow} onkeydown={key} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`}></textarea>
   <div class="tools">
-    <span class="prov">
-      <Pill label="{provider?.name ?? ''} · {modelName}" icon="spark" showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)} />
-      <Menu open={menuOpen} {items} label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
-    </span>
+    <div class="chips">
+      <span class="chip">
+        <Pill label="{provider?.name ?? ''} · {modelName}" icon="spark" showLabel glass={false} aria-haspopup="menu" aria-expanded={menuOpen} bind:el={trigger} onclick={() => (menuOpen = !menuOpen)} />
+        <Menu open={menuOpen} {items} label="Provider and model" trigger={trigger} onclose={() => (menuOpen = false)} onpick={(id) => { const [p, m] = id.split(":") as [ThreadSummary["provider"], string]; onprovider(p, m); }} />
+      </span>
+      <span class="chip">
+        <Pill label={permissionLabel(thread.permission)} icon={PERM_ICON} showLabel glass={false} aria-haspopup="menu" aria-expanded={permOpen} bind:el={permTrigger} onclick={() => (permOpen = !permOpen)} />
+        <Menu open={permOpen} items={permItems} label="Permission mode" trigger={permTrigger} onclose={() => (permOpen = false)} onpick={(id) => onpermission(id as Permission)} />
+      </span>
+      <span class="chip">
+        <Pill label={runsOnLabel(thread.runsOn)} icon="terminal" showLabel glass={false} aria-haspopup="menu" aria-expanded={whereOpen} bind:el={whereTrigger} onclick={() => (whereOpen = !whereOpen)} />
+        <Menu open={whereOpen} items={whereItems} label="Where it runs" trigger={whereTrigger} onclose={() => (whereOpen = false)} onpick={(id) => { const [machine, mode] = id.split("|") as [string, RunsOn["mode"]]; onrunson({ machine, mode }); }} />
+      </span>
+    </div>
     {#if running && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}
@@ -68,12 +99,14 @@
 </div>
 
 <style>
-  .composer { position: relative; isolation: isolate; border-radius: var(--r-panel); padding: var(--s-4) var(--s-4) var(--s-4) var(--s-6); display: grid; gap: var(--s-2); }
-  textarea { width: 100%; min-height: max(var(--s-9), var(--hit-min)); max-height: 9.5rem; padding: var(--s-3) 0; border: 0; background: none; resize: none; font-size: var(--text-body); line-height: 1.5; color: var(--ink); overflow-y: auto; scrollbar-width: none; }
+  .composer { position: relative; isolation: isolate; border-radius: var(--r-pane); padding: var(--s-4) var(--s-4) var(--s-4) var(--s-6); display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+  textarea { width: 100%; min-height: var(--pill-h); max-height: 9.5rem; padding: var(--s-3) 0; border: 0; background: none; resize: none; font-size: var(--text-body); line-height: 1.5; color: var(--ink); overflow-y: auto; scrollbar-width: none; }
   textarea::placeholder { color: var(--ink-3); }
   textarea:focus-visible { outline: none; }
   .composer:has(textarea:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .tools { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); }
-  .prov { position: relative; min-width: 0; }
-  .prov :global(.pill) { max-width: 100%; }
+  .tools { min-width: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s-4); }
+  .chips { flex: 1 1 0; display: flex; flex-wrap: wrap; gap: var(--s-2); min-width: 0; }
+  .chip { position: relative; min-width: 0; max-width: 100%; }
+  .chip :global(.pill) { max-width: 100%; overflow: hidden; }
+  .chip :global(.pill span) { overflow: hidden; text-overflow: ellipsis; }
 </style>

@@ -6,6 +6,18 @@
 /** A thread's life: `waiting` means a request needs the person, `failed` and `done` keep it visible until it archives. */
 export type ThreadState = "idle" | "running" | "waiting" | "failed" | "done";
 
+/**
+ * How much the agent may do without asking, chosen per thread. A different choice from where it runs (`RunsOn`); the composer and the
+ * thread details show them as two separate chips.
+ */
+export type Permission = "least" | "approve" | "full";
+
+/** Where the thread runs: a machine, and whether in a sandbox or directly on a folder of the machine. */
+export interface RunsOn {
+  machine: string;
+  mode: "sandboxed" | "direct";
+}
+
 /** Which official agent program runs the thread. */
 export type ProviderId = "claude" | "codex";
 
@@ -21,6 +33,8 @@ export interface ThreadSummary {
   updatedAt: number;
   provider: ProviderId;
   model: string;
+  permission: Permission;
+  runsOn: RunsOn;
   /** Total messages in the thread's file. The list never loads them all. */
   messageCount: number;
 }
@@ -118,8 +132,8 @@ export interface Change {
 
 /** The Run tab: where the thread runs and what it has used. */
 export interface RunInfo {
-  machine: string;
-  sandbox: string;
+  permission: string;
+  runsOn: string;
   workspace: string;
   branch: string;
   provider: string;

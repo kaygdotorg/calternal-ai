@@ -57,15 +57,17 @@
   .cap { position: relative; isolation: isolate; display: flex; align-items: center; gap: var(--s-1); padding: var(--s-2); border-radius: var(--r-pill); color: var(--ink-2); }
   .seg {
     position: relative; flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3);
-    height: max(var(--pill-h), var(--hit-min)); padding: 0 var(--s-6); border-radius: var(--r-pill);
+    height: var(--pill-h); padding: 0 var(--s-6); border-radius: var(--r-pill);
     font-size: var(--text-ui); font-weight: var(--strong-weight); white-space: nowrap; overflow: hidden; color: var(--ink-2);
     transition: flex-grow var(--dur-slow) var(--spring), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), scale var(--dur-fast) var(--ease-out);
   }
   .seg:active { scale: var(--press-scale); }
   .seg[aria-selected="true"], .seg[aria-checked="true"] { background: rgb(var(--ink-rgb) / 0.11); color: var(--ink); }
   @media (hover: hover) and (pointer: fine) { .seg:not([aria-selected="true"]):not([aria-checked="true"]):hover { background: var(--hover); color: var(--ink); } }
-  .morph .seg[aria-selected="true"], .seg[aria-checked="true"] { flex-grow: 2.6; }
+  .cap.morph { height: var(--tier-cap); padding: var(--s-1); }
+  .morph .seg { height: calc(var(--tier-cap) - 2 * var(--s-1)); }
+  .morph .seg[aria-selected="true"] { flex-grow: 2.6; }
   .txt { overflow: hidden; text-overflow: ellipsis; transition: opacity var(--dur-base) var(--ease-out), max-width var(--dur-slow) var(--spring); max-width: 12em; }
   .txt.icononly { opacity: 0; max-width: 0; }
-  .n { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--accent-base); color: #fff; font-size: var(--text-section); display: inline-grid; place-items: center; }
+  .n { min-width: var(--s-7); height: var(--s-7); padding: 0 var(--s-3); border-radius: var(--r-pill); background: var(--accent-base); color: #fff; font-size: var(--text-section); display: inline-grid; place-items: center; }
 </style>

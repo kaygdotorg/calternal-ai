@@ -20,7 +20,7 @@
 <style>
   .ib {
     position: relative; flex: none; display: inline-grid; place-items: center;
-    width: max(var(--ib, var(--pill-h)), var(--hit-min)); height: max(var(--ib, var(--pill-h)), var(--hit-min));
+    width: var(--ib, var(--pill-h)); height: var(--ib, var(--pill-h));
     border-radius: var(--r-pill); color: var(--ink-2);
     transition: scale var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
   }

@@ -10,7 +10,7 @@
     <header><span class="av" aria-hidden="true">K</span><div><h2>Kay</h2><p>Personal space</p></div></header>
     <h3 id="scheme">Appearance</h3>
     <Capsule label="Colour scheme" kind="radio" glass={false} items={[{ id: "system", label: "System", icon: "apps" }, { id: "light", label: "Light", icon: "sun" }, { id: "dark", label: "Dark", icon: "moon" }]} bind:value={pref} onchange={(v) => applyScheme(v as SchemePreference)} />
-    <Row title="Settings" icon="settings" href="/settings/account" onclick={onclose} />
+    <Row tall title="Settings" icon="settings" href="/settings/account" onclick={onclose} />
   </div>
 </Sheet>
 

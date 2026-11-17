@@ -31,28 +31,31 @@ so the fixture costs no memory until a range is read.
 ## Measured
 
 Scrolling the 10,000 message thread (120 steps of 900 px up from the end, 40 random jumps anywhere in the
-thread, 120 steps of 700 px down), one frame per `requestAnimationFrame`:
+thread, 120 steps of 700 px down), one frame per `requestAnimationFrame`. **Four consecutive runs** on the
+final build; the host is shared (load average 2 to 3, other lanes working), so the spread is real:
 
-| Phase | Frames | Median | 95th percentile | Worst | Frames over 20 ms |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Steady scroll up | 120 | 16.7 ms | 16.8 ms | 33.4 ms | 5 |
-| Random jumps | 40 | 16.7 ms | 33.4 ms | 33.4 ms | 3 |
-| Steady scroll down | 120 | 16.7 ms | 16.8 ms | 33.4 ms | 5 |
+| Phase | Median | 95th percentile | Worst | Frames over 20 ms (of 120, 40, 120) |
+| --- | ---: | ---: | ---: | ---: |
+| Steady scroll up | 16.7 ms every run | 33.3 to 33.4 ms | 33.4 to 50 ms | 6, 20, 24, 13 |
+| Random jumps | 16.7 ms every run | 33.3 to 33.4 ms | 33.4 to 50 ms | 2, 7, 5, 5 |
+| Steady scroll down | 16.7 ms every run | 33.3 to 33.4 ms | 33.4 to 50 ms | 8, 30, 23, 13 |
 
-16.7 ms is the display's 60 Hz frame; the worst frames are one missed frame (33.4 ms), about 4% of steady
-frames and 8% of jumps. None is longer.
+16.7 ms is the display's 60 Hz frame, so the median frame is on time; 5% to 25% of frames miss one vsync (33 ms)
+and none misses more than three (50 ms). An earlier run before the native-values pass (and on a quieter host) had
+5 slow frames in 120; the spread between runs is as large as that difference, so this does not show a regression
+and does not show an improvement. A real device and a quiet host are needed for a number worth quoting.
 
-DOM size (all elements on the page, including the shell):
+DOM size (all elements on the page, including the shell), in the same four runs:
 
 | Position | Message rows drawn | All elements |
 | --- | ---: | ---: |
-| At the end (start) | 9 | 606 |
-| After a full scroll | 14 | 765 |
-| At the top | 11 | 495 |
+| At the end (start) | 9 | 617 |
+| After a full scroll | 14 to 17 | 631 to 793 |
+| At the top | 11 | 500 |
 
 Ten thousand messages cost the same DOM as ten.
 
-Streaming (the running fixture thread, 4 s of text arriving every 40 ms): **104 DOM mutations, all inside
+Streaming (the running fixture thread, 4 s of text arriving every 40 ms): **102 to 103 DOM mutations, all inside
 the streaming row** (plus the window's own transform); no other row was touched; no long task (50 ms or
 more) was recorded.
 

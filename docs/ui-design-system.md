@@ -23,35 +23,36 @@ Tokens are data; surfaces are components. Visual language is ported from the moc
   `text-section`; weights `ui-weight` 440, `body-weight` 460, `strong-weight` 620. Components use these and
   no other size or weight. `apps/web/e2e/audit.mjs` lists every size and weight actually drawn.
 - **Spacing:** components use `--s-*` only (plus the tokens derived from them: `--card-gap`, `--pad-region`).
-- **Radii nest:** an inner radius is the outer radius minus the padding between them (`--r-select` is the
-  frame radius less 10, a menu item is the menu radius less its padding).
+- **Radii:** concentric where it costs nothing (a menu item is the menu radius less its padding); the selected-row
+  tint is the native 8 whatever it sits in (decided, see below).
 - **One inset, three durations, two curves** (collapsed after `docs/native-ui-study.md`, which found the mockup
   had five names for the space between surfaces and twelve duration and spring tokens): `--inset` (8) is the
   only gap between surfaces and from the viewport's sides; `--dur-fast` 120, `--dur-base` 220, `--dur-slow` 300
   and the curves `--ease-out` and `--spring` (one spring, damping 0.9, response 0.42 s, run over `--dur-slow`).
-  Heights: `--pill-h` (the control tier; 44 on touch, 30 on a desktop), `--hit-min`, `--row-h`, and the phone's
-  bottom capsule `--tier-cap`.
+  Heights: `--pill-h` (the one control tier: 38 on a desktop, 44 on touch, which is also the touch hit target),
+  `--row-h`, `--bar-h` (header band) and the phone's bottom capsule `--tier-cap`. Four radii: `--r-pill`, `--r-card` 14,
+  `--r-pane` 20, `--r-select` 8.
 - **Reduced motion and transparency:** under `prefers-reduced-motion` every duration is 1 ms and every spring
   is linear; under `prefers-reduced-transparency` glass becomes near-opaque.
 
-## Values waiting on the owner
+## Native values (decided 2026-11-17)
 
-Where the native study measured something different from the mockup, the component reads one token and nothing
-else, so the decision is a one-line edit in `tokens.json` (then `npm run tokens`). Current values follow the
-mockup until the owner decides (`docs/native-ui-study.md` section 7.2).
+Where `docs/native-ui-study.md` section 7.2 measured something different from the mockup, the system follows native. Each
+is one token in `tokens.json`, so a change is a one-line edit followed by `npm run tokens`.
 
-| Token | Now (mockup) | Native | Used by |
+| Token | Value | Replaces (mockup) | Used by |
 | --- | --- | --- | --- |
-| `row-h` (desktop) | 30 | 32 | every row: sidebar, menus, steps, lists |
-| `r-select` | 12 | 8 | the selected-row tint (`Row`) |
-| `text-ui` (desktop) | 14 | 13 | all UI text on a desktop |
-| `tier-cap` | 52 | 49 | the phone's bottom capsule (`Capsule morph`) and the space reserved for it |
-| `cap-offset` | 12 | 27 | the bottom capsule's gap above the bottom edge or home indicator |
-| `inset` | 8 | 8 (mockup had 5) | gap between cards and to the viewport's sides |
+| `row-h` desktop | 32 | 30 | every row: sidebar, menus, steps, lists |
+| `r-select` | 8 | 12 | the selected-row tint and small rounded rectangles |
+| `text-ui` desktop | 13 | 14 | all UI text on a desktop |
+| `bar-h` | 52 desktop, 60 touch | 54 | header bands of the sidebar, middle and right cards |
+| `pill-h` desktop | 38 | 30 | toolbar buttons, pills, buttons |
+| `tier-cap` / `cap-offset` | 49 / 27 | 52 / 12 | the phone's bottom capsule and its gap above the bottom |
+| `text-title` | 34 touch, 22 desktop | 30 | Notes title |
+| `row-h-settings` | 44 desktop, 52 touch | row height | settings rows (`Row tall`) |
+| `inset` | 8 | 5 | gap between cards and to the viewport's sides |
 
-Not yet a decision but noted by the study: phone title 34 (now 26 `text-title`, used by the Notes title), the
-desktop toolbar tier 38 against `pill-h` 30, settings rows 44 and 52, panes that abut instead of floating
-(list and editor flush; here the middle and right cards keep one `inset` between them).
+Kept from the mockup deliberately: the narrow centred Notes column. Reading text stays at `text-body` (15 on a desktop).
 
 ## Adaptive material
 
@@ -81,6 +82,6 @@ blurring beyond about 24 px, so a larger value would not be verifiable here.
 | `Badge`, `Icon`, `Spinner`, `Glass` | Status, line icons (decorative, `aria-hidden`), progress, the glass layer | Badge carries its status in text; icons never carry meaning alone |
 
 Every interactive component is keyboard reachable and shows the one focus ring (`:focus-visible`, 2 px
-accent). Hit targets are at least 44 px on touch (`--hit-min`); `audit.mjs` checks this on a phone.
+accent). Hit targets are at least 44 px on touch (`--pill-h`); `audit.mjs` checks this on a phone.
 Tests: `npm test --workspace @calternal/ui` (names, roles, keyboard, focus trap, axe) and
 `npm test --workspace @calternal/web`.

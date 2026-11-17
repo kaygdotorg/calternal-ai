@@ -5,7 +5,8 @@
  */
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
-import type { Answer, Change, Message, ProviderOption, Request, RunInfo, ThreadState, ThreadSummary } from "./model";
+import { permissionLabel, runsOnLabel } from "./permissions";
+import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, ThreadState, ThreadSummary } from "./model";
 
 const BASE = Date.UTC(2026, 10, 17, 6, 0, 0);
 const MIN = 60_000;
@@ -19,7 +20,7 @@ const PROVIDERS: ProviderOption[] = [
 ];
 
 function thread(id: string, title: string, state: ThreadState, workspace: string, ago: number, count: number, parentId: string | null = null, provider: "claude" | "codex" = "claude", model = "sonnet-5-5"): ThreadSummary {
-  return { id, title, parentId, state, workspace, updatedAt: BASE + 5 * 3600_000 - ago * MIN, provider, model, messageCount: count };
+  return { id, title, parentId, state, workspace, updatedAt: BASE + 5 * 3600_000 - ago * MIN, provider, model, permission: "approve", runsOn: { machine: "calternal-dev-02-std", mode: "sandboxed" }, messageCount: count };
 }
 
 function seedThreads(): ThreadSummary[] {
@@ -31,8 +32,8 @@ function seedThreads(): ThreadSummary[] {
     thread("t-secret", "Publish docs to the Forgejo wiki", "waiting", "calternal-ai", 12, 6),
     thread("t-fail", "Conformance run on dev-02", "failed", "calternal-ai", 40, 12),
     thread(LONG_THREAD, "Journal replay is slow after restart", "idle", "calternal-ai", 95, 10_000, null, "claude", "opus-5-5"),
-    thread("t-idle", "Expired invite test", "idle", "calternal-ai", 180, 8, null, "codex", "gpt-6-1-sol"),
-    thread("t-mesh", "Mesh idle-peer RSS guard", "idle", "infraternal", 320, 12),
+    { ...thread("t-idle", "Expired invite test", "idle", "calternal-ai", 180, 8, null, "codex", "gpt-6-1-sol"), permission: "least" as const },
+    { ...thread("t-mesh", "Mesh idle-peer RSS guard", "idle", "infraternal", 320, 12), permission: "full" as const, runsOn: { machine: "kayg-laptop", mode: "direct" as const } },
   ];
 }
 
@@ -159,6 +160,15 @@ export class FixtureClient implements ThreadsClient {
       this.finishStream(threadId, `${threadId}-stopped-${Date.now()}`, STREAM_TEXT.slice(0, o.sent));
     } else this.patch(threadId, { state: "idle" });
   }
+  async setPermission(threadId: string, permission: Permission): Promise<void> {
+    this.patch(threadId, { permission });
+  }
+  async machines(): Promise<string[]> {
+    return ["calternal-dev-02-std", "calternal-dev-01-compute02", "kayg-laptop"];
+  }
+  async setRunsOn(threadId: string, runsOn: RunsOn): Promise<void> {
+    this.patch(threadId, { runsOn });
+  }
   async setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void> {
     this.patch(threadId, { provider, model });
   }
@@ -188,6 +198,6 @@ export class FixtureClient implements ThreadsClient {
   }
   async run(threadId: string): Promise<RunInfo> {
     const t = this.summary(threadId);
-    return { machine: "calternal-dev-02-std", sandbox: "thread sandbox, running", workspace: t.workspace, branch: `lane/${t.id.replace(/^t-/, "")}`, provider: t.provider === "claude" ? "Claude Code" : "Codex", model: t.model, tokens: "184k in, 22k out", state: t.state };
+    return { permission: permissionLabel(t.permission), runsOn: runsOnLabel(t.runsOn), workspace: t.workspace, branch: `lane/${t.id.replace(/^t-/, "")}`, provider: t.provider === "claude" ? "Claude Code" : "Codex", model: t.model, tokens: "184k in, 22k out", state: t.state };
   }
 }

@@ -26,7 +26,7 @@
 <style>
   .pill {
     position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: var(--s-3); flex: none;
-    min-width: max(var(--pill-h), var(--hit-min)); height: max(var(--pill-h), var(--hit-min)); padding: 0; border-radius: var(--r-pill);
+    min-width: var(--pill-h); height: var(--pill-h); padding: 0; border-radius: var(--r-pill);
     color: var(--ink); font-size: var(--text-ui); font-weight: var(--strong-weight); white-space: nowrap;
     transition: scale var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
   }

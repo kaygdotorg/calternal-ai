@@ -31,7 +31,7 @@
 <style>
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--pad-region); display: flex; }
   .user { justify-content: flex-end; }
-  .bubble { max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-sheet); background: rgb(var(--ink-rgb) / 0.07); }
+  .bubble { max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
   .agent { display: grid; gap: var(--s-5); min-width: 0; width: 100%; }
   .child { display: inline-flex; align-items: center; gap: var(--s-4); padding: var(--s-3) var(--s-5); border-radius: var(--r-pill); background: var(--accent-soft); color: var(--accent); font-size: var(--text-label); font-weight: var(--strong-weight); justify-self: start; }
   .child small { color: var(--ink-3); font-weight: var(--ui-weight); }

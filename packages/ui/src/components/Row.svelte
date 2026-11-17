@@ -1,6 +1,6 @@
 <script lang="ts">
   // A list row: icon or leading content, a title, an optional quiet line, trailing content. A link when it has an `href`, else a button.
-  // `title` is required and is the accessible name. A selected row is the accent tint (concentric with its pane: --r-select).
+  // `title` is required and is the accessible name. `tall` is the settings-row height (44 desktop, 52 phone). A selected row is the accent tint (concentric with its pane: --r-select).
   import type { Snippet } from "svelte";
   import Icon from "./Icon.svelte";
   import type { IconName } from "../icons";
@@ -11,11 +11,12 @@
     href,
     selected = false,
     depth = 0,
+    tall = false,
     leading,
     trailing,
     onclick,
     class: klass,
-  }: { title: string; sub?: string; icon?: IconName; href?: string; selected?: boolean; depth?: number; leading?: Snippet; trailing?: Snippet; onclick?: (e: MouseEvent) => void; class?: string } = $props();
+  }: { title: string; sub?: string; icon?: IconName; href?: string; selected?: boolean; depth?: number; tall?: boolean; leading?: Snippet; trailing?: Snippet; onclick?: (e: MouseEvent) => void; class?: string } = $props();
 </script>
 
 {#snippet inner()}
@@ -25,9 +26,9 @@
 {/snippet}
 
 {#if href}
-  <a class={["row", klass]} {href} aria-current={selected ? "page" : undefined} style:--depth={depth} {onclick}>{@render inner()}</a>
+  <a class={["row", klass]} class:tall {href} aria-current={selected ? "page" : undefined} style:--depth={depth} {onclick}>{@render inner()}</a>
 {:else}
-  <button type="button" class={["row", klass]} aria-current={selected ? "true" : undefined} style:--depth={depth} {onclick}>{@render inner()}</button>
+  <button type="button" class={["row", klass]} class:tall aria-current={selected ? "true" : undefined} style:--depth={depth} {onclick}>{@render inner()}</button>
 {/if}
 
 <style>
@@ -36,6 +37,7 @@
     padding: 0 var(--s-5) 0 calc(var(--s-5) + var(--depth, 0) * var(--s-7)); border-radius: var(--r-select); color: var(--ink); font-size: var(--text-ui);
     transition: scale var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
   }
+  .row.tall { min-height: var(--row-h-settings); }
   .row:active { scale: var(--press-scale); }
   @media (hover: hover) and (pointer: fine) { .row:not([aria-current]):hover { background: var(--hover); } }
   .row[aria-current] { background: var(--accent-soft); }

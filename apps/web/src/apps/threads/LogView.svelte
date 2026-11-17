@@ -25,7 +25,7 @@
 {/if}
 
 <style>
-  .log { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.06); font-size: var(--text-label); line-height: 1.6; overflow: auto; max-height: calc(var(--view, 15) * 1.6em); white-space: pre; color: var(--ink-2); }
+  .log { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.06); font-size: var(--text-label); line-height: 1.6; overflow: auto; max-height: calc(var(--view, 15) * 1.6em); white-space: pre; color: var(--ink-2); }
   .win { padding: 0 var(--s-5); }
   .space { position: relative; }
   .win pre { position: absolute; left: 0; margin: 0; font: inherit; line-height: inherit; }

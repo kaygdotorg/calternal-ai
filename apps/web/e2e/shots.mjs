@@ -22,6 +22,8 @@ try {
   await shot("desktop-light-long-thread", "desktop", "light", "/threads/t-long?panel=run");
   await shot("desktop-light-notes", "desktop", "light", "/notes/n-1?panel=inspector", async (p) => { await p.getByRole("button", { name: "Table of contents" }).focus(); await p.waitForTimeout(300); });
   await shot("desktop-light-switcher", "desktop", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Threads", exact: true }).last().click(); await p.waitForTimeout(300); });
+  await shot("desktop-light-permission-menu", "desktop", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "Approve for me" }).click(); await p.waitForTimeout(300); });
+  await shot("phone-light-permission-menu", "phone", "light", "/threads/t-run", async (p) => { await p.getByRole("button", { name: "dev-02-std · Sandboxed" }).click(); await p.waitForTimeout(300); });
   await shot("phone-light-thread", "phone", "light", "/threads/t-run");
   await shot("phone-dark-thread", "phone", "dark", "/threads/t-run");
   await shot("phone-light-request", "phone", "light", "/threads/t-wait");

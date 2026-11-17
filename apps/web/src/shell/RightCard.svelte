@@ -24,7 +24,7 @@
 
 <style>
   .in { position: absolute; inset: 0; display: flex; flex-direction: column; border-radius: inherit; overflow: hidden; }
-  header { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--s-4) var(--s-5) var(--s-2) var(--s-6); min-height: calc(max(var(--pill-h), var(--hit-min)) + 2 * var(--s-4)); }
+  header { flex: none; display: flex; align-items: center; justify-content: space-between; padding: var(--s-4) var(--s-5) var(--s-2) var(--s-6); min-height: var(--bar-h); }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .content { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--s-4) var(--s-4); }
   .tabs { flex: none; display: flex; justify-content: center; padding: var(--s-4) var(--s-5) var(--s-5); }

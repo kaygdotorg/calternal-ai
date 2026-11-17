@@ -19,7 +19,7 @@
 </section>
 
 <style>
-  .card { position: relative; isolation: isolate; border-radius: var(--r-frame); min-width: 0; min-height: 0; }
+  .card { position: relative; isolation: isolate; border-radius: var(--r-pane); min-width: 0; min-height: 0; }
   .card[data-variant="glass"] { box-shadow: var(--shadow-card); }
   .card[data-variant="solid"] { background: var(--paper); box-shadow: var(--shadow-card); }
   .card[data-variant="attention"] { background: color-mix(in oklab, var(--accent-base) 12%, rgb(var(--tint) / 0.6)); border-radius: var(--r-card); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 22%, transparent); }

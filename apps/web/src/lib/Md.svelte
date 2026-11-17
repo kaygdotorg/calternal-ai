@@ -28,7 +28,7 @@
   ul, ol { display: grid; gap: var(--s-2); padding-inline-start: var(--s-7); }
   ul { list-style: disc; } ol { list-style: decimal; }
   li::marker { color: var(--ink-3); }
-  code { font-family: var(--font-mono); font-size: var(--text-code); padding: 0 var(--s-2); border-radius: var(--r-chip); background: rgb(var(--ink-rgb) / 0.07); }
+  code { font-family: var(--font-mono); font-size: var(--text-code); padding: 0 var(--s-2); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); }
   pre { margin: 0; padding: var(--s-5) var(--s-6); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); overflow-x: auto; font-size: var(--text-label); line-height: 1.6; }
   pre code { padding: 0; background: none; font-size: inherit; }
   a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }

@@ -3,7 +3,7 @@
  * generated operations (`threads.list`, `threads.send` and the rest of `contract/operations.json`), plugs in here and no component changes.
  * Every call is async because the real one crosses the network. Reads are bounded: a thread is read in message ranges, never whole.
  */
-import type { Answer, Change, Message, ProviderOption, Request, RunInfo, ThreadSummary } from "./model";
+import type { Answer, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, ThreadSummary } from "./model";
 
 /** What a watcher is told about a thread while it is open. */
 export interface ThreadEvents {
@@ -35,6 +35,12 @@ export interface ThreadsClient {
   stop(threadId: string): Promise<void>;
   /** Changes the provider and model for the next message. Nothing visible happens in the thread. */
   setProvider(threadId: string, provider: ThreadSummary["provider"], model: string): Promise<void>;
+  /** How much the agent may do without asking, for the next message. */
+  setPermission(threadId: string, permission: Permission): Promise<void>;
+  /** The machines this person can run a thread on (their own, and the pool if their group allows it). */
+  machines(): Promise<string[]>;
+  /** Where the thread runs next: a machine, sandboxed or direct. Never moves work that is already running. */
+  setRunsOn(threadId: string, runsOn: RunsOn): Promise<void>;
   /** Open requests across the space, newest first. */
   requests(): Promise<Request[]>;
   /** Subscribes to changes of the open requests. */

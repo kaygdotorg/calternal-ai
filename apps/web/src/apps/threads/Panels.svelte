@@ -26,8 +26,9 @@
     {/each}
   </ul>
 {:else if kind === "run" && info}
+  <div class="chips" aria-label="Access"><Badge text={info.permission} tone={info.permission === "Full access" ? "warn" : "neutral"} /><Badge text={info.runsOn} tone="info" /></div>
   <dl class="kv">
-    {#each Object.entries({ State: info.state, Machine: info.machine, Sandbox: info.sandbox, Workspace: info.workspace, Branch: info.branch, Provider: info.provider, Model: info.model, Usage: info.tokens }) as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}
+    {#each Object.entries({ State: info.state, Permission: info.permission, "Runs on": info.runsOn, Workspace: info.workspace, Branch: info.branch, Provider: info.provider, Model: info.model, Usage: info.tokens }) as [k, v]}<dt>{k}</dt><dd>{v}</dd>{/each}
   </dl>
 {:else if kind === "files"}
   <ul class="list" aria-label="Workspace files">
@@ -36,6 +37,7 @@
 {/if}
 
 <style>
+  .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); padding: var(--s-2) var(--s-4) 0; }
   .list { display: grid; gap: var(--s-1); }
   .empty { color: var(--ink-3); padding: var(--s-6); }
   .add { color: var(--good); font-variant-numeric: tabular-nums; } .rem { color: var(--danger); font-variant-numeric: tabular-nums; }

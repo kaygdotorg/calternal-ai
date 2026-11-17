@@ -45,7 +45,7 @@
 <style>
   .note { position: absolute; inset: 0; }
   .scroll { position: absolute; inset: 0; overflow-y: auto; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-5); }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-4); min-height: var(--bar-h); padding: 0 var(--s-5); }
   .grow { flex: 1; }
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); line-height: 1.2; letter-spacing: -0.01em; }
@@ -53,7 +53,7 @@
   p { font-size: var(--text-body); line-height: 1.65; font-weight: var(--body-weight); }
   .lede { color: var(--ink-3); }
   .rail { position: absolute; z-index: 3; top: 50%; translate: 0 -50%; left: 0; }
-  .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-5); min-width: var(--hit-min); justify-items: start; }
+  .ticks { display: grid; gap: var(--s-4); padding: var(--s-6) var(--s-5); min-width: var(--pill-h); justify-items: start; }
   .ticks i { display: block; width: var(--s-6); height: 2px; border-radius: var(--r-pill); background: var(--ink-4); }
   .ticks i:first-child { width: var(--s-8); background: var(--ink-2); }
   .tocard { position: absolute; left: var(--s-5); top: 50%; translate: 0 -50%; isolation: isolate; display: grid; min-width: 15rem; padding: var(--s-3); border-radius: var(--r-card); animation: pop var(--dur-base) var(--ease-out); transform-origin: left center; }

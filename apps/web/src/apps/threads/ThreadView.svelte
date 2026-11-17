@@ -69,14 +69,14 @@
   {#if summary}
     <div class="bottom">
       <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a)} />
-      <Composer thread={summary} providers={store.providers} onsend={(t) => client.send(id, t, crypto.randomUUID())} onstop={() => client.stop(id)} onprovider={(p, m) => client.setProvider(id, p, m)} />
+      <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID())} onstop={() => client.stop(id)} onprovider={(p, m) => client.setProvider(id, p, m)} />
     </div>
   {/if}
 </div>
 
 <style>
   .thread { position: absolute; inset: 0; display: flex; flex-direction: column; }
-  header { flex: none; display: flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-5) var(--s-4) var(--pad-region); min-height: calc(max(var(--pill-h), var(--hit-min)) + 2 * var(--s-4)); }
+  header { flex: none; display: flex; align-items: center; gap: var(--s-4); padding: var(--s-4) var(--s-5) var(--s-4) var(--pad-region); min-height: var(--bar-h); }
   .title { flex: 1; min-width: 0; display: grid; }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .crumb { font-size: var(--text-label); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

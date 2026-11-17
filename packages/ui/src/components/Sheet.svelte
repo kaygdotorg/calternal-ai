@@ -40,8 +40,8 @@
 <style>
   .scrim { position: fixed; inset: 0; z-index: 40; background: var(--scrim); animation: fade var(--dur-base) var(--ease-out); }
   .sheet { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); }
-  .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-panel); animation: up var(--dur-slow) var(--spring); }
-  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(420px, 92vw); border-radius: var(--r-panel); animation: in var(--dur-slow) var(--spring); }
+  .bottom { left: var(--inset); right: var(--inset); bottom: max(var(--inset), var(--safe-bottom)); border-radius: var(--r-pane); animation: up var(--dur-slow) var(--spring); }
+  .right { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(420px, 92vw); border-radius: var(--r-pane); animation: in var(--dur-slow) var(--spring); }
   @keyframes fade { from { opacity: 0; } }
   @keyframes up { from { translate: 0 24px; opacity: 0; } }
   @keyframes in { from { translate: 24px 0; opacity: 0; } }

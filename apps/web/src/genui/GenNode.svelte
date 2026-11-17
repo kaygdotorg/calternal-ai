@@ -92,11 +92,11 @@
   .h { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .stack, .form { display: grid; gap: var(--s-4); }
   .rowl { display: flex; flex-wrap: wrap; gap: var(--s-4); align-items: center; }
-  .fallback { color: var(--ink-3); font-size: var(--text-label); padding: var(--s-3) var(--s-5); border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.05); }
-  .callout { display: grid; gap: var(--s-2); padding: var(--s-4) var(--s-5); border-radius: var(--r-control); background: color-mix(in oklab, var(--c, var(--ink-3)) 12%, transparent); }
+  .fallback { color: var(--ink-3); font-size: var(--text-label); padding: var(--s-3) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.05); }
+  .callout { display: grid; gap: var(--s-2); padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: color-mix(in oklab, var(--c, var(--ink-3)) 12%, transparent); }
   .callout.good { --c: var(--good); } .callout.warn { --c: var(--warn); } .callout.bad { --c: var(--danger); } .callout.info { --c: var(--info); }
   hr { border: 0; height: 1px; background: var(--line); width: 100%; }
-  pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.06); overflow-x: auto; font-size: var(--text-label); }
+  pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.06); overflow-x: auto; font-size: var(--text-label); }
   details summary { cursor: pointer; font-weight: var(--strong-weight); min-height: var(--row-h); display: flex; align-items: center; }
   .progress { display: grid; gap: var(--s-2); font-size: var(--text-label); color: var(--ink-2); }
   .bar { height: var(--s-3); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.1); overflow: hidden; --c: var(--accent); }
@@ -104,23 +104,23 @@
   .bar i { display: block; height: 100%; background: var(--c); border-radius: inherit; transition: width var(--dur-base) var(--ease-out); }
   .kv { display: grid; grid-template-columns: max-content 1fr; gap: var(--s-2) var(--s-6); margin: 0; font-size: var(--text-label); }
   dt { color: var(--ink-3); } dd { margin: 0; }
-  .tablewrap { overflow-x: auto; border-radius: var(--r-control); }
+  .tablewrap { overflow-x: auto; border-radius: var(--r-select); }
   table { border-collapse: collapse; width: 100%; font-size: var(--text-label); }
   th { text-align: start; color: var(--ink-3); font-weight: var(--strong-weight); }
   th, td { padding: var(--s-3) var(--s-5) var(--s-3) 0; white-space: nowrap; }
   tbody tr + tr td { border-top: 1px solid var(--line); }
   .field { display: grid; gap: var(--s-2); border: 0; padding: 0; margin: 0; font-size: var(--text-label); color: var(--ink-2); font-weight: var(--strong-weight); }
-  input[type="text"], textarea, select { width: 100%; min-height: calc(var(--pill-h) + var(--s-2)); padding: 0 var(--s-5); border: 0; border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
+  input[type="text"], textarea, select { width: 100%; min-height: calc(var(--pill-h) + var(--s-2)); padding: 0 var(--s-5); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
   textarea { padding: var(--s-4) var(--s-5); resize: vertical; }
   .choice { display: flex; flex-wrap: wrap; gap: var(--s-2); }
-  .choice button, .radios button { min-height: max(var(--pill-h), var(--hit-min)); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
+  .choice button, .radios button { min-height: var(--pill-h); padding: 0 var(--s-5); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); font-weight: var(--ui-weight); }
   .choice button[aria-checked="true"], .radios button[aria-checked="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--strong-weight); }
-  .radios { display: grid; gap: var(--s-2); } .radios button { display: grid; text-align: start; border-radius: var(--r-control); padding: var(--s-3) var(--s-5); } small { font-weight: var(--ui-weight); color: var(--ink-3); }
-  .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: max(var(--pill-h), var(--hit-min)); font-size: var(--text-ui); text-align: start; }
+  .radios { display: grid; gap: var(--s-2); } .radios button { display: grid; text-align: start; border-radius: var(--r-select); padding: var(--s-3) var(--s-5); } small { font-weight: var(--ui-weight); color: var(--ink-3); }
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: var(--s-5); width: 100%; min-height: var(--pill-h); font-size: var(--text-ui); text-align: start; }
   .track { position: relative; flex: none; width: calc(var(--s-9) + var(--s-4)); height: calc(var(--s-8) + var(--s-1) * 2); border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.18); transition: background-color var(--dur-fast) var(--ease-out); }
   .track b { position: absolute; top: var(--s-1); left: var(--s-1); width: var(--s-8); height: var(--s-8); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: translate var(--dur-base) var(--spring); }
   .toggle[aria-checked="true"] .track { background: var(--accent-base); }
   .toggle[aria-checked="true"] .track b { translate: calc(var(--s-9) + var(--s-4) - var(--s-8) - var(--s-1) * 2) 0; }
-  .check { display: flex; align-items: center; gap: var(--s-4); min-height: max(var(--pill-h), var(--hit-min)); font-weight: var(--ui-weight); color: var(--ink); font-size: var(--text-ui); }
+  .check { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); font-weight: var(--ui-weight); color: var(--ink); font-size: var(--text-ui); }
   .check input { width: var(--s-7); height: var(--s-7); accent-color: var(--accent-base); }
 </style>

@@ -18,7 +18,7 @@
 
 <style>
   .in { display: grid; gap: var(--s-4); padding: var(--s-5); }
-  input { width: 100%; min-height: max(var(--pill-h), var(--hit-min)); padding: 0 var(--s-6); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); font-size: var(--text-body); color: var(--ink); }
+  input { width: 100%; min-height: var(--pill-h); padding: 0 var(--s-6); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); font-size: var(--text-body); color: var(--ink); }
   ul { display: grid; gap: var(--s-1); }
   p { color: var(--ink-3); padding: var(--s-4); }
 </style>
