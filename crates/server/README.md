@@ -116,7 +116,8 @@ match the resolved owner. Collections and creation still require a space.
 The CLI's get/update/history commands omit the hint by default.
 
 Every response retains CSP, nosniff, no-referrer, DENY framing and API no-store.
-`--web-dir` serves existing static files first. A missing GET or HEAD on a
+There are no CORS headers. `--web-dir` serves existing static files first.
+A missing GET or HEAD on a
 [Calternal address](../../docs/addresses.md) serves the app shell. Missing
 assets and API routes still return 404.
 Core operation bodies remain capped at 2 MiB, Markdown at 1 MiB. The server
