@@ -97,6 +97,66 @@ saved checkpoint can still contain the prior machine ID. The baseline log is
   from fresh preview data keeps the single file format and preserves the
   distinction between recorded and inferred times.
 
+## Real-server follow-up
+
+The accepted personal-space decision is in `docs/settings.md`. The account
+creation helper writes the account, a fresh space UUID and its Owner membership
+in the same protected transaction in first-owner setup, privileged account
+creation and development seeding. The UNIQUE `spaces.personal_for` account
+relation identifies the personal space. `spaces.list` exposes it to that caller
+as `personal: true`. A second space can have the same display name. The preview
+exposes first-owner and recovery passkey enrollment. Invite redemption is a
+separate implementation, and its account insert can use the same helper.
+The authority schema is version 6 and the disposable preview requires fresh
+roots from the prior schema.
+
+The fresh-space probe returned `200 {"threads":[]}` from the repository root
+and `404 space not found` from an unrelated working directory. In the second
+case, registry startup skipped the missing relative orchestrator manifest, so
+dispatch had no policy for `threads.list`. The official trusted registry
+already marks the orchestrator default-enabled. The implicit plugin path
+now uses the exact shipped native manifest when its relative copy is missing.
+Explicit plugin roots keep their existing loading rules.
+
+Static serving checks the real asset first, then serves the shell for GET or
+HEAD at a recognized application address. The fallback does not resolve item
+existence. The ordinary API remains responsible for identity and access.
+The CSP continues to require same-origin JavaScript and now allows `blob:` in
+`img-src`. The web lane can move the early theme/font bootstrap from
+`apps/web/index.html` into a same-origin classic script in the head before the
+app module, with correct base-relative font URLs. Retaining inline JavaScript
+would require putting the SHA-256 of the exact emitted bytes in the HTTP
+`script-src` header.
+
+The follow-up adds no dependencies or locks. Signup adds two row inserts and
+their index work to the existing authority commit. The listing marker comes
+from the existing space membership query. The registry prepares known kinds
+once at startup and the web fallback pays an extra index-file lookup only
+when serving the shell. The new authority field is included by the existing
+space recovery record. The conformance case covers first-owner space identity
+across restart, duplicate display names, cold empty lists from an unrelated
+working directory, and equal refusals for hidden and missing UUIDs.
+
+The follow-up merged `origin/dev` at `6cf46a4` as `c4228ec`. Commands ran
+inside `nix develop -c` on dev-02 in the same staged lane directory. Logs are
+under `/tmp/threads-followup-*.log` there.
+
+| Command | Result |
+| --- | --- |
+| `npm run build:plugins` | Pass, before Cargo tests. |
+| `cargo test --locked -j6 -p calternal-server --test http static_dir_serves_files_and_only_app_addresses_fall_back` | Pass. |
+| `cargo test --locked -j6 -p calternal-recovery --lib account_creation_passkey_removal_and_session_revocation_use_the_barrier` | Pass after moving the fixture's synchronous directory lookup onto a blocking worker. |
+| `cargo build --locked -j6 -p calternal-server --features test-plugins` | Pass. |
+| `CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" cargo test --locked -j6 --manifest-path tests/conformance/Cargo.toml --test isolation -- --test-threads=1` | Pass, 56 cases. |
+| `cargo test --locked -j6 -p calternal-server --test secrets --test spaces_matrix` | Pass, 13 cases after scoping each fixture edit to its shared space. |
+| `cargo build --locked -j6 -p calternal-cli` and `python3 contract/verify-cli.py` | Pass. |
+| `npm run test:integration` and `npm run test:plugins` | Pass. |
+| `cargo run --locked -j6 -p calternal-core --bin export-contract -- --check` | Pass. |
+| `scripts/check-docs.sh` and `node scripts/docs-site/generate.mjs --check` | Pass. |
+| `cargo test --locked -j6 --workspace --no-fail-fast` | 538 passed, two failed, one ignored. The same Podman pool and baseline provider-resume failures remain. |
+| `node --test scripts/docs-site/publication.test.mjs` | Pass, two cases. |
+| `cargo fmt --all -- --check` and `cargo fmt --manifest-path tests/conformance/Cargo.toml -- --check` | Pass. |
+
 ## Simplification opportunities
 
 - Put the metadata-only content index query behind a shared read interface when

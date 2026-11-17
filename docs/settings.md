@@ -89,9 +89,12 @@ Each is at `https://unsplash.com/photos/<Photo ID>`. The default is Geronimo Giq
 
 ## Decided 2026-11-18
 
-- Everyone has a personal space from sign-up; the fixtures start with one (and a second, to
-  show the switcher). A space's standing instructions are `AI/AGENTS.md` (only Managers and
-  the Owner may edit it).
+- Everyone has a personal space from sign-up. The server creates the space and
+  its Owner membership with the account. Clients use the `personal: true` row
+  from `spaces.list` and its independent space UUID. An additional fixture space
+  demonstrates the switcher.
+- A space's standing instructions are `AI/AGENTS.md` (only Managers and the
+  Owner may edit it).
 - The default wallpaper is painted on the first paint from tiny pre-blurred renditions that
   `index.html` carries, from the defaults and with no stored setting; the blurred picture
   replaces it when ready.
