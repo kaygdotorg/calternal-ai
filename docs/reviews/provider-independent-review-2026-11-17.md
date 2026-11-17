@@ -193,7 +193,9 @@ All builds and tests ran on `ubuntu@calternal-dev-02-std` under
 | `cargo test --locked -j6 -p calternal-server --test provider_review` | 4 failed (findings 2, 4, 5, 6) |
 | `npm ci --ignore-scripts --no-audit --no-fund && npm run build:plugins` | Passed |
 | `cargo test --locked -j6 -p calternal-server --test provider_review_stream` | 1 failed (finding 1) |
-| `cargo build --locked -j6 -p calternal-server --features test-plugins`, then the conformance `isolation` suite (`--test-threads=1`) | See the conformance note below |
+| `cargo build --locked -j6 -p calternal-server --features test-plugins`, then `CALTERNAL_SERVER_BIN=$PWD/target/debug/calternal cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 --test isolation -- --test-threads=1` | 46 passed, 0 failed |
+| `cargo fmt --all -- --check` | Passed |
+| Lane baseline (`provider_access`, `provider_security`, `provider_turns`) | Not run by the review; covered by the coordinator gate |
 
 ## Simplification opportunities
 
