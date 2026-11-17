@@ -513,6 +513,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "calternal-machine"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "calternal-fsio",
+ "clap",
+ "reqwest",
+ "ring",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "calternal-plugin-host"
 version = "0.1.0"
 dependencies = [
@@ -575,10 +594,12 @@ name = "calternal-server"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "calternal-auth",
  "calternal-content",
  "calternal-core",
  "calternal-fsio",
+ "calternal-machine",
  "calternal-plugin-host",
  "calternal-roots",
  "calternal-secrets",
@@ -587,6 +608,8 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "http-body-util",
+ "reqwest",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",

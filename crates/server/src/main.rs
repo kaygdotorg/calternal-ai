@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use calternal_server::api::{self, AppState};
 use calternal_server::auth::TokenTable;
+use calternal_server::machines::MachineService;
 use calternal_server::plugins::{self, Registry};
 use calternal_server::store::Store;
 use clap::{Parser, Subcommand};
@@ -49,12 +50,129 @@ enum Cmd {
         /// was built with the `test-plugins` feature.
         #[arg(long)]
         test_plugin_root: Option<PathBuf>,
+        /// How long a machine's leases survive without a sync, in milliseconds.
+        #[arg(long, default_value_t = 90_000)]
+        machine_lease_ttl_ms: u64,
+        /// Longest hold of a machine's long-poll, in milliseconds.
+        #[arg(long, default_value_t = 20_000)]
+        machine_poll_hold_ms: u64,
+    },
+    /// Machine role: enrol this computer and run threads for a server.
+    Machine {
+        #[command(subcommand)]
+        cmd: calternal_machine::cli::Command,
+    },
+    /// Operator administration of execution machines in a data directory.
+    Machines {
+        #[command(subcommand)]
+        cmd: MachinesCmd,
     },
     /// Print SHA-256 of trusted worker bundles for pinning in trusted-plugins.json.
     PluginDigest {
         #[arg(long, default_value = "plugins")]
         plugin_root: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum MachinesCmd {
+    /// Print a one-time enrolment code (for an account, or the shared pool).
+    Code {
+        #[arg(long)]
+        data_dir: PathBuf,
+        /// Code for a pool machine the operator runs.
+        #[arg(long, conflicts_with = "account")]
+        pool: bool,
+        /// Code for a machine owned by this account UUID.
+        #[arg(long)]
+        account: Option<String>,
+        /// Validity in minutes.
+        #[arg(long, default_value_t = 60)]
+        minutes: u64,
+    },
+    /// List enrolled machines.
+    List {
+        #[arg(long)]
+        data_dir: PathBuf,
+    },
+    /// Revoke a machine; a running server applies it within a second.
+    Revoke {
+        #[arg(long)]
+        data_dir: PathBuf,
+        /// Machine UUID.
+        machine: String,
+    },
+    /// Allow (or with --remove, stop allowing) an account to use pool machines.
+    PoolGrant {
+        #[arg(long)]
+        data_dir: PathBuf,
+        /// Account UUID.
+        account: String,
+        #[arg(long)]
+        remove: bool,
+    },
+}
+
+fn machines_admin(cmd: MachinesCmd) -> i32 {
+    use calternal_server::machines::admin;
+    let account = |s: &str| calternal_auth::AccountId::parse(s).ok_or("not an account UUID");
+    let result: Result<(), String> = (|| match cmd {
+        MachinesCmd::Code {
+            data_dir,
+            pool,
+            account: acct,
+            minutes,
+        } => {
+            let owner = match (pool, acct) {
+                (true, _) => calternal_machine::protocol::Owner::Pool,
+                (false, Some(a)) => {
+                    calternal_machine::protocol::Owner::Account { id: account(&a)?.0 }
+                }
+                (false, None) => return Err("pass --pool or --account <uuid>".into()),
+            };
+            let ttl = std::time::Duration::from_secs(minutes * 60);
+            let (code, _) = admin::issue_code(&data_dir, owner, ttl).map_err(|e| e.message)?;
+            println!("{code}");
+            Ok(())
+        }
+        MachinesCmd::List { data_dir } => {
+            for m in admin::list(&data_dir).map_err(|e| e.message)? {
+                let owner = calternal_server::machines::db::owner_text(m.owner);
+                let state = if m.revoked {
+                    "revoked"
+                } else if m.draining {
+                    "draining"
+                } else {
+                    "enrolled"
+                };
+                println!(
+                    "{}\t{}\t{}\t{}/{}\t{}",
+                    m.id, owner, m.name, m.os, m.arch, state
+                );
+            }
+            Ok(())
+        }
+        MachinesCmd::Revoke { data_dir, machine } => {
+            let id = uuid::Uuid::parse_str(&machine).map_err(|_| "not a machine UUID")?;
+            if admin::revoke(&data_dir, id).map_err(|e| e.message)? {
+                Ok(())
+            } else {
+                Err("no such machine".into())
+            }
+        }
+        MachinesCmd::PoolGrant {
+            data_dir,
+            account: acct,
+            remove,
+        } => admin::pool_grant(&data_dir, account(&acct)?, !remove).map_err(|e| e.message),
+    })();
+    match result {
+        Ok(()) => 0,
+        Err(e) => {
+            eprintln!("calternal machines: {e}");
+            1
+        }
+    }
 }
 
 fn main() {
@@ -68,6 +186,8 @@ fn main() {
     let cli = Cli::parse();
     let code = match cli.cmd {
         Cmd::PluginDigest { plugin_root } => digest(&plugin_root),
+        Cmd::Machine { cmd } => calternal_machine::cli::main(cmd),
+        Cmd::Machines { cmd } => machines_admin(cmd),
         Cmd::Serve {
             data_dir,
             port,
@@ -77,6 +197,8 @@ fn main() {
             development,
             origin,
             trusted_proxies,
+            machine_lease_ttl_ms,
+            machine_poll_hold_ms,
             test_plugin_root,
         } => {
             if test_plugin_root.is_some() && plugins::test_entries().is_empty() {
@@ -85,6 +207,11 @@ fn main() {
                 );
                 std::process::exit(1);
             }
+            let machines = calternal_server::machines::Settings {
+                lease_ttl: std::time::Duration::from_millis(machine_lease_ttl_ms),
+                poll_hold: std::time::Duration::from_millis(machine_poll_hold_ms),
+                ..Default::default()
+            };
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .max_blocking_threads(8)
@@ -101,6 +228,7 @@ fn main() {
                 origin,
                 trusted_proxies,
                 test_plugin_root,
+                machines,
             ))
         }
     };
@@ -138,6 +266,7 @@ async fn serve(
     origin: Option<String>,
     trusted_proxies: String,
     test_plugin_root: Option<PathBuf>,
+    machine_settings: calternal_server::machines::Settings,
 ) -> i32 {
     if let Err(e) = calternal_auth::private_fs::directory(&data_dir) {
         eprintln!("calternal: cannot prepare data dir: {e}");
@@ -157,6 +286,20 @@ async fn serve(
             return 2;
         }
     };
+    let machines = {
+        let dir = data_dir.clone();
+        match tokio::task::spawn_blocking(move || MachineService::open(&dir, machine_settings))
+            .await
+        {
+            Ok(Ok(m)) => m,
+            Ok(Err(e)) => {
+                eprintln!("calternal: machines: {}", e.message);
+                return 2;
+            }
+            Err(_) => return 2,
+        }
+    };
+    let _sweeper = machines.spawn_sweeper();
     let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
     let registry = match &test_root {
@@ -258,7 +401,7 @@ async fn serve(
             return 2;
         }
     }
-    let app = api::router(state, web_dir.clone());
+    let app = api::router(state, web_dir.clone()).layer(axum::Extension(machines));
 
     let base_url = if development {
         format!("http://127.0.0.1:{port}")

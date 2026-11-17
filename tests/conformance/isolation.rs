@@ -2499,3 +2499,304 @@ async fn manager_cannot_demote_or_remove_another_manager() {
 async fn running_worker_expired_session_blocks_delivery() {
     running_worker_revoke(WorkerRevocation::Expiry).await;
 }
+
+/// Machine routes as registered in `crates/server/src/machines/http.rs`.
+const MACHINE_ROUTES: &[(&str, &str)] = &[
+    ("POST", "/api/v1/machine/enrol"),
+    ("POST", "/api/v1/machine/session/start"),
+    ("POST", "/api/v1/machine/session/finish"),
+    ("POST", "/api/v1/machine/sync"),
+    ("POST", "/api/v1/machine/output"),
+    ("GET", "/api/v1/machines"),
+    ("POST", "/api/v1/machines/codes"),
+    ("POST", "/api/v1/machines/{id}/revoke"),
+    ("POST", "/api/v1/machines/{id}/drain"),
+    ("POST", "/api/v1/machines/runs"),
+    ("GET", "/api/v1/machines/runs/{lease}"),
+    ("POST", "/api/v1/machines/runs/{lease}/stop"),
+    ("POST", "/api/v1/machines/runs/{lease}/execs"),
+    ("GET", "/api/v1/machines/execs/{exec}/output"),
+];
+
+impl Fixture {
+    /// Machine-protocol request with an optional machine bearer and no cookie.
+    async fn machine(&self, path: &str, bearer: Option<&str>, body: Value) -> Answer {
+        let mut r = self
+            .client
+            .post(format!("{}{path}", self.base))
+            .header("host", "localhost:18080")
+            .json(&body);
+        if let Some(b) = bearer {
+            r = r.bearer_auth(b);
+        }
+        let r = r.send().await.unwrap();
+        let status = r.status().as_u16();
+        let text = r.text().await.unwrap();
+        Answer {
+            status,
+            body: serde_json::from_str(&text).unwrap_or(json!({"raw":text})),
+            headers: BTreeMap::new(),
+            micros: 0,
+        }
+    }
+}
+
+#[tokio::test]
+async fn machines_and_runs_are_owner_private() {
+    use calternal_machine::identity::MachineKey;
+    let f = Fixture::new().await;
+    // Source inventory guard: a new machine route needs a case here.
+    let source = include_str!("../../crates/server/src/machines/http.rs");
+    // Every quoted machine path in that file is a route (rustfmt may wrap `.route(`).
+    let mut registered: Vec<_> = source
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .filter(|s| s.starts_with("/api/v1/machine"))
+        .collect();
+    let mut covered: Vec<_> = MACHINE_ROUTES.iter().map(|(_, p)| *p).collect();
+    registered.sort_unstable();
+    covered.sort_unstable();
+    assert_eq!(
+        registered, covered,
+        "machine route inventory changed; add conformance cases"
+    );
+
+    // Account A (1) enrols a machine with a code it issued; the code works once.
+    let code = f
+        .req(
+            "POST",
+            "/api/v1/machines/codes",
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    code.ok();
+    let key = MachineKey::generate().unwrap();
+    let enrol = json!({"code":code.body["code"],"public_key":key.public_key_b64(),"name":"a","os":"linux","arch":"x86_64"});
+    let first = f
+        .machine("/api/v1/machine/enrol", None, enrol.clone())
+        .await;
+    first.ok();
+    let replay = f.machine("/api/v1/machine/enrol", None, enrol).await;
+    assert_eq!(replay.status, 404, "{}", replay.body);
+    let machine: uuid::Uuid = first.body["machine_id"].as_str().unwrap().parse().unwrap();
+    // A session needs the machine key.
+    let start = f
+        .machine(
+            "/api/v1/machine/session/start",
+            None,
+            json!({"machine_id":machine}),
+        )
+        .await;
+    start.ok();
+    let challenge = start.body["challenge"].as_str().unwrap().to_owned();
+    let forged = MachineKey::generate()
+        .unwrap()
+        .sign_session(machine, &challenge);
+    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":1});
+    assert_eq!(
+        f.machine(
+            "/api/v1/machine/session/finish",
+            None,
+            finish(forged, &challenge)
+        )
+        .await
+        .status,
+        401
+    );
+    let start = f
+        .machine(
+            "/api/v1/machine/session/start",
+            None,
+            json!({"machine_id":machine}),
+        )
+        .await;
+    let challenge = start.body["challenge"].as_str().unwrap().to_owned();
+    let session = f
+        .machine(
+            "/api/v1/machine/session/finish",
+            None,
+            finish(key.sign_session(machine, &challenge), &challenge),
+        )
+        .await;
+    session.ok();
+    let token = session.body["token"].as_str().unwrap().to_owned();
+    // Sync and output refuse a missing or unknown bearer.
+    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
+    for bearer in [None, Some("cm1_unknown")] {
+        assert_eq!(
+            f.machine("/api/v1/machine/sync", bearer, sync.clone())
+                .await
+                .status,
+            401
+        );
+        let out = json!({"lease_id":machine,"fence":1,"exec_id":machine,"chunks":[]});
+        assert_eq!(
+            f.machine("/api/v1/machine/output", bearer, out)
+                .await
+                .status,
+            401
+        );
+    }
+
+    // A starts a run in its own space; the queued exec goes out with the assignment.
+    let run = f
+        .req(
+            "POST",
+            "/api/v1/machines/runs",
+            Some(&f.cookies[1]),
+            json!({"space_id":f.spaces[0],"thread_id":uuid::Uuid::now_v7()}),
+            Some(ORIGIN),
+        )
+        .await;
+    run.ok();
+    let lease = run.body["lease_id"].as_str().unwrap().to_owned();
+    let exec = f
+        .req(
+            "POST",
+            &format!("/api/v1/machines/runs/{lease}/execs"),
+            Some(&f.cookies[1]),
+            json!({"argv":["true"]}),
+            Some(ORIGIN),
+        )
+        .await;
+    exec.ok();
+    let exec = exec.body["exec_id"].as_str().unwrap().to_owned();
+    let assigned = f
+        .machine("/api/v1/machine/sync", Some(&token), sync.clone())
+        .await;
+    assigned.ok();
+    assert_eq!(
+        assigned.body["messages"][0]["message"]["type"], "assign",
+        "{}",
+        assigned.body
+    );
+
+    // Everyone else gets the same answer for A's ids as for ids that do not exist.
+    let missing = uuid::Uuid::now_v7().to_string();
+    let paths = |m: &str, l: &str, e: &str| {
+        vec![
+            ("POST", format!("/api/v1/machines/{m}/revoke"), json!({})),
+            (
+                "POST",
+                format!("/api/v1/machines/{m}/drain"),
+                json!({"draining":true}),
+            ),
+            ("GET", format!("/api/v1/machines/runs/{l}"), json!({})),
+            ("POST", format!("/api/v1/machines/runs/{l}/stop"), json!({})),
+            (
+                "POST",
+                format!("/api/v1/machines/runs/{l}/execs"),
+                json!({"argv":["id"]}),
+            ),
+            (
+                "GET",
+                format!("/api/v1/machines/execs/{e}/output"),
+                json!({}),
+            ),
+            (
+                "POST",
+                "/api/v1/machines/runs".into(),
+                json!({"space_id":if m == missing { missing.clone() } else { f.spaces[0].clone() },"thread_id":uuid::Uuid::now_v7()}),
+            ),
+        ]
+    };
+    let mine = paths(&machine.to_string(), &lease, &exec);
+    let absent = paths(&missing, &missing, &missing);
+    for who in [0, 2, 3] {
+        for ((m, p, b), (_, q, c)) in mine.iter().zip(&absent) {
+            let x = f
+                .req(m, p, Some(&f.cookies[who]), b.clone(), Some(ORIGIN))
+                .await;
+            let y = f
+                .req(m, q, Some(&f.cookies[who]), c.clone(), Some(ORIGIN))
+                .await;
+            assert_eq!(
+                (x.status, x.signature()),
+                (404, y.signature()),
+                "{who} {m} {p}"
+            );
+        }
+        let list = f
+            .req(
+                "GET",
+                "/api/v1/machines",
+                Some(&f.cookies[who]),
+                json!({}),
+                Some(ORIGIN),
+            )
+            .await;
+        list.ok();
+        assert_eq!(list.body["machines"], json!([]), "account {who}");
+    }
+    // Runs need plugins.use: B is a reader in spaces[2] (refused) and an editor in spaces[3].
+    let as_reader = f
+        .req(
+            "POST",
+            "/api/v1/machines/runs",
+            Some(&f.cookies[2]),
+            json!({"space_id":f.spaces[2],"thread_id":uuid::Uuid::now_v7()}),
+            Some(ORIGIN),
+        )
+        .await;
+    assert_eq!(as_reader.status, 404);
+    let as_editor = f
+        .req(
+            "POST",
+            "/api/v1/machines/runs",
+            Some(&f.cookies[2]),
+            json!({"space_id":f.spaces[3],"thread_id":uuid::Uuid::now_v7()}),
+            Some(ORIGIN),
+        )
+        .await;
+    as_editor.ok();
+    // A's machine has room but is not B's: B's run waits.
+    assert_eq!(as_editor.body["state"], "waiting");
+    // Anonymous callers are refused on every account route.
+    for (m, p, b) in &mine {
+        assert_eq!(
+            f.req(m, p, None, b.clone(), Some(ORIGIN)).await.status,
+            401,
+            "{p}"
+        );
+    }
+    for (m, p) in [
+        ("GET", "/api/v1/machines"),
+        ("POST", "/api/v1/machines/codes"),
+    ] {
+        assert_eq!(
+            f.req(m, p, None, json!({}), Some(ORIGIN)).await.status,
+            401,
+            "{p}"
+        );
+    }
+    // Revocation is immediate: the session dies and A's run ends.
+    let revoked = f
+        .req(
+            "POST",
+            &format!("/api/v1/machines/{machine}/revoke"),
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    revoked.ok();
+    assert_eq!(
+        f.machine("/api/v1/machine/sync", Some(&token), sync)
+            .await
+            .status,
+        401
+    );
+    let run = f
+        .req(
+            "GET",
+            &format!("/api/v1/machines/runs/{lease}"),
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    assert_eq!(run.body["state"], "ended");
+}
