@@ -223,6 +223,7 @@ fn human_names_collisions_renames_and_registered_hidden_placement() {
         )
         .unwrap();
     assert_eq!(renamed.id, one.id);
+    content.materialize(space, one.id).unwrap();
     let path = content.file_path(space, "notes", one.id).unwrap();
     assert_eq!(path.file_name().unwrap(), "CAFÉ.md");
     assert_eq!(
@@ -484,4 +485,64 @@ fn startup_defers_inactive_space_validation_until_first_use() {
     let content = open(dir.path(), |_| {});
     assert!(content.list(broken, "notes", 1).is_err());
     assert!(content.list(SpaceId::new(), "notes", 1).unwrap().is_empty());
+}
+
+/// Acknowledgement needs the SSD transactions, while the lifecycle worker makes
+/// the real file durable without requiring another request to that space.
+#[test]
+fn acknowledged_content_materializes_without_another_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = open_retaining(
+        dir.path(),
+        |_| {},
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    );
+    let (space, actor) = (SpaceId::new(), AccountId::new());
+    content
+        .register_kind(
+            space,
+            "notes",
+            Placement::Visible {
+                folder: "Notes".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    let item = content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title":"Async"}),
+            b"durable",
+            request(actor, "async"),
+            |_| json!({}),
+        )
+        .unwrap();
+    let path = content.file_path(space, "notes", item.id).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    loop {
+        let db = rusqlite::Connection::open(
+            dir.path()
+                .join(format!("appdata/spaces/{space}/content.db")),
+        )
+        .unwrap();
+        let done: bool = db
+            .query_row(
+                "SELECT mat_state='materialized' FROM items WHERE id=?1",
+                [item.id.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if done {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "materialization exceeded one second"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(std::fs::read_to_string(path).unwrap().ends_with("durable"));
 }

@@ -23,6 +23,7 @@ mod agent_cases;
 mod jobs_cases;
 
 mod drafts_cases;
+mod perf_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
 mod simplify_review_cases;

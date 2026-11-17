@@ -6,9 +6,9 @@
 //! inherited store owns each space's journal and account-qualified receipts.
 //!
 //! A FULL content transaction records a head and outbox intent. Publication
-//! durably records its journal event/receipt, then checked fsio placement makes
-//! the current file durable before acknowledgement. Startup replays unfinished
-//! intents. A changed/deleted/foreign file blocks writes and is preserved.
+//! durably records its journal event/receipt, before acknowledgement. The existing lifecycle worker then uses checked fsio
+//! placement within ADR 0062's one-second maximum; overdue placement blocks new
+//! writes. First use replays unfinished intents before exposing that space. A changed/deleted/foreign file blocks writes and is preserved.
 //! This preserves the preview materialization contract; complete file-only
 //! recovery, external-editor reconciliation and tier moves remain separate work.
 //!
@@ -32,7 +32,9 @@ mod db;
 mod files;
 mod journal;
 mod lifecycle;
+mod mutation;
 mod pool;
+mod publication;
 mod recovery;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 mod types;
@@ -63,6 +65,8 @@ pub struct Content {
     catalog: ReadPool,
     // Declared before `journals`: open stores drain before the driver stops.
     spaces: Cache,
+    root_guard: lifecycle::RootGuard,
+    sweeper: std::thread::Thread,
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),
@@ -84,6 +88,14 @@ pub fn now_rfc3339() -> String {
         .expect("timestamp format")
 }
 impl Content {
+    /// Retain the host's validated root locks during background placement. The
+    /// lifecycle worker pins them only while doing I/O, so it cannot outlive the
+    /// installation locks if the host drops its last service handle. Call once
+    /// before exposing this service. Cost: a short mutex and an Arc move; no I/O.
+    pub fn retain_root_guard(&self, guard: Arc<calternal_roots::RootLocks>) {
+        *lock(&self.root_guard) = Some(guard);
+    }
+
     /// Return the validated SSD userdata root for descriptor-relative, authorized
     /// metadata reads. The caller must retain root guards and check space access.
     /// Cost: one path clone, no I/O or content/space locks.
@@ -121,7 +133,8 @@ impl Content {
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(std::collections::HashMap::new()));
-        spawn_sweeper(&spaces, idle_after)?;
+        let root_guard = Arc::new(Mutex::new(None));
+        let sweeper = spawn_sweeper(&spaces, &root_guard, idle_after, fault)?;
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
@@ -129,6 +142,8 @@ impl Content {
             index: Mutex::new(index),
             catalog,
             spaces,
+            root_guard,
+            sweeper,
             idle_after,
             journals,
             fault,
@@ -175,8 +190,21 @@ impl Content {
             self.recover_space(&mut opened)?;
             *held = Some(opened);
         }
+        // A failed NORMAL bookkeeping reset must never weaken a later original
+        // mutation. Like the journal writer, restore FULL before each admission;
+        // this PRAGMA performs no flush when no transaction is active.
+        held.as_ref()
+            .expect("opened above")
+            .conn
+            .pragma_update(None, "synchronous", "FULL")
+            .map_err(internal)?;
         let result = f(held.as_mut().expect("opened above"));
         *lock(&slot.last_used) = Instant::now();
+        let pending = held.as_ref().is_some_and(|s| s.pending_since.is_some());
+        drop(held);
+        if pending {
+            self.sweeper.unpark();
+        }
         result
     }
     /// Releases idle unpinned spaces, also performed by the background sweeper.
@@ -363,73 +391,10 @@ impl Content {
     }
     /// Finishes pending file placement without changing the committed revision.
     /// Cost: cache/space locks, head bytes/hash allocation; pending placement reads
-    /// at most the old/new file, then fsio fsyncs file and parent plus one FULL SQL
+    /// at most the old/new file, then fsio fsyncs file and parent plus one NORMAL replayable SQL
     /// bookkeeping update. Materialized items need only metadata reads.
     pub fn materialize(&self, space: SpaceId, id: Uuid) -> Result<()> {
         self.with_space(space, |s| s.place(id, self.fault))
-    }
-    /// Records the global route of item `id`, once. An existing route (every update)
-    /// is a pooled read only; a new item takes the catalog writer for one FULL insert.
-    fn route(&self, space: SpaceId, id: &str, kind: &str) -> Result<()> {
-        let read = |c: &Connection| {
-            c.query_row("SELECT space,kind FROM items WHERE id=?1", [id], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-            })
-            .optional()
-        };
-        let existing = match self.catalog.read(read).map_err(internal)? {
-            Some(existing) => existing,
-            None => {
-                let index = lock(&self.index);
-                index
-                    .execute(
-                        "INSERT INTO items VALUES(?1,?2,?3) ON CONFLICT(id) DO NOTHING",
-                        params![id, space.to_string(), kind],
-                    )
-                    .map_err(internal)?;
-                read(&index)
-                    .map_err(internal)?
-                    .ok_or_else(|| internal("route missing"))?
-            }
-        };
-        if existing != (space.to_string(), kind.to_owned()) {
-            return Err(internal("global item collision"));
-        }
-        Ok(())
-    }
-    fn publish_pending(&self, space: &mut Space) -> Result<()> {
-        loop {
-            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
-            let Some((account, request, op, fp, id, revision, result)) = row else {
-                return Ok(());
-            };
-            // Item writes route their item first; control changes have no item.
-            let item = match id {
-                Some(id) => {
-                    let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
-                    self.route(space.id, &id, &item.kind)?;
-                    Some(item.id)
-                }
-                None => None,
-            };
-            self.journals.publish(
-                &space.journal,
-                account.parse().map_err(internal)?,
-                &request,
-                &op,
-                &fp,
-                item,
-                &revision,
-                serde_json::from_str(&result).map_err(internal)?,
-            )?;
-            space
-                .conn
-                .execute(
-                    "DELETE FROM outbox WHERE account=?1 AND request=?2",
-                    params![account, request],
-                )
-                .map_err(internal)?;
-        }
     }
     /// Reads one per-space control value, such as a plugin's enablement, from the
     /// space's own database. Callers authorize the space first.
@@ -545,64 +510,6 @@ impl Content {
                 response.clone(),
             )?;
             Ok(response)
-        })
-    }
-    /// Commits generic bytes/metadata and finishes journal publication and placement.
-    /// `id=None` creates a UUIDv7; updates require the current base token. The host
-    /// supplies the operation response encoder and checks authority before calling.
-    /// Request IDs are unique per (account, space); a reused one is a conflict.
-    /// Cost: cache/space locks, bounded metadata/byte
-    /// allocations, indexed head/name checks, one FULL content transaction, a catalog
-    /// route insert for a new item, one FULL journal receipt/event commit,
-    /// checked file I/O with file+directory fsync, and FULL placement/outbox updates.
-    /// First name allocation loads the directory-name cache; warm Linux allocations
-    /// drain inherited name-watch events. Other platforms rescan that one directory.
-    /// No unrelated-space history/content reads. This is durability, not a perf gate.
-    #[allow(clippy::too_many_arguments)]
-    pub fn write(
-        &self,
-        space: SpaceId,
-        id: Option<Uuid>,
-        kind: &str,
-        base: Option<&str>,
-        metadata: Value,
-        bytes: &[u8],
-        request: Request<'_>,
-        result: impl FnOnce(&Item) -> Value,
-    ) -> Result<Item> {
-        if bytes.len() > 2 * 1024 * 1024
-            || metadata.to_string().len() > 256 * 1024
-            || request.id.len() > 256
-        {
-            return Err(Error::invalid_input("content input is too large"));
-        }
-        files::validate_kind(kind)?;
-        self.with_space(space,|s| {
-            s.validate_bytes(kind,bytes)?;
-            self.publish_pending(s)?;
-            // Request IDs are unique per (account, space): the host replays a matching
-            // receipt before calling, so any receipt here is a reuse.
-            if self.journals.receipt(&s.journal,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
-            let (id,seq,old_path,expected)=if let Some(id)=id {
-                let current=s.get(id)?;if current.kind!=kind{return Err(missing());}
-                s.place(id,self.fault)?;s.check_file(id)?;
-                if base!=Some(current.revision.as_str()) {return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":current.revision}))});}
-                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_hash FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(internal)?;
-                (id,seq+1,Some(path),sha)
-            }else{(Uuid::now_v7(),1,None,None)};
-            let title=metadata.get("title").and_then(Value::as_str).unwrap_or(kind);
-            let path=s.choose_path(kind,title,old_path.as_deref())?;
-            let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:format!("v{seq}.{}",Uuid::now_v7().simple()),updated_at:now_rfc3339()};
-            let response=result(&item);
-            let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(internal)?;
-            tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,item.metadata.to_string(),bytes,item.updated_at,request.account.to_string()]).map_err(internal)?;
-            tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(internal)?;
-            tx.commit().map_err(internal)?;
-            (self.fault)(FaultPoint::AfterCommit);
-            self.publish_pending(s)?;
-            s.place(id,self.fault)?;
-            Ok(item)
         })
     }
 }

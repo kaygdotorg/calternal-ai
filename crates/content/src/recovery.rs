@@ -9,7 +9,15 @@ impl Content {
     pub(crate) fn recover_space(&self, space: &mut Space) -> Result<()> {
         space.cleanup()?;
         self.publish_pending(space)?;
-        let mut stmt = space
+        space.materialize_pending(self.fault)
+    }
+}
+
+impl Space {
+    /// Complete durable pending heads in this space. Called under its slot lock
+    /// by lazy recovery and the existing lifecycle worker, never an async worker.
+    pub(crate) fn materialize_pending(&mut self, fault: fn(crate::FaultPoint)) -> Result<()> {
+        let mut stmt = self
             .conn
             .prepare("SELECT id FROM items WHERE mat_state='pending'")
             .map_err(internal)?;
@@ -20,12 +28,13 @@ impl Content {
             .map_err(internal)?;
         drop(stmt);
         for id in ids {
-            if let Err(e) = space.place(Uuid::parse_str(&id).map_err(internal)?, self.fault)
+            if let Err(e) = self.place(Uuid::parse_str(&id).map_err(internal)?, fault)
                 && e.code != ErrorCode::Conflict
             {
                 return Err(e);
             }
         }
+        self.pending_since = None;
         Ok(())
     }
 }

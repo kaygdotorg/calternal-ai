@@ -43,8 +43,22 @@ when the file is materialized.
 
 Writes commit metadata, immutable bytes and an outbox intent with FULL SQLite
 synchronization. Recovery publishes its journal event and receipt, uses a FULL
-journal publication barrier, then retires the intent. Checked current-file
-placement fsyncs the file and directory before success. Restart handles both
+journal publication barrier, then durably retires the intent. Acknowledgement
+requires FULL content/history, journal/receipt and outbox-retirement commits on SSD.
+The retirement barrier prevents power loss from resurrecting an intent after its
+receipt has expired; removing it needs a shared transaction or expiry proof. The existing
+lifecycle worker wakes after commit, fsyncs the current file and directory, then
+marks placement with NORMAL bookkeeping. Lost bookkeeping is replayed from durable
+intents and file hashes. Pending heads pin their existing cache slots; no second
+cache, queue, per-write thread or unbounded task list is added. The worker pins the
+host's root locks while doing I/O. It does not poll while idle: the inherited
+30-second retirement deadline remains; failed placement retries after 50 ms.
+ADR 0062's materialization maximum is one second after acknowledgement. The oldest
+pending age never extends when newer edits arrive. A missed deadline refuses new
+writes in that space until placement succeeds; failed/outside-changed files remain
+preserved and blocked. An update to a pending head first finishes its placement,
+keeping the existing checked outside-edit and rename guards. Crash recovery opens
+and recovers affected spaces lazily before serving their first operation. Restart handles both
 committed-before-placement and placed-before-bookkeeping states. This preserves
 the preview's checked-copy contract, including its documented limitation for an
 external writer racing the last hash check and replacement. It does not implement
@@ -76,8 +90,10 @@ Every public operation documents its allocations, locks, I/O and durability cost
 Lists seek an index and load bounded metadata pages. Item/history reads select
 one physical database. Resolution uses indexed global identifier routes read through
 a connection pool, never membership/content scans. Request IDs are unique per
-(account, space) and checked in that space's journal. Writes pay FULL content and
-journal commits plus file/directory syncs, and a FULL catalog insert only when an
-item is created. Work in one space never waits for another: each space has its own
+(account, space) and checked in that space's journal. Writes pay three FULL SSD commits before acknowledgement (content, journal and
+outbox retirement),
+plus a FULL catalog insert only for a new item. The former FULL placement mark is now NORMAL, safe-to-replay bookkeeping.
+File/directory syncs follow off the acknowledgement path. SQLite may still sync at
+WAL creation/checkpoint; those maintenance costs are measured separately. Work in one space never waits for another: each space has its own
 lock, the cache map lock covers lookups only, and journal calls run on the caller's
 thread.

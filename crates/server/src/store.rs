@@ -30,7 +30,7 @@ pub struct Store {
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
     // Dropped last: every database and file handle above closes first.
-    _roots: calternal_roots::RootLocks,
+    _roots: std::sync::Arc<calternal_roots::RootLocks>,
 }
 /// Replayable account-qualified result; note responses live in their space journal.
 pub struct Receipt {
@@ -168,8 +168,10 @@ impl Store {
         create: bool,
         receipt_retention: Duration,
     ) -> Result<Self, Error> {
-        let locks = calternal_roots::prepare(roots, installation, create)
-            .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?;
+        let locks = std::sync::Arc::new(
+            calternal_roots::prepare(roots, installation, create)
+                .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?,
+        );
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let secrets = root.join("secrets");
@@ -180,6 +182,7 @@ impl Store {
             receipt_retention,
             content_fault,
         )?;
+        content.retain_root_guard(locks.clone());
         // Owner keys are opened on access. The host attaches recovery and validates
         // protected fingerprints before admission through secrets::configure_keys.
         let secrets = calternal_secrets::LocalStore::open(&root)
@@ -282,7 +285,8 @@ impl Store {
     }
     /// Creates a globally UUIDv7-identified Notes item with a human filename and
     /// frontmatter identity. Cost: generic write allocations/locks, FULL content and
-    /// journal commits, fsio file+directory fsync, placement/outbox SQL commits.
+    /// journal and outbox-retirement commits. File/directory durability and
+    /// replayable placement bookkeeping follow on the existing lifecycle worker.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,

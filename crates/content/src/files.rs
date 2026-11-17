@@ -106,6 +106,9 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
 }
 impl Space {
     fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
+        if let Some(definition) = self.registrations.borrow().get(kind) {
+            return Ok(definition.clone());
+        }
         let json = self
             .conn
             .query_row("SELECT definition FROM kinds WHERE kind=?1", [kind], |r| {
@@ -114,7 +117,13 @@ impl Space {
             .optional()
             .map_err(internal)?
             .ok_or_else(|| Error::invalid_input("kind is not registered"))?;
-        serde_json::from_str(&json).map_err(internal)
+        let definition: (Placement, FileFormat) = serde_json::from_str(&json).map_err(internal)?;
+        let mut cache = self.registrations.borrow_mut();
+        if cache.len() >= crate::db::KIND_CACHE {
+            cache.clear();
+        }
+        cache.insert(kind.into(), definition.clone());
+        Ok(definition)
     }
     pub(crate) fn validate_bytes(&self, kind: &str, bytes: &[u8]) -> Result<()> {
         let (_, format) = self.registration(kind)?;
@@ -148,7 +157,7 @@ impl Space {
         // Prepare the folder once per cached name set, not on every write.
         if !self.names.contains_key(&folder) {
             calternal_fsio::private::directory(&dir).map_err(internal)?;
-            if self.names.len() >= 32 {
+            if self.names.len() >= crate::db::KIND_CACHE {
                 self.names.clear();
             }
         }
@@ -316,12 +325,15 @@ impl Space {
             }
             return Err(e);
         }
-        self.conn
+        crate::db::bookkeeping(&self.conn, || {
+            self.conn
             .execute(
                 "UPDATE items SET mat_state='materialized',file_hash=?1,old_path=NULL WHERE id=?2",
                 params![new_hash, id.to_string()],
             )
             .map_err(internal)?;
+            Ok(())
+        })?;
         Ok(())
     }
     pub(crate) fn cleanup(&self) -> Result<()> {

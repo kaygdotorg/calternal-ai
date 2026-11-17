@@ -124,8 +124,8 @@ A write proceeds as follows:
 
 1. **Commit.** One transaction commits the full revision, the receipt `(principal, request_id) → operation, SHA-256 fingerprint of canonical input, result` and `mat_state=pending`.
 2. **Check the existing file.** It must be missing on a first write, or match the SHA-256 recorded at the last placement. Symlinks and non-regular files never pass.
-3. **Place the new bytes.** Write a temp file, fsync it, rename it over the target, then fsync the directory. Newly created directory ancestry is also fsynced.
-4. **Mark and acknowledge.** Set `mat_state=materialized` with the new hash, then return the acknowledgement.
+3. **Acknowledge durable SSD state.** Content/history, journal/receipt and outbox retirement are durable before the response. Retirement stays FULL so a power loss cannot resurrect an intent after its receipt expires.
+4. **Place and mark within one second.** The existing content lifecycle worker wakes after commit, writes a temp file, fsyncs it, renames it over the target, and fsyncs the directory. Newly created ancestry is also fsynced. It marks `mat_state=materialized` with the new hash using NORMAL, replayable bookkeeping. The oldest pending age never resets; overdue placement blocks further writes until the disk recovers. Pending slots pin the existing 64-space cache, and the worker pins installation root locks during I/O.
 
 Recovery and retries:
 
