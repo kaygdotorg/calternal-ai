@@ -623,3 +623,37 @@ async fn host_calls_recheck_the_callers_sign_in() {
     .await
     .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn mutating_operation_retry_replays_its_receipt() {
+    let f = fixture("receipt", vec![tagger(&tmp("receipt-worker"))], None).await;
+    f.op(
+        "owner",
+        "e",
+        "plugins.enable",
+        json!({"space_id": "shared", "plugin_id": "tagger"}),
+    )
+    .await
+    .unwrap();
+    let input = json!({"space_id": "shared", "label": "once"});
+    let first = f
+        .op("owner", "r1", "tagger.tag", input.clone())
+        .await
+        .unwrap();
+    // Same request ID and input: the original result, and the worker is not run again
+    // (a second run would allocate a second item ID).
+    let again = f.op("owner", "r1", "tagger.tag", input).await.unwrap();
+    assert_eq!(first, again);
+    // Same request ID, different input: a conflict, nothing written.
+    let e = f
+        .op(
+            "owner",
+            "r1",
+            "tagger.tag",
+            json!({"space_id": "shared", "label": "other"}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::Conflict);
+    assert!(!find(&f.root.join("data/userdata-ssd"), "other.md"));
+}

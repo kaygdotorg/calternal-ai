@@ -844,6 +844,12 @@ fn check_view(plugin: &Plugin, value: &Value) -> Result<(), HostError> {
 
 /// Invoke a manifest-declared operation on its (plugin, space) worker.
 ///
+/// A mutating operation is receipted like every other write: a retry with the same
+/// request ID and input returns the original result without invoking the worker, and
+/// different input under that ID is a conflict. The worker's own `write_item` calls
+/// carry per-call receipts, so a retry after an undelivered result replays them.
+/// Cost for mutating operations: one receipt lookup before, one journal append after.
+///
 /// Admission (already done by the caller) checked the manifest-derived policy.
 /// Here: the plugin must be enabled; its activation generation is captured; every
 /// host call and the delivery are rechecked by the broker; then, as before, the
@@ -863,6 +869,8 @@ async fn invoke_plugin<D: Directory>(
         .owner_of_operation(op)
         .ok_or_else(|| HostError::not_found("unknown operation"))?
         .clone();
+    let fp = fingerprint(op, &input);
+    let mutates = plugin.operation(op).is_some_and(|o| o.mutates);
     let space = match input.remove("space_id") {
         Some(Value::String(space)) => space,
         _ => {
@@ -874,14 +882,40 @@ async fn invoke_plugin<D: Directory>(
     // The resolved space travels separately; the plugin sees only its declared input.
     let plugin_input = Value::Object(input.into_iter().collect());
     let (space_key, plugin2, account) = (space.clone(), plugin.clone(), p.id.clone());
-    let (generation, (account_id, space_id)) = blocking(&state, move |s| {
+    let (st, rid, operation, fp2) = (
+        state.clone(),
+        request_id.to_owned(),
+        op.to_owned(),
+        fp.clone(),
+    );
+    let admitted = blocking(&state, move |s| {
+        // A mutating operation's retry replays its receipt and runs nothing again.
+        if mutates {
+            if st.tokens.has_space_receipt(
+                &Identity {
+                    id: account.clone(),
+                },
+                &rid,
+            )? {
+                return Err(HostError::conflict(
+                    "request_id was already used with different input",
+                ));
+            }
+            if let Some(v) = replay_receipt(s, &account, &rid, &operation, &fp2)? {
+                return Ok(Err(v));
+            }
+        }
         let row = activation(s, &space_key, &plugin2)?;
         if !row.enabled {
             return Err(HostError::forbidden("plugin is disabled in this space"));
         }
-        Ok((row.generation, s.worker_ids(&account, &space_key)?))
+        Ok(Ok((row.generation, s.worker_ids(&account, &space_key)?)))
     })
     .await?;
+    let (generation, (account_id, space_id)) = match admitted {
+        Ok(admitted) => admitted,
+        Err(replayed) => return Ok(wire_spaces(&state.tokens, replayed)),
+    };
     let ids = calternal_plugin_host::AccountId::parse(&account_id)
         .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
     let Ok((account_id, space_id)) = ids else {
@@ -924,11 +958,22 @@ async fn invoke_plugin<D: Directory>(
     }
     let st = state.clone();
     let delivery = space.clone();
+    let caller = p.id.clone();
     tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &delivery))
         .await
         .map_err(|_| HostError::internal("directory task failed"))??;
     let value = outcome_value(outcome)?;
     check_view(&plugin, &value)?;
+    if mutates {
+        // Only a delivered result is receipted: a refused or failed call may be
+        // retried, and its brokered writes replay by their own receipts.
+        let (principal, rid, op, result) =
+            (caller, request_id.to_owned(), op.to_owned(), value.clone());
+        blocking(&state, move |s| {
+            s.record_plugin_receipt(&principal, &rid, &op, &fp, &space, result)
+        })
+        .await?;
+    }
     Ok(wire_spaces(&state.tokens, value))
 }
 
