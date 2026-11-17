@@ -247,6 +247,7 @@ Saved conversations are described in [threads](../../docs/threads.md). The orche
 
 Canonical request fingerprinting for Notes, plugin activation and plugin calls
 uses the existing blocking pool. The parsed input moves into that task and returns
-unchanged with its digest; its body is not cloned and the canonical digest is
-computed once. Synchronous callers retain the same canonical helper. CLI argument
+unchanged with its digest; handoff adds no body clone and the canonical digest is
+computed once. The existing canonical encoder still materializes sorted JSON
+trees. Synchronous callers retain the same canonical helper. CLI argument
 definitions live in `src/cli.rs`; `main.rs` keeps startup and dispatch.

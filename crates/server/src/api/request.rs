@@ -2,10 +2,10 @@
 use calternal_core::JsonObject;
 use calternal_types::Error;
 
-/// Compute the shared canonical digest and return the same parsed input, without
-/// cloning its body. Join failure returns a caller-safe internal error before any
-/// mutation. Cost: one operation-name copy, canonical encoding/hash proportional
-/// to the bounded input, and one awaited task on the existing blocking pool.
+/// Compute the shared digest and return the original parsed input by move.
+/// Handoff adds no body clone; the canonical encoder retains its own allocations.
+/// Join failure returns a caller-safe error before mutation. Cost: one operation
+/// copy, encoding/hash proportional to bounded input, and one blocking-pool task.
 pub(super) async fn fingerprint(
     operation: &str,
     input: JsonObject,
