@@ -22,7 +22,7 @@ pub mod spaces;
 use calternal_types::{AccountId, InstallationId, SpaceId};
 pub mod token;
 pub use account::{Auth, LoginPurpose};
-pub use config::AuthConfig;
+pub use config::{AuthConfig, Clock};
 pub use passkeys::PasskeyInfo;
 pub use session::{Installation, InstallationKind};
 pub use setup::Created;

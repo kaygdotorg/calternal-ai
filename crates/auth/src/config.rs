@@ -1,7 +1,32 @@
 //! Sign-in settings.
 
+use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
+
+/// The wall clock sign-in reads, in Unix milliseconds. Production uses the system
+/// clock; tests inject one to make expiry deterministic. Cost: one call.
+#[derive(Clone)]
+pub struct Clock(Arc<dyn Fn() -> i64 + Send + Sync>);
+impl Clock {
+    /// The system clock ([`calternal_types::now_ms`]).
+    pub fn system() -> Self {
+        Self(Arc::new(calternal_types::now_ms))
+    }
+    /// A clock that reads `now`, for tests.
+    pub fn from_fn(now: impl Fn() -> i64 + Send + Sync + 'static) -> Self {
+        Self(Arc::new(now))
+    }
+    /// The current time in Unix milliseconds.
+    pub fn now(&self) -> i64 {
+        (self.0)()
+    }
+}
+impl std::fmt::Debug for Clock {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Clock")
+    }
+}
 
 /// How sign-in behaves on this server.
 #[derive(Debug, Clone)]
@@ -16,6 +41,8 @@ pub struct AuthConfig {
     pub setup_ttl: Duration,
     /// Idle session lifetime; source touch extends it at most once per hour.
     pub session_ttl: Duration,
+    /// The clock idle-session expiry is judged with; the system clock by default.
+    pub clock: Clock,
     /// How long a passkey prompt may stay open.
     pub ceremony_ttl: Duration,
     /// Maximum prompts in each of the independent Login, Setup and Add pools.
@@ -74,6 +101,7 @@ impl AuthConfig {
             origin: url,
             setup_ttl: Duration::from_secs(24 * 3600),
             session_ttl: Duration::from_secs(90 * 24 * 3600),
+            clock: Clock::system(),
             ceremony_ttl: Duration::from_secs(5 * 60),
             max_ceremonies: 10_000,
             setup_failures_per_minute: 20,

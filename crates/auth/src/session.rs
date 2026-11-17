@@ -157,7 +157,9 @@ pub(crate) fn create(
     Ok((id, token))
 }
 
-/// Who a token belongs to, if it's a live session.
+/// Who a token belongs to, if it's a live session. Expiry is judged against
+/// [`AuthConfig::clock`](crate::AuthConfig::clock); a cache miss costs one
+/// database read on the auth worker.
 pub(crate) async fn identify(
     inner: &std::sync::Arc<Inner>,
     token: &str,
@@ -166,7 +168,8 @@ pub(crate) async fn identify(
         return None;
     }
     let key = hash(token);
-    let now = now_ms();
+    // Expiry is judged by the configured clock, so tests can advance time.
+    let now = inner.config.clock.now();
     let cached = {
         let c = inner
             .sessions

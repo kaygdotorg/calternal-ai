@@ -28,7 +28,7 @@ def smoke(data_dir, spawn):
 
     def start():
         nonlocal process
-        process = subprocess.Popen([str(ROOT/'target/debug/calternal'), 'serve', '--development', '--data-dir', str(data_dir), '--port', '0'], stdout=log, stderr=log, cwd=ROOT)
+        process = subprocess.Popen([str(ROOT/'target/debug/calternal'), 'serve', '--development', '--create', '--installation-id', '00000000-0000-0000-0000-000000000001', '--appdata', str(data_dir/'appdata'), '--userdata-ssd', str(data_dir/'userdata-ssd'), '--userdata-hdd', str(data_dir/'userdata-hdd'), '--port', '0'], stdout=log, stderr=log, cwd=ROOT)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if process.poll() is not None:
@@ -52,7 +52,7 @@ def smoke(data_dir, spawn):
         env = dict(os.environ)
         env.pop('CALTERNAL_TOKEN', None)
         env.pop('CALTERNAL_TOKEN_FILE', None)
-        result = subprocess.run([str(ROOT/'target/debug/cl'), '--json', '--base-url', info['base_url'], '--token-file', str(data_dir/'dev-tokens'/f'{principal}.token'), *command], capture_output=True, text=True, env=env, timeout=20)
+        result = subprocess.run([str(ROOT/'target/debug/cl'), '--json', '--base-url', info['base_url'], '--token-file', str(data_dir/'appdata'/'dev-tokens'/f'{principal}.token'), *command], capture_output=True, text=True, env=env, timeout=20)
         payload = json.loads(result.stdout)
         if error:
             assert result.returncode != 0 and payload['error']['code'] == error, 'unexpected CLI error category'
@@ -65,7 +65,7 @@ def smoke(data_dir, spawn):
         env.pop('CALTERNAL_TOKEN', None)
         env.pop('CALTERNAL_TOKEN_FILE', None)
         result = subprocess.run([str(ROOT/'target/debug/calternal'), '--json', *command,
-            '--base-url', info['base_url'], '--token-file', str(data_dir/'dev-tokens/owner.token')],
+            '--base-url', info['base_url'], '--token-file', str(data_dir/'appdata'/'dev-tokens'/'owner.token')],
             capture_output=True, text=True, env=env, timeout=20)
         payload = json.loads(result.stdout)
         assert result.returncode == 0, f'account CLI failed: {payload.get("error", {})}'
@@ -73,7 +73,7 @@ def smoke(data_dir, spawn):
 
     def watched_create(space, operation):
         watcher = subprocess.Popen([str(ROOT/'target/debug/calternal'), '--json', 'watch', space,
-            '--base-url', info['base_url'], '--token-file', str(data_dir/'dev-tokens/owner.token')],
+            '--base-url', info['base_url'], '--token-file', str(data_dir/'appdata'/'dev-tokens'/'owner.token')],
             stdout=subprocess.PIPE, stderr=log, text=True)
         selector = selectors.DefaultSelector()
         selector.register(watcher.stdout, selectors.EVENT_READ)

@@ -317,11 +317,30 @@ async fn revoking_another_device_signs_it_out() {
 
 #[tokio::test]
 async fn sessions_expire_when_unused() {
-    let app = app_with(|c| c.session_ttl = Duration::from_millis(80));
+    // An injected clock: expiry is decided by time passing, not by scheduling.
+    let start = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    let now = std::sync::Arc::new(std::sync::atomic::AtomicI64::new(start));
+    let clock = now.clone();
+    let app = app_with(move |c| {
+        c.session_ttl = Duration::from_secs(60);
+        c.clock =
+            calternal_auth::Clock::from_fn(move || clock.load(std::sync::atomic::Ordering::SeqCst));
+    });
     let (signed, _) = first_owner(&app, "kayg").await;
-    assert!(app.auth.identify(&signed.2).await.is_some());
-    tokio::time::sleep(Duration::from_millis(150)).await;
-    assert_eq!(app.auth.identify(&signed.2).await, None);
+    now.fetch_add(59_000, std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        app.auth.identify(&signed.2).await.is_some(),
+        "still live within the TTL"
+    );
+    now.fetch_add(60_001, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        app.auth.identify(&signed.2).await,
+        None,
+        "expired after an idle TTL"
+    );
 }
 
 #[tokio::test]
