@@ -25,20 +25,26 @@ impl Inputs {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .map_err(internal)?;
         if version == 0 {
+            // The record body is the one authoritative copy of its ownership:
+            // `space` and `item` are generated from it, so lookups and revocation
+            // cleanup can never disagree with what is delivered. A draft's item has
+            // one draft in one space; pending identities are (space, request ID).
             c.execute_batch("BEGIN IMMEDIATE;
-CREATE TABLE IF NOT EXISTS binding(account TEXT PRIMARY KEY,epoch TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS inputs(kind TEXT NOT NULL,id TEXT NOT NULL,space TEXT NOT NULL,item TEXT NOT NULL,body TEXT NOT NULL,draft_revision TEXT,payload_bytes INTEGER GENERATED ALWAYS AS (length(CAST(coalesce(json_extract(body,'$.text'),json_extract(body,'$.request')) AS BLOB))) STORED,PRIMARY KEY(kind,id));
-CREATE INDEX IF NOT EXISTS inputs_space ON inputs(space);
-CREATE INDEX IF NOT EXISTS inputs_budget ON inputs(kind,payload_bytes);
-CREATE INDEX IF NOT EXISTS inputs_due ON inputs(kind,json_extract(body,'$.state'),json_extract(body,'$.created_at_ms'));
-CREATE TABLE IF NOT EXISTS events(seq INTEGER PRIMARY KEY AUTOINCREMENT,token TEXT NOT NULL UNIQUE);
-PRAGMA user_version=1;COMMIT;").map_err(internal)?;
+CREATE TABLE binding(account TEXT PRIMARY KEY,epoch TEXT NOT NULL);
+CREATE TABLE inputs(kind TEXT NOT NULL CHECK(kind IN ('draft','pending')),id TEXT NOT NULL,body TEXT NOT NULL,draft_revision TEXT,space TEXT GENERATED ALWAYS AS (json_extract(body,'$.space_id')) STORED NOT NULL,item TEXT GENERATED ALWAYS AS (json_extract(body,'$.item_id')) STORED NOT NULL,payload_bytes INTEGER GENERATED ALWAYS AS (length(CAST(coalesce(json_extract(body,'$.text'),json_extract(body,'$.request')) AS BLOB))) STORED);
+CREATE UNIQUE INDEX inputs_key ON inputs(kind,space,id);
+CREATE UNIQUE INDEX inputs_one_draft ON inputs(id) WHERE kind='draft';
+CREATE INDEX inputs_space ON inputs(space);
+CREATE INDEX inputs_budget ON inputs(kind,payload_bytes);
+CREATE INDEX inputs_due ON inputs(kind,json_extract(body,'$.state'),json_extract(body,'$.created_at_ms'));
+CREATE TABLE events(seq INTEGER PRIMARY KEY AUTOINCREMENT,token TEXT NOT NULL UNIQUE);
+PRAGMA user_version=2;COMMIT;").map_err(internal)?;
             c.execute(
                 "INSERT OR IGNORE INTO binding VALUES(?1,?2)",
                 params![id.to_string(), Uuid::new_v4().to_string()],
             )
             .map_err(internal)?;
-        } else if version != 1 {
+        } else if version != 2 {
             return Err(internal("schema"));
         }
         let bound: String = c
@@ -62,20 +68,33 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         .map_err(internal)?;
         Ok(())
     }
+    /// One record by its identity in `space`. Cost: one indexed read.
     pub(super) fn get(
         c: &Connection,
         kind: &str,
+        space: &str,
         id: &str,
     ) -> Result<Option<AccountInputRecord>, Error> {
         c.query_row(
-            "SELECT body FROM inputs WHERE kind=?1 AND id=?2",
-            params![kind, id],
+            "SELECT body FROM inputs WHERE kind=?1 AND space=?2 AND id=?3",
+            params![kind, space, id],
             |r| r.get::<_, String>(0),
         )
         .optional()
         .map_err(internal)?
         .map(|v| serde_json::from_str(&v).map_err(internal))
         .transpose()
+    }
+    /// The space holding the draft for `item`, if any: a draft's space never
+    /// changes. Cost: one indexed read.
+    pub(super) fn draft_space(c: &Connection, item: &str) -> Result<Option<String>, Error> {
+        c.query_row(
+            "SELECT space FROM inputs WHERE kind='draft' AND id=?1",
+            [item],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(internal)
     }
     pub(super) fn list(c: &Connection, kind: &str) -> Result<Vec<AccountInputRecord>, Error> {
         let mut q = c
@@ -109,8 +128,8 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
             .map_err(internal)?;
         let prior: Option<i64> = c
             .query_row(
-                "SELECT payload_bytes FROM inputs WHERE kind=?1 AND id=?2",
-                params![kind, record.id],
+                "SELECT payload_bytes FROM inputs WHERE kind=?1 AND space=?2 AND id=?3",
+                params![kind, record.space_id, record.id],
                 |r| r.get(0),
             )
             .optional()
@@ -129,7 +148,18 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
                 "account input cap reached; send, erase or cancel input, or ask the operator to raise CALTERNAL_DRAFT_COUNT, CALTERNAL_PENDING_COUNT or CALTERNAL_INPUT_BYTES",
             ));
         }
-        c.execute("INSERT INTO inputs(kind,id,space,item,body,draft_revision) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(kind,id) DO UPDATE SET body=excluded.body",params![kind,record.id,record.space_id,record.item_id,body,draft]).map_err(internal)?;
+        if prior.is_some() {
+            c.execute(
+                "UPDATE inputs SET body=?3 WHERE kind=?1 AND space=?4 AND id=?2",
+                params![kind, record.id, body, record.space_id],
+            )
+        } else {
+            c.execute(
+                "INSERT INTO inputs(kind,id,body,draft_revision) VALUES(?1,?2,?3,?4)",
+                params![kind, record.id, body, draft],
+            )
+        }
+        .map_err(internal)?;
         self.change(c)
     }
     // State-only changes preserve payload bytes and bypass admission counters.
@@ -144,8 +174,8 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         row.revision = Uuid::now_v7().to_string();
         let body = serde_json::to_string(row).map_err(internal)?;
         c.execute(
-            "UPDATE inputs SET body=?1 WHERE kind='pending' AND id=?2",
-            params![body, row.id],
+            "UPDATE inputs SET body=?1 WHERE kind='pending' AND space=?2 AND id=?3",
+            params![body, row.space_id, row.id],
         )
         .map_err(internal)?;
         self.change(c)
@@ -182,13 +212,6 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
             }
         }
         let now = (self.clock)();
-        // Sent markers only route a retry to its space's receipt; they live as long
-        // as the receipt does.
-        tx.execute(
-            "DELETE FROM inputs WHERE kind='sent' AND CAST(body AS INTEGER) < ?1",
-            [now.saturating_sub(self.receipt_retention_ms)],
-        )
-        .map_err(internal)?;
         let due: Vec<AccountInputRecord> = {
             let mut q=tx.prepare_cached("SELECT body FROM inputs WHERE kind='pending' AND json_extract(body,'$.state')='queued' AND json_extract(body,'$.created_at_ms')<?1").map_err(internal)?;
             let rows = q
@@ -325,18 +348,5 @@ impl Inputs {
             return Err(Error::not_found("input not found"));
         }
         content.receipt(space, p.id, id).map_err(internal)
-    }
-    /// The space a sent submission went to, while its receipt is retained.
-    /// Cost: one indexed read.
-    pub(super) fn sent_space(c: &Connection, id: &str) -> Result<Option<SpaceId>, Error> {
-        c.query_row(
-            "SELECT space FROM inputs WHERE kind='sent' AND id=?1",
-            [id],
-            |r| r.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(internal)?
-        .map(|s| SpaceId::parse(&s).map_err(internal))
-        .transpose()
     }
 }

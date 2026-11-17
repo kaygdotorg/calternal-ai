@@ -37,10 +37,15 @@ text: string, };
 
 export type AccountInputList = Record<string, never>;
 /**
- * Stable pending identity; another account's identical ID selects its own state.
+ * Stable pending identity: the write's space and request ID, as request IDs
+ * are scoped to (account, space). Another account's identical ID selects its own state.
  */
 
 export type PendingInput = {
+/**
+ * Space UUID the write targets.
+ */
+space_id: string,
 /**
  * Request ID of the underlying write, retained through every reconnect.
  */

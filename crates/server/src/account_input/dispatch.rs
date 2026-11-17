@@ -68,15 +68,34 @@ pub(crate) async fn dispatch<D: Directory>(
         request.input,
     ))
     .await?;
-    tokio::task::spawn_blocking(move||{
-        let mut c=state.inputs.open(p.id)?;
-        let tx=c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-        let draft:Option<String>=tx.query_row("SELECT draft_revision FROM inputs WHERE kind='pending' AND id=?1",[&row.id],|r|r.get(0)).unwrap_or(None);
-        tx.execute("DELETE FROM inputs WHERE kind='pending' AND id=?1",[&row.id]).map_err(internal)?;
-        // Remember where it went, so a retry finds the receipt in that space.
-        tx.execute("INSERT OR REPLACE INTO inputs(kind,id,space,item,body) VALUES('sent',?1,?2,?3,?4)",params![row.id,row.space_id,row.item_id,(state.inputs.clock)().to_string()]).map_err(internal)?;
-        if let Some(revision)=draft {tx.execute("DELETE FROM inputs WHERE kind='draft' AND item=?1 AND json_extract(body,'$.revision')=?2",params![row.item_id,revision]).map_err(internal)?;}
-        state.inputs.change(&tx)?;tx.commit().map_err(internal)?;Ok(Inputs::result(None,Some(result)))
+    tokio::task::spawn_blocking(move || {
+        let mut c = state.inputs.open(p.id)?;
+        let tx = c
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(internal)?;
+        let draft: Option<String> = tx
+            .query_row(
+                "SELECT draft_revision FROM inputs WHERE kind='pending' AND space=?1 AND id=?2",
+                [&row.space_id, &row.id],
+                |r| r.get(0),
+            )
+            .unwrap_or(None);
+        // A retry later finds the result in the space's own receipt.
+        tx.execute(
+            "DELETE FROM inputs WHERE kind='pending' AND space=?1 AND id=?2",
+            [&row.space_id, &row.id],
+        )
+        .map_err(internal)?;
+        if let Some(revision) = draft {
+            tx.execute(
+                "DELETE FROM inputs WHERE kind='draft' AND space=?1 AND id=?2 AND json_extract(body,'$.revision')=?3",
+                params![row.space_id, row.item_id, revision],
+            )
+            .map_err(internal)?;
+        }
+        state.inputs.change(&tx)?;
+        tx.commit().map_err(internal)?;
+        Ok(Inputs::result(None, Some(result)))
     }).await.map_err(internal)?
 }
 
@@ -101,7 +120,13 @@ fn prepare<D: Directory>(
         AccountInput::List => json!({"records":Inputs::list(&tx,kind)?}),
         AccountInput::Save(i) => {
             allowed(&st.directory, &identity, &i.space_id)?;
-            let prior = Inputs::get(&tx, kind, &i.item_id)?;
+            // A draft's space is fixed when first saved: one ownership fact.
+            if Inputs::draft_space(&tx, &i.item_id)?.is_some_and(|s| s != i.space_id) {
+                return Err(Error::conflict(
+                    "this item already has a draft in another space; delete that draft first",
+                ));
+            }
+            let prior = Inputs::get(&tx, kind, &i.space_id, &i.item_id)?;
             let row = AccountInputRecord {
                 id: i.item_id.clone(),
                 space_id: i.space_id,
@@ -117,12 +142,14 @@ fn prepare<D: Directory>(
         }
         AccountInput::Draft(i) => {
             allowed(&st.directory, &identity, &i.space_id)?;
-            let row = Inputs::get(&tx, kind, &i.item_id)?
-                .filter(|r| r.space_id == i.space_id)
+            let row = Inputs::get(&tx, kind, &i.space_id, &i.item_id)?
                 .ok_or_else(|| Error::not_found("input not found"))?;
             if operation == "drafts.delete" {
-                tx.execute("DELETE FROM inputs WHERE kind='draft' AND id=?1", [&row.id])
-                    .map_err(internal)?;
+                tx.execute(
+                    "DELETE FROM inputs WHERE kind='draft' AND space=?1 AND id=?2",
+                    [&row.space_id, &row.id],
+                )
+                .map_err(internal)?;
                 service.change(&tx)?;
                 Inputs::result(None, None)
             } else {
@@ -154,7 +181,7 @@ fn prepare<D: Directory>(
                 return Err(Error::invalid_input("only content writes may be queued"));
             }
             policy.authorize_space(&st.directory, &identity, space)?;
-            let prior = Inputs::get(&tx, kind, &i.request.request_id)?;
+            let prior = Inputs::get(&tx, kind, &i.space_id, &i.request.request_id)?;
             if prior.is_none()
                 && let Some(saved) =
                     service.receipt(&st.directory, &identity, space, &i.request.request_id)?
@@ -206,21 +233,21 @@ fn prepare<D: Directory>(
                 request: Some(i.request),
                 state: status.into(),
             };
-            let draft = Inputs::get(&tx, "draft", &row.item_id)?.map(|r| r.revision);
+            let draft = Inputs::get(&tx, "draft", &row.space_id, &row.item_id)?.map(|r| r.revision);
             service.put(&tx, kind, &row, draft.as_deref())?;
             Inputs::result(Some(row), None)
         }
         AccountInput::Pending(i) => {
-            let found = Inputs::get(&tx, kind, &i.id)?;
+            let space = allowed(&st.directory, &identity, &i.space_id)?;
+            let found = Inputs::get(&tx, kind, &i.space_id, &i.id)?;
+            // Already sent: the reply is the space's receipt for this request ID.
             if found.is_none()
                 && matches!(operation.as_str(), "pending.submit" | "pending.confirm")
-                && let Some(space) = Inputs::sent_space(&tx, &i.id)?
                 && let Some(saved) = service.receipt(&st.directory, &identity, space, &i.id)?
             {
                 return Ok(Inputs::result(None, Some(saved.result)));
             }
             let mut row = found.ok_or_else(|| Error::not_found("input not found"))?;
-            allowed(&st.directory, &identity, &row.space_id)?;
             match operation.as_str() {
                 "pending.cancel" => {
                     if row.state == "submitting" {
@@ -228,8 +255,11 @@ fn prepare<D: Directory>(
                             "send outcome may be unknown; retry submission with the original request ID",
                         ));
                     }
-                    tx.execute("DELETE FROM inputs WHERE kind='pending' AND id=?1", [i.id])
-                        .map_err(internal)?;
+                    tx.execute(
+                        "DELETE FROM inputs WHERE kind='pending' AND space=?1 AND id=?2",
+                        [&row.space_id, &row.id],
+                    )
+                    .map_err(internal)?;
                     service.change(&tx)?;
                     Inputs::result(None, None)
                 }

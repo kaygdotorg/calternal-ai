@@ -27,10 +27,13 @@ pub struct DraftSaveInput {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct AccountInputList {}
-/// Stable pending identity; another account's identical ID selects its own state.
+/// Stable pending identity: the write's space and request ID, as request IDs
+/// are scoped to (account, space). Another account's identical ID selects its own state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct PendingInput {
+    /// Space UUID the write targets.
+    pub space_id: String,
     /// Request ID of the underlying write, retained through every reconnect.
     pub id: String,
 }

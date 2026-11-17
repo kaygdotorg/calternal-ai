@@ -80,8 +80,6 @@ pub struct Inputs {
     content: Option<Arc<calternal_content::Content>>,
     limits: Limits,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
-    /// How long a sent marker is kept: the journal's receipt retention.
-    receipt_retention_ms: i64,
 }
 impl Inputs {
     /// Configure the owner-local database service without opening files. Calls
@@ -101,7 +99,6 @@ impl Inputs {
     /// lock/connection is created. Enables replay after pending input was sent
     /// and removed; callers without this service cannot recover terminal replies.
     pub fn with_content(mut self, content: Arc<calternal_content::Content>) -> Self {
-        self.receipt_retention_ms = content.receipt_retention().as_millis() as i64;
         self.content = Some(content);
         self
     }
@@ -120,9 +117,6 @@ impl Inputs {
             content: None,
             limits,
             clock,
-            receipt_retention_ms: calternal_store::Options::default()
-                .idempotency_retention
-                .as_millis() as i64,
         }
     }
 }
