@@ -1,6 +1,6 @@
 # Morning test: what to try on the preview
 
-Open `https://preview.calternal.cloud/ai/?server=1#setup=<setup code>` in a browser on the NetBird network. The code is the one-use setup token of the disposable server; keep it out of chat and screenshots. Each line: do this, expect that. Everything below ran end to end on a fresh server (desktop and phone width); the Threads steps are added separately.
+Open **`https://preview.calternal.cloud/ai/#setup=<setup code>`** (replace `<setup code>` with the one-use code of the first-owner setup; the preview build talks to its real server by default, so no flag is needed; the design fixtures you have been reviewing all night, with the mock threads and notes, are now at **`https://preview.calternal.cloud/ai/?server=0`**: without that flag the page goes to the real server and starts at "Set up Calternal") in a browser on the NetBird network. The code is the one-use setup token of the disposable server; keep it out of chat and screenshots. Each line: do this, expect that. Everything below ran end to end on a fresh server (desktop and phone width); the Threads steps are added separately.
 
 1. **Set up.** The page shows "Set up Calternal" with the code filled in. Type your name, press *Create passkey*, approve the prompt. Expect the app within a few seconds and a "Choose a look" sheet; pick one or *Keep the default*.
 2. **Your space.** Expect no space dots (one space, *Personal*) and *Settings > Space: Personal*.

@@ -179,15 +179,19 @@ export function devToken(): string | null {
     return localStorage.getItem(KEY);
   } catch { return null; }
 }
-/** Whether the real server is the source: `?server=1` (kept) or `cal.server` in localStorage. Fixtures are the default. */
+/**
+ * Whether the real server is the source: `?server=1` or `?server=0` (kept in `cal.server`), else the build's default: fixtures, except a build made with `VITE_SERVER_DEFAULT=1` (the preview host's, scripts/deploy-preview.sh),
+ * which talks to its server unless `?server=0` is given.
+ */
 export function serverMode(): boolean {
   try {
     // An invitation link is for the real server, whoever opens it (the person has no flag set).
     if (/\/invites\/[^/?#]+/.test(location.pathname)) localStorage.setItem("cal.server", "1");
     const q = new URLSearchParams(location.search).get("server");
     if (q === "1" || q === "0") localStorage.setItem("cal.server", q);
-    return localStorage.getItem("cal.server") === "1";
-  } catch { return false; }
+    const kept = localStorage.getItem("cal.server");
+    return kept === null ? import.meta.env.VITE_SERVER_DEFAULT === "1" : kept === "1";
+  } catch { return import.meta.env.VITE_SERVER_DEFAULT === "1"; }
 }
 /** The shared client (development token mode). */
 export const server = new ServerClient({ token: devToken });

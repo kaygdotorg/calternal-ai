@@ -9,6 +9,7 @@
   import { navigate, segments } from "../lib/route.svelte";
   import { client, startThread, store } from "../apps/threads/store.svelte";
   import { shell } from "./shell.svelte";
+  import { serverMode } from "../server/client";
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
   let text = $state("");
   let sel = $state(0);
@@ -23,7 +24,28 @@
     const f = () => document.querySelector<HTMLElement>(".pal-input");
     f()?.focus();
     requestAnimationFrame(() => { if (document.activeElement !== f()) f()?.focus(); });
-    setItems([...store.threads.map((t) => ({ id: t.id, kind: "thread" as const, title: t.title, space: spaces.list.find((s) => s.id === t.spaceId)?.name ?? spaces.current.name, go: `/threads/${t.id}` })), ...fixtureItems()], spaces.current.name); // the palette searches every space; results from another one say which
+    const threads = store.threads.map((t) => ({ id: t.id, kind: "thread" as const, title: t.title, space: spaces.list.find((s) => s.id === t.spaceId)?.name ?? spaces.current.name, go: `/threads/${t.id}` }));
+    if (!serverMode()) { setItems([...threads, ...fixtureItems()], spaces.current.name); return; } // the palette's data is fixtures, as is everything else, unless the real server is the source
+    // The real server: this space's threads and notes (the newest page, and whatever the person types is looked up by title below), and every space the person is in, so none is unreachable from here.
+    void import("../apps/notes/store.svelte").then(({ notes }) => { listed = notes.list.map((n) => ({ id: n.id, kind: "note" as const, title: n.title, space: spaces.current.name, go: `/notes/${n.id}` })); rebuild(threads); });
+    rebuild(threads);
+  });
+  let listed = $state<{ id: string; kind: "note"; title: string; space: string; go: string }[]>([]);
+  let found = $state<typeof listed>([]);
+  const spaceItems = () => spaces.list.map((s) => ({ id: `space:${s.id}`, kind: "command" as const, title: `Space: ${s.name}`, space: spaces.current.name, op: `space.switch:${s.id}`, group: s.id === spaces.current.id ? "This space" : "Switch space", words: ["switch", "space", "change"] }));
+  function rebuild(threads: Parameters<typeof setItems>[0]) {
+    const seen = new Set(listed.map((n) => n.id));
+    setItems([...threads, ...listed, ...found.filter((n) => !seen.has(n.id)), ...spaceItems()], spaces.current.name);
+  }
+  // Notes the newest page does not hold: while the person types, the space's title index is asked (one request per pause), so every note of the space is findable from here.
+  $effect(() => {
+    const q = text.trim();
+    if (!open || !serverMode() || q.length < 2) { found = []; return; }
+    const space = spaces.current;
+    const h = setTimeout(async () => {
+      try { const { notes } = await import("../apps/notes/store.svelte"); found = (await notes.client.lookupNotes(space.id, q)).map((n) => ({ id: n.id, kind: "note" as const, title: n.title, space: space.name, go: `/notes/${n.id}` })); rebuild(store.threads.map((t) => ({ id: t.id, kind: "thread" as const, title: t.title, space: spaces.list.find((s) => s.id === t.spaceId)?.name ?? space.name, go: `/threads/${t.id}` }))); } catch { found = []; }
+    }, 150);
+    return () => clearTimeout(h);
   });
   const p = $derived(plan(text, provider));
   $effect(() => { p; sel = 0; });
@@ -32,7 +54,8 @@
     if (!r) return;
     const a = r.action;
     onclose();
-    if (a.go) navigate(a.go);
+    if (a.op?.startsWith("space.switch:")) { spaces.switchTo(a.op.slice(13)); navigate("/threads"); }
+    else if (a.go) navigate(a.go);
     else if (a.op === "help.shortcuts") shell.helpOpen = true;
     else if (a.op === "thread.new") void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`));
     else if (a.ask) {
