@@ -1,5 +1,6 @@
 //! Transport-independent, single-worker session state machine and newline JSON frames.
-use crate::{AccountId, Error, SpaceId, validate_manifest};
+use crate::{Error, validate_manifest};
+use calternal_types::{AccountId, SpaceId};
 use calternal_core::{HostCallKind, ManifestCapability, ManifestV1};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

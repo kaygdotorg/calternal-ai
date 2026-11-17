@@ -115,7 +115,7 @@ enum MachinesCmd {
 
 fn machines_admin(cmd: MachinesCmd) -> i32 {
     use calternal_server::machines::admin;
-    let account = |s: &str| calternal_auth::AccountId::parse(s).ok_or("not an account UUID");
+    let account = |s: &str| calternal_types::AccountId::parse(s).map_err(|_| "not an account UUID");
     let result: Result<(), String> = (|| match cmd {
         MachinesCmd::Code {
             data_dir,
@@ -126,7 +126,7 @@ fn machines_admin(cmd: MachinesCmd) -> i32 {
             let owner = match (pool, acct) {
                 (true, _) => calternal_machine::protocol::Owner::Pool,
                 (false, Some(a)) => {
-                    calternal_machine::protocol::Owner::Account { id: account(&a)?.0 }
+                    calternal_machine::protocol::Owner::Account { id: account(&a)? }
                 }
                 (false, None) => return Err("pass --pool or --account <uuid>".into()),
             };

@@ -1,0 +1,18 @@
+[package]
+name = "calternal-types"
+description = "Shared identifiers, the caller-safe error, capabilities and clock helpers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[features]
+# Derives JSON Schema and TypeScript declarations for the wire contract exporter.
+contract = ["dep:schemars", "dep:ts-rs"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid = { workspace = true, features = ["v7"] }
+schemars = { workspace = true, optional = true }
+ts-rs = { workspace = true, optional = true, features = ["no-serde-warnings"] }

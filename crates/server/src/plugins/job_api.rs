@@ -37,29 +37,29 @@ use super::live::Subscription;
 use super::{Session, activation, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use crate::authz::Capability;
-use crate::error::HostError;
+use calternal_types::Capability;
+use calternal_types::Error;
 
 /// Longest wait between deliveries; an idle stream sends a comment and rechecks access.
 pub const KEEPALIVE: Duration = Duration::from_secs(15);
 
-fn hidden() -> HostError {
-    HostError::not_found("job not found")
+fn hidden() -> Error {
+    Error::not_found("job not found")
 }
 
 async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, HostError> + Send + 'static,
-) -> Result<T, HostError> {
+    f: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     tokio::task::spawn_blocking(f)
         .await
-        .map_err(|_| HostError::internal("job task failed"))?
+        .map_err(|_| Error::internal("job task failed"))?
 }
 
 /// The space UUID of a job, for policy admission. Cost: one shared map read.
 pub fn route<D: Directory>(
     state: &Shared<D>,
     input: &calternal_core::JsonObject,
-) -> Result<String, HostError> {
+) -> Result<String, Error> {
     let id = input.get("job_id").and_then(Value::as_str).unwrap_or("");
     state.jobs.route(id).ok_or_else(hidden)
 }
@@ -92,7 +92,7 @@ async fn visible<D: Directory>(
         let store = st
             .store
             .lock()
-            .map_err(|_| HostError::internal("store poisoned"))?;
+            .map_err(|_| Error::internal("store poisoned"))?;
         let row = activation(&store, &space, plugin)?;
         Ok(caps.is_some_and(|c| c.contains(required))
             && row.enabled
@@ -102,7 +102,7 @@ async fn visible<D: Directory>(
     .unwrap_or(false)
 }
 
-async fn load<D: Directory>(state: &Shared<D>, space: &str, id: &str) -> Result<Job, HostError> {
+async fn load<D: Directory>(state: &Shared<D>, space: &str, id: &str) -> Result<Job, Error> {
     let (st, sp, jid) = (state.clone(), space.to_owned(), id.to_owned());
     blocking(move || st.jobs.get(&sp, &jid))
         .await?
@@ -119,9 +119,9 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     space: String,
     input: calternal_core::JsonObject,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     let i: JobInput = serde_json::from_value(Value::Object(input.into_iter().collect()))
-        .map_err(|_| HostError::invalid_input("input does not match operation schema"))?;
+        .map_err(|_| Error::invalid_input("input does not match operation schema"))?;
     let job = load(&state, &space, &i.job_id).await?;
     if op == "jobs.cancel" {
         let owner = *job.account == *identity.id
@@ -130,7 +130,7 @@ pub async fn dispatch<D: Directory>(
                 .capabilities(&identity.id, &state.tokens.content_space(&space))
                 .is_some_and(|c| c.contains(Capability::PluginsManage));
         if !owner {
-            return Err(HostError::forbidden(
+            return Err(Error::forbidden(
                 "only the job's starter or a plugin manager can cancel it",
             ));
         }
@@ -140,7 +140,7 @@ pub async fn dispatch<D: Directory>(
         }
     }
     let job = load(&state, &space, &i.job_id).await?;
-    serde_json::to_value(JobResult { job: job.view() }).map_err(|_| HostError::internal("encode"))
+    serde_json::to_value(JobResult { job: job.view() }).map_err(|_| Error::internal("encode"))
 }
 
 /// Parse `<epoch>:<seq>` from the query or `Last-Event-ID`.

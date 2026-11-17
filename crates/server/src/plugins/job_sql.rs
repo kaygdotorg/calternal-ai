@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::Session;
 use super::jobs::{Job, Jobs, MAX_FINAL_PER_SPACE, MAX_RUNS, RETAIN_FINAL};
-use crate::error::HostError;
+use calternal_types::Error;
 
 pub(super) const SCHEMA: &str = "BEGIN IMMEDIATE;
 CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,plugin TEXT NOT NULL,account TEXT NOT NULL,session TEXT NOT NULL,operation TEXT NOT NULL,input TEXT NOT NULL,parent TEXT,state TEXT NOT NULL,checkpoint TEXT NOT NULL,checkpoint_seq INTEGER NOT NULL,checkpoints INTEGER NOT NULL,result TEXT NOT NULL,runs INTEGER NOT NULL,generation INTEGER NOT NULL,request_key TEXT UNIQUE,finished_ms INTEGER) STRICT;
@@ -22,9 +22,9 @@ CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms 
 CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;
 PRAGMA user_version=1;COMMIT;";
 
-pub(super) fn db_err(e: rusqlite::Error) -> HostError {
+pub(super) fn db_err(e: rusqlite::Error) -> Error {
     tracing::error!(error = %e, "jobs sqlite error");
-    HostError::internal("job storage error")
+    Error::internal("job storage error")
 }
 
 pub(super) fn state_name(state: JobState) -> &'static str {
@@ -53,11 +53,7 @@ pub(super) fn parse_state(name: &str) -> JobState {
 
 pub(super) const ACTIVE: &str = "('admitted','running','waiting')";
 
-pub(super) fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
-}
+pub(super) use calternal_types::now_ms;
 
 pub(super) const COLUMNS: &str = "id,plugin,account,session,operation,input,parent,state,checkpoint,checkpoint_seq,checkpoints,result,runs,generation";
 
@@ -70,9 +66,10 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         space: space.to_owned(),
         plugin: r.get(1)?,
         account: r.get(2)?,
+        // An unreadable session fails closed: fresh IDs match no live installation.
         session: serde_json::from_str(&r.get::<_, String>(3)?).unwrap_or(Session::Installation {
-            account: String::new(),
-            installation: String::new(),
+            account: calternal_types::AccountId::new(),
+            installation: calternal_types::InstallationId::new(),
         }),
         operation: r.get(4)?,
         input: json(5)?,
@@ -92,7 +89,7 @@ pub(super) fn set_state(
     id: &str,
     state: JobState,
     result: &str,
-) -> Result<(), HostError> {
+) -> Result<(), Error> {
     let finished = state.is_final().then(now_ms);
     tx.execute(
         "UPDATE jobs SET state=?1,result=?2,finished_ms=?3 WHERE id=?4",
@@ -106,7 +103,7 @@ pub(super) fn set_state(
 pub(super) fn all_reported(
     tx: &rusqlite::Transaction<'_>,
     parent: &str,
-) -> Result<bool, HostError> {
+) -> Result<bool, Error> {
     let pending: i64 = tx
         .query_row(
             "SELECT count(*) FROM jobs j WHERE j.parent=?1 AND NOT EXISTS (SELECT 1 FROM child_results c WHERE c.parent=?1 AND c.child=j.id)",
@@ -124,7 +121,7 @@ pub(super) fn report(
     child: &str,
     state: JobState,
     result: &str,
-) -> Result<Vec<String>, HostError> {
+) -> Result<Vec<String>, Error> {
     tx.execute(
         "INSERT INTO child_results VALUES(?1,?2,?3,?4) ON CONFLICT(parent,child) DO NOTHING",
         params![parent, child, state_name(state), result],
@@ -147,7 +144,7 @@ pub(super) fn report(
 
 /// Delete final jobs past [`RETAIN_FINAL`] or beyond [`MAX_FINAL_PER_SPACE`], and the
 /// child reports of deleted parents. Cost: indexed deletes; runs when a file opens.
-pub(super) fn retain(c: &Connection) -> Result<(), HostError> {
+pub(super) fn retain(c: &Connection) -> Result<(), Error> {
     let cutoff = now_ms() - RETAIN_FINAL.as_millis() as i64;
     c.execute_batch(&format!(
         "BEGIN IMMEDIATE;
@@ -179,7 +176,7 @@ impl Jobs {
     pub fn recover(
         &self,
         resumable: impl Fn(&str, &str) -> bool,
-    ) -> Result<Vec<(String, String)>, HostError> {
+    ) -> Result<Vec<(String, String)>, Error> {
         let spaces: Vec<String> = {
             let routes = self.routes.read().unwrap_or_else(|p| p.into_inner());
             let mut s: Vec<String> = routes.values().cloned().collect();

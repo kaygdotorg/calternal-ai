@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use calternal_auth::AccountId;
+use calternal_types::AccountId;
 use calternal_machine::protocol::{
     Capacity, Chunk, ChunkEvent, Down, Envelope, ExitInfo, LeaseReport, Owner, SandboxSpec,
     SandboxState,
@@ -16,7 +16,7 @@ use tokio::sync::Notify;
 use uuid::Uuid;
 
 use super::{LeaseState, MachineView, RunView, Settings, db, sql};
-use crate::error::HostError;
+use calternal_types::Error;
 
 /// An open machine session: its outbox and last report.
 pub(super) struct Live {
@@ -170,8 +170,8 @@ impl State {
         let msg = Down::Assign {
             lease_id: lease,
             fence: l.row.fence,
-            space_id: l.row.space.to_string(),
-            account_id: l.row.account.to_string(),
+            space_id: l.row.space,
+            account_id: l.row.account,
             spec: SandboxSpec {
                 thread_id: l.row.thread,
                 image: l.row.image.clone(),
@@ -288,7 +288,7 @@ impl State {
     }
 
     /// Re-read machines and pool grants after the operator CLI wrote the file.
-    pub fn reload(&mut self, settings: &Settings) -> Result<(), HostError> {
+    pub fn reload(&mut self, settings: &Settings) -> Result<(), Error> {
         self.pool_grants = db::pool_grants(&self.db)
             .map_err(sql)?
             .into_iter()
@@ -313,7 +313,7 @@ impl State {
 
     fn may_use(&self, m: &Machine, account: AccountId) -> bool {
         match m.row.owner {
-            Owner::Account { id } => id == account.0,
+            Owner::Account { id } => id == account,
             Owner::Pool => self.pool_grants.contains(&account),
         }
     }

@@ -89,7 +89,7 @@ impl Auth {
             .run(move |c| crate::setup::find_in(c, &who))
             .await?;
         Ok((
-            AccountId::parse(&id).ok_or_else(|| Error::internal("bad account id"))?,
+            AccountId::parse(&id).map_err(|_| Error::internal("bad account id"))?,
             name,
         ))
     }
@@ -170,7 +170,7 @@ impl Auth {
                 "too many login starts",
             ));
         }
-        crate::passkey::start_login(&self.inner, account, purpose, source)
+        crate::passkey::start_login(&self.inner, Some(account), purpose, source)
     }
 
     /// Consumes a matching challenge and verifies its signature/counter before

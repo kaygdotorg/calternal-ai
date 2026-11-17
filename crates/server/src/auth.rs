@@ -19,12 +19,8 @@ use std::sync::Arc;
 use calternal_core::{Principal, SpaceGrant, SpaceRole};
 use subtle::ConstantTimeEq;
 
-use crate::authz::capabilities::{Capability, CapabilitySet};
-use crate::error::HostError;
-use calternal_auth::{
-    AccountId, SpaceId,
-    spaces::{DevelopmentIds, SpaceChange, Spaces},
-};
+use calternal_auth::spaces::{DevelopmentIds, SpaceChange, Spaces};
+use calternal_types::{AccountId, Capability, CapabilitySet, Error, SpaceId};
 use calternal_core::JsonObject;
 use serde_json::{Value, json};
 
@@ -73,7 +69,7 @@ pub trait Directory: Send + Sync + 'static {
         &self,
         _principal: &Identity,
         _request_id: &str,
-    ) -> Result<bool, HostError> {
+    ) -> Result<bool, Error> {
         Ok(false)
     }
     /// Execute a stored-directory operation on a blocking host thread.
@@ -84,8 +80,8 @@ pub trait Directory: Send + Sync + 'static {
         _rid: &str,
         _op: &str,
         _input: &JsonObject,
-    ) -> Result<Value, HostError> {
-        Err(HostError::unavailable("stored space directory unavailable"))
+    ) -> Result<Value, Error> {
+        Err(Error::unavailable("stored space directory unavailable"))
     }
 }
 
@@ -225,29 +221,29 @@ impl TokenTable {
         match value {
             "owner" => self.ids.as_ref().map(|ids| ids.owner),
             "guest" => self.ids.as_ref().map(|ids| ids.guest),
-            _ => AccountId::parse(value),
+            _ => AccountId::parse(value).ok(),
         }
     }
     fn space(&self, value: &str) -> Option<SpaceId> {
         match value {
             "personal" => self.ids.as_ref().map(|ids| ids.personal),
             "shared" => self.ids.as_ref().map(|ids| ids.shared),
-            _ => SpaceId::parse(value),
+            _ => SpaceId::parse(value).ok(),
         }
     }
 }
-fn auth_error(e: calternal_auth::Error) -> HostError {
+fn auth_error(e: calternal_auth::Error) -> Error {
     match e.code() {
         calternal_auth::ErrorCode::InvalidInput => {
-            HostError::invalid_input("invalid space operation")
+            Error::invalid_input("invalid space operation")
         }
         calternal_auth::ErrorCode::Forbidden | calternal_auth::ErrorCode::NotFound => {
-            HostError::forbidden("no access to this space")
+            Error::forbidden("no access to this space")
         }
         calternal_auth::ErrorCode::Conflict => {
-            HostError::conflict("request_id was already used with different input")
+            Error::conflict("request_id was already used with different input")
         }
-        _ => HostError::internal("space database operation failed"),
+        _ => Error::internal("space database operation failed"),
     }
 }
 impl Directory for TokenTable {
@@ -306,11 +302,11 @@ impl Directory for TokenTable {
             .map(|s| s.to_string())
             .unwrap_or_else(|| space.to_owned())
     }
-    fn has_space_receipt(&self, principal: &Identity, request_id: &str) -> Result<bool, HostError> {
+    fn has_space_receipt(&self, principal: &Identity, request_id: &str) -> Result<bool, Error> {
         self.spaces
             .has_receipt(
                 self.account(&principal.id)
-                    .ok_or_else(|| HostError::forbidden("no access to this space"))?,
+                    .ok_or_else(|| Error::forbidden("no access to this space"))?,
                 request_id,
             )
             .map_err(auth_error)
@@ -321,11 +317,11 @@ impl Directory for TokenTable {
         rid: &str,
         op: &str,
         input: &JsonObject,
-    ) -> Result<Value, HostError> {
+    ) -> Result<Value, Error> {
         calternal_core::validate_operation_input(op, input)?;
         let actor = self
             .account(&principal.id)
-            .ok_or_else(|| HostError::forbidden("no access to this space"))?;
+            .ok_or_else(|| Error::forbidden("no access to this space"))?;
         if op == "spaces.list" {
             return Ok(json!({"spaces":self.spaces.list(actor).map_err(auth_error)?}));
         }
@@ -335,22 +331,22 @@ impl Directory for TokenTable {
             .and_then(|s| self.space(s));
         if op == "spaces.members" {
             return Ok(
-                json!({"members":self.spaces.members(actor,space.ok_or_else(||HostError::forbidden("no access to this space"))?).map_err(auth_error)?}),
+                json!({"members":self.spaces.members(actor,space.ok_or_else(||Error::forbidden("no access to this space"))?).map_err(auth_error)?}),
             );
         }
         let target = || {
             input
                 .get("account_id")
                 .and_then(Value::as_str)
-                .and_then(AccountId::parse)
-                .ok_or_else(|| HostError::invalid_input("account UUID required"))
+                .and_then(|a| AccountId::parse(a).ok())
+                .ok_or_else(|| Error::invalid_input("account UUID required"))
         };
         let change = match op {
             "spaces.create" => SpaceChange::Create {
                 name: input
                     .get("name")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| HostError::invalid_input("name required"))?
+                    .ok_or_else(|| Error::invalid_input("name required"))?
                     .into(),
             },
             "spaces.set_role" => SpaceChange::SetRole {
@@ -358,14 +354,14 @@ impl Directory for TokenTable {
                 role: input
                     .get("role")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| HostError::invalid_input("role required"))?
+                    .ok_or_else(|| Error::invalid_input("role required"))?
                     .into(),
             },
             "spaces.remove_member" => SpaceChange::Remove { target: target()? },
             "spaces.leave" => SpaceChange::Leave,
             "spaces.transfer" => SpaceChange::Transfer { target: target()? },
             "spaces.delete" => SpaceChange::Delete,
-            _ => return Err(HostError::not_found("unknown operation")),
+            _ => return Err(Error::not_found("unknown operation")),
         };
         let fp =
             crate::store::sha256_hex(calternal_core::canonical_request_input(input).as_bytes());

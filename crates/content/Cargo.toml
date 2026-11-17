@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 calternal-auth.workspace = true
-calternal-core.workspace = true
+calternal-types.workspace = true
 calternal-fsio.workspace = true
 calternal-roots.workspace = true
 calternal-store.workspace = true

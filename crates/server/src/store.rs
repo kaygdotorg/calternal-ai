@@ -7,11 +7,10 @@
 //! `open` selects separate `userdata-ssd`/`userdata-hdd` subdirectories for disposable preview data;
 //! production callers must supply validated and locked roots through `open_roots`.
 //! No old shared-content schema is migrated or adopted.
-use crate::{
-    error::HostError,
-    fault::{self, FaultPoint},
-};
-use calternal_content::{AccountId, Content, Item, Request, SpaceId};
+use crate::fault::{self, FaultPoint};
+use calternal_types::Error;
+use calternal_content::{Content, Item, Request};
+use calternal_types::{AccountId, SpaceId};
 use calternal_core::{Note, NoteSummary, NoteVersion};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use sha2::{Digest, Sha256};
@@ -59,20 +58,13 @@ pub fn now_rfc3339() -> String {
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
-fn db_err(e: rusqlite::Error) -> HostError {
+fn db_err(e: rusqlite::Error) -> Error {
     tracing::error!(error=%e,"sqlite error");
-    HostError::internal("storage error")
+    Error::internal("storage error")
 }
-fn io_err(context: &'static str, e: std::io::Error) -> HostError {
+fn io_err(context: &'static str, e: std::io::Error) -> Error {
     tracing::error!(error=%e,context,"io error");
-    HostError::internal("storage io error")
-}
-fn content_error(e: calternal_content::Error) -> HostError {
-    HostError {
-        code: e.code,
-        message: e.message,
-        details: e.details,
-    }
+    Error::internal("storage io error")
 }
 fn content_fault(point: calternal_content::FaultPoint) {
     fault::hit(match point {
@@ -81,8 +73,8 @@ fn content_fault(point: calternal_content::FaultPoint) {
         calternal_content::FaultPoint::AfterPlacement => FaultPoint::AfterPlacement,
     });
 }
-fn item_id(id: &str) -> Result<Uuid, HostError> {
-    Uuid::parse_str(id).map_err(|_| HostError::not_found("item not found"))
+fn item_id(id: &str) -> Result<Uuid, Error> {
+    Uuid::parse_str(id).map_err(|_| Error::not_found("item not found"))
 }
 fn note(item: &Item, space: &str) -> Note {
     Note {
@@ -104,7 +96,7 @@ impl Store {
     /// Cost: directory/lock/plugin SQLite I/O, generic catalog startup and replay;
     /// recovered writes fsync their database, journal, current file and directory.
     /// This helper is not production three-root validation or witness provisioning.
-    pub fn open(root: &Path) -> Result<Self, HostError> {
+    pub fn open(root: &Path) -> Result<Self, Error> {
         Self::open_roots(
             calternal_roots::Roots {
                 appdata: root.into(),
@@ -118,7 +110,7 @@ impl Store {
     /// journal witness root. The host must retain the roots guards for this lifetime.
     /// Cost: one installation lock, plugin/catalog database opens and schema fsyncs,
     /// then startup-only pending publication/materialization recovery per space.
-    pub fn open_roots(roots: calternal_roots::Roots, secrets: PathBuf) -> Result<Self, HostError> {
+    pub fn open_roots(roots: calternal_roots::Roots, secrets: PathBuf) -> Result<Self, Error> {
         let root = roots.appdata.clone();
         calternal_auth::private_fs::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let lock = calternal_auth::private_fs::file(&root.join(".calternal.lock"))
@@ -126,7 +118,7 @@ impl Store {
         match lock.try_lock() {
             Ok(()) => {}
             Err(fs::TryLockError::WouldBlock) => {
-                return Err(HostError::unavailable(
+                return Err(Error::unavailable(
                     "data directory is locked by another calternal process",
                 ));
             }
@@ -145,7 +137,7 @@ impl Store {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(db_err)?;
         if version != 0 && version != 2 {
-            return Err(HostError::unavailable(
+            return Err(Error::unavailable(
                 "unsupported preview schema; use fresh disposable data",
             ));
         }
@@ -156,11 +148,11 @@ impl Store {
             CREATE TABLE IF NOT EXISTS fixture_bindings(domain TEXT NOT NULL,name TEXT NOT NULL,id TEXT NOT NULL UNIQUE,PRIMARY KEY(domain,name));
             PRAGMA user_version=2;COMMIT;").map_err(db_err)?;
         let content = Content::open(roots, secrets, Duration::from_secs(600), content_fault)
-            .map_err(content_error)?;
+            ?;
         // Fails closed: a missing or wrong secret key stops startup instead of
         // minting a key that cannot read the stored secrets.
         let secrets = calternal_secrets::LocalStore::open(&root)
-            .map_err(|e| HostError::unavailable(e.to_string()))?;
+            .map_err(|e| Error::unavailable(e.to_string()))?;
         let store = Self {
             conn,
             root,
@@ -186,7 +178,7 @@ impl Store {
     // Explicit preview/synthetic-fixture bindings preserve existing test directories'
     // authority vocabulary. All real databases and trees use independently allocated
     // UUIDv7 identifiers. These mappings never grant authority.
-    fn binding(&self, domain: &str, name: &str) -> Result<String, HostError> {
+    fn binding(&self, domain: &str, name: &str) -> Result<String, Error> {
         if let Ok(id) = Uuid::parse_str(name) {
             return Ok(id.to_string());
         }
@@ -229,15 +221,15 @@ impl Store {
             .map_err(db_err)?;
         Ok(id)
     }
-    fn space(&self, name: &str) -> Result<SpaceId, HostError> {
+    fn space(&self, name: &str) -> Result<SpaceId, Error> {
         self.binding("space", name)?
             .parse()
-            .map_err(|_| HostError::invalid_input("invalid space identifier"))
+            .map_err(|_| Error::invalid_input("invalid space identifier"))
     }
-    fn account(&self, name: &str) -> Result<AccountId, HostError> {
+    fn account(&self, name: &str) -> Result<AccountId, Error> {
         self.binding("account", name)?
             .parse()
-            .map_err(|_| HostError::invalid_input("invalid account identifier"))
+            .map_err(|_| Error::invalid_input("invalid account identifier"))
     }
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
@@ -249,11 +241,11 @@ impl Store {
     /// Resolves identifier-only catalog routing for any stored kind. No content is read
     /// and no authority is granted. Cost: catalog mutex/indexed read plus at most one
     /// indexed fixture binding lookup; no membership scan or materialization/fsync.
-    pub fn locate(&self, kind: &str, id: &str) -> Result<Option<String>, HostError> {
+    pub fn locate(&self, kind: &str, id: &str) -> Result<Option<String>, Error> {
         let Ok(id) = Uuid::parse_str(id) else {
             return Ok(None);
         };
-        let Some(space) = self.content.locate(kind, id).map_err(content_error)? else {
+        let Some(space) = self.content.locate(kind, id)? else {
             return Ok(None);
         };
         let alias = self
@@ -269,10 +261,10 @@ impl Store {
     }
     /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
     /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
-    pub fn list(&self, space_id: &str, limit: u32) -> Result<Vec<NoteSummary>, HostError> {
+    pub fn list(&self, space_id: &str, limit: u32) -> Result<Vec<NoteSummary>, Error> {
         self.content
             .list(self.space(space_id)?, "notes", limit)
-            .map_err(content_error)
+            
             .map(|rows| {
                 rows.into_iter()
                     .map(|i| NoteSummary {
@@ -287,25 +279,25 @@ impl Store {
     }
     /// Gets one Notes item from its selected physical database. A foreign ID is absent.
     /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.
-    pub fn get(&self, space_id: &str, id: &str) -> Result<Note, HostError> {
+    pub fn get(&self, space_id: &str, id: &str) -> Result<Note, Error> {
         let item = self
             .content
             .get(self.space(space_id)?, item_id(id)?)
-            .map_err(content_error)?;
+            ?;
         if item.kind != "notes" {
-            return Err(HostError::not_found("item not found"));
+            return Err(Error::not_found("item not found"));
         }
         Ok(note(&item, space_id))
     }
     /// Reads materialization state by trusted internal ID. Cost: one global indexed
     /// route and one space metadata lookup; no membership scan, content file read or fsync.
-    pub fn mat_state(&self, id: &str) -> Result<Option<MatState>, HostError> {
+    pub fn mat_state(&self, id: &str) -> Result<Option<MatState>, Error> {
         let Some(space) = self.locate("notes", id)? else {
             return Ok(None);
         };
         self.content
             .materialization(self.space(&space)?, item_id(id)?)
-            .map_err(content_error)
+            
     }
     /// Reads newest immutable versions using an item-bound opaque cursor. Cost:
     /// cache/space locks, bounded indexed reads and at most 1,001 body allocations;
@@ -316,12 +308,12 @@ impl Store {
         id: &str,
         limit: u32,
         cursor: Option<&str>,
-    ) -> Result<(Vec<NoteVersion>, Option<String>), HostError> {
+    ) -> Result<(Vec<NoteVersion>, Option<String>), Error> {
         self.get(space_id, id)?;
         let (versions, next) = self
             .content
             .history(self.space(space_id)?, item_id(id)?, limit, cursor)
-            .map_err(content_error)?;
+            ?;
         Ok((
             versions
                 .into_iter()
@@ -340,19 +332,19 @@ impl Store {
     /// routing for the existing account-wide request namespace. Pending control
     /// intents finish publication first. Cost: indexed control/catalog reads and one
     /// bounded journal bridge/read, with journal fsyncs only during pending replay.
-    pub fn receipt(&self, principal: &str, request_id: &str) -> Result<Option<Receipt>, HostError> {
+    pub fn receipt(&self, principal: &str, request_id: &str) -> Result<Option<Receipt>, Error> {
         self.publish_plugin_pending(principal, request_id)?;
         let account = self.account(principal)?;
         let Some(space) = self
             .content
             .receipt_space(account, request_id)
-            .map_err(content_error)?
+            ?
         else {
             return Ok(None);
         };
         self.content
             .receipt(space, account, request_id)
-            .map_err(content_error)
+            
             .map(|r| {
                 r.map(|r| Receipt {
                     operation: r.operation,
@@ -362,7 +354,7 @@ impl Store {
                 })
             })
     }
-    fn publish_plugins_for_space(&self, space_id: &str) -> Result<(), HostError> {
+    fn publish_plugins_for_space(&self, space_id: &str) -> Result<(), Error> {
         loop {
             let first=self.conn.query_row("SELECT principal,request_id FROM plugin_outbox WHERE space_id=?1 ORDER BY rowid LIMIT 1",[space_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?))).optional().map_err(db_err)?;
             let Some((principal, request)) = first else {
@@ -371,11 +363,11 @@ impl Store {
             self.publish_plugin_pending(&principal, &request)?;
         }
     }
-    fn publish_plugin_pending(&self, principal: &str, request_id: &str) -> Result<(), HostError> {
+    fn publish_plugin_pending(&self, principal: &str, request_id: &str) -> Result<(), Error> {
         let pending=self.conn.query_row("SELECT operation,fingerprint,result_json,space_id FROM plugin_outbox WHERE principal=?1 AND request_id=?2",params![principal,request_id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?))).optional().map_err(db_err)?;
         if let Some((operation, fingerprint, json, space)) = pending {
             let result = serde_json::from_str(&json)
-                .map_err(|_| HostError::internal("corrupt plugin publication"))?;
+                .map_err(|_| Error::internal("corrupt plugin publication"))?;
             self.content
                 .record_receipt(
                     self.space(&space)?,
@@ -387,7 +379,7 @@ impl Store {
                     },
                     result,
                 )
-                .map_err(content_error)?;
+                ?;
             self.conn
                 .execute(
                     "DELETE FROM plugin_outbox WHERE principal=?1 AND request_id=?2",
@@ -410,7 +402,7 @@ impl Store {
         space_id: &str,
         title: &str,
         markdown: &str,
-    ) -> Result<Note, HostError> {
+    ) -> Result<Note, Error> {
         self.content
             .register_kind(
                 self.space(space_id)?,
@@ -420,7 +412,7 @@ impl Store {
                 },
                 calternal_content::FileFormat::Markdown,
             )
-            .map_err(content_error)?;
+            ?;
         let request = Request {
             account: self.account(principal)?,
             id: request_id,
@@ -439,7 +431,7 @@ impl Store {
                 request,
                 |i| serde_json::json!({"note":note(i,space_id)}),
             )
-            .map_err(content_error)?;
+            ?;
         Ok(note(&item, space_id))
     }
     /// Updates only the current base revision, preserving external edits/deletes.
@@ -458,7 +450,7 @@ impl Store {
         base_revision: &str,
         title: Option<&str>,
         markdown: &str,
-    ) -> Result<Note, HostError> {
+    ) -> Result<Note, Error> {
         let current = self.get(space_id, id)?;
         let request = Request {
             account: self.account(principal)?,
@@ -478,18 +470,18 @@ impl Store {
                 request,
                 |i| serde_json::json!({"note":note(i,space_id)}),
             )
-            .map_err(content_error)?;
+            ?;
         Ok(note(&item, space_id))
     }
     /// Finishes checked placement before retry replay. Cost: catalog lookup and
     /// generic materialization locks/reads, with file+directory fsync only if pending.
-    pub fn materialize(&mut self, id: &str) -> Result<(), HostError> {
+    pub fn materialize(&mut self, id: &str) -> Result<(), Error> {
         let space = self
             .locate("notes", id)?
-            .ok_or_else(|| HostError::not_found("item not found"))?;
+            .ok_or_else(|| Error::not_found("item not found"))?;
         self.content
             .materialize(self.space(&space)?, item_id(id)?)
-            .map_err(content_error)
+            
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
     /// so a retry replays it through [`Self::receipt`] instead of running the plugin
@@ -505,7 +497,7 @@ impl Store {
         fingerprint: &str,
         space_id: &str,
         result: serde_json::Value,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         let request = Request {
             account: self.account(principal)?,
             id: request_id,
@@ -514,27 +506,24 @@ impl Store {
         };
         self.content
             .record_receipt(self.space(space_id)?, request, result)
-            .map_err(content_error)
+            
     }
-    /// UUID forms of an acting account and a content space, for worker authority
+    /// Typed IDs of an acting account and a content space, for worker authority
     /// correlation only (they grant nothing). Cost: at most two indexed binding
     /// lookups; a first-seen fixture name inserts one binding row.
-    pub fn worker_ids(&self, principal: &str, space_id: &str) -> Result<(String, String), HostError> {
-        Ok((
-            self.account(principal)?.to_string(),
-            self.space(space_id)?.to_string(),
-        ))
+    pub fn worker_ids(&self, principal: &str, space_id: &str) -> Result<(AccountId, SpaceId), Error> {
+        Ok((self.account(principal)?, self.space(space_id)?))
     }
     /// Reads one item of `kind` for a plugin broker. The global route must place it in
     /// `space_id`; a foreign, absent or wrong-kind ID is the same not-found.
     /// Cost: catalog route lookup plus one indexed item read and body allocation.
-    pub fn read_item(&self, space_id: &str, kind: &str, id: &str) -> Result<Item, HostError> {
-        let missing = || HostError::not_found("item not found");
+    pub fn read_item(&self, space_id: &str, kind: &str, id: &str) -> Result<Item, Error> {
+        let missing = || Error::not_found("item not found");
         let (space, id) = (self.space(space_id)?, item_id(id)?);
-        if self.content.locate(kind, id).map_err(content_error)? != Some(space) {
+        if self.content.locate(kind, id)? != Some(space) {
             return Err(missing());
         }
-        let item = self.content.get(space, id).map_err(content_error)?;
+        let item = self.content.get(space, id)?;
         if item.kind != kind {
             return Err(missing());
         }
@@ -557,7 +546,7 @@ impl Store {
         base: Option<&str>,
         metadata: serde_json::Value,
         text: &str,
-    ) -> Result<Item, HostError> {
+    ) -> Result<Item, Error> {
         if let Some(id) = id {
             self.read_item(space_id, kind, &id.to_string())?;
         }
@@ -578,7 +567,7 @@ impl Store {
                 request,
                 |i| serde_json::json!({"id": i.id, "revision": i.revision}),
             )
-            .map_err(content_error)
+            
     }
     /// Provisions a plugin in one space: registers each declared kind's placement
     /// and format, then creates (or returns) each standard collection with its
@@ -591,12 +580,12 @@ impl Store {
         principal: &str,
         kinds: &[(String, calternal_content::Placement, calternal_content::FileFormat)],
         collections: &[(String, String, String)],
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         let space = self.space(space_id)?;
         for (kind, placement, format) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())
-                .map_err(content_error)?;
+                ?;
         }
         if collections.is_empty() {
             return Ok(());
@@ -613,12 +602,12 @@ impl Store {
                     extension: "json".into(),
                 },
             )
-            .map_err(content_error)?;
+            ?;
         let account = self.account(principal)?;
         for (kind, key, title) in collections {
             self.content
                 .ensure_standard_collection(space, account, kind, key, title)
-                .map_err(content_error)?;
+                ?;
         }
         Ok(())
     }
@@ -628,7 +617,7 @@ impl Store {
         &self,
         space_id: &str,
         plugin_id: &str,
-    ) -> Result<Option<PluginRow>, HostError> {
+    ) -> Result<Option<PluginRow>, Error> {
         self.conn
             .query_row(
                 "SELECT enabled, generation FROM plugin_state WHERE space_id = ?1 AND plugin_id = ?2",
@@ -658,7 +647,7 @@ impl Store {
         default: PluginRow,
         enabled: bool,
         result: impl FnOnce(&PluginRow) -> serde_json::Value,
-    ) -> Result<(PluginRow, serde_json::Value), HostError> {
+    ) -> Result<(PluginRow, serde_json::Value), Error> {
         self.publish_plugins_for_space(space_id)?;
         let current = self.plugin_row(space_id, plugin_id)?.unwrap_or(default);
         let next = if current.enabled == enabled {
@@ -699,7 +688,7 @@ impl Store {
 }
 /// External bytes prevented checked placement. Cost: short error/JSON allocations;
 /// no I/O, locks or fsync. The generic content materializer uses the same reason.
-pub fn blocked_error() -> HostError {
-    HostError::conflict("note file was changed outside Calternal; writes are blocked")
+pub fn blocked_error() -> Error {
+    Error::conflict("note file was changed outside Calternal; writes are blocked")
         .with_details(serde_json::json!({"reason":"external_change"}))
 }

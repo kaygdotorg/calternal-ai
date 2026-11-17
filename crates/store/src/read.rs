@@ -74,7 +74,7 @@ pub(crate) fn since(
         let (seq, at_ms, kind, item, data, installation, request_id, author) =
             row.map_err(Error::internal)?;
         out.push(JournalEntry {
-            author: author.parse()?,
+            author: author.parse().map_err(Error::internal)?,
             seq,
             token: String::new(),
             at_ms,

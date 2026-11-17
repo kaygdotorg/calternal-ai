@@ -30,7 +30,7 @@ use super::worker::Outcome;
 use super::{Call, activation, host_capability};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use crate::error::HostError;
+use calternal_types::Error;
 
 /// Concurrent job runs across the server. Kept below the worker pool size so
 /// interactive plugin calls always find a worker.
@@ -65,7 +65,7 @@ pub fn schedule<D: Directory>(state: &Shared<D>, space: String, job: String) {
 /// After a restart: mark interrupted runs for resumption (or `outcome_unknown`) and
 /// schedule every admitted job. Call once at startup inside the runtime.
 /// Cost: see [`super::jobs::Jobs::recover`], on a blocking task.
-pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, HostError> {
+pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     let st = state.clone();
     let woken = tokio::task::spawn_blocking(move || {
         st.jobs.recover(|plugin, operation| {
@@ -75,7 +75,7 @@ pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, HostError
         })
     })
     .await
-    .map_err(|_| HostError::internal("job recovery task failed"))??;
+    .map_err(|_| Error::internal("job recovery task failed"))??;
     let n = woken.len();
     for (space, job) in woken {
         schedule(state, space, job);
@@ -84,15 +84,15 @@ pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, HostError
 }
 
 async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, HostError> + Send + 'static,
-) -> Result<T, HostError> {
+    f: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     tokio::task::spawn_blocking(f)
         .await
-        .map_err(|_| HostError::internal("job task failed"))?
+        .map_err(|_| Error::internal("job task failed"))?
 }
 
 /// One run: claim, recheck authority, invoke, record the end, wake what it unblocks.
-async fn run<D: Directory>(state: &Shared<D>, space: &str, id: &str) -> Result<(), HostError> {
+async fn run<D: Directory>(state: &Shared<D>, space: &str, id: &str) -> Result<(), Error> {
     let (st, sp, jid) = (state.clone(), space.to_owned(), id.to_owned());
     let Some(super::jobs::Claimed { job, live, cancel }) =
         blocking(move || st.jobs.claim(&sp, &jid)).await?
@@ -125,8 +125,8 @@ async fn execute<D: Directory>(
     job: &super::jobs::Job,
     live: &Arc<super::live::Live>,
     cancel: &Arc<super::worker::CancelFlag>,
-) -> Result<Option<RunEnd>, HostError> {
-    let refused = || HostError::forbidden("job authority no longer holds");
+) -> Result<Option<RunEnd>, Error> {
+    let refused = || Error::forbidden("job authority no longer holds");
     let plugin = state.registry.get(&job.plugin).ok_or_else(refused)?.clone();
     let required = plugin
         .operation(&job.operation)
@@ -158,7 +158,7 @@ async fn execute<D: Directory>(
         let store = st
             .store
             .lock()
-            .map_err(|_| HostError::internal("store poisoned"))?;
+            .map_err(|_| Error::internal("store poisoned"))?;
         let row = activation(&store, &k, &p2)?;
         let ids = store.worker_ids(&account, &k)?;
         drop(store);
@@ -172,13 +172,6 @@ async fn execute<D: Directory>(
     if generation != (true, job.generation) {
         return Err(refused());
     }
-    let ids = calternal_plugin_host::AccountId::parse(&account_id)
-        .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
-    let Ok((account_id, space_id)) = ids else {
-        return Err(HostError::unavailable(
-            "jobs need UUIDv7 account and space identities",
-        ));
-    };
     let host = SpaceHost::new(
         state.clone(),
         identity,

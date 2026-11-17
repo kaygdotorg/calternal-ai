@@ -407,6 +407,7 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "calternal-fsio",
+ "calternal-types",
  "getrandom 0.4.3",
  "rusqlite",
  "serde",
@@ -431,6 +432,7 @@ version = "0.1.0"
 dependencies = [
  "calternal-client",
  "calternal-core",
+ "calternal-types",
  "schemars",
  "serde_json",
  "thiserror 2.0.21",
@@ -454,6 +456,7 @@ name = "calternal-client"
 version = "0.1.0"
 dependencies = [
  "calternal-core",
+ "calternal-types",
  "reqwest",
  "serde",
  "serde_json",
@@ -466,10 +469,10 @@ name = "calternal-content"
 version = "0.1.0"
 dependencies = [
  "calternal-auth",
- "calternal-core",
  "calternal-fsio",
  "calternal-roots",
  "calternal-store",
+ "calternal-types",
  "hex",
  "rusqlite",
  "serde",
@@ -486,10 +489,10 @@ dependencies = [
 name = "calternal-core"
 version = "0.1.0"
 dependencies = [
+ "calternal-types",
  "schemars",
  "serde",
  "serde_json",
- "thiserror 2.0.21",
  "ts-rs",
  "uuid",
 ]
@@ -518,6 +521,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "calternal-fsio",
+ "calternal-types",
  "clap",
  "reqwest",
  "ring",
@@ -537,11 +541,11 @@ version = "0.1.0"
 dependencies = [
  "calternal-core",
  "calternal-fsio",
+ "calternal-types",
  "jsonschema",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
- "uuid",
 ]
 
 [[package]]
@@ -551,6 +555,7 @@ dependencies = [
  "blake3",
  "calternal-auth",
  "calternal-fsio",
+ "calternal-types",
  "rusqlite",
  "rustix",
  "serde",
@@ -579,6 +584,7 @@ dependencies = [
  "blake3",
  "calternal-auth",
  "calternal-fsio",
+ "calternal-types",
  "getrandom 0.4.3",
  "openssl",
  "rusqlite",
@@ -603,6 +609,7 @@ dependencies = [
  "calternal-plugin-host",
  "calternal-roots",
  "calternal-secrets",
+ "calternal-types",
  "clap",
  "futures-util",
  "getrandom 0.3.4",
@@ -634,6 +641,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "calternal-fsio",
+ "calternal-types",
  "rusqlite",
  "serde",
  "serde_json",
@@ -641,6 +649,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "calternal-types"
+version = "0.1.0"
+dependencies = [
+ "schemars",
+ "serde",
+ "serde_json",
+ "ts-rs",
  "uuid",
 ]
 

@@ -18,14 +18,14 @@
 //! bridge has a bounded 32-command queue. SQL and file work belong on blocking
 //! host threads, never on async executor workers.
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
+use crate::types::{internal, missing};
 mod collections;
 mod db;
 mod files;
 mod journal;
 mod types;
-pub use calternal_core::ErrorCode;
 use calternal_roots::Roots;
-pub use calternal_store::{AccountId, SpaceId};
+use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
 pub use collections::StoredCollection;
 use db::Space;
 use journal::{Journals, Shared, lock};
@@ -40,7 +40,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub use types::{
-    Collection, CollectionOwner, Error, FaultPoint, FileFormat, Item, Materialization, Placement,
+    Collection, CollectionOwner, FaultPoint, FileFormat, Item, Materialization, Placement,
     Receipt, Request, Result, Summary,
 };
 use uuid::Uuid;
@@ -95,12 +95,12 @@ impl Content {
         fault: fn(FaultPoint),
     ) -> Result<Self> {
         for path in [&roots.appdata, &roots.userdata_ssd, &roots.userdata_hdd, &secrets] {
-            calternal_auth::private_fs::directory(path).map_err(Error::internal)?;
+            calternal_auth::private_fs::directory(path).map_err(internal)?;
         }
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS requests(account TEXT NOT NULL,request TEXT NOT NULL,space TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;").map_err(Error::internal)?;
+            CREATE TABLE IF NOT EXISTS requests(account TEXT NOT NULL,request TEXT NOT NULL,space TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;").map_err(internal)?;
         let spaces = Arc::new(Mutex::new(HashMap::new()));
         let cache = spaces.clone();
         let journals = Journals::open(roots.appdata.clone(), secrets, move || {
@@ -118,9 +118,9 @@ impl Content {
         };
         let dir = content.roots.appdata.join("spaces");
         if dir.exists() {
-            for entry in fs::read_dir(dir).map_err(Error::internal)? {
-                let entry = entry.map_err(Error::internal)?;
-                if !entry.file_type().map_err(Error::internal)?.is_dir() {
+            for entry in fs::read_dir(dir).map_err(internal)? {
+                let entry = entry.map_err(internal)?;
+                if !entry.file_type().map_err(internal)?.is_dir() {
                     continue;
                 }
                 let Some(id) = entry
@@ -137,16 +137,16 @@ impl Content {
                         let mut stmt = space
                             .conn
                             .prepare("SELECT id FROM items WHERE mat_state='pending'")
-                            .map_err(Error::internal)?;
+                            .map_err(internal)?;
                         let ids = stmt
                             .query_map([], |r| r.get::<_, String>(0))
-                            .map_err(Error::internal)?
+                            .map_err(internal)?
                             .collect::<std::result::Result<Vec<_>, _>>()
-                            .map_err(Error::internal)?;
+                            .map_err(internal)?;
                         drop(stmt);
                         for id in ids {
                             if let Err(e) =
-                                space.place(Uuid::parse_str(&id).map_err(Error::internal)?, fault)
+                                space.place(Uuid::parse_str(&id).map_err(internal)?, fault)
                                 && e.code != ErrorCode::Conflict {
                                     return Err(e);
                                 }
@@ -214,7 +214,7 @@ impl Content {
     ) -> Result<()> {
         files::validate_kind(kind)?;
         files::validate_registration(&placement, &format)?;
-        let definition = serde_json::to_string(&(placement, format)).map_err(Error::internal)?;
+        let definition = serde_json::to_string(&(placement, format)).map_err(internal)?;
         self.with_space(space, |s| {
             let old = s
                 .conn
@@ -222,7 +222,7 @@ impl Content {
                     r.get::<_, String>(0)
                 })
                 .optional()
-                .map_err(Error::internal)?;
+                .map_err(internal)?;
             if let Some(old) = old {
                 if old != definition {
                     return Err(Error::new(
@@ -233,7 +233,7 @@ impl Content {
             } else {
                 s.conn
                     .execute("INSERT INTO kinds VALUES(?1,?2)", params![kind, definition])
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
             }
             Ok(())
         })
@@ -249,8 +249,8 @@ impl Content {
                 |r| r.get::<_, String>(0),
             )
             .optional()
-            .map_err(Error::internal)?
-            .map(|s| s.parse().map_err(Error::internal))
+            .map_err(internal)?
+            .map(|s| s.parse().map_err(internal))
             .transpose()
     }
     /// Selects a receipt's space by identifiers only, for the host's account-wide
@@ -264,8 +264,8 @@ impl Content {
                 |r| r.get::<_, String>(0),
             )
             .optional()
-            .map_err(Error::internal)?
-            .map(|s| s.parse().map_err(Error::internal))
+            .map_err(internal)?
+            .map(|s| s.parse().map_err(internal))
             .transpose()
     }
     /// Reads one current item after the caller selects an authorized space.
@@ -324,8 +324,8 @@ impl Content {
         self.with_space(space,|_| {
             {
                 let index=lock(&self.index);
-                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![request.account.to_string(),request.id,space.to_string()]).map_err(Error::internal)?;
-                let bound:String=index.query_row("SELECT space FROM requests WHERE account=?1 AND request=?2",params![request.account.to_string(),request.id],|r|r.get(0)).map_err(Error::internal)?;
+                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![request.account.to_string(),request.id,space.to_string()]).map_err(internal)?;
+                let bound:String=index.query_row("SELECT space FROM requests WHERE account=?1 AND request=?2",params![request.account.to_string(),request.id],|r|r.get(0)).map_err(internal)?;
                 if bound!=space.to_string(){return Err(Error::new(ErrorCode::Conflict,"request_id was already used with different input"));}
             }
             self.journals.publish(space,request.account,request.id.into(),request.operation.into(),request.fingerprint.into(),None,"control".into(),result)
@@ -351,8 +351,8 @@ impl Content {
                     |r| r.get::<_, String>(0),
                 )
                 .optional()
-                .map_err(Error::internal)?
-                .ok_or_else(Error::missing)?;
+                .map_err(internal)?
+                .ok_or_else(missing)?;
             Ok(s.files.join(path))
         })
     }
@@ -370,11 +370,11 @@ impl Content {
     }
     fn publish_pending(&self, space: &mut Space) -> Result<()> {
         loop {
-            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(Error::internal)?;
+            let row=space.conn.query_row("SELECT account,request,operation,fingerprint,item,revision,result FROM outbox ORDER BY rowid LIMIT 1",[],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?))).optional().map_err(internal)?;
             let Some((account, request, op, fp, id, revision, result)) = row else {
                 return Ok(());
             };
-            let item = space.get(Uuid::parse_str(&id).map_err(Error::internal)?)?;
+            let item = space.get(Uuid::parse_str(&id).map_err(internal)?)?;
             {
                 let index = lock(&self.index);
                 index
@@ -382,23 +382,23 @@ impl Content {
                         "INSERT INTO items VALUES(?1,?2,?3) ON CONFLICT(id) DO NOTHING",
                         params![id, space.id.to_string(), item.kind],
                     )
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
                 let existing: (String, String) = index
                     .query_row("SELECT space,kind FROM items WHERE id=?1", [&id], |r| {
                         Ok((r.get(0)?, r.get(1)?))
                     })
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
                 if existing != (space.id.to_string(), item.kind.clone()) {
-                    return Err(Error::internal("global item collision"));
+                    return Err(internal("global item collision"));
                 }
-                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![account,request,space.id.to_string()]).map_err(Error::internal)?;
+                index.execute("INSERT INTO requests VALUES(?1,?2,?3) ON CONFLICT(account,request) DO NOTHING",params![account,request,space.id.to_string()]).map_err(internal)?;
                 let bound: String = index
                     .query_row(
                         "SELECT space FROM requests WHERE account=?1 AND request=?2",
                         params![account, request],
                         |r| r.get(0),
                     )
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
                 if bound != space.id.to_string() {
                     return Err(Error::new(
                         ErrorCode::Conflict,
@@ -408,13 +408,13 @@ impl Content {
             }
             self.journals.publish(
                 space.id,
-                account.parse().map_err(Error::internal)?,
+                account.parse().map_err(internal)?,
                 request.clone(),
                 op,
                 fp,
                 Some(item.id),
                 revision,
-                serde_json::from_str(&result).map_err(Error::internal)?,
+                serde_json::from_str(&result).map_err(internal)?,
             )?;
             space
                 .conn
@@ -422,7 +422,7 @@ impl Content {
                     "DELETE FROM outbox WHERE account=?1 AND request=?2",
                     params![account, request],
                 )
-                .map_err(Error::internal)?;
+                .map_err(internal)?;
         }
     }
     /// Commits generic bytes/metadata and finishes journal publication and placement.
@@ -457,7 +457,7 @@ impl Content {
             || metadata.to_string().len() > 256 * 1024
             || request.id.len() > 256
         {
-            return Err(Error::invalid("content input is too large"));
+            return Err(Error::invalid_input("content input is too large"));
         }
         files::validate_kind(kind)?;
         self.with_space(space,|s| {
@@ -465,21 +465,21 @@ impl Content {
             self.publish_pending(s)?;
             if self.receipt_space(request.account,request.id)?.is_some(){return Err(Error::new(ErrorCode::Conflict,"request_id was already used with different input"));}
             let (id,seq,old_path,expected)=if let Some(id)=id {
-                let current=s.get(id)?;if current.kind!=kind{return Err(Error::missing());}
+                let current=s.get(id)?;if current.kind!=kind{return Err(missing());}
                 s.place(id,self.fault)?;s.check_file(id)?;
                 if base!=Some(current.revision.as_str()) {return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":current.revision}))});}
-                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_sha256 FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(Error::internal)?;
+                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_sha256 FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(internal)?;
                 (id,seq+1,Some(path),sha)
             }else{(Uuid::now_v7(),1,None,None)};
             let title=metadata.get("title").and_then(Value::as_str).unwrap_or(kind);
             let path=s.choose_path(kind,title,old_path.as_deref())?;
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:format!("v{seq}.{}",Uuid::now_v7().simple()),updated_at:now_rfc3339()};
             let response=result(&item);
-            let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(Error::internal)?;
-            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_sha256) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(Error::internal)?;
-            tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,item.metadata.to_string(),bytes,item.updated_at,request.account.to_string()]).map_err(Error::internal)?;
-            tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(Error::internal)?;
-            tx.commit().map_err(Error::internal)?;
+            let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
+            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_sha256) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(internal)?;
+            tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,item.metadata.to_string(),bytes,item.updated_at,request.account.to_string()]).map_err(internal)?;
+            tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(internal)?;
+            tx.commit().map_err(internal)?;
             (self.fault)(FaultPoint::AfterCommit);
             self.publish_pending(s)?;
             s.place(id,self.fault)?;

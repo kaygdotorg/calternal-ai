@@ -13,12 +13,12 @@ use std::time::Duration;
 // Moves to calternal-fsio with the shared-types work; this line is the only change then.
 use calternal_auth::private_fs;
 use calternal_auth::token::{hash32, new_setup_token, normalize_setup_token};
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::Owner;
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
-use crate::error::HostError;
+use calternal_types::Error;
 
 /// Current schema version (`PRAGMA user_version`).
 pub const SCHEMA_VERSION: i64 = 1;
@@ -63,13 +63,7 @@ CREATE TABLE IF NOT EXISTS leases (
 CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE state != 'ended';
 ";
 
-/// Milliseconds since the Unix epoch. (auth and store keep private copies; a
-/// shared time helper belongs in the coming shared-types crate.)
-pub(crate) fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
-}
+pub(crate) use calternal_types::now_ms;
 
 /// Open (creating 0600 if missing) and migrate the database.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
@@ -110,7 +104,7 @@ pub fn parse_owner(s: &str) -> Option<Owner> {
     if s == "pool" {
         return Some(Owner::Pool);
     }
-    Uuid::parse_str(s.strip_prefix("account:")?)
+    AccountId::parse(s.strip_prefix("account:")?)
         .ok()
         .map(|id| Owner::Account { id })
 }
@@ -119,9 +113,9 @@ pub fn parse_owner(s: &str) -> Option<Owner> {
 /// its hash; codes expired for a day are deleted at the same time (retention).
 /// The code uses the setup-token format of `calternal-auth` (52 characters in
 /// groups of four; dashes and case ignored). Returns (code, expiry in ms).
-pub fn new_code(c: &Connection, owner: Owner, ttl: Duration) -> Result<(String, i64), HostError> {
-    let code = new_setup_token().map_err(|_| HostError::internal("no randomness"))?;
-    let canon = normalize_setup_token(&code).ok_or_else(|| HostError::internal("bad new code"))?;
+pub fn new_code(c: &Connection, owner: Owner, ttl: Duration) -> Result<(String, i64), Error> {
+    let code = new_setup_token().map_err(|_| Error::internal("no randomness"))?;
+    let canon = normalize_setup_token(&code).ok_or_else(|| Error::internal("bad new code"))?;
     let now = now_ms();
     let expires = now + ttl.as_millis() as i64;
     let store = || -> rusqlite::Result<()> {
@@ -341,12 +335,22 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// A stored typed ID; an unparsable one fails the row instead of becoming a default.
+fn typed<T: std::str::FromStr<Err = calternal_types::Error>>(
+    column: usize,
+    text: String,
+) -> rusqlite::Result<T> {
+    text.parse().map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(column, rusqlite::types::Type::Text, Box::new(e))
+    })
+}
+
 fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
     let uuid = |s: Option<String>| s.and_then(|s| Uuid::parse_str(&s).ok());
     Ok(LeaseRow {
         id: uuid(r.get(0)?).unwrap_or_default(),
-        space: SpaceId(uuid(r.get(1)?).unwrap_or_default()),
-        account: AccountId(uuid(r.get(2)?).unwrap_or_default()),
+        space: typed(1, r.get(1)?)?,
+        account: typed(2, r.get(2)?)?,
         thread: uuid(r.get(3)?).unwrap_or_default(),
         image: r.get(4)?,
         machine: uuid(r.get(5)?),

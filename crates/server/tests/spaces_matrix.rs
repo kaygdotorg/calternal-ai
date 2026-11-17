@@ -50,7 +50,7 @@ impl Fixture {
             let owner = owner_identity.id.to_string();
             let spaces = tokens
                 .spaces
-                .list(calternal_auth::AccountId::parse(&owner).unwrap())
+                .list(calternal_types::AccountId::parse(&owner).unwrap())
                 .unwrap();
             let shared = spaces
                 .iter()

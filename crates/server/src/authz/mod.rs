@@ -14,10 +14,10 @@ use calternal_core::JsonObject;
 
 pub mod capabilities;
 
-pub use capabilities::{BUILTIN_ROLES, Capability, CapabilitySet, RoleSet};
+pub use capabilities::{BUILTIN_ROLES, RoleSet};
 
 use crate::auth::{Directory, Identity};
-use crate::error::HostError;
+use calternal_types::{Capability, Error};
 
 /// Input scope whose space must be authorized before any resource lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -227,14 +227,14 @@ impl Policy {
         directory: &impl Directory,
         principal: &Identity,
         input: &JsonObject,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         if self.scope == Scope::Account {
             return Ok(());
         }
         let space = input
             .get("space_id")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| HostError::invalid_input("input does not match operation schema"))?;
+            .ok_or_else(|| Error::invalid_input("input does not match operation schema"))?;
         self.authorize_space(directory, principal, space)
     }
 
@@ -248,21 +248,21 @@ impl Policy {
         directory: &impl Directory,
         principal: &Identity,
         space: &str,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         match directory.capabilities(&principal.id, space) {
-            None if self.scope == Scope::Note => Err(HostError::not_found("item not found")),
-            None if self.scope == Scope::Job => Err(HostError::not_found("job not found")),
-            None => Err(HostError::not_found("space not found")),
+            None if self.scope == Scope::Note => Err(Error::not_found("item not found")),
+            None if self.scope == Scope::Job => Err(Error::not_found("job not found")),
+            None => Err(Error::not_found("space not found")),
             Some(set)
                 if self.scope == Scope::Note
                     && !set.contains(Capability::SpaceRead)
                     && !set.contains(self.required) =>
             {
-                Err(HostError::not_found("item not found"))
+                Err(Error::not_found("item not found"))
             }
             Some(set) if !set.contains(self.required) => {
                 // Preserve the development wire error text for existing clients.
-                Err(HostError::forbidden("insufficient role for this space"))
+                Err(Error::forbidden("insufficient role for this space"))
             }
             Some(_) => Ok(()),
         }

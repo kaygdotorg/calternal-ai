@@ -54,13 +54,13 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::{Capacity, Chunk, ChunkEvent, ExitInfo, Limits, Owner};
 use serde::Serialize;
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-use crate::error::HostError;
+use calternal_types::Error;
 use state::{Exec, ExecState, Lease, Machine, State};
 
 /// Tunables. Defaults suit production; tests shorten the times.
@@ -196,24 +196,24 @@ pub struct MachineService {
 
 const EXEC_RETENTION: Duration = Duration::from_secs(600);
 
-fn sql(e: rusqlite::Error) -> HostError {
+fn sql(e: rusqlite::Error) -> Error {
     tracing::warn!(error = %e, "machines database");
-    HostError::internal("machine database failure")
+    Error::internal("machine database failure")
 }
 
 /// Run `f` on a blocking task; the registry lock and SQLite never block an async worker.
 async fn blocking<T: Send + 'static>(
-    f: impl FnOnce() -> Result<T, HostError> + Send + 'static,
-) -> Result<T, HostError> {
+    f: impl FnOnce() -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     tokio::task::spawn_blocking(f)
         .await
-        .map_err(|_| HostError::internal("machine task failed"))?
+        .map_err(|_| Error::internal("machine task failed"))?
 }
 
 impl MachineService {
     /// Open `<data>/system/machines.db` and load machines, grants and active leases.
     /// Blocks: one schema check and three reads.
-    pub fn open(data_dir: &Path, settings: Settings) -> Result<Arc<Self>, HostError> {
+    pub fn open(data_dir: &Path, settings: Settings) -> Result<Arc<Self>, Error> {
         let db = db::open(&data_dir.join("system/machines.db")).map_err(sql)?;
         let now = Instant::now();
         let machines = db::machines(&db)
@@ -246,10 +246,10 @@ impl MachineService {
         }))
     }
 
-    fn lock(&self) -> Result<MutexGuard<'_, State>, HostError> {
+    fn lock(&self) -> Result<MutexGuard<'_, State>, Error> {
         self.state
             .lock()
-            .map_err(|_| HostError::internal("machine registry poisoned"))
+            .map_err(|_| Error::internal("machine registry poisoned"))
     }
 
     // ------------------------------------------------------------ callers
@@ -263,13 +263,13 @@ impl MachineService {
         account: AccountId,
         thread: Uuid,
         image: Option<String>,
-    ) -> Result<RunView, HostError> {
+    ) -> Result<RunView, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         if let Some(id) = st.threads.get(&thread).copied() {
             let l = &st.leases[&id];
             if l.row.account != account || l.row.space != space {
-                return Err(HostError::conflict("thread is running for another context"));
+                return Err(Error::conflict("thread is running for another context"));
             }
             return Ok(st.view(id));
         }
@@ -305,11 +305,11 @@ impl MachineService {
 
     /// Current view of a run owned by `account`; not found otherwise. Blocks
     /// (reads SQLite only for runs no longer in memory).
-    pub fn run(&self, account: AccountId, lease: Uuid) -> Result<RunView, HostError> {
+    pub fn run(&self, account: AccountId, lease: Uuid) -> Result<RunView, Error> {
         let st = self.lock()?;
         match st.leases.get(&lease) {
             Some(l) if l.row.account == account => Ok(st.view(lease)),
-            Some(_) => Err(HostError::not_found("run not found")),
+            Some(_) => Err(Error::not_found("run not found")),
             None => match db::lease(&st.db, lease).map_err(sql)? {
                 Some(row) if row.account == account => Ok(RunView {
                     lease_id: row.id,
@@ -320,19 +320,19 @@ impl MachineService {
                     reason: row.reason,
                     queue_position: None,
                 }),
-                _ => Err(HostError::not_found("run not found")),
+                _ => Err(Error::not_found("run not found")),
             },
         }
     }
 
     /// End a run; blocks (one commit). The machine is told to stop the sandbox
     /// and any later output is refused.
-    pub fn stop_run(&self, account: AccountId, lease: Uuid) -> Result<RunView, HostError> {
+    pub fn stop_run(&self, account: AccountId, lease: Uuid) -> Result<RunView, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         match st.leases.get(&lease) {
             Some(l) if l.row.account == account => {}
-            _ => return Err(HostError::not_found("run not found")),
+            _ => return Err(Error::not_found("run not found")),
         }
         st.end_lease(lease, "stopped by the caller", &self.settings);
         Ok(st.view(lease))
@@ -354,9 +354,9 @@ impl MachineService {
         lease: Uuid,
         argv: Vec<String>,
         env: Vec<(String, String)>,
-    ) -> Result<Uuid, HostError> {
+    ) -> Result<Uuid, Error> {
         if argv.is_empty() || argv.len() > 4096 || argv.iter().any(|a| a.len() > 65_536) {
-            return Err(HostError::invalid_input(
+            return Err(Error::invalid_input(
                 "argv must have 1 to 4096 arguments of at most 64 KiB",
             ));
         }
@@ -365,9 +365,9 @@ impl MachineService {
         match st.leases.get(&lease) {
             Some(l) if l.row.account == account && l.state != LeaseState::Ended => {}
             Some(l) if l.row.account == account => {
-                return Err(HostError::conflict("run has ended"));
+                return Err(Error::conflict("run has ended"));
             }
-            _ => return Err(HostError::not_found("run not found")),
+            _ => return Err(Error::not_found("run not found")),
         }
         let id = Uuid::new_v4();
         st.execs
@@ -387,7 +387,7 @@ impl MachineService {
         exec_id: Uuid,
         after: u64,
         wait: Duration,
-    ) -> Result<OutputView, HostError> {
+    ) -> Result<OutputView, Error> {
         let deadline = tokio::time::Instant::now() + wait.min(Duration::from_secs(30));
         loop {
             let svc = self.clone();
@@ -417,11 +417,11 @@ impl MachineService {
         account: AccountId,
         exec_id: Uuid,
         after: u64,
-    ) -> Result<Result<OutputView, Arc<Notify>>, HostError> {
+    ) -> Result<Result<OutputView, Arc<Notify>>, Error> {
         let mut st = self.lock()?;
         let exec = match st.execs.get_mut(&exec_id) {
             Some(e) if e.account == account => e,
-            _ => return Err(HostError::not_found("exec not found")),
+            _ => return Err(Error::not_found("exec not found")),
         };
         while exec.chunks.front().is_some_and(|(c, _)| c.seq <= after) {
             exec.held -= exec.chunks.pop_front().expect("front").1;
@@ -443,7 +443,7 @@ impl MachineService {
     }
 
     /// The space of a run, for re-checking the caller's authority. Blocks.
-    pub fn run_space(&self, lease: Uuid) -> Result<Option<SpaceId>, HostError> {
+    pub fn run_space(&self, lease: Uuid) -> Result<Option<SpaceId>, Error> {
         let st = self.lock()?;
         Ok(match st.leases.get(&lease) {
             Some(l) => Some(l.row.space),
@@ -452,7 +452,7 @@ impl MachineService {
     }
 
     /// The space of an exec's run, for re-checking the caller's authority.
-    pub fn exec_space(&self, exec: Uuid) -> Result<Option<SpaceId>, HostError> {
+    pub fn exec_space(&self, exec: Uuid) -> Result<Option<SpaceId>, Error> {
         let st = self.lock()?;
         Ok(st
             .execs
@@ -465,7 +465,7 @@ impl MachineService {
 
     /// Issue a one-time enrolment code for `owner`; blocks (one commit).
     /// Returns the code and its expiry in Unix milliseconds.
-    pub fn issue_code(&self, owner: Owner) -> Result<(String, i64), HostError> {
+    pub fn issue_code(&self, owner: Owner) -> Result<(String, i64), Error> {
         let mut st = self.lock()?;
         let issued = db::new_code(&st.db, owner, self.settings.code_ttl)?;
         st.data_version = db::data_version(&st.db).map_err(sql)?;
@@ -473,9 +473,9 @@ impl MachineService {
     }
 
     /// Machines owned by `account`. Blocks briefly (no file I/O).
-    pub fn machines_of(&self, account: AccountId) -> Result<Vec<MachineView>, HostError> {
+    pub fn machines_of(&self, account: AccountId) -> Result<Vec<MachineView>, Error> {
         let st = self.lock()?;
-        let owner = Owner::Account { id: account.0 };
+        let owner = Owner::Account { id: account };
         Ok(st
             .machines
             .values()
@@ -484,16 +484,16 @@ impl MachineService {
             .collect())
     }
 
-    fn check_owner(st: &State, account: AccountId, machine: Uuid) -> Result<(), HostError> {
+    fn check_owner(st: &State, account: AccountId, machine: Uuid) -> Result<(), Error> {
         match st.machines.get(&machine) {
-            Some(m) if m.row.owner == (Owner::Account { id: account.0 }) => Ok(()),
-            _ => Err(HostError::not_found("machine not found")),
+            Some(m) if m.row.owner == (Owner::Account { id: account }) => Ok(()),
+            _ => Err(Error::not_found("machine not found")),
         }
     }
 
     /// Revoke one of `account`'s machines now; blocks (one commit). Sessions are
     /// dropped, a held poll is answered 403 and its leases end.
-    pub fn revoke(&self, account: AccountId, machine: Uuid) -> Result<(), HostError> {
+    pub fn revoke(&self, account: AccountId, machine: Uuid) -> Result<(), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         Self::check_owner(st, account, machine)?;
@@ -509,7 +509,7 @@ impl MachineService {
         account: AccountId,
         machine: Uuid,
         draining: bool,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         Self::check_owner(st, account, machine)?;
@@ -545,7 +545,7 @@ impl MachineService {
     /// re-place their leases after `lease_ttl`, drop finished exec buffers after
     /// ten minutes and ended lease rows after `ended_lease_retention`. Blocks: one
     /// `PRAGMA data_version` read per tick; writes only when something changed.
-    pub fn sweep(&self) -> Result<(), HostError> {
+    pub fn sweep(&self) -> Result<(), Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
         let version = db::data_version(&st.db).map_err(sql)?;

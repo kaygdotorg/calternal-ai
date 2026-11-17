@@ -110,7 +110,7 @@ pub(crate) async fn start_add(inner: &Arc<Inner>, user: AccountId) -> Result<(St
     let existing = crate::passkey::existing_cred_ids(inner, user).await?;
     let (ccr, state) = inner
         .webauthn
-        .start_passkey_registration(user.0, &username, &name, Some(existing))
+        .start_passkey_registration(user.as_uuid(), &username, &name, Some(existing))
         .map_err(Error::internal)?;
     let mut options = serde_json::to_value(&ccr).map_err(Error::internal)?;
     crate::passkey::require_discoverable(&mut options);

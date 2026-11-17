@@ -46,7 +46,7 @@ impl Fixture {
         key: &str,
         op: &str,
         input: Value,
-    ) -> Result<Value, calternal_server::error::HostError> {
+    ) -> Result<Value, calternal_types::Error> {
         dispatch(
             self.state.clone(),
             account.clone(),

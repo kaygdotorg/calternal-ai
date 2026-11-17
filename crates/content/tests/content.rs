@@ -1,7 +1,6 @@
 //! Physical separation and restart recovery on disposable roots.
-use calternal_content::{
-    AccountId, Content, ErrorCode, FaultPoint, FileFormat, Placement, Request, SpaceId,
-};
+use calternal_content::{Content, FaultPoint, FileFormat, Placement, Request};
+use calternal_types::{AccountId, ErrorCode, SpaceId};
 use calternal_roots::Roots;
 use serde_json::json;
 use std::{path::Path, time::Duration};

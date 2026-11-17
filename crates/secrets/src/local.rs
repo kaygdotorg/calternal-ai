@@ -218,13 +218,7 @@ fn current(tx: &Connection, name: &str) -> Result<Option<(u64, String)>> {
     .map_err(|_| Error::Internal)
 }
 
-/// Unix milliseconds. A private copy because auth's `db::now_ms` is crate-private;
-/// it moves to the shared types crate with the IDs.
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as i64)
-}
+use calternal_types::now_ms;
 
 /// Test-only process abort just before a commit, to prove crash atomicity.
 #[cfg(test)]

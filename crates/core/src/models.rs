@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use ts_rs::TS;
+use calternal_types::ErrorCode;
 
 /// JSON object with deterministically ordered top-level keys; nested values remain arbitrary JSON.
 pub type JsonObject = BTreeMap<String, Value>;
@@ -46,42 +47,6 @@ pub struct OperationRequest {
     pub input: JsonObject,
 }
 
-/// Stable error categories used by every operation failure; each maps to one HTTP status.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ErrorCode {
-    /// Authentication is missing or invalid (HTTP 401).
-    Unauthorized,
-    /// Current authority does not permit the operation (HTTP 403).
-    Forbidden,
-    /// The requested resource or operation is unavailable (HTTP 404).
-    NotFound,
-    /// The expected revision or durable retry input conflicts (HTTP 409).
-    Conflict,
-    /// Input violates the contract (HTTP 400 in operation errors).
-    InvalidInput,
-    /// The serialized body or document exceeds its byte budget (HTTP 413).
-    TooLarge,
-    /// The operation cannot currently be served (HTTP 503).
-    Unavailable,
-    /// An internal failure occurred; expose only safe diagnostics (HTTP 500 in operation errors).
-    Internal,
-}
-impl ErrorCode {
-    /// Return the HTTP status required for this error category in constant time.
-    pub fn http_status(self) -> u16 {
-        match self {
-            Self::Unauthorized => 401,
-            Self::Forbidden => 403,
-            Self::NotFound => 404,
-            Self::Conflict => 409,
-            Self::InvalidInput => 400,
-            Self::TooLarge => 413,
-            Self::Unavailable => 503,
-            Self::Internal => 500,
-        }
-    }
-}
 /// Safe error payload for all operations; messages must not contain credentials or private diagnostics.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]

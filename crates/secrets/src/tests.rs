@@ -1,5 +1,5 @@
 use crate::*;
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -259,14 +259,14 @@ fn accounts_and_spaces_are_isolated() {
     let id = uuid::Uuid::now_v7();
     store
         .put(
-            &Owner::Account(AccountId(id)),
+            &Owner::Account(AccountId::from_uuid(id).unwrap()),
             &name("x"),
             "X",
             value(b"acct"),
             &me,
         )
         .unwrap();
-    assert!(store.list(&Owner::Space(SpaceId(id))).unwrap().is_empty());
+    assert!(store.list(&Owner::Space(SpaceId::from_uuid(id).unwrap())).unwrap().is_empty());
 }
 
 #[test]
@@ -475,7 +475,7 @@ fn crash_child() {
         .unwrap()
         .parse()
         .unwrap();
-    let owner = Owner::Account(AccountId(owner));
+    let owner = Owner::Account(AccountId::from_uuid(owner).unwrap());
     let store = LocalStore::open(Path::new(&dir)).unwrap();
     let me = actor(AccountId::new());
     match std::env::var("CALTERNAL_SECRETS_CRASH").unwrap().as_str() {

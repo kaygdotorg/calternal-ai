@@ -1,6 +1,7 @@
 //! Library projections of the source setup/create/login/passkey/isolation cases.
 mod common;
-use calternal_auth::{AccountId, ErrorCode, LoginPurpose};
+use calternal_auth::{ErrorCode, LoginPurpose};
+use calternal_types::AccountId;
 use common::*;
 use serde_json::json;
 use std::time::Duration;
@@ -165,7 +166,7 @@ async fn a_created_person_enrolls_their_first_passkey_and_is_the_same_person() {
     let app = app();
     let made = app.auth.create("Kayg").await.unwrap();
     assert_eq!(made.username, "kayg");
-    assert!(AccountId::parse(&made.id.to_string()).is_some());
+    assert!(AccountId::parse(&made.id.to_string()).is_ok());
     assert_eq!(app.auth.first_owner_token().await.unwrap(), None);
     let (signed, mut dev) = enroll(&app, &made.token, "").await;
     assert_eq!(signed.0, made.id);
@@ -741,7 +742,7 @@ async fn devices_and_passkeys_of_another_person_are_not_found() {
     let made = app.auth.create("Bob").await.unwrap();
     let (bob, _) = enroll(&app, &made.token, "").await;
     let alice_key = app.auth.passkeys(alice.0).await.unwrap()[0].id.clone();
-    let fake_install = calternal_auth::InstallationId::new();
+    let fake_install = calternal_types::InstallationId::new();
     let fake_key = "AAAAAAAAAAAAAAAAAAAAAA";
     let real = app.auth.revoke(bob.0, alice.1).await.unwrap_err();
     let fake = app.auth.revoke(bob.0, fake_install).await.unwrap_err();

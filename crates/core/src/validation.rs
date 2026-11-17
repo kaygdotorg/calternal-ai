@@ -1,38 +1,21 @@
 use crate::*;
+use calternal_types::Error;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("{message}")]
-/// Pure contract validation failure; carries safe diagnostics and no authority decisions.
-pub struct ValidationError {
-    /// Stable failure category for protocol mapping.
-    pub code: ErrorCode,
-    /// Safe human-readable reason; do not include credentials or private input.
-    pub message: String,
-}
-impl ValidationError {
-    /// Construct an invalid-input error with a safe caller-supplied message; no input content is sanitized here.
-    pub fn invalid(message: impl Into<String>) -> Self {
-        Self {
-            code: ErrorCode::InvalidInput,
-            message: message.into(),
-        }
-    }
-}
-fn require(ok: bool, message: &str) -> Result<(), ValidationError> {
+fn require(ok: bool, message: &str) -> Result<(), Error> {
     if ok {
         Ok(())
     } else {
-        Err(ValidationError::invalid(message))
+        Err(Error::invalid_input(message))
     }
 }
 /// Check a space/plugin/node identifier in O(bytes), without allocation.
 ///
 /// # Errors
 /// Returns invalid input unless there are 1..80 ASCII letters, digits or `_.:-`.
-pub fn validate_id(value: &str) -> Result<(), ValidationError> {
+pub fn validate_id(value: &str) -> Result<(), Error> {
     require(
         !value.is_empty()
             && value.len() <= 80
@@ -46,7 +29,7 @@ pub fn validate_id(value: &str) -> Result<(), ValidationError> {
 ///
 /// # Errors
 /// Returns invalid input for a malformed UUID.
-pub fn validate_resource_id(value: &str) -> Result<(), ValidationError> {
+pub fn validate_resource_id(value: &str) -> Result<(), Error> {
     require(
         uuid::Uuid::parse_str(value).is_ok(),
         "resource id must be a UUID",
@@ -56,7 +39,7 @@ pub fn validate_resource_id(value: &str) -> Result<(), ValidationError> {
 ///
 /// # Errors
 /// Returns invalid input when any title constraint fails.
-pub fn validate_title(value: &str) -> Result<(), ValidationError> {
+pub fn validate_title(value: &str) -> Result<(), Error> {
     require(
         !value.trim().is_empty()
             && value.chars().count() <= 256
@@ -68,32 +51,29 @@ pub fn validate_title(value: &str) -> Result<(), ValidationError> {
 ///
 /// # Errors
 /// Returns too large above the 1 MiB document budget.
-pub fn validate_markdown(value: &str) -> Result<(), ValidationError> {
+pub fn validate_markdown(value: &str) -> Result<(), Error> {
     if value.len() > MAX_DOCUMENT_BYTES {
-        Err(ValidationError {
-            code: ErrorCode::TooLarge,
-            message: "document exceeds 1 MiB".into(),
-        })
+        Err(Error::new(ErrorCode::TooLarge, "document exceeds 1 MiB"))
     } else {
         Ok(())
     }
 }
-fn decode<T: DeserializeOwned>(input: &JsonObject) -> Result<T, ValidationError> {
+fn decode<T: DeserializeOwned>(input: &JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.clone().into_iter().collect()))
-        .map_err(|_| ValidationError::invalid("input does not match operation schema"))
+        .map_err(|_| Error::invalid_input("input does not match operation schema"))
 }
-fn space(value: &str) -> Result<(), ValidationError> {
+fn space(value: &str) -> Result<(), Error> {
     validate_id(value)
 }
 /// An omitted space (empty) selects the caller's account as owner.
-fn optional_space(value: &str) -> Result<(), ValidationError> {
+fn optional_space(value: &str) -> Result<(), Error> {
     if value.is_empty() {
         Ok(())
     } else {
         space(value)
     }
 }
-fn resource(space_id: &str, id: &str) -> Result<(), ValidationError> {
+fn resource(space_id: &str, id: &str) -> Result<(), Error> {
     if !space_id.is_empty() {
         space(space_id)?;
     }
@@ -104,7 +84,7 @@ fn resource(space_id: &str, id: &str) -> Result<(), ValidationError> {
 ///
 /// # Errors
 /// Returns invalid input for malformed IDs, serialization failure or an oversized envelope.
-pub fn validate_envelope(request: &OperationRequest) -> Result<(), ValidationError> {
+pub fn validate_envelope(request: &OperationRequest) -> Result<(), Error> {
     require(
         !request.request_id.is_empty() && request.request_id.chars().count() <= 128,
         "request_id must have 1..128 characters",
@@ -115,7 +95,7 @@ pub fn validate_envelope(request: &OperationRequest) -> Result<(), ValidationErr
     )?;
     require(
         serde_json::to_vec(request)
-            .map_err(|_| ValidationError::invalid("invalid JSON"))?
+            .map_err(|_| Error::invalid_input("invalid JSON"))?
             .len()
             <= MAX_BODY_BYTES,
         "request exceeds 2 MiB",
@@ -126,7 +106,7 @@ pub fn validate_envelope(request: &OperationRequest) -> Result<(), ValidationErr
 ///
 /// # Errors
 /// Returns envelope/input errors, or not found for an unknown operation.
-pub fn validate_request(request: &OperationRequest) -> Result<(), ValidationError> {
+pub fn validate_request(request: &OperationRequest) -> Result<(), Error> {
     validate_envelope(request)?;
     validate_operation_input(&request.operation, &request.input)
 }
@@ -164,7 +144,7 @@ pub fn is_known_operation(operation: &str) -> bool {
 ///
 /// # Errors
 /// Returns envelope errors or input errors for a known operation.
-pub fn validate_client_request(request: &OperationRequest) -> Result<(), ValidationError> {
+pub fn validate_client_request(request: &OperationRequest) -> Result<(), Error> {
     validate_envelope(request)?;
     if is_known_operation(&request.operation) {
         validate_operation_input(&request.operation, &request.input)?
@@ -179,15 +159,12 @@ pub fn validate_client_request(request: &OperationRequest) -> Result<(), Validat
 /// # Errors
 /// Returns too large above 2 MiB, or invalid input for a malformed envelope or a
 /// catalog operation's malformed input.
-pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> {
+pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, Error> {
     if bytes.len() > MAX_BODY_BYTES {
-        return Err(ValidationError {
-            code: ErrorCode::TooLarge,
-            message: "request exceeds 2 MiB".into(),
-        });
+        return Err(Error::new(ErrorCode::TooLarge, "request exceeds 2 MiB"));
     }
     let request: OperationRequest = serde_json::from_slice(bytes)
-        .map_err(|_| ValidationError::invalid("malformed operation envelope"))?;
+        .map_err(|_| Error::invalid_input("malformed operation envelope"))?;
     validate_client_request(&request)?;
     Ok(request)
 }
@@ -198,7 +175,7 @@ pub fn parse_request(bytes: &[u8]) -> Result<OperationRequest, ValidationError> 
 pub fn validate_operation_input(
     operation: &str,
     input: &JsonObject,
-) -> Result<(), ValidationError> {
+) -> Result<(), Error> {
     if matches!(
         operation,
         "notes.get" | "notes.history" | "notes.update" | "notes-insights.summarize"
@@ -206,7 +183,7 @@ pub fn validate_operation_input(
     {
         space(
             hint.as_str()
-                .ok_or_else(|| ValidationError::invalid("invalid space_id"))?,
+                .ok_or_else(|| Error::invalid_input("invalid space_id"))?,
         )?;
     }
     match operation {
@@ -311,10 +288,7 @@ pub fn validate_operation_input(
                 "give exactly one of name or request_id",
             )
         }
-        _ => Err(ValidationError {
-            code: ErrorCode::NotFound,
-            message: "unknown operation".into(),
-        }),
+        _ => Err(Error::new(ErrorCode::NotFound, "unknown operation")),
     }
 }
 
@@ -330,12 +304,12 @@ fn string_bytes(value: &Value) -> usize {
 ///
 /// # Errors
 /// Returns invalid input for any tree or budget violation; does not grant operation authority.
-pub fn validate_genui(view: &GenUiView) -> Result<(), ValidationError> {
+pub fn validate_genui(view: &GenUiView) -> Result<(), Error> {
     require(
         view.genui_version == GENUI_VERSION,
         "unsupported GenUI version",
     )?;
-    let bytes = serde_json::to_vec(view).map_err(|_| ValidationError::invalid("invalid GenUI"))?;
+    let bytes = serde_json::to_vec(view).map_err(|_| Error::invalid_input("invalid GenUI"))?;
     require(bytes.len() <= 64 * 1024, "GenUI exceeds 64 KiB")?;
     require(
         string_bytes(&serde_json::to_value(view).unwrap()) <= 32 * 1024,
@@ -345,7 +319,7 @@ pub fn validate_genui(view: &GenUiView) -> Result<(), ValidationError> {
         node: &GenUiNode,
         depth: usize,
         ids: &mut HashSet<String>,
-    ) -> Result<(), ValidationError> {
+    ) -> Result<(), Error> {
         require(depth <= 8, "GenUI depth exceeds 8")?;
         validate_id(node.id())?;
         require(ids.insert(node.id().into()), "duplicate GenUI id")?;
@@ -398,9 +372,9 @@ pub fn validate_genui(view: &GenUiView) -> Result<(), ValidationError> {
 pub fn validate_extension_view(
     view: &GenUiView,
     manifest: &PluginManifest,
-) -> Result<(), ValidationError> {
+) -> Result<(), Error> {
     validate_genui(view)?;
-    fn visit(node: &GenUiNode, manifest: &PluginManifest) -> Result<(), ValidationError> {
+    fn visit(node: &GenUiNode, manifest: &PluginManifest) -> Result<(), Error> {
         match node {
             GenUiNode::Stack { children, .. } => {
                 for child in children {
@@ -434,7 +408,7 @@ pub fn validate_extension_view(
 ///
 /// # Errors
 /// Returns invalid input or propagated view/input errors for invalid declarations.
-pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), ValidationError> {
+pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), Error> {
     validate_id(&manifest.id)?;
     require(
         manifest.api_version == PROTOCOL_VERSION,
@@ -465,7 +439,7 @@ pub fn validate_manifest(manifest: &PluginManifest) -> Result<(), ValidationErro
 ///
 /// # Errors
 /// Returns invalid input for malformed metadata or too large above the Markdown byte limit.
-pub fn validate_worker_request(request: &WorkerRequest) -> Result<(), ValidationError> {
+pub fn validate_worker_request(request: &WorkerRequest) -> Result<(), Error> {
     require(
         request.protocol_version == PROTOCOL_VERSION,
         "unsupported worker protocol",
@@ -486,13 +460,13 @@ pub fn validate_worker_request(request: &WorkerRequest) -> Result<(), Validation
 pub fn parse_worker_response(
     bytes: &[u8],
     invocation_id: &str,
-) -> Result<WorkerResponse, ValidationError> {
+) -> Result<WorkerResponse, Error> {
     require(
         bytes.len() <= MAX_WORKER_OUTPUT_BYTES,
         "worker output exceeds 256 KiB",
     )?;
     let response: WorkerResponse = serde_json::from_slice(bytes)
-        .map_err(|_| ValidationError::invalid("malformed worker output"))?;
+        .map_err(|_| Error::invalid_input("malformed worker output"))?;
     let (version, id) = match &response {
         WorkerResponse::Success(r) => {
             validate_genui(&r.data.view)?;
@@ -538,7 +512,7 @@ impl PendingRequest {
     ///
     /// # Errors
     /// Returns envelope or known-operation validation failures.
-    pub fn new(operation: impl Into<String>, input: JsonObject) -> Result<Self, ValidationError> {
+    pub fn new(operation: impl Into<String>, input: JsonObject) -> Result<Self, Error> {
         Self::with_id(uuid::Uuid::new_v4().to_string(), operation, input)
     }
     /// Create a validated pending request using an existing retry identity; callers must preserve the operation and input on retries. Cost is O(input bytes).
@@ -549,7 +523,7 @@ impl PendingRequest {
         id: impl Into<String>,
         operation: impl Into<String>,
         input: JsonObject,
-    ) -> Result<Self, ValidationError> {
+    ) -> Result<Self, Error> {
         let request = OperationRequest {
             request_id: id.into(),
             operation: operation.into(),
@@ -566,14 +540,11 @@ impl PendingRequest {
     ///
     /// # Errors
     /// Returns conflict on mismatch or invalid input if update decoding fails.
-    pub fn check_base_revision(&self, actual: &str) -> Result<(), ValidationError> {
+    pub fn check_base_revision(&self, actual: &str) -> Result<(), Error> {
         if self.request.operation == "notes.update" {
             let input: NotesUpdateInput = decode(&self.request.input)?;
             if input.base_revision != actual {
-                return Err(ValidationError {
-                    code: ErrorCode::Conflict,
-                    message: "stale base revision".into(),
-                });
+                return Err(Error::new(ErrorCode::Conflict, "stale base revision"));
             }
         }
         Ok(())

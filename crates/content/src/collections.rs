@@ -1,6 +1,7 @@
 //! Stored collection records and idempotent standard-collection provisioning.
 //! Space collections use ordinary content items. Account collections live only in
 //! a protected account database, never inside a shareable space's content file.
+use crate::types::{internal, missing};
 use crate::{
     AccountId, Collection, CollectionOwner, Content, Error, Request, Result, SpaceId, db,
     journal::lock, now_rfc3339, sha256,
@@ -35,14 +36,14 @@ impl Content {
         title: &str,
     ) -> Result<StoredCollection> {
         if key.is_empty() || key.len() > 64 {
-            return Err(Error::invalid("invalid standard collection key"));
+            return Err(Error::invalid_input("invalid standard collection key"));
         }
         super::files::validate_kind(kind)?;
         let existing = || {
             self.with_space(space,|s|{
-            s.conn.query_row("SELECT id FROM items WHERE kind='collections' AND json_extract(metadata,'$.item_kind')=?1 AND json_extract(metadata,'$.standard_key')=?2",params![kind,key],|r|r.get::<_,String>(0)).optional().map_err(Error::internal)?.map(|id|{
-                let item=s.get(Uuid::parse_str(&id).map_err(Error::internal)?)?;
-                Ok(StoredCollection {id:item.id,revision:item.revision,collection:serde_json::from_value(item.metadata).map_err(Error::internal)?})
+            s.conn.query_row("SELECT id FROM items WHERE kind='collections' AND json_extract(metadata,'$.item_kind')=?1 AND json_extract(metadata,'$.standard_key')=?2",params![kind,key],|r|r.get::<_,String>(0)).optional().map_err(internal)?.map(|id|{
+                let item=s.get(Uuid::parse_str(&id).map_err(internal)?)?;
+                Ok(StoredCollection {id:item.id,revision:item.revision,collection:serde_json::from_value(item.metadata).map_err(internal)?})
             }).transpose()
         })
         };
@@ -56,8 +57,8 @@ impl Content {
             standard_key: Some(key.into()),
             members: vec![],
         };
-        let metadata = serde_json::to_value(&definition).map_err(Error::internal)?;
-        let bytes = serde_json::to_vec_pretty(&definition).map_err(Error::internal)?;
+        let metadata = serde_json::to_value(&definition).map_err(internal)?;
+        let bytes = serde_json::to_vec_pretty(&definition).map_err(internal)?;
         let request = format!("standard/{space}/{kind}/{key}");
         let fingerprint = sha256(&bytes);
         let write = self.write(
@@ -90,12 +91,12 @@ impl Content {
     pub fn collection(&self, space: SpaceId, id: Uuid) -> Result<StoredCollection> {
         let item = self.get(space, id)?;
         if item.kind != "collections" {
-            return Err(Error::missing());
+            return Err(missing());
         }
         Ok(StoredCollection {
             id,
             revision: item.revision,
-            collection: serde_json::from_value(item.metadata).map_err(Error::internal)?,
+            collection: serde_json::from_value(item.metadata).map_err(internal)?,
         })
     }
     /// Replaces explicit membership as one ordinary versioned space-item mutation.
@@ -110,17 +111,17 @@ impl Content {
         request: Request<'_>,
     ) -> Result<StoredCollection> {
         if members.len() > 10_000 {
-            return Err(Error::invalid("collection membership is too large"));
+            return Err(Error::invalid_input("collection membership is too large"));
         }
         let mut collection = self.collection(space, id)?.collection;
         collection.members = members;
-        let bytes = serde_json::to_vec_pretty(&collection).map_err(Error::internal)?;
+        let bytes = serde_json::to_vec_pretty(&collection).map_err(internal)?;
         let item = self.write(
             space,
             Some(id),
             "collections",
             Some(base),
-            serde_json::to_value(&collection).map_err(Error::internal)?,
+            serde_json::to_value(&collection).map_err(internal)?,
             &bytes,
             request,
             |i| serde_json::json!({"id":i.id,"revision":i.revision}),
@@ -145,7 +146,7 @@ impl Content {
         members: Vec<Uuid>,
     ) -> Result<StoredCollection> {
         if members.len() > 10_000 || title.len() > 4096 {
-            return Err(Error::invalid("collection is too large"));
+            return Err(Error::invalid_input("collection is too large"));
         }
         super::files::validate_kind(item_kind)?;
         let id = Uuid::now_v7();
@@ -162,18 +163,18 @@ impl Content {
             "INSERT INTO collections VALUES(?1,?2,?3,?4)",
             params![
                 id.to_string(),
-                serde_json::to_string(&collection).map_err(Error::internal)?,
+                serde_json::to_string(&collection).map_err(internal)?,
                 revision,
                 now_rfc3339()
             ],
         )
-        .map_err(Error::internal)?;
+        .map_err(internal)?;
         lock(&self.index)
             .execute(
                 "INSERT INTO account_items VALUES(?1,?2,'collections')",
                 params![id.to_string(), account.to_string()],
             )
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         Ok(StoredCollection {
             id,
             collection,
@@ -191,16 +192,16 @@ impl Content {
             |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
         )
         .optional()
-        .map_err(Error::internal)?
+        .map_err(internal)?
         .map(|(json, revision)| {
             Ok(StoredCollection {
                 id,
                 revision,
-                collection: serde_json::from_str(&json).map_err(Error::internal)?,
+                collection: serde_json::from_str(&json).map_err(internal)?,
             })
         })
         .transpose()?
-        .ok_or_else(Error::missing)
+        .ok_or_else(missing)
     }
     /// Replaces account-owned collection membership with optimistic concurrency.
     /// Only the host-authenticated account selects this profile. Cost: one database
@@ -213,13 +214,13 @@ impl Content {
         members: Vec<Uuid>,
     ) -> Result<StoredCollection> {
         if members.len() > 10_000 {
-            return Err(Error::invalid("collection membership is too large"));
+            return Err(Error::invalid_input("collection membership is too large"));
         }
         let mut stored = self.account_collection(account, id)?;
         stored.collection.members = members;
         stored.revision = Uuid::now_v7().to_string();
         let conn = self.account_collection_db(account)?;
-        let changed=conn.execute("UPDATE collections SET definition=?1,revision=?2,updated_at=?3 WHERE id=?4 AND revision=?5",params![serde_json::to_string(&stored.collection).map_err(Error::internal)?,stored.revision,now_rfc3339(),id.to_string(),base]).map_err(Error::internal)?;
+        let changed=conn.execute("UPDATE collections SET definition=?1,revision=?2,updated_at=?3 WHERE id=?4 AND revision=?5",params![serde_json::to_string(&stored.collection).map_err(internal)?,stored.revision,now_rfc3339(),id.to_string(),base]).map_err(internal)?;
         if changed != 1 {
             return Err(Error::new(
                 super::ErrorCode::Conflict,
@@ -237,17 +238,17 @@ impl Content {
                 .join(account.to_string())
                 .join("content.db"),
         )?;
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS binding(account TEXT PRIMARY KEY) STRICT;CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY,definition TEXT NOT NULL,revision TEXT NOT NULL,updated_at TEXT NOT NULL) STRICT;").map_err(Error::internal)?;
+        conn.execute_batch("CREATE TABLE IF NOT EXISTS binding(account TEXT PRIMARY KEY) STRICT;CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY,definition TEXT NOT NULL,revision TEXT NOT NULL,updated_at TEXT NOT NULL) STRICT;").map_err(internal)?;
         conn.execute(
             "INSERT INTO binding SELECT ?1 WHERE NOT EXISTS(SELECT 1 FROM binding)",
             [account.to_string()],
         )
-        .map_err(Error::internal)?;
+        .map_err(internal)?;
         let binding: String = conn
             .query_row("SELECT account FROM binding", [], |r| r.get(0))
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         if binding != account.to_string() {
-            return Err(Error::internal("wrong account binding"));
+            return Err(internal("wrong account binding"));
         }
         Ok(conn)
     }

@@ -1,6 +1,7 @@
 use calternal_core::*;
 use calternal_plugin_host::validate_manifest;
 use calternal_plugin_host::*;
+use calternal_types::{AccountId, SpaceId};
 use serde_json::{Value, json};
 
 fn manifest() -> ManifestV1 {

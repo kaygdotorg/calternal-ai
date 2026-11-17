@@ -5,11 +5,10 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 use crate::{
     auth::{Directory, Identity},
-    authz::capabilities::Capability,
-    error::HostError,
     store::Store,
 };
 use calternal_core::ResolveResult;
+use calternal_types::{Capability, CapabilitySet, Error};
 
 /// Resolves a kind and global item UUID to its owning space and current access.
 /// Wrong kind, absent item and missing read access have identical refusals.
@@ -22,7 +21,7 @@ pub fn resolve(
     account: &Identity,
     kind: &str,
     id: &str,
-) -> Result<ResolveResult, HostError> {
+) -> Result<ResolveResult, Error> {
     resolve_for(directory, store, account, kind, id, Capability::SpaceRead)
 }
 
@@ -36,12 +35,12 @@ pub(crate) fn resolve_for(
     kind: &str,
     id: &str,
     required: Capability,
-) -> Result<ResolveResult, HostError> {
-    let visible = |caps: crate::authz::CapabilitySet| {
+) -> Result<ResolveResult, Error> {
+    let visible = |caps: CapabilitySet| {
         caps.contains(Capability::SpaceRead)
             || (required == Capability::ContentWrite && caps.contains(Capability::ContentWrite))
     };
-    let missing = || HostError::not_found("item not found");
+    let missing = || Error::not_found("item not found");
     let root = store.locate(kind, id)?.ok_or_else(missing)?;
     let public_space = directory.wire_space(&root);
     directory

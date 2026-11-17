@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use base64::Engine;
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
 use calternal_core::ErrorCode;
 use calternal_machine::identity::MachineKey;
 use calternal_machine::protocol::{
@@ -32,7 +32,7 @@ struct M {
 }
 
 fn enrol(svc: &MachineService, owner: AccountId) -> (Uuid, MachineKey) {
-    let (code, _) = svc.issue_code(Owner::Account { id: owner.0 }).unwrap();
+    let (code, _) = svc.issue_code(Owner::Account { id: owner }).unwrap();
     let key = MachineKey::generate().unwrap();
     let req = EnrolRequest {
         code,

@@ -1,8 +1,10 @@
 //! Synchronous bridge to the inherited asynchronous per-space journal pool.
 //! A dedicated runtime keeps synchronous host callers independent from their executor.
+use crate::types::internal;
 use crate::{Error, Receipt, Result};
+use calternal_types::{AccountId, SpaceId};
 use calternal_store::{
-    AccountId, Commit, IdemWrite, JournalEntry, Options, SpaceId, SpaceStore, SpaceStores,
+    Commit, IdemWrite, JournalEntry, Options, SpaceStore, SpaceStores,
     StampedEvent,
 };
 use serde_json::Value;
@@ -32,7 +34,7 @@ impl Journals {
             .worker_threads(1)
             .enable_all()
             .build()
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         let journal_appdata = appdata.clone();
         let journal_secrets = secrets.clone();
         let thread = thread::Builder::new()
@@ -57,7 +59,7 @@ impl Journals {
                 // Pool shutdown drains writers before its runtime is dropped.
                 drop(pool);
             })
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         Ok(Self {
             appdata,
             secrets,
@@ -67,16 +69,16 @@ impl Journals {
     }
     fn prepare(&self, space: SpaceId) -> Result<()> {
         let dir = self.appdata.join("spaces").join(space.to_string());
-        calternal_auth::private_fs::directory(&dir).map_err(Error::internal)?;
-        calternal_auth::private_fs::file(&dir.join("index.db")).map_err(Error::internal)?;
+        calternal_auth::private_fs::directory(&dir).map_err(internal)?;
+        calternal_auth::private_fs::file(&dir.join("index.db")).map_err(internal)?;
         calternal_auth::private_fs::directory(&self.secrets.join("spaces").join(space.to_string()))
-            .map_err(Error::internal)?;
+            .map_err(internal)?;
         Ok(())
     }
     pub(crate) fn handle(&self, space: SpaceId) -> Result<SpaceStore> {
         self.prepare(space)?;
         self.run(move |rt, pool| {
-            rt.block_on(async { pool.get(space).await.map_err(Error::internal) })
+            rt.block_on(async { pool.get(space).await.map_err(internal) })
         })
     }
     fn run<T: Send + 'static>(
@@ -86,12 +88,12 @@ impl Journals {
         let (sender, receiver) = mpsc::sync_channel(1);
         self.sender
             .as_ref()
-            .ok_or_else(|| Error::internal("stopped"))?
+            .ok_or_else(|| internal("stopped"))?
             .send(Box::new(move |rt, pool| {
                 let _ = sender.send(f(rt, pool));
             }))
-            .map_err(Error::internal)?;
-        receiver.recv().map_err(Error::internal)?
+            .map_err(internal)?;
+        receiver.recv().map_err(internal)?
     }
     pub(crate) fn receipt(
         &self,
@@ -102,11 +104,11 @@ impl Journals {
         let id = id.to_owned();
         self.run(move |rt, pool| {
             rt.block_on(async {
-                let store = pool.get(space).await.map_err(Error::internal)?;
+                let store = pool.get(space).await.map_err(internal)?;
                 store
                     .idempotency(account, &id)
                     .await
-                    .map_err(Error::internal)?
+                    .map_err(internal)?
                     .map(|r| {
                         let item = r
                             .result
@@ -114,7 +116,7 @@ impl Journals {
                             .and_then(Value::as_str)
                             .map(Uuid::parse_str)
                             .transpose()
-                            .map_err(Error::internal)?;
+                            .map_err(internal)?;
                         Ok(Receipt {
                             operation: r.action,
                             fingerprint: r.payload_hash,
@@ -140,15 +142,15 @@ impl Journals {
     ) -> Result<()> {
         self.run(move |rt, pool| {
             rt.block_on(async {
-                let store = pool.get(space).await.map_err(Error::internal)?;
+                let store = pool.get(space).await.map_err(internal)?;
                 let prior = store
                     .idempotency(account, &id)
                     .await
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
                 if let Some(prior) = prior {
                     if prior.action != operation || prior.payload_hash != fingerprint {
                         return Err(Error::new(
-                            calternal_core::ErrorCode::Conflict,
+                            calternal_types::ErrorCode::Conflict,
                             "request_id was already used with different input",
                         ));
                     }
@@ -172,7 +174,7 @@ impl Journals {
                             }),
                         })
                         .await
-                        .map_err(Error::internal)?;
+                        .map_err(internal)?;
                 }
                 // A new FULL-synchronous permanent publication transaction makes the
                 // preceding receipt/event WAL durable before the outbox can retire.
@@ -184,7 +186,7 @@ impl Journals {
                         vec![],
                     )
                     .await
-                    .map_err(Error::internal)?;
+                    .map_err(internal)?;
                 Ok(())
             })
         })
@@ -194,10 +196,10 @@ impl Journals {
             rt.block_on(async {
                 pool.get(space)
                     .await
-                    .map_err(Error::internal)?
+                    .map_err(internal)?
                     .since(0, 10_000)
                     .await
-                    .map_err(Error::internal)
+                    .map_err(internal)
             })
         })
     }

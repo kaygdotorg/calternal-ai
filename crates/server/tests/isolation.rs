@@ -61,7 +61,7 @@ async fn devices_and_passkeys_of_another_person_are_not_found() {
         .as_str()
         .unwrap()
         .to_owned();
-    let made_up_install = uuid::Uuid::new_v4().to_string();
+    let made_up_install = uuid::Uuid::now_v7().to_string();
     let made_up_passkey = "AAAAAAAAAAAAAAAAAAAAAA".to_owned();
 
     let tries = |install: &str, passkey: &str| {

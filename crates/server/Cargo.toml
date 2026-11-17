@@ -18,6 +18,7 @@ path = "src/lib.rs"
 test-plugins = []
 
 [dependencies]
+calternal-types.workspace = true
 calternal-content.workspace = true
 calternal-roots.workspace = true
 calternal-auth.workspace = true

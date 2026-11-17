@@ -29,7 +29,7 @@ use tower_http::services::ServeDir;
 
 use crate::auth::{Directory, Identity, TokenTable};
 use crate::authz::{self, Constraint};
-use crate::error::HostError;
+use calternal_types::Error;
 use crate::fault::{self, FaultPoint};
 use crate::plugins::worker::Outcome;
 use crate::plugins::{
@@ -118,7 +118,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
 // ------------------------------------------------------------- envelope
 
 /// Operation error envelope with the error's HTTP status.
-pub(crate) fn failure(request_id: Option<String>, e: HostError) -> Response {
+pub(crate) fn failure(request_id: Option<String>, e: Error) -> Response {
     let status =
         StatusCode::from_u16(e.code.http_status()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let mut resp = OperationResponse::<Value>::failure(request_id, e.code, e.message);
@@ -141,12 +141,12 @@ pub(crate) fn json_response<T: serde::Serialize>(status: StatusCode, body: &T) -
 
 /// A failure envelope without a request ID, for routes outside `/api/v1/operations`.
 /// Cost: one small serialization.
-pub(crate) fn error_response(e: HostError) -> Response {
+pub(crate) fn error_response(e: Error) -> Response {
     failure(None, e)
 }
 
 async fn api_not_found() -> Response {
-    failure(None, HostError::not_found("unknown API route"))
+    failure(None, Error::not_found("unknown API route"))
 }
 
 /// Client-side routes (e.g. `/notes/<id>`) get index.html; a
@@ -203,7 +203,7 @@ async fn guard<D: Directory>(
 ) -> Response {
     let path = req.uri().path().to_string();
     let api = is_api(&path);
-    let deny = |e: HostError| -> Response {
+    let deny = |e: Error| -> Response {
         if api {
             failure(None, e)
         } else {
@@ -221,7 +221,7 @@ async fn guard<D: Directory>(
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
         if !state.allowed_hosts.iter().any(|h| h == host) {
-            break 'resp deny(HostError::forbidden("host not allowed"));
+            break 'resp deny(Error::forbidden("host not allowed"));
         }
         // Machine protocol routes authenticate the machine themselves.
         let account_route = path.starts_with("/api/v1/auth/")
@@ -235,7 +235,7 @@ async fn guard<D: Directory>(
                 .get(header::ORIGIN)
                 .is_some_and(|v| v.as_bytes() != service.config.origin_header().as_bytes())
         {
-            break 'resp deny(HostError::unauthorized("missing or invalid session"));
+            break 'resp deny(Error::unauthorized("missing or invalid session"));
         }
 
         if !account_route && let Some(origin) = req.headers().get(header::ORIGIN) {
@@ -252,7 +252,7 @@ async fn guard<D: Directory>(
                     .unwrap_or_else(|| format!("http://{host}"))
             };
             if origin.to_str().ok() != Some(expected.as_str()) {
-                break 'resp deny(HostError::forbidden("cross-origin request denied"));
+                break 'resp deny(Error::forbidden("cross-origin request denied"));
             }
         }
         if req
@@ -261,7 +261,7 @@ async fn guard<D: Directory>(
             .and_then(|v| v.to_str().ok())
             == Some("cross-site")
         {
-            break 'resp deny(HostError::forbidden("cross-site request denied"));
+            break 'resp deny(Error::forbidden("cross-site request denied"));
         }
         if api && !account_route {
             // The installation travels with the request so plugin work can recheck it.
@@ -290,7 +290,7 @@ async fn guard<D: Directory>(
                     req.extensions_mut().insert(session);
                 }
                 None => {
-                    break 'resp deny(HostError::unauthorized("missing or invalid session"));
+                    break 'resp deny(Error::unauthorized("missing or invalid session"));
                 }
             }
         }
@@ -312,7 +312,7 @@ async fn guard<D: Directory>(
             if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
                 || current.is_none()
             {
-                break 'resp deny(HostError::unauthorized("missing or invalid session"));
+                break 'resp deny(Error::unauthorized("missing or invalid session"));
             }
         }
         response
@@ -355,7 +355,7 @@ async fn describe<D: Directory>(State(state): State<Shared<D>>, req: Request) ->
     let st = state.clone();
     let principal = match tokio::task::spawn_blocking(move || st.tokens.describe(&p)).await {
         Ok(p) => p,
-        Err(_) => return failure(None, HostError::internal("directory task failed")),
+        Err(_) => return failure(None, Error::internal("directory task failed")),
     };
     let result = DescribeResult {
         protocol_version: PROTOCOL_VERSION,
@@ -392,18 +392,18 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     if !ct_ok {
         return failure(
             None,
-            HostError::invalid_input("Content-Type must be application/json"),
+            Error::invalid_input("Content-Type must be application/json"),
         );
     }
     if req.method() != Method::POST {
-        return failure(None, HostError::invalid_input("POST required"));
+        return failure(None, Error::invalid_input("POST required"));
     }
     let bytes: Bytes = match axum::body::to_bytes(req.into_body(), MAX_BODY_BYTES + 1).await {
         Ok(b) => b,
         Err(_) => {
             return failure(
                 None,
-                HostError::new(ErrorCode::TooLarge, "request exceeds 2 MiB"),
+                Error::new(ErrorCode::TooLarge, "request exceeds 2 MiB"),
             );
         }
     };
@@ -442,9 +442,9 @@ fn salvage_request_id(bytes: &[u8]) -> Option<String> {
     (!id.is_empty() && id.chars().count() <= 128).then(|| id.to_string())
 }
 
-fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, HostError> {
+fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.into_iter().collect()))
-        .map_err(|_| HostError::invalid_input("input does not match operation schema"))
+        .map_err(|_| Error::invalid_input("input does not match operation schema"))
 }
 
 fn fingerprint(op: &str, input: &JsonObject) -> String {
@@ -453,22 +453,22 @@ fn fingerprint(op: &str, input: &JsonObject) -> String {
 
 async fn blocking<D: Directory, T: Send + 'static>(
     state: &Shared<D>,
-    f: impl FnOnce(&mut Store) -> Result<T, HostError> + Send + 'static,
-) -> Result<T, HostError> {
+    f: impl FnOnce(&mut Store) -> Result<T, Error> + Send + 'static,
+) -> Result<T, Error> {
     let state = state.clone();
     tokio::task::spawn_blocking(move || {
         let mut store = state
             .store
             .lock()
-            .map_err(|_| HostError::internal("store poisoned"))?;
+            .map_err(|_| Error::internal("store poisoned"))?;
         f(&mut store)
     })
     .await
-    .map_err(|_| HostError::internal("storage task failed"))?
+    .map_err(|_| Error::internal("storage task failed"))?
 }
 
-fn to_value<T: serde::Serialize>(v: T) -> Result<Value, HostError> {
-    serde_json::to_value(v).map_err(|_| HostError::internal("encode"))
+fn to_value<T: serde::Serialize>(v: T) -> Result<Value, Error> {
+    serde_json::to_value(v).map_err(|_| Error::internal("encode"))
 }
 
 /// Dispatch through the mandatory policy gate before any handler or receipt replay.
@@ -485,7 +485,7 @@ pub async fn dispatch<D: Directory>(
     request_id: &str,
     op: &str,
     input: JsonObject,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     let p = p.into();
     let mut input = input;
     let item_scoped = state
@@ -520,18 +520,18 @@ pub async fn dispatch<D: Directory>(
             .registry
             .policy(op)
             .map(|p| p.required)
-            .unwrap_or(authz::Capability::SpaceRead);
+            .unwrap_or(calternal_types::Capability::SpaceRead);
         let st = state.clone();
         let account = p.clone();
         let resolved = tokio::task::spawn_blocking(move || {
             let store = st
                 .store
                 .lock()
-                .map_err(|_| HostError::internal("store poisoned"))?;
+                .map_err(|_| Error::internal("store poisoned"))?;
             crate::resolve::resolve_for(&st.tokens, &store, &account, &kind, &id, op_required)
         })
         .await
-        .map_err(|_| HostError::internal("resolver task failed"))??;
+        .map_err(|_| Error::internal("resolver task failed"))??;
         if op == "resolve" {
             return to_value(resolved);
         }
@@ -541,7 +541,7 @@ pub async fn dispatch<D: Directory>(
             .filter(|s| !s.is_empty())
             && state.tokens.wire_space(hint) != resolved.space_id
         {
-            return Err(HostError::not_found("item not found"));
+            return Err(Error::not_found("item not found"));
         }
         input.insert("space_id".into(), Value::String(resolved.space_id));
     }
@@ -559,7 +559,7 @@ pub async fn dispatch<D: Directory>(
     // Without either, answer as a hidden target would, so a caller cannot tell an
     // unregistered plugin operation from an item or space it may not see.
     let Some(policy) = state.registry.policy(op).cloned() else {
-        return Err(HostError::not_found(if input.contains_key("id") {
+        return Err(Error::not_found(if input.contains_key("id") {
             "item not found"
         } else if input.contains_key("space_id") {
             "space not found"
@@ -573,11 +573,11 @@ pub async fn dispatch<D: Directory>(
     let admission = policy.clone();
     tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &identity, &checked))
         .await
-        .map_err(|_| HostError::internal("directory task failed"))??;
+        .map_err(|_| Error::internal("directory task failed"))??;
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,
-            _ => return Err(HostError::not_found("job not found")),
+            _ => return Err(Error::not_found("job not found")),
         };
         return crate::plugins::job_api::dispatch(state, p, op, space, input).await;
     }
@@ -594,18 +594,18 @@ pub async fn dispatch<D: Directory>(
             let store = st
                 .store
                 .lock()
-                .map_err(|_| HostError::internal("store poisoned"))?;
+                .map_err(|_| Error::internal("store poisoned"))?;
             if !matches!(operation.as_str(), "spaces.list" | "spaces.members")
                 && store.receipt(&p.id, &rid)?.is_some()
             {
-                return Err(HostError::conflict(
+                return Err(Error::conflict(
                     "request_id was already used with different input",
                 ));
             }
             st.tokens.space_operation(&p, &rid, &operation, &input)
         })
         .await
-        .map_err(|_| HostError::internal("directory task failed"))?;
+        .map_err(|_| Error::internal("directory task failed"))?;
     }
     let mut input = input;
     if let Some(Value::String(space)) = input.get_mut("space_id") {
@@ -623,7 +623,7 @@ pub async fn dispatch<D: Directory>(
         let st = state.clone();
         tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &space))
             .await
-            .map_err(|_| HostError::internal("directory task failed"))??;
+            .map_err(|_| Error::internal("directory task failed"))??;
     }
     Ok(wire_spaces(&state.tokens, value))
 }
@@ -659,7 +659,7 @@ async fn dispatch_checked<D: Directory>(
     request_id: &str,
     op: &str,
     input: JsonObject,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     match op {
         "notes.list" => {
             let i: NotesListInput = decode(input)?;
@@ -720,7 +720,7 @@ async fn dispatch_checked<D: Directory>(
                     },
                     &rid,
                 )? {
-                    return Err(HostError::conflict(
+                    return Err(Error::conflict(
                         "request_id was already used with different input",
                     ));
                 }
@@ -730,10 +730,10 @@ async fn dispatch_checked<D: Directory>(
                 let plugin = st
                     .registry
                     .get(&i.plugin_id)
-                    .ok_or_else(|| HostError::not_found("plugin is not registered"))?;
+                    .ok_or_else(|| Error::not_found("plugin is not registered"))?;
                 if enable {
                     if let Some(why) = &plugin.unavailable {
-                        return Err(HostError::unavailable(format!(
+                        return Err(Error::unavailable(format!(
                             "plugin cannot be enabled: {why}"
                         )));
                     }
@@ -781,11 +781,11 @@ async fn dispatch_checked<D: Directory>(
             let plugin = state
                 .registry
                 .get(&i.plugin_id)
-                .ok_or_else(|| HostError::not_found("plugin is not registered"))?
+                .ok_or_else(|| Error::not_found("plugin is not registered"))?
                 .clone();
             preview(state, p, plugin, &i.space_id).await
         }
-        _ => Err(HostError::unavailable(
+        _ => Err(Error::unavailable(
             "operation has no host binding in this preview",
         )),
     }
@@ -800,13 +800,13 @@ fn replay_receipt(
     rid: &str,
     op: &str,
     fp: &str,
-) -> Result<Option<Value>, HostError> {
+) -> Result<Option<Value>, Error> {
     let Some(r) = s.receipt(principal, rid)? else {
         return Ok(None);
     };
     if r.operation != op || r.fingerprint != fp {
         return Err(
-            HostError::conflict("request_id was already used with different input")
+            Error::conflict("request_id was already used with different input")
                 .with_details(serde_json::json!({ "reason": "request_id_reused" })),
         );
     }
@@ -815,7 +815,7 @@ fn replay_receipt(
             if e.code == ErrorCode::Conflict {
                 e
             } else {
-                HostError::unavailable("committed but not yet materialized; retry")
+                Error::unavailable("committed but not yet materialized; retry")
             }
         })?;
     }
@@ -826,7 +826,7 @@ fn default_row(plugin: &Plugin) -> PluginRow {
     crate::plugins::default_row(plugin)
 }
 
-fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, HostError> {
+fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, Error> {
     let row = activation(s, space, plugin)?;
     Ok(PluginState {
         manifest: plugin.wire.clone(),
@@ -839,8 +839,8 @@ fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, 
 /// entry: `field` holds a bounded string ID and the optional `space_id` hint is a
 /// string. Every other property is checked by the declared input schema before the
 /// worker sees it. Cost: O(1) map lookups.
-fn validate_item_input(input: &JsonObject, field: &str) -> Result<(), HostError> {
-    let shape = HostError::invalid_input("input does not match operation schema");
+fn validate_item_input(input: &JsonObject, field: &str) -> Result<(), Error> {
+    let shape = Error::invalid_input("input does not match operation schema");
     if !input
         .get(field)
         .and_then(Value::as_str)
@@ -853,28 +853,28 @@ fn validate_item_input(input: &JsonObject, field: &str) -> Result<(), HostError>
 }
 
 /// Map a worker outcome onto the wire, after the caller's delivery checks.
-fn outcome_value(outcome: Outcome) -> Result<Value, HostError> {
+fn outcome_value(outcome: Outcome) -> Result<Value, Error> {
     match outcome {
         Outcome::Complete(value) => Ok(value),
-        Outcome::InvalidInput => Err(HostError::invalid_input(
+        Outcome::InvalidInput => Err(Error::invalid_input(
             "input does not match operation schema",
         )),
-        Outcome::Refused => Err(HostError::unavailable("extension request was refused")),
+        Outcome::Refused => Err(Error::unavailable("extension request was refused")),
         Outcome::Failed(e) => Err(e),
-        Outcome::Cancelled => Err(HostError::unavailable("extension request was cancelled")),
+        Outcome::Cancelled => Err(Error::unavailable("extension request was cancelled")),
     }
 }
 
 /// A portable view in a plugin result must pass the same checks as the v0 host:
 /// bounded tree, unique IDs, and actions only to declared read-only operations.
 /// Cost: one view decode and validation when the result carries `view`.
-fn check_view(plugin: &Plugin, value: &Value) -> Result<(), HostError> {
+fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
     let Some(view) = value.get("view") else {
         return Ok(());
     };
     let rejected = || {
         tracing::warn!(plugin = %plugin.manifest.id, "worker view rejected");
-        HostError::unavailable("extension returned an invalid view")
+        Error::unavailable("extension returned an invalid view")
     };
     let view: calternal_core::GenUiView =
         serde_json::from_value(view.clone()).map_err(|_| rejected())?;
@@ -902,18 +902,18 @@ async fn invoke_plugin<D: Directory>(
     op: &str,
     policy: authz::Policy,
     mut input: JsonObject,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     let plugin = state
         .registry
         .owner_of_operation(op)
-        .ok_or_else(|| HostError::not_found("unknown operation"))?
+        .ok_or_else(|| Error::not_found("unknown operation"))?
         .clone();
     let fp = fingerprint(op, &input);
     let mutates = plugin.operation(op).is_some_and(|o| o.mutates);
     let space = match input.remove("space_id") {
         Some(Value::String(space)) => space,
         _ => {
-            return Err(HostError::invalid_input(
+            return Err(Error::invalid_input(
                 "input does not match operation schema",
             ));
         }
@@ -936,7 +936,7 @@ async fn invoke_plugin<D: Directory>(
                 },
                 &rid,
             )? {
-                return Err(HostError::conflict(
+                return Err(Error::conflict(
                     "request_id was already used with different input",
                 ));
             }
@@ -946,7 +946,7 @@ async fn invoke_plugin<D: Directory>(
         }
         let row = activation(s, &space_key, &plugin2)?;
         if !row.enabled {
-            return Err(HostError::forbidden("plugin is disabled in this space"));
+            return Err(Error::forbidden("plugin is disabled in this space"));
         }
         Ok(Ok((row.generation, s.worker_ids(&account, &space_key)?)))
     })
@@ -955,19 +955,12 @@ async fn invoke_plugin<D: Directory>(
         Ok(admitted) => admitted,
         Err(replayed) => return Ok(wire_spaces(&state.tokens, replayed)),
     };
-    let ids = calternal_plugin_host::AccountId::parse(&account_id)
-        .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
-    let Ok((account_id, space_id)) = ids else {
-        return Err(HostError::unavailable(
-            "plugin workers need UUIDv7 account and space identities",
-        ));
-    };
     let host = SpaceHost::new(
         state.clone(),
         p.clone(),
         session.clone(),
         space.clone(),
-        space_id.as_uuid().to_string(),
+        space_id.to_string(),
         plugin.clone(),
         generation,
         request_id.to_owned(),
@@ -992,12 +985,12 @@ async fn invoke_plugin<D: Directory>(
     // Delivery checks run whatever the worker answered, so a refusal caused by a
     // revocation reports the same error the revocation itself would.
     if !session.is_live(&state.tokens).await {
-        return Err(HostError::unauthorized("missing or invalid session"));
+        return Err(Error::unauthorized("missing or invalid session"));
     }
     let (space_key, plugin2) = (space.clone(), plugin.clone());
     let still = blocking(&state, move |s| activation(s, &space_key, &plugin2)).await?;
     if !still.enabled || still.generation != generation {
-        return Err(HostError::conflict(
+        return Err(Error::conflict(
             "plugin state changed during invocation; result discarded",
         )
         .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })));
@@ -1007,7 +1000,7 @@ async fn invoke_plugin<D: Directory>(
     let caller = p.id.clone();
     tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &delivery))
         .await
-        .map_err(|_| HostError::internal("directory task failed"))??;
+        .map_err(|_| Error::internal("directory task failed"))??;
     let value = outcome_value(outcome)?;
     check_view(&plugin, &value)?;
     if mutates {
@@ -1032,24 +1025,17 @@ async fn preview<D: Directory>(
     p: Identity,
     plugin: Arc<Plugin>,
     space: &str,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     let (operation, target) = plugin
         .manifest
         .operations
         .iter()
         .find_map(|op| Some((op.id.clone(), op.target.clone()?)))
         .filter(|_| plugin.entry.worker.is_some())
-        .ok_or_else(|| HostError::not_found("plugin has no views"))?;
+        .ok_or_else(|| Error::not_found("plugin has no views"))?;
     let (space_key, account) = (space.to_owned(), p.id.clone());
     let (account_id, space_id) =
         blocking(&state, move |s| s.worker_ids(&account, &space_key)).await?;
-    let ids = calternal_plugin_host::AccountId::parse(&account_id)
-        .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
-    let Ok((account_id, space_id)) = ids else {
-        return Err(HostError::unavailable(
-            "plugin workers need UUIDv7 account and space identities",
-        ));
-    };
     let outcome = state
         .workers
         .invoke(
@@ -1072,9 +1058,9 @@ async fn preview<D: Directory>(
     let view = value
         .get("view")
         .cloned()
-        .ok_or_else(|| HostError::not_found("plugin has no views"))?;
+        .ok_or_else(|| Error::not_found("plugin has no views"))?;
     let view = serde_json::from_value(view)
-        .map_err(|_| HostError::unavailable("extension returned an invalid view"))?;
+        .map_err(|_| Error::unavailable("extension returned an invalid view"))?;
     to_value(PluginPreviewResult {
         view,
         preview: True,
@@ -1087,7 +1073,7 @@ async fn mutate_note<D: Directory>(
     request_id: &str,
     op: &str,
     input: JsonObject,
-) -> Result<Value, HostError> {
+) -> Result<Value, Error> {
     let fp = fingerprint(op, &input);
     let (create, update) = if op == "notes.create" {
         let i: NotesCreateInput = decode(input)?;
@@ -1119,7 +1105,7 @@ async fn mutate_note<D: Directory>(
             },
             &rid,
         )? {
-            return Err(HostError::conflict(
+            return Err(Error::conflict(
                 "request_id was already used with different input",
             ));
         }

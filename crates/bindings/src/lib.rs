@@ -25,7 +25,7 @@ pub fn contract_schema_json() -> String {
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn validate_request_json(request_json: String) -> String {
     let result = serde_json::from_str::<OperationRequest>(&request_json)
-        .map_err(|_| ValidationError::invalid("malformed operation envelope"))
+        .map_err(|_| calternal_types::Error::invalid_input("malformed operation envelope"))
         .and_then(|r| {
             validate_client_request(&r)?;
             Ok(r)
@@ -41,7 +41,7 @@ pub fn validate_request_json(request_json: String) -> String {
 #[cfg_attr(feature = "uniffi", uniffi::export)]
 pub fn validate_genui_json(view_json: String) -> String {
     let result = serde_json::from_str::<GenUiView>(&view_json)
-        .map_err(|_| ValidationError::invalid("malformed GenUI tree"))
+        .map_err(|_| calternal_types::Error::invalid_input("malformed GenUI tree"))
         .and_then(|view| validate_genui(&view));
     match result {
         Ok(()) => json!({"valid":true}).to_string(),

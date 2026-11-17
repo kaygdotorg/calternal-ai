@@ -10,8 +10,9 @@ use std::time::{Duration, Instant};
 use calternal_core::{ErrorCode, JsonObject};
 use calternal_server::api::{AppState, Shared, allowed_hosts, dispatch};
 use calternal_server::auth::{DevPrincipal, TokenTable, dev_principals};
-use calternal_server::authz::{self, Capability, Constraint, Scope};
-use calternal_server::error::HostError;
+use calternal_server::authz::{self, Constraint, Scope};
+use calternal_types::Capability;
+use calternal_types::Error;
 use calternal_server::plugins::{Plugin, Registry, WORKER_TIMEOUT, WorkerPool, resolve_node};
 use calternal_server::store::Store;
 use serde_json::{Value, json};
@@ -94,7 +95,7 @@ async fn fixture(tag: &str, plugins: Vec<Plugin>, pool: Option<usize>) -> Fixtur
 }
 
 impl Fixture {
-    async fn op(&self, who: &str, rid: &str, op: &str, input: Value) -> Result<Value, HostError> {
+    async fn op(&self, who: &str, rid: &str, op: &str, input: Value) -> Result<Value, Error> {
         dispatch(
             self.state.clone(),
             principal(who),
@@ -118,7 +119,7 @@ impl Fixture {
             .unwrap();
         r["note"]["id"].as_str().unwrap().to_owned()
     }
-    async fn summarize(&self, id: &str) -> Result<Value, HostError> {
+    async fn summarize(&self, id: &str) -> Result<Value, Error> {
         let rid = uuid::Uuid::new_v4().to_string();
         self.op("owner", &rid, "notes-insights.summarize", json!({"id": id}))
             .await
@@ -597,8 +598,8 @@ async fn host_calls_recheck_the_callers_sign_in() {
     .await
     .unwrap();
     let gone = calternal_server::plugins::Session::Installation {
-        account: uuid::Uuid::now_v7().to_string(),
-        installation: uuid::Uuid::now_v7().to_string(),
+        account: calternal_types::AccountId::new(),
+        installation: calternal_types::InstallationId::new(),
     };
     let e = calternal_server::api::dispatch(
         f.state.clone(),
@@ -695,7 +696,7 @@ impl Fixture {
             .unwrap();
         r["job_id"].as_str().unwrap().to_owned()
     }
-    async fn job(&self, who: &str, id: &str) -> Result<Value, HostError> {
+    async fn job(&self, who: &str, id: &str) -> Result<Value, Error> {
         self.op(
             who,
             &uuid::Uuid::new_v4().to_string(),
@@ -863,7 +864,7 @@ async fn secret_handle_requests_are_owned_by_the_space_uuid() {
     assert_eq!(r, json!({"ok": false}));
     f.op("owner", "k2", "keyed.use", json!({"space_id": "shared"})).await.unwrap();
     let (_, space) = f.state.store.lock().unwrap().worker_ids("owner", "shared").unwrap();
-    let owner = Owner::Space(calternal_auth::SpaceId::parse(&space).unwrap());
+    let owner = Owner::Space(space);
     let secrets = f.state.store.lock().unwrap().secrets();
     let pending = secrets.pending(&owner).unwrap();
     assert_eq!(pending.len(), 1, "a repeated request must not queue a second prompt");

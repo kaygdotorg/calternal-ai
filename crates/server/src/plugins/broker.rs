@@ -33,7 +33,7 @@ use super::live::Live;
 use super::{Plugin, Session, activation, host_capability, runner};
 use crate::api::Shared;
 use crate::auth::{Directory, Identity};
-use crate::authz::Capability;
+use calternal_types::Capability;
 use crate::store::sha256_hex;
 
 /// Fixed fixture text served to previews. Never user data.
@@ -181,7 +181,7 @@ impl<D: Directory> SpaceHost<D> {
     fn secret_handle(&self, input: &Value) -> Result<Value, Error> {
         let object = exact(input, &["name"])?;
         let name = str_field(object, "name")?.ok_or(Error::Invalid)?;
-        let space = calternal_auth::SpaceId::parse(&self.space_uuid).ok_or(Error::Refused)?;
+        let space = calternal_types::SpaceId::parse(&self.space_uuid).map_err(|_| Error::Refused)?;
         let (secrets, account) = {
             let store = self.state.store.lock().map_err(|_| Error::Refused)?;
             let (account, _) = store
@@ -190,7 +190,7 @@ impl<D: Directory> SpaceHost<D> {
             (store.secrets(), account)
         };
         let actor = Actor {
-            account: calternal_auth::AccountId::parse(&account).ok_or(Error::Refused)?,
+            account,
             via: Via::Plugin(self.plugin.manifest.id.clone()),
         };
         crate::secrets::plugin_handle(

@@ -66,7 +66,7 @@ pub(crate) fn find_in(c: &Connection, who: &str) -> Result<(String, String)> {
     // Display names are never identity selectors, even when currently unique.
     // BINARY overrides the username column's case-insensitive uniqueness collation.
     let id = AccountId::parse(who)
-        .filter(|id| who.eq_ignore_ascii_case(&id.to_string()))
+        .ok()
         .map(|id| id.to_string());
     let mut st = c
         .prepare("SELECT id, name FROM users WHERE id = ?1 OR username = ?2 COLLATE BINARY")
@@ -154,7 +154,7 @@ pub(crate) fn create_in(c: &mut Connection, name: &str, ttl: i64) -> Result<Crea
     insert_token(&tx, &token, "recover", Some(&id), ttl)?;
     crate::spaces::commit(tx)?;
     Ok(Created {
-        id: AccountId::parse(&id).ok_or_else(|| Error::internal("bad account id"))?,
+        id: AccountId::parse(&id).map_err(|_| Error::internal("bad account id"))?,
         name,
         username,
         token,
@@ -217,7 +217,7 @@ pub(crate) async fn check(inner: &Arc<Inner>, raw: &str, name: &str) -> Result<R
     }
     let user = user
         .as_deref()
-        .and_then(AccountId::parse)
+        .and_then(|u| AccountId::parse(u).ok())
         .ok_or_else(|| Error::internal("recover token without a user"))?;
     let u = user.to_string();
     let name: String = inner
@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(find_in(&c, &other).unwrap().0, other);
         recover_in(&mut c, &owner, 1000).unwrap();
         // A 32-character hexadecimal username is also valid UUID syntax.
-        let hex_username = AccountId::new().0.simple().to_string();
+        let hex_username = AccountId::new().as_uuid().simple().to_string();
         c.execute(
             "UPDATE users SET username=?2 WHERE id=?1",
             params![other, hex_username],

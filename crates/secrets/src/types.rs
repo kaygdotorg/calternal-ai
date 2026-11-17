@@ -2,7 +2,7 @@
 //! except [`SecretValue`], which only exposes its bytes through an explicit call.
 
 use crate::{Error, Result};
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
 use zeroize::Zeroizing;
 
 /// The single account or space a secret belongs to.
@@ -25,8 +25,8 @@ impl Owner {
     /// The owner's UUID.
     pub fn uuid(&self) -> uuid::Uuid {
         match self {
-            Self::Account(id) => id.0,
-            Self::Space(id) => id.0,
+            Self::Account(id) => id.as_uuid(),
+            Self::Space(id) => id.as_uuid(),
         }
     }
 }

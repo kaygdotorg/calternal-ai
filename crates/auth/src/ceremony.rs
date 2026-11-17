@@ -34,7 +34,8 @@ pub(crate) enum Pending {
     /// Signing in with any passkey for this host.
     Login {
         state: DiscoverableAuthentication,
-        user: AccountId,
+        /// The account being reverified; `None` for an anonymous sign-in.
+        user: Option<AccountId>,
         purpose: crate::LoginPurpose,
         source: String,
     },
@@ -135,7 +136,7 @@ impl Ceremonies {
     pub fn take_login(
         &self,
         id: &str,
-        user: AccountId,
+        user: Option<AccountId>,
         purpose: crate::LoginPurpose,
     ) -> Result<Pending> {
         let mut open = self.open.lock().unwrap_or_else(|p| p.into_inner());
@@ -189,14 +190,14 @@ mod tests {
         let auth = crate::Auth::open(dir.path(), config).unwrap();
         let (victim, _) = crate::passkey::start_login(
             &auth.inner,
-            AccountId::new(),
+            Some(AccountId::new()),
             crate::LoginPurpose::SignIn,
             "victim",
         )
         .unwrap();
         let error = crate::passkey::start_login(
             &auth.inner,
-            AccountId::new(),
+            Some(AccountId::new()),
             crate::LoginPurpose::SignIn,
             "other",
         )
@@ -213,21 +214,21 @@ mod tests {
         let auth = crate::Auth::open(dir.path(), config).unwrap();
         let (oldest, _) = crate::passkey::start_login(
             &auth.inner,
-            AccountId::new(),
+            Some(AccountId::new()),
             crate::LoginPurpose::SignIn,
             "same-source",
         )
         .unwrap();
         let (second, _) = crate::passkey::start_login(
             &auth.inner,
-            AccountId::new(),
+            Some(AccountId::new()),
             crate::LoginPurpose::SignIn,
             "same-source",
         )
         .unwrap();
         let (newest, _) = crate::passkey::start_login(
             &auth.inner,
-            AccountId::new(),
+            Some(AccountId::new()),
             crate::LoginPurpose::SignIn,
             "same-source",
         )

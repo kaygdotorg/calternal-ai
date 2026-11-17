@@ -34,7 +34,8 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
-pub use types::{AccountId, Error, ErrorCode, Result, SpaceId};
+use calternal_types::{AccountId, SpaceId};
+pub use types::{Error, ErrorCode, Result};
 
 /// One event, stamped with who made it, ready to store.
 #[derive(Debug, Clone)]
@@ -774,12 +775,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
         .map_err(Error::internal)?
 }
 
-fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
+use calternal_types::now_ms;
 
 #[cfg(test)]
 mod tests;

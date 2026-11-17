@@ -1,6 +1,6 @@
 //! An old-schema copy with a real passkey and session remains usable.
 mod common;
-use calternal_auth::AccountId;
+use calternal_types::AccountId;
 use common::*;
 
 #[tokio::test]

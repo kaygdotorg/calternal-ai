@@ -1,54 +1,26 @@
 //! Generic item contracts, separate from plugin-specific document wire formats.
-use calternal_core::ErrorCode;
-use calternal_store::{AccountId, SpaceId};
+use calternal_types::{AccountId, Error, SpaceId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-/// Caller-safe content failure; diagnostic paths and database errors stay private.
-#[derive(Debug, Clone)]
-pub struct Error {
-    /// Stable operation error classification.
-    pub code: ErrorCode,
-    /// Safe explanation suitable for an operation response.
-    pub message: String,
-    /// Structured conflict details such as the current revision.
-    pub details: Option<Value>,
+/// Logs a private storage failure and returns the caller-safe internal error.
+/// Cost: one log line and a short message allocation.
+pub(crate) fn internal(detail: impl std::fmt::Display) -> Error {
+    tracing::error!(error=%detail,"content storage failure");
+    Error::internal("content storage error")
 }
-impl Error {
-    pub(crate) fn new(code: ErrorCode, message: &str) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            details: None,
-        }
-    }
-    pub(crate) fn internal(detail: impl std::fmt::Display) -> Self {
-        tracing::error!(error=%detail,"content storage failure");
-        Self::new(ErrorCode::Internal, "content storage error")
-    }
-    pub(crate) fn missing() -> Self {
-        Self::new(ErrorCode::NotFound, "item not found")
-    }
-    pub(crate) fn invalid(message: &str) -> Self {
-        Self::new(ErrorCode::InvalidInput, message)
-    }
-    pub(crate) fn blocked() -> Self {
-        Self {
-            code: ErrorCode::Conflict,
-            message: "item file was changed outside Calternal; writes are blocked".into(),
-            details: Some(serde_json::json!({"reason":"external_change"})),
-        }
-    }
+/// The not-found answer, identical for absent and foreign items.
+pub(crate) fn missing() -> Error {
+    Error::not_found("item not found")
 }
-impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}: {}", self.code, self.message)
-    }
+/// The answer when the current file no longer matches the stored head.
+pub(crate) fn blocked() -> Error {
+    Error::conflict("item file was changed outside Calternal; writes are blocked")
+        .with_details(serde_json::json!({"reason":"external_change"}))
 }
-impl std::error::Error for Error {}
 /// Result of a content operation; all error messages are safe for callers.
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = calternal_types::Result<T>;
 
 /// One globally identified item version; bytes are opaque to the host.
 #[derive(Debug, Clone, Serialize, Deserialize)]

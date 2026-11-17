@@ -1,8 +1,6 @@
 use super::*;
-use calternal_auth::{
-    AccountId,
-    spaces::{SpaceId, Spaces},
-};
+use calternal_auth::spaces::Spaces;
+use calternal_types::{AccountId, SpaceId};
 use std::{
     os::unix::fs::PermissionsExt,
     sync::atomic::{AtomicBool, Ordering},
@@ -312,7 +310,7 @@ fn modes_symlinks_and_space_records_keep_credentials_private() {
         );
     }
     let s = c.load().unwrap();
-    let space = &s.image.records[&format!("2{}", f.space.0.simple())];
+    let space = &s.image.records[&format!("2{}", f.space.as_uuid().simple())];
     let text = serde_json::to_string(space).unwrap();
     for secret in [
         "PRIVATE-PASSKEY",
@@ -390,12 +388,12 @@ async fn account_creation_passkey_removal_and_session_revocation_use_the_barrier
     assert!(
         ids(&coordinator.validate_and_read().unwrap(), "users", "id")
             .unwrap()
-            .contains(&created.id.0)
+            .contains(&created.id.as_uuid())
     );
     for cred in [vec![1_u8], vec![2_u8]] {
         c.execute("INSERT INTO passkeys(cred_id,user_id,passkey,created_at) VALUES(?1,?2,'protected passkey fixture',1)", rusqlite::params![cred, created.id.to_string()]).unwrap();
     }
-    let installation = calternal_auth::InstallationId::new();
+    let installation = calternal_types::InstallationId::new();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -465,7 +463,7 @@ async fn failed_recovery_completion_still_fences_a_committed_session_revocation(
     .unwrap();
     let created = auth.create("revoke test").await.unwrap();
     let c = calternal_auth::db::open_conn(&f._dir.path().join("system/auth.db")).unwrap();
-    let installation = calternal_auth::InstallationId::new();
+    let installation = calternal_types::InstallationId::new();
     let token = calternal_auth::token::new_session_token().unwrap();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -569,7 +567,7 @@ fn deleting_newest_generation_must_not_resurrect_revoked_membership() {
             "account_id"
         )
         .unwrap()
-        .contains(&f.member.0)
+        .contains(&f.member.as_uuid())
     );
     fsio::write_atomic_mode(&log_path(&f), &old, 0o600).unwrap();
     // A valid prefix is indistinguishable without independent freshness evidence.
@@ -667,7 +665,7 @@ fn log_path(f: &Fixture) -> PathBuf {
 #[test]
 fn telemetry_and_sharing_delivery_changes_do_not_publish() {
     let f = Fixture::new();
-    let installation = calternal_auth::InstallationId::new();
+    let installation = calternal_types::InstallationId::new();
     f.connection().execute("INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at,expires_at) VALUES(?1,?2,'browser','test',x'0123',1,1,100)",rusqlite::params![installation.to_string(),f.owner.to_string()]).unwrap();
     f.baseline();
     let pin = f.coordinator().checkpoint().unwrap();
@@ -825,12 +823,12 @@ fn next_request_finishes_a_committed_revocation_before_publishing_another_change
     assert!(
         !ids(&snapshot, "space_memberships", "account_id")
             .unwrap()
-            .contains(&f.member.0)
+            .contains(&f.member.as_uuid())
     );
     assert!(
         ids(&snapshot, "spaces", "id")
             .unwrap()
-            .contains(&created.id.0)
+            .contains(&created.id.as_uuid())
     );
     assert_eq!(
         snapshot.tables,

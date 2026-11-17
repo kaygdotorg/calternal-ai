@@ -54,7 +54,7 @@ impl Fixture {
                 .to_string();
             let shared = tokens
                 .spaces
-                .list(calternal_auth::AccountId::parse(&owner_id).unwrap())
+                .list(calternal_types::AccountId::parse(&owner_id).unwrap())
                 .unwrap()
                 .into_iter()
                 .find(|s| s.name == "shared")

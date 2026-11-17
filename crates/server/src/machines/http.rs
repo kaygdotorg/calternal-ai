@@ -36,7 +36,7 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Extension, Router};
-use calternal_auth::{AccountId, SpaceId};
+use calternal_types::{AccountId, SpaceId};
 use calternal_machine::protocol::{
     EnrolRequest, OutputPost, Owner, SessionChallenge, SessionFinish, SessionStart, SyncRequest,
     SyncResponse,
@@ -49,8 +49,8 @@ use uuid::Uuid;
 use super::{MachineService, blocking};
 use crate::api::{Shared, failure, json_response};
 use crate::auth::{Directory, Identity};
-use crate::authz::Capability;
-use crate::error::HostError;
+use calternal_types::Capability;
+use calternal_types::Error;
 
 /// The service as a request extension; absent when machines are disabled.
 type Svc = Option<Extension<Arc<MachineService>>>;
@@ -78,34 +78,34 @@ pub fn routes<D: Directory>() -> Router<Shared<D>> {
         )
 }
 
-fn reply<T: serde::Serialize>(r: Result<T, HostError>) -> Response {
+fn reply<T: serde::Serialize>(r: Result<T, Error>) -> Response {
     match r {
         Ok(v) => json_response(StatusCode::OK, &v),
         Err(e) => failure(None, e),
     }
 }
 
-fn service(svc: Svc) -> Result<Arc<MachineService>, HostError> {
+fn service(svc: Svc) -> Result<Arc<MachineService>, Error> {
     svc.map(|Extension(s)| s)
-        .ok_or_else(|| HostError::not_found("machines are not enabled"))
+        .ok_or_else(|| Error::not_found("machines are not enabled"))
 }
 
-fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, HostError> {
+fn body<T: DeserializeOwned>(bytes: &Bytes) -> Result<T, Error> {
     serde_json::from_slice(bytes)
-        .map_err(|_| HostError::invalid_input("body does not match the schema"))
+        .map_err(|_| Error::invalid_input("body does not match the schema"))
 }
 
-fn bearer(headers: &HeaderMap) -> Result<String, HostError> {
+fn bearer(headers: &HeaderMap) -> Result<String, Error> {
     headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .map(str::to_owned)
-        .ok_or_else(|| HostError::unauthorized("machine session required"))
+        .ok_or_else(|| Error::unauthorized("machine session required"))
 }
 
-fn account(identity: &Identity) -> Result<AccountId, HostError> {
-    AccountId::parse(&identity.id).ok_or_else(|| HostError::forbidden("not an account"))
+fn account(identity: &Identity) -> Result<AccountId, Error> {
+    AccountId::parse(&identity.id).map_err(|_| Error::forbidden("not an account"))
 }
 
 // ------------------------------------------------------------ machine side
@@ -182,7 +182,7 @@ async fn code(svc: Svc, Extension(who): Extension<Identity>) -> Response {
         async {
             let svc = service(svc)?;
             let owner = Owner::Account {
-                id: account(&who)?.0,
+                id: account(&who)?,
             };
             let (code, expires_ms) = blocking(move || svc.issue_code(owner)).await?;
             Ok(json!({ "code": code, "expires_ms": expires_ms }))
@@ -245,12 +245,12 @@ async fn authorize<D: Directory>(
     state: &Shared<D>,
     who: &Identity,
     space: SpaceId,
-) -> Result<(), HostError> {
+) -> Result<(), Error> {
     let (state, id) = (state.clone(), who.id.clone());
     blocking(
         move || match state.tokens.capabilities(&id, &space.to_string()) {
             Some(caps) if caps.contains(Capability::PluginsUse) => Ok(()),
-            _ => Err(HostError::not_found("space not found")),
+            _ => Err(Error::not_found("space not found")),
         },
     )
     .await
@@ -281,7 +281,7 @@ async fn create_run<D: Directory>(
                 .as_ref()
                 .is_some_and(|i| i.is_empty() || i.len() > 255)
             {
-                return Err(HostError::invalid_input(
+                return Err(Error::invalid_input(
                     "image must be 1 to 255 characters",
                 ));
             }
@@ -299,15 +299,15 @@ async fn authorize_run<D: Directory>(
     svc: &Arc<MachineService>,
     who: &Identity,
     lease: Uuid,
-) -> Result<AccountId, HostError> {
+) -> Result<AccountId, Error> {
     let me = account(who)?;
     let s = svc.clone();
     let space = blocking(move || s.run_space(lease))
         .await?
-        .ok_or_else(|| HostError::not_found("run not found"))?;
+        .ok_or_else(|| Error::not_found("run not found"))?;
     authorize(state, who, space)
         .await
-        .map_err(|_| HostError::not_found("run not found"))?;
+        .map_err(|_| Error::not_found("run not found"))?;
     Ok(me)
 }
 
@@ -373,7 +373,7 @@ async fn exec<D: Directory>(
 /// `after` and `wait_ms` from the query string; other keys are ignored and a
 /// malformed number is an input error. Parsed by hand: two integers do not
 /// justify axum's `query` feature and its dependencies.
-fn output_query(uri: &Uri) -> Result<(u64, u64), HostError> {
+fn output_query(uri: &Uri) -> Result<(u64, u64), Error> {
     let (mut after, mut wait) = (0, 0);
     for pair in uri
         .query()
@@ -384,7 +384,7 @@ fn output_query(uri: &Uri) -> Result<(u64, u64), HostError> {
         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
         let n = || {
             v.parse::<u64>()
-                .map_err(|_| HostError::invalid_input("after and wait_ms are integers"))
+                .map_err(|_| Error::invalid_input("after and wait_ms are integers"))
         };
         match k {
             "after" => after = n()?,
@@ -410,10 +410,10 @@ async fn read_output<D: Directory>(
             let s = svc.clone();
             let space = blocking(move || s.exec_space(exec))
                 .await?
-                .ok_or_else(|| HostError::not_found("exec not found"))?;
+                .ok_or_else(|| Error::not_found("exec not found"))?;
             authorize(&state, &who, space)
                 .await
-                .map_err(|_| HostError::not_found("exec not found"))?;
+                .map_err(|_| Error::not_found("exec not found"))?;
             svc.read_output(me, exec, after, Duration::from_millis(wait_ms))
                 .await
         }

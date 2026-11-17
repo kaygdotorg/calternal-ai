@@ -1,6 +1,7 @@
 //! Stored space invariants and source people-action projections, using only temp DBs.
+use calternal_types::{AccountId, SpaceId};
 use calternal_auth::{
-    AccountId, ErrorCode, SpaceId,
+    ErrorCode,
     db::open_conn,
     spaces::{DevelopmentIds, SpaceChange, Spaces},
 };
@@ -381,10 +382,10 @@ fn database_requires_owner_membership_and_existing_accounts() {
 fn identifiers_are_fresh_v7_and_memberships_are_space_scoped() {
     let f = Fixture::new();
     let ids = [
-        f.ids.owner.0,
-        f.ids.guest.0,
-        f.ids.personal.0,
-        f.ids.shared.0,
+        f.ids.owner.as_uuid(),
+        f.ids.guest.as_uuid(),
+        f.ids.personal.as_uuid(),
+        f.ids.shared.as_uuid(),
     ];
     for id in ids {
         assert_eq!(id.get_version_num(), 7);

@@ -9,6 +9,7 @@ pub use spaces::*;
 mod secrets;
 pub use secrets::*;
 mod validation;
+pub use calternal_types::ErrorCode;
 pub use models::*;
 pub use validation::*;
 

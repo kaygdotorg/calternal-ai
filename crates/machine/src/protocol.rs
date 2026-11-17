@@ -24,6 +24,7 @@
 //! 409 means a lease is fenced (stop that sandbox), 404 an unknown code or lease.
 
 use serde::{Deserialize, Serialize};
+use calternal_types::{AccountId, SpaceId};
 use uuid::Uuid;
 
 /// Protocol version spoken by this build; the server refuses other versions.
@@ -54,7 +55,7 @@ pub enum Owner {
     /// The user's own machine; only that account's work is placed on it.
     Account {
         /// The owning account.
-        id: Uuid,
+        id: AccountId,
     },
     /// An operator-enrolled machine in the shared pool.
     Pool,
@@ -235,9 +236,9 @@ pub enum Down {
         /// Fencing token; output with an older fence is refused.
         fence: u64,
         /// Space the work belongs to.
-        space_id: String,
+        space_id: SpaceId,
         /// Account the work runs for.
-        account_id: String,
+        account_id: AccountId,
         /// Sandbox to start.
         spec: SandboxSpec,
     },

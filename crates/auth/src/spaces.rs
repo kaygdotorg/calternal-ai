@@ -3,37 +3,11 @@
 //! All APIs block on SQLite and must run on a blocking host thread. Mutations
 //! acquire an IMMEDIATE transaction before checking current capability rows.
 //! State commits optionally pass through a protected recovery barrier before acknowledgement.
-use crate::{AccountId, Error, ErrorCode, Result};
+use crate::{AccountId, Error, ErrorCode, Result, SpaceId};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-/// Stable UUIDv7 space identity, distinct from an account identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SpaceId(
-    /// UUID value; allocating a new space always uses UUIDv7.
-    pub uuid::Uuid,
-);
-impl SpaceId {
-    /// Allocates a fresh UUIDv7; never copies an account identifier.
-    pub fn new() -> Self {
-        Self(uuid::Uuid::now_v7())
-    }
-    /// Parses a persisted UUID without establishing access.
-    pub fn parse(value: &str) -> Option<Self> {
-        uuid::Uuid::parse_str(value).ok().map(Self)
-    }
-}
-impl Default for SpaceId {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-impl std::fmt::Display for SpaceId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
 /// A space and the caller's effective role; no content or account secrets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Space {
@@ -69,10 +43,10 @@ fn denied() -> Error {
     Error::new(ErrorCode::Forbidden, "no access to this space")
 }
 fn account(s: String) -> Result<AccountId> {
-    AccountId::parse(&s).ok_or_else(|| sql("invalid account UUID"))
+    AccountId::parse(&s).map_err(|_| sql("invalid account UUID"))
 }
 fn space_id(s: String) -> Result<SpaceId> {
-    SpaceId::parse(&s).ok_or_else(|| sql("invalid space UUID"))
+    SpaceId::parse(&s).map_err(|_| sql("invalid space UUID"))
 }
 fn role(c: &Connection, actor: AccountId, space: SpaceId) -> Result<Option<String>> {
     c.query_row(

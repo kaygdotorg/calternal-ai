@@ -1055,13 +1055,7 @@ mod port_tests {
     }
 }
 
-/// Current Unix time in milliseconds, as used by persisted account records.
-pub(crate) fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as i64
-}
+pub(crate) use calternal_types::now_ms;
 
 /// Converts a SQLite failure into a private host diagnostic.
 pub(crate) fn sql(e: rusqlite::Error) -> crate::Error {
