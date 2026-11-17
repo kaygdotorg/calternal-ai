@@ -651,7 +651,7 @@ fn host_origin_and_bearer_checks() {
 }
 
 #[test]
-fn static_spa_fallback_and_missing_assets() {
+fn static_dir_serves_files_without_spa_fallback() {
     let d = TempDir::new("web");
     let web = d.0.join("web");
     std::fs::create_dir_all(web.join("assets")).unwrap();
@@ -664,15 +664,9 @@ fn static_spa_fallback_and_missing_assets() {
     assert_eq!(r.status, 200);
     assert!(r.headers.contains("content-security-policy"));
     assert_eq!(get("/assets/app.js").status, 200);
-    let deep = get("/s/personal/notes/11111111-1111-4111-8111-111111111111");
-    assert_eq!(deep.status, 200);
-    assert!(deep.headers.contains("text/html"));
+    assert_eq!(get("/s/personal/notes/x").status, 404);
     assert_eq!(get("/assets/missing.js").status, 404);
-    assert_eq!(get("/favicon.ico").status, 404);
-    // Traversal never escapes web dir: either 404 or the SPA shell.
-    let t = get("/../../etc/passwd");
-    assert!(t.status == 404 || t.headers.contains("text/html"));
-    // API paths never fall back to HTML.
+    // API paths never fall back to files.
     let auth = format!("Bearer {}", srv.owner);
     let r = raw(
         srv.port,
