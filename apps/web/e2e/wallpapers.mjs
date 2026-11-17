@@ -16,12 +16,12 @@ try {
     await page.evaluate((w) => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: w })), id);
     await page.reload();
     await page.waitForSelector("html[data-ready]");
-    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wash").trim() !== "", null, { timeout: 8000 });
+    await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--c-dim-a").trim() !== "" && getComputedStyle(document.documentElement).getPropertyValue("--wall-card").includes("blob"), null, { timeout: 15000 });
     await page.waitForTimeout(300);
-    const wash = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--wash").trim());
+    const wash = await page.evaluate(() => { const cs = getComputedStyle(document.documentElement); const t = (k) => 1 - (1 - +cs.getPropertyValue(`--${k}-tint-a`)) * (1 - +cs.getPropertyValue(`--${k}-dim-a`)); return `veil left ${t("l").toFixed(2)} card ${t("c").toFixed(2)} right ${t("r").toFixed(2)}`; });
     const r = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze();
     const v = r.violations.flatMap((x) => x.nodes.map((n) => `${n.target.join(" ")} ${n.any[0]?.message?.slice(0, 90)}`));
-    console.log(`${v.length ? "FAIL" : "ok  "} ${scheme} ${id} (wash ${wash})${v.length ? "\n   " + v.slice(0, 4).join("\n   ") : ""}`);
+    console.log(`${v.length ? "FAIL" : "ok  "} ${scheme} ${id} (${wash})${v.length ? "\n   " + v.slice(0, 4).join("\n   ") : ""}`);
     bad += v.length;
     if (GRID) { mkdirSync(GRID, { recursive: true }); await page.screenshot({ path: `${GRID}/${scheme}-${id}.png` }); }
     await ctx.close();
