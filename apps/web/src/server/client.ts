@@ -155,6 +155,18 @@ export class ServerClient {
     }
   }
 
+  /**
+   * The account's readiness feed (`GET /api/v1/account/live?readiness=true`, docs/agent-turns.md): `readiness_changed` has no payload and says "read `agent.readiness` again" (machines connected or dropped,
+   * capacity or a provider observation changed or expired); a reset says the same. Resolves when the stream ends or `signal` aborts.
+   */
+  async readinessLive(onChange: () => void, signal?: AbortSignal): Promise<void> {
+    for await (const ev of events(await this.stream("/api/v1/account/live?readiness=true", signal))) {
+      const raw = JSON.parse(ev.data) as Record<string, unknown> | string;
+      const type = typeof raw === "string" ? raw : typeof raw.type === "string" ? raw.type : Object.keys(raw)[0]?.toLowerCase();
+      if (type === "readiness_changed" || type === "readinesschanged" || type === "reset") onChange();
+    }
+  }
+
   /** Follows a plugin job's events (`GET /api/v1/jobs/<id>/events`, SSE): `snapshot` first, then `chunk`s, possibly a `reset`, and `end`. `after` resumes (`<epoch>:<seq>`). */
   async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "state" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {
     const q = o.after ? `?after=${encodeURIComponent(o.after)}` : "";

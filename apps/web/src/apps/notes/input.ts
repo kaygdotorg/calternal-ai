@@ -89,6 +89,7 @@ export class ServerInput implements InputClient {
           await this.server.accountLive((f) => {
             if (f === "ReadinessChanged") return; // only asked for by the Machines page
             if (f === "Reset") { reset = true; bookmark = undefined; onChange(); }
+            else if (f === "ReadinessChanged") return; // the readiness feed's frame (the Threads adapter reads it); not a private-snapshot change
             else if ("Changed" in f) { onChange(); bookmark = f.Changed.bookmark; }
             else bookmark = f.Ready.bookmark;
           }, { bookmark, signal: ac.signal });

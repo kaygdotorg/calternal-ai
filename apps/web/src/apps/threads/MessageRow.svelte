@@ -3,13 +3,20 @@
   // One message. The person's words sit in a tinted bubble on the right; the agent's are plain text on the card, with folded
   // steps, generated-UI cards and links to child threads between paragraphs. No inner card around a message.
   import type { Component } from "svelte";
-  import { Icon } from "@calternal/ui";
+  import { Button, Icon } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";
   import MessageActions from "./MessageActions.svelte";
   import Steps from "./Steps.svelte";
   import type { Message } from "./model";
   import { store } from "./store.svelte";
   let { message }: { message: Message } = $props();
+  // A very long message (a tool's whole output, say) is drawn in part: the first CAP characters, cut at a line end, and the person chooses to draw the rest. Drawing 5 MB of Markdown at once blocked the page
+  // for 0.7 s (2.4 s at 4x CPU slowdown); the list virtualises messages, not the inside of one. The text is all there (copy takes all of it).
+  const CAP = 64 * 1024;
+  let all = $state(false);
+  const clip = (t: string) => { if (all || t.length <= CAP) return t; const cut = t.lastIndexOf("\n", CAP); return t.slice(0, cut > CAP / 2 ? cut : CAP); };
+  const size = (t: string) => (t.length >= 1048576 ? `${(t.length / 1048576).toFixed(1)} MB` : `${Math.round(t.length / 1024)} KB`);
+  const long = $derived(message.blocks.find((b) => b.type === "text" && b.text.length > CAP && !all) as { type: "text"; text: string } | undefined);
   // The generated-UI renderer is its own chunk, fetched the first time a message holds a card; a thread of plain messages never downloads it.
   let GenUi = $state<Component<{ source: string }>>();
   $effect(() => { if (!GenUi && message.blocks.some((b) => b.type === "card")) void import("../../genui/GenUi.svelte").then((m) => (GenUi = m.default as never)); });
@@ -20,11 +27,11 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="msg {message.role}" onpointerenter={() => (armed = true)} onfocusin={() => (armed = true)}>
   {#if message.role === "user"}
-    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={b.text} />{/if}{/each}</div><MessageActions {message} {armed} /></div>
+    <div class="col end"><div class="bubble">{#each message.blocks as b}{#if b.type === "text"}<Md text={clip(b.text)} />{/if}{/each}</div><MessageActions {message} {armed} /></div>
   {:else}
     <div class="agent" id={message.id}>
       {#each message.blocks as b}
-        {#if b.type === "text"}<Md text={b.text} />
+        {#if b.type === "text"}<Md text={clip(b.text)} />
         {:else if b.type === "steps"}<Steps steps={b.steps} ms={b.ms} />
         {:else if b.type === "card"}{#if GenUi}<GenUi source={b.source} />{/if}
         {:else}
@@ -32,12 +39,14 @@
           {#if t}<a class="child" href={href(`/threads/${t.id}`)}><Icon name="branch" inline /><span>{t.title}</span><small>{t.state}</small></a>{/if}
         {/if}
       {/each}
+      {#if long}<p class="clipped">This message is {size(long.text)}; the first 64 KB is shown. <Button variant="quiet" text="Show all" onclick={() => (all = true)} /></p>{/if}
       <MessageActions {message} {armed} />
     </div>
   {/if}
 </div>
 
 <style>
+  .clipped { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-label); }
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
   .user { justify-content: flex-end; }
   .bubble { position: relative; max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }

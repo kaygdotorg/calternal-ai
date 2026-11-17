@@ -188,7 +188,7 @@
   {#if empty}
     <div class="empty">
       <h2>No threads yet</h2>
-      <p>A thread is a conversation with an agent that works on your files and notes, with only the access you allow. Start one and say what you want done.</p>
+      <p>Start one and say what you want an agent to do.</p>
       <Button variant="primary" text="Start a thread" onclick={() => void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`))} />
     </div>
   {:else}

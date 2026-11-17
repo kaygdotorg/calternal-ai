@@ -115,6 +115,15 @@ export function notify(e: ToastEvent & { awaited?: boolean }): string {
   return b.id;
 }
 
+/** Runs the newest toast's Undo, if one is showing. The keyboard's way to Undo (Mod+Z outside a text field): the toast's own button sits at the end of the page, a long way along a Tab walk. Returns whether there was one. */
+export function undoLatest(): boolean {
+  const all = [...views.values()].filter((v) => v.action?.label === "Undo" && v.phase === "shown" && !v.action.busy);
+  const v = all[all.length - 1];
+  if (!v?.action) return false;
+  void v.action.run();
+  return true;
+}
+
 /** Undo for a burst: honest about what happened, never claims more than it did. */
 async function undo(id: string, e: ToastEvent) {
   const v = views.get(id);
