@@ -1,4 +1,3 @@
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -127,9 +126,7 @@ async fn serve(
     origin: Option<String>,
     trusted_proxies: String,
 ) -> i32 {
-    if let Err(e) = std::fs::create_dir_all(&data_dir)
-        .and_then(|_| std::fs::set_permissions(&data_dir, std::fs::Permissions::from_mode(0o700)))
-    {
+    if let Err(e) = calternal_auth::private_fs::directory(&data_dir) {
         eprintln!("calternal: cannot prepare data dir: {e}");
         return 1;
     }
@@ -277,17 +274,7 @@ async fn serve(
 }
 
 fn write_private_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    let tmp = path.with_extension("json.tmp");
-    let _ = std::fs::remove_file(&tmp);
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&tmp)?;
-    f.write_all(bytes)?;
-    f.sync_all()?;
-    std::fs::rename(&tmp, path)
+    calternal_fsio::write_atomic_mode(path, bytes, 0o600)
 }
 
 async fn shutdown_signal() {

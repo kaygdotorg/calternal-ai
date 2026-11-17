@@ -29,8 +29,8 @@
 //! This is NOT the inherited file-only recovery / tiering guarantee. It is a
 //! disposable-data preview profile.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::fs::{self, File};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use calternal_core::{Note, NoteSummary, NoteVersion};
@@ -43,6 +43,7 @@ use crate::fault::{self, FaultPoint};
 
 const SCHEMA_VERSION: i64 = 1;
 
+/// Locked disposable preview database, including checked Markdown materialization.
 pub struct Store {
     conn: Connection,
     root: PathBuf,
@@ -51,16 +52,24 @@ pub struct Store {
 
 /// A request receipt as stored at commit time.
 pub struct Receipt {
+    /// Operation whose committed result is retained.
     pub operation: String,
+    /// Canonical operation/input digest used to reject mismatched retries.
     pub fingerprint: String,
+    /// Previously committed operation payload, private to its acting account.
     pub result: serde_json::Value,
+    /// Materialized note that must be completed before replay, if applicable.
     pub note_id: Option<String>,
 }
 
+/// Relationship between a committed note head and its portable Markdown copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MatState {
+    /// The committed head still requires placement or replay.
     Pending,
+    /// Checked bytes have been durably placed at the note's current path.
     Materialized,
+    /// External file changes prevent automatic placement.
     Blocked,
 }
 
@@ -81,12 +90,16 @@ impl MatState {
     }
 }
 
+/// Persisted enablement and invalidation generation of a space's plugin.
 #[derive(Debug, Clone)]
 pub struct PluginRow {
+    /// Whether this plugin is enabled in the owning space.
     pub enabled: bool,
+    /// Monotonic generation checked before asynchronous result delivery.
     pub generation: u32,
 }
 
+/// Current UTC timestamp with millisecond precision for preview records.
 pub fn now_rfc3339() -> String {
     let now = time::OffsetDateTime::now_utc();
     let fmt = time::macros::format_description!(
@@ -95,6 +108,7 @@ pub fn now_rfc3339() -> String {
     now.format(&fmt).expect("timestamp format")
 }
 
+/// Lowercase SHA-256 digest for materialized-byte and request comparisons.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -117,16 +131,13 @@ fn io_err(context: &'static str, e: std::io::Error) -> HostError {
 
 impl Store {
     /// Open (creating if needed) the data directory, take the exclusive lock,
-    /// migrate and replay pending materializations.
+    /// migrate and replay pending materializations. The root is mode 0700;
+    /// database and lock files are mode 0600 before they can contain state.
     pub fn open(root: &Path) -> Result<Self, HostError> {
-        fs::create_dir_all(root).map_err(|e| io_err("create data dir", e))?;
+        calternal_auth::private_fs::directory(root).map_err(|e| io_err("create data dir", e))?;
         let lock_path = root.join(".calternal.lock");
-        let lock = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&lock_path)
-            .map_err(|e| io_err("open lock", e))?;
+        let lock =
+            calternal_auth::private_fs::file(&lock_path).map_err(|e| io_err("open lock", e))?;
         match lock.try_lock() {
             Ok(()) => {}
             Err(fs::TryLockError::WouldBlock) => {
@@ -136,7 +147,9 @@ impl Store {
             }
             Err(fs::TryLockError::Error(e)) => return Err(io_err("lock data dir", e)),
         }
-        let conn = Connection::open(root.join("state.sqlite3")).map_err(db_err)?;
+        let db_path = root.join("state.sqlite3");
+        calternal_auth::private_fs::file(&db_path).map_err(|e| io_err("prepare database", e))?;
+        let conn = Connection::open(db_path).map_err(db_err)?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
         conn.pragma_update(None, "synchronous", "FULL")
@@ -225,11 +238,20 @@ impl Store {
     }
 
     /// Remove our own orphaned temp files left by a crash before rename.
-    /// Only exact `.<uuid>.<12 hex>.tmp` names inside real
-    /// `spaces/<known space>/Notes` directories are removed.
+    /// Only recognized preview/fsio temporary names inside real
+    /// `spaces/<known space>/Notes` directories are removed. UUID spaces come
+    /// from the content database; seeded development roots remain explicit.
     fn cleanup_temp_files(&self) {
-        for space in crate::auth::SPACES {
-            let dir = self.notes_dir(space);
+        let mut spaces: Vec<String> = crate::auth::SPACES.iter().map(|s| s.to_string()).collect();
+        if let Ok(mut statement) = self.conn.prepare("SELECT DISTINCT space_id FROM notes") {
+            if let Ok(rows) = statement.query_map([], |r| r.get::<_, String>(0)) {
+                spaces.extend(rows.filter_map(Result::ok));
+            }
+        }
+        spaces.sort_unstable();
+        spaces.dedup();
+        for space in spaces {
+            let dir = self.notes_dir(&space);
             match fs::symlink_metadata(&dir) {
                 Ok(m) if m.file_type().is_dir() => {}
                 _ => continue,
@@ -273,6 +295,7 @@ impl Store {
 
     // ---------------------------------------------------------------- reads
 
+    /// List bounded summaries within an already authorized space, newest first.
     pub fn list(&self, space_id: &str, limit: u32) -> Result<Vec<NoteSummary>, HostError> {
         let mut stmt = self
             .conn
@@ -295,6 +318,8 @@ impl Store {
         .map_err(db_err)
     }
 
+    /// Fetch a current note only when both its item and space identifiers match.
+    /// Authentication and current membership checks remain the caller's duty.
     pub fn get(&self, space_id: &str, id: &str) -> Result<Note, HostError> {
         self.conn
             .query_row(
@@ -318,6 +343,7 @@ impl Store {
             .ok_or_else(|| HostError::not_found("note not found"))
     }
 
+    /// Inspect internal placement state; never exposes authority or note content.
     pub fn mat_state(&self, id: &str) -> Result<Option<MatState>, HostError> {
         self.conn
             .query_row("SELECT mat_state FROM notes WHERE id = ?1", [id], |r| {
@@ -328,7 +354,9 @@ impl Store {
             .map(|o| o.map(|s| MatState::parse(&s)))
     }
 
-    /// Newest first. Cursor is an opaque `h<seq>` meaning "versions older than seq".
+    /// Return newest versions first. An opaque `h<revision>` cursor selects
+    /// versions older than that revision of this exact note in this space.
+    /// Foreign, missing and old unbound numeric cursors are invalid input.
     pub fn history(
         &self,
         space_id: &str,
@@ -340,11 +368,20 @@ impl Store {
         self.get(space_id, id)?;
         let before: i64 = match cursor {
             None => i64::MAX,
-            Some(c) => c
-                .strip_prefix('h')
-                .and_then(|s| s.parse::<i64>().ok())
-                .filter(|n| *n > 0)
-                .ok_or_else(|| HostError::invalid_input("invalid history cursor"))?,
+            Some(c) => {
+                let revision = c
+                    .strip_prefix('h')
+                    .ok_or_else(|| HostError::invalid_input("invalid history cursor"))?;
+                self.conn
+                    .query_row(
+                        "SELECT seq FROM versions WHERE note_id=?1 AND revision=?2",
+                        params![id, revision],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .map_err(db_err)?
+                    .ok_or_else(|| HostError::invalid_input("invalid history cursor"))?
+            }
         };
         let mut stmt = self
             .conn
@@ -372,13 +409,14 @@ impl Store {
         let mut versions: Vec<(i64, NoteVersion)> = rows;
         versions.truncate(limit as usize);
         let next = if more {
-            versions.last().map(|(s, _)| format!("h{s}"))
+            versions.last().map(|(_, v)| format!("h{}", v.revision))
         } else {
             None
         };
         Ok((versions.into_iter().map(|(_, v)| v).collect(), next))
     }
 
+    /// Read an account-qualified receipt after the caller rechecks current grants.
     pub fn receipt(&self, principal: &str, request_id: &str) -> Result<Option<Receipt>, HostError> {
         self.conn
             .query_row(
@@ -590,7 +628,8 @@ impl Store {
         Ok(())
     }
 
-    /// Place the head revision on disk if pending. Idempotent.
+    /// Place the head revision on disk if pending. Idempotent. Each storage
+    /// directory is owner-only (0700); fsio publishes private 0600 Markdown.
     pub fn materialize(&mut self, id: &str) -> Result<(), HostError> {
         let (space_id, state, file_sha, markdown): (String, String, Option<String>, String) = self
             .conn
@@ -611,25 +650,14 @@ impl Store {
         }
         let new_sha = sha256_hex(markdown.as_bytes());
         let dir = self.notes_dir(&space_id);
-        if !dir.is_dir() {
-            fs::create_dir_all(&dir).map_err(|e| io_err("create notes dir", e))?;
-            // Make the new directory entries themselves durable.
-            for d in [
-                self.root.join("spaces").join(&space_id),
-                self.root.join("spaces"),
-                self.root.clone(),
-            ] {
-                File::open(&d)
-                    .and_then(|f| f.sync_all())
-                    .map_err(|e| io_err("fsync parent dir", e))?;
-            }
-        }
         // Every path component we create must be a real directory, not a symlink.
         for d in [
             self.root.join("spaces"),
             self.root.join("spaces").join(&space_id),
             dir.clone(),
         ] {
+            calternal_auth::private_fs::directory(&d)
+                .map_err(|e| io_err("prepare notes dir", e))?;
             let m = fs::symlink_metadata(&d).map_err(|e| io_err("stat notes dir", e))?;
             if !m.file_type().is_dir() {
                 tracing::error!(dir = %d.display(), "notes directory is not a real directory");
@@ -679,6 +707,7 @@ impl Store {
 
     // -------------------------------------------------------------- plugins
 
+    /// Read one space's plugin state without inheriting another space's enablement.
     pub fn plugin_row(
         &self,
         space_id: &str,
@@ -762,8 +791,20 @@ fn file_hash(path: &Path) -> Result<FileState, HostError> {
     Ok(FileState::Regular(sha256_hex(&bytes)))
 }
 
-/// `.{uuid}.{12 lowercase hex}.tmp` exactly, as produced by `atomic_write`.
+/// Recognize exact preview temporary names and fsio's hex nonce plus UUID
+/// Markdown name; unrelated files are never treated as cleanup candidates.
 fn is_owned_temp_name(name: &str) -> bool {
+    if let Some(rest) = name.strip_prefix(calternal_fsio::TEMP_PREFIX) {
+        let Some((nonce, note)) = rest.split_once('-') else {
+            return false;
+        };
+        return !nonce.is_empty()
+            && nonce.len() <= 32
+            && nonce.bytes().all(|b| b.is_ascii_hexdigit())
+            && note
+                .strip_suffix(".md")
+                .is_some_and(|id| Uuid::parse_str(id).is_ok_and(|u| u.to_string() == id));
+    }
     let Some(inner) = name.strip_prefix('.').and_then(|n| n.strip_suffix(".tmp")) else {
         return false;
     };
@@ -779,6 +820,7 @@ fn is_owned_temp_name(name: &str) -> bool {
             .unwrap_or(false)
 }
 
+/// Caller-safe conflict indicating that external bytes prevented materialization.
 pub fn blocked_error() -> HostError {
     HostError::conflict("note file was changed outside Calternal; writes are blocked")
         .with_details(serde_json::json!({ "reason": "external_change" }))
@@ -802,23 +844,6 @@ fn insert_receipt(
     Ok(())
 }
 
-fn atomic_write(dir: &Path, target: &Path, id: &str, bytes: &[u8]) -> Result<(), HostError> {
-    let tmp = dir.join(format!(".{id}.{}.tmp", random_hex(6)));
-    {
-        let mut f = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp)
-            .map_err(|e| io_err("create temp", e))?;
-        f.write_all(bytes).map_err(|e| io_err("write temp", e))?;
-        f.sync_all().map_err(|e| io_err("fsync temp", e))?;
-    }
-    if let Err(e) = fs::rename(&tmp, target) {
-        let _ = fs::remove_file(&tmp);
-        return Err(io_err("rename", e));
-    }
-    File::open(dir)
-        .and_then(|d| d.sync_all())
-        .map_err(|e| io_err("fsync dir", e))?;
-    Ok(())
+fn atomic_write(_dir: &Path, target: &Path, _id: &str, bytes: &[u8]) -> Result<(), HostError> {
+    calternal_fsio::write_atomic_mode(target, bytes, 0o600).map_err(|e| io_err("place note", e))
 }

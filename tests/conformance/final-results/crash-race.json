@@ -1,0 +1,52 @@
+[
+  {
+    "remove": 403,
+    "round": 0,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 1,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 2,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 3,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 4,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 5,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 6,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 7,
+    "transfer": 200
+  },
+  {
+    "remove": 403,
+    "round": 8,
+    "transfer": 200
+  },
+  {
+    "remove": 200,
+    "round": 9,
+    "transfer": 403
+  }
+]

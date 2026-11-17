@@ -1,0 +1,302 @@
+[
+  {
+    "capability": "space.read",
+    "op": "notes.get",
+    "status": 200
+  },
+  {
+    "capability": "space.read",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "space.read",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "space.read",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "space.read",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "space.read",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "content.write",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "content.write",
+    "op": "notes.create",
+    "status": 200
+  },
+  {
+    "capability": "content.write",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "content.write",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "content.write",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "content.write",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "plugins.use",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "plugins.use",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "plugins.use",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "plugins.use",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "plugins.use",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "plugins.use",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "plugins.manage",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "plugins.manage",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "plugins.manage",
+    "op": "plugins.enable",
+    "status": 200
+  },
+  {
+    "capability": "plugins.manage",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "plugins.manage",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "plugins.manage",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "members.invite",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "members.invite",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "members.invite",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "members.invite",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "members.invite",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "members.invite",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "members.manage",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "members.manage",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "members.manage",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "members.manage",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "members.manage",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "members.manage",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "managers.manage",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "managers.manage",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "managers.manage",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "managers.manage",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "managers.manage",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "managers.manage",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "space.settings",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "space.settings",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "space.settings",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "space.settings",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "space.settings",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "space.settings",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "space.transfer",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "space.transfer",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "space.transfer",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "space.transfer",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "space.transfer",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "space.transfer",
+    "op": "spaces.set_role",
+    "status": 403
+  },
+  {
+    "capability": "space.delete",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "capability": "space.delete",
+    "op": "notes.create",
+    "status": 403
+  },
+  {
+    "capability": "space.delete",
+    "op": "plugins.enable",
+    "status": 403
+  },
+  {
+    "capability": "space.delete",
+    "op": "spaces.transfer",
+    "status": 403
+  },
+  {
+    "capability": "space.delete",
+    "op": "spaces.delete",
+    "status": 403
+  },
+  {
+    "capability": "space.delete",
+    "op": "spaces.set_role",
+    "status": 403
+  }
+]

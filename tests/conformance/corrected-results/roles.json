@@ -1,0 +1,383 @@
+[
+  {
+    "body": {
+      "data": {
+        "note": {
+          "id": "5f12173b-61c3-4664-88df-212a3bd5432c",
+          "markdown": "private content\n",
+          "revision": "v1.b879619b88afe218",
+          "space_id": "01a1e82b-f3d2-702e-8f1e-dce3db586dc6",
+          "title": "Secret",
+          "updated_at": "2026-11-17T06:22:37.052Z"
+        }
+      },
+      "ok": true,
+      "request_id": "01a1e82b-f3fd-730f-84f1-0173b385a75c"
+    },
+    "op": "notes.get",
+    "role": "reader",
+    "status": 200
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f401-7212-843c-37693899c17b"
+    },
+    "op": "notes.create",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f402-7752-be6d-7cbcb4f06bcd"
+    },
+    "op": "plugins.enable",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f403-7265-9245-15cffad459e7"
+    },
+    "op": "spaces.set_role",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f405-776a-a81c-5c84355f8923"
+    },
+    "op": "spaces.remove_member",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f406-7106-9f26-b2dfcc848ac2"
+    },
+    "op": "spaces.remove_member",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f407-77c5-a8a9-79a08c1ca5e3"
+    },
+    "op": "spaces.transfer",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f408-7461-b8cc-726bffd4b15f"
+    },
+    "op": "spaces.delete",
+    "role": "reader",
+    "status": 403
+  },
+  {
+    "body": {
+      "data": {
+        "note": {
+          "id": "d7819a35-2380-41c1-8d83-2b04343f17f4",
+          "markdown": "private content\n",
+          "revision": "v1.3a820e20a64523e3",
+          "space_id": "01a1e82b-f3d4-7125-87c7-be7ac64d7a67",
+          "title": "Secret",
+          "updated_at": "2026-11-17T06:22:37.067Z"
+        }
+      },
+      "ok": true,
+      "request_id": "01a1e82b-f40c-741a-9281-47b68c63eb46"
+    },
+    "op": "notes.get",
+    "role": "editor",
+    "status": 200
+  },
+  {
+    "body": {
+      "data": {
+        "note": {
+          "id": "1efd6b3f-46ef-447c-aed5-954a9802d221",
+          "markdown": "x",
+          "revision": "v1.c0c4c3fad49f78b8",
+          "space_id": "01a1e82b-f3d4-7125-87c7-be7ac64d7a67",
+          "title": "role write",
+          "updated_at": "2026-11-17T06:22:37.072Z"
+        }
+      },
+      "ok": true,
+      "request_id": "01a1e82b-f40f-709a-96e6-39161b269049"
+    },
+    "op": "notes.create",
+    "role": "editor",
+    "status": 200
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f411-74b8-897d-74988f963332"
+    },
+    "op": "plugins.enable",
+    "role": "editor",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f412-70d6-b8e5-967b86f5e737"
+    },
+    "op": "spaces.set_role",
+    "role": "editor",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f413-7766-b88c-67ee284a307b"
+    },
+    "op": "spaces.remove_member",
+    "role": "editor",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f414-7105-b26c-788cf8ffce3c"
+    },
+    "op": "spaces.remove_member",
+    "role": "editor",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f415-77cc-99bf-82fac3375999"
+    },
+    "op": "spaces.transfer",
+    "role": "editor",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f416-75d4-9433-9bfd0ce9f815"
+    },
+    "op": "spaces.delete",
+    "role": "editor",
+    "status": 403
+  },
+  {
+    "body": {
+      "data": {
+        "note": {
+          "id": "38e37192-34ba-4c47-b147-447005e50638",
+          "markdown": "private content\n",
+          "revision": "v1.56cac260b4a288a9",
+          "space_id": "01a1e82b-f3d5-7365-ba7d-bc8b8c32d5aa",
+          "title": "Secret",
+          "updated_at": "2026-11-17T06:22:37.081Z"
+        }
+      },
+      "ok": true,
+      "request_id": "01a1e82b-f41a-7345-927f-06cbc906e5b0"
+    },
+    "op": "notes.get",
+    "role": "manager",
+    "status": 200
+  },
+  {
+    "body": {
+      "data": {
+        "note": {
+          "id": "5d86dbdb-3ee5-4c09-90df-32c6529ca46e",
+          "markdown": "x",
+          "revision": "v1.7a9dbd5202696db2",
+          "space_id": "01a1e82b-f3d5-7365-ba7d-bc8b8c32d5aa",
+          "title": "role write",
+          "updated_at": "2026-11-17T06:22:37.087Z"
+        }
+      },
+      "ok": true,
+      "request_id": "01a1e82b-f41d-7523-98cd-a2833102d194"
+    },
+    "op": "notes.create",
+    "role": "manager",
+    "status": 200
+  },
+  {
+    "body": {
+      "data": {
+        "plugin": {
+          "enabled": true,
+          "generation": 2,
+          "manifest": {
+            "api_version": 1,
+            "capabilities": [
+              "notes.read"
+            ],
+            "dependencies": [
+              {
+                "id": "notes",
+                "version": "0.1.0"
+              }
+            ],
+            "description": "Read-only word, character, and line statistics for a note.",
+            "id": "notes-insights",
+            "name": "Notes Insights",
+            "operations": [
+              {
+                "description": "Compute word, character, and line statistics",
+                "id": "notes-insights.summarize",
+                "mutates": false
+              }
+            ],
+            "version": "0.1.0",
+            "views": [
+              {
+                "extension_point": "notes.detail",
+                "id": "notes-insights.detail",
+                "view": {
+                  "genui_version": 1,
+                  "root": {
+                    "id": "notes-insights.placeholder",
+                    "text": "Summarize a note to see word, character, and line counts.",
+                    "type": "text"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "ok": true,
+      "request_id": "01a1e82b-f420-7261-a004-2e00834f4f6d"
+    },
+    "op": "plugins.enable",
+    "role": "manager",
+    "status": 200
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "no access to this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f422-7116-8c70-1f5a1d605c60"
+    },
+    "op": "spaces.set_role",
+    "role": "manager",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "no access to this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f424-7082-9298-0c5eac8130da"
+    },
+    "op": "spaces.remove_member",
+    "role": "manager",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "no access to this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f425-74c6-84cf-8b72b553a51b"
+    },
+    "op": "spaces.remove_member",
+    "role": "manager",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f427-70c2-a4f1-92a75a502e49"
+    },
+    "op": "spaces.transfer",
+    "role": "manager",
+    "status": 403
+  },
+  {
+    "body": {
+      "error": {
+        "code": "forbidden",
+        "message": "insufficient role for this space"
+      },
+      "ok": false,
+      "request_id": "01a1e82b-f428-742c-be91-9d37f90fa969"
+    },
+    "op": "spaces.delete",
+    "role": "manager",
+    "status": 403
+  }
+]

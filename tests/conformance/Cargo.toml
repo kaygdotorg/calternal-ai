@@ -1,0 +1,24 @@
+[package]
+name = "calternal-conformance"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone suite with its own HTTP/software-authenticator fixture dependencies.
+[workspace]
+
+[dependencies]
+calternal-auth = { path = "../../crates/auth" }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+tempfile = "3.27"
+url = "2.5.8"
+uuid = { version = "1", features = ["v7"] }
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
+webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
+
+[[test]]
+name = "isolation"
+path = "isolation.rs"

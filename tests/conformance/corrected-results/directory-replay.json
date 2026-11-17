@@ -1,0 +1,11 @@
+{
+  "after_removal": 404,
+  "body": {
+    "error": {
+      "code": "not_found",
+      "message": "space not found"
+    },
+    "ok": false,
+    "request_id": "directory-before-demotion"
+  }
+}

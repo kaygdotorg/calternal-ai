@@ -202,6 +202,8 @@ impl Policy {
     /// Recheck the already extracted scope, including before asynchronous delivery.
     /// Borrowing the scope adds no allocation; all authority still comes from a
     /// current directory read rather than the request's authenticated identity.
+    /// Missing membership hides both existing and absent spaces with not-found;
+    /// an existing member missing the required capability receives forbidden.
     pub fn authorize_space(
         &self,
         directory: &impl Directory,
@@ -210,7 +212,7 @@ impl Policy {
     ) -> Result<(), HostError> {
         match directory.capabilities(&principal.id, space) {
             None if self.scope == Scope::Note => Err(HostError::not_found("item not found")),
-            None => Err(HostError::forbidden("no access to this space")),
+            None => Err(HostError::not_found("space not found")),
             Some(set)
                 if self.scope == Scope::Note
                     && !set.contains(Capability::SpaceRead)

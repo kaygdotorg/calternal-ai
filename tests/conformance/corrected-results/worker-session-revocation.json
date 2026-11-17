@@ -1,0 +1,11 @@
+{
+  "body": {
+    "error": {
+      "code": "unauthorized",
+      "message": "missing or invalid session"
+    },
+    "ok": false,
+    "request_id": null
+  },
+  "status": 401
+}

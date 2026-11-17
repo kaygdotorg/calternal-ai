@@ -335,7 +335,7 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
             } else {
                 denial(
                     response,
-                    if role == 0 && item_operation(op) {
+                    if role == 0 {
                         StatusCode::NOT_FOUND
                     } else {
                         StatusCode::FORBIDDEN
@@ -343,7 +343,7 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
                     if role == 0 && item_operation(op) {
                         "item not found"
                     } else if role == 0 {
-                        "no access to this space"
+                        "space not found"
                     } else {
                         "insufficient role for this space"
                     },
@@ -353,15 +353,11 @@ async fn every_operation_role_unknown_space_and_token_matrix() {
                 fixture
                     .call(Some(TOKEN), "unknown", op, fixture.input(op, "unknown"))
                     .await,
-                if item_operation(op) {
-                    StatusCode::NOT_FOUND
-                } else {
-                    StatusCode::FORBIDDEN
-                },
+                StatusCode::NOT_FOUND,
                 if item_operation(op) {
                     "item not found"
                 } else {
-                    "no access to this space"
+                    "space not found"
                 },
             );
             for token in [None, Some("invalid-token")] {
@@ -399,15 +395,11 @@ async fn no_grant_hides_existing_and_absent_resources() {
         assert_eq!(existing, unknown, "space existence leak: {op}");
         denial(
             existing,
-            if item_operation(op) {
-                StatusCode::NOT_FOUND
-            } else {
-                StatusCode::FORBIDDEN
-            },
+            StatusCode::NOT_FOUND,
             if item_operation(op) {
                 "item not found"
             } else {
-                "no access to this space"
+                "space not found"
             },
         );
     }

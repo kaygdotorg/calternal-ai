@@ -7,6 +7,7 @@ license.workspace = true
 description = "Legacy-compatible auth database worker and bounded identity primitives"
 
 [dependencies]
+calternal-fsio.workspace = true
 rusqlite = { version = "0.41", features = ["bundled"] }
 tokio = { workspace = true, features = ["sync"] }
 thiserror.workspace = true

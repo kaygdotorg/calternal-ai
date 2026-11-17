@@ -1,0 +1,82 @@
+[
+  {
+    "ack_status": null,
+    "delay_us": 0,
+    "receipt": false,
+    "role": "editor",
+    "scenario": "spaces.set_role"
+  },
+  {
+    "ack_status": null,
+    "delay_us": 300,
+    "receipt": false,
+    "role": "editor",
+    "scenario": "spaces.set_role"
+  },
+  {
+    "ack_status": 200,
+    "delay_us": 2000,
+    "receipt": true,
+    "role": "reader",
+    "scenario": "spaces.set_role"
+  },
+  {
+    "ack_status": 200,
+    "delay_us": 10000,
+    "receipt": true,
+    "role": "reader",
+    "scenario": "spaces.set_role"
+  },
+  {
+    "ack_status": null,
+    "delay_us": 0,
+    "receipt": false,
+    "role": "editor",
+    "scenario": "spaces.transfer"
+  },
+  {
+    "ack_status": null,
+    "delay_us": 300,
+    "receipt": false,
+    "role": "editor",
+    "scenario": "spaces.transfer"
+  },
+  {
+    "ack_status": 200,
+    "delay_us": 2000,
+    "receipt": true,
+    "role": "manager",
+    "scenario": "spaces.transfer"
+  },
+  {
+    "ack_status": 200,
+    "delay_us": 10000,
+    "receipt": true,
+    "role": "manager",
+    "scenario": "spaces.transfer"
+  },
+  {
+    "ack_status": null,
+    "delay_us": 0,
+    "new_sessions": 0,
+    "scenario": "login"
+  },
+  {
+    "ack_status": null,
+    "delay_us": 300,
+    "new_sessions": 0,
+    "scenario": "login"
+  },
+  {
+    "ack_status": 200,
+    "delay_us": 2000,
+    "new_sessions": 1,
+    "scenario": "login"
+  },
+  {
+    "ack_status": 200,
+    "delay_us": 10000,
+    "new_sessions": 1,
+    "scenario": "login"
+  }
+]

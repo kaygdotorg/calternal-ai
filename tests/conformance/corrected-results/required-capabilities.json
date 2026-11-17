@@ -1,0 +1,104 @@
+[
+  {
+    "operation": "resolve",
+    "required": "space.read",
+    "with": 200,
+    "without": 404
+  },
+  {
+    "operation": "spaces.members",
+    "required": "space.read",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "spaces.set_role",
+    "required": "members.manage",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "spaces.remove_member",
+    "required": "members.manage",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "spaces.leave",
+    "required": "space.read",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "spaces.transfer",
+    "required": "space.transfer",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "spaces.delete",
+    "required": "space.delete",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "notes.list",
+    "required": "space.read",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "notes.get",
+    "required": "space.read",
+    "with": 200,
+    "without": 404
+  },
+  {
+    "operation": "notes.history",
+    "required": "space.read",
+    "with": 200,
+    "without": 404
+  },
+  {
+    "operation": "notes.create",
+    "required": "content.write",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "notes.update",
+    "required": "content.write",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "plugins.list",
+    "required": "space.read",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "plugins.enable",
+    "required": "plugins.manage",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "plugins.disable",
+    "required": "plugins.manage",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "plugins.preview",
+    "required": "space.read",
+    "with": 200,
+    "without": 403
+  },
+  {
+    "operation": "notes-insights.summarize",
+    "required": "space.read",
+    "with": 200,
+    "without": 404
+  }
+]

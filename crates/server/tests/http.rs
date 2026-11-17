@@ -226,7 +226,7 @@ fn permissions_two_principals() {
     );
     assert_eq!(
         (r.status, r.body["error"]["code"].as_str()),
-        (403, Some("forbidden"))
+        (404, Some("not_found"))
     );
     let r = op(
         &srv,
@@ -288,7 +288,7 @@ fn permissions_two_principals() {
         "notes.list",
         json!({"space_id": "other"}),
     );
-    assert_eq!(r.status, 403);
+    assert_eq!(r.status, 404);
 }
 
 #[test]

@@ -13,6 +13,7 @@ mod ceremony;
 mod config;
 pub mod db;
 pub mod limit;
+pub mod private_fs;
 mod passkey;
 mod passkeys;
 mod session;

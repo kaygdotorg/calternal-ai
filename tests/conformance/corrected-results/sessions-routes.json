@@ -1,0 +1,318 @@
+[
+  {
+    "route": "installations/revoke",
+    "status": 404
+  },
+  {
+    "route": "passkeys/remove",
+    "status": 404
+  },
+  {
+    "route": "passkeys/rename",
+    "status": 404
+  },
+  {
+    "revoked_route": "status",
+    "status": 200
+  },
+  {
+    "revoked_route": "setup/start",
+    "status": 400
+  },
+  {
+    "revoked_route": "setup/finish",
+    "status": 400
+  },
+  {
+    "revoked_route": "login/start",
+    "status": 200
+  },
+  {
+    "revoked_route": "login/finish",
+    "status": 400
+  },
+  {
+    "revoked_route": "reverify/start",
+    "status": 401
+  },
+  {
+    "revoked_route": "reverify/finish",
+    "status": 401
+  },
+  {
+    "revoked_route": "logout",
+    "status": 204
+  },
+  {
+    "revoked_route": "me",
+    "status": 401
+  },
+  {
+    "revoked_route": "installations",
+    "status": 401
+  },
+  {
+    "revoked_route": "installations/revoke",
+    "status": 401
+  },
+  {
+    "revoked_route": "passkeys",
+    "status": 401
+  },
+  {
+    "revoked_route": "passkeys/add/start",
+    "status": 401
+  },
+  {
+    "revoked_route": "passkeys/add/finish",
+    "status": 401
+  },
+  {
+    "revoked_route": "passkeys/rename",
+    "status": 401
+  },
+  {
+    "revoked_route": "passkeys/remove",
+    "status": 401
+  },
+  {
+    "origin": null,
+    "route": "status",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "setup/start",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "setup/finish",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "login/start",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "login/finish",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "reverify/start",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "reverify/finish",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "logout",
+    "status": 204
+  },
+  {
+    "origin": null,
+    "route": "me",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "installations",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "installations/revoke",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "passkeys",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "passkeys/add/start",
+    "status": 200
+  },
+  {
+    "origin": null,
+    "route": "passkeys/add/finish",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "passkeys/rename",
+    "status": 400
+  },
+  {
+    "origin": null,
+    "route": "passkeys/remove",
+    "status": 400
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "status",
+    "status": 200
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "setup/start",
+    "status": 403
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "setup/finish",
+    "status": 403
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "login/start",
+    "status": 403
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "login/finish",
+    "status": 403
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "reverify/start",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "reverify/finish",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "logout",
+    "status": 403
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "me",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "installations",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "installations/revoke",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "passkeys",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "passkeys/add/start",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "passkeys/add/finish",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "passkeys/rename",
+    "status": 401
+  },
+  {
+    "origin": "https://evil.invalid",
+    "route": "passkeys/remove",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "status",
+    "status": 200
+  },
+  {
+    "origin": "null",
+    "route": "setup/start",
+    "status": 403
+  },
+  {
+    "origin": "null",
+    "route": "setup/finish",
+    "status": 403
+  },
+  {
+    "origin": "null",
+    "route": "login/start",
+    "status": 403
+  },
+  {
+    "origin": "null",
+    "route": "login/finish",
+    "status": 403
+  },
+  {
+    "origin": "null",
+    "route": "reverify/start",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "reverify/finish",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "logout",
+    "status": 403
+  },
+  {
+    "origin": "null",
+    "route": "me",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "installations",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "installations/revoke",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "passkeys",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "passkeys/add/start",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "passkeys/add/finish",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "passkeys/rename",
+    "status": 401
+  },
+  {
+    "origin": "null",
+    "route": "passkeys/remove",
+    "status": 401
+  }
+]

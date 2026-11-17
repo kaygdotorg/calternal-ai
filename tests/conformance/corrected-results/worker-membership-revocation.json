@@ -1,0 +1,11 @@
+{
+  "body": {
+    "error": {
+      "code": "not_found",
+      "message": "item not found"
+    },
+    "ok": false,
+    "request_id": "inflight-worker"
+  },
+  "status": 404
+}

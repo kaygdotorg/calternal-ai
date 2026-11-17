@@ -346,13 +346,15 @@ impl Db {
     /// Blocking startup operation: creates parent directories, configures
     /// WAL/FULL/foreign keys and a 5 s busy timeout, then applies migrations
     /// atomically. Call outside async request workers. Returns [`Error::Internal`]
-    /// on filesystem, connection or migration failure. Does not validate root
-    /// pairing, enforce private file modes, or recover lost installation state;
+    /// on filesystem, connection or migration failure. Creates the requested
+    /// parent as 0700 and database as 0600 before SQLite can create sidecars.
+    /// Does not validate root pairing or recover lost installation state;
     /// callers must apply those guards before allowing database creation.
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(dir) = path.parent() {
             create_parent(dir)?;
         }
+        crate::private_fs::file(path).map_err(Error::internal)?;
         let conn = Connection::open(path).map_err(Error::internal)?;
         configure(&conn).map_err(Error::internal)?;
         migrate(&conn).map_err(Error::internal)?;
@@ -514,10 +516,9 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     tx.commit()
 }
 
-// Parent creation is intentionally isolated until the fsio port supplies
-// the appropriate helper; this is the source's ordinary mkdir, not a root guard.
+// Owner-only creation and fsio directory durability; not a root guard.
 fn create_parent(dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(dir).map_err(Error::internal)
+    crate::private_fs::directory(dir).map_err(Error::internal)
 }
 
 #[cfg(test)]

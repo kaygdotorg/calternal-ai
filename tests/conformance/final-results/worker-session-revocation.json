@@ -1,0 +1,41 @@
+{
+  "body": {
+    "data": {
+      "stats": {
+        "characters": 16,
+        "lines": 1,
+        "words": 2
+      },
+      "view": {
+        "genui_version": 1,
+        "root": {
+          "children": [
+            {
+              "id": "notes-insights.words",
+              "label": "Words",
+              "type": "stat",
+              "value": "2"
+            },
+            {
+              "id": "notes-insights.characters",
+              "label": "Characters",
+              "type": "stat",
+              "value": "16"
+            },
+            {
+              "id": "notes-insights.lines",
+              "label": "Lines",
+              "type": "stat",
+              "value": "1"
+            }
+          ],
+          "id": "notes-insights.stats",
+          "type": "stack"
+        }
+      }
+    },
+    "ok": true,
+    "request_id": "inflight-worker"
+  },
+  "status": 200
+}

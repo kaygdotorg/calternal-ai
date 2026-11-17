@@ -172,8 +172,7 @@ impl TokenTable {
         .map_err(|_| std::io::Error::other("directory startup failed"))?
         .map_err(std::io::Error::other)?;
         let dir = data_dir.join("dev-tokens");
-        fs::create_dir_all(&dir)?;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        calternal_auth::private_fs::directory(&dir)?;
         let mut entries = Vec::new();
         let mut files = Vec::new();
         for (name, id) in [("owner", ids.owner), ("guest", ids.guest)] {

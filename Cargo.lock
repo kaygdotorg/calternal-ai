@@ -346,6 +346,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "blake3",
+ "calternal-fsio",
  "getrandom 0.4.3",
  "rusqlite",
  "serde",
@@ -454,6 +455,7 @@ dependencies = [
  "axum",
  "calternal-auth",
  "calternal-core",
+ "calternal-fsio",
  "clap",
  "getrandom 0.3.4",
  "hex",

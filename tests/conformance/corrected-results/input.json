@@ -1,0 +1,119 @@
+[
+  {
+    "operation_body_status": 400
+  },
+  {
+    "operation_body_status": 400
+  },
+  {
+    "operation_body_status": 400
+  },
+  {
+    "operation_body_status": 400
+  },
+  {
+    "id": "../../escape",
+    "op": "notes.get",
+    "status": 400
+  },
+  {
+    "id": "../../escape",
+    "op": "notes.create",
+    "status": 400
+  },
+  {
+    "id": "../../escape",
+    "op": "plugins.enable",
+    "status": 400
+  },
+  {
+    "id": "/tmp/escape",
+    "op": "notes.get",
+    "status": 400
+  },
+  {
+    "id": "/tmp/escape",
+    "op": "notes.create",
+    "status": 400
+  },
+  {
+    "id": "/tmp/escape",
+    "op": "plugins.enable",
+    "status": 400
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "op": "notes.create",
+    "status": 404
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "op": "plugins.enable",
+    "status": 404
+  },
+  {
+    "id": "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "id": "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+    "op": "notes.create",
+    "status": 404
+  },
+  {
+    "id": "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF",
+    "op": "plugins.enable",
+    "status": 404
+  },
+  {
+    "id": "{00000000-0000-0000-0000-000000000000}",
+    "op": "notes.get",
+    "status": 404
+  },
+  {
+    "id": "{00000000-0000-0000-0000-000000000000}",
+    "op": "notes.create",
+    "status": 400
+  },
+  {
+    "id": "{00000000-0000-0000-0000-000000000000}",
+    "op": "plugins.enable",
+    "status": 400
+  },
+  {
+    "id": "%2e%2e%2fescape",
+    "op": "notes.get",
+    "status": 400
+  },
+  {
+    "id": "%2e%2e%2fescape",
+    "op": "notes.create",
+    "status": 400
+  },
+  {
+    "id": "%2e%2e%2fescape",
+    "op": "plugins.enable",
+    "status": 400
+  },
+  {
+    "id": "x\u0000x",
+    "op": "notes.get",
+    "status": 400
+  },
+  {
+    "id": "x\u0000x",
+    "op": "notes.create",
+    "status": 400
+  },
+  {
+    "id": "x\u0000x",
+    "op": "plugins.enable",
+    "status": 400
+  }
+]

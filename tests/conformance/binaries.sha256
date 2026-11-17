@@ -1,0 +1,4 @@
+b93d7e6020e984fe09bd30d91ed098ebdaf088e48953d841d74affb759b526f9  target/debug/calternal
+eb8dffa8b1e6ff1bbe9debdf746b61a44c71bcd55a1fd1b6f384cfb5b4c4de7a  plugins/notes-insights/dist/worker.js
+ae136212ab6242c3758a0dce2741fb544289d59c3c42959cc8596d0d31bb911f  Cargo.lock
+57ca9a98b8ef23ba606cbb8bd389e5bf3150dc26a1691b48834ec1a7a2115b1a  tests/conformance/isolation.rs

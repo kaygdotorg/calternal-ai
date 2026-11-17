@@ -1,0 +1,11 @@
+{
+  "after_removal": 403,
+  "body": {
+    "error": {
+      "code": "forbidden",
+      "message": "no access to this space"
+    },
+    "ok": false,
+    "request_id": "directory-before-demotion"
+  }
+}

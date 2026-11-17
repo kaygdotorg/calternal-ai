@@ -11,10 +11,8 @@ pub mod auth;
 pub mod authz;
 pub mod error;
 pub mod fault;
-// These two pre-existing modules belong to the storage/plugin lanes. Preserve
-// their existing warning level while enforcing documentation in owned modules.
+// Preserve the plugin module's pre-existing documentation warning level.
 #[warn(missing_docs)]
 pub mod plugins;
 pub mod resolve;
-#[warn(missing_docs)]
 pub mod store;

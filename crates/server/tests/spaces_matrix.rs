@@ -201,13 +201,15 @@ async fn stored_operations_have_complete_role_space_and_authentication_matrix() 
                     .call(Some(&f.token), "unknown", op, f.input(op, &f.personal))
                     .await;
                 assert_eq!(unknown, hidden, "space existence leak {op}");
-                assert_eq!(unknown.0, StatusCode::FORBIDDEN);
+                assert_eq!(unknown.0, StatusCode::NOT_FOUND);
             }
             let response = f.call(Some(&f.token), op, op, f.input(op, &f.shared)).await;
             assert_eq!(
                 response.0,
                 if allowed[index] {
                     StatusCode::OK
+                } else if role.is_none() && !matches!(*op, "spaces.list" | "spaces.create") {
+                    StatusCode::NOT_FOUND
                 } else {
                     StatusCode::FORBIDDEN
                 },
@@ -238,7 +240,7 @@ async fn sqlite_revocation_takes_effect_on_next_request_and_note_receipt_replay(
     let replay = f
         .call(Some(&f.token), "receipt", "notes.create", input)
         .await;
-    assert_eq!(replay.0, StatusCode::FORBIDDEN);
+    assert_eq!(replay.0, StatusCode::NOT_FOUND);
     assert_eq!(
         f.call(
             Some(&f.token),
@@ -248,7 +250,7 @@ async fn sqlite_revocation_takes_effect_on_next_request_and_note_receipt_replay(
         )
         .await
         .0,
-        StatusCode::FORBIDDEN
+        StatusCode::NOT_FOUND
     );
 }
 #[tokio::test]
@@ -268,7 +270,7 @@ async fn server_admin_has_no_space_content_access() {
             f.call(Some(&f.token), "admin", op, json!({"space_id":f.personal}))
                 .await
                 .0,
-            StatusCode::FORBIDDEN
+            StatusCode::NOT_FOUND
         );
     }
 }

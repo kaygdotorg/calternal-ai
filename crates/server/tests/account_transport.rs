@@ -116,7 +116,7 @@ async fn session_authenticates_an_account_and_never_implies_space_authority() {
     let request =
         json!({"request_id":"denied","operation":"notes.list","input":{"space_id":"personal"}});
     let refused = post(&app, "/api/v1/operations", Some(&cookie), request).await;
-    assert_eq!(refused.status, 403);
+    assert_eq!(refused.status, 404);
     let created = post(
         &app,
         "/api/v1/operations",

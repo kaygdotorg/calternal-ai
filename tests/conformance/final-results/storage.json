@@ -1,0 +1,294 @@
+{
+  "files": [
+    {
+      "directory": true,
+      "mode": "0700",
+      "path": "."
+    },
+    {
+      "directory": true,
+      "mode": "0755",
+      "path": "spaces"
+    },
+    {
+      "directory": true,
+      "mode": "0755",
+      "path": "spaces/01a1e81f-6b78-7433-a55d-eef89d0c9919"
+    },
+    {
+      "directory": true,
+      "mode": "0755",
+      "path": "spaces/01a1e81f-6b78-7433-a55d-eef89d0c9919/Notes"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "spaces/01a1e81f-6b78-7433-a55d-eef89d0c9919/Notes/1b8ea7c4-c233-4200-94ec-295573e42d7d.md"
+    },
+    {
+      "directory": true,
+      "mode": "0755",
+      "path": "spaces/01a1e81f-6b77-7559-971b-c8b315c5acbf"
+    },
+    {
+      "directory": true,
+      "mode": "0755",
+      "path": "spaces/01a1e81f-6b77-7559-971b-c8b315c5acbf/Notes"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "spaces/01a1e81f-6b77-7559-971b-c8b315c5acbf/Notes/9aa1c02a-4cc1-4429-9120-8a40c714fba5.md"
+    },
+    {
+      "directory": false,
+      "mode": "0600",
+      "path": "startup.json"
+    },
+    {
+      "directory": false,
+      "mode": "0600",
+      "path": "setup.token"
+    },
+    {
+      "directory": true,
+      "mode": "0755",
+      "path": "system"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "system/auth.db-shm"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "system/auth.db-wal"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "system/auth.db"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "state.sqlite3-shm"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "state.sqlite3-wal"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": "state.sqlite3"
+    },
+    {
+      "directory": false,
+      "mode": "0644",
+      "path": ".calternal.lock"
+    }
+  ],
+  "tables": [
+    {
+      "db": "state.sqlite3",
+      "rows": 2,
+      "sql": "CREATE TABLE notes (\n                    id TEXT PRIMARY KEY,\n                    space_id TEXT NOT NULL,\n                    title TEXT NOT NULL,\n                    head_revision TEXT NOT NULL,\n                    head_seq INTEGER NOT NULL,\n                    updated_at TEXT NOT NULL,\n                    mat_state TEXT NOT NULL,\n                    file_sha256 TEXT\n                )",
+      "table": "notes"
+    },
+    {
+      "db": "state.sqlite3",
+      "rows": 1,
+      "sql": "CREATE TABLE plugin_state (\n                    space_id TEXT NOT NULL,\n                    plugin_id TEXT NOT NULL,\n                    enabled INTEGER NOT NULL,\n                    generation INTEGER NOT NULL,\n                    PRIMARY KEY (space_id, plugin_id)\n                )",
+      "table": "plugin_state"
+    },
+    {
+      "db": "state.sqlite3",
+      "rows": 3,
+      "sql": "CREATE TABLE receipts (\n                    principal TEXT NOT NULL,\n                    request_id TEXT NOT NULL,\n                    operation TEXT NOT NULL,\n                    fingerprint TEXT NOT NULL,\n                    result_json TEXT NOT NULL,\n                    note_id TEXT,\n                    created_at TEXT NOT NULL,\n                    PRIMARY KEY (principal, request_id)\n                )",
+      "table": "receipts"
+    },
+    {
+      "db": "state.sqlite3",
+      "rows": 2,
+      "sql": "CREATE TABLE versions (\n                    note_id TEXT NOT NULL REFERENCES notes(id),\n                    seq INTEGER NOT NULL,\n                    revision TEXT NOT NULL UNIQUE,\n                    title TEXT NOT NULL,\n                    markdown TEXT NOT NULL,\n                    updated_at TEXT NOT NULL,\n                    author TEXT NOT NULL,\n                    PRIMARY KEY (note_id, seq)\n                )",
+      "table": "versions"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE development_directory(name TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE) STRICT",
+      "table": "development_directory"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE group_members (\n    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,\n    user_id TEXT NOT NULL REFERENCES users(id),\n    manager INTEGER NOT NULL DEFAULT 0 CHECK (manager IN (0,1)),\n    PRIMARY KEY (group_id,user_id)\n)",
+      "table": "group_members"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE groups (\n    id TEXT PRIMARY KEY,\n    name TEXT NOT NULL,\n    source TEXT NOT NULL DEFAULT 'local' CHECK (source IN ('local','oidc'))\n)",
+      "table": "groups"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE installation_notes_scopes (\n    installation_id TEXT NOT NULL REFERENCES installations(id) ON DELETE CASCADE,\n    scope TEXT NOT NULL CHECK (scope IN ('notes.read','notes.write','notes.share')),\n    PRIMARY KEY (installation_id, scope)\n) STRICT",
+      "table": "installation_notes_scopes"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 10,
+      "sql": "CREATE TABLE installations (\n    id           TEXT PRIMARY KEY,\n    user_id      TEXT NOT NULL REFERENCES users(id),\n    kind         TEXT NOT NULL CHECK (kind IN ('browser', 'native', 'cli', 'agent', 'dav')),\n    name         TEXT NOT NULL,\n    token_hash   BLOB NOT NULL UNIQUE,\n    created_at   INTEGER NOT NULL,\n    last_seen_at INTEGER NOT NULL,\n    expires_at   INTEGER,\n    revoked_at   INTEGER\n, scopes TEXT NOT NULL DEFAULT '', assertion_at INTEGER, registration_session INTEGER NOT NULL DEFAULT 0)",
+      "table": "installations"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE invite_groups (\n    invite_id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE,\n    group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,\n    PRIMARY KEY (invite_id,group_id)\n)",
+      "table": "invite_groups"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE invites (\n    id TEXT PRIMARY KEY,\n    created_by TEXT NOT NULL REFERENCES users(id),\n    hash BLOB NOT NULL UNIQUE,\n    secret BLOB NOT NULL,\n    created_at INTEGER NOT NULL,\n    expires_at INTEGER NOT NULL,\n    used_at INTEGER,\n    revoked_at INTEGER,\n    quota_bytes INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0),\n    plan TEXT\n, lookup_version INTEGER NOT NULL DEFAULT 0)",
+      "table": "invites"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE note_journal (\n    owner_id TEXT NOT NULL,\n    note_id TEXT NOT NULL,\n    note_seq INTEGER NOT NULL CHECK (note_seq > 0),\n    event_id TEXT NOT NULL,\n    kind TEXT NOT NULL,\n    item TEXT NOT NULL,\n    data TEXT NOT NULL,\n    actor_id TEXT NOT NULL REFERENCES users(id),\n    installation_id TEXT REFERENCES installations(id),\n    request_id TEXT,\n    at_ms INTEGER NOT NULL,\n    PRIMARY KEY (owner_id, note_id, note_seq),\n    UNIQUE (owner_id, event_id),\n    FOREIGN KEY (owner_id, note_id) REFERENCES note_shares(owner_id, note_id)\n) STRICT",
+      "table": "note_journal"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE note_shares (\n    id TEXT PRIMARY KEY,\n    owner_id TEXT NOT NULL REFERENCES users(id),\n    note_id TEXT NOT NULL,\n    last_note_seq INTEGER NOT NULL DEFAULT 0 CHECK (last_note_seq >= 0),\n    created_at INTEGER NOT NULL,\n    creator_installation TEXT REFERENCES installations(id), deleted_at_seq INTEGER\n    CHECK (deleted_at_seq IS NULL OR deleted_at_seq > 0),\n    UNIQUE (owner_id, note_id)\n) STRICT",
+      "table": "note_shares"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 5,
+      "sql": "CREATE TABLE passkeys (\n    cred_id      BLOB PRIMARY KEY,\n    user_id      TEXT NOT NULL REFERENCES users(id),\n    passkey      TEXT NOT NULL,\n    created_at   INTEGER NOT NULL,\n    last_used_at INTEGER\n, name TEXT NOT NULL DEFAULT 'Passkey')",
+      "table": "passkeys"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE recipient_control (\n    id TEXT PRIMARY KEY,\n    recipient_id TEXT NOT NULL REFERENCES users(id),\n    share_id TEXT NOT NULL REFERENCES note_shares(id) ON DELETE CASCADE,\n    note_seq INTEGER NOT NULL CHECK (note_seq >= 0),\n    kind TEXT NOT NULL CHECK (kind IN ('purge','delete','baseline','loss-of-edit')),\n    created_at INTEGER NOT NULL,\n    UNIQUE (recipient_id, share_id, note_seq, kind)\n) STRICT",
+      "table": "recipient_control"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE recipient_control_acks (\n    control_id TEXT NOT NULL REFERENCES recipient_control(id) ON DELETE CASCADE,\n    installation_id TEXT NOT NULL REFERENCES installations(id) ON DELETE CASCADE,\n    acknowledged_at INTEGER NOT NULL,\n    PRIMARY KEY (control_id, installation_id)\n) STRICT",
+      "table": "recipient_control_acks"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE recipient_share_fences (\n    recipient_id TEXT NOT NULL REFERENCES users(id),\n    share_id TEXT NOT NULL REFERENCES note_shares(id) ON DELETE CASCADE,\n    note_seq INTEGER NOT NULL CHECK (note_seq >= 0),\n    PRIMARY KEY (recipient_id, share_id)\n) STRICT",
+      "table": "recipient_share_fences"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE recipient_share_state (\n    recipient_id TEXT NOT NULL REFERENCES users(id),\n    share_id TEXT NOT NULL REFERENCES note_shares(id) ON DELETE CASCADE,\n    hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0,1)),\n    PRIMARY KEY (recipient_id, share_id)\n) STRICT",
+      "table": "recipient_share_state"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 4,
+      "sql": "CREATE TABLE role_capabilities (\n    role TEXT NOT NULL REFERENCES roles(name),\n    capability TEXT NOT NULL,\n    PRIMARY KEY (role, capability)\n)",
+      "table": "role_capabilities"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 2,
+      "sql": "CREATE TABLE roles (name TEXT PRIMARY KEY)",
+      "table": "roles"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 5,
+      "sql": "CREATE TABLE setup_tokens (\n    hash        BLOB PRIMARY KEY,\n    purpose     TEXT NOT NULL CHECK (purpose IN ('first-owner', 'recover')),\n    user_id     TEXT REFERENCES users(id),\n    created_at  INTEGER NOT NULL,\n    expires_at  INTEGER NOT NULL,\n    used_at     INTEGER\n)",
+      "table": "setup_tokens"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE share_fanout (\n    owner_id TEXT NOT NULL,\n    note_id TEXT NOT NULL,\n    note_seq INTEGER NOT NULL,\n    created_at INTEGER NOT NULL,\n    PRIMARY KEY (owner_id, note_id, note_seq),\n    FOREIGN KEY (owner_id, note_id, note_seq)\n        REFERENCES note_journal(owner_id, note_id, note_seq) ON DELETE CASCADE\n) STRICT",
+      "table": "share_fanout"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE share_fanout_acks (\n    owner_id TEXT NOT NULL,\n    note_id TEXT NOT NULL,\n    note_seq INTEGER NOT NULL,\n    installation_id TEXT NOT NULL REFERENCES installations(id) ON DELETE CASCADE,\n    acknowledged_at INTEGER NOT NULL,\n    PRIMARY KEY (owner_id, note_id, note_seq, installation_id),\n    FOREIGN KEY (owner_id, note_id, note_seq)\n        REFERENCES share_fanout(owner_id, note_id, note_seq) ON DELETE CASCADE\n) STRICT",
+      "table": "share_fanout_acks"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE share_fanout_deliveries (\n    owner_id TEXT NOT NULL,\n    note_id TEXT NOT NULL,\n    note_seq INTEGER NOT NULL,\n    recipient_id TEXT NOT NULL REFERENCES users(id),\n    delivered_at INTEGER NOT NULL,\n    PRIMARY KEY (owner_id, note_id, note_seq, recipient_id),\n    FOREIGN KEY (owner_id, note_id, note_seq)\n        REFERENCES share_fanout(owner_id, note_id, note_seq) ON DELETE CASCADE\n) STRICT",
+      "table": "share_fanout_deliveries"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE share_grants (\n    id TEXT PRIMARY KEY,\n    share_id TEXT NOT NULL REFERENCES note_shares(id) ON DELETE CASCADE,\n    person_id TEXT NOT NULL REFERENCES users(id),\n    permission TEXT NOT NULL CHECK (permission IN ('read','edit')),\n    grant_start_seq INTEGER NOT NULL CHECK (grant_start_seq >= 0),\n    revoked_at_seq INTEGER CHECK (revoked_at_seq IS NULL OR revoked_at_seq > grant_start_seq),\n    created_by TEXT NOT NULL REFERENCES users(id),\n    revoked_by TEXT REFERENCES users(id)\n) STRICT",
+      "table": "share_grants"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE sharing_installation_resets (\n    installation_id TEXT PRIMARY KEY REFERENCES installations(id) ON DELETE CASCADE,\n    required_at INTEGER NOT NULL\n) STRICT",
+      "table": "sharing_installation_resets"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 0,
+      "sql": "CREATE TABLE sharing_reset_cursors (\n    installation_id TEXT NOT NULL REFERENCES installations(id) ON DELETE CASCADE,\n    owner_id TEXT NOT NULL REFERENCES users(id),\n    note_id TEXT NOT NULL,\n    note_seq INTEGER NOT NULL CHECK (note_seq >= 0),\n    PRIMARY KEY (installation_id, owner_id, note_id)\n) STRICT",
+      "table": "sharing_reset_cursors"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 9,
+      "sql": "CREATE TABLE space_memberships(\n space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,\n account_id TEXT NOT NULL REFERENCES users(id),\n role TEXT NOT NULL REFERENCES space_roles(name) CHECK(role<>'owner'),\n PRIMARY KEY(space_id,account_id)\n) STRICT",
+      "table": "space_memberships"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 5,
+      "sql": "CREATE TABLE space_receipts(\n actor TEXT NOT NULL REFERENCES users(id),\n request_id TEXT NOT NULL,\n operation TEXT NOT NULL,\n fingerprint TEXT NOT NULL,\n result TEXT NOT NULL,\n PRIMARY KEY(actor,request_id)\n) STRICT",
+      "table": "space_receipts"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 21,
+      "sql": "CREATE TABLE space_role_capabilities(\n    role TEXT NOT NULL REFERENCES space_roles(name),\n    capability TEXT NOT NULL,\n    PRIMARY KEY(role,capability)\n) STRICT",
+      "table": "space_role_capabilities"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 4,
+      "sql": "CREATE TABLE space_roles(name TEXT PRIMARY KEY) STRICT",
+      "table": "space_roles"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 5,
+      "sql": "CREATE TABLE spaces(\n id TEXT PRIMARY KEY,\n name TEXT NOT NULL,\n owner_account TEXT NOT NULL REFERENCES users(id),\n created INTEGER NOT NULL,\n FOREIGN KEY(id,owner_account) REFERENCES space_memberships(space_id,account_id) DEFERRABLE INITIALLY DEFERRED\n) STRICT",
+      "table": "spaces"
+    },
+    {
+      "db": "system/auth.db",
+      "rows": 5,
+      "sql": "CREATE TABLE users (\n    id          TEXT PRIMARY KEY,\n    name        TEXT NOT NULL,\n    username    TEXT NOT NULL UNIQUE COLLATE NOCASE,\n    created_at  INTEGER NOT NULL\n, role TEXT NOT NULL DEFAULT 'member', quota_bytes INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0))",
+      "table": "users"
+    }
+  ]
+}

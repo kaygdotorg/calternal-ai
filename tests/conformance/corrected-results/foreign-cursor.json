@@ -1,0 +1,11 @@
+{
+  "body": {
+    "error": {
+      "code": "invalid_input",
+      "message": "invalid history cursor"
+    },
+    "ok": false,
+    "request_id": "01a1e82b-e6c7-70f0-a85e-98b17e3fd68c"
+  },
+  "status": 400
+}

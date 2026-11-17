@@ -1,0 +1,18 @@
+{
+  "body": {
+    "data": {
+      "next_cursor": null,
+      "versions": [
+        {
+          "markdown": "private content\n",
+          "revision": "v1.fcff5eec6816c339",
+          "title": "Secret",
+          "updated_at": "2026-11-17T06:08:55.879Z"
+        }
+      ]
+    },
+    "ok": true,
+    "request_id": "01a1e81f-6c48-7794-8342-c02fd293425e"
+  },
+  "status": 200
+}

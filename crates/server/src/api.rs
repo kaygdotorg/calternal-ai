@@ -179,6 +179,8 @@ fn is_api(path: &str) -> bool {
 
 /// Host allowlist (DNS-rebinding defense), configured Origin checks, current session
 /// or explicitly enabled development bearer auth, and security headers on every response.
+/// Successful operation/discovery delivery revalidates the originating credential
+/// after the handler finishes, discarding work whose session was revoked meanwhile.
 async fn guard<D: Directory>(
     State(state): State<Shared<D>>,
     mut req: Request,
@@ -267,7 +269,28 @@ async fn guard<D: Directory>(
                 }
             }
         }
-        next.run(req).await
+        let credentials = req.headers().clone();
+        let admitted = req.extensions().get::<Identity>().cloned();
+        let response = next.run(req).await;
+        if api && !account_route && response.status().is_success() {
+            let session = if let Some(service) = state.tokens.http_auth() {
+                crate::account_http::identify(service, &credentials)
+                    .await
+                    .map(|(id, _)| Identity {
+                        id: Arc::from(id.to_string()),
+                    })
+            } else {
+                None
+            };
+            let current =
+                session.or_else(|| bearer(&credentials).and_then(|t| state.tokens.authenticate(t)));
+            if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
+                || current.is_none()
+            {
+                break 'resp deny(HostError::unauthorized("missing or invalid session"));
+            }
+        }
+        response
     };
     let mut resp = resp;
     let h = resp.headers_mut();
