@@ -39,8 +39,17 @@ permission mode, chosen in the composer:
 | --- | --- | --- |
 | Least access | Use the thread, its workspace, and the app it was opened from | For anything else: a grant names the app, read or write, and once, this thread, or always in this space |
 | **Approve for me** (default) | Act with the person's access in the space; each request is reviewed automatically | Only for high-risk actions: messaging outside, spending, publishing or sharing outside, and anything that widens access. Asked once per scope, not repeatedly |
-| Full access | Everything, with no sandbox and no approvals | Never. Offered only on the person's own machine |
+| Full access | Everything the person can do in the space, with no approvals | Never |
 
+- The mode is about approvals only. Where the agent runs is a separate setting of the
+  machine: in the cloud always inside the person's sandbox; on their own machine sandboxed
+  or direct, as they chose for that machine. Both show as their own chip in the composer
+  and in the thread's details.
+- Automatic review in Approve for me is rules, by the risk class each operation declares
+  in its manifest: reads and changes that can be undone are allowed; changes that cannot
+  be undone ask; effects outside Calternal ask once per scope; anything that widens
+  access always asks. Nothing inside the sandbox needs review. A reviewing model may be
+  added later for the cannot-undo class only, able to allow or pass to the person.
 - Approvals appear in the request bar on a trusted form the agent cannot answer.
 - Every change of access or mode issues a new token and ends the old one.
 - What an agent reads (a note, a web page, a mail) is data, never an instruction, in every mode.
