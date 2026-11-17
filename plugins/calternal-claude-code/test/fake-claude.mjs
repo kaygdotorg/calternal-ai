@@ -2,12 +2,15 @@
 // Account-free fixture of the documented stream-json output, selected by prompt.
 import { existsSync,readFileSync,writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 const args=process.argv.slice(2);
 if(args.join(' ')==='auth status'){
   // Raw status and stderr must never reach the adapter's caller.
   console.log(JSON.stringify({authMethod:existsSync(join(process.env.HOME,'subscription'))?'claude.ai':'api_key',private:'PRIVATE_LOGIN_SENTINEL'})); console.error('PRIVATE_LOGIN_SENTINEL');
   process.exit(existsSync(join(process.env.HOME,'signed-in'))?0:1);
 }
+// The machine supplies the same operation CLI inside both execution backends.
+if(process.env.CALTERNAL_AGENT_TOKEN) execFileSync('calternal',['--help'],{stdio:'ignore'});
 let prompt='';for await(const data of process.stdin)prompt+=data;
 const emit=m=>process.stdout.write(JSON.stringify(m)+'\n');
 if(!args.includes('--append-system-prompt')||!args.includes('--disallowedTools')||process.env.ANTHROPIC_API_KEY||process.env.CLAUDE_CODE_OAUTH_TOKEN)process.exit(93);

@@ -10,8 +10,10 @@ and handles no OAuth token, API key or provider login file. The person uses
 
 Build from the repository root: `npm ci && npm run build:plugins`. Install `dist/`
 and `bin/` together in the sandbox image; put `bin/` on PATH. The Containerfile is
-built from the repository root. The machine supplies its own read-only Calternal
+built from the repository root. Linux machines supply their own read-only Calternal
 CLI; Nix builds also expose the immutable Nix store for runtime dependencies.
+On other host platforms, the image must include a matching Linux Calternal CLI;
+a native host executable is not mounted into a Linux container.
 Install the official Claude Code binary in the persistent account home, normally
 `~/.local/bin/claude`. It is never installed, patched or signed in by the adapter.
 
@@ -36,3 +38,11 @@ Official interface references:
 - [Programmatic use](https://code.claude.com/docs/en/headless)
 - [CLI reference](https://code.claude.com/docs/en/cli-reference)
 - [Stream message and error types](https://code.claude.com/docs/en/agent-sdk/typescript)
+
+The fake provider can also run through the actual rootless container layout, with
+the mounted Calternal executable checked inside it. On the dev VM, build plugins,
+run `test/build-image.sh localhost/calternal-provider-fixture` from this package,
+then set `CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-provider-fixture` for
+`cargo test -j6 -p calternal-server --test provider_container`. The fixture builder
+uses a bounded context and an empty registry auth file. It installs only the fake
+CLI and never signs in. The test removes only its fresh account's containers.

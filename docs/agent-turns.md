@@ -23,6 +23,9 @@ for the Calternal CLI. Remote sandboxes use the server's HTTPS origin: a loopbac
 URL names the sandbox itself. HTTP is accepted only for direct loopback previews.
 The server never receives the provider login.
 
+`check` and `run` accept `--provider <plugin-id>`; omitting it uses the server
+default. An omitted `--model` uses that provider manifest's default model.
+
 One thread has at most one active or interrupted job. Admission records the prompt
 before returning, reuses the same job on an identical request ID, and refuses a
 changed input or concurrent turn. Each space's existing jobs SQLite file holds
@@ -44,6 +47,27 @@ home. Container names and directories include the account UUID, preventing a
 caller reusing a thread UUID from adopting another account's mounts. Persistent
 provider homes are intentionally retained until the machine owner removes them;
 the provider owns the files, and Calternal does not inspect or clean login files.
+
+Working areas follow the accepted orchestration retention rule: keep them until
+all changes are preserved or the person explicitly discards them. This lane keeps
+released workspaces and stopped containers until explicit deletion, with no timed
+expiry. A person runs `calternal agent ... discard <job-id>` after stopping the
+latest turn. The operation reports pending until every retained target machine
+confirms removal; the persistent account home remains. A failed result requires
+inspection and `discard <job-id> --retry`. Offline, never-sent requests survive
+restart. An in-flight deletion lost with a session becomes failed rather than
+being replayed over possibly newer work. Another active or newer turn refuses
+an old discard. A machine owner can stop its role and run
+`calternal machine discard --account-id <uuid> --thread-id <uuid> [--dir DIR]`
+for copies older than job/lease history. Auto removes Podman artifacts when the
+engine is available; `--backend direct|podman` selects explicitly. A machine-directory
+lock prevents this local command from overlapping a live role.
+
+Deletion metadata has at most 128 unfinished requests and at most 1152 total rows
+per machine; completed rows are pruned after seven days or down to 1024 during
+cleanup activity. There are at most 64 target machines per request. Automatic
+cleanup after every change is preserved, and disk accounting against the person's
+plan, are named follow-ups. Neither is replaced by a timed workspace expiry.
 
 Permission mode is independent of execution isolation. Cloud/pool machines always
 use a sandbox. An account-owned machine defaults to sandboxed execution; its owner
@@ -100,6 +124,11 @@ message, not a replay of the original task. A `retry_waiting` job has durable
 milliseconds. It holds no provider process or execution permit; its same-machine
 lease remains fenced by the ordinary machine protocol. A silent waiting machine
 interrupts the job instead of moving it. Restart restores the wait deadline.
+
+Turning off the applicable recovery setting during a wait parks the turn as
+interrupted; it does not perform one more automatic retry. Placement queues hold
+no shared execution slot. Only placed readers await the existing fair execution
+budget, while continuing cancellation and lease checks.
 
 The orchestrator manifest declares typed default booleans for provider-error
 retry and subscription-limit snoozing; both default on. `agent.settings` reads or

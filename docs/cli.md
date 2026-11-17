@@ -146,7 +146,7 @@ forced to UTC+1 and codes, ids, paths and ports replaced by placeholders).
 
 ## Manual agents
 
-`calternal agent check|run|stop|resume` supervises an official CLI on an enrolled
+`calternal agent check|run|stop|resume|discard` supervises an official CLI on an enrolled
 machine. `agent mode` and `agent approve` require a freshly verified person
 session. `run` and `resume` stream text/tool steps in human mode and NDJSON with
 `--json`. The same binary exposes `describe` and `invoke` inside a sandbox using
@@ -161,3 +161,9 @@ Human output uses labelled fields. Reconnect uses accepted signed bookmarks;
 That directory must be exclusive to this server and signed-in account; discard it
 on sign-out or account changes. Without the option, bookmarks stay in memory.
 A reset stops watch: reload the authorized space before discarding its old bookmark.
+
+`calternal agent discard <job-id>` keeps the account login home and reports pending
+until the machines confirm deletion. Stop the latest turn first. Inspect a failed
+cleanup before `discard <job-id> --retry`. A machine owner can stop its role and
+use `calternal machine discard --account-id <uuid> --thread-id <uuid>` for retained
+local work; `--json` returns the same confirmation and identifiers.
