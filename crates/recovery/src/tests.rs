@@ -109,17 +109,12 @@ impl Fixture {
 }
 const STEPS: &[Step] = &[
     Step::BeforeIntent,
+    Step::BeforeAppend,
+    Step::AfterPrefix,
+    Step::AfterAppend,
     Step::AfterIntent,
-    Step::BeforePendingHead,
-    Step::AfterPendingHead,
     Step::BeforeCommit,
     Step::AfterCommit,
-    Step::BeforeIndex,
-    Step::AfterIndex,
-    Step::BeforeRecord,
-    Step::AfterRecord,
-    Step::BeforeDirectorySync,
-    Step::AfterDirectorySync,
     Step::BeforeCompletion,
     Step::AfterCompletion,
 ];
@@ -146,62 +141,30 @@ fn every_crash_boundary_preserves_the_transaction_decision() {
             let f = Fixture::new();
             let old = f.baseline();
             let coordinator = injected(&f.root, f.install, step);
-            let mut c = f.connection();
-            let tx = c
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .unwrap();
+            let mut db = f.connection();
+            let tx = db.transaction().unwrap();
             f.mutate(&tx, mutation);
-            let prepare = coordinator.prepare(&tx);
-            let committed = match prepare {
+            let committed = match coordinator.prepare(&tx) {
                 Err(_) => {
                     drop(tx);
                     false
                 }
                 Ok(id) => {
                     tx.commit().unwrap();
-                    assert!(
-                        coordinator.complete(&c, &id).is_err(),
-                        "{mutation} {step:?}"
-                    );
+                    assert!(coordinator.complete(&db, &id).is_err(), "{step:?}");
                     true
                 }
             };
-            // A pending intent cannot be used for state-loss recovery, even if
-            // the last complete version was otherwise readable.
-            if step != Step::BeforeIntent
-                && step != Step::BeforeDirectorySync
-                && step != Step::AfterCompletion
-            {
-                assert!(
-                    f.coordinator().validate_and_read().is_err(),
-                    "{mutation} {step:?}"
-                );
-            }
-            drop(c);
-            let c = f.connection();
-            // Crash once in replay, then restart it twice. Both the decision
-            // point and each publication/completion step must be repeatable.
-            if step != Step::BeforeIntent
-                && step != Step::BeforeDirectorySync
-                && step != Step::AfterCompletion
-            {
-                assert!(
-                    injected(&f.root, f.install, Step::Replay)
-                        .replay(&c)
-                        .is_err()
-                );
-            }
-            let recovery = f.coordinator();
-            recovery.replay(&c).unwrap();
-            recovery.replay(&c).unwrap();
-            let recovered = recovery.validate_and_read().unwrap();
-            let current = capture(&c, f.install, 999).unwrap();
-            assert_eq!(recovered.tables, current.tables, "{mutation} {step:?}");
-            if committed {
-                assert_ne!(recovered.tables, old.tables);
-            } else {
-                assert_eq!(recovered.tables, old.tables);
-            }
+            let replay = f.coordinator();
+            replay.replay(&db).unwrap();
+            replay.replay(&db).unwrap();
+            let snapshot = replay.validate_and_read().unwrap();
+            assert_eq!(
+                snapshot.tables,
+                capture(&db, f.install, 1).unwrap().tables,
+                "{mutation} {step:?}"
+            );
+            assert_eq!(snapshot.tables == old.tables, !committed);
         }
     }
 }
@@ -209,36 +172,39 @@ fn every_crash_boundary_preserves_the_transaction_decision() {
 #[test]
 fn crashes_at_each_replay_publication_boundary_are_idempotent() {
     for mutation in ["grant", "revoke", "role", "transfer", "passkey"] {
-        for step in [
-            Step::Replay,
-            Step::BeforeRecord,
-            Step::AfterRecord,
-            Step::BeforeDirectorySync,
-            Step::AfterDirectorySync,
-            Step::BeforeCompletion,
-            Step::AfterCompletion,
-        ] {
-            let f = Fixture::new();
-            f.baseline();
-            let coordinator = f.coordinator();
-            let mut c = f.connection();
-            let tx = c
-                .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-                .unwrap();
-            f.mutate(&tx, mutation);
-            coordinator.prepare(&tx).unwrap();
-            tx.commit().unwrap();
-            assert!(
-                injected(&f.root, f.install, step).replay(&c).is_err(),
-                "{mutation} {step:?}"
-            );
-            let replay = f.coordinator();
-            replay.replay(&c).unwrap();
-            replay.replay(&c).unwrap();
-            assert_eq!(
-                replay.validate_and_read().unwrap().tables,
-                capture(&c, f.install, 1).unwrap().tables
-            );
+        for committed in [false, true] {
+            for step in [
+                Step::Replay,
+                Step::BeforeCompletion,
+                Step::BeforeAppend,
+                Step::AfterPrefix,
+                Step::AfterAppend,
+                Step::FileSynced,
+                Step::AfterCompletion,
+            ] {
+                let f = Fixture::new();
+                let old = f.baseline();
+                let c = f.coordinator();
+                let mut db = f.connection();
+                let tx = db.transaction().unwrap();
+                f.mutate(&tx, mutation);
+                c.prepare(&tx).unwrap();
+                if committed {
+                    tx.commit().unwrap();
+                } else {
+                    drop(tx);
+                }
+                assert!(
+                    injected(&f.root, f.install, step).replay(&db).is_err(),
+                    "{step:?}"
+                );
+                let replay = f.coordinator();
+                replay.replay(&db).unwrap();
+                replay.replay(&db).unwrap();
+                let snapshot = replay.validate_and_read().unwrap();
+                assert_eq!(snapshot.tables, capture(&db, f.install, 1).unwrap().tables);
+                assert_eq!(snapshot.tables == old.tables, !committed);
+            }
         }
     }
 }
@@ -299,32 +265,26 @@ fn space_api_never_acknowledges_failed_intent_or_completion() {
 fn wrong_installation_truncation_bit_flip_and_missing_record_refuse() {
     for damage in [
         "installation",
-        "truncate-intent",
-        "flip-intent",
-        "truncate-completion",
-        "flip-record",
-        "flip-space",
-        "missing-record",
-        "missing-intent",
+        "truncate-log",
+        "flip-log",
+        "missing-log",
+        "truncate-snapshot",
+        "flip-snapshot",
+        "missing-snapshot",
     ] {
         let f = Fixture::new();
         f.baseline();
-        let coordinator = f.coordinator();
+        let c = f.coordinator();
         if damage == "installation" {
             assert!(Coordinator::open(&f.root, Uuid::now_v7()).is_err());
             continue;
         }
-        let intent = coordinator.intents().unwrap().pop().unwrap();
-        let record = record_path(&f, &format!("1{}", f.owner.0.simple()));
-        let path = match damage {
-            "truncate-intent" | "flip-intent" | "missing-intent" => {
-                f.root.join("transactions").join(&intent)
-            }
-            "truncate-completion" => f.root.join("head.json"),
-            "flip-space" => record_path(&f, &format!("2{}", f.space.0.simple())),
-            _ => record,
+        let path = if damage.ends_with("log") {
+            log_path(&f)
+        } else {
+            f.root.join("snapshot.json")
         };
-        if damage.starts_with("missing-") {
+        if damage.starts_with("missing") {
             std::fs::remove_file(path).unwrap();
         } else {
             let mut bytes = std::fs::read(&path).unwrap();
@@ -336,7 +296,7 @@ fn wrong_installation_truncation_bit_flip_and_missing_record_refuse() {
             }
             fsio::write_atomic_mode(&path, &bytes, 0o600).unwrap();
         }
-        assert!(coordinator.validate_and_read().is_err(), "{damage}");
+        assert!(c.validate_and_read().is_err(), "{damage}");
     }
 }
 
@@ -344,39 +304,33 @@ fn wrong_installation_truncation_bit_flip_and_missing_record_refuse() {
 fn modes_symlinks_and_space_records_keep_credentials_private() {
     let f = Fixture::new();
     f.baseline();
-    for sub in ["accounts", "spaces", "transactions", "index"] {
-        for entry in std::fs::read_dir(f.root.join(sub)).unwrap() {
-            let path = entry.unwrap().path();
-            assert_eq!(
-                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-            if sub == "spaces" {
-                let bytes = std::fs::read(path).unwrap();
-                let env: Envelope = serde_json::from_slice(&bytes).unwrap();
-                let text = String::from_utf8(env.bytes).unwrap();
-                for secret in [
-                    "PRIVATE-PASSKEY",
-                    "passkeys",
-                    "token_hash",
-                    "setup_tokens",
-                    "installations",
-                ] {
-                    assert!(!text.contains(secret));
-                }
-                assert!(text.contains(&f.space.to_string()));
-            }
-        }
+    let c = f.coordinator();
+    for e in std::fs::read_dir(&f.root).unwrap() {
+        assert_eq!(
+            e.unwrap().metadata().unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
-    // Refuse final root symlinks and insecure parent permissions.
+    let s = c.load().unwrap();
+    let space = &s.image.records[&format!("2{}", f.space.0.simple())];
+    let text = serde_json::to_string(space).unwrap();
+    for secret in [
+        "PRIVATE-PASSKEY",
+        "passkeys",
+        "token_hash",
+        "setup_tokens",
+        "installations",
+    ] {
+        assert!(!text.contains(secret));
+    }
     let link = f._dir.path().join("link");
     std::os::unix::fs::symlink(&f.root, &link).unwrap();
     assert!(Coordinator::open(&link, f.install).is_err());
-    let account = record_path(&f, &format!("1{}", f.owner.0.simple()));
+    let path = log_path(&f);
     let held = f._dir.path().join("held");
-    std::fs::rename(&account, &held).unwrap();
-    std::os::unix::fs::symlink(&held, &account).unwrap();
-    assert!(f.coordinator().validate_and_read().is_err());
+    std::fs::rename(&path, &held).unwrap();
+    std::os::unix::fs::symlink(&held, &path).unwrap();
+    assert!(c.validate_and_read().is_err());
     std::fs::set_permissions(&f.root, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(Coordinator::open(&f.root, f.install).is_err());
 }
@@ -408,11 +362,11 @@ fn equal_account_and_space_ids_and_changed_witnesses_refuse() {
     let coordinator = f.coordinator();
     let tx = c.transaction().unwrap();
     f.mutate(&tx, "grant");
-    let id = coordinator.prepare(&tx).unwrap();
+    let _id = coordinator.prepare(&tx).unwrap();
     tx.commit().unwrap();
     c.execute(
-        "UPDATE security_recovery_commits SET digest='wrong' WHERE id=?1",
-        [id],
+        "UPDATE security_recovery_commits SET digest='wrong' WHERE singleton=1",
+        [],
     )
     .unwrap();
     assert!(coordinator.replay(&c).is_err());
@@ -475,32 +429,29 @@ async fn account_creation_passkey_removal_and_session_revocation_use_the_barrier
 #[test]
 fn second_record_failure_never_exposes_a_partial_snapshot() {
     let f = Fixture::new();
-    f.baseline();
-    let calls = std::sync::atomic::AtomicUsize::new(0);
-    let coordinator = Coordinator::with_observer(
-        &f.root,
-        f.install,
-        Arc::new(move |step| {
-            if step == Step::AfterRecord && calls.fetch_add(1, Ordering::SeqCst) == 1 {
-                Err(err("crash after second record"))
-            } else {
-                Ok(())
-            }
-        }),
-    )
-    .unwrap();
-    let mut c = f.connection();
-    let tx = c.transaction().unwrap();
+    let old = f.baseline();
+    let c = injected(&f.root, f.install, Step::AfterPrefix);
+    let mut db = f.connection();
+    let tx = db.transaction().unwrap();
     f.mutate(&tx, "revoke");
     f.mutate(&tx, "passkey");
-    let intent = coordinator.prepare(&tx).unwrap();
+    assert!(c.prepare(&tx).is_err());
+    drop(tx);
+    assert!(c.validate_and_read().is_err());
+    c.replay(&db).unwrap();
+    assert_eq!(c.validate_and_read().unwrap().tables, old.tables);
+    let c = injected(&f.root, f.install, Step::BeforeCompletion);
+    let tx = db.transaction().unwrap();
+    f.mutate(&tx, "revoke");
+    f.mutate(&tx, "passkey");
+    let id = c.prepare(&tx).unwrap();
     tx.commit().unwrap();
-    assert!(coordinator.complete(&c, &intent).is_err());
-    assert!(coordinator.validate_and_read().is_err());
-    f.coordinator().replay(&c).unwrap();
+    assert!(c.complete(&db, &id).is_err());
+    assert!(c.validate_and_read().is_err());
+    c.replay(&db).unwrap();
     assert_eq!(
-        f.coordinator().validate_and_read().unwrap().tables,
-        capture(&c, f.install, 1).unwrap().tables
+        c.validate_and_read().unwrap().tables,
+        capture(&db, f.install, 1).unwrap().tables
     );
 }
 
@@ -567,7 +518,7 @@ fn replay_and_completion_cannot_publish_an_uncommitted_witness() {
     assert!(coordinator.validate_and_read().is_err());
     drop(tx);
     coordinator.replay(&c).unwrap();
-    assert_eq!(coordinator.validate_and_read().unwrap(), old);
+    assert_eq!(coordinator.validate_and_read().unwrap().tables, old.tables);
     assert!(coordinator.complete(&c, &intent).is_err());
     assert!(coordinator.complete(&c, "not-a-transaction-id").is_err());
     assert!(
@@ -579,30 +530,21 @@ fn replay_and_completion_cannot_publish_an_uncommitted_witness() {
 
 #[test]
 fn missing_versions_and_partial_directory_trees_refuse_without_repair() {
-    let f = Fixture::new();
-    f.baseline();
-    let coordinator = f.coordinator();
-    let mut c = f.connection();
-    let tx = c.transaction().unwrap();
-    f.mutate(&tx, "revoke");
-    let intent = coordinator.prepare(&tx).unwrap();
-    tx.commit().unwrap();
-    coordinator.complete(&c, &intent).unwrap();
-    let latest = coordinator.validate_and_read().unwrap();
-    let stem = format!("{:020}-{}", latest.sequence, latest.transaction);
-    for extension in ["intent"] {
-        std::fs::remove_file(
-            f.root
-                .join("transactions")
-                .join(format!("{stem}.{extension}")),
-        )
-        .unwrap();
+    for name in ["snapshot", "segment"] {
+        let f = Fixture::new();
+        f.baseline();
+        let c = f.coordinator();
+        let path = if name == "snapshot" {
+            f.root.join("snapshot.json")
+        } else {
+            log_path(&f)
+        };
+        std::fs::remove_file(&path).unwrap();
+        assert!(c.validate_and_read().is_err());
+        assert!(c.replay(&f.connection()).is_err());
+        assert!(Coordinator::open(&f.root, f.install).is_err());
+        assert!(!path.exists());
     }
-    assert!(coordinator.validate_and_read().is_err());
-    assert!(coordinator.replay(&c).is_err());
-    std::fs::remove_dir_all(f.root.join("accounts")).unwrap();
-    assert!(Coordinator::open(&f.root, f.install).is_err());
-    assert!(!f.root.join("accounts").exists());
 }
 
 // Independent review regressions: these deliberately express the required safety
@@ -611,32 +553,28 @@ fn missing_versions_and_partial_directory_trees_refuse_without_repair() {
 fn deleting_newest_generation_must_not_resurrect_revoked_membership() {
     let f = Fixture::new();
     f.baseline();
-    let coordinator = f.coordinator();
-    let mut c = f.connection();
-    let tx = c.transaction().unwrap();
+    let c = f.coordinator();
+    let old = std::fs::read(log_path(&f)).unwrap();
+    let mut db = f.connection();
+    let tx = db.transaction().unwrap();
     f.mutate(&tx, "revoke");
-    let intent = coordinator.prepare(&tx).unwrap();
+    let id = c.prepare(&tx).unwrap();
     tx.commit().unwrap();
-    coordinator.complete(&c, &intent).unwrap();
-    let latest = coordinator.validate_and_read().unwrap();
+    c.complete(&db, &id).unwrap();
+    let pin = c.checkpoint().unwrap();
     assert!(
-        !ids(&latest, "space_memberships", "account_id")
-            .unwrap()
-            .contains(&f.member.0)
-    );
-    let stem = format!("{:020}-{}", latest.sequence, latest.transaction);
-    for extension in ["intent"] {
-        std::fs::remove_file(
-            f.root
-                .join("transactions")
-                .join(format!("{stem}.{extension}")),
+        !ids(
+            &c.validate_and_read().unwrap(),
+            "space_memberships",
+            "account_id"
         )
-        .unwrap();
-    }
-    assert!(
-        coordinator.validate_and_read().is_err(),
-        "deleting an acknowledged revocation's newest files must refuse recovery"
+        .unwrap()
+        .contains(&f.member.0)
     );
+    fsio::write_atomic_mode(&log_path(&f), &old, 0o600).unwrap();
+    // A valid prefix is indistinguishable without independent freshness evidence.
+    assert!(c.validate_and_read_at(&pin).is_err());
+    assert!(c.replay(&db).is_err());
 }
 
 #[test]
@@ -694,60 +632,15 @@ async fn acknowledged_passkey_label_must_reach_recovery() {
 }
 
 #[test]
-fn publication_record_cost_is_independent_of_other_accounts_and_spaces() {
-    let mut costs = Vec::new();
-    for extra in [0, 12] {
-        let f = Fixture::new();
-        let c = f.connection();
-        for n in 0..extra {
-            let id = AccountId::new();
-            c.execute(
-                "INSERT INTO users(id,name,username,created_at) VALUES(?1,?2,?2,1)",
-                rusqlite::params![id.to_string(), format!("other-{n}")],
-            )
-            .unwrap();
-            Spaces::open(&f.db)
-                .unwrap()
-                .create(id, "unrelated")
-                .unwrap();
-        }
-        f.baseline();
-        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let seen = count.clone();
-        let coordinator = Coordinator::with_observer(
-            &f.root,
-            f.install,
-            Arc::new(move |step| {
-                if step == Step::AfterRecord {
-                    seen.fetch_add(1, Ordering::SeqCst);
-                }
-                Ok(())
-            }),
-        )
-        .unwrap();
-        let mut c = f.connection();
-        let tx = c.transaction().unwrap();
-        f.mutate(&tx, "role");
-        let id = coordinator.prepare(&tx).unwrap();
-        tx.commit().unwrap();
-        coordinator.complete(&c, &id).unwrap();
-        costs.push(count.load(Ordering::SeqCst));
-    }
-    assert_eq!(
-        costs,
-        vec![1, 1],
-        "only the changed space record is materialized"
-    );
-}
-
-#[test]
 fn completed_transaction_retention_is_bounded() {
     let f = Fixture::new();
     f.baseline();
+    let c = Arc::new(
+        Coordinator::with_compaction_threshold(&f.root, f.install, 1, Arc::new(|_| Ok(())))
+            .unwrap(),
+    );
     let spaces = Spaces::open(&f.db).unwrap();
-    spaces
-        .configure_recovery(Arc::new(f.coordinator()))
-        .unwrap();
+    spaces.configure_recovery(c.clone()).unwrap();
     for n in 0..20 {
         spaces
             .set_role(
@@ -758,135 +651,17 @@ fn completed_transaction_retention_is_bounded() {
             )
             .unwrap();
     }
-    assert!(
-        std::fs::read_dir(f.root.join("transactions"))
-            .unwrap()
-            .count()
-            <= 2,
-        "completed intents must not accumulate with installation history"
+    assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 2);
+    assert_eq!(std::fs::metadata(log_path(&f)).unwrap().len(), 0);
+    assert_eq!(
+        c.validate_and_read().unwrap().tables,
+        capture(&f.connection(), f.install, 1).unwrap().tables
     );
 }
 
-fn record_path(f: &Fixture, key: &str) -> PathBuf {
-    let c = f.coordinator();
-    let h = c.head().unwrap();
-    let r = index::get(&c.store, h.root.as_deref(), key)
-        .unwrap()
-        .unwrap();
-    f.root.join(r.path())
-}
-
-#[test]
-fn fsync_cost_is_constant_for_one_account_or_space_replacement() {
-    for mutation in ["role", "passkey"] {
-        let mut costs = Vec::new();
-        for extra in [0, 12] {
-            let f = Fixture::new();
-            for n in 0..extra {
-                let id = AccountId::new();
-                f.connection()
-                    .execute(
-                        "INSERT INTO users(id,name,username,created_at) VALUES(?1,?2,?2,1)",
-                        rusqlite::params![id.to_string(), format!("unrelated-{n}")],
-                    )
-                    .unwrap();
-                Spaces::open(&f.db)
-                    .unwrap()
-                    .create(id, "unrelated")
-                    .unwrap();
-            }
-            f.baseline();
-            let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-            let observed = count.clone();
-            let c = Coordinator::with_observer(
-                &f.root,
-                f.install,
-                Arc::new(move |step| {
-                    if matches!(step, Step::FileSynced | Step::DirectorySynced) {
-                        observed.fetch_add(1, Ordering::SeqCst);
-                    }
-                    Ok(())
-                }),
-            )
-            .unwrap();
-            let mut db = f.connection();
-            let tx = db.transaction().unwrap();
-            f.mutate(&tx, mutation);
-            let id = c.prepare(&tx).unwrap();
-            tx.commit().unwrap();
-            c.complete(&db, &id).unwrap();
-            costs.push(count.load(Ordering::SeqCst));
-        }
-        assert_eq!(
-            costs,
-            vec![81, 81],
-            "filesystem durability cost for {mutation}"
-        );
-    }
-}
-
-#[test]
-fn every_index_and_compaction_boundary_can_be_interrupted() {
-    for (step, count) in [
-        (Step::BeforeIndex, 34),
-        (Step::AfterIndex, 34),
-        (Step::BeforeCompact, 36),
-        (Step::AfterCompact, 36),
-        (Step::BeforeCompactSync, 3),
-        (Step::AfterCompactSync, 3),
-    ] {
-        for fail_at in 0..count {
-            let f = Fixture::new();
-            f.baseline();
-            let calls = std::sync::atomic::AtomicUsize::new(0);
-            let c = Coordinator::with_observer(
-                &f.root,
-                f.install,
-                Arc::new(move |s| {
-                    if s == step && calls.fetch_add(1, Ordering::SeqCst) == fail_at {
-                        Err(err("interrupted publication/collection"))
-                    } else {
-                        Ok(())
-                    }
-                }),
-            )
-            .unwrap();
-            let mut db = f.connection();
-            let tx = db.transaction().unwrap();
-            f.mutate(&tx, "revoke");
-            let id = c.prepare(&tx).unwrap();
-            tx.commit().unwrap();
-            assert!(c.complete(&db, &id).is_err(), "{step:?} {fail_at}");
-            if matches!(step, Step::BeforeIndex | Step::AfterIndex) {
-                assert!(c.validate_and_read().is_err());
-            }
-            let recovery = f.coordinator();
-            recovery.replay(&db).unwrap();
-            recovery.replay(&db).unwrap();
-            assert!(
-                !ids(
-                    &recovery.validate_and_read().unwrap(),
-                    "space_memberships",
-                    "account_id"
-                )
-                .unwrap()
-                .contains(&f.member.0)
-            );
-            assert_eq!(
-                std::fs::read_dir(f.root.join("transactions"))
-                    .unwrap()
-                    .count(),
-                1
-            );
-            // One global record, three account records, one space record.
-            assert_eq!(
-                std::fs::read_dir(f.root.join("accounts")).unwrap().count()
-                    + std::fs::read_dir(f.root.join("spaces")).unwrap().count(),
-                5
-            );
-            assert!(std::fs::read_dir(f.root.join("index")).unwrap().count() <= 5 * 34);
-        }
-    }
+fn log_path(f: &Fixture) -> PathBuf {
+    let image: Image = decode(&std::fs::read(f.root.join("snapshot.json")).unwrap()).unwrap();
+    f.root.join(image.segment)
 }
 
 #[test]
@@ -910,6 +685,8 @@ fn telemetry_and_sharing_delivery_changes_do_not_publish() {
     )
     .unwrap();
     let mut db = f.connection();
+    c.reconcile(&db).unwrap();
+    calls.store(0, Ordering::SeqCst);
     let tx = db.transaction().unwrap();
     tx.execute(
         "UPDATE installations SET last_seen_at=50,expires_at=150 WHERE id=?1",
@@ -943,70 +720,20 @@ fn telemetry_and_sharing_delivery_changes_do_not_publish() {
 }
 
 #[test]
-fn stale_record_and_index_bytes_cannot_satisfy_the_current_head() {
-    for damage in ["record", "index", "head"] {
-        let f = Fixture::new();
-        f.baseline();
-        let c = f.coordinator();
-        let old_head = c.head().unwrap();
-        let old_path = record_path(&f, &format!("2{}", f.space.0.simple()));
-        let old_record = std::fs::read(old_path).unwrap();
-        let old_index = c
-            .store
-            .read("index", &format!("{}.json", old_head.root.unwrap()))
-            .unwrap();
-        let mut db = f.connection();
-        let tx = db.transaction().unwrap();
-        f.mutate(&tx, "revoke");
-        let id = c.prepare(&tx).unwrap();
-        tx.commit().unwrap();
-        c.complete(&db, &id).unwrap();
-        let path = match damage {
-            "record" => record_path(&f, &format!("2{}", f.space.0.simple())),
-            "index" => f
-                .root
-                .join("index")
-                .join(format!("{}.json", c.head().unwrap().root.unwrap())),
-            _ => f.root.join("head.json"),
-        };
-        if damage == "head" {
-            std::fs::remove_file(path).unwrap();
-            assert!(Coordinator::open(&f.root, f.install).is_err());
-        } else {
-            fsio::write_atomic_mode(
-                &path,
-                if damage == "record" {
-                    &old_record
-                } else {
-                    &old_index
-                },
-                0o600,
-            )
-            .unwrap();
-            assert!(c.validate_and_read().is_err());
-        }
-    }
-}
-
-#[test]
 fn whole_tree_rollback_requires_a_surviving_database_or_external_checkpoint() {
     let f = Fixture::new();
     f.baseline();
     fn files(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
-        let mut result = vec![(
-            PathBuf::from("head.json"),
-            std::fs::read(root.join("head.json")).unwrap(),
-        )];
-        for sub in ["accounts", "spaces", "index", "transactions"] {
-            for e in std::fs::read_dir(root.join(sub)).unwrap() {
+        std::fs::read_dir(root)
+            .unwrap()
+            .map(|e| {
                 let e = e.unwrap();
-                result.push((
-                    PathBuf::from(sub).join(e.file_name()),
+                (
+                    PathBuf::from(e.file_name()),
                     std::fs::read(e.path()).unwrap(),
-                ));
-            }
-        }
-        result
+                )
+            })
+            .collect()
     }
     let old = files(&f.root);
     let c = f.coordinator();
@@ -1112,29 +839,6 @@ fn next_request_finishes_a_committed_revocation_before_publishing_another_change
 }
 
 #[test]
-fn aborted_intent_collection_can_be_interrupted_without_publishing_its_grant() {
-    for step in [
-        Step::BeforeCompact,
-        Step::AfterCompact,
-        Step::BeforeCompactSync,
-        Step::AfterCompactSync,
-    ] {
-        let f = Fixture::new();
-        let old = f.baseline();
-        let c = f.coordinator();
-        let mut db = f.connection();
-        let tx = db.transaction().unwrap();
-        f.mutate(&tx, "grant");
-        c.prepare(&tx).unwrap();
-        drop(tx);
-        assert!(injected(&f.root, f.install, step).replay(&db).is_err());
-        c.replay(&db).unwrap();
-        c.replay(&db).unwrap();
-        assert_eq!(c.validate_and_read().unwrap().tables, old.tables);
-    }
-}
-
-#[test]
 fn account_receipt_and_space_change_publish_together_and_retry_has_no_fsyncs() {
     let f = Fixture::new();
     f.baseline();
@@ -1166,8 +870,9 @@ fn account_receipt_and_space_change_publish_together_and_retry_has_no_fsyncs() {
             Some(("receipt-1", "spaces.role", "fixed-fingerprint")),
         )
     };
+    count.store(0, Ordering::SeqCst);
     let first = apply().unwrap();
-    assert_eq!(count.load(Ordering::SeqCst), 150);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
     let snapshot = c.validate_and_read().unwrap();
     assert_eq!(snapshot.tables["space_receipts"].rows.len(), 1);
     assert_eq!(
@@ -1177,4 +882,443 @@ fn account_receipt_and_space_change_publish_together_and_retry_has_no_fsyncs() {
     count.store(0, Ordering::SeqCst);
     assert_eq!(apply().unwrap(), first);
     assert_eq!(count.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
+    for extra in [0, 12] {
+        for mutation in [
+            "grant",
+            "revoke",
+            "role",
+            "transfer",
+            "passkey",
+            "account",
+            "new-account",
+            "create",
+            "delete",
+            "both",
+            "noop",
+        ] {
+            let f = Fixture::new();
+            for n in 0..extra {
+                let id = AccountId::new();
+                f.connection()
+                    .execute(
+                        "INSERT INTO users(id,name,username,created_at) VALUES(?1,?2,?2,1)",
+                        rusqlite::params![id.to_string(), format!("other-{n}")],
+                    )
+                    .unwrap();
+                Spaces::open(&f.db)
+                    .unwrap()
+                    .create(id, "unrelated")
+                    .unwrap();
+            }
+            f.baseline();
+            let counts = Arc::new(Mutex::new((0, 0)));
+            let seen = counts.clone();
+            let c = Coordinator::with_observer(
+                &f.root,
+                f.install,
+                Arc::new(move |step| {
+                    let mut n = seen.lock().unwrap();
+                    if step == Step::FileSynced {
+                        n.0 += 1;
+                    }
+                    if step == Step::DirectorySynced {
+                        n.1 += 1;
+                    }
+                    Ok(())
+                }),
+            )
+            .unwrap();
+            let mut db = f.connection();
+            c.reconcile(&db).unwrap();
+            *counts.lock().unwrap() = (0, 0);
+            let tx = db.transaction().unwrap();
+            match mutation {
+                "new-account" => {
+                    tx.execute(
+                        "INSERT INTO users(id,name,username,created_at) VALUES(?1,'new','new',1)",
+                        [AccountId::new().to_string()],
+                    )
+                    .unwrap();
+                }
+                "account" => {
+                    tx.execute(
+                        "UPDATE users SET name='changed' WHERE id=?1",
+                        [f.owner.to_string()],
+                    )
+                    .unwrap();
+                }
+                "create" => {
+                    let id = SpaceId::new();
+                    tx.execute(
+                        "INSERT INTO spaces(id,owner_account,name,created) VALUES(?1,?2,'new',1)",
+                        rusqlite::params![id.to_string(), f.owner.to_string()],
+                    )
+                    .unwrap();
+                    tx.execute(
+                        "INSERT INTO space_memberships VALUES(?1,?2,'manager')",
+                        rusqlite::params![id.to_string(), f.owner.to_string()],
+                    )
+                    .unwrap();
+                }
+                "delete" => {
+                    tx.execute("DELETE FROM spaces WHERE id=?1", [f.space.to_string()])
+                        .unwrap();
+                }
+                "both" => {
+                    f.mutate(&tx, "revoke");
+                    f.mutate(&tx, "passkey");
+                }
+                "noop" => {}
+                _ => f.mutate(&tx, mutation),
+            }
+            let before = std::fs::metadata(log_path(&f)).unwrap().len() as usize;
+            let id = c.prepare(&tx).unwrap();
+            if mutation != "noop" {
+                let bytes = std::fs::read(log_path(&f)).unwrap();
+                let proposed: Entry = decode(&bytes[before + 8..]).unwrap();
+                let Body::Proposed { delta, .. } = proposed.body else {
+                    panic!("expected delta")
+                };
+                assert_eq!(
+                    delta.len(),
+                    if mutation == "both" { 2 } else { 1 },
+                    "{mutation}, unrelated={extra}"
+                );
+            } else {
+                assert_eq!(
+                    std::fs::metadata(log_path(&f)).unwrap().len(),
+                    before as u64
+                );
+            }
+            tx.commit().unwrap();
+            c.complete(&db, &id).unwrap();
+            assert_eq!(
+                *counts.lock().unwrap(),
+                (if mutation == "noop" { 0 } else { 2 }, 0),
+                "{mutation}, unrelated={extra}"
+            );
+            assert_eq!(
+                c.validate_and_read().unwrap().tables,
+                capture(&db, f.install, 1).unwrap().tables
+            );
+        }
+    }
+}
+
+#[test]
+fn all_compaction_boundaries_preserve_the_acknowledged_state() {
+    use std::sync::atomic::AtomicUsize;
+    for (step, positions) in [
+        (Step::BeforeSegment, 1),
+        (Step::AfterSegment, 1),
+        (Step::BeforeSnapshot, 1),
+        (Step::AfterSnapshot, 1),
+        (Step::BeforeCompact, 1),
+        (Step::AfterCompact, 1),
+        (Step::BeforeCompactSync, 2),
+        (Step::AfterCompactSync, 2),
+        (Step::FileSynced, 4),
+        (Step::DirectorySynced, 3),
+    ] {
+        for position in 0..positions {
+            let f = Fixture::new();
+            f.baseline();
+            let armed = Arc::new(AtomicBool::new(false));
+            let enabled = armed.clone();
+            let hits = AtomicUsize::new(0);
+            let c = Coordinator::with_compaction_threshold(
+                &f.root,
+                f.install,
+                1,
+                Arc::new(move |s| {
+                    if enabled.load(Ordering::SeqCst)
+                        && s == step
+                        && hits.fetch_add(1, Ordering::SeqCst) == position
+                    {
+                        return Err(err("compaction crash"));
+                    }
+                    Ok(())
+                }),
+            )
+            .unwrap();
+            let mut db = f.connection();
+            c.reconcile(&db).unwrap();
+            armed.store(true, Ordering::SeqCst);
+            let tx = db.transaction().unwrap();
+            f.mutate(&tx, "revoke");
+            match c.prepare(&tx) {
+                Err(_) => {
+                    drop(tx);
+                }
+                Ok(id) => {
+                    tx.commit().unwrap();
+                    assert!(c.complete(&db, &id).is_err(), "{step:?} {position}");
+                }
+            }
+            let replay = f.coordinator();
+            replay.reconcile(&db).unwrap();
+            replay.replay(&db).unwrap();
+            assert_eq!(
+                replay.validate_and_read().unwrap().tables,
+                capture(&db, f.install, 1).unwrap().tables,
+                "{step:?} {position}"
+            );
+            assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 2);
+        }
+    }
+}
+
+#[test]
+fn compaction_adds_exactly_two_file_and_three_directory_fsyncs() {
+    let f = Fixture::new();
+    f.baseline();
+    let counts = Arc::new(Mutex::new((0, 0)));
+    let seen = counts.clone();
+    let c = Coordinator::with_compaction_threshold(
+        &f.root,
+        f.install,
+        1,
+        Arc::new(move |s| {
+            let mut n = seen.lock().unwrap();
+            if s == Step::FileSynced {
+                n.0 += 1;
+            }
+            if s == Step::DirectorySynced {
+                n.1 += 1;
+            }
+            Ok(())
+        }),
+    )
+    .unwrap();
+    let mut db = f.connection();
+    c.reconcile(&db).unwrap();
+    *counts.lock().unwrap() = (0, 0);
+    let pin = c.checkpoint().unwrap();
+    let tx = db.transaction().unwrap();
+    f.mutate(&tx, "revoke");
+    let id = c.prepare(&tx).unwrap();
+    tx.commit().unwrap();
+    c.complete(&db, &id).unwrap();
+    assert_eq!(*counts.lock().unwrap(), (4, 3));
+    assert!(c.validate_and_read_at(&pin).is_err());
+    let pin = c.checkpoint().unwrap();
+    let s = c.load().unwrap();
+    assert_eq!(s.length, 0);
+    assert_eq!(s.image.head, pin);
+    c.replay(&db).unwrap();
+}
+
+#[test]
+fn frame_deletion_substitution_reordering_and_sequence_gaps_refuse() {
+    for damage in [
+        "delete",
+        "substitute",
+        "reorder",
+        "gap",
+        "wrong-installation",
+    ] {
+        let f = Fixture::new();
+        f.baseline();
+        let c = f.coordinator();
+        let path = log_path(&f);
+        let old = std::fs::read(&path).unwrap();
+        let mut db = f.connection();
+        let tx = db.transaction().unwrap();
+        f.mutate(&tx, "revoke");
+        let id = c.prepare(&tx).unwrap();
+        tx.commit().unwrap();
+        c.complete(&db, &id).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let mut frames = Vec::new();
+        let mut pos = 0;
+        while pos < bytes.len() {
+            let end =
+                pos + 8 + u64::from_le_bytes(bytes[pos..pos + 8].try_into().unwrap()) as usize;
+            frames.push(bytes[pos..end].to_vec());
+            pos = end;
+        }
+        match damage {
+            "delete" => {
+                frames.remove(1);
+            }
+            "substitute" => {
+                frames[2] = frames[0].clone();
+            }
+            "reorder" => {
+                frames.swap(0, 2);
+            }
+            _ => {
+                let mut e: Entry = decode(&frames[2][8..]).unwrap();
+                if damage == "gap" {
+                    e.sequence += 1;
+                } else {
+                    e.installation = Uuid::now_v7();
+                }
+                frames[2] = frame(&e).unwrap();
+            }
+        }
+        assert!(old.len() < bytes.len());
+        fsio::write_atomic_mode(&path, &frames.concat(), 0o600).unwrap();
+        assert!(c.validate_and_read().is_err(), "{damage}");
+        assert!(c.replay(&db).is_err(), "{damage}");
+    }
+}
+
+#[test]
+fn torn_marker_prefixes_repair_only_from_the_exact_committed_witness() {
+    for committed in [false, true] {
+        for cut in [0, 1, 7, 8, 9, 33, 100] {
+            let f = Fixture::new();
+            let old = f.baseline();
+            let c = f.coordinator();
+            let mut db = f.connection();
+            let tx = db.transaction().unwrap();
+            f.mutate(&tx, "grant");
+            c.prepare(&tx).unwrap();
+            if committed {
+                tx.commit().unwrap();
+            } else {
+                drop(tx);
+            }
+            let s = c.load().unwrap();
+            let marker = s.resolution(committed).unwrap().0;
+            assert!(cut < marker.len());
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .open(log_path(&f))
+                .unwrap();
+            use std::io::Write;
+            file.write_all(&marker[..cut]).unwrap();
+            drop(file);
+            assert!(c.validate_and_read().is_err());
+            let replay = f.coordinator();
+            replay.replay(&db).unwrap();
+            assert_eq!(
+                replay.validate_and_read().unwrap().tables,
+                capture(&db, f.install, 1).unwrap().tables
+            );
+            assert_eq!(
+                replay.validate_and_read().unwrap().tables == old.tables,
+                !committed
+            );
+        }
+    }
+}
+
+#[test]
+fn corrupt_resolution_tail_is_preserved_and_refused() {
+    let f = Fixture::new();
+    f.baseline();
+    let c = f.coordinator();
+    let mut db = f.connection();
+    let tx = db.transaction().unwrap();
+    f.mutate(&tx, "revoke");
+    c.prepare(&tx).unwrap();
+    tx.commit().unwrap();
+    use std::io::Write;
+    let path = log_path(&f);
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .write_all(&[255; 8])
+        .unwrap();
+    let damaged = std::fs::read(&path).unwrap();
+    assert!(c.replay(&db).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), damaged);
+    assert!(c.validate_and_read().is_err());
+}
+
+#[test]
+fn tail_repair_can_be_interrupted_without_recovering_an_aborted_grant() {
+    for step in [Step::BeforeTailRepair, Step::AfterTailRepair] {
+        let f = Fixture::new();
+        let old = f.baseline();
+        let c = injected(&f.root, f.install, Step::AfterPrefix);
+        let mut db = f.connection();
+        let tx = db.transaction().unwrap();
+        f.mutate(&tx, "grant");
+        assert!(c.prepare(&tx).is_err());
+        drop(tx);
+        assert!(injected(&f.root, f.install, step).replay(&db).is_err());
+        let c = f.coordinator();
+        c.replay(&db).unwrap();
+        assert_eq!(c.validate_and_read().unwrap().tables, old.tables);
+    }
+}
+
+#[test]
+fn cached_writer_detects_snapshot_or_segment_replacement() {
+    let f = Fixture::new();
+    f.baseline();
+    let c = f.coordinator();
+    let mut db = f.connection();
+    c.replay(&db).unwrap();
+    let old = std::fs::read(log_path(&f)).unwrap();
+    let tx = db.transaction().unwrap();
+    f.mutate(&tx, "revoke");
+    let id = c.prepare(&tx).unwrap();
+    tx.commit().unwrap();
+    c.complete(&db, &id).unwrap();
+    fsio::write_atomic_mode(&log_path(&f), &old, 0o600).unwrap();
+    let tx = db.transaction().unwrap();
+    f.mutate(&tx, "grant");
+    assert!(c.prepare(&tx).is_err());
+}
+
+#[test]
+fn missing_compacted_segment_never_falls_back_to_the_old_segment() {
+    let f = Fixture::new();
+    f.baseline();
+    let fired = AtomicBool::new(false);
+    let c = Coordinator::with_compaction_threshold(
+        &f.root,
+        f.install,
+        1,
+        Arc::new(move |s| {
+            if s == Step::AfterSnapshot && !fired.swap(true, Ordering::SeqCst) {
+                return Err(err("snapshot published"));
+            }
+            Ok(())
+        }),
+    )
+    .unwrap();
+    assert!(c.replay(&f.connection()).is_err());
+    assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 3);
+    std::fs::remove_file(log_path(&f)).unwrap();
+    assert!(c.validate_and_read().is_err());
+    assert!(c.replay(&f.connection()).is_err());
+    assert!(Coordinator::open(&f.root, f.install).is_err());
+}
+
+#[test]
+fn compaction_preserves_the_exact_external_checkpoint() {
+    let f = Fixture::new();
+    let expected = f.baseline();
+    let pin = f.coordinator().checkpoint().unwrap();
+    let c = Coordinator::with_compaction_threshold(&f.root, f.install, 1, Arc::new(|_| Ok(())))
+        .unwrap();
+    c.replay(&f.connection()).unwrap();
+    assert_eq!(c.checkpoint().unwrap(), pin);
+    assert_eq!(c.validate_and_read_at(&pin).unwrap(), expected);
+}
+
+#[test]
+fn failed_prepare_reconciles_only_after_the_authority_transaction_rolls_back() {
+    let f = Fixture::new();
+    let old = f.baseline();
+    let spaces = Spaces::open(&f.db).unwrap();
+    let sink = Arc::new(injected(&f.root, f.install, Step::AfterIntent));
+    spaces.configure_recovery(sink.clone()).unwrap();
+    assert!(spaces.remove(f.owner, f.space, f.member).is_err());
+    assert_eq!(sink.validate_and_read().unwrap().tables, old.tables);
+    spaces.remove(f.owner, f.space, f.member).unwrap();
+    assert_eq!(
+        sink.validate_and_read().unwrap().tables,
+        capture(&f.connection(), f.install, 1).unwrap().tables
+    );
 }

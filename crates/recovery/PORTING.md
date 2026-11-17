@@ -15,7 +15,7 @@ Reference: `/home/kayg/Developer/calternal`, `origin/dev` at
   or plugin dependencies. No schema migration in the auth crate is changed;
   the optional coordinator owns its witness table.
 - `crates/fsio/src/swap.rs:102–119,163–200`: inspected recoverable settings exchange;
-  not copied because immutable version records have no displaced image to restore.
+  not copied because log segment replacement uses an explicit snapshot pointer.
   Reuses this workspace's fsio mode-aware atomic writer and directory fsync instead.
 - `crates/auth/src/setup.rs:324–399`, `passkeys.rs:201–233`, session revocation
   paths identified in port-map §6: keep the already-ported auth checks and insert
@@ -30,9 +30,10 @@ weakened, skipped or renamed to imply FO1 coverage.
 The reconstructed logical snapshot excludes SQLite/coordinator bookkeeping and
 sharing delivery/reset state. Rebuild must install its own validated current
 schema, never execute stored SQL, and force every sharing device through a fresh
-authorized resync. Version 2 uses indexed transactional dirty-owner capture and
-an immutable authenticated radix index bound by a fixed installation head.
-Publication writes one delta intent and only affected owner records/path nodes;
-post-publication reclamation deletes exact retired paths. This coordinator is a
-new implementation of the inherited requirement, not source code ported from an
-existing FO1 engine. No historical data is imported or migrated.
+authorized resync. Format 3 keeps indexed transactional dirty-owner capture and
+replaces the radix index and immutable record files with checksummed, hash-chained
+delta frames.
+A SQLite witness and synced resolution marker bind authority to publication;
+threshold compaction writes a full snapshot before retiring its old segment.
+This is a new implementation of the inherited requirement, not source code ported
+from an existing FO1 engine. No historical data is imported or migrated.

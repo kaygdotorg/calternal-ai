@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Protected installation-bound auth recovery intent coordinator"
+description = "Protected installation-bound append-only auth recovery log"
 
 [dependencies]
 calternal-auth.workspace = true

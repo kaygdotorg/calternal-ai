@@ -41,10 +41,10 @@ const EXCLUDED: &[&str] = &[
     "sharing_reset_cursors",
     "share_fanout_deliveries",
 ];
-/// One installation-bound owner record; never exposed through a tenant file API.
-#[derive(Clone, Serialize, Deserialize)]
+/// Comparable format-three owner record for delta capture; never exposed to tenants.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Record {
-    /// Recovery record format, independent of SQLite migration numbers.
+    /// Recovery record format (three), independent of SQLite migration numbers.
     pub version: u32,
     /// Externally pinned installation UUID.
     pub installation: Uuid,
@@ -69,7 +69,7 @@ fn key_expr(kind: char, owner: &str, prefix: &str) -> String {
         "CASE WHEN {value} IS NULL THEN '{GLOBAL}' ELSE '{kind}'||replace(lower({value}),'-','') END"
     )
 }
-/// Installs transactional dirty-key triggers and indexed owner selection once; seeds first publication.
+/// Installs format-three chain witnesses and dirty-owner triggers; seeds initial log publication.
 pub(crate) fn initialize(c: &Connection) -> Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(c, rusqlite::TransactionBehavior::Immediate)
         .map_err(err)?;
@@ -96,7 +96,7 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
             "unclassified auth table; recovery owner mapping required",
         ));
     }
-    tx.execute_batch("CREATE TABLE IF NOT EXISTS security_recovery_commits(id TEXT PRIMARY KEY,digest TEXT NOT NULL) STRICT;
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS security_recovery_commits(singleton INTEGER PRIMARY KEY CHECK(singleton=1),sequence INTEGER NOT NULL,digest TEXT NOT NULL,proposal_sequence INTEGER NOT NULL,proposal_digest TEXT NOT NULL) STRICT;
         CREATE TABLE IF NOT EXISTS security_recovery_dirty(key TEXT PRIMARY KEY) STRICT;
         CREATE INDEX IF NOT EXISTS security_recovery_setup_user ON setup_tokens(user_id);").map_err(err)?;
     for (table, kind, owner) in SPECS {
@@ -159,13 +159,13 @@ fn schema(c: &Connection, table: &str) -> Result<(String, Vec<String>)> {
         .map_err(err)?;
     Ok((schema, stmt.column_names().map(str::to_owned).collect()))
 }
-/// Selects only one dirty owner record using indexed predicates; normalizes disposable telemetry.
+/// Captures one format-three delta record with indexed predicates and normalized telemetry.
 pub(crate) fn capture_record(
     c: &Connection,
     installation: Uuid,
     key: &str,
 ) -> Result<Option<Record>> {
-    if !crate::index::key_ok(key) {
+    if !crate::key_ok(key) {
         return Err(invalid());
     }
     let kind = key.as_bytes()[0] as char;
@@ -261,7 +261,7 @@ pub(crate) fn capture_record(
         );
     }
     let mut record = Record {
-        version: 2,
+        version: 3,
         installation,
         key: key.into(),
         tables,
@@ -284,7 +284,7 @@ fn sort_tables(tables: &mut BTreeMap<String, Table>) {
             .sort_by_cached_key(|r| serde_json::to_vec(r).expect("cells serialize"));
     }
 }
-/// Joins validated current records into a rebuild input using the global schema inventory.
+/// Joins current snapshot/log records into format-three rebuild input with global schemas.
 pub(crate) fn assemble(
     installation: Uuid,
     transaction: Uuid,
@@ -297,7 +297,7 @@ pub(crate) fn assemble(
         .ok_or_else(invalid)?;
     let mut tables = global.tables.clone();
     for record in records.iter().filter(|r| r.key != GLOBAL) {
-        if record.version != 2 || record.installation != installation {
+        if record.version != 3 || record.installation != installation {
             return Err(invalid());
         }
         for (name, table) in &record.tables {
@@ -310,7 +310,7 @@ pub(crate) fn assemble(
     }
     sort_tables(&mut tables);
     let snapshot = Snapshot {
-        version: 2,
+        version: 3,
         installation,
         transaction,
         sequence,
@@ -336,9 +336,9 @@ pub(crate) fn ids(snapshot: &Snapshot, table: &str, column: &str) -> Result<Vec<
         })
         .collect()
 }
-/// Checks the closed protected-table inventory, cell widths and account/space identity separation.
+/// Checks format three, protected inventory, cell widths and account/space identity separation.
 pub(crate) fn validate(snapshot: &Snapshot, installation: Uuid) -> Result<()> {
-    if snapshot.version != 2
+    if snapshot.version != 3
         || snapshot.installation != installation
         || snapshot.sequence == 0
         || SPECS

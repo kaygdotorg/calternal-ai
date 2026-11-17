@@ -21,47 +21,49 @@ pub(crate) fn invalid() -> Error {
 /// execution; production uses an observer that always succeeds.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Step {
-    /// Before writing and syncing the proposed-state intent.
+    /// Before appending a proposed delta.
     BeforeIntent,
-    /// After the atomic intent file and directory have been synced.
+    /// After the proposed delta's file fsync.
     AfterIntent,
-    /// Last boundary before the caller commits the SQLite transaction.
+    /// Before SQLite may commit its witness and authority.
     BeforeCommit,
-    /// First boundary after the transaction committed.
+    /// After SQLite commit, before marker publication.
     AfterCommit,
-    /// Before materializing an account or space record.
-    BeforeRecord,
-    /// After atomic record placement, including fsio's directory flush.
-    AfterRecord,
-    /// Before the atomic fsio writer, which includes its placement directory barrier.
-    BeforeDirectorySync,
-    /// After the atomic writer has durably synced the placement directory.
-    AfterDirectorySync,
-    /// Before the completion marker is durably placed.
+    /// Before appending a resolution marker.
     BeforeCompletion,
-    /// After durable completion; an injected failure here means an unacknowledged commit.
+    /// After the marker's file fsync, the acknowledgement barrier.
     AfterCompletion,
-    /// Before replay resolves an unfinished transaction.
+    /// Before resolving a proposal from committed database visibility.
     Replay,
-    /// Before making a durable head point to an unresolved intent.
-    BeforePendingHead,
-    /// After the pending head is durable, before SQLite may commit.
-    AfterPendingHead,
-    /// Before publishing an immutable authenticated index node.
-    BeforeIndex,
-    /// After an index node and its directory are durable.
-    AfterIndex,
-    /// Before unlinking a retired immutable file.
+    /// Before writing bytes to the current segment.
+    BeforeAppend,
+    /// After writing a frame length prefix; permits torn-tail tests.
+    AfterPrefix,
+    /// After writing frame bytes, before their fsync.
+    AfterAppend,
+    /// Before repairing a database-proven uncommitted torn tail.
+    BeforeTailRepair,
+    /// After the repaired tail is synced.
+    AfterTailRepair,
+    /// Before creating the next empty segment.
+    BeforeSegment,
+    /// After the segment and its directory entry are durable.
+    AfterSegment,
+    /// Before replacing the full snapshot.
+    BeforeSnapshot,
+    /// After the snapshot and its placement directory are durable.
+    AfterSnapshot,
+    /// Before unlinking an obsolete segment.
     BeforeCompact,
-    /// After unlinking one retired file; deletion may still need directory sync.
+    /// After unlinking an obsolete segment.
     AfterCompact,
-    /// Before syncing directories containing retired files.
+    /// Before a segment creation/removal directory flush.
     BeforeCompactSync,
-    /// After reclamation directory syncs are durable.
+    /// After a segment creation/removal directory flush.
     AfterCompactSync,
-    /// One file fsync completed through the atomic fsio writer.
+    /// One completed file fsync, including snapshot/segment creation.
     FileSynced,
-    /// One directory fsync completed through fsio.
+    /// One completed directory fsync.
     DirectorySynced,
 }
 
@@ -101,31 +103,21 @@ pub struct Snapshot {
     pub transaction: Uuid,
     /// Monotonic local publication order, independent of wall-clock time.
     pub sequence: u64,
-    /// Current protected account/space/policy tables reconstructed from the index;
+    /// Current protected account/space/policy tables reconstructed from snapshot and log;
     /// sharing delivery/reset bookkeeping is absent.
     pub tables: BTreeMap<String, Table>,
 }
-/// Checksummed canonical payload envelope; not an administrator-authentication MAC.
-#[derive(Serialize, Deserialize)]
-pub(crate) struct Envelope {
-    /// Exact serialized payload bytes bound by the checksum.
-    pub(crate) bytes: Vec<u8>,
-    checksum: String,
-}
-/// Serializes a deterministic value with an integrity-checking BLAKE3 envelope.
+/// Serializes canonical JSON preceded by its fixed-width BLAKE3 checksum.
 pub(crate) fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let bytes = serde_json::to_vec(value).map_err(err)?;
-    serde_json::to_vec(&Envelope {
-        checksum: blake3::hash(&bytes).to_hex().to_string(),
-        bytes,
-    })
-    .map_err(err)
+    let mut out = blake3::hash(&bytes).as_bytes().to_vec();
+    out.extend(bytes);
+    Ok(out)
 }
-/// Verifies exact payload bytes before deserializing a protected value.
+/// Checks exact payload bytes before decoding; a checksum is not an operator MAC.
 pub(crate) fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
-    let envelope: Envelope = serde_json::from_slice(bytes).map_err(err)?;
-    if envelope.checksum != blake3::hash(&envelope.bytes).to_hex().as_str() {
+    if bytes.len() < 32 || bytes[..32] != *blake3::hash(&bytes[32..]).as_bytes() {
         return Err(invalid());
     }
-    serde_json::from_slice(&envelope.bytes).map_err(err)
+    serde_json::from_slice(&bytes[32..]).map_err(err)
 }

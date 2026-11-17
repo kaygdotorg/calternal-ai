@@ -1,19 +1,18 @@
 use crate::{Result, Step, err, invalid};
-use calternal_fsio as fsio;
 use std::{
     fs::File,
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-/// Pinned Linux directory access and observed fsio durability primitives.
+/// Descriptor-pinned private files; only creation, replacement and removal sync directories.
 pub(crate) struct Storage {
     root: File,
     observe: Arc<dyn Fn(Step) -> Result<()> + Send + Sync>,
 }
 impl Storage {
-    /// Pins and validates the private root and its fixed subdirectories; returns whether it was empty.
+    /// Opens an existing mode-0700 root without following its final component.
     pub(crate) fn open(
         path: &Path,
         observe: Arc<dyn Fn(Step) -> Result<()> + Send + Sync>,
@@ -31,78 +30,26 @@ impl Storage {
         if root.metadata().map_err(err)?.permissions().mode() & 0o777 != 0o700 {
             return Err(invalid());
         }
-        let store = Self { root, observe };
-        let empty = std::fs::read_dir(store.path())
-            .map_err(err)?
-            .next()
-            .is_none();
-        if empty {
-            for sub in ["accounts", "spaces", "index", "transactions"] {
-                fsio::create_dir_all_durable(&store.path().join(sub)).map_err(err)?;
-            }
-        }
-        for sub in ["accounts", "spaces", "index", "transactions"] {
-            store.folder(sub)?;
-        }
-        Ok((store, empty))
-    }
-    fn fd_path(file: &File) -> PathBuf {
-        use std::os::fd::AsRawFd;
-        PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()))
+        let s = Self { root, observe };
+        let empty = s.names()?.is_empty();
+        Ok((s, empty))
     }
     fn path(&self) -> PathBuf {
-        Self::fd_path(&self.root)
+        use std::os::fd::AsRawFd;
+        PathBuf::from(format!("/proc/self/fd/{}", self.root.as_raw_fd()))
     }
-    fn folder(&self, sub: &str) -> Result<File> {
-        use rustix::fs::{Mode, OFlags, openat};
-        if sub == "." {
-            return self.root.try_clone().map_err(err);
-        }
-        if !["accounts", "spaces", "index", "transactions"].contains(&sub) {
-            return Err(invalid());
-        }
-        openat(
-            &self.root,
-            sub,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::empty(),
-        )
-        .map(File::from)
-        .map_err(err)
-    }
-    fn name(name: &str) -> Result<()> {
-        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
-            Err(invalid())
-        } else {
-            Ok(())
-        }
-    }
-    /// Reports an injectable coordinator boundary or completed durability operation.
-    pub(crate) fn tick(&self, step: Step) -> Result<()> {
-        (self.observe)(step)
-    }
-    /// Atomically places mode-0600 bytes relative to a pinned directory and syncs placement.
-    pub(crate) fn write(&self, sub: &str, name: &str, bytes: &[u8]) -> Result<()> {
-        Self::name(name)?;
-        let folder = self.folder(sub)?;
-        self.tick(Step::BeforeDirectorySync)?;
-        fsio::write_atomic_mode(&Self::fd_path(&folder).join(name), bytes, 0o600).map_err(err)?;
-        self.tick(Step::FileSynced)?;
-        self.tick(Step::DirectorySynced)?;
-        self.tick(Step::AfterDirectorySync)
-    }
-    /// Reads only a regular mode-0600 file through no-follow descriptors.
-    pub(crate) fn read(&self, sub: &str, name: &str) -> Result<Vec<u8>> {
+    fn file(&self, name: &str, flags: rustix::fs::OFlags) -> Result<File> {
         use rustix::fs::{Mode, OFlags, openat};
         use std::os::unix::fs::PermissionsExt;
-        Self::name(name)?;
-        let folder = self.folder(sub)?;
-        let mut file = File::from(
+        if name.is_empty() || name.contains('/') || name == "." || name == ".." {
+            return Err(invalid());
+        }
+        let file = File::from(
             openat(
-                &folder,
+                &self.root,
                 name,
-                OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-                Mode::empty(),
+                flags | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::from_raw_mode(0o600),
             )
             .map_err(err)?,
         );
@@ -110,34 +57,108 @@ impl Storage {
         if !m.is_file() || m.permissions().mode() & 0o777 != 0o600 {
             return Err(invalid());
         }
-        let mut bytes = Vec::new();
-        file.read_to_end(&mut bytes).map_err(err)?;
-        Ok(bytes)
+        Ok(file)
     }
-    /// Lists a pinned directory in deterministic order without following entries.
-    pub(crate) fn names(&self, sub: &str) -> Result<Vec<String>> {
-        let mut names = std::fs::read_dir(Self::fd_path(&self.folder(sub)?))
-            .map_err(err)?
-            .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
-            .collect::<std::io::Result<Vec<_>>>()
+    /// Reports a fault boundary; sync events count completed system calls.
+    pub(crate) fn tick(&self, step: Step) -> Result<()> {
+        (self.observe)(step)
+    }
+    /// Reads a no-follow regular mode-0600 file.
+    pub(crate) fn read(&self, name: &str) -> Result<Vec<u8>> {
+        let mut b = Vec::new();
+        self.file(name, rustix::fs::OFlags::RDONLY)?
+            .read_to_end(&mut b)
             .map_err(err)?;
-        names.sort();
-        Ok(names)
+        Ok(b)
     }
-    /// Idempotently unlinks a retired file; the caller must sync the affected directory.
-    pub(crate) fn remove(&self, sub: &str, name: &str) -> Result<()> {
-        Self::name(name)?;
+    /// Creates and syncs a fresh empty segment before publishing its snapshot pointer.
+    pub(crate) fn create(&self, name: &str) -> Result<()> {
+        use rustix::fs::OFlags;
+        self.file(name, OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL)?
+            .sync_all()
+            .map_err(err)?;
+        self.tick(Step::FileSynced)?;
+        self.sync()
+    }
+    /// Appends one complete frame and flushes it before returning.
+    pub(crate) fn append(&self, name: &str, bytes: &[u8]) -> Result<()> {
+        let mut f = self.file(
+            name,
+            rustix::fs::OFlags::WRONLY | rustix::fs::OFlags::APPEND,
+        )?;
+        self.tick(Step::BeforeAppend)?;
+        // Separate boundary exercises a torn length prefix with real partial bytes.
+        let split = bytes.len().min(8);
+        f.write_all(&bytes[..split]).map_err(err)?;
+        self.tick(Step::AfterPrefix)?;
+        f.write_all(&bytes[split..]).map_err(err)?;
+        self.tick(Step::AfterAppend)?;
+        f.sync_all().map_err(err)?;
+        self.tick(Step::FileSynced)
+    }
+    /// Reestablishes durability after an uncertain prior append or cold restart.
+    pub(crate) fn flush(&self, name: &str) -> Result<()> {
+        self.file(name, rustix::fs::OFlags::WRONLY)?
+            .sync_all()
+            .map_err(err)?;
+        self.tick(Step::FileSynced)
+    }
+    /// Trims only a database-proven uncommitted torn proposal tail, then syncs it.
+    pub(crate) fn trim(&self, name: &str, length: u64) -> Result<()> {
+        self.tick(Step::BeforeTailRepair)?;
+        let f = self.file(name, rustix::fs::OFlags::WRONLY)?;
+        f.set_len(length).map_err(err)?;
+        f.sync_all().map_err(err)?;
+        self.tick(Step::FileSynced)?;
+        self.tick(Step::AfterTailRepair)
+    }
+    /// Atomically replaces the checksummed snapshot using the ported fsio primitive.
+    pub(crate) fn snapshot(&self, bytes: &[u8]) -> Result<()> {
+        self.tick(Step::BeforeSnapshot)?;
+        calternal_fsio::write_atomic_mode(&self.path().join("snapshot.json"), bytes, 0o600)
+            .map_err(err)?;
+        self.tick(Step::FileSynced)?;
+        self.tick(Step::DirectorySynced)?;
+        self.tick(Step::AfterSnapshot)
+    }
+    /// Lists names for bounded segment/staging-file cleanup under the root lock.
+    pub(crate) fn names(&self) -> Result<Vec<String>> {
+        std::fs::read_dir(self.path())
+            .map_err(err)?
+            .map(|e| {
+                e.map(|e| e.file_name().to_string_lossy().into_owned())
+                    .map_err(err)
+            })
+            .collect()
+    }
+    /// Unlinks an obsolete segment only after the new snapshot is durable.
+    pub(crate) fn remove(&self, name: &str) -> Result<()> {
         self.tick(Step::BeforeCompact)?;
-        match std::fs::remove_file(Self::fd_path(&self.folder(sub)?).join(name)) {
-            Ok(()) => (),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-            Err(e) => return Err(err(e)),
-        }
+        std::fs::remove_file(self.path().join(name)).map_err(err)?;
         self.tick(Step::AfterCompact)
     }
-    /// Durably flushes a pinned directory after reclamation.
-    pub(crate) fn sync(&self, sub: &str) -> Result<()> {
-        fsio::sync_dir(&Self::fd_path(&self.folder(sub)?)).map_err(err)?;
-        self.tick(Step::DirectorySynced)
+    /// Flushes directory metadata after segment creation or retirement.
+    pub(crate) fn sync(&self) -> Result<()> {
+        self.tick(Step::BeforeCompactSync)?;
+        self.root.sync_all().map_err(err)?;
+        self.tick(Step::DirectorySynced)?;
+        self.tick(Step::AfterCompactSync)
+    }
+    /// Returns inode/size/time evidence for safely reusing a private-file read cache.
+    pub(crate) fn stamp(&self, name: &str) -> Result<Vec<u64>> {
+        use std::os::unix::fs::MetadataExt;
+        let m = self
+            .file(name, rustix::fs::OFlags::RDONLY)?
+            .metadata()
+            .map_err(err)?;
+        Ok(vec![
+            m.dev(),
+            m.ino(),
+            m.len(),
+            m.mtime() as u64,
+            m.mtime_nsec() as u64,
+            m.ctime() as u64,
+            m.ctime_nsec() as u64,
+        ])
     }
 }
