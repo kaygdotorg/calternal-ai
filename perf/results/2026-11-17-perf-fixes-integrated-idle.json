@@ -1,0 +1,123 @@
+{
+  "breach": false,
+  "commit": "40a3848",
+  "limitation": "three independent servers per size idle concurrently; no latency samples are taken here",
+  "observations": [
+    {
+      "after_mib": 24.171875,
+      "before_mib": 24.22265625,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.000201921,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 0,
+      "spaces": 1,
+      "writers_after": 0,
+      "writers_before": 1
+    },
+    {
+      "after_mib": 24.23046875,
+      "before_mib": 24.28125,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.002793815,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 1,
+      "spaces": 1,
+      "writers_after": 0,
+      "writers_before": 1
+    },
+    {
+      "after_mib": 24.140625,
+      "before_mib": 24.19140625,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.004947897,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 2,
+      "spaces": 1,
+      "writers_after": 0,
+      "writers_before": 1
+    },
+    {
+      "after_mib": 48.75390625,
+      "before_mib": 53.37109375,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.006949052,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 0,
+      "spaces": 100,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 48.23046875,
+      "before_mib": 52.7734375,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.130346547,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 1,
+      "spaces": 100,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 48.62890625,
+      "before_mib": 53.16796875,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.271687641,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 2,
+      "spaces": 100,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 57.3515625,
+      "before_mib": 62.04296875,
+      "budget_mib": 64.0,
+      "idle_seconds": 632.389947922,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 0,
+      "spaces": 1000,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 57.890625,
+      "before_mib": 62.51953125,
+      "budget_mib": 64.0,
+      "idle_seconds": 633.681486989,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 1,
+      "spaces": 1000,
+      "writers_after": 0,
+      "writers_before": 64
+    },
+    {
+      "after_mib": 57.8046875,
+      "before_mib": 62.49609375,
+      "budget_mib": 64.0,
+      "idle_seconds": 635.508705066,
+      "notes_per_space": 100,
+      "released": true,
+      "repeat": 2,
+      "spaces": 1000,
+      "writers_after": 0,
+      "writers_before": 64
+    }
+  ],
+  "reproduced": false,
+  "servers": 9,
+  "simultaneous_idle_only": true,
+  "space_cases": [
+    1,
+    100,
+    1000
+  ]
+}

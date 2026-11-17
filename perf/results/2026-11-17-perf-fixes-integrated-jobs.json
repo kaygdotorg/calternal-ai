@@ -1,0 +1,57 @@
+{
+  "commit": "40a3848",
+  "mode": "CALTERNAL_WORKER_TEST_BACKEND=local; release test-plugins; trusted jobs-demo fixture only",
+  "runs": [
+    {
+      "cold_first_ms": 216.13267199999999,
+      "commit": "40a3848",
+      "delay_ms": 0,
+      "provider": "none",
+      "qualification": "fixture stream only; not provider startup and not a three-host-call operation",
+      "summary": {
+        "breached": false,
+        "max": 52.888228000000005,
+        "metric": "job.first_chunk",
+        "p50": 32.897073999999996,
+        "p95": 39.777080999999995,
+        "p99": 52.888228000000005,
+        "samples": 99
+      },
+      "worker": "tests/plugins/jobs-demo"
+    },
+    {
+      "cold_first_ms": 126.985669,
+      "commit": "40a3848",
+      "delay_ms": 0,
+      "provider": "none",
+      "qualification": "fixture stream only; not provider startup and not a three-host-call operation",
+      "summary": {
+        "breached": false,
+        "max": 59.46689,
+        "metric": "job.first_chunk",
+        "p50": 32.824229,
+        "p95": 41.302065,
+        "p99": 59.46689,
+        "samples": 99
+      },
+      "worker": "tests/plugins/jobs-demo"
+    },
+    {
+      "cold_first_ms": 130.434191,
+      "commit": "40a3848",
+      "delay_ms": 0,
+      "provider": "none",
+      "qualification": "fixture stream only; not provider startup and not a three-host-call operation",
+      "summary": {
+        "breached": false,
+        "max": 47.406208,
+        "metric": "job.first_chunk",
+        "p50": 32.379276,
+        "p95": 38.493609,
+        "p99": 47.406208,
+        "samples": 99
+      },
+      "worker": "tests/plugins/jobs-demo"
+    }
+  ]
+}
