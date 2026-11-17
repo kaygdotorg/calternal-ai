@@ -12,7 +12,6 @@ use calternal_content::{Content, Item, ReadPool, Request};
 use calternal_types::{AccountId, SpaceId};
 use calternal_core::{Note, NoteSummary, NoteVersion};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use sha2::{Digest, Sha256};
 use std::{
     sync::Mutex,
     time::Duration,
@@ -64,7 +63,7 @@ pub fn now_rfc3339() -> String {
 }
 /// SHA-256 request/byte digest. Cost: O(bytes) CPU and one hex allocation; no locks or I/O.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+    hex::encode(ring::digest::digest(&ring::digest::SHA256, bytes))
 }
 fn db_err(e: rusqlite::Error) -> Error {
     tracing::error!(error=%e,"sqlite error");

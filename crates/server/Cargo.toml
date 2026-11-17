@@ -36,17 +36,16 @@ clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 tower-http = { version = "0.7", features = ["fs"] }
-rusqlite = { version = "0.41", features = ["bundled"] }
-sha2 = "0.10"
-hex = "0.4"
+rusqlite.workspace = true
+hex.workspace = true
 subtle = "2"
-getrandom = "0.3"
-time = { version = "0.3", features = ["formatting", "macros"] }
-tracing = "0.1"
+getrandom.workspace = true
+time = { workspace = true, features = ["formatting", "macros"] }
+tracing.workspace = true
 # Already in the dependency tree through axum; used for the SSE body stream.
 futures-util = { version = "0.3", default-features = false }
-ring = "0.17"
-base64 = "0.22"
+ring.workspace = true
+base64.workspace = true
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "ansi"] }
 
 [dev-dependencies]
@@ -54,8 +53,8 @@ reqwest.workspace = true
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 
-webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
-webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
-tempfile = "3.27"
+webauthn-authenticator-rs.workspace = true
+webauthn-rs.workspace = true
+tempfile.workspace = true
 calternal-cli = { workspace = true, features = ["testing"] }
-url = "2.5.8"
+url.workspace = true

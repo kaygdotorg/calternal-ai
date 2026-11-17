@@ -39,7 +39,6 @@ use db::Space;
 use journal::{Journals, lock};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
@@ -103,8 +102,9 @@ fn spawn_sweeper(spaces: &Cache, idle: Duration) -> Result<()> {
         .map(drop)
         .map_err(internal)
 }
-pub(crate) fn sha256(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
+/// BLAKE3 of an item file's bytes, as hex. Cost: O(bytes), one allocation.
+pub(crate) fn file_hash(bytes: &[u8]) -> String {
+    blake3::hash(bytes).to_hex().to_string()
 }
 /// Current UTC timestamp used by item versions and server adapters.
 /// Cost: one clock read and a short string allocation; no locks, SQLite or fsync.
@@ -479,7 +479,7 @@ impl Content {
                 let current=s.get(id)?;if current.kind!=kind{return Err(missing());}
                 s.place(id,self.fault)?;s.check_file(id)?;
                 if base!=Some(current.revision.as_str()) {return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":current.revision}))});}
-                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_sha256 FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(internal)?;
+                let (seq,path,sha):(i64,String,Option<String>)=s.conn.query_row("SELECT seq,path,file_hash FROM items WHERE id=?1",[id.to_string()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(internal)?;
                 (id,seq+1,Some(path),sha)
             }else{(Uuid::now_v7(),1,None,None)};
             let title=metadata.get("title").and_then(Value::as_str).unwrap_or(kind);
@@ -487,7 +487,7 @@ impl Content {
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:format!("v{seq}.{}",Uuid::now_v7().simple()),updated_at:now_rfc3339()};
             let response=result(&item);
             let tx=s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
-            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_sha256) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(internal)?;
+            tx.execute("INSERT INTO items(id,kind,metadata,revision,seq,updated_at,path,folded_path,old_path,mat_state,file_hash) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10) ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",params![id.to_string(),kind,item.metadata.to_string(),item.revision,seq,item.updated_at,path,calternal_fsio::names::fold(&path),old_path.filter(|old|old!=&path),expected]).map_err(internal)?;
             tx.execute("INSERT INTO versions VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id.to_string(),seq,item.revision,item.metadata.to_string(),bytes,item.updated_at,request.account.to_string()]).map_err(internal)?;
             tx.execute("INSERT INTO outbox VALUES(?1,?2,?3,?4,?5,?6,?7)",params![request.account.to_string(),request.id,request.operation,request.fingerprint,id.to_string(),item.revision,response.to_string()]).map_err(internal)?;
             tx.commit().map_err(internal)?;

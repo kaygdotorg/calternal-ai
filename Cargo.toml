@@ -31,3 +31,18 @@ uuid = { version = "1", features = ["v4", "serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util"] }
 clap = { version = "4", features = ["derive", "env"] }
+# One declaration per shared dependency; crates add features with `.workspace = true`.
+rusqlite = { version = "0.41", features = ["bundled"] }
+getrandom = "0.4.3"
+rustix = "1.1.5"
+blake3 = "1.8.7"
+tracing = "0.1.44"
+time = "0.3"
+base64 = "0.23.1"
+ring = "0.17"
+hex = "0.4"
+url = "2.5.8"
+unicode-normalization = "0.1.25"
+webauthn-rs = { version = "0.5.5", features = ["conditional-ui"] }
+webauthn-authenticator-rs = { version = "0.5.5", features = ["softpasskey"] }
+tempfile = "3.27"

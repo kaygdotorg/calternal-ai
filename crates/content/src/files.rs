@@ -2,7 +2,7 @@
 //! Committed path intents survive restart; outside changes are preserved and block writes.
 use crate::types::{blocked, internal, missing};
 use crate::{
-    Error, FaultPoint, FileFormat, Item, Materialization, Placement, Result, db::Space, sha256,
+    Error, FaultPoint, FileFormat, Item, Materialization, Placement, Result, db::Space, file_hash,
 };
 use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
@@ -17,7 +17,7 @@ fn hash(path: &Path) -> Result<Option<String>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(internal(e)),
         Ok(meta) if !meta.is_file() => Err(blocked()),
-        Ok(_) => Ok(Some(sha256(&fs::read(path).map_err(internal)?))),
+        Ok(_) => Ok(Some(file_hash(&fs::read(path).map_err(internal)?))),
     }
 }
 pub(crate) fn validate_kind(kind: &str) -> Result<()> {
@@ -194,7 +194,7 @@ impl Space {
         let (state, expected): (String, Option<String>) = self
             .conn
             .query_row(
-                "SELECT mat_state,file_sha256 FROM items WHERE id=?1",
+                "SELECT mat_state,file_hash FROM items WHERE id=?1",
                 [id.to_string()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -243,7 +243,7 @@ impl Space {
         let (state, expected, old): (String, Option<String>, Option<String>) = self
             .conn
             .query_row(
-                "SELECT mat_state,file_sha256,old_path FROM items WHERE id=?1",
+                "SELECT mat_state,file_hash,old_path FROM items WHERE id=?1",
                 [id.to_string()],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
@@ -257,7 +257,7 @@ impl Space {
         let item = self.get(id)?;
         let (_, format) = self.registration(&item.kind)?;
         let bytes = encoded(&item, &format)?;
-        let new_hash = sha256(&bytes);
+        let new_hash = file_hash(&bytes);
         let path = self.file_path(id)?;
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
         // Normally prepared by `choose_path`; recreate only if it vanished since.
@@ -334,7 +334,7 @@ impl Space {
             }
             return Err(e);
         }
-        self.conn.execute("UPDATE items SET mat_state='materialized',file_sha256=?1,old_path=NULL WHERE id=?2",params![new_hash,id.to_string()]).map_err(internal)?;
+        self.conn.execute("UPDATE items SET mat_state='materialized',file_hash=?1,old_path=NULL WHERE id=?2",params![new_hash,id.to_string()]).map_err(internal)?;
         Ok(())
     }
     pub(crate) fn cleanup(&self) -> Result<()> {

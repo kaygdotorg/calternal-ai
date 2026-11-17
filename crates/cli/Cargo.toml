@@ -23,8 +23,8 @@ calternal-client.workspace = true
 serde_json.workspace = true
 clap.workspace = true
 tokio.workspace = true
-time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
-rustix = { version = "1.1", features = ["termios", "stdio"] }
+time = { workspace = true, features = ["formatting", "parsing", "local-offset"] }
+rustix = { workspace = true, features = ["termios", "stdio"] }
 
 [dev-dependencies]
 calternal-cli = { path = ".", features = ["testing"] }

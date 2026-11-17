@@ -9,8 +9,8 @@ publish = false
 calternal-fsio.workspace = true
 uuid = { workspace = true, features = ["v7"] }
 tokio.workspace = true
-rustix = { version = "1.1.5", features = ["fs"] }
+rustix = { workspace = true, features = ["fs"] }
 
 [dev-dependencies]
-tempfile = "3.27"
+tempfile.workspace = true
 tokio = { version = "1", features = ["test-util", "sync"] }

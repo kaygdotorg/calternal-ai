@@ -4,7 +4,7 @@
 use crate::types::{internal, missing};
 use crate::{
     AccountId, Collection, CollectionOwner, Content, Error, Request, Result, SpaceId, db,
-    journal::lock, now_rfc3339, sha256,
+    journal::lock, now_rfc3339, file_hash,
 };
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,7 @@ impl Content {
         let metadata = serde_json::to_value(&definition).map_err(internal)?;
         let bytes = serde_json::to_vec_pretty(&definition).map_err(internal)?;
         let request = format!("standard/{space}/{kind}/{key}");
-        let fingerprint = sha256(&bytes);
+        let fingerprint = file_hash(&bytes);
         let write = self.write(
             space,
             None,
