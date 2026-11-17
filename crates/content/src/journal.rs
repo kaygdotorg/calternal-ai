@@ -58,6 +58,11 @@ impl Journals {
         block_on(future)
     }
 
+    /// How long request receipts are kept. Cost: a copy.
+    pub(crate) fn retention(&self) -> std::time::Duration {
+        self.options.idempotency_retention
+    }
+
     /// Opens one space's journal: private directories, then [`SpaceStore::open_with`].
     /// Cost: directory preparation and the store's open (SQLite, key and witness reads).
     pub(crate) fn open_store(&self, space: SpaceId) -> Result<SpaceStore> {

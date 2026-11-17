@@ -41,6 +41,7 @@ mod guard;
 mod plugins;
 pub use dispatch::dispatch;
 use dispatch::*;
+pub(crate) use dispatch::fingerprint;
 use guard::*;
 use plugins::*;
 
@@ -51,6 +52,8 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = StoredDirectory> {
+    /// Per-account input databases (drafts, pending submissions, the account feed).
+    pub inputs: crate::account_input::Inputs,
     /// Durable preview store, shared without an outer lock: work in one space never
     /// waits for another (see [`Store`] for the locks it takes).
     pub store: Store,
@@ -80,8 +83,14 @@ pub fn allowed_hosts(port: u16) -> Vec<String> {
 
 /// Build the authenticated API and optional static asset routes.
 pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Router {
+    let content = state.store.shared_content();
     let api = Router::new()
         .route("/api/v1/describe", get(describe::<D>))
+        .route(
+            "/api/v1/account/live",
+            get(crate::account_input::events::<D>),
+        )
+        .route("/api/v1/live", get(crate::live::events::<D>))
         .route("/api/v1/operations", post(operations::<D>))
         .route(
             "/api/v1/jobs/{id}/events",
@@ -90,7 +99,8 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         .merge(crate::machines::http::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
-        .route("/api/{*rest}", any(api_not_found));
+        .route("/api/{*rest}", any(api_not_found))
+        .layer(axum::Extension(content));
     let http_auth = state.directory.http_auth().cloned();
     let mut app = Router::new().merge(api);
     if let Some(service) = &http_auth {

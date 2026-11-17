@@ -381,6 +381,11 @@ impl Content {
             )
         })
     }
+    /// How long a request receipt is kept; a retry after that runs as a new
+    /// request. Cost: a copy.
+    pub fn receipt_retention(&self) -> Duration {
+        self.journals.retention()
+    }
     /// Checks one item's current kind and existence inside an authorized space.
     /// Cost: the space's lock and one indexed read; no catalog access, body
     /// allocation, journal call or fsync.

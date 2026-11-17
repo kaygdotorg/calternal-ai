@@ -163,11 +163,8 @@ fn auth_error(e: calternal_auth::Error) -> Error {
 }
 impl Directory for StoredDirectory {
     fn changes(&self) -> Vec<tokio::sync::watch::Receiver<u64>> {
-        let mut changes = vec![self.spaces.changes()];
-        if let Some(service) = self.http_auth() {
-            changes.push(service.auth.changes());
-        }
-        changes
+        // Accounts and spaces share one auth.db handle, hence one change watch.
+        vec![self.spaces.changes()]
     }
 
     fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
