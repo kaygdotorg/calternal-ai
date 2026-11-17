@@ -209,7 +209,7 @@ impl Jobs {
                 let mut wake = vec![];
                 for Active { id, state, plugin, operation, runs, parent } in rows {
                     if operation == "agent.turn" {
-                        if state!="retry_waiting" {set_state(tx, &id, JobState::Interrupted, "null")?;}
+                        if !matches!(state.as_str(), "retry_waiting" | "waiting") {set_state(tx, &id, JobState::Interrupted, "null")?;}
                         continue;
                     }
                     match state.as_str() {

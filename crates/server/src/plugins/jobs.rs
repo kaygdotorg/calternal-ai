@@ -200,6 +200,7 @@ type OpenSpace = (Arc<Mutex<Connection>>, u64);
 pub struct Jobs {
     pub(super) root: Option<PathBuf>,
     pub(super) security: Option<calternal_auth::agents::Agents>,
+    pub(super) receipt_retention: std::time::Duration,
     spaces: Mutex<HashMap<String, OpenSpace>>,
     tick: AtomicUsize,
     pub(super) routes: RwLock<HashMap<String, String>>,
@@ -260,11 +261,19 @@ impl Jobs {
         self
     }
 
+    /// Reuse the installation's receipt retention for completed person requests.
+    /// Cost: one copy at startup, no I/O.
+    pub fn with_receipt_retention(mut self, retention: std::time::Duration) -> Self {
+        self.receipt_retention = retention;
+        self
+    }
+
     /// A job service that refuses every admission (for hosts without job storage).
     pub fn disabled() -> Self {
         Self {
             root: None,
             security: None,
+            receipt_retention: calternal_content::DEFAULT_RECEIPT_RETENTION,
             spaces: Mutex::new(HashMap::new()),
             tick: AtomicUsize::new(0),
             routes: RwLock::new(HashMap::new()),

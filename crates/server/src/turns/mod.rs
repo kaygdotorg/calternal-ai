@@ -240,10 +240,8 @@ pub async fn dispatch<D: Directory>(
             let reset = (!i.epoch.is_empty() && i.epoch != batch.epoch) || i.after < batch.oldest;
             let events:Vec<Value> = batch.chunks.iter().map(|c| json!({"seq":c.seq,"data":serde_json::from_str::<Value>(&c.data).unwrap_or(Value::Null)})).collect();
             let next = batch.chunks.last().map_or(i.after, |c| c.seq + 1);
-            let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
-            let requests = blocking(move || st.jobs.agent_requests(&sp, &id)).await?;
             Ok(
-                json!({"job":job.view(),"epoch":batch.epoch,"events":events,"next":next,"reset":reset,"requests":requests}),
+                json!({"job":job.view(),"epoch":batch.epoch,"events":events,"next":next,"reset":reset}),
             )
         }
         "agent.discard" => {
@@ -324,16 +322,23 @@ pub async fn dispatch<D: Directory>(
             let id = blocking(move || {
                 admission.apply(|| {
                     let a = st.jobs.agent_scope(&sp, &id)?;
-                    Ok(json!({"approval_id":st.jobs.agent_request(&a,&app,write)?}))
+                    let create = || st.jobs.agent_request(&a, &app, write);
+                    let id = if agent.is_some() {
+                        crate::requests::park(&st, &machines, &a, create)?
+                    } else {
+                        create()?
+                    };
+                    st.inputs.invalidate(a.actor.account)?;
+                    Ok(json!({"approval_id":id}))
                 })
             })
             .await?["approval_id"]
                 .as_str()
                 .ok_or_else(|| Error::internal("approval result"))?
                 .to_owned();
-            Ok(json!({"approval_id":id,"status":"pending","scope":"this turn"}))
+            Ok(json!({"approval_id":id,"status":"pending","scope":"pending person decision"}))
         }
-        "agent.mode" | "access.approve" => {
+        "agent.mode" => {
             if agent.is_some() {
                 return Err(Error::forbidden(
                     "a freshly verified person must change agent access",
@@ -344,22 +349,13 @@ pub async fn dispatch<D: Directory>(
                 return Err(Error::conflict("finished turns cannot change access"));
             }
             // Revoke authority before stopping processes so no old token can act.
-            let (st, sp, id, action) = (
-                state.clone(),
-                job.space.clone(),
-                job.id.clone(),
-                op.to_owned(),
-            );
+            let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             let (svc, ending) = (machines.clone(), job.clone());
             blocking(move || {
                 admission.apply(|| {
                     let mut a = st.jobs.agent_scope(&sp, &id)?;
-                    if action == "agent.mode" {
-                        a.mode = i.mode;
-                        st.jobs.agent_scope_change(&a)?;
-                    } else {
-                        st.jobs.agent_approve(&mut a, &i.approval_id)?;
-                    }
+                    a.mode = i.mode;
+                    st.jobs.agent_scope_change(&a)?;
                     st.jobs.agent_interrupt(&sp, &id)?;
                     release(&svc, &ending)?;
                     Ok(Value::Null)
@@ -416,7 +412,7 @@ pub(super) async fn authorize<D: Directory>(
     .await
 }
 
-async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(), Error> {
+pub(crate) async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(), Error> {
     let Session::Installation {
         account,
         installation,
@@ -437,7 +433,10 @@ async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) -> Result<(),
         .map_err(|_| Error::forbidden("sign in again with a passkey to approve access"))
 }
 
-fn release(machines: &MachineService, job: &Job) -> Result<(), Error> {
+pub(crate) fn release(machines: &MachineService, job: &Job) -> Result<(), Error> {
+    if job.state == JobState::Waiting && job.checkpoint["person_request"].is_string() {
+        return Ok(());
+    }
     if let Some(lease) = job.checkpoint["lease_id"]
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())

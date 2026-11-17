@@ -49,6 +49,22 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             .iter()
             .map(|(id, _, _)| *id),
     );
+    // Request isolation and the instructions role matrix use real passkey
+    // sessions in conformance/requests_cases.rs.
+    for (id, required) in [
+        ("requests.list", Capability::SpaceRead),
+        ("requests.ask", Capability::PluginsUse),
+        ("requests.answer", Capability::SpaceRead),
+        ("requests.approve", Capability::PluginsUse),
+        ("requests.deny", Capability::PluginsUse),
+        ("space.instructions", Capability::SpaceSettings),
+    ] {
+        assert!(stored_rows.insert(id), "duplicate request operation {id}");
+        assert_eq!(
+            fixture.state.registry.policy(id).unwrap().required,
+            required
+        );
+    }
     let rows: BTreeSet<_> = rows.union(&stored_rows).copied().collect();
     assert_eq!(
         rows.iter()
@@ -75,6 +91,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         .map(|p| p.operation.to_string())
         .chain(calternal_core::account_input_operations().map(str::to_owned))
         .chain(
+            calternal_core::REQUEST_OPERATIONS
+                .iter()
+                .map(|row| row.id.to_owned()),
+        )
+        .chain(
             calternal_server::authz::agent_policies()
                 .iter()
                 .map(|p| p.operation.to_string()),
@@ -90,6 +111,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     assert_eq!(
         POLICIES.len()
             + calternal_core::account_input_operations().count()
+            + calternal_core::REQUEST_OPERATIONS.len()
             + calternal_server::authz::agent_policies().len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),

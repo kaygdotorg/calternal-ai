@@ -19,7 +19,8 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const REQUEST_TTL_MS: i64 = 15 * 60 * 1000;
+/// Lifetime of a pending secret prompt in Unix milliseconds.
+pub const REQUEST_TTL_MS: i64 = 15 * 60 * 1000;
 
 pub(crate) const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS key_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1), fingerprint BLOB NOT NULL, erasing INTEGER NOT NULL);

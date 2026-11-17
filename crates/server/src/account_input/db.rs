@@ -9,6 +9,17 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 impl Inputs {
+    /// Append a content-free invalidation to the account feed. Opens only the
+    /// recipient's database and commits one short transaction on a blocking worker.
+    pub(crate) fn invalidate(&self, account: AccountId) -> Result<(), Error> {
+        let mut connection = self.open(account)?;
+        let tx = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(internal)?;
+        self.change(&tx)?;
+        tx.commit().map_err(internal)
+    }
+
     pub(super) fn open(&self, id: AccountId) -> Result<Connection, Error> {
         let dir = self.root.join("accounts").join(id.to_string());
         calternal_fsio::private::directory(&dir).map_err(internal)?;

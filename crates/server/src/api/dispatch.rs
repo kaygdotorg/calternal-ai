@@ -1,5 +1,6 @@
 //! Operation admission (one capability lookup), receipts and the host handlers.
 use super::*;
+use crate::authz::Policy;
 
 pub(super) fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(Value::Object(input.into_iter().collect()))
@@ -45,7 +46,7 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    dispatch_scoped(state, p, session, request_id, op, input, None).await
+    dispatch_scoped(state, p, session, request_id, op, input, None, None).await
 }
 
 pub(super) async fn dispatch_scoped<D: Directory>(
@@ -56,7 +57,12 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     op: &str,
     input: JsonObject,
     agent: Option<crate::turns::access::Authority>,
+    machines: Option<std::sync::Arc<crate::machines::MachineService>>,
 ) -> Result<Value, Error> {
+    if let Some(row) = calternal_core::request_operation(op) {
+        return crate::requests::dispatch(state, None, p, session, agent, request_id, row, input)
+            .await;
+    }
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(
@@ -183,6 +189,15 @@ pub(super) async fn dispatch_scoped<D: Directory>(
             if e.code != ErrorCode::Forbidden {
                 return Err(e);
             }
+            if let Session::Agent { token_hash, .. } = &session
+                && let Some(result) = super::request_action::once(
+                    &state, &p, &session, a, token_hash, request_id, op, &input, &policy, mutates,
+                    risk, job_scoped,
+                )
+                .await?
+            {
+                return Ok(result);
+            }
             let (st, a, op, input, rid) = (
                 state.clone(),
                 a.clone(),
@@ -191,14 +206,40 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                 request_id.to_owned(),
             );
             let approval = tokio::task::spawn_blocking(move || {
-                st.jobs
-                    .agent_action_request(&a, &op, &input, &rid, risk, mutates)
+                let create = || {
+                    st.jobs
+                        .agent_action_request(&a, &op, &input, &rid, risk, mutates)
+                };
+                let id = if let Some(machines) = machines {
+                    crate::requests::park(&st, &machines, &a, create)?
+                } else {
+                    create()?
+                };
+                st.inputs.invalidate(a.actor.account)?;
+                Ok::<_, Error>(id)
             })
             .await
             .map_err(|_| Error::internal("approval task failed"))??;
             return Err(e.with_details(serde_json::json!({"status":"approval_required","approval_id":approval,"job_id":agent.as_ref().map(|a|a.job.as_str()),"request_id":request_id})));
         }
     }
+    admitted_operation(
+        state, p, session, request_id, op, input, agent, policy, job_scoped,
+    )
+    .await
+}
+
+pub(super) async fn admitted_operation<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    session: Session,
+    request_id: &str,
+    op: &str,
+    mut input: JsonObject,
+    agent: Option<crate::turns::access::Authority>,
+    policy: Policy,
+    job_scoped: bool,
+) -> Result<Value, Error> {
     if job_scoped {
         let space = match input.remove("space_id") {
             Some(Value::String(space)) => space,
