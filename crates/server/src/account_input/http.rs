@@ -1,9 +1,9 @@
 //! One private account SSE route, account inferred exclusively from authentication.
+use calternal_types::Error;
 use super::{Inputs, internal};
 use crate::{
     api::{Shared, error_response},
     auth::{Directory, Identity},
-    error::HostError,
     plugins::Session,
 };
 use axum::{
@@ -42,20 +42,20 @@ pub(crate) async fn events<D: Directory>(
     req: Request,
 ) -> Response {
     let Some(p) = req.extensions().get::<Identity>().cloned() else {
-        return error_response(HostError::unauthorized("sign in required"));
+        return error_response(Error::unauthorized("sign in required"));
     };
     let Some(session) = req.extensions().get::<Session>().cloned() else {
-        return error_response(HostError::unauthorized("sign in required"));
+        return error_response(Error::unauthorized("sign in required"));
     };
     if q.bookmark.as_ref().is_some_and(|b| b.len() > 128) {
-        return error_response(HostError::invalid_input("invalid bookmark"));
+        return error_response(Error::invalid_input("invalid bookmark"));
     }
     let st = state.clone();
     let identity = p.clone();
     let head = tokio::task::spawn_blocking(move || {
-        let mut c = st.inputs.open(&identity.id)?;
-        st.inputs.clean(&mut c, &st.tokens, &identity)?;
-        Ok::<_, HostError>((Inputs::head(&c)?, st.inputs.admit(&identity.id)?))
+        let mut c = st.inputs.open(identity.id)?;
+        st.inputs.clean(&mut c, &st.directory, &identity)?;
+        Ok::<_, Error>((Inputs::head(&c)?, st.inputs.admit(identity.id)?))
     })
     .await;
     let (head, admission) = match head {
@@ -78,7 +78,7 @@ pub(crate) async fn events<D: Directory>(
             return None;
         }
         loop {
-            if !f.session.is_live(&f.state.tokens).await {
+            if !f.session.is_live(&f.state.directory).await {
                 return None;
             }
             if let Some(bookmark) = f.page.pop_front() {
@@ -92,8 +92,8 @@ pub(crate) async fn events<D: Directory>(
             let p = f.p.clone();
             let after = f.after.clone();
             let page = tokio::task::spawn_blocking(move || {
-                let mut c = st.inputs.open(&p.id)?;
-                st.inputs.clean(&mut c, &st.tokens, &p)?;
+                let mut c = st.inputs.open(p.id)?;
+                st.inputs.clean(&mut c, &st.directory, &p)?;
                 Inputs::page(&c, &after)
             })
             .await

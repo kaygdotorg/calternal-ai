@@ -6,7 +6,8 @@ pub(super) fn decode<T: DeserializeOwned>(input: JsonObject) -> Result<T, Error>
         .map_err(|_| Error::invalid_input("input does not match operation schema"))
 }
 
-pub(super) fn fingerprint(op: &str, input: &JsonObject) -> String {
+/// Canonical operation identity digest; also used by private pending replay.
+pub(crate) fn fingerprint(op: &str, input: &JsonObject) -> String {
     sha256_hex(format!("{op}\n{}", canonical_request_input(input)).as_bytes())
 }
 
@@ -44,6 +45,9 @@ pub async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
+    if calternal_core::is_account_input_operation(op) {
+        return crate::account_input::dispatch(state, p, session, op, input).await;
+    }
     let mut input = input;
     // Capabilities already read for this request (by the resolver), so admission
     // does not look them up again.
@@ -153,7 +157,19 @@ pub async fn dispatch<D: Directory>(
         let operation = op.to_owned();
         // Directory changes keep their own receipts in auth.db.
         return tokio::task::spawn_blocking(move || {
-            st.directory.space_operation(&p, &rid, &operation, &input)
+            // Accounts this change removes lose their private input for the space.
+            let removed =
+                crate::account_input::revoked_targets(&st.directory, &p, &operation, &input)?;
+            let result = st.directory.space_operation(&p, &rid, &operation, &input);
+            if result.is_ok()
+                && let Some(space) = input.get("space_id").and_then(Value::as_str)
+            {
+                let space = space_of(space)?;
+                for account in removed {
+                    st.inputs.erase_space(account, space)?;
+                }
+            }
+            result
         })
         .await
         .map_err(|_| Error::internal("directory task failed"))?;

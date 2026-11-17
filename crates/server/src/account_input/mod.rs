@@ -5,7 +5,7 @@
 mod db;
 mod dispatch;
 mod http;
-use crate::error::HostError;
+use calternal_types::Error;
 pub(crate) use dispatch::dispatch;
 pub(crate) use http::events;
 use std::{
@@ -45,20 +45,20 @@ impl Default for Limits {
 impl Limits {
     /// Read positive operator ceilings once at startup. Fails closed on malformed
     /// values; no environment reads or parsing on the request path.
-    pub fn from_env() -> Result<Self, HostError> {
-        fn value(name: &str, default: usize) -> Result<usize, HostError> {
+    pub fn from_env() -> Result<Self, Error> {
+        fn value(name: &str, default: usize) -> Result<usize, Error> {
             match std::env::var(name) {
                 Ok(v) => v
                     .parse()
                     .ok()
                     .filter(|n| *n > 0 && *n <= i32::MAX as usize)
                     .ok_or_else(|| {
-                        HostError::invalid_input(format!(
+                        Error::invalid_input(format!(
                             "{name} must be a positive integer <= 2147483647"
                         ))
                     }),
                 Err(std::env::VarError::NotPresent) => Ok(default),
-                Err(_) => Err(HostError::invalid_input("invalid input ceiling")),
+                Err(_) => Err(Error::invalid_input("invalid input ceiling")),
             }
         }
         let d = Self::default();
@@ -80,6 +80,8 @@ pub struct Inputs {
     content: Option<Arc<calternal_content::Content>>,
     limits: Limits,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
+    /// How long a sent marker is kept: the journal's receipt retention.
+    receipt_retention_ms: i64,
 }
 impl Inputs {
     /// Configure the owner-local database service without opening files. Calls
@@ -99,6 +101,7 @@ impl Inputs {
     /// lock/connection is created. Enables replay after pending input was sent
     /// and removed; callers without this service cannot recover terminal replies.
     pub fn with_content(mut self, content: Arc<calternal_content::Content>) -> Self {
+        self.receipt_retention_ms = content.receipt_retention().as_millis() as i64;
         self.content = Some(content);
         self
     }
@@ -117,11 +120,14 @@ impl Inputs {
             content: None,
             limits,
             clock,
+            receipt_retention_ms: calternal_store::Options::default()
+                .idempotency_retention
+                .as_millis() as i64,
         }
     }
 }
-fn internal(_: impl std::fmt::Display) -> HostError {
-    HostError::internal("account input storage failed")
+fn internal(_: impl std::fmt::Display) -> Error {
+    Error::internal("account input storage failed")
 }
 
 /// Determine accounts whose input must be erased by a successful membership
@@ -132,23 +138,24 @@ pub(crate) fn revoked_targets(
     p: &crate::auth::Identity,
     op: &str,
     input: &calternal_core::JsonObject,
-) -> Result<Vec<String>, HostError> {
+) -> Result<Vec<calternal_types::AccountId>, Error> {
+    use calternal_types::AccountId;
     use serde_json::Value;
     match op {
         "spaces.remove_member" => Ok(input
             .get("account_id")
             .and_then(Value::as_str)
-            .map(str::to_owned)
+            .and_then(|a| AccountId::parse(a).ok())
             .into_iter()
             .collect()),
-        "spaces.leave" => Ok(vec![p.id.to_string()]),
+        "spaces.leave" => Ok(vec![p.id]),
         "spaces.delete" => {
             let members = d.space_operation(p, "input-cleanup-members", "spaces.members", input)?;
             Ok(members["members"]
                 .as_array()
                 .into_iter()
                 .flatten()
-                .filter_map(|m| m["account_id"].as_str().map(str::to_owned))
+                .filter_map(|m| m["account_id"].as_str().and_then(|a| AccountId::parse(a).ok()))
                 .collect())
         }
         _ => Ok(Vec::new()),

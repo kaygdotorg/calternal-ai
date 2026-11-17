@@ -1,24 +1,19 @@
 //! Owner-local SQL and bounded invalidation history. Events carry no content.
+use calternal_types::Error;
 use super::{Inputs, internal};
-use crate::{
-    auth::{Directory, Identity},
-    authz::Capability,
-    error::HostError,
-};
-use calternal_auth::AccountId;
+use crate::auth::{Directory, Identity};
+use calternal_types::{AccountId, Capability, SpaceId};
 use calternal_core::AccountInputRecord;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 impl Inputs {
-    pub(super) fn open(&self, account: &str) -> Result<Connection, HostError> {
-        let id = AccountId::parse(account)
-            .ok_or_else(|| HostError::unauthorized("account UUID required"))?;
+    pub(super) fn open(&self, id: AccountId) -> Result<Connection, Error> {
         let dir = self.root.join("accounts").join(id.to_string());
-        calternal_auth::private_fs::directory(&dir).map_err(internal)?;
+        calternal_fsio::private::directory(&dir).map_err(internal)?;
         let path = dir.join("input.db");
-        calternal_auth::private_fs::file(&path).map_err(internal)?;
+        calternal_fsio::private::file(&path).map_err(internal)?;
         let c = Connection::open(&path).map_err(internal)?;
         c.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(internal)?;
@@ -54,7 +49,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         }
         Ok(c)
     }
-    pub(super) fn change(&self, c: &Connection) -> Result<(), HostError> {
+    pub(super) fn change(&self, c: &Connection) -> Result<(), Error> {
         c.execute(
             "INSERT INTO events(token) VALUES(?1)",
             [Uuid::new_v4().to_string()],
@@ -71,7 +66,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         c: &Connection,
         kind: &str,
         id: &str,
-    ) -> Result<Option<AccountInputRecord>, HostError> {
+    ) -> Result<Option<AccountInputRecord>, Error> {
         c.query_row(
             "SELECT body FROM inputs WHERE kind=?1 AND id=?2",
             params![kind, id],
@@ -82,7 +77,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         .map(|v| serde_json::from_str(&v).map_err(internal))
         .transpose()
     }
-    pub(super) fn list(c: &Connection, kind: &str) -> Result<Vec<AccountInputRecord>, HostError> {
+    pub(super) fn list(c: &Connection, kind: &str) -> Result<Vec<AccountInputRecord>, Error> {
         let mut q = c
             .prepare_cached("SELECT body FROM inputs WHERE kind=?1 ORDER BY id")
             .map_err(internal)?;
@@ -98,7 +93,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         kind: &str,
         record: &AccountInputRecord,
         draft: Option<&str>,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         let body = serde_json::to_string(record).map_err(internal)?;
         let payload = record
             .text
@@ -129,7 +124,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
             || (total - prior.unwrap_or(0) + payload as i64 > self.limits.bytes as i64
                 && payload as i64 > prior.unwrap_or(0))
         {
-            return Err(HostError::new(
+            return Err(Error::new(
                 calternal_core::ErrorCode::TooLarge,
                 "account input cap reached; send, erase or cancel input, or ask the operator to raise CALTERNAL_DRAFT_COUNT, CALTERNAL_PENDING_COUNT or CALTERNAL_INPUT_BYTES",
             ));
@@ -144,7 +139,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         c: &Connection,
         row: &mut AccountInputRecord,
         state: &str,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         row.state = state.into();
         row.revision = Uuid::now_v7().to_string();
         let body = serde_json::to_string(row).map_err(internal)?;
@@ -162,7 +157,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         c: &mut Connection,
         d: &impl Directory,
         p: &Identity,
-    ) -> Result<(), HostError> {
+    ) -> Result<(), Error> {
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(internal)?;
@@ -176,16 +171,24 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
                 .map_err(internal)?
         };
         for space in spaces {
-            if !d
-                .capabilities(&p.id, &space)
-                .is_some_and(|c| c.contains(Capability::SpaceRead))
-            {
+            let readable = SpaceId::parse(&space)
+                .ok()
+                .and_then(|s| d.capabilities(p.id, s))
+                .is_some_and(|c| c.contains(Capability::SpaceRead));
+            if !readable {
                 tx.execute("DELETE FROM inputs WHERE space=?1", [space])
                     .map_err(internal)?;
                 self.change(&tx)?;
             }
         }
         let now = (self.clock)();
+        // Sent markers only route a retry to its space's receipt; they live as long
+        // as the receipt does.
+        tx.execute(
+            "DELETE FROM inputs WHERE kind='sent' AND CAST(body AS INTEGER) < ?1",
+            [now.saturating_sub(self.receipt_retention_ms)],
+        )
+        .map_err(internal)?;
         let due: Vec<AccountInputRecord> = {
             let mut q=tx.prepare_cached("SELECT body FROM inputs WHERE kind='pending' AND json_extract(body,'$.state')='queued' AND json_extract(body,'$.created_at_ms')<?1").map_err(internal)?;
             let rows = q
@@ -205,7 +208,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
         }
         tx.commit().map_err(internal)
     }
-    pub(super) fn head(c: &Connection) -> Result<String, HostError> {
+    pub(super) fn head(c: &Connection) -> Result<String, Error> {
         Ok(c.query_row(
             "SELECT token FROM events ORDER BY seq DESC LIMIT 1",
             [],
@@ -218,7 +221,7 @@ PRAGMA user_version=1;COMMIT;").map_err(internal)?;
                 .map_err(internal)?,
         ))
     }
-    pub(super) fn page(c: &Connection, after: &str) -> Result<Option<Vec<String>>, HostError> {
+    pub(super) fn page(c: &Connection, after: &str) -> Result<Option<Vec<String>>, Error> {
         let epoch: String = c
             .query_row("SELECT epoch FROM binding", [], |r| r.get(0))
             .map_err(internal)?;
@@ -254,9 +257,7 @@ impl Inputs {
     /// Erase one revoked account/space's unsent input after authority commits.
     /// One owner-local transaction and event; revocation itself never waits for
     /// this cleanup to stop access. No private content is retained in events.
-    pub fn erase_space(&self, account: &str, space: &str) -> Result<(), HostError> {
-        let id = AccountId::parse(account)
-            .ok_or_else(|| HostError::invalid_input("account UUID required"))?;
+    pub fn erase_space(&self, id: AccountId, space: SpaceId) -> Result<(), Error> {
         if !self
             .root
             .join("accounts")
@@ -266,12 +267,12 @@ impl Inputs {
         {
             return Ok(());
         }
-        let mut c = self.open(account)?;
+        let mut c = self.open(id)?;
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(internal)?;
         if tx
-            .execute("DELETE FROM inputs WHERE space=?1", [space])
+            .execute("DELETE FROM inputs WHERE space=?1", [space.to_string()])
             .map_err(internal)?
             > 0
         {
@@ -285,13 +286,11 @@ impl Inputs {
     // Owner-local advisory slot locks bound connection admission across processes.
     // Held for the HTTP body lifetime, never by mutations or publication. Files
     // are empty appdata state, bounded by the operator listener ceiling, and reused.
-    pub(super) fn admit(&self, account: &str) -> Result<std::fs::File, HostError> {
-        let id = AccountId::parse(account)
-            .ok_or_else(|| HostError::unauthorized("account UUID required"))?;
+    pub(super) fn admit(&self, id: AccountId) -> Result<std::fs::File, Error> {
         let dir = self.root.join("accounts").join(id.to_string()).join("live");
-        calternal_auth::private_fs::directory(&dir).map_err(internal)?;
+        calternal_fsio::private::directory(&dir).map_err(internal)?;
         for slot in 0..self.limits.listeners {
-            let file = calternal_auth::private_fs::file(&dir.join(format!("{slot}.lock")))
+            let file = calternal_fsio::private::file(&dir.join(format!("{slot}.lock")))
                 .map_err(internal)?;
             match file.try_lock() {
                 Ok(()) => return Ok(file),
@@ -299,38 +298,45 @@ impl Inputs {
                 Err(e) => return Err(internal(e)),
             }
         }
-        Err(HostError::unavailable(
+        Err(Error::unavailable(
             "account live subscriber cap reached; close a connection or raise CALTERNAL_LIVE_LISTENERS",
         ))
     }
 }
 
 impl Inputs {
-    // Completed input reuses the ordinary per-space receipt; no second result log
-    // or forever-retained copy of private input is created in the account store.
-    // Retry-only routing costs one existing identifier-catalog read, then current
-    // capability admission before the selected journal receipt is opened.
+    // Completed input reuses the ordinary per-space receipt (request IDs are scoped
+    // to account and space); no second result log or copy of private input exists.
+    // Cost: one capability lookup, then one journal receipt read in that space.
     pub(super) fn receipt(
         &self,
         d: &impl Directory,
         p: &Identity,
+        space: SpaceId,
         id: &str,
-    ) -> Result<Option<calternal_content::Receipt>, HostError> {
+    ) -> Result<Option<calternal_content::Receipt>, Error> {
         let Some(content) = &self.content else {
             return Ok(None);
         };
-        let account =
-            p.id.parse::<calternal_content::AccountId>()
-                .map_err(internal)?;
-        let Some(space) = content.receipt_space(account, id).map_err(internal)? else {
-            return Ok(None);
-        };
         if !d
-            .capabilities(&p.id, &space.to_string())
+            .capabilities(p.id, space)
             .is_some_and(|c| c.contains(Capability::ContentWrite))
         {
-            return Err(HostError::not_found("input not found"));
+            return Err(Error::not_found("input not found"));
         }
-        content.receipt(space, account, id).map_err(internal)
+        content.receipt(space, p.id, id).map_err(internal)
+    }
+    /// The space a sent submission went to, while its receipt is retained.
+    /// Cost: one indexed read.
+    pub(super) fn sent_space(c: &Connection, id: &str) -> Result<Option<SpaceId>, Error> {
+        c.query_row(
+            "SELECT space FROM inputs WHERE kind='sent' AND id=?1",
+            [id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(internal)?
+        .map(|s| SpaceId::parse(&s).map_err(internal))
+        .transpose()
     }
 }

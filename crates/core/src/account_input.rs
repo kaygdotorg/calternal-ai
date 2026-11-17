@@ -165,33 +165,56 @@ pub fn account_input_catalog() -> Vec<crate::OperationDescription> {
 pub fn is_account_input_operation(op: &str) -> bool {
     account_input_operations().any(|id| id == op)
 }
-/// Parse and validate private input once before effects. Nested operations must be
-/// writes; their current authority and item route are checked again at submission.
-/// Cost: bounded JSON decode; no storage access.
-pub fn validate_account_input(
+/// One private-input operation's input, decoded and validated.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AccountInput {
+    /// `drafts.list` or `pending.list`.
+    List,
+    /// `drafts.get` or `drafts.delete`.
+    Draft(DraftKey),
+    /// `drafts.save`.
+    Save(DraftSaveInput),
+    /// `pending.queue` or `pending.edit`.
+    Queue(PendingQueueInput),
+    /// `pending.submit`, `pending.confirm` or `pending.cancel`.
+    Pending(PendingInput),
+}
+
+/// Parses and validates private input once, consuming it: one JSON projection into
+/// the typed input. Nested operations must be writes; their current authority and
+/// item route are checked again at submission.
+///
+/// # Errors
+/// Invalid input for a shape or value violation.
+/// Cost: one bounded decode of `input`; no storage access.
+pub fn parse_account_input(
     op: &str,
-    input: &crate::JsonObject,
-) -> Result<(), crate::ValidationError> {
+    input: crate::JsonObject,
+) -> Result<AccountInput, calternal_types::Error> {
     fn decode<T: serde::de::DeserializeOwned>(
-        input: &crate::JsonObject,
-    ) -> Result<T, crate::ValidationError> {
-        serde_json::from_value(serde_json::to_value(input).unwrap())
-            .map_err(|_| crate::ValidationError::invalid("input does not match operation schema"))
+        input: crate::JsonObject,
+    ) -> Result<T, calternal_types::Error> {
+        serde_json::from_value(serde_json::Value::Object(input.into_iter().collect())).map_err(
+            |_| calternal_types::Error::invalid_input("input does not match operation schema"),
+        )
     }
-    match op {
+    Ok(match op {
         "drafts.list" | "pending.list" => {
             let _: AccountInputList = decode(input)?;
+            AccountInput::List
         }
         "drafts.get" | "drafts.delete" => {
             let i: DraftKey = decode(input)?;
             crate::validate_resource_id(&i.space_id)?;
             crate::validate_resource_id(&i.item_id)?;
+            AccountInput::Draft(i)
         }
         "drafts.save" => {
             let i: DraftSaveInput = decode(input)?;
             crate::validate_resource_id(&i.space_id)?;
             crate::validate_resource_id(&i.item_id)?;
             crate::validate_markdown(&i.text)?;
+            AccountInput::Save(i)
         }
         "pending.queue" | "pending.edit" => {
             let i: PendingQueueInput = decode(input)?;
@@ -201,7 +224,7 @@ pub fn validate_account_input(
                 || i.request.operation.starts_with("spaces.")
                 || i.request.operation.starts_with("secrets.")
             {
-                return Err(crate::ValidationError::invalid(
+                return Err(calternal_types::Error::invalid_input(
                     "only content writes may be queued",
                 ));
             }
@@ -210,19 +233,29 @@ pub fn validate_account_input(
                 crate::validate_operation_input(&i.request.operation, &i.request.input)?;
             }
             if i.created_at_ms < 0 {
-                return Err(crate::ValidationError::invalid(
+                return Err(calternal_types::Error::invalid_input(
                     "creation time must be nonnegative",
                 ));
             }
+            AccountInput::Queue(i)
         }
         _ => {
             let i: PendingInput = decode(input)?;
             if i.id.is_empty() || i.id.chars().count() > 128 {
-                return Err(crate::ValidationError::invalid(
+                return Err(calternal_types::Error::invalid_input(
                     "request ID must have 1..128 characters",
                 ));
             }
+            AccountInput::Pending(i)
         }
-    }
-    Ok(())
+    })
+}
+
+/// [`parse_account_input`] for callers that keep the input (client-side checks).
+/// Cost: one clone of `input` plus the parse.
+pub fn validate_account_input(
+    op: &str,
+    input: &crate::JsonObject,
+) -> Result<(), calternal_types::Error> {
+    parse_account_input(op, input.clone()).map(drop)
 }
