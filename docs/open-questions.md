@@ -13,6 +13,7 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
+- Onboarding for developers versus everyone else: what changes.
 - Skills and automations management screens.
 - The app shell on narrow screens, and the app switcher's exact form.
 

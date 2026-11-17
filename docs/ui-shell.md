@@ -101,6 +101,13 @@ Decided by kayg, 2026-11-17, from the first live preview.
 - The composer doubles as a command and search palette that understands plain language,
   after the existing app's unified composer.
 
+- No lone standard-sized icon: an icon that is a control sits in a pill. Deliberately small
+  inline icons (a message's actions) are the exception and stay bare.
+- Each message has small actions beside its time (copy, reply in side chat, more) that
+  fade in on hover or focus, with tooltips.
+- Threads outside any section sit in a "Threads" section below the attention card.
+- The app switcher capsule shows labels only, three apps by default, on the pill surface.
+
 ## Preview
 
 The web UI is deployed for review at `https://preview.calternal.cloud/ai/` (served from
