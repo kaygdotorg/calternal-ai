@@ -10,9 +10,12 @@ use std::{
 use uuid::Uuid;
 
 async fn op(server: &Server, operation: &str, input: Value) -> Value {
+    op_as(server, &server.owner, operation, input).await
+}
+async fn op_as(server: &Server, token: &str, operation: &str, input: Value) -> Value {
     let (status, v) = server
         .call(
-            &server.owner,
+            token,
             "/api/v1/operations",
             Some(json!({"request_id":Uuid::new_v4(),"operation":operation,"input":input})),
         )
@@ -90,10 +93,11 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
     let machine = machine_with_adapter(&mdir.0, &bin.0);
     wait_online(&server, &server.owner, 1).await;
     let space = server.owned_space(&server.owner).await;
+    let initial_thread = Uuid::new_v4();
     let start = op(
         &server,
         "agent.run",
-        json!({"space_id":space,"thread_id":Uuid::new_v4(),"prompt":"hello"}),
+        json!({"space_id":space,"thread_id":initial_thread,"prompt":"hello"}),
     )
     .await;
     let id = start["job"]["id"].as_str().unwrap();
@@ -133,6 +137,9 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
                 "--prompt",
                 "hello",
             ]);
+        if json_output {
+            command.args(["--provider", "calternal-claude-code"]);
+        }
         let output = tokio::time::timeout(Duration::from_secs(20), command.output())
             .await
             .unwrap()
@@ -156,6 +163,50 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
             assert!(stdout.contains("Step:"));
         }
     }
+    let calternal_machine::protocol::Owner::Account { id: account } =
+        calternal_machine::identity::Credentials::load(&mdir.0)
+            .unwrap()
+            .owner
+    else {
+        panic!("account machine")
+    };
+    let workspace = mdir.join(&format!(
+        "sandboxes/accounts/{account}/threads/{initial_thread}"
+    ));
+    let home = mdir.join(&format!("sandboxes/accounts/{account}/home"));
+    assert!(workspace.exists());
+    // The machine owner's local command refuses deletion while its role is running.
+    let local = tokio::process::Command::new(BIN)
+        .kill_on_drop(true)
+        .args([
+            "machine",
+            "discard",
+            "--backend",
+            "direct",
+            "--account-id",
+            &account.to_string(),
+            "--thread-id",
+            &initial_thread.to_string(),
+            "--dir",
+        ])
+        .arg(&mdir.0)
+        .output()
+        .await
+        .unwrap();
+    assert!(!local.status.success());
+    assert!(workspace.exists());
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let discarded = op(&server, "agent.discard", json!({"job_id":id})).await;
+        if discarded["discard"] == "done" {
+            break;
+        }
+        assert_eq!(discarded["discard"], "pending", "{discarded}");
+        assert!(std::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!workspace.exists());
+    assert!(home.exists(), "discard removed account login home");
     // Check runs in the same persistent account home and reveals only status.
     let check = op(
         &server,
@@ -224,6 +275,37 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
     assert_ne!(current["job"]["checkpoint"]["machine_id"], previous);
     machine.signal("-CONT");
     op(&server, "agent.stop", json!({"job_id":sid})).await;
+    drop(machine);
+    let scratch = Uuid::new_v4();
+    let scratch_dir = mdir.join(&format!(
+        "sandboxes/accounts/{account}/threads/{scratch}/work"
+    ));
+    std::fs::create_dir_all(&scratch_dir).unwrap();
+    let local = tokio::process::Command::new(BIN)
+        .kill_on_drop(true)
+        .args([
+            "--json",
+            "machine",
+            "discard",
+            "--backend",
+            "direct",
+            "--account-id",
+            &account.to_string(),
+            "--thread-id",
+            &scratch.to_string(),
+            "--dir",
+        ])
+        .arg(&mdir.0)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        local.status.success(),
+        "{}",
+        String::from_utf8_lossy(&local.stderr)
+    );
+    assert!(!scratch_dir.exists());
+    assert!(home.exists());
 }
 
 fn expedite(data: &Path, space: &str, id: &str) {
@@ -292,6 +374,13 @@ async fn classified_provider_retries_are_durable_and_do_not_repeat_unknown_effec
             expedite(&data.0, &space, id);
         }
     }
+    op(
+        &server,
+        "agent.settings",
+        json!({"job_id":id,"retry_settings":{"provider_errors":false,"subscription_limits":true}}),
+    )
+    .await;
+    until(&server, id, |j| j["state"] == "interrupted").await;
     op(&server, "agent.stop", json!({"job_id":id})).await;
     let (account, _) = server.principal(&server.owner).await;
     let home = mdir.join(&format!("sandboxes/accounts/{account}/home"));
@@ -326,4 +415,63 @@ async fn classified_provider_retries_are_durable_and_do_not_repeat_unknown_effec
     })
     .await;
     assert!(job["checkpoint"]["retry"].is_null());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn offline_account_placement_does_not_hold_another_accounts_execution_slot() {
+    let data = TempDir::new("provider-placement-data");
+    let plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let server = Server::start_with_plugins(&data.0, free_port(), &plugins);
+    let space = server.owned_space(&server.owner).await;
+    let mut waiting = Vec::new();
+    for _ in 0..calternal_server::plugins::runner::MAX_RUNNING {
+        let start=op(&server,"agent.run",json!({"space_id":space,"thread_id":Uuid::new_v4(),"prompt":"waiting for my offline machine"})).await;
+        let id = start["job"]["id"].as_str().unwrap().to_owned();
+        until(&server, &id, |j| j["checkpoint"]["lease_id"].is_string()).await;
+        waiting.push(id);
+    }
+    let ready = op_as(
+        &server,
+        &server.guest,
+        "spaces.create",
+        json!({"name":"Ready account"}),
+    )
+    .await;
+    let ready_space = ready["space"]["id"].as_str().unwrap();
+    let bin = TempDir::new("provider-placement-bin");
+    std::fs::copy(
+        plugins.join("calternal-claude-code/test/fake-claude.mjs"),
+        bin.join("claude"),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mdir = TempDir::new("provider-placement-machine");
+    let code = server.code(&server.guest).await;
+    assert_eq!(enrol(&server.url(), &code, &mdir.0), 0);
+    let _machine = machine_with_adapter(&mdir.0, &bin.0);
+    wait_online(&server, &server.guest, 1).await;
+    let start = op_as(
+        &server,
+        &server.guest,
+        "agent.run",
+        json!({"space_id":ready_space,"thread_id":Uuid::new_v4(),"prompt":"hello"}),
+    )
+    .await;
+    let id = start["job"]["id"].as_str().unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let view = op_as(&server, &server.guest, "agent.events", json!({"job_id":id})).await;
+        if view["job"]["state"] == "done" {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "offline account blocked ready work: {view}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    for id in waiting {
+        op(&server, "agent.stop", json!({"job_id":id})).await;
+    }
 }

@@ -23,7 +23,8 @@ use std::{
 use uuid::Uuid;
 
 /// Queue a turn; claim prevents duplicate request retries from starting it twice.
-/// Bounded by the per-space active-job limit and existing job execution permits.
+/// Admission is bounded per space. Only placed output readers hold the shared
+/// execution budget; offline-machine queues cannot occupy those slots.
 pub(super) fn schedule<D: Directory>(
     state: &Shared<D>,
     machines: &Arc<MachineService>,
@@ -32,9 +33,6 @@ pub(super) fn schedule<D: Directory>(
 ) {
     let (st, svc) = (state.clone(), machines.clone());
     tokio::spawn(async move {
-        let Ok(_permit) = st.jobs.permits().acquire_owned().await else {
-            return;
-        };
         let (s, sp, jid) = (st.clone(), space.clone(), id.clone());
         let Ok(Some(claimed)) = blocking(move || s.jobs.claim(&sp, &jid)).await else {
             return;
@@ -163,7 +161,9 @@ async fn execute<D: Directory>(
         .and_then(|s| Uuid::parse_str(s).ok());
     let placement_deadline = Instant::now() + Duration::from_secs(600);
     let mut queued = None;
-    let machine_id = loop {
+    let acquire = state.jobs.permits().acquire_owned();
+    tokio::pin!(acquire);
+    let (machine_id, _permit) = loop {
         if !live.is_current(job.runs) {
             return Ok(RunEnd::Failed);
         }
@@ -177,7 +177,10 @@ async fn execute<D: Directory>(
             return Ok(RunEnd::OutcomeUnknown);
         }
         if let Some(machine) = view.machine_id {
-            break machine;
+            tokio::select! {
+                permit=&mut acquire=>break (machine,permit.map_err(|_|HostError::unavailable("turn execution stopped"))?),
+                _=tokio::time::sleep(Duration::from_secs(1))=>continue,
+            }
         }
         if queued != view.queue_position {
             queued = view.queue_position;

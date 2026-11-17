@@ -115,6 +115,22 @@ pub(super) fn schedule<D: Directory>(
                 if job.state != calternal_core::JobState::RetryWaiting {
                     return;
                 }
+                let enabled = serde_json::from_value::<AgentRetrySettings>(
+                    job.input["retry_settings"].clone(),
+                )
+                .is_ok_and(|settings| {
+                    match job.checkpoint["retry"]["reason"].as_str() {
+                        Some("subscription_limit") => settings.subscription_limits,
+                        Some("provider_unavailable") => settings.provider_errors,
+                        _ => false,
+                    }
+                });
+                if !enabled {
+                    let (s, sp, jid, run) = (st.clone(), space.clone(), id.clone(), job.runs);
+                    let _ = blocking(move || s.jobs.agent_interrupt_wait(&sp, &jid, run)).await;
+                    let _ = super::stop_machine(&svc, &job).await;
+                    return;
+                }
                 let who = Identity {
                     id: Arc::from(job.account.as_str()),
                 };
