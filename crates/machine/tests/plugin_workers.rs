@@ -164,17 +164,27 @@ async fn container_enforces_memory_cpu_pids_and_streams_ordered_stdin() {
     }
     let group = cgroup(&limits).await;
     let before = counter(&group.join("pids.events"), "max").await;
-    let _forks = sb.exec(ExecRequest {
-        argv: vec!["node".into(), "-e".into(), "const {spawn}=require('node:child_process'); for(let i=0;i<100;i++)spawn('sleep',['60'],{stdio:'ignore'}).on('error',()=>{}); setInterval(()=>{},1000);".into()],
-        ..ExecRequest::default()
-    }).await.unwrap();
-    wait_counter(&sb, &group.join("pids.events"), "max", before).await;
+    // Hold every child in this cgroup. A small shell issues one fork at a time
+    // so the workload does not depend on Node's startup threads or spawn errors.
+    // The shell may exit when fork is denied; the kernel increments max first.
+    let forks = sb
+        .exec(ExecRequest {
+            argv: vec![
+                "/bin/sh".into(),
+                "-c".into(),
+                "printf 'forking\\n'; i=0; while [ \"$i\" -lt 64 ]; do sleep 60 & i=$((i+1)); done; wait".into(),
+            ],
+            ..ExecRequest::default()
+        })
+        .await
+        .unwrap();
+    wait_counter(forks, &group.join("pids.events"), "max", before).await;
     sb.stop().await.unwrap();
     let memory = spec("memory pressure");
     let sb = backend.start(&memory).await.unwrap();
     let group = cgroup(&memory).await;
     let before = counter(&group.join("memory.events"), "oom_kill").await;
-    let _allocation = sb
+    let allocation = sb
         .exec(ExecRequest {
             argv: vec![
                 "node".into(),
@@ -186,7 +196,7 @@ async fn container_enforces_memory_cpu_pids_and_streams_ordered_stdin() {
         })
         .await
         .unwrap();
-    wait_counter(&sb, &group.join("memory.events"), "oom_kill", before).await;
+    wait_counter(allocation, &group.join("memory.events"), "oom_kill", before).await;
     sb.stop().await.unwrap();
 }
 
@@ -224,15 +234,41 @@ async fn counter(path: &std::path::Path, field: &str) -> u64 {
         })
         .unwrap()
 }
-async fn wait_counter(sb: &Arc<dyn Sandbox>, path: &std::path::Path, field: &str, before: u64) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while counter(path, field).await <= before {
-        if std::time::Instant::now() >= deadline {
-            let _ = sb.stop().await;
-            panic!("kernel did not report enforcement of {field}");
+async fn wait_counter(
+    mut probe: calternal_machine::sandbox::Exec,
+    path: &std::path::Path,
+    field: &str,
+    before: u64,
+) {
+    let mut poll = tokio::time::interval(std::time::Duration::from_millis(20));
+    let mut output = String::new();
+    let mut exit = None;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            tokio::select! {
+                event = probe.events.recv() => match event {
+                    Some(OutputEvent::Exit(info)) => { exit = Some(info); break; }
+                    Some(OutputEvent::Data(_, bytes)) if output.len() < 128 => {
+                        output.push_str(&String::from_utf8_lossy(&bytes[..bytes.len().min(128)]));
+                    }
+                    Some(_) => {}
+                    None => break,
+                },
+                _ = poll.tick() => {
+                    if counter(path, field).await > before { return true; }
+                }
+            }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
+        // Both cgroup counters are cumulative. The kernel records the event
+        // before the fork refusal or OOM-killed process is observable by Podman.
+        counter(path, field).await > before
+    })
+    .await;
+    assert!(
+        matches!(result, Ok(true)),
+        "kernel did not report {field}: initial={before}, probe_exit={exit:?}, probe_output={output:?}, timed_out={}",
+        result.is_err(),
+    );
 }
 
 #[tokio::test]
