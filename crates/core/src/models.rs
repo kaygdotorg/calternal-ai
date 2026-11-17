@@ -215,6 +215,12 @@ pub struct Principal {
 pub struct OperationDescription {
     /// Declared risk used by the permission-mode reviewer, independent of capabilities.
     pub risk: crate::OperationRisk,
+    /// Current capability required by the operation, when declared in discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_capability: Option<String>,
+    /// Authority scope, when declared in discovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<crate::PeopleTarget>,
     /// Versioned operation identifier used for dispatch; never a URL or executable path.
     pub id: String,
     /// Human-readable description for discovery; carries no execution authority.
@@ -266,8 +272,6 @@ pub struct Contract {
     pub space_input: crate::SpaceInput,
     /// Schema representative for the stored space directory space member input.
     pub space_member_input: crate::SpaceMemberInput,
-    /// Schema representative for the stored space directory space set role input.
-    pub space_set_role_input: crate::SpaceSetRoleInput,
     /// Schema representative for the stored space directory spaces list result.
     pub spaces_list_result: crate::SpacesListResult,
     /// Schema representative for the stored space directory space result.
@@ -276,6 +280,62 @@ pub struct Contract {
     pub space_members_result: crate::SpaceMembersResult,
     /// Schema representative for the stored space directory space changed result.
     pub space_changed_result: crate::SpaceChangedResult,
+    /// Schema representative for SpaceGrantInput in the people contract.
+    pub space_grant_input: crate::SpaceGrantInput,
+    /// Schema representative for SpaceGrantRoleInput in the people contract.
+    pub space_grant_role_input: crate::SpaceGrantRoleInput,
+    /// Schema representative for SpaceGroupMember in the people contract.
+    pub space_group_member: crate::SpaceGroupMember,
+    /// Schema representative for DirectoryInput in the people contract.
+    pub directory_input: crate::DirectoryInput,
+    /// Server directory pagination.
+    pub directory_page_input: crate::DirectoryPageInput,
+    /// Scoped directory pagination.
+    pub space_directory_page_input: crate::SpaceDirectoryPageInput,
+    /// Group and group member pagination.
+    pub group_directory_page_input: crate::GroupDirectoryPageInput,
+    /// Schema representative for RoleDefinition in the people contract.
+    pub role_definition: crate::RoleDefinition,
+    /// Schema representative for RolesResult in the people contract.
+    pub roles_result: crate::RolesResult,
+    /// Schema representative for ProfileInput in the people contract.
+    pub profile_input: crate::ProfileInput,
+    /// Schema representative for ProfileResult in the people contract.
+    pub profile_result: crate::ProfileResult,
+    /// Schema representative for PersonInput in the people contract.
+    pub person_input: crate::PersonInput,
+    /// Schema representative for DirectoryPerson in the people contract.
+    pub directory_person: crate::DirectoryPerson,
+    /// Schema representative for PeopleResult in the people contract.
+    pub people_result: crate::PeopleResult,
+    /// Schema representative for DisabledPerson in the people contract.
+    pub disabled_person: crate::DisabledPerson,
+    /// Schema representative for GroupCreateInput in the people contract.
+    pub group_create_input: crate::GroupCreateInput,
+    /// Schema representative for GroupInput in the people contract.
+    pub group_input: crate::GroupInput,
+    /// Schema representative for GroupRenameInput in the people contract.
+    pub group_rename_input: crate::GroupRenameInput,
+    /// Schema representative for GroupPersonInput in the people contract.
+    pub group_person_input: crate::GroupPersonInput,
+    /// Schema representative for DirectoryGroup in the people contract.
+    pub directory_group: crate::DirectoryGroup,
+    /// Schema representative for GroupsResult in the people contract.
+    pub groups_result: crate::GroupsResult,
+    /// Schema representative for InviteCreateInput in the people contract.
+    pub invite_create_input: crate::InviteCreateInput,
+    /// Schema representative for InviteInput in the people contract.
+    pub invite_input: crate::InviteInput,
+    /// Schema representative for InviteCreated in the people contract.
+    pub invite_created: crate::InviteCreated,
+    /// Schema representative for DirectoryInvite in the people contract.
+    pub directory_invite: crate::DirectoryInvite,
+    /// Schema representative for InvitesResult in the people contract.
+    pub invites_result: crate::InvitesResult,
+    /// Schema representative for InviteRevoked in the people contract.
+    pub invite_revoked: crate::InviteRevoked,
+    /// Schema representative for InviteRedeemInput in the people contract.
+    pub invite_redeem_input: crate::InviteRedeemInput,
     /// Schema representative for the secrets request input.
     pub secrets_request_input: crate::SecretsRequestInput,
     /// Schema representative for the secrets request result.

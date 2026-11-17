@@ -21,6 +21,8 @@ mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
+mod people_cases;
+
 mod requests_cases;
 mod requests_review_cases;
 mod threads_cases;
@@ -332,12 +334,11 @@ impl Fixture {
         .await
     }
     async fn enroll(&mut self, token: &str) {
+        self.enroll_named(token, "conformance account").await;
+    }
+    async fn enroll_named(&mut self, token: &str, name: &str) {
         let s = self
-            .auth(
-                "setup/start",
-                None,
-                json!({"token":token,"name":"conformance account"}),
-            )
+            .auth("setup/start", None, json!({"token":token,"name":name}))
             .await;
         s.ok();
         let mut d = Device::new();
@@ -408,7 +409,7 @@ impl Fixture {
             f.spaces
                 .push(s.body["data"]["space"]["id"].as_str().unwrap().into());
         }
-        // Roles are preprovisioned offline: no HTTP invite/join operation exists.
+        // Preprovision this common fixture so tests start with fixed roles.
         for role in ["reader", "editor", "manager"] {
             let s = f
                 .op(1, "spaces.create", json!({"name":format!("role {role}")}))
@@ -630,6 +631,8 @@ async fn all_operations_hide_foreign_ids() {
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
+    covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
+
     covered.extend(requests_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([

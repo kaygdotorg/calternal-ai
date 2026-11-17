@@ -129,11 +129,11 @@ pub(super) async fn guard<D: Directory>(
                     )
                 })
                 .or(session)
-                .or_else(|| {
-                    bearer(req.headers())
-                        .and_then(|t| state.directory.authenticate(t))
-                        .map(|p| (p, Session::Static))
-                }) {
+                .or(
+                    super::people::development_identity(&state.directory, req.headers())
+                        .await
+                        .map(|p| (p, Session::Static)),
+                ) {
                 Some((p, session)) => {
                     req.extensions_mut().insert(p);
                     req.extensions_mut().insert(session);
@@ -183,9 +183,11 @@ pub(super) async fn guard<D: Directory>(
             } else {
                 None
             };
-            let current = agent_current
-                .or(session)
-                .or_else(|| bearer(&credentials).and_then(|t| state.directory.authenticate(t)));
+            let current = agent_current.or(session);
+            let current = match current {
+                Some(current) => Some(current),
+                None => super::people::development_identity(&state.directory, &credentials).await,
+            };
             if current.as_ref().map(|p| &p.id) != admitted.as_ref().map(|p| &p.id)
                 || current.is_none()
             {

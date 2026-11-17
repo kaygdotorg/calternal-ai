@@ -25,6 +25,8 @@ pub(crate) enum Pending {
         name: String,
         /// Whether this creates the first owner.
         first_owner: bool,
+        /// Whether enrollment consumes a space invitation.
+        invite: bool,
     },
     /// A signed-in person adding another passkey in Settings.
     Add {

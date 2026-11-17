@@ -2,9 +2,9 @@
 use calternal_auth::{
     ErrorCode,
     db::open_conn,
-    spaces::{DevelopmentIds, SpaceChange, Spaces},
+    spaces::{DevelopmentIds, MemberTarget, SpaceChange, Spaces},
 };
-use calternal_types::{AccountId, SpaceId};
+use calternal_types::{AccountId, GroupId, SpaceId};
 use rusqlite::params;
 
 struct Fixture {
@@ -54,6 +54,77 @@ fn forbidden<T: std::fmt::Debug>(r: calternal_auth::Result<T>) {
     assert_eq!(r.unwrap_err().code(), ErrorCode::Forbidden);
 }
 
+#[test]
+fn losing_the_last_group_grant_erases_protected_requests_and_turn_authority() {
+    for remove_group_member in [false, true] {
+        let f = Fixture::new();
+        let c = open_conn(&f.path).unwrap();
+        let (space, guest) = (f.ids.shared.to_string(), f.ids.guest.to_string());
+        let group = GroupId::new();
+        c.execute(
+            "INSERT INTO groups(id,name) VALUES(?1,'Editors')",
+            [group.to_string()],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO group_members(group_id,user_id) VALUES(?1,?2)",
+            params![group.to_string(), guest],
+        )
+        .unwrap();
+        f.change(
+            f.ids.owner,
+            f.ids.shared,
+            SpaceChange::Add {
+                target: MemberTarget::Group(group),
+                role: "editor".into(),
+            },
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO agent_access VALUES('thread','job',?1,?2,NULL,'{}',0,1,0)",
+            params![guest, space],
+        )
+        .unwrap();
+        c.execute(
+            "INSERT INTO agent_approvals(id,job,account,space,thread,app,write_access,action)
+            VALUES('approval','job',?1,?2,'thread','app',0,'{}')",
+            params![guest, space],
+        )
+        .unwrap();
+        let authority = || {
+            c.query_row(
+            "SELECT (SELECT count(*) FROM agent_access), (SELECT count(*) FROM agent_approvals)",
+            [], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        ).unwrap()
+        };
+
+        f.change(
+            f.ids.owner,
+            f.ids.shared,
+            SpaceChange::Remove {
+                target: f.ids.guest,
+            },
+        )
+        .unwrap();
+        assert_eq!(authority(), (1, 1));
+        if remove_group_member {
+            c.execute(
+                "DELETE FROM group_members WHERE group_id=?1 AND user_id=?2",
+                params![group.to_string(), guest],
+            )
+            .unwrap();
+        } else {
+            f.change(
+                f.ids.owner,
+                f.ids.shared,
+                SpaceChange::RemoveGroup { target: group },
+            )
+            .unwrap();
+        }
+        assert_eq!(authority(), (0, 0));
+    }
+}
+
 // Source people.rs first_owner_has_capabilities_and_cannot_demote_the_last_admin:
 // space ownership replaces the server-level last-manager rule.
 #[test]
@@ -82,8 +153,9 @@ fn first_owner_has_capabilities_and_cannot_be_demoted_or_removed() {
     }
     assert_eq!(
         f.spaces
-            .members(o, s)
+            .members(o, s, None)
             .unwrap()
+            .members
             .iter()
             .filter(|m| m.role == "owner")
             .count(),
@@ -184,7 +256,7 @@ fn two_concurrent_transfers_have_one_winner() {
         1
     );
     let new = if first.is_ok() { a } else { b };
-    let members = f.spaces.members(new, s).unwrap();
+    let members = f.spaces.members(new, s, None).unwrap().members;
     assert_eq!(members.iter().filter(|m| m.role == "owner").count(), 1);
     assert_eq!(
         members.iter().find(|m| m.account_id == o).unwrap().role,
@@ -212,8 +284,9 @@ fn transfer_racing_target_removal_preserves_owner_membership() {
         let owner = if transferred.is_ok() { a } else { o };
         assert_eq!(
             f.spaces
-                .members(owner, s)
+                .members(owner, s, None)
                 .unwrap()
+                .members
                 .iter()
                 .filter(|m| m.role == "owner")
                 .count(),
@@ -291,8 +364,9 @@ fn managers_manage_only_readers_and_editors() {
     .unwrap(); // last Manager may be demoted
     assert_eq!(
         f.spaces
-            .members(o, s)
+            .members(o, s, None)
             .unwrap()
+            .members
             .iter()
             .filter(|m| m.role == "manager")
             .count(),
@@ -339,7 +413,7 @@ fn owner_role_requires_explicit_transfer() {
     ));
     f.change(f.ids.owner, f.ids.shared, SpaceChange::Leave)
         .unwrap();
-    forbidden(f.spaces.members(f.ids.owner, f.ids.shared));
+    forbidden(f.spaces.members(f.ids.owner, f.ids.shared, None));
 }
 #[test]
 fn database_requires_owner_membership_and_existing_accounts() {
@@ -374,7 +448,11 @@ fn database_requires_owner_membership_and_existing_accounts() {
         }
     }
     assert_eq!(
-        f.spaces.members(f.ids.owner, f.ids.shared).unwrap().len(),
+        f.spaces
+            .members(f.ids.owner, f.ids.shared, None)
+            .unwrap()
+            .members
+            .len(),
         2
     );
 }
@@ -422,8 +500,8 @@ fn identifiers_are_fresh_v7_and_memberships_are_space_scoped() {
             .contains(calternal_types::Capability::from_name("space.delete").unwrap())
     );
     forbidden(f.change(f.ids.guest, f.ids.shared, SpaceChange::Delete));
-    forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
-    forbidden(f.spaces.members(f.ids.guest, SpaceId::new()));
+    forbidden(f.spaces.members(f.ids.guest, f.ids.personal, None));
+    forbidden(f.spaces.members(f.ids.guest, SpaceId::new(), None));
 }
 #[test]
 fn server_admin_gains_no_content_or_membership_access() {
@@ -440,7 +518,7 @@ fn server_admin_gains_no_content_or_membership_access() {
             .unwrap()
             .is_none()
     );
-    forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
+    forbidden(f.spaces.members(f.ids.guest, f.ids.personal, None));
     assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 2);
 }
 #[test]
@@ -493,7 +571,11 @@ fn revocations_and_transfer_survive_restart() {
             .is_none()
     );
     assert_eq!(
-        reopened.members(f.ids.guest, f.ids.shared).unwrap()[0].role,
+        reopened
+            .members(f.ids.guest, f.ids.shared, None)
+            .unwrap()
+            .members[0]
+            .role,
         "owner"
     );
 }
@@ -611,7 +693,7 @@ fn directory_group_management_cannot_expose_another_spaces_members() {
         [f.ids.owner.to_string()],
     )
     .unwrap();
-    forbidden(f.spaces.members(f.ids.guest, f.ids.personal));
+    forbidden(f.spaces.members(f.ids.guest, f.ids.personal, None));
     assert_eq!(f.spaces.list(f.ids.guest).unwrap().len(), 2);
     assert!(
         f.spaces

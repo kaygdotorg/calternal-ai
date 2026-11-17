@@ -49,6 +49,7 @@ pub(crate) async fn start_registration(
         user: r.user,
         name: r.name,
         first_owner: r.first_owner,
+        invite: r.invite,
     })?;
     Ok((id, options))
 }
@@ -80,6 +81,7 @@ pub(crate) async fn finish_registration(
         user,
         name,
         first_owner,
+        invite,
     } = inner.ceremonies.take_setup(ceremony, account)?
     else {
         return Err(failed("prompt was not a registration"));
@@ -96,6 +98,7 @@ pub(crate) async fn finish_registration(
         user,
         name,
         first_owner,
+        invite,
     };
     let (installation, token) = crate::setup::redeem(inner, r, cred_id, json, device).await?;
     Ok((user, installation, token))

@@ -399,9 +399,11 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "blake3",
+ "calternal-core",
  "calternal-fsio",
  "calternal-types",
  "getrandom 0.4.3",
+ "openssl",
  "rusqlite",
  "serde",
  "serde_json",

@@ -37,8 +37,24 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "spaces.list",
         "spaces.create",
         "spaces.members",
+        // People directory and group grants are exercised by conformance/people_cases.rs.
+        "spaces.add_member",
         "spaces.set_role",
         "spaces.remove_member",
+        "roles.list",
+        "account.set_profile",
+        "people.list",
+        "people.disable",
+        "groups.list",
+        "groups.create",
+        "groups.rename",
+        "groups.delete",
+        "groups.add_member",
+        "groups.remove_member",
+        "invites.create",
+        "invites.list",
+        "invites.revoke",
+        "invites.redeem",
         "spaces.leave",
         "spaces.transfer",
         "spaces.delete",
@@ -109,6 +125,11 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
                 .iter()
                 .map(|p| p.operation.to_string()),
         )
+        .chain(
+            calternal_server::authz::people_policies()
+                .iter()
+                .map(|p| p.operation.to_string()),
+        )
         .chain(calternal_core::NOTE_OPERATIONS.iter().map(|op| {
             fixture
                 .state
@@ -131,6 +152,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             + calternal_core::account_input_operations().count()
             + calternal_core::REQUEST_OPERATIONS.len()
             + calternal_server::authz::agent_policies().len()
+            + calternal_server::authz::people_policies().len()
             + calternal_core::NOTE_OPERATIONS.len()
             + plugin_rows.len(),
         MATRIX.len() + stored_rows.len(),
@@ -224,7 +246,13 @@ fn built_in_roles_cover_exact_documented_capabilities() {
             roles().iter().any(|role| role.contains(capability))
                 || matches!(
                     capability,
-                    Capability::SpacesList | Capability::SpacesCreate
+                    Capability::SpacesList
+                        | Capability::SpacesCreate
+                        | Capability::PeopleManage
+                        | Capability::GroupsManage
+                        | Capability::AccountProfile
+                        | Capability::InviteRedeem
+                        | Capability::RolesList
                 ),
             "unheld capability: {}",
             capability.name()

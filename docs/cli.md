@@ -23,7 +23,7 @@ reply or an error and never prints results itself.
 | Errors, human | stderr: `error: <what happened and why, when known>` then `hint: <next step>`. Nothing on stdout. Wording may be friendlier than the unchanged JSON message. |
 | `--json` | stdout holds exactly one pretty-printed JSON document, for failures too; stderr stays empty. Success: `{"ok": true, "data": {…}}` (plus `"request_id"` for `cl` operations). Failure: `{"ok": false, "error": {"code", "message", "hint", "details"?}}` (plus `"request_id"` when known). `hint` is a string or `null`. Object keys are always printed in alphabetical order (not the order of `cli-shapes.json`), whatever the build; fields are only ever added, never renamed. |
 | Usage errors | A command line that does not parse is an error with code `usage` and exit status 2, as JSON too when `--json` appears in the arguments. `--help` and `--version` print text and exit 0. |
-| Secrets | Never printed, in either mode, except where the command exists to issue one: `calternal machines code` prints the new enrollment code, once. Tokens are accepted from environment variables or owner-only files, never from arguments (`cl`), and the machine key is never printed. |
+| Secrets | Never printed, in either mode, except where the command exists to issue one: `calternal machines code` prints the new enrollment code once. `calternal invites list` prints usable invite links for people authorized to copy them. Tokens are accepted from environment variables or owner-only files, never from arguments (`cl`), and the machine key is never printed. |
 
 ### Exit codes
 
@@ -55,7 +55,7 @@ Global options on every command: `--json`, `--no-hints`.
 
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
-| `serve --appdata DIR --userdata-ssd DIR --userdata-hdd DIR --installation-id UUID [--create] [--receipt-retention-days N] [--port N] [--web-dir DIR] [--development] [--origin URL] [--trusted-proxies CIDRS] [--plugin-root DIR] [--node PATH] [--machine-lease-ttl-ms N] [--machine-poll-hold-ms N]` | Run the server on 127.0.0.1 until stopped. The installation ID (`--installation-id`, or `CALTERNAL_INSTALLATION_ID` in the server's configuration) is required; the roots are validated and locked against it first: `--create` pairs empty or missing roots on first setup; missing, swapped or foreign roots are refused (exit 1) before anything is created. Prints one startup block, then logs to stderr. | Title line, then `url`, one `<name> token file` per development token (paths only, never tokens), `startup info`. | `profile`, `url`, `token_files` (name → path), `startup_file` |
+| `serve --appdata DIR --userdata-ssd DIR --userdata-hdd DIR --installation-id UUID [--create] [--receipt-retention-days N] [--invite-retention-days DAYS] [--port N] [--web-dir DIR] [--development] [--origin URL] [--trusted-proxies CIDRS] [--plugin-root DIR] [--node PATH] [--machine-lease-ttl-ms N] [--machine-poll-hold-ms N]` | Run the server on 127.0.0.1 until stopped. The installation ID (`--installation-id`, or `CALTERNAL_INSTALLATION_ID` in the server's configuration) is required; the roots are validated and locked against it first: `--create` pairs empty or missing roots on first setup; missing, swapped or foreign roots are refused (exit 1) before anything is created. Prints one startup block, then logs to stderr. | Title line, then `url`, one `<name> token file` per development token (paths only, never tokens), `startup info`. | `profile`, `url`, `token_files` (name → path), `startup_file` |
 | `machines code (--pool \| --account UUID) --appdata DIR --userdata-ssd DIR --userdata-hdd DIR [--minutes N]` | Issue a one-time machine enrollment code (default 60 minutes). | `code`, `owner`, `expires` (local), then two sentences on using it. | `code`, `owner` (`pool` or `account:<uuid>`), `expires_at` |
 | `machines list --appdata DIR --userdata-ssd DIR --userdata-hdd DIR` | List enrolled machines, revoked ones included. | Table `ID OWNER NAME PLATFORM STATE` (state `enrolled`, `draining` or `revoked`), or a friendly empty result with the command to add one. | `machines[]`: `id`, `owner`, `name`, `os`, `arch`, `state` |
 | `machines revoke MACHINE --appdata DIR --userdata-ssd DIR --userdata-hdd DIR` | Revoke a machine; it can no longer authenticate, and its leases end at once. | One sentence. Unknown machine: `not_found`. | `machine`, `revoked` |
@@ -64,6 +64,39 @@ Global options on every command: `--json`, `--no-hints`.
 | `machine enroll --server URL --code CODE [--dir DIR] [--name LABEL]` | Exchange a one-time code for a machine identity; saves credentials (0600). `--code` also reads `CALTERNAL_ENROLL_CODE`. | `machine`, `owner`, `server`, `credentials` (path). | `machine_id`, `owner`, `server`, `credentials_file` |
 | `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
+
+People, groups, and invitations use the HTTP session in an owner-only file
+supplied with `--token-file` or `CALTERNAL_TOKEN_FILE`. Use `--base-url` to choose
+the server and keep the same `--request-id` when retrying an uncertain write.
+These commands preserve Unix milliseconds in JSON wherever the HTTP contract
+uses them. Human invite output shows expiry in the local time zone.
+
+| Arguments | Purpose | Human output | JSON data |
+|---|---|---|---|
+| `people members --space SPACE [--cursor CURSOR]` | List direct people and group grants in a space. | ID, name, role, recipient type, group member count. | `members`, `groups` |
+| `people add --space SPACE (--account ID or --group ID) --role ROLE` | Grant a direct role to a person or group. | Grant confirmation. | empty object |
+| `people set-role --space SPACE (--account ID or --group ID) --role ROLE` | Change a direct grant's role. | Save confirmation. | empty object |
+| `people remove --space SPACE (--account ID or --group ID)` | Remove a direct grant. | Removal confirmation. | empty object |
+| `people transfer --space SPACE ACCOUNT` | Transfer space ownership to a current member. | Transfer confirmation. | empty object |
+| `people roles` | Show role definitions for a space. | Role labels and capability tables. | `roles` |
+| `people set-profile NAME` | Update your own display name. | Account ID and name. | `account_id`, `name` |
+| `people list [--cursor CURSOR]` | List server accounts with the people administration capability. | ID, name, role, state. | `people` |
+| `people disable ACCOUNT` | Disable the account and sign out its sessions. | Account ID and disable confirmation. | `account_id`, `disabled` |
+| `groups list [--group GROUP] [--cursor CURSOR]` | List server groups and current member IDs. | Group and member tables. | `groups` |
+| `groups create NAME` | Create a local group. | Group ID. | `group_id` |
+| `groups rename GROUP NAME` | Rename a local group. | Group ID. | `group_id` |
+| `groups delete GROUP` | Delete a local group and its grants. | Group ID. | `group_id` |
+| `groups add-member GROUP ACCOUNT` | Add a person to a local group. | Group ID. | `group_id` |
+| `groups remove-member GROUP ACCOUNT` | Remove a person from a local group. | Group ID. | `group_id` |
+| `invites create --space SPACE --role ROLE [--expires-at MILLISECONDS]` | Issue one invite. The default expiry is seven days. | Invite ID and expiry. | `invite_id`, `expires_at` |
+| `invites list --space SPACE [--cursor CURSOR]` | List invitations and copy usable links. | Invite state and complete usable links. | `invites` |
+| `invites revoke --space SPACE INVITE` | Revoke an unused link. | Invite ID and revocation confirmation. | `invite_id` |
+| `invites redeem --secret-file FILE` | Redeem a link as the signed-in person. Use `-` to read standard input. | Space ID. | `space_id` |
+
+Directory pages display a continuation when more rows are available. Use it
+with `--cursor`. For a group's member continuation, also pass `--group GROUP`.
+The invite retention setting is `CALTERNAL_INVITE_RETENTION_DAYS`, seven days by
+default from expiry, redemption, or revocation.
 
 | Command | Purpose | Human output | Data |
 |---|---|---|---|

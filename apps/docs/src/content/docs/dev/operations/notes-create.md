@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "reversible",
   "id": "notes.create",
   "description": "Create a Markdown note",
   "mutates": true

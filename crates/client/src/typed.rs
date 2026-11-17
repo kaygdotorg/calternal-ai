@@ -65,19 +65,19 @@ pub mod operations {
     operation!(
         SpacesMembers,
         "spaces.members",
-        SpaceInput,
+        SpaceDirectoryPageInput,
         SpaceMembersResult
     );
     operation!(
         SpacesSetRole,
         "spaces.set_role",
-        SpaceSetRoleInput,
+        SpaceGrantRoleInput,
         SpaceChangedResult
     );
     operation!(
         SpacesRemoveMember,
         "spaces.remove_member",
-        SpaceMemberInput,
+        SpaceGrantInput,
         SpaceChangedResult
     );
     operation!(SpacesLeave, "spaces.leave", SpaceInput, SpaceChangedResult);

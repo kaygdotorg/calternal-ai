@@ -1,0 +1,17 @@
+{
+  "data": {
+    "invites": [
+      {
+        "created_at": 1784283000000,
+        "expires_at": 1784887800000,
+        "invite_id": "01912345-6789-7abc-8123-000000000003",
+        "link": "https://example.test/invites/example",
+        "revoked_at": null,
+        "role": "reader",
+        "used_at": null
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "people-example"
+}

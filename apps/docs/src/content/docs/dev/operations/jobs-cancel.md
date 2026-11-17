@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "reversible",
   "id": "jobs.cancel",
   "description": "Cancel a plugin job and its active child jobs",
   "mutates": true
@@ -66,9 +67,23 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "type": "string"
         },
         {
-          "description": "Parked until its child jobs report; it runs again when they all have.",
+          "description": "Parked without a process until its child jobs report or its person request is resolved.",
           "enum": [
             "waiting"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Machine or server went silent; only explicit resume may restart this turn.",
+          "enum": [
+            "interrupted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "No provider process is held; checkpoint.retry records the durable next attempt.",
+          "enum": [
+            "retry_waiting"
           ],
           "type": "string"
         },
