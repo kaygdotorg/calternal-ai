@@ -181,3 +181,14 @@ In this lane's code:
 - The fixture generator, the Fenwick tree and the Markdown subset are three small pieces that the Notes app
   will also want (`apps/web/src/lib`); they should move into `packages/ui` when a second app uses them.
 - `apps/web/src/genui/GenNode.svelte` is one file of 67 possible components; it will split by group when more are drawn.
+
+## Update 2026-11-17 (owner list 4)
+
+Done: one-line thread rows (title, provider mark, one compact state, time on hover); state never icon plus word; no automatic section labels;
+toasts ported from the existing app and mounted (Archive offers Undo, fixture `unarchive`); warm tooltips (existing engine kept, comparison in
+`docs/ui-design-system.md`); pill bounce (pointer only); double-click the title pill to rename; `InlineEditor` behind composer, side chat and rename fields;
+phone composer hit target fixed to 44 px. `e2e/interact.mjs` checks these (10 of 10 pass).
+
+Fixture-only: `unarchive` and `rename` are fixture client methods; the backend must provide both (undo of archive needs a stable, reversible archive).
+
+Open: whether deleting a section should offer Undo (not done); the composer palette (`docs/ui-composer-palette.md`) is planned, not built.

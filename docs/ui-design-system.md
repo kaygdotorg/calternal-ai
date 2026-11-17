@@ -143,3 +143,60 @@ Every interactive component is keyboard reachable and shows the one focus ring (
 accent). Hit targets are at least 44 px on touch (`--pill-h`); `audit.mjs` checks this on a phone.
 Tests: `npm test --workspace @calternal/ui` (names, roles, keyboard, focus trap, axe) and
 `npm test --workspace @calternal/web`.
+
+## Interaction rules
+
+- **Focus rings only for the keyboard.** `data-input="key" | "pointer"` on `<html>` (`lib/input.ts`); the ring is inset so it never draws outside its box.
+- **No animation from the keyboard.** In `key` mode every transition and animation duration is 0. Pointer and touch animate.
+- **Nothing out of bounds.** Menus and popovers place themselves with `lib/place.ts` (flip, shift, clamp to the window); rings are inset.
+- **Surfaces are never seen before their material is ready** (`lib/ready.ts`): a popover or sheet appears only after the blur and tint are in, and leaves with a fade.
+- **One state signal.** A thread's state is an icon in a row (spinner, bell, warning) or a word in the title pill, never both (`StateMark form`). Idle and done show nothing.
+- **Thread rows are one line:** title, time (hover only), compact state, provider mark. No second line, no automatic workspace labels; people make their own sections.
+
+## Primitives
+
+| Primitive | Role |
+| --- | --- |
+| `Panel` | the material for cards, panes, pills (radius token), floating or docked |
+| `Pill`, `IconButton` | round controls; both carry the tooltip and the bounce |
+| `Popover`, `Menu` (search, anchor), `Sheet` | floating surfaces on `Panel` |
+| `InlineEditor` | the one text-input surface (composer, side chat, rename); the Notes block editor's input replaces this file alone |
+| `Toasts` | ported from the existing app; mount once; T1 rule: toasts only for something to act on (Undo, Retry) or a result awaited |
+
+## Tooltips: which engine, and why
+
+Compared sveltebits' `warm-tooltip` (uses the `motion` library; delay 400 ms, warm window 300 ms, travel 320 ms, pop scale .94 with blur, long-press 500 ms)
+with the existing app's `tooltip-engine.ts` (dependency-free; delay 400, warm window **600**, travel 320 on the spring, shared surface plus a stage where
+words slide with blur on swap, keeps itself centred while the trigger moves, **keyboard focus-visible only**, hides on scroll and Escape, shortcut chips).
+**Kept the existing app's**: same behaviour as the reference, no dependency, a longer warm window that suits a toolbar, and it already follows our
+keyboard rule. Ported to `lib/tooltip.ts` (`use:tip={{ label, kbd }}`); the label also names the control.
+
+## Pill bounce
+
+Defined once (`lib/bounce.ts`, used by `Pill` and `IconButton`): after a pointer or touch click the control rebounds from `--press-scale` (0.96) to 1.035 and
+settles over `--dur-slow` on `--ease-out`. A keyboard activation (`detail` 0, or key modality) and reduced motion never move it; a new press cancels it.
+
+## Motion, per transition (measured on the dev VM, p50 / p90 / p98 ms to reach the end value)
+
+| Transition | Duration and curve | p50 / p90 / p98 |
+| --- | --- | --- |
+| Press a control to 0.96 | `--dur-fast` 150, `--ease-out` | 17 / 50 / 83 |
+| Phone: card slides aside, panel slides over | `--dur-sheet` 340, `--ease-sheet` (native fit) | 83 / 217 / 300 |
+| Desktop: sidebar hide/show, sheet open | `--dur-sheet` 190, Mac curve | 67 / 150 / 167 |
+| Menu / popover | ready, then fade `--dur-base` 220; leave `--dur-leave` 200 | opens within a frame |
+| Toast | spring capsule (ported), arrive 260 | unchanged from the existing app |
+| Tooltip | pop 160, travel 320 on `--spring` | unchanged from the existing app |
+| Bounce | `--dur-slow` 300, `--ease-out` | n/a |
+
+All are interruptible (a reversal half way is continuous, checked in `e2e/motion.mjs`), and none run from the keyboard.
+
+## Craft references applied
+
+Emil Kowalski's and Jakub Krehel's animation skills: ease-out for entrances, nothing slower than 300 ms, scale from 0.95+ never from 0, interruptible
+transitions, no animation for keyboard actions. Hallmark's and the existing app's Craft studies: one inset ring, concentric radii, optical alignment of icons and carets.
+
+## Backgrounds, themes, accent
+
+Mechanism from `docs/ui-backgrounds-and-themes.md`: the wallpaper is blurred once (canvas, then a JPEG blob), brightness grid drives the wash and the
+material, a 48×48 hue sample gives the accent (guarded to 4.5:1, overridable), twelve presets map palette to tokens, and recipes (OKLab gradients) render
+light and dark. Choices (default wallpaper `haze`, default preset `calternal`, grain) are tokens in `tokens.json`; the mechanism is code.
