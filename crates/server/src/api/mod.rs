@@ -37,6 +37,7 @@ use calternal_types::{AccountId, Error, SpaceId};
 
 mod dispatch;
 mod guard;
+pub(crate) mod people;
 mod plugins;
 mod web;
 pub use dispatch::dispatch;

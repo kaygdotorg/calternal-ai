@@ -31,3 +31,6 @@ pub use live::*;
 
 mod account_input;
 pub use account_input::*;
+
+mod people;
+pub use people::*;

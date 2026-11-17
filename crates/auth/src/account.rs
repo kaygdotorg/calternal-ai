@@ -28,12 +28,22 @@ impl Auth {
     /// Opens `state/system/auth.db` and builds the WebAuthn verifier.
     /// The host must validate and lock its state root first; this creates missing
     /// database parents and does not implement recovery of lost security state.
-    /// No space or account directory is created.
+    /// Initializes the private invite key if there are no stored invites.
+    /// A missing key with stored invites is an error. This startup does not
+    /// provision any accounts or spaces.
     pub fn open(state: &Path, config: AuthConfig) -> Result<Self> {
         let webauthn = crate::passkey::build(&config)?;
+        let database = state.join("system/auth.db");
+        let db = crate::db::Db::open(&database)?;
+        let invite_key = crate::invite_key::Key::open(&state.join("system/invite.key"), || {
+            crate::db::open_conn(&database)?
+                .query_row("SELECT EXISTS(SELECT 1 FROM invites)", [], |r| r.get(0))
+                .map_err(crate::db::sql)
+        })?;
         Ok(Self {
             inner: Arc::new(crate::Inner {
-                db: crate::db::Db::open(&state.join("system/auth.db"))?,
+                db,
+                invite_key,
                 ceremonies: crate::ceremony::Ceremonies::new(
                     config.ceremony_ttl,
                     config.max_ceremonies,

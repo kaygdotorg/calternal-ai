@@ -17,6 +17,10 @@ use calternal_types::{Capability, CapabilitySet, Error, SpaceId};
 pub enum Scope {
     /// Account-scoped operation; the stored handler verifies account existence.
     Account,
+    /// Server-scoped capabilities, rechecked in the authorized directory transaction.
+    Server,
+    /// The protected handler authorizes by a current bearer invitation.
+    Invitation,
     /// The input's `space_id` is the complete access boundary.
     Space,
     /// The global item resolver derives the owning space before policy admission.
@@ -81,32 +85,8 @@ pub const POLICIES: &[Policy] = &[
         constraint: Constraint::None,
     },
     Policy {
-        operation: Cow::Borrowed("spaces.members"),
-        required: Capability::SpaceRead,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
-        operation: Cow::Borrowed("spaces.set_role"),
-        required: Capability::MembersManage,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
-        operation: Cow::Borrowed("spaces.remove_member"),
-        required: Capability::MembersManage,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
         operation: Cow::Borrowed("spaces.leave"),
         required: Capability::SpaceRead,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
-        operation: Cow::Borrowed("spaces.transfer"),
-        required: Capability::SpaceTransfer,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
@@ -223,7 +203,30 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
         .iter()
         .chain(account)
         .chain(agent_policies())
+        .chain(people_policies())
         .find(|p| p.operation == operation)
+}
+
+/// Host policies derived from the people operation declarations, initialized once.
+pub fn people_policies() -> &'static [Policy] {
+    use calternal_core::{PeopleOperation, PeopleTarget};
+    static POLICIES: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    POLICIES.get_or_init(|| {
+        PeopleOperation::ALL
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id()),
+                required: op.capability(),
+                scope: match op.target() {
+                    PeopleTarget::Account => Scope::Account,
+                    PeopleTarget::Server => Scope::Server,
+                    PeopleTarget::Space => Scope::Space,
+                    PeopleTarget::Invitation => Scope::Invitation,
+                },
+                constraint: Constraint::None,
+            })
+            .collect()
+    })
 }
 
 impl Policy {
@@ -237,7 +240,10 @@ impl Policy {
         principal: &Identity,
         input: &JsonObject,
     ) -> Result<(), Error> {
-        if self.scope == Scope::Account {
+        if matches!(
+            self.scope,
+            Scope::Account | Scope::Server | Scope::Invitation
+        ) {
             return Ok(());
         }
         let space = input

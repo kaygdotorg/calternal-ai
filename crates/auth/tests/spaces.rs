@@ -84,6 +84,7 @@ fn first_owner_has_capabilities_and_cannot_be_demoted_or_removed() {
         f.spaces
             .members(o, s)
             .unwrap()
+            .0
             .iter()
             .filter(|m| m.role == "owner")
             .count(),
@@ -184,7 +185,7 @@ fn two_concurrent_transfers_have_one_winner() {
         1
     );
     let new = if first.is_ok() { a } else { b };
-    let members = f.spaces.members(new, s).unwrap();
+    let (members, _) = f.spaces.members(new, s).unwrap();
     assert_eq!(members.iter().filter(|m| m.role == "owner").count(), 1);
     assert_eq!(
         members.iter().find(|m| m.account_id == o).unwrap().role,
@@ -214,6 +215,7 @@ fn transfer_racing_target_removal_preserves_owner_membership() {
             f.spaces
                 .members(owner, s)
                 .unwrap()
+                .0
                 .iter()
                 .filter(|m| m.role == "owner")
                 .count(),
@@ -293,6 +295,7 @@ fn managers_manage_only_readers_and_editors() {
         f.spaces
             .members(o, s)
             .unwrap()
+            .0
             .iter()
             .filter(|m| m.role == "manager")
             .count(),
@@ -374,7 +377,7 @@ fn database_requires_owner_membership_and_existing_accounts() {
         }
     }
     assert_eq!(
-        f.spaces.members(f.ids.owner, f.ids.shared).unwrap().len(),
+        f.spaces.members(f.ids.owner, f.ids.shared).unwrap().0.len(),
         2
     );
 }
@@ -493,7 +496,7 @@ fn revocations_and_transfer_survive_restart() {
             .is_none()
     );
     assert_eq!(
-        reopened.members(f.ids.guest, f.ids.shared).unwrap()[0].role,
+        reopened.members(f.ids.guest, f.ids.shared).unwrap().0[0].role,
         "owner"
     );
 }

@@ -159,6 +159,11 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         }
     }
     if let Some(a) = &agent {
+        if calternal_core::PeopleOperation::from_id(op)
+            == Some(calternal_core::PeopleOperation::ListInvites)
+        {
+            return Err(Error::forbidden("invite links require a person session"));
+        }
         let declared = state
             .registry
             .owner_of_operation(op)
@@ -210,6 +215,11 @@ pub(super) async fn dispatch_scoped<D: Directory>(
         let via = agent.as_ref().and_then(|a| a.actor.via.clone());
         return crate::secrets::dispatch(state, p, policy, input, via).await;
     }
+    if let Some(operation) = calternal_core::PeopleOperation::from_id(op)
+        && !op.starts_with("spaces.")
+    {
+        return super::people::dispatch(state, p, operation, request_id.to_owned(), input).await;
+    }
     if op.starts_with("spaces.") {
         let st = state.clone();
         let rid = request_id.to_owned();
@@ -256,7 +266,9 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                         .map_err(|e| Error::unavailable(e.to_string()))?;
                 }
                 for account in removed {
-                    st.inputs.erase_space(account, space)?;
+                    if st.directory.capabilities(account, space).is_none() {
+                        st.inputs.erase_space(account, space)?;
+                    }
                 }
             }
             result

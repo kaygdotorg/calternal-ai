@@ -1,4 +1,4 @@
--- auth.db, version 6: the current schema in one definition (no migration chain).
+-- auth.db, version 7: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -9,6 +9,7 @@ CREATE TABLE users (
     username    TEXT NOT NULL UNIQUE COLLATE NOCASE,
     created_at  INTEGER NOT NULL,
     role        TEXT NOT NULL DEFAULT 'member',
+    disabled_at INTEGER,
     quota_bytes INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0)
 );
 CREATE TABLE passkeys (
@@ -91,8 +92,10 @@ CREATE TABLE invites (
     revoked_at     INTEGER,
     quota_bytes    INTEGER CHECK (quota_bytes IS NULL OR quota_bytes >= 0),
     plan           TEXT,
-    lookup_version INTEGER NOT NULL DEFAULT 0
+    space_id       TEXT REFERENCES spaces(id) ON DELETE CASCADE,
+    space_role     TEXT REFERENCES space_roles(name) CHECK (space_role <> 'owner')
 );
+CREATE INDEX invites_space_expiry ON invites(space_id, expires_at);
 CREATE TABLE invite_groups (
     invite_id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
     group_id  TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
@@ -129,6 +132,25 @@ CREATE TABLE space_memberships(
  PRIMARY KEY(space_id,account_id)
 ) STRICT;
 CREATE INDEX spaces_account ON space_memberships(account_id,space_id);
+CREATE TABLE space_group_memberships(
+ space_id TEXT NOT NULL REFERENCES spaces(id) ON DELETE CASCADE,
+ group_id TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+ role TEXT NOT NULL REFERENCES space_roles(name) CHECK(role<>'owner'),
+ PRIMARY KEY(space_id,group_id)
+) STRICT;
+CREATE INDEX spaces_group ON space_group_memberships(group_id,space_id);
+-- This view expands current direct and group grants, without materialized
+-- membership or a cache to invalidate when a grant changes.
+CREATE VIEW space_account_roles AS
+ SELECT m.space_id,m.account_id,
+        CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END AS role
+ FROM space_memberships m JOIN spaces s ON s.id=m.space_id
+ JOIN users u ON u.id=m.account_id AND u.disabled_at IS NULL
+ UNION ALL
+ SELECT m.space_id,g.user_id,m.role
+ FROM group_members g JOIN space_group_memberships m ON m.group_id=g.group_id
+ JOIN users u ON u.id=g.user_id AND u.disabled_at IS NULL;
+
 -- Receipts of directory changes (spaces.*): one per (acting account, scope,
 -- request ID), where scope is the space, or the actor's own account for an
 -- operation with no space. Kept for the receipt retention, then pruned.
