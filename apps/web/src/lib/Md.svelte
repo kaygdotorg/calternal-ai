@@ -14,7 +14,7 @@
 <div class="md">
   {#each blocks as b, bi}
     {#if b.t === "p"}<p>{@render inl(b.v)}{#if caret && bi === blocks.length - 1}<span class="caret" aria-hidden="true"></span>{/if}</p>
-    {:else if b.t === "h"}<h4>{@render inl(b.v)}</h4>
+    {:else if b.t === "h"}<p class="h" role="heading" aria-level="2">{@render inl(b.v)}</p>
     {:else if b.t === "ul"}<ul>{#each b.v as li}<li>{@render inl(li)}</li>{/each}</ul>
     {:else if b.t === "ol"}<ol>{#each b.v as li}<li>{@render inl(li)}</li>{/each}</ol>
     {:else}<!-- svelte-ignore a11y_no_noninteractive_tabindex --><pre tabindex="0" aria-label="Code{b.lang ? `, ${b.lang}` : ''}"><code>{b.v}</code></pre>{/if}
@@ -24,7 +24,7 @@
 
 <style>
   .md { display: grid; gap: var(--s-4); font-size: var(--text-body); line-height: 1.55; font-weight: var(--body-weight); overflow-wrap: anywhere; }
-  h4 { font-size: var(--text-body); font-weight: var(--strong-weight); }
+  .h { font-size: var(--text-body); font-weight: var(--strong-weight); }
   ul, ol { display: grid; gap: var(--s-2); padding-inline-start: var(--s-7); }
   ul { list-style: disc; } ol { list-style: decimal; }
   li::marker { color: var(--ink-3); }

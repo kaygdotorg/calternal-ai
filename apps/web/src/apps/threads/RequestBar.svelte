@@ -4,6 +4,7 @@
   //   approval  drawn by the shell only (never by generated UI); an agent cannot answer it. Never expires.
   //   secret    drawn by the shell only; masked entry, the agent only ever gets a handle; expires after 15 minutes and can be asked again.
   // Answering is an operation (`onanswer`), so the same answer works from any device or the CLI. The bar is absent when nothing waits.
+  import { untrack } from "svelte";
   import { Badge, Button, Glass, Icon, IconButton, adaptive } from "@calternal/ui";
   import GenUi from "../../genui/GenUi.svelte";
   import type { Value } from "@calternal/genui";
@@ -14,7 +15,7 @@
   let folded = $state(false);
   let formState = $state<Record<string, Value>>({});
   let secret = $state("");
-  let tick = $state(Date.now());
+  let tick = $state(untrack(() => now()));
   const cur = $derived(requests[Math.min(index, requests.length - 1)]);
   const hasSecret = $derived(requests.some((r) => r.kind === "secret"));
   $effect(() => {
@@ -57,7 +58,7 @@
           <footer><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></footer>
         {:else if cur.kind === "approval"}
           <div class="trusted"><Icon name="lock" mini /> Drawn by Calternal. An agent can’t answer this for you.</div>
-          <h3>{cur.title}</h3>
+          <h2>{cur.title}</h2>
           <p>{cur.action}</p>
           <pre aria-label="The command"><code>{cur.command}</code></pre>
           <footer>
@@ -67,7 +68,7 @@
           </footer>
         {:else}
           <div class="trusted"><Icon name="lock" mini /> Drawn by Calternal. The agent gets a handle, never the value.</div>
-          <h3>{cur.label}</h3>
+          <h2>{cur.label}</h2>
           <p id="why">{cur.why}</p>
           <div class="meta"><Badge text={cur.scope === "personal" ? "Personal" : "Shared with the space"} tone="info" /><Badge text={cur.required ? "Required" : "Optional"} /><code>{cur.name}</code></div>
           {#if expired}
@@ -95,7 +96,7 @@
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--accent); text-transform: uppercase; letter-spacing: 0.04em; }
   .pager { display: inline-flex; align-items: center; font-size: var(--text-label); color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .body { display: grid; gap: var(--s-4); padding: 0 var(--s-6) var(--s-6); }
-  h3 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
+  h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   p { color: var(--ink-2); font-size: var(--text-ui); }
   .trusted { display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); color: var(--ink-2); }
   pre { margin: 0; padding: var(--s-4) var(--s-5); border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.08); overflow-x: auto; font-size: var(--text-label); }

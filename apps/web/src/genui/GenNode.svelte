@@ -21,7 +21,7 @@
 {#if type === "Error"}
   <p class="fallback" role="alert">{p.message}</p>
 {:else if type === "Card"}
-  <section class="card" aria-label={p.title ?? "Card"}>{#if p.title}<h4>{p.title}</h4>{/if}{#each kids as k (k.key)}<GenNode node={k} {host} {act} />{/each}</section>
+  <div class="card" role="group" aria-label={p.title ?? "Card"}>{#if p.title}<p class="h" role="heading" aria-level="2">{p.title}</p>{/if}{#each kids as k (k.key)}<GenNode node={k} {host} {act} />{/each}</div>
 {:else if type === "Stack"}
   <div class="stack">{#each kids as k (k.key)}<GenNode node={k} {host} {act} />{/each}</div>
 {:else if type === "Row"}
@@ -45,7 +45,7 @@
   <dl class="kv">{#each Object.entries(p.pairs ?? {}) as [k, v]}<dt>{k}</dt><dd>{String(v)}</dd>{/each}</dl>
 {:else if type === "Table"}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="tablewrap" role="region" aria-label="Table" tabindex="0">
+  <div class="tablewrap" role="group" aria-label="Table: {p.columns.map(String).join(", ")}" tabindex="0">
     <table>
       <thead><tr>{#each p.columns as c}<th scope="col">{isNode(c) ? "" : String(c)}</th>{/each}</tr></thead>
       <tbody>{#each p.rows as r}<tr>{#each r as cell}<td>{#if isNode(cell)}<GenNode node={cell} {host} {act} />{:else}{String(cell)}{/if}</td>{/each}</tr>{/each}</tbody>
@@ -53,7 +53,7 @@
   </div>
 {:else if type === "Form"}
   <form class="form" aria-label={p.label} onsubmit={(e) => e.preventDefault()}>
-    <h4>{p.label}</h4>
+    <p class="h" role="heading" aria-level="2">{p.label}</p>
     {#each kids as k (k.key)}<GenNode node={k} {host} {act} />{/each}
   </form>
 {:else if type === "Input" || type === "TextArea"}
@@ -89,7 +89,7 @@
 
 <style>
   .card { display: grid; gap: var(--s-4); padding: var(--s-5) var(--s-6); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); min-width: 0; }
-  h4 { font-size: var(--text-ui); font-weight: var(--strong-weight); }
+  .h { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .stack, .form { display: grid; gap: var(--s-4); }
   .rowl { display: flex; flex-wrap: wrap; gap: var(--s-4); align-items: center; }
   .fallback { color: var(--ink-3); font-size: var(--text-label); padding: var(--s-3) var(--s-5); border-radius: var(--r-control); background: rgb(var(--ink-rgb) / 0.05); }
