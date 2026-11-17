@@ -177,7 +177,6 @@ start_browser_machine() {
   [[ $mode == fixture || $mode == claude ]] || die 'Choose fixture or claude.'
   active browser-server || die 'Start the browser installation first.'
   if [[ ! -e $root/machine/credentials ]]; then
-    [[ $mode == fixture ]] || die 'Enroll the browser machine and verify the fixture first.'
     printf 'Enrollment code from Settings > Machines: ' >&2
     IFS= read -rs code || die 'Enter an enrollment code and press Enter.'
     printf '\n' >&2
@@ -196,13 +195,13 @@ start_browser_machine() {
     die 'Expected an account-owned machine enrolled with this browser server.'
   home=$root/machine/sandboxes/accounts/$account/home
   install -d -m 0700 "$home"
-  if [[ -f ${home%/home}/fixture-verified ]]; then
-    mode=claude
-  elif [[ $mode == fixture ]]; then
-    (shopt -s dotglob nullglob; entries=("$home"/*); ((${#entries[@]} == 0))) ||
-      die 'Finish the fixture proof before placing provider sign-in files.'
-  else
-    die 'Finish the fixture proof before switching to Claude Code.'
+  if [[ $mode == fixture ]]; then
+    if [[ -f ${home%/home}/fixture-verified ]]; then
+      mode=claude
+    else
+      (shopt -s dotglob nullglob; entries=("$home"/*); ((${#entries[@]} == 0))) ||
+        die 'Run the optional fixture proof before placing provider sign-in files.'
+    fi
   fi
   podman image exists "localhost/calternal-e2e-$mode:dev" ||
     die "Build the $mode image with image.sh $mode first."
