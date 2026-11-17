@@ -1,6 +1,7 @@
 //! CLI presentation regression fixtures.
 
 use super::*;
+use crate::admin_cli::MachinesCmd;
 use calternal_cli::testing::assert_golden;
 use calternal_server::store::Store;
 use std::path::{Path, PathBuf};

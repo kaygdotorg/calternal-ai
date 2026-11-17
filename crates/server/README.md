@@ -244,3 +244,9 @@ recheck current authority. An idle-feed test advances the seven-day confirmation
 state without issuing another operation.
 
 Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.
+
+Canonical request fingerprinting for Notes, plugin activation and plugin calls
+uses the existing blocking pool. The parsed input moves into that task and returns
+unchanged with its digest; its body is not cloned and the canonical digest is
+computed once. Synchronous callers retain the same canonical helper. CLI argument
+definitions live in `src/cli.rs`; `main.rs` keeps startup and dispatch.
