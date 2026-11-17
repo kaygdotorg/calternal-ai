@@ -3,8 +3,8 @@
 Thread: `thr_2f8y5u386e`
 Issue: `kayg/calternal-ai#30`
 Branch: `lane/plugin-rename`
-Merged through `origin/dev` commit `1d8fa7d`, including the threads and
-plugin-worker lanes.
+Merged through `origin/dev` commit `6cf46a4`, including the threads,
+plugin-worker, and latest UI/docs changes.
 
 Renamed the official plugin IDs and folders to `calternal-notes` and
 `calternal-notes-insights`. The Notes kind (`notes`), operations (including
