@@ -14,6 +14,7 @@ calternal-plugin-host = { path = "crates/plugin-host" }
 calternal-recovery = { path = "crates/recovery" }
 calternal-store = { path = "crates/store" }
 calternal-auth = { path = "crates/auth" }
+calternal-secrets = { path = "crates/secrets" }
 calternal-fsio = { path = "crates/fsio" }
 calternal-roots = { path = "crates/roots" }
 calternal-core = { path = "crates/core" }
