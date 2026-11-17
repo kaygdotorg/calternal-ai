@@ -142,7 +142,138 @@ bookmark: string, } } | { "Ready": {
 /**
  * Current accepted position.
  */
-bookmark: string, } } | "Reset";
+bookmark: string, } } | "ReadinessChanged" | "Reset";
+/**
+ * Select the space and optionally a saved thread's placement constraint.
+ */
+
+export type ReadinessInput = {
+/**
+ * Space UUID. The person needs the space's plugins.use capability.
+ */
+space_id: string,
+/**
+ * Saved thread UUID, if readiness should be restricted by a thread pin.
+ */
+thread_id: string | null, };
+/**
+ * One cached readiness snapshot. Pool options carry no host identity.
+ */
+
+export type ReadinessResult = {
+/**
+ * Nonrevoked machines enrolled to the requesting account.
+ */
+machines: Array<PersonalMachineReadiness>,
+/**
+ * Anonymous options from the entitled pool, if any.
+ */
+pool: Array<MachineReadiness>,
+/**
+ * Lifetime of one provider observation in milliseconds.
+ */
+check_ttl_ms: number, };
+/**
+ * An eligible personal machine or anonymous pool option.
+ */
+
+export type MachineReadiness = {
+/**
+ * The machine has an active enrollment record.
+ */
+enrolled: boolean,
+/**
+ * The server has a current connection from the machine.
+ */
+connected: boolean,
+/**
+ * The machine is accepting additional placements.
+ */
+available: boolean,
+/**
+ * How this machine runs turns.
+ */
+execution: MachineExecution,
+/**
+ * Installed provider plugins and their account-scoped check results.
+ */
+providers: { [key in string]?: ProviderReadiness }, };
+/**
+ * Readiness for a machine owned by the caller.
+ */
+
+export type PersonalMachineReadiness = {
+/**
+ * Stable enrolled machine UUID.
+ */
+machine_id: string,
+/**
+ * The owner's machine label.
+ */
+name: string,
+/**
+ * Last observed contact in Unix milliseconds, when known.
+ */
+last_seen_ms: number | null,
+/**
+ * The machine has an active enrollment record.
+ */
+enrolled: boolean,
+/**
+ * The server has a current connection from the machine.
+ */
+connected: boolean,
+/**
+ * The machine is accepting additional placements.
+ */
+available: boolean,
+/**
+ * How this machine runs turns.
+ */
+execution: MachineExecution,
+/**
+ * Installed provider plugins and their account-scoped check results.
+ */
+providers: { [key in string]?: ProviderReadiness }, };
+/**
+ * The effective execution environment available on a machine.
+ */
+
+export type MachineExecution = "sandboxed" | "direct";
+/**
+ * A bounded observation of the official provider program's own check.
+ */
+
+export type ProviderCheck = {
+/**
+ * The provider program was found inside the machine's execution environment.
+ */
+installed: boolean,
+/**
+ * The program reported an active login for this account.
+ */
+signed_in: boolean,
+/**
+ * The program's own sign-in command, for display only.
+ */
+sign_in_command: string, };
+/**
+ * A machine's readiness for one provider in this space.
+ */
+
+export type ProviderReadiness = {
+/**
+ * The provider and orchestrator are enabled for this space.
+ */
+enabled: boolean,
+/**
+ * Recent provider status, or null until a fresh check is available.
+ */
+check: ProviderCheck | null,
+/**
+ * The machine has capacity and the enabled provider reports a login.
+ */
+ready: boolean, };
 /**
  * A request is presented only to the authenticated recipient.
  */
@@ -730,6 +861,10 @@ lease_id: string,
  */
 direct: boolean,
 /**
+ * Check an entitled pool machine without exposing its identity.
+ */
+pool: boolean,
+/**
  * Thread UUID for check/run; no thread file is created in step one.
  */
 thread_id: string,
@@ -881,19 +1016,7 @@ command: ProviderCommand, };
  * Normalized provider output. Untrusted provider text conveys no authority.
  */
 
-export type ProviderEventKind = { "type": "check",
-/**
- * Official program was found.
- */
-installed: boolean,
-/**
- * Official program reports a current login.
- */
-signed_in: boolean,
-/**
- * Command the person runs in their sandbox, never run by the adapter.
- */
-sign_in_command: string, } | { "type": "session",
+export type ProviderEventKind = { "type": "check" } & ProviderCheck | { "type": "session",
 /**
  * Opaque provider session identifier; never a login or access token.
  */

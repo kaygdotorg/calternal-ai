@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use calternal_machine::protocol::{
     Capacity, Chunk, ChunkEvent, Down, Envelope, ExitInfo, LeaseReport, Owner, SandboxSpec,
@@ -20,6 +20,7 @@ use super::{LeaseState, MachineView, RunView, Settings, db};
 /// An open machine session: its outbox and last report.
 pub(super) struct Live {
     pub session: [u8; 32],
+    pub direct: bool,
     pub outbox: VecDeque<Envelope>,
     pub next_seq: u64,
     pub polls: u32,
@@ -31,8 +32,11 @@ pub(super) struct Live {
 /// An enrolled machine.
 pub(super) struct Machine {
     pub row: db::MachineRow,
+    pub assigned: usize,
     pub boot_id: Option<Uuid>,
+    pub checks: HashMap<AccountId, HashMap<String, super::readiness::Observation>>,
     pub last_seen: Instant,
+    pub last_seen_ms: Option<i64>,
     pub live: Option<Live>,
 }
 
@@ -42,8 +46,11 @@ impl Machine {
     pub fn new(row: db::MachineRow, now: Instant) -> Self {
         Self {
             row,
+            assigned: 0,
             boot_id: None,
+            checks: HashMap::new(),
             last_seen: now,
+            last_seen_ms: None,
             live: None,
         }
     }
@@ -54,6 +61,15 @@ pub(super) struct Lease {
     pub row: db::LeaseRow,
     pub state: LeaseState,
     pub order: u64,
+}
+
+impl Lease {
+    /// A lease holds a placement slot from assignment through running.
+    pub(super) fn assigned_machine(&self) -> Option<Uuid> {
+        self.row
+            .machine
+            .filter(|_| matches!(self.state, LeaseState::Assigned | LeaseState::Running))
+    }
 }
 
 #[derive(PartialEq, Eq)]
@@ -132,6 +148,7 @@ pub(super) struct State {
     /// Recovery-protected machine authority in `auth.db`.
     pub authority: calternal_auth::machines::Machines,
     pub machines: HashMap<Uuid, Machine>,
+    pub readiness: super::readiness::Readiness,
     pub sessions: HashMap<[u8; 32], Uuid>,
     pub challenges: HashMap<String, (Uuid, Instant)>,
     pub pool_grants: HashSet<AccountId>,
@@ -238,10 +255,12 @@ impl State {
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
         };
+        let assigned = l.assigned_machine();
         l.row.fence += 1;
         l.row.machine = None;
         l.row.reason = Some(why.into());
         l.state = LeaseState::Interrupted;
+        self.release_slot(assigned);
         self.persist(lease);
     }
 
@@ -265,6 +284,7 @@ impl State {
             return;
         }
         let machine = l.row.machine;
+        let assigned = l.assigned_machine();
         let worker = l.row.worker;
         l.row.fence += 1;
         l.state = if worker && machine.is_some() {
@@ -276,6 +296,7 @@ impl State {
         let thread = l.row.thread;
         self.threads.remove(&thread);
         self.workers.remove(&lease);
+        self.release_slot(assigned);
         self.persist(lease);
         for e in self.execs.values_mut() {
             if e.lease == lease && e.state != ExecState::Done {
@@ -313,6 +334,9 @@ impl State {
             self.sessions.remove(&live.session);
             live.notify.notify_one();
         }
+        let owner = m.row.owner;
+        m.checks.clear();
+        self.readiness_changed(owner);
         let held: Vec<Uuid> = self
             .leases
             .values()
@@ -324,7 +348,7 @@ impl State {
         }
     }
 
-    fn may_use(&self, m: &Machine, account: AccountId) -> bool {
+    pub(super) fn may_use(&self, m: &Machine, account: AccountId) -> bool {
         match m.row.owner {
             Owner::Account { id } => id == account,
             Owner::Pool => self.pool_grants.contains(&account),
@@ -332,19 +356,30 @@ impl State {
     }
 
     pub fn load(&self, machine: Uuid) -> usize {
-        self.leases
-            .values()
-            .filter(|l| {
-                l.row.machine == Some(machine)
-                    && matches!(l.state, LeaseState::Assigned | LeaseState::Running)
-            })
-            .count()
+        self.machines.get(&machine).map_or(0, |m| m.assigned)
     }
 
-    fn free(&self, m: &Machine) -> usize {
+    /// Restore or reserve capacity for a live assigned/running lease.
+    pub(super) fn take_slot(&mut self, machine: Option<Uuid>) {
+        if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
+            m.assigned += 1;
+            let owner = m.row.owner;
+            self.readiness_changed(owner);
+        }
+    }
+
+    fn release_slot(&mut self, machine: Option<Uuid>) {
+        if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
+            m.assigned = m.assigned.saturating_sub(1);
+            let owner = m.row.owner;
+            self.readiness_changed(owner);
+        }
+    }
+
+    pub(super) fn free(&self, m: &Machine) -> usize {
         match &m.live {
             Some(live) if !live.draining && !m.row.draining && !m.row.revoked => {
-                (live.capacity.max_sandboxes as usize).saturating_sub(self.load(m.row.id))
+                (live.capacity.max_sandboxes as usize).saturating_sub(m.assigned)
             }
             _ => 0,
         }
@@ -353,8 +388,8 @@ impl State {
     /// Assign waiting leases in arrival order. Preference: the machine that held
     /// the thread before, then the account's own machines, then the pool; ties go
     /// to the machine with the most free slots. Shared-space plugin workers are
-    /// restricted to operator pool machines pending their placement contract. Cost: waiting × machines × leases
-    /// (the load count); one commit per assignment.
+    /// restricted to operator pool machines pending their placement contract. Cost: waiting × machines, with an
+    /// indexed load count; one commit per assignment.
     pub fn place_waiting(&mut self, settings: &Settings) {
         let mut waiting: Vec<(u64, Uuid)> = self
             .leases
@@ -401,6 +436,7 @@ impl State {
         l.row.last_machine = Some(machine);
         l.row.reason = None;
         l.state = LeaseState::Assigned;
+        self.take_slot(Some(machine));
         self.persist(lease);
         self.send_assign(lease, settings);
         self.send_execs(lease);
@@ -482,9 +518,7 @@ impl State {
     }
 
     pub fn machine_view(&self, m: &Machine, settings: &Settings) -> MachineView {
-        let online = m.live.as_ref().is_some_and(|l| {
-            l.polls > 0 || m.last_seen.elapsed() < settings.poll_hold + Duration::from_secs(5)
-        });
+        let online = super::readiness::connected(m, settings);
         let state = if m.row.revoked {
             "revoked"
         } else if !online {

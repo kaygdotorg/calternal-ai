@@ -1,0 +1,23 @@
+Machine: Development
+Connection: Connected
+Execution: sandboxed
+Capacity: Available
+Machine ID: 019a8c00-0000-7000-8000-000…
+Last seen: 2025-10-09 08:53:20 +00:00
+Provider: calternal-claude-code
+Sign-in: Signed out
+Readiness: Unavailable
+
+Machine: Cloud pool
+Connection: Offline
+Execution: sandboxed
+Capacity: Unavailable
+Machine ID: —
+Last seen: —
+Provider: calternal-claude-code
+Sign-in: Unknown
+Readiness: Unavailable
+
+Sign-in commands
+Development · calternal-claude-code:  claude auth login
+Use calternal agent check --help to ref…

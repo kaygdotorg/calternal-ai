@@ -32,6 +32,8 @@ pub struct AgentInput {
     pub lease_id: String,
     /// Whether an account-owned machine runs directly; pool machines refuse this.
     pub direct: bool,
+    /// Check an entitled pool machine without exposing its identity.
+    pub pool: bool,
     /// Thread UUID for check/run; no thread file is created in step one.
     pub thread_id: String,
     /// Job UUID for events/stop/resume/mode/access operations.
@@ -65,6 +67,11 @@ pub struct AgentInput {
 
 /// Manual provider operations. This table feeds discovery, policy and instruction indexes.
 pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
+    (
+        crate::AGENT_READINESS,
+        "Read your machine and provider readiness in a space",
+        false,
+    ),
     (
         "agent.settings",
         "Read or set your account defaults or thread retry settings",

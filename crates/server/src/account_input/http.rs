@@ -19,6 +19,8 @@ use std::collections::VecDeque;
 #[serde(deny_unknown_fields)]
 pub(crate) struct FollowQuery {
     bookmark: Option<String>,
+    #[serde(default)]
+    readiness: bool,
 }
 struct Follow<D: Directory> {
     state: Shared<D>,
@@ -29,6 +31,7 @@ struct Follow<D: Directory> {
     ready: bool,
     done: bool,
     _admission: std::fs::File,
+    readiness: Option<crate::machines::readiness::Listener>,
 }
 fn encode(frame: AccountFrame) -> String {
     format!(
@@ -50,15 +53,27 @@ pub(crate) async fn events<D: Directory>(
     if q.bookmark.as_ref().is_some_and(|b| b.len() > 128) {
         return error_response(Error::invalid_input("invalid bookmark"));
     }
+    let machines = q
+        .readiness
+        .then(|| {
+            req.extensions()
+                .get::<std::sync::Arc<crate::machines::MachineService>>()
+                .cloned()
+        })
+        .flatten();
     let st = state.clone();
     let identity = p.clone();
     let head = tokio::task::spawn_blocking(move || {
         let mut c = st.inputs.open(identity.id)?;
         st.inputs.clean(&mut c, &st.directory, &identity)?;
-        Ok::<_, Error>((Inputs::head(&c)?, st.inputs.admit(identity.id)?))
+        let admission = st.inputs.admit(identity.id)?;
+        let readiness = machines
+            .map(|m| m.subscribe_readiness(identity.id))
+            .transpose()?;
+        Ok::<_, Error>((Inputs::head(&c)?, admission, readiness))
     })
     .await;
-    let (head, admission) = match head {
+    let (head, admission, readiness) = match head {
         Ok(Ok(v)) => v,
         Ok(Err(e)) => return error_response(e),
         Err(e) => return error_response(internal(e)),
@@ -72,6 +87,7 @@ pub(crate) async fn events<D: Directory>(
         ready: false,
         done: false,
         _admission: admission,
+        readiness,
     };
     let body = Body::from_stream(futures_util::stream::unfold(follow, |mut f| async move {
         if f.done {
@@ -80,6 +96,12 @@ pub(crate) async fn events<D: Directory>(
         loop {
             if !f.session.is_live(&f.state.directory).await {
                 return None;
+            }
+            if let Some(listener) = &mut f.readiness
+                && listener.changes.has_changed().unwrap_or(false)
+            {
+                listener.changes.borrow_and_update();
+                return Some((Ok(encode(AccountFrame::ReadinessChanged)), f));
             }
             if let Some(bookmark) = f.page.pop_front() {
                 f.after = bookmark.clone();

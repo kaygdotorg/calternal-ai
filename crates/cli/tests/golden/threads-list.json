@@ -12,6 +12,10 @@
           "provider": "calternal-claude-code",
           "title": "Long conversation title that should wrap clearly"
         },
+        "turn_reason": {
+          "code": "waiting_on_person",
+          "request_id": "019a8c00-0000-7000-8000-000000000002"
+        },
         "turn_state": "waiting"
       }
     ]

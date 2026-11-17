@@ -120,6 +120,34 @@ pub struct Job {
 }
 
 impl Job {
+    /// Remove provider login, placement and person-request references from
+    /// someone else's turn. Cost: existing view clone plus constant removals.
+    pub(crate) fn view_for(&self, account: AccountId) -> JobView {
+        let mut view = self.view();
+        if self.operation == "agent.turn"
+            && (self.account != account || self.input["check"] == true)
+        {
+            for value in [&mut view.checkpoint, &mut view.result] {
+                if let Some(fields) = value.as_object_mut() {
+                    for key in [
+                        "machine_id",
+                        "lease_id",
+                        "request_machine",
+                        "person_request",
+                        "error",
+                        "placement",
+                        "interruption",
+                        "session_id",
+                        "session_notice",
+                    ] {
+                        fields.remove(key);
+                    }
+                }
+            }
+        }
+        view
+    }
+
     /// Client view. Cost: clones the checkpoint and result.
     pub fn view(&self) -> JobView {
         JobView {
@@ -217,7 +245,7 @@ impl Jobs {
     pub(crate) fn thread_latest(&self, space: &str, thread: &str) -> Result<Option<Job>, Error> {
         let conn = self.conn(space)?;
         let c = conn.lock().unwrap_or_else(|p| p.into_inner());
-        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
+        c.query_row(&format!("SELECT {COLUMNS} FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 ORDER BY rowid DESC LIMIT 1"),[thread],|r|row(space,r)).optional().map_err(db_err)
     }
 
     /// Permits for concurrent runs ([`super::runner::MAX_RUNNING`]). Cost: one clone.
@@ -328,8 +356,19 @@ impl Jobs {
         c.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
         c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
+        const SCHEMA_VERSION: i64 = 2;
+        let version = c
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+            .map_err(db_err)?;
+        if version != 0 && version != SCHEMA_VERSION {
+            return Err(Error::unavailable(
+                "jobs database schema requires fresh preview data",
+            ));
+        }
         c.execute_batch(SCHEMA).map_err(db_err)?;
-        c.execute_batch(crate::threads::turn_events::SCHEMA)
+        c.execute_batch(crate::threads::turn_events::schema())
+            .map_err(db_err)?;
+        c.pragma_update(None, "user_version", SCHEMA_VERSION)
             .map_err(db_err)?;
         retain(&c)?;
         let c = Arc::new(JobDatabase::new(c));
@@ -414,7 +453,7 @@ impl Jobs {
             }
             if a.operation=="agent.turn" {
                 let thread=a.input["request"]["thread_id"].as_str().ok_or_else(||Error::invalid_input("turn needs a thread UUID"))?;
-                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
+                let active:bool=tx.query_row(&format!("SELECT EXISTS(SELECT 1 FROM jobs WHERE operation='agent.turn' AND json_extract(input,'$.request.thread_id')=?1 AND json_extract(input,'$.check') IS NOT 1 AND state IN {ACTIVE})"),[thread],|r|r.get(0)).map_err(db_err)?;
                 if active{return Err(Error::conflict("this thread already has active or interrupted work"));}
             }
             let active: i64 = tx

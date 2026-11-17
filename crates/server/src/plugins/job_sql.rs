@@ -18,7 +18,7 @@ CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE INDEX IF NOT EXISTS jobs_parent ON jobs(parent);
 CREATE INDEX IF NOT EXISTS jobs_finished ON jobs(finished_ms) WHERE finished_ms IS NOT NULL;
 CREATE TABLE IF NOT EXISTS child_results(parent TEXT NOT NULL,child TEXT NOT NULL,state TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(parent,child)) STRICT;
-PRAGMA user_version=1;COMMIT;";
+COMMIT;";
 
 pub(super) fn db_err(e: rusqlite::Error) -> Error {
     tracing::error!(error = %e, "jobs sqlite error");
@@ -210,7 +210,12 @@ impl Jobs {
                 let mut wake = vec![];
                 for Active { id, state, plugin, operation, runs, parent } in rows {
                     if operation == "agent.turn" {
-                        if !matches!(state.as_str(), "retry_waiting" | "waiting") {set_state(tx, &id, JobState::Interrupted, "null")?;}
+                        if !matches!(state.as_str(), "retry_waiting" | "waiting") {
+                            tx.execute(
+                                "UPDATE jobs SET state='interrupted',checkpoint=json_set(coalesce(nullif(checkpoint,'null'),'{}'),'$.interruption',json_object('why','server_restarted')) WHERE id=?1",
+                                [&id],
+                            ).map_err(db_err)?;
+                        }
                         continue;
                     }
                     match state.as_str() {

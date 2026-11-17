@@ -66,8 +66,10 @@ impl MachineService {
             machine_id: row.id,
             owner: row.owner,
         };
-        st.machines
-            .insert(row.id, Machine::new(row, Instant::now()));
+        let machine = Machine::new(row, Instant::now());
+        st.readiness.insert(&machine);
+        st.machines.insert(machine.row.id, machine);
+        st.readiness_changed(resp.owner);
         Ok(resp)
     }
 
@@ -143,8 +145,10 @@ impl MachineService {
         let rebooted = machine.boot_id.is_some_and(|b| b != f.boot_id);
         machine.boot_id = Some(f.boot_id);
         machine.last_seen = Instant::now();
+        machine.last_seen_ms = Some(super::db::now_ms());
         machine.live = Some(Live {
             session: hash,
+            direct: backend == "direct",
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,
@@ -152,6 +156,8 @@ impl MachineService {
             draining: false,
             notify: Arc::new(Notify::new()),
         });
+        let owner = machine.row.owner;
+        st.readiness_changed(owner);
         st.replay_discards(f.machine_id)?;
         let held: Vec<Uuid> = st
             .leases
@@ -237,12 +243,19 @@ impl MachineService {
         st.finish_discards(machine_id, &req.discards)?;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
+        let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
+            || live.draining != req.draining;
         live.capacity = req.capacity;
         live.draining = req.draining;
         live.polls += 1;
         let notify = live.notify.clone();
         if let Some(m) = st.machines.get_mut(&machine_id) {
             m.last_seen = Instant::now();
+            m.last_seen_ms = Some(super::db::now_ms());
+            let owner = m.row.owner;
+            if readiness_changed {
+                st.readiness_changed(owner);
+            }
         }
         if st.finish_worker_stops(machine_id, session, req)? > 0 {
             self.worker_changes.notify_waiters();
@@ -354,6 +367,7 @@ impl Drop for PollGuard {
                 && let Some(m) = st.machines.get_mut(&id)
             {
                 m.last_seen = Instant::now();
+                m.last_seen_ms = Some(super::db::now_ms());
                 if let Some(live) = m.live.as_mut() {
                     live.polls = live.polls.saturating_sub(1);
                 }

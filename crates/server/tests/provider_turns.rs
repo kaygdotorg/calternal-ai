@@ -1,5 +1,7 @@
 //! Official CLI fixture through the real server, machine role and provider adapter.
 mod machines_common;
+#[path = "provider_turns/readiness.rs"]
+mod readiness;
 #[path = "provider_turns/saved_threads.rs"]
 mod saved_threads;
 use machines_common::*;
@@ -412,8 +414,17 @@ async fn classified_provider_retries_are_durable_and_do_not_repeat_unknown_effec
     )
     .await;
     let id = limit["job"]["id"].as_str().unwrap().to_owned();
-    let (job, _) = until(&server, &id, |j| j["state"] == "retry_waiting").await;
-    assert_eq!(job["checkpoint"]["retry"]["reason"], "subscription_limit");
+    for count in 1..=5 {
+        until(&server, &id, |j| {
+            j["state"] == "retry_waiting" && j["checkpoint"]["retry"]["retry_count"] == count
+        })
+        .await;
+        expedite(&data.0, &space, &id);
+    }
+    let (job, _) = until(&server, &id, |j| {
+        j["state"] == "retry_waiting" && j["checkpoint"]["retry"]["reason"] == "subscription_limit"
+    })
+    .await;
     let wake = job["checkpoint"]["retry"]["next_attempt_ms"].clone();
     server.proc.kill();
     server = Server::start_with_plugins(&data.0, port, &plugins);
