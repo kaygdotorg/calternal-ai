@@ -16,4 +16,6 @@ fi
   -p calternal-core -p calternal-client -p calternal-cli -p calternal-bindings \
   -p calternal-auth -p calternal-fsio -p calternal-roots -p calternal-store -p calternal-content \
   --all-features --target-dir reference-docs/rust
+# TypeScript reference checks resolve workspace packages through their built type output.
+npm run build:plugins --silent
 npm run check --prefix scripts/docs-tools
