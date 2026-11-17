@@ -1,72 +1,27 @@
-import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-import test from "node:test";
-
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const distDir = resolve(packageRoot, "dist");
-const workerPath = resolve(distDir, "worker.js");
-const fixturePath = resolve(packageRoot, "../../contract/fixtures/worker-request.json");
-
-function invokeWorker(input, { args = [], timeout = 3000 } = {}) {
-  return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, ["--permission", `--allow-fs-read=${distDir}`, ...args, workerPath], {
-      cwd: distDir,
-      env: { LANG: "C.UTF-8" },
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    const stdout = [];
-    const stderr = [];
-    child.stdout.on("data", (chunk) => stdout.push(chunk));
-    child.stderr.on("data", (chunk) => stderr.push(chunk));
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("worker did not exit"));
-    }, timeout);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (code, signal) => {
-      clearTimeout(timer);
-      resolvePromise({
-        code,
-        signal,
-        stdout: Buffer.concat(stdout),
-        stderr: Buffer.concat(stderr),
-      });
-    });
-    child.stdin.end(input);
-  });
-}
-
-test("compiled worker reads one JSON object to EOF and writes one protocol object", async () => {
-  const request = await readFile(fixturePath);
-  const result = await invokeWorker(request);
-  assert.equal(result.code, 0, result.stderr.toString("utf8"));
-  assert.equal(result.signal, null);
-  assert.equal(result.stderr.byteLength, 0);
-  const response = JSON.parse(result.stdout.toString("utf8"));
-  assert.equal(response.protocol_version, 1);
-  assert.equal(response.invocation_id, "fixture-1");
-  assert.equal(response.ok, true);
-  assert.deepEqual(response.data.stats, { words: 2, characters: 12, lines: 1 });
-  assert.equal(response.data.view.genui_version, 1);
-  assert.equal(response.data.view.root.type, "stack");
-  assert.equal(response.data.view.root.children.length, 3);
-  assert.throws(() => JSON.parse(`${result.stdout.toString("utf8")} {}`));
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+import { once } from 'node:events';
+import test from 'node:test';
+const path = new URL('../dist/worker.js', import.meta.url);
+const authority={account_id:'01932910-0000-7000-8000-000000000001',space_id:'01932910-0000-7000-8000-000000000002',grant:'host-ref'};
+const frame=(invocation_id,message)=>({protocol_version:2,invocation_id,message});
+test('one worker handles multiple authorized broker-backed invocations',async()=>{
+ const child=spawn(process.execPath,[path.pathname],{stdio:['pipe','pipe','pipe']});
+ const lines=createInterface({input:child.stdout})[Symbol.asyncIterator]();
+ const timer=setTimeout(()=>child.kill('SIGKILL'),5000);
+ try {
+  for(const id of ['i1','i2']) {
+   child.stdin.write(JSON.stringify(frame(id,{type:'invoke',operation:'notes-insights.summarize',input:{note_id:'01932910-0000-7000-8000-000000000003'},authority}))+'\n');
+   const call=JSON.parse((await lines.next()).value); assert.equal(call.message.type,'host_call'); assert.equal(call.message.method,'read_item'); assert.deepEqual(call.message.authority,authority);
+   child.stdin.write(JSON.stringify(frame(id,{type:'host_reply',call_id:call.message.call_id,ok:true,data:{text:'hello world\n'}}))+'\n');
+   const result=JSON.parse((await lines.next()).value); assert.equal(result.message.type,'complete'); assert.equal(result.invocation_id,id); assert.deepEqual(result.message.data.stats,{words:2,characters:12,lines:1}); assert.deepEqual(result.message.data.view.root.children.map(n=>n.value),['2','12','1']);
+  }
+  child.stdin.end(); const [code]=await once(child,'exit'); assert.equal(code,0);
+ } finally { clearTimeout(timer); child.kill(); }
 });
-
-test("worker rejects malformed or oversized input without protocol details on stderr", async () => {
-  const malformed = await invokeWorker('{"protocol_version":1} {}');
-  assert.notEqual(malformed.code, 0);
-  assert.equal(malformed.stdout.byteLength, 0);
-  assert.equal(malformed.stderr.toString("utf8"), "notes-insights worker protocol failure\n");
-
-  const oversized = await invokeWorker(Buffer.alloc(2 * 1024 * 1024 + 1));
-  assert.notEqual(oversized.code, 0);
-  assert.equal(oversized.stdout.byteLength, 0);
-  assert.equal(oversized.stderr.toString("utf8"), "notes-insights worker protocol failure\n");
+test('malformed and oversized frames fail with safe diagnostics',async()=>{
+ for(const input of ['{"protocol_version":1}\n','x'.repeat(256*1024+1)]) {
+  const child=spawn(process.execPath,[path.pathname],{stdio:['pipe','pipe','pipe']}); let stdout='',stderr=''; child.stdout.on('data',b=>stdout+=b);child.stderr.on('data',b=>stderr+=b);child.stdin.on('error',()=>{}); const done=once(child,'exit'); child.stdin.end(input); const [code]=await done; assert.notEqual(code,0);assert.equal(stdout,'');assert.equal(stderr,'notes-insights worker protocol failure\n');
+ }
 });

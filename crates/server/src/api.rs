@@ -21,7 +21,7 @@ use calternal_core::{
     NotesCreateInput, NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesListInput,
     NotesListResult, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
     PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
-    WorkerResource, canonical_request_input, operation_catalog, parse_request,
+    canonical_request_input, operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -31,16 +31,15 @@ use crate::auth::{Directory, Identity, TokenTable};
 use crate::authz::{self, Constraint};
 use crate::error::HostError;
 use crate::fault::{self, FaultPoint};
-use crate::plugins::{LoadedPlugin, NodeRuntime, Registry, run_summarize};
+use crate::plugins::worker::Outcome;
+use crate::plugins::{
+    Call, PREVIEW_ITEM_ID, Plugin, PreviewHost, Registry, WorkerPool, activation, broker::SpaceHost,
+};
 use crate::store::{PluginRow, Store, sha256_hex};
 
 /// Same-origin development content security policy applied to every response.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
-/// Fixed fixture text for plugin preview. Never user data.
-pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
-/// Stable synthetic resource identifier used only for plugin previews.
-pub const PREVIEW_RESOURCE_ID: &str = "00000000-0000-4000-8000-000000000000";
 
 /// Shared host services; `D` is the protected source of current identity and grants.
 /// The default preserves fixture integrations; stored directories plug in without
@@ -50,10 +49,10 @@ pub struct AppState<D: Directory = TokenTable> {
     pub store: Mutex<Store>,
     /// Identity and membership directory (legacy field name preserves startup callers).
     pub tokens: D,
-    /// Immutable registry of trusted development plugins.
+    /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,
-    /// Optional bounded Node worker runtime.
-    pub node: Option<NodeRuntime>,
+    /// Bounded pool of long-lived (plugin, space) workers; refuses calls without Node.
+    pub workers: WorkerPool,
     /// Exact loopback Host allowlist for this listener.
     pub allowed_hosts: Vec<String>,
 }
@@ -452,12 +451,24 @@ pub async fn dispatch<D: Directory>(
 ) -> Result<Value, HostError> {
     let p = p.into();
     let mut input = input;
-    if op == "resolve" || authz::policy(op).is_some_and(|p| p.scope == authz::Scope::Note) {
-        calternal_core::validate_operation_input(op, &input)?;
+    let item_scoped = state
+        .registry
+        .policy(op)
+        .is_some_and(|p| p.scope == authz::Scope::Note);
+    if op == "resolve" || item_scoped {
+        if calternal_core::is_known_operation(op) {
+            calternal_core::validate_operation_input(op, &input)?;
+        } else {
+            validate_item_input(&input)?;
+        }
         let kind = if op == "resolve" {
             input.get("kind").and_then(Value::as_str).unwrap_or("")
         } else {
-            "notes"
+            state
+                .registry
+                .owner_of_operation(op)
+                .and_then(|p| p.item_operation(op))
+                .map_or("notes", |b| b.kind.as_str())
         }
         .to_owned();
         let id = input
@@ -465,7 +476,9 @@ pub async fn dispatch<D: Directory>(
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_owned();
-        let op_required = authz::policy(op)
+        let op_required = state
+            .registry
+            .policy(op)
             .map(|p| p.required)
             .unwrap_or(authz::Capability::SpaceRead);
         let st = state.clone();
@@ -491,17 +504,23 @@ pub async fn dispatch<D: Directory>(
             }
         input.insert("space_id".into(), Value::String(resolved.space_id));
     }
-    let Some(policy) = authz::policy(op) else {
-        return Err(if state.registry.owner_of_operation(op).is_some() {
-            HostError::unavailable("operation has no host binding in this preview")
+    // One authorization path: a host row or a row derived from a plugin manifest.
+    // Without either, answer as a hidden target would, so a caller cannot tell an
+    // unregistered plugin operation from an item or space it may not see.
+    let Some(policy) = state.registry.policy(op).cloned() else {
+        return Err(HostError::not_found(if input.contains_key("id") {
+            "item not found"
+        } else if input.contains_key("space_id") {
+            "space not found"
         } else {
-            HostError::not_found("unknown operation")
-        });
+            "unknown operation"
+        }));
     };
     let st = state.clone();
     let identity = p.clone();
     let checked = input.clone();
-    tokio::task::spawn_blocking(move || policy.authorize(&st.tokens, &identity, &checked))
+    let admission = policy.clone();
+    tokio::task::spawn_blocking(move || admission.authorize(&st.tokens, &identity, &checked))
         .await
         .map_err(|_| HostError::internal("directory task failed"))??;
     if op.starts_with("spaces.") {
@@ -532,19 +551,7 @@ pub async fn dispatch<D: Directory>(
         *space = state.tokens.content_space(space);
     }
     if policy.constraint == Constraint::PluginInvocation {
-        let i: NotesGetInput = decode(input)?;
-        let lp = state
-            .registry
-            .owner_of_operation(op)
-            .ok_or_else(|| HostError::not_found("unknown operation"))?
-            .clone();
-        let result = summarize(state.clone(), lp, &i).await?;
-        let st = state.clone();
-        let space = i.space_id.clone();
-        tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &space))
-            .await
-            .map_err(|_| HostError::internal("directory task failed"))??;
-        return Ok(wire_spaces(&state.tokens, result));
+        return invoke_plugin(state, p, request_id, op, policy, input).await;
     }
     let delivery_space = input
         .get("space_id")
@@ -621,9 +628,9 @@ async fn dispatch_checked<D: Directory>(
             let st = state.clone();
             let plugins = blocking(&state, move |s| {
                 st.registry
-                    .plugins
+                    .plugins()
                     .iter()
-                    .map(|lp| plugin_state(s, &i.space_id, lp))
+                    .map(|plugin| plugin_state(s, &i.space_id, plugin))
                     .collect::<Result<Vec<_>, _>>()
             })
             .await?;
@@ -636,13 +643,16 @@ async fn dispatch_checked<D: Directory>(
             let st = state.clone();
             let (rid, op, principal) = (request_id.to_string(), op.to_string(), p.id);
             blocking(&state, move |s| {
-                authz::policy(&op).expect("bound policy").authorize_space(
-                    &st.tokens,
-                    &Identity {
-                        id: principal.clone(),
-                    },
-                    &i.space_id,
-                )?;
+                st.registry
+                    .policy(&op)
+                    .expect("bound policy")
+                    .authorize_space(
+                        &st.tokens,
+                        &Identity {
+                            id: principal.clone(),
+                        },
+                        &i.space_id,
+                    )?;
                 if st.tokens.has_space_receipt(
                     &Identity {
                         id: principal.clone(),
@@ -656,55 +666,39 @@ async fn dispatch_checked<D: Directory>(
                 if let Some(v) = replay_receipt(s, &principal, &rid, &op, &fp)? {
                     return Ok(v);
                 }
-                let lp = st
+                let plugin = st
                     .registry
                     .get(&i.plugin_id)
                     .ok_or_else(|| HostError::not_found("plugin is not registered"))?;
                 if enable {
-                    if let Some(why) = &lp.unavailable {
+                    if let Some(why) = &plugin.unavailable {
                         return Err(HostError::unavailable(format!(
                             "plugin cannot be enabled: {why}"
                         )));
                     }
-                    // Dependencies must be enabled in this space first.
-                    for dep in &lp.manifest.dependencies {
-                        let dlp = st
-                            .registry
-                            .get(&dep.id)
-                            .ok_or_else(|| HostError::unavailable("dependency missing"))?;
-                        if !plugin_state(s, &i.space_id, dlp)?.enabled {
-                            return Err(HostError::conflict(format!(
-                                "dependency {} is disabled",
-                                dep.id
-                            )));
-                        }
-                    }
-                } else {
-                    // Refuse to disable a plugin an enabled dependent needs.
-                    for other in &st.registry.plugins {
-                        if other
-                            .manifest
-                            .dependencies
-                            .iter()
-                            .any(|d| d.id == lp.manifest.id)
-                            && plugin_state(s, &i.space_id, other)?.enabled
-                        {
-                            return Err(HostError::conflict(format!(
-                                "plugin {} depends on it; disable that first",
-                                other.manifest.id
-                            )));
-                        }
-                    }
+                    // Provision before activation commits, so a failure leaves it disabled.
+                    let collections: Vec<_> = plugin
+                        .manifest
+                        .collections
+                        .iter()
+                        .map(|c| (c.kind.clone(), c.id.clone(), c.name.clone()))
+                        .collect();
+                    s.provision_plugin(
+                        &i.space_id,
+                        &principal,
+                        &plugin.kind_registrations()?,
+                        &collections,
+                    )?;
                 }
-                let manifest = lp.manifest.clone();
+                let manifest = plugin.wire.clone();
                 let (_, value) = s.set_plugin_enabled(
                     &principal,
                     &rid,
                     &op,
                     &fp,
                     &i.space_id,
-                    &lp.manifest.id,
-                    default_row(lp),
+                    &plugin.manifest.id,
+                    default_row(plugin),
                     enable,
                     |row| {
                         serde_json::to_value(PluginResult {
@@ -723,42 +717,12 @@ async fn dispatch_checked<D: Directory>(
         }
         "plugins.preview" => {
             let i: PluginInput = decode(input)?;
-            let lp = state
+            let plugin = state
                 .registry
                 .get(&i.plugin_id)
                 .ok_or_else(|| HostError::not_found("plugin is not registered"))?
                 .clone();
-            // Preview never activates and never touches user data: the worker
-            // sees only fixed fixture text.
-            let view = if lp.worker.is_some() {
-                let node = state
-                    .node
-                    .as_ref()
-                    .ok_or_else(|| HostError::unavailable("Node runtime unavailable"))?;
-                let r = run_summarize(
-                    node,
-                    &lp,
-                    WorkerResource {
-                        id: PREVIEW_RESOURCE_ID.into(),
-                        space_id: i.space_id.clone(),
-                        revision: "preview-fixture".into(),
-                        title: "Preview fixture".into(),
-                        markdown: PREVIEW_FIXTURE.into(),
-                    },
-                )
-                .await?;
-                r.view
-            } else {
-                lp.manifest
-                    .views
-                    .first()
-                    .map(|v| v.view.clone())
-                    .ok_or_else(|| HostError::not_found("plugin has no views"))?
-            };
-            to_value(PluginPreviewResult {
-                view,
-                preview: True,
-            })
+            preview(state, p, plugin, &i.space_id).await
         }
         _ => Err(HostError::unavailable(
             "operation has no host binding in this preview",
@@ -797,67 +761,205 @@ fn replay_receipt(
     Ok(Some(r.result))
 }
 
-fn default_row(lp: &LoadedPlugin) -> PluginRow {
-    PluginRow {
-        enabled: lp.entry.default_enabled && lp.unavailable.is_none(),
-        generation: 1,
-    }
+fn default_row(plugin: &Plugin) -> PluginRow {
+    crate::plugins::default_row(plugin)
 }
 
-fn plugin_state(s: &Store, space: &str, lp: &LoadedPlugin) -> Result<PluginState, HostError> {
-    let row = s
-        .plugin_row(space, &lp.manifest.id)?
-        .unwrap_or_else(|| default_row(lp));
+fn plugin_state(s: &Store, space: &str, plugin: &Plugin) -> Result<PluginState, HostError> {
+    let row = activation(s, space, plugin)?;
     Ok(PluginState {
-        manifest: lp.manifest.clone(),
-        enabled: row.enabled && lp.unavailable.is_none(),
+        manifest: plugin.wire.clone(),
+        enabled: row.enabled,
         generation: row.generation,
     })
 }
 
-async fn summarize<D: Directory>(
+/// Wire shape of an item-targeted plugin operation without a core-contract entry:
+/// exactly `{ "id": <string>, "space_id"?: <string> }`. Cost: O(keys).
+fn validate_item_input(input: &JsonObject) -> Result<(), HostError> {
+    let shape = HostError::invalid_input("input does not match operation schema");
+    if input.keys().any(|k| k != "id" && k != "space_id")
+        || !input
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty() && id.len() <= 128)
+        || input.get("space_id").is_some_and(|v| !v.is_string())
+    {
+        return Err(shape);
+    }
+    Ok(())
+}
+
+/// Map a worker outcome onto the wire, after the caller's delivery checks.
+fn outcome_value(outcome: Outcome) -> Result<Value, HostError> {
+    match outcome {
+        Outcome::Complete(value) => Ok(value),
+        Outcome::InvalidInput => Err(HostError::invalid_input(
+            "input does not match operation schema",
+        )),
+        Outcome::Refused => Err(HostError::unavailable("extension request was refused")),
+        Outcome::Failed(e) => Err(e),
+    }
+}
+
+/// A portable view in a plugin result must pass the same checks as the v0 host:
+/// bounded tree, unique IDs, and actions only to declared read-only operations.
+/// Cost: one view decode and validation when the result carries `view`.
+fn check_view(plugin: &Plugin, value: &Value) -> Result<(), HostError> {
+    let Some(view) = value.get("view") else {
+        return Ok(());
+    };
+    let rejected = || {
+        tracing::warn!(plugin = %plugin.manifest.id, "worker view rejected");
+        HostError::unavailable("extension returned an invalid view")
+    };
+    let view: calternal_core::GenUiView =
+        serde_json::from_value(view.clone()).map_err(|_| rejected())?;
+    calternal_core::validate_extension_view(&view, &plugin.wire).map_err(|_| rejected())
+}
+
+/// Invoke a manifest-declared operation on its (plugin, space) worker.
+///
+/// Admission (already done by the caller) checked the manifest-derived policy.
+/// Here: the plugin must be enabled; its activation generation is captured; every
+/// host call and the delivery are rechecked by the broker; then, as before, the
+/// result is discarded if the generation changed (conflict) or the caller's space
+/// access no longer holds. The HTTP guard rechecks the session on delivery.
+async fn invoke_plugin<D: Directory>(
     state: Shared<D>,
-    lp: LoadedPlugin,
-    i: &NotesGetInput,
+    p: Identity,
+    request_id: &str,
+    op: &str,
+    policy: authz::Policy,
+    mut input: JsonObject,
 ) -> Result<Value, HostError> {
-    let node = state
-        .node
-        .clone()
-        .ok_or_else(|| HostError::unavailable("Node runtime unavailable"))?;
-    let (space, id) = (i.space_id.clone(), i.id.clone());
-    let lp2 = lp.clone();
-    // Authorized canonical read + generation capture under the same lock.
-    let (note, generation) = blocking(&state, move |s| {
-        let ps = plugin_state(s, &space, &lp2)?;
-        if !ps.enabled {
+    let plugin = state
+        .registry
+        .owner_of_operation(op)
+        .ok_or_else(|| HostError::not_found("unknown operation"))?
+        .clone();
+    let space = match input.remove("space_id") {
+        Some(Value::String(space)) => space,
+        _ => return Err(HostError::invalid_input("input does not match operation schema")),
+    };
+    let plugin_input = match plugin.item_operation(op) {
+        Some(binding) => {
+            let id = input.remove("id").unwrap_or(Value::Null);
+            serde_json::json!({ binding.field.clone(): id })
+        }
+        None => Value::Object(input.into_iter().collect()),
+    };
+    let (space_key, plugin2, account) = (space.clone(), plugin.clone(), p.id.clone());
+    let (generation, (account_id, space_id)) = blocking(&state, move |s| {
+        let row = activation(s, &space_key, &plugin2)?;
+        if !row.enabled {
             return Err(HostError::forbidden("plugin is disabled in this space"));
         }
-        Ok((s.get(&space, &id)?, ps.generation))
+        Ok((row.generation, s.worker_ids(&account, &space_key)?))
     })
     .await?;
-    let result = run_summarize(
-        &node,
-        &lp,
-        WorkerResource {
-            id: note.id.clone(),
-            space_id: note.space_id.clone(),
-            revision: note.revision.clone(),
-            title: note.title.clone(),
-            markdown: note.markdown,
-        },
-    )
-    .await?;
-    // Reauthorize delivery: plugin must still be enabled at the same generation.
-    let space = i.space_id.clone();
-    let lp3 = lp.clone();
-    let still = blocking(&state, move |s| plugin_state(s, &space, &lp3)).await?;
+    let ids = calternal_plugin_host::AccountId::parse(&account_id)
+        .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
+    let Ok((account_id, space_id)) = ids else {
+        return Err(HostError::unavailable(
+            "plugin workers need UUIDv7 account and space identities",
+        ));
+    };
+    let host = SpaceHost::new(
+        state.clone(),
+        p.clone(),
+        space.clone(),
+        plugin.clone(),
+        generation,
+        request_id.to_owned(),
+    );
+    let outcome = state
+        .workers
+        .invoke(
+            &plugin,
+            &space,
+            space_id,
+            Call {
+                operation: op.to_owned(),
+                input: plugin_input,
+                account: account_id,
+                host: Arc::new(host),
+            },
+        )
+        .await;
+    // Delivery checks run whatever the worker answered, so a refusal caused by a
+    // revocation reports the same error the revocation itself would.
+    let (space_key, plugin2) = (space.clone(), plugin.clone());
+    let still = blocking(&state, move |s| activation(s, &space_key, &plugin2)).await?;
     if !still.enabled || still.generation != generation {
         return Err(HostError::conflict(
             "plugin state changed during invocation; result discarded",
         )
         .with_details(serde_json::json!({ "reason": "plugin_generation_changed" })));
     }
-    to_value(result)
+    let st = state.clone();
+    let delivery = space.clone();
+    tokio::task::spawn_blocking(move || policy.authorize_space(&st.tokens, &p, &delivery))
+        .await
+        .map_err(|_| HostError::internal("directory task failed"))??;
+    let value = outcome_value(outcome)?;
+    check_view(&plugin, &value)?;
+    Ok(wire_spaces(&state.tokens, value))
+}
+
+/// Preview a plugin without activating it or touching user data: its first
+/// item-targeted operation runs against the fixed fixture item, served by a
+/// broker that refuses every other host call. A plugin with no worker or no
+/// item-targeted operation has nothing to preview (not found).
+async fn preview<D: Directory>(
+    state: Shared<D>,
+    p: Identity,
+    plugin: Arc<Plugin>,
+    space: &str,
+) -> Result<Value, HostError> {
+    let binding = plugin
+        .entry
+        .item_operations
+        .first()
+        .filter(|_| plugin.entry.worker.is_some())
+        .ok_or_else(|| HostError::not_found("plugin has no views"))?
+        .clone();
+    let (space_key, account) = (space.to_owned(), p.id.clone());
+    let (account_id, space_id) =
+        blocking(&state, move |s| s.worker_ids(&account, &space_key)).await?;
+    let ids = calternal_plugin_host::AccountId::parse(&account_id)
+        .and_then(|a| calternal_plugin_host::SpaceId::parse(&space_id).map(|s| (a, s)));
+    let Ok((account_id, space_id)) = ids else {
+        return Err(HostError::unavailable(
+            "plugin workers need UUIDv7 account and space identities",
+        ));
+    };
+    let outcome = state
+        .workers
+        .invoke(
+            &plugin,
+            space,
+            space_id,
+            Call {
+                operation: binding.operation.clone(),
+                input: serde_json::json!({ binding.field.clone(): PREVIEW_ITEM_ID }),
+                account: account_id,
+                host: Arc::new(PreviewHost { kind: binding.kind }),
+            },
+        )
+        .await;
+    let value = outcome_value(outcome)?;
+    check_view(&plugin, &value)?;
+    let view = value
+        .get("view")
+        .cloned()
+        .ok_or_else(|| HostError::not_found("plugin has no views"))?;
+    let view = serde_json::from_value(view)
+        .map_err(|_| HostError::unavailable("extension returned an invalid view"))?;
+    to_value(PluginPreviewResult {
+        view,
+        preview: True,
+    })
 }
 
 async fn mutate_note<D: Directory>(

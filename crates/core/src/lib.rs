@@ -7,3 +7,6 @@ pub use spaces::*;
 mod validation;
 pub use models::*;
 pub use validation::*;
+
+mod plugin_manifest;
+pub use plugin_manifest::*;

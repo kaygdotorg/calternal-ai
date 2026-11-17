@@ -102,8 +102,8 @@ impl Fixture {
             let state = Arc::new(AppState {
                 store: Mutex::new(Store::open(&root).unwrap()),
                 tokens,
-                registry: Registry { plugins: vec![] },
-                node: None,
+                registry: Registry::empty(),
+                workers: calternal_server::plugins::WorkerPool::new(None),
                 allowed_hosts: allowed_hosts(0),
             });
             Self {

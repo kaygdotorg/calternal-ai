@@ -29,7 +29,7 @@ impl Fixture {
             store: Mutex::new(store),
             tokens,
             registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
-            node: None,
+            workers: calternal_server::plugins::WorkerPool::new(None),
             allowed_hosts: Vec::new(),
         });
         Self {

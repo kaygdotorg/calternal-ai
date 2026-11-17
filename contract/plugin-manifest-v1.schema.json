@@ -1,0 +1,675 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ManifestV1",
+  "description": "Plugin menu read without running plugin code; all fields are required.",
+  "type": "object",
+  "required": [
+    "api_version",
+    "attention",
+    "collections",
+    "hooks",
+    "host_calls",
+    "icon",
+    "id",
+    "kinds",
+    "name",
+    "operations",
+    "schedules",
+    "secrets",
+    "settings",
+    "themes",
+    "version",
+    "views",
+    "webhooks"
+  ],
+  "properties": {
+    "api_version": {
+      "description": "Manifest API version, currently 1.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0.0
+    },
+    "attention": {
+      "description": "Attention sources.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestAttention"
+      }
+    },
+    "collections": {
+      "description": "Collection provisioning templates.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestCollection"
+      }
+    },
+    "hooks": {
+      "description": "Space-scoped watch or block hooks.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestHook"
+      }
+    },
+    "host_calls": {
+      "description": "Broker calls the worker may request; each still needs live authorization.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/HostCallKind"
+      }
+    },
+    "icon": {
+      "description": "Registered icon identifier.",
+      "type": "string"
+    },
+    "id": {
+      "description": "Stable plugin identifier.",
+      "type": "string"
+    },
+    "kinds": {
+      "description": "Kinds offered by this plugin.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestKind"
+      }
+    },
+    "name": {
+      "description": "Human-readable plugin name.",
+      "type": "string"
+    },
+    "operations": {
+      "description": "Public operation schemas and policy.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestOperation"
+      }
+    },
+    "schedules": {
+      "description": "Schedule declarations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestSchedule"
+      }
+    },
+    "secrets": {
+      "description": "Requested secret names only; no values.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "settings": {
+      "description": "Typed space settings.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestSetting"
+      }
+    },
+    "themes": {
+      "description": "Packaged theme declarations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestTheme"
+      }
+    },
+    "version": {
+      "description": "Exact package version.",
+      "type": "string"
+    },
+    "views": {
+      "description": "Shell region component references.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestView"
+      }
+    },
+    "webhooks": {
+      "description": "Webhook declarations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ManifestWebhook"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "HostCallKind": {
+      "description": "The only broker methods a worker may request.",
+      "oneOf": [
+        {
+          "description": "Read an authorized item.",
+          "type": "string",
+          "enum": [
+            "read_item"
+          ]
+        },
+        {
+          "description": "Write an authorized item.",
+          "type": "string",
+          "enum": [
+            "write_item"
+          ]
+        },
+        {
+          "description": "List an authorized collection.",
+          "type": "string",
+          "enum": [
+            "list_collection"
+          ]
+        },
+        {
+          "description": "Emit an authorized event.",
+          "type": "string",
+          "enum": [
+            "emit_event"
+          ]
+        },
+        {
+          "description": "Request durable job admission.",
+          "type": "string",
+          "enum": [
+            "start_job"
+          ]
+        },
+        {
+          "description": "Request a scoped opaque handle, never secret bytes.",
+          "type": "string",
+          "enum": [
+            "request_secret_handle"
+          ]
+        }
+      ]
+    },
+    "ManifestAttention": {
+      "description": "Authorized attention candidates; the shell selects at most three.",
+      "type": "object",
+      "required": [
+        "id",
+        "operation"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable attention source identifier.",
+          "type": "string"
+        },
+        "operation": {
+          "description": "Declared operation providing candidates.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestCapability": {
+      "description": "Closed host vocabulary, matching protected host capability names.",
+      "oneOf": [
+        {
+          "description": "Read authorized space content.",
+          "type": "string",
+          "enum": [
+            "space.read"
+          ]
+        },
+        {
+          "description": "Write authorized space content.",
+          "type": "string",
+          "enum": [
+            "content.write"
+          ]
+        },
+        {
+          "description": "Use installed plugins.",
+          "type": "string",
+          "enum": [
+            "plugins.use"
+          ]
+        },
+        {
+          "description": "Manage shared plugin installations.",
+          "type": "string",
+          "enum": [
+            "plugins.manage"
+          ]
+        },
+        {
+          "description": "Invite space members.",
+          "type": "string",
+          "enum": [
+            "members.invite"
+          ]
+        },
+        {
+          "description": "Manage ordinary space members.",
+          "type": "string",
+          "enum": [
+            "members.manage"
+          ]
+        },
+        {
+          "description": "Manage Managers; owner constraints still apply.",
+          "type": "string",
+          "enum": [
+            "managers.manage"
+          ]
+        },
+        {
+          "description": "Change shared settings.",
+          "type": "string",
+          "enum": [
+            "space.settings"
+          ]
+        },
+        {
+          "description": "Explicitly transfer ownership.",
+          "type": "string",
+          "enum": [
+            "space.transfer"
+          ]
+        },
+        {
+          "description": "Delete a space.",
+          "type": "string",
+          "enum": [
+            "space.delete"
+          ]
+        },
+        {
+          "description": "List the acting account memberships.",
+          "type": "string",
+          "enum": [
+            "spaces.list"
+          ]
+        },
+        {
+          "description": "Create a space for the acting account.",
+          "type": "string",
+          "enum": [
+            "spaces.create"
+          ]
+        }
+      ]
+    },
+    "ManifestCollection": {
+      "description": "Provisioning template; the host allocates a fresh Collection UUID per enable.",
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ],
+      "properties": {
+        "id": {
+          "description": "Globally unique template identifier, never a Collection address.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind of items in this collection.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name for provisioned collections.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestHook": {
+      "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
+      "type": "object",
+      "required": [
+        "id",
+        "mode",
+        "operation",
+        "patterns"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable hook identifier.",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Watch or block only.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestHookMode"
+            }
+          ]
+        },
+        "operation": {
+          "description": "Declared operation implementing the hook.",
+          "type": "string"
+        },
+        "patterns": {
+          "description": "Exact operation IDs or namespace patterns ending in .* .",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestHookMode": {
+      "description": "Hooks observe or block; rewriting is unavailable.",
+      "oneOf": [
+        {
+          "description": "Observe permitted matching operations.",
+          "type": "string",
+          "enum": [
+            "watch"
+          ]
+        },
+        {
+          "description": "Return proceed, wait or reject under a host deadline.",
+          "type": "string",
+          "enum": [
+            "block"
+          ]
+        }
+      ]
+    },
+    "ManifestIdempotency": {
+      "description": "Retry behavior declared by an operation.",
+      "oneOf": [
+        {
+          "description": "Read with no durable effect.",
+          "type": "string",
+          "enum": [
+            "read_only"
+          ]
+        },
+        {
+          "description": "Host receipt required before durable effects.",
+          "type": "string",
+          "enum": [
+            "request_id"
+          ]
+        },
+        {
+          "description": "Automatic retry prohibited; reconcile uncertain outcomes.",
+          "type": "string",
+          "enum": [
+            "never"
+          ]
+        }
+      ]
+    },
+    "ManifestKind": {
+      "description": "Kind identity remains independent of plugin identity.",
+      "type": "object",
+      "required": [
+        "claimed_text",
+        "id",
+        "schema",
+        "storage"
+      ],
+      "properties": {
+        "claimed_text": {
+          "description": "True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Stable kind name used in item addresses.",
+          "type": "string"
+        },
+        "schema": {
+          "description": "JSON Schema for the kind content; no executable code."
+        },
+        "storage": {
+          "description": "Placement within the selected per-space userdata tree; never an appdata database path.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestPlacement"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestOperation": {
+      "description": "Public operation declaration consumed by host policy.",
+      "type": "object",
+      "required": [
+        "id",
+        "idempotency",
+        "input_schema",
+        "mutates",
+        "output_schema",
+        "required_capability"
+      ],
+      "properties": {
+        "id": {
+          "description": "Globally unique operation identifier.",
+          "type": "string"
+        },
+        "idempotency": {
+          "description": "Retry and host receipt contract.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestIdempotency"
+            }
+          ]
+        },
+        "input_schema": {
+          "description": "JSON Schema of operation input."
+        },
+        "mutates": {
+          "description": "Whether this operation can produce durable effects.",
+          "type": "boolean"
+        },
+        "output_schema": {
+          "description": "JSON Schema of successful output."
+        },
+        "required_capability": {
+          "description": "Required current host capability.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestCapability"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestPlacement": {
+      "description": "Placement inside a space userdata tree; hidden files belong to the declaring plugin.",
+      "anyOf": [
+        {
+          "description": "User-visible top-level folder; the host rejects cross-plugin folder claims.",
+          "type": "object",
+          "required": [
+            "folder"
+          ],
+          "properties": {
+            "folder": {
+              "description": "One NFC folder component, with no leading dot or reserved name.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "description": "Plugin-owned files ordinary people need not see.",
+          "type": "object",
+          "required": [
+            "hidden"
+          ],
+          "properties": {
+            "hidden": {
+              "description": "Must be true; placement is `.calternal/<plugin-id>/<kind>/` within userdata.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ManifestRegion": {
+      "description": "Shell region populated by a component reference.",
+      "oneOf": [
+        {
+          "description": "App sidebar body.",
+          "type": "string",
+          "enum": [
+            "sidebar"
+          ]
+        },
+        {
+          "description": "Main card.",
+          "type": "string",
+          "enum": [
+            "main"
+          ]
+        },
+        {
+          "description": "Panel in the right card.",
+          "type": "string",
+          "enum": [
+            "right_card"
+          ]
+        }
+      ]
+    },
+    "ManifestSchedule": {
+      "description": "Schedule declaration; durable execution belongs to the host.",
+      "type": "object",
+      "required": [
+        "expression",
+        "id",
+        "operation"
+      ],
+      "properties": {
+        "expression": {
+          "description": "Schedule expression; activation awaits host scheduler validation.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable schedule identifier.",
+          "type": "string"
+        },
+        "operation": {
+          "description": "Declared operation to invoke.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestSetting": {
+      "description": "Typed space setting; secrets use separate handles.",
+      "type": "object",
+      "required": [
+        "default",
+        "id",
+        "value_type"
+      ],
+      "properties": {
+        "default": {
+          "description": "Default setting value."
+        },
+        "id": {
+          "description": "Stable setting identifier.",
+          "type": "string"
+        },
+        "value_type": {
+          "description": "Primitive type of the default and stored values.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestSettingType"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestSettingType": {
+      "description": "Primitive setting value type.",
+      "oneOf": [
+        {
+          "description": "UTF-8 text.",
+          "type": "string",
+          "enum": [
+            "string"
+          ]
+        },
+        {
+          "description": "Boolean value.",
+          "type": "string",
+          "enum": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Finite JSON number.",
+          "type": "string",
+          "enum": [
+            "number"
+          ]
+        }
+      ]
+    },
+    "ManifestTheme": {
+      "description": "Network-free theme asset; protected surfaces cannot be themed.",
+      "type": "object",
+      "required": [
+        "id",
+        "stylesheet"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable theme identifier.",
+          "type": "string"
+        },
+        "stylesheet": {
+          "description": "Relative packaged CSS asset; activation requires sealed theme validation.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestView": {
+      "description": "Component reference only; component format is separately versioned.",
+      "type": "object",
+      "required": [
+        "component",
+        "id",
+        "region"
+      ],
+      "properties": {
+        "component": {
+          "description": "Registered component identifier; no inline code.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable contribution identifier.",
+          "type": "string"
+        },
+        "region": {
+          "description": "Shell region.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestRegion"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestWebhook": {
+      "description": "Webhook declaration; this does not mount an HTTP route.",
+      "type": "object",
+      "required": [
+        "id",
+        "operation"
+      ],
+      "properties": {
+        "id": {
+          "description": "Stable webhook identifier.",
+          "type": "string"
+        },
+        "operation": {
+          "description": "Declared operation receiving authorized webhook input.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

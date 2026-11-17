@@ -12,6 +12,7 @@ import {
   validateExtensionView,
   validateGenUiView,
   validateOperationRequest,
+  validateManifestV1,
   validatePluginManifest,
   validateWorkerRequest,
   validateWorkerResponse,
@@ -47,10 +48,10 @@ test("operation request fixture corpus has the same accept/reject outcomes", asy
   expectInvalid(() => parseOperationRequest(Buffer.alloc(2 * 1024 * 1024 + 1)), /exceeds/);
 });
 
-test("repo Notes and extension manifests satisfy the frozen SDK schema", async () => {
+test("repo Notes (manifest v1) and legacy extension fixture satisfy their SDK schemas", async () => {
   const notes = await fixture("plugins/notes/manifest.json");
-  const insights = await fixture("plugins/notes-insights/manifest.json");
-  assert.equal(validatePluginManifest(notes).id, "notes");
+  const insights = await fixture("packages/plugin-sdk/test/fixtures/legacy-insights.json");
+  assert.equal(validateManifestV1(notes).id, "notes");
   assert.equal(validatePluginManifest(insights).id, "notes-insights");
 
   expectInvalid(() => validatePluginManifest({ ...insights, browser_code: "alert(1)" }), /unknown field/);
@@ -59,7 +60,7 @@ test("repo Notes and extension manifests satisfy the frozen SDK schema", async (
 });
 
 test("extension actions must be declared, schema-valid and host-read-only", async () => {
-  const insights = await fixture("plugins/notes-insights/manifest.json");
+  const insights = await fixture("packages/plugin-sdk/test/fixtures/legacy-insights.json");
   const resourceId = "11111111-1111-4111-8111-111111111111";
   const getManifest = {
     ...insights,

@@ -222,7 +222,7 @@ async fn serve(
         store: Mutex::new(store),
         tokens,
         registry,
-        node,
+        workers: plugins::WorkerPool::new(node),
         allowed_hosts: hosts,
     });
     let app = api::router(state, web_dir.clone());

@@ -10,6 +10,7 @@ license = "AGPL-3.0-only"
 
 [workspace.dependencies]
 calternal-content = { path = "crates/content" }
+calternal-plugin-host = { path = "crates/plugin-host" }
 calternal-recovery = { path = "crates/recovery" }
 calternal-store = { path = "crates/store" }
 calternal-auth = { path = "crates/auth" }

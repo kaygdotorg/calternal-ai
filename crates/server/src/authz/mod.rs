@@ -8,6 +8,8 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+use std::borrow::Cow;
+
 use calternal_core::JsonObject;
 
 pub mod capabilities;
@@ -34,17 +36,19 @@ pub enum Scope {
 pub enum Constraint {
     /// No extra authority-bearing state beyond space membership and resource scope.
     None,
-    /// Enable requires available dependencies; disable refuses enabled dependents.
-    PluginDependencies,
-    /// Invocation requires an enabled plugin, and delivery requires unchanged
-    /// enablement/generation plus a fresh directory capability check after worker exit.
+    /// Manifest-derived plugin operation: invocation requires an enabled plugin, every
+    /// brokered host call rechecks it, and delivery requires unchanged
+    /// enablement/generation plus a fresh directory capability check.
     PluginInvocation,
 }
 
-/// Immutable host policy associated with one operation binding.
+/// Immutable policy associated with one operation binding: a host row from
+/// [`POLICIES`] or a row derived from a registered plugin manifest.
+/// Cloning a host row copies a borrowed name; a plugin row clones its owned name.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Policy {
     /// Exact operation identifier, matching discovery and the handler binding.
-    pub operation: &'static str,
+    pub operation: Cow<'static, str>,
     /// Single capability required from the current directory, including on retries.
     pub required: Capability,
     /// Input scope and the required storage resource binding.
@@ -54,126 +58,123 @@ pub struct Policy {
 }
 
 /// Exhaustive host binding policies; new bindings must add a policy and matrix row.
-/// Unbound plugin operations fail closed instead of receiving inferred authority.
+/// Plugin operations are never listed here: their rows are derived from registered
+/// manifests by [`crate::plugins::Registry`], and an operation with neither row fails
+/// closed instead of receiving inferred authority.
 pub const POLICIES: &[Policy] = &[
     // The resolver derives and checks space.read itself; there is no supplied space.
     Policy {
-        operation: "resolve",
+        operation: Cow::Borrowed("resolve"),
         required: Capability::SpaceRead,
         scope: Scope::Account,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.list",
+        operation: Cow::Borrowed("spaces.list"),
         required: Capability::SpacesList,
         scope: Scope::Account,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.create",
+        operation: Cow::Borrowed("spaces.create"),
         required: Capability::SpacesCreate,
         scope: Scope::Account,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.members",
+        operation: Cow::Borrowed("spaces.members"),
         required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.set_role",
+        operation: Cow::Borrowed("spaces.set_role"),
         required: Capability::MembersManage,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.remove_member",
+        operation: Cow::Borrowed("spaces.remove_member"),
         required: Capability::MembersManage,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.leave",
+        operation: Cow::Borrowed("spaces.leave"),
         required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.transfer",
+        operation: Cow::Borrowed("spaces.transfer"),
         required: Capability::SpaceTransfer,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "spaces.delete",
+        operation: Cow::Borrowed("spaces.delete"),
         required: Capability::SpaceDelete,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "notes.list",
+        operation: Cow::Borrowed("notes.list"),
         required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "notes.get",
+        operation: Cow::Borrowed("notes.get"),
         required: Capability::SpaceRead,
         scope: Scope::Note,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "notes.history",
+        operation: Cow::Borrowed("notes.history"),
         required: Capability::SpaceRead,
         scope: Scope::Note,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "notes.create",
+        operation: Cow::Borrowed("notes.create"),
         required: Capability::ContentWrite,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "notes.update",
+        operation: Cow::Borrowed("notes.update"),
         required: Capability::ContentWrite,
         scope: Scope::Note,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "plugins.list",
+        operation: Cow::Borrowed("plugins.list"),
         required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "plugins.enable",
+        operation: Cow::Borrowed("plugins.enable"),
         required: Capability::PluginsManage,
-        scope: Scope::Space,
-        constraint: Constraint::PluginDependencies,
-    },
-    Policy {
-        operation: "plugins.disable",
-        required: Capability::PluginsManage,
-        scope: Scope::Space,
-        constraint: Constraint::PluginDependencies,
-    },
-    Policy {
-        operation: "plugins.preview",
-        required: Capability::SpaceRead,
         scope: Scope::Space,
         constraint: Constraint::None,
     },
     Policy {
-        operation: "notes-insights.summarize",
+        operation: Cow::Borrowed("plugins.disable"),
+        required: Capability::PluginsManage,
+        scope: Scope::Space,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: Cow::Borrowed("plugins.preview"),
         required: Capability::SpaceRead,
-        scope: Scope::Note,
-        constraint: Constraint::PluginInvocation,
+        scope: Scope::Space,
+        constraint: Constraint::None,
     },
 ];
 
-/// Find an explicit policy using a bounded, allocation-free scan.
+/// Find an explicit host policy using a bounded, allocation-free scan.
+/// Plugin rows are looked up through [`crate::plugins::Registry::policy`].
 pub fn policy(operation: &str) -> Option<&'static Policy> {
     POLICIES.iter().find(|p| p.operation == operation)
 }

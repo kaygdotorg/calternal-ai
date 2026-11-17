@@ -7,7 +7,7 @@ import type {
   WorkerResponse,
 } from "@calternal/contracts";
 
-/** Operation and worker transport version supported by the SDK. */
+/** Frozen preview operation/snapshot-worker version; worker-v2 envelopes carry version 2. */
 export const PROTOCOL_VERSION = 1 as const;
 /** Portable declarative view version supported by the SDK. */
 export const GENUI_VERSION = 1 as const;
@@ -383,6 +383,7 @@ export function parseOperationRequest(input: string | Uint8Array): OperationRequ
 }
 
 /**
+ * @deprecated Use validateManifestV1 for new plugin menus; this frozen preview remains for existing callers.
  * Validate plugin declarations, unique operation/view IDs and all read-only contributions. Does not load code or grant capabilities. Cost includes contributed views and action-input validation.
  * @returns The validated value without an additional clone.
  * @throws {@link ContractValidationError} if decoding, shape, value, correlation or budget checks fail.
@@ -527,3 +528,40 @@ export function parseWorkerResponse(input: string | Uint8Array, invocationId: st
   const response = validateWorkerResponse(decodeJson(input, MAX_WORKER_OUTPUT_BYTES, "worker output"), invocationId);
   return response;
 }
+
+
+/** Manifest v1: validateManifestV1; validation requests no authority and performs no I/O. */
+export { validateManifestV1 } from "./manifest-v1.js";
+
+/** Manifest v1: HostCallKind; validation requests no authority and performs no I/O. */
+export { HostCallKind } from "./manifest-v1.js";
+
+/** Worker v2: parseWorkerFrameV2; bounded transport and host-authorized effects. */
+export { parseWorkerFrameV2 } from "./worker-v2.js";
+
+/** Worker v2: encodeWorkerFrameV2; bounded transport and host-authorized effects. */
+export { encodeWorkerFrameV2 } from "./worker-v2.js";
+
+/** Worker v2: MAX_V2_FRAME_BYTES; bounded transport and host-authorized effects. */
+export { MAX_V2_FRAME_BYTES } from "./worker-v2.js";
+
+/** Worker v2: MAX_V2_PENDING; bounded transport and host-authorized effects. */
+export { MAX_V2_PENDING } from "./worker-v2.js";
+
+/** Worker v2: InvocationAuthority; bounded transport and host-authorized effects. */
+export { InvocationAuthority } from "./worker-v2.js";
+
+/** Worker v2: WorkerMessageV2; bounded transport and host-authorized effects. */
+export { WorkerMessageV2 } from "./worker-v2.js";
+
+/** Worker v2: WorkerFrameV2; bounded transport and host-authorized effects. */
+export { WorkerFrameV2 } from "./worker-v2.js";
+
+/** Worker v2: WorkerContextV2; bounded transport and host-authorized effects. */
+export { WorkerContextV2 } from "./worker-v2.js";
+
+/** Worker v2: WorkerHandlerV2; bounded transport and host-authorized effects. */
+export { WorkerHandlerV2 } from "./worker-v2.js";
+
+/** Worker v2: WorkerRuntimeV2; bounded transport and host-authorized effects. */
+export { WorkerRuntimeV2 } from "./worker-v2.js";
