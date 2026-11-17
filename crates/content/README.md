@@ -10,8 +10,10 @@ and **userdata-hdd** (other originals). The current `calternal-roots::Roots`
 field names are used at its API boundary until that crate's separate rename.
 Callers retain its root guards. The disposable server helper places the two
 userdata trees inside its data directory; it is not production mount validation.
-Production callers use `Store::open_roots` with independently validated roots
-and a journal-witness root outside appdata backups.
+The host adapter `Store::open` validates and locks the supplied roots and retains
+those guards during background placement. The witness root is `<appdata>/secrets`;
+production backup policy must keep independent witnesses outside restored state.
+This preview is not proof of complete file-only or rollback recovery.
 
 | Location | Contents |
 | --- | --- |

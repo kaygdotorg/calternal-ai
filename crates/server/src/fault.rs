@@ -4,7 +4,7 @@
 /// Durable write boundaries available to disposable crash tests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultPoint {
-    /// SQLite committed the revision and receipt, before materialization.
+    /// Content revision and publication intent committed, before journal publication.
     AfterCommit,
     /// Materialization is about to publish the new file bytes.
     BeforePlacement,

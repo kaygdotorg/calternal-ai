@@ -22,6 +22,32 @@ fn open_retaining(path: &Path, fault: fn(FaultPoint), retention: Duration) -> Co
     )
     .unwrap()
 }
+/// Observe the post-fsync bookkeeping mark without forcing publication or placement.
+fn wait_for_placement(path: &Path, space: SpaceId, item: uuid::Uuid) {
+    let conn = rusqlite::Connection::open_with_flags(
+        path.join(format!("appdata/spaces/{space}/content.db")),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    loop {
+        let done: bool = conn
+            .query_row(
+                "SELECT mat_state='materialized' FROM items WHERE id=?1",
+                [item.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if done {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "userdata placement exceeded one second"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
 fn request(account: AccountId, id: &str) -> Request<'_> {
     Request {
         account,
@@ -223,7 +249,7 @@ fn human_names_collisions_renames_and_registered_hidden_placement() {
         )
         .unwrap();
     assert_eq!(renamed.id, one.id);
-    content.materialize(space, one.id).unwrap();
+    wait_for_placement(dir.path(), space, one.id);
     let path = content.file_path(space, "notes", one.id).unwrap();
     assert_eq!(path.file_name().unwrap(), "CAFÉ.md");
     assert_eq!(
@@ -520,29 +546,9 @@ fn acknowledged_content_materializes_without_another_request() {
             |_| json!({}),
         )
         .unwrap();
-    let path = content.file_path(space, "notes", item.id).unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(1);
-    loop {
-        let db = rusqlite::Connection::open(
-            dir.path()
-                .join(format!("appdata/spaces/{space}/content.db")),
-        )
-        .unwrap();
-        let done: bool = db
-            .query_row(
-                "SELECT mat_state='materialized' FROM items WHERE id=?1",
-                [item.id.to_string()],
-                |r| r.get(0),
-            )
-            .unwrap();
-        if done {
-            break;
-        }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "materialization exceeded one second"
-        );
-        std::thread::sleep(Duration::from_millis(2));
-    }
+    let path = dir
+        .path()
+        .join(format!("userdata-ssd/spaces/{space}/Notes/Async.md"));
+    wait_for_placement(dir.path(), space, item.id);
     assert!(std::fs::read_to_string(path).unwrap().ends_with("durable"));
 }

@@ -389,16 +389,6 @@ impl Content {
             Ok(s.files.join(path))
         })
     }
-    /// Finishes pending file placement without changing the committed revision.
-    /// Cost: cache/space locks, head bytes/hash allocation; pending placement reads
-    /// at most the old/new file, then fsio fsyncs file and parent plus one NORMAL replayable SQL
-    /// bookkeeping update. Materialized items need only metadata reads.
-    pub fn materialize(&self, space: SpaceId, id: Uuid) -> Result<()> {
-        self.with_space(space, |s| {
-            self.publish_pending(s)?;
-            s.place(id, self.fault)
-        })
-    }
     /// Reads one per-space control value, such as a plugin's enablement, from the
     /// space's own database. Callers authorize the space first.
     /// Cost: the space's lock and one indexed read; no other space is touched.
@@ -422,7 +412,7 @@ impl Content {
     /// commit with an outbox intent in one FULL transaction, then the receipt is
     /// published to the space's journal. Callers authorize the space first.
     /// Cost: the space's lock (this space only), one receipt read, one FULL
-    /// content transaction and one FULL journal commit.
+    /// content transaction, one FULL journal commit and one FULL outbox retirement.
     pub fn set_control(
         &self,
         space: SpaceId,

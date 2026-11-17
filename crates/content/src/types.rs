@@ -77,7 +77,8 @@ pub struct Receipt {
     pub fingerprint: String,
     /// Original operation payload.
     pub result: Value,
-    /// Item whose materialization must finish before replay.
+    /// Optional affected item for trusted host bookkeeping; grants no access.
+    /// Replay uses the durable SSD result, independently of userdata placement.
     pub item: Option<Uuid>,
 }
 /// Durable boundaries exposed to trusted crash tests; no environment hooks in this crate.

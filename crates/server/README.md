@@ -123,15 +123,15 @@ Each space's `appdata/spaces/<space-uuid>/content.db` (WAL, `synchronous=FULL`) 
 A write proceeds as follows:
 
 1. **Commit.** One transaction commits the full revision, the receipt `(principal, request_id) → operation, SHA-256 fingerprint of canonical input, result` and `mat_state=pending`.
-2. **Check the existing file.** It must be missing on a first write, or match the SHA-256 recorded at the last placement. Symlinks and non-regular files never pass.
+2. **Check the existing file.** It must be missing on a first write, or match the BLAKE3 recorded at the last placement. Symlinks and non-regular files never pass.
 3. **Acknowledge durable SSD state.** Content/history, journal/receipt and outbox retirement are durable before the response. Retirement stays FULL so a power loss cannot resurrect an intent after its receipt expires.
 4. **Place and mark within one second.** The existing content lifecycle worker wakes after commit, writes a temp file, fsyncs it, renames it over the target, and fsyncs the directory. Newly created ancestry is also fsynced. It marks `mat_state=materialized` with the new hash using NORMAL, replayable bookkeeping. The oldest pending age never resets; overdue placement blocks further writes until the disk recovers. Pending slots pin the existing 64-space cache, and the worker pins installation root locks during I/O.
 
 Recovery and retries:
 
-- **Startup.** The server takes an exclusive lock on the data directory (a second instance exits with code 2). It removes only its own `.<uuid>.<12hex>.tmp` files, then replays pending notes before serving.
+- **Startup.** The server locks installation roots and completes authority/recovery reconciliation before serving. Content stores open lazily; before first use of each space they remove only owned `.<uuid>.<12hex>.tmp` files, publish pending intents, then recover pending placement. Inactive spaces do not delay readiness.
 - **Crash after rename.** If replay finds the new bytes already in place, it fsyncs the file and the directory before marking.
-- **Retry with the same input.** It returns the original result, finishing any pending placement. It is reauthorized against current grants and does not re-run the old base-revision check.
+- **Retry with the same input.** It returns the original durable SSD result; a later userdata placement failure cannot change that result. It is reauthorized against current grants and does not re-run the old base-revision check.
 - **Retry with different input.** It returns 409 `request_id_reused`.
 - **Plugin enable/disable.** These are receipted in the same way, so retrying an old enable cannot undo a later disable.
 - **Mutating plugin operations.** Receipted after delivery: a retry with the same request ID and input returns the original result without running the worker; different input is 409. Each brokered `write_item` also carries its own receipt (`plugin/<plugin>/<request>/<n>`), so a retry after an undelivered result replays those writes instead of duplicating them.
@@ -218,3 +218,19 @@ Account-private drafts, pending submissions and `/api/v1/account/live` are
 implemented in separate owner-local modules; see [account input](../../docs/account-input.md).
 The live space/subscriber defaults above are operator-configurable through
 `CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.
+
+The private account feed subscribes before replay and wakes only after a committed
+input change. Each admitted stream retains its existing SQLite connection with a
+64 KiB page-cache setting; no SQL transaction remains open between wakes. This
+avoids last-connection WAL checkpoint/delete/reopen between saves. Disconnect
+closes SQLite on the host blocking pool, retaining the admission lease and root
+guards until close finishes. Active plus closing readers therefore share the
+existing per-account listener ceiling. There is no second account cache or new
+background thread. The reference app's TCP_NODELAY listener policy is also retained
+for small live frames; changing that option alone did not remove the database
+connection costs in the measured control.
+Ordinary commit wakes replay bookmarks without repeating the mutation's cleanup
+scan. Maintenance still runs on authority changes and an absolute one-second
+heartbeat, including during continuous writes; actual content operations always
+recheck current authority. An idle-feed test advances the seven-day confirmation
+state without issuing another operation.

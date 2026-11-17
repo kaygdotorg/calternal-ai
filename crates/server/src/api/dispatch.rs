@@ -414,7 +414,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
 
 /// Retry handling shared by every mutation in an authorized space: the same
 /// (account, space, request_id) with the same canonical fingerprint returns the
-/// stored result (finishing any pending materialization); a different fingerprint
+/// durable SSD result; userdata placement follows its bounded policy. A different fingerprint
 /// is a conflict. Another account or space never sees this receipt.
 pub(super) fn replay_receipt(
     s: &Store,
@@ -438,15 +438,6 @@ pub(super) fn replay_receipt(
     };
     if r.operation != op || r.fingerprint != fp {
         return Err(Error::request_reused());
-    }
-    if let Some(n) = &r.note_id {
-        s.materialize(n).map_err(|e| {
-            if e.code == ErrorCode::Conflict {
-                e
-            } else {
-                Error::unavailable("committed but not yet materialized; retry")
-            }
-        })?;
     }
     Ok(Some(r.result))
 }

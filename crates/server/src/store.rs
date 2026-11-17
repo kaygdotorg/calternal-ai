@@ -40,8 +40,6 @@ pub struct Receipt {
     pub fingerprint: String,
     /// Previously committed response, private to its acting account.
     pub result: serde_json::Value,
-    /// Item whose file placement must finish before replay.
-    pub note_id: Option<String>,
 }
 /// Persisted plugin enablement and asynchronous-result invalidation generation.
 #[derive(Debug, Clone)]
@@ -279,7 +277,6 @@ impl Store {
                 operation: r.operation,
                 fingerprint: r.fingerprint,
                 result: r.result,
-                note_id: r.item.map(|id| id.to_string()),
             })
         })
     }
@@ -359,14 +356,6 @@ impl Store {
             |i| serde_json::json!({"note":note(i)}),
         )?;
         Ok(note(&item))
-    }
-    /// Finishes checked placement before retry replay. Cost: catalog lookup and
-    /// generic materialization locks/reads, with file+directory fsync only if pending.
-    pub fn materialize(&self, id: &str) -> Result<(), Error> {
-        let space = self
-            .locate("notes", id)?
-            .ok_or_else(|| Error::not_found("item not found"))?;
-        self.content.materialize(space, item_id(id)?)
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
     /// so a retry replays it through [`Self::receipt`] instead of running the plugin

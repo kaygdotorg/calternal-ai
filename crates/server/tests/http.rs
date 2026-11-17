@@ -1163,3 +1163,36 @@ fn server_refuses_empty_swapped_or_foreign_roots() {
         "recovery log provisioned"
     );
 }
+
+/// Once SSD state was acknowledged, a later userdata conflict cannot change that
+/// request's durable replay result or authorize replacing the outside bytes.
+#[test]
+fn acknowledged_receipt_replays_after_userdata_becomes_blocked() {
+    let data = TempDir::new("replay-blocked-placement");
+    let server = start(&data.0, None);
+    let first = create(&server, "create", &server.personal, "before\n");
+    let input =
+        json!({"id":first["id"],"base_revision":first["revision"],"markdown":"acknowledged\n"});
+    let saved = op(
+        &server,
+        &server.owner,
+        "saved",
+        "notes.update",
+        input.clone(),
+    );
+    assert_eq!(saved.status, 200);
+    let path = note_file(&data.0, &server.personal, first["id"].as_str().unwrap());
+    std::fs::write(&path, "outside bytes").unwrap();
+    let blocked = op(
+        &server,
+        &server.owner,
+        "later",
+        "notes.update",
+        json!({"id":first["id"],"base_revision":saved.body["data"]["note"]["revision"],"markdown":"must not overwrite"}),
+    );
+    assert_eq!(blocked.status, 409);
+    let replay = op(&server, &server.owner, "saved", "notes.update", input);
+    assert_eq!(replay.status, 200);
+    assert_eq!(replay.body, saved.body);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "outside bytes");
+}
