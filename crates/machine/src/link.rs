@@ -58,7 +58,10 @@ impl Link {
             .json(body);
         if bearer {
             let Some(token) = self.token.borrow().clone() else {
-                return Err(Error::Status { status: 401, message: "no session".into() });
+                return Err(Error::Status {
+                    status: 401,
+                    message: "no session".into(),
+                });
             };
             req = req.bearer_auth(&*token);
         }
@@ -76,7 +79,10 @@ impl Link {
             .ok()
             .and_then(|v| v["error"]["message"].as_str().map(str::to_owned))
             .unwrap_or_else(|| status.to_string());
-        Err(Error::Status { status: status.as_u16(), message })
+        Err(Error::Status {
+            status: status.as_u16(),
+            message,
+        })
     }
 
     /// Install a new session token, waking every waiter.
@@ -88,10 +94,5 @@ impl Link {
     pub async fn wait_for_session(&self) {
         let mut rx = self.token.subscribe();
         let _ = rx.wait_for(Option::is_some).await;
-    }
-
-    /// Whether a session is currently open.
-    pub fn has_session(&self) -> bool {
-        self.token.borrow().is_some()
     }
 }

@@ -33,7 +33,12 @@ pub async fn enrol(server: &str, code: &str, dir: &Path, name: &str) -> Result<C
         arch: std::env::consts::ARCH.into(),
     };
     let resp: EnrolResponse = link
-        .post("/api/v1/machine/enrol", &req, false, Duration::from_secs(30))
+        .post(
+            "/api/v1/machine/enrol",
+            &req,
+            false,
+            Duration::from_secs(30),
+        )
         .await?;
     let creds = Credentials {
         server: link.base().to_owned(),

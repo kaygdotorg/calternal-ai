@@ -33,7 +33,7 @@ pub enum BackendKind {
 pub enum Command {
     /// Enrol this computer with a server using a one-time code.
     Enrol {
-        /// Server base URL, for example https://cal.example.org.
+        /// Server base URL, for example `https://cal.example.org`.
         #[arg(long)]
         server: String,
         /// One-time enrolment code from the server.
@@ -90,12 +90,21 @@ pub fn main(cmd: Command) -> i32 {
 
 async fn run(cmd: Command) -> i32 {
     match cmd {
-        Command::Enrol { server, code, dir, name } => {
+        Command::Enrol {
+            server,
+            code,
+            dir,
+            name,
+        } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let name = name.unwrap_or_else(enrol::host_name);
             match enrol::enrol(&server, &code, &dir, &name).await {
                 Ok(c) => {
-                    println!("enrolled machine {} ({})", c.machine_id, owner_text(c.owner));
+                    println!(
+                        "enrolled machine {} ({})",
+                        c.machine_id,
+                        owner_text(c.owner)
+                    );
                     println!("credentials: {}", Credentials::path(&dir).display());
                     0
                 }
@@ -109,7 +118,12 @@ async fn run(cmd: Command) -> i32 {
             let dir = dir.unwrap_or_else(connection::default_dir);
             match Credentials::load(&dir) {
                 Ok(c) => {
-                    println!("machine_id: {}\nowner: {}\nserver: {}", c.machine_id, owner_text(c.owner), c.server);
+                    println!(
+                        "machine_id: {}\nowner: {}\nserver: {}",
+                        c.machine_id,
+                        owner_text(c.owner),
+                        c.server
+                    );
                     0
                 }
                 Err(e) => {
@@ -118,20 +132,33 @@ async fn run(cmd: Command) -> i32 {
                 }
             }
         }
-        Command::Run { dir, backend, image, podman, max_sandboxes } => {
+        Command::Run {
+            dir,
+            backend,
+            image,
+            podman,
+            max_sandboxes,
+        } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let root = dir.join("sandboxes");
             let backend: Arc<dyn Backend> = match backend {
                 BackendKind::Process => Arc::new(ProcessBackend::new(root)),
                 BackendKind::Podman => {
                     if !PodmanBackend::available(&podman).await {
-                        eprintln!("calternal machine run: podman is not available ({})", podman.display());
+                        eprintln!(
+                            "calternal machine run: podman is not available ({})",
+                            podman.display()
+                        );
                         return 1;
                     }
                     Arc::new(PodmanBackend::new(podman, root, image))
                 }
             };
-            let config = Config { dir, backend, max_sandboxes };
+            let config = Config {
+                dir,
+                backend,
+                max_sandboxes,
+            };
             match connection::run(config, shutdown_signal()).await {
                 Ok(()) => 0,
                 Err(Error::Revoked) => {

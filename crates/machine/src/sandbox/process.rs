@@ -15,7 +15,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
-use uuid::Uuid;
 
 use super::{Backend, BoxFuture, Exec, ExecRequest, Sandbox, SandboxError, SandboxResult};
 use crate::protocol::SandboxSpec;
@@ -37,7 +36,10 @@ impl Backend for ProcessBackend {
         "process"
     }
 
-    fn start<'a>(&'a self, spec: &'a SandboxSpec) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+    fn start<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let dir = self.root.join(spec.thread_id.to_string());
             let work = dir.join("work");
@@ -45,7 +47,6 @@ impl Backend for ProcessBackend {
                 .await
                 .map_err(|e| SandboxError(format!("cannot create work directory: {}", e.kind())))?;
             Ok(Arc::new(ProcessSandbox {
-                thread_id: spec.thread_id,
                 dir,
                 work,
                 groups: Mutex::new(HashSet::new()),
@@ -56,7 +57,6 @@ impl Backend for ProcessBackend {
 
 /// One thread's process sandbox.
 pub struct ProcessSandbox {
-    thread_id: Uuid,
     dir: PathBuf,
     work: PathBuf,
     /// Process groups started here; pruned lazily when they no longer exist.
@@ -75,10 +75,6 @@ impl ProcessSandbox {
 }
 
 impl Sandbox for ProcessSandbox {
-    fn thread_id(&self) -> Uuid {
-        self.thread_id
-    }
-
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>> {
         Box::pin(async move {
             let Some((program, args)) = request.argv.split_first() else {
@@ -88,13 +84,17 @@ impl Sandbox for ProcessSandbox {
             cmd.args(args)
                 .current_dir(&self.work)
                 .env_clear()
-                .env("PATH", std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()))
+                .env(
+                    "PATH",
+                    std::env::var_os("PATH").unwrap_or_else(|| "/usr/bin:/bin".into()),
+                )
                 .env("HOME", &self.work)
                 .envs(request.env.iter().map(|(k, v)| (k, v)));
             cmd.as_std_mut().process_group(0);
             let (exec, pid) = super::spawn_streaming(cmd)?;
             let mut groups = self.groups.lock().expect("groups");
-            groups.retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
+            groups
+                .retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
             if let Some(pid) = pid {
                 groups.insert(pid as i32);
             }
@@ -143,6 +143,7 @@ mod tests {
     use super::*;
     use crate::protocol::{Limits, Stream};
     use crate::sandbox::{OutputEvent, collect};
+    use uuid::Uuid;
 
     fn spec() -> SandboxSpec {
         SandboxSpec {
@@ -166,7 +167,12 @@ mod tests {
         let (a, b) = (spec(), spec());
         let sa = backend.start(&a).await.unwrap();
         let sb = backend.start(&b).await.unwrap();
-        let (out, _, exit) = collect(sa.exec(argv(&["sh", "-c", "pwd; env | sort"])).await.unwrap()).await;
+        let (out, _, exit) = collect(
+            sa.exec(argv(&["sh", "-c", "pwd; env | sort"]))
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(exit.code, Some(0));
         let out = String::from_utf8(out).unwrap();
         let wd = dir.path().join(a.thread_id.to_string()).join("work");
@@ -174,7 +180,10 @@ mod tests {
         assert!(out.contains("ONLY=this"));
         assert!(!out.contains("CARGO"), "machine environment leaked: {out}");
         let (out_b, _, _) = collect(sb.exec(argv(&["pwd"])).await.unwrap()).await;
-        assert_ne!(String::from_utf8(out_b).unwrap().trim(), wd.display().to_string());
+        assert_ne!(
+            String::from_utf8(out_b).unwrap().trim(),
+            wd.display().to_string()
+        );
     }
 
     #[tokio::test]
@@ -188,7 +197,10 @@ mod tests {
             .exec(argv(&["sh", "-c", "sleep 30 & echo started; wait"]))
             .await
             .unwrap();
-        assert_eq!(exec.events.recv().await, Some(OutputEvent::Data(Stream::Stdout, b"started\n".to_vec())));
+        assert_eq!(
+            exec.events.recv().await,
+            Some(OutputEvent::Data(Stream::Stdout, b"started\n".to_vec()))
+        );
         sb.stop().await.unwrap();
         let exit = loop {
             match exec.events.recv().await.unwrap() {
@@ -203,9 +215,16 @@ mod tests {
     #[tokio::test]
     async fn freeze_pauses_and_resume_continues() {
         let dir = tempfile::tempdir().unwrap();
-        let sb = ProcessBackend::new(dir.path()).start(&spec()).await.unwrap();
+        let sb = ProcessBackend::new(dir.path())
+            .start(&spec())
+            .await
+            .unwrap();
         let mut exec = sb
-            .exec(argv(&["sh", "-c", "while true; do echo t; sleep 0.05; done"]))
+            .exec(argv(&[
+                "sh",
+                "-c",
+                "while true; do echo t; sleep 0.05; done",
+            ]))
             .await
             .unwrap();
         exec.events.recv().await.unwrap();
@@ -213,9 +232,13 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         while exec.events.try_recv().is_ok() {}
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        assert!(exec.events.try_recv().is_err(), "frozen sandbox kept writing");
+        assert!(
+            exec.events.try_recv().is_err(),
+            "frozen sandbox kept writing"
+        );
         sb.resume().await.unwrap();
-        let next = tokio::time::timeout(std::time::Duration::from_secs(2), exec.events.recv()).await;
+        let next =
+            tokio::time::timeout(std::time::Duration::from_secs(2), exec.events.recv()).await;
         assert!(matches!(next, Ok(Some(OutputEvent::Data(..)))));
         sb.stop().await.unwrap();
     }
@@ -223,10 +246,17 @@ mod tests {
     #[tokio::test]
     async fn slow_reader_blocks_the_writer() {
         let dir = tempfile::tempdir().unwrap();
-        let sb = ProcessBackend::new(dir.path()).start(&spec()).await.unwrap();
+        let sb = ProcessBackend::new(dir.path())
+            .start(&spec())
+            .await
+            .unwrap();
         // Writes 64 MiB; with nobody reading it must block well before finishing.
         let exec = sb
-            .exec(argv(&["sh", "-c", "head -c 67108864 /dev/zero; echo done >&2"]))
+            .exec(argv(&[
+                "sh",
+                "-c",
+                "head -c 67108864 /dev/zero; echo done >&2",
+            ]))
             .await
             .unwrap();
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -235,7 +265,10 @@ mod tests {
         while let Ok(OutputEvent::Data(_, b)) = exec.events.try_recv() {
             seen += b.len();
         }
-        assert!(seen <= super::super::OUTPUT_CHANNEL * super::super::CHUNK_BYTES, "{seen}");
+        assert!(
+            seen <= super::super::OUTPUT_CHANNEL * super::super::CHUNK_BYTES,
+            "{seen}"
+        );
         sb.stop().await.unwrap();
     }
 }

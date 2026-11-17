@@ -96,7 +96,9 @@ impl Runner {
                 fence: s.fence.load(Ordering::Acquire),
                 sandbox: match s.sandbox.get() {
                     None => SandboxState::Starting,
-                    Some(Err(reason)) => SandboxState::Failed { reason: reason.clone() },
+                    Some(Err(reason)) => SandboxState::Failed {
+                        reason: reason.clone(),
+                    },
                     Some(Ok(_)) if s.frozen.load(Ordering::Acquire) => SandboxState::Frozen,
                     Some(Ok(_)) => SandboxState::Running,
                 },
@@ -112,7 +114,12 @@ impl Runner {
     /// this returns at once and the long-poll loop is never held up.
     pub fn handle(self: &Arc<Self>, message: Down) {
         match message {
-            Down::Assign { lease_id, fence, spec, .. } => {
+            Down::Assign {
+                lease_id,
+                fence,
+                spec,
+                ..
+            } => {
                 let slot = {
                     let mut slots = self.slots.lock().expect("slots");
                     slots
@@ -141,10 +148,18 @@ impl Runner {
                     }
                 });
             }
-            Down::Exec { lease_id, fence, exec_id, argv, env } => {
+            Down::Exec {
+                lease_id,
+                fence,
+                exec_id,
+                argv,
+                env,
+            } => {
                 let me = self.clone();
                 tokio::spawn(async move {
-                    let slot = me.slot(lease_id).filter(|s| s.fence.load(Ordering::Acquire) == fence);
+                    let slot = me
+                        .slot(lease_id)
+                        .filter(|s| s.fence.load(Ordering::Acquire) == fence);
                     let exec = match &slot {
                         None => failed_exec("lease not held by this machine"),
                         Some(s) => {
@@ -226,7 +241,13 @@ impl Runner {
 
     /// Stop and delete every sandbox (revocation).
     pub async fn stop_all(&self) {
-        let slots: Vec<_> = self.slots.lock().expect("slots").drain().map(|(_, s)| s).collect();
+        let slots: Vec<_> = self
+            .slots
+            .lock()
+            .expect("slots")
+            .drain()
+            .map(|(_, s)| s)
+            .collect();
         for slot in slots {
             slot.removed.store(true, Ordering::Release);
             slot.stop_if_removed().await;
@@ -243,20 +264,34 @@ impl Runner {
     }
 
     fn all(&self) -> Vec<Arc<Slot>> {
-        self.slots.lock().expect("slots").values().cloned().collect()
+        self.slots
+            .lock()
+            .expect("slots")
+            .values()
+            .cloned()
+            .collect()
     }
 
     /// Number the exec's events and upload them until the exit is acknowledged,
     /// the lease is fenced or the machine is revoked.
     async fn upload(&self, lease_id: Uuid, fence: u64, exec_id: Uuid, mut exec: Exec) {
         let mut pending: VecDeque<(Chunk, usize)> = VecDeque::new();
-        let (mut seq, mut bytes, mut ended, mut backoff) = (0u64, 0usize, false, Duration::from_millis(200));
-        let push = |ev: OutputEvent, seq: &mut u64, pending: &mut VecDeque<(Chunk, usize)>, bytes: &mut usize| {
+        let (mut seq, mut bytes, mut ended, mut backoff) =
+            (0u64, 0usize, false, Duration::from_millis(200));
+        let push = |ev: OutputEvent,
+                    seq: &mut u64,
+                    pending: &mut VecDeque<(Chunk, usize)>,
+                    bytes: &mut usize| {
             *seq += 1;
             let (event, size, last) = match ev {
-                OutputEvent::Data(stream, b) => {
-                    (ChunkEvent::Data { stream, data: B64.encode(&b) }, b.len(), false)
-                }
+                OutputEvent::Data(stream, b) => (
+                    ChunkEvent::Data {
+                        stream,
+                        data: B64.encode(&b),
+                    },
+                    b.len(),
+                    false,
+                ),
                 OutputEvent::Exit(info) => (ChunkEvent::Exit(info), 0, true),
             };
             pending.push_back((Chunk { seq: *seq, event }, size));
@@ -268,7 +303,10 @@ impl Runner {
                 match exec.events.recv().await {
                     Some(ev) => ended |= push(ev, &mut seq, &mut pending, &mut bytes),
                     None => {
-                        let lost = OutputEvent::Exit(ExitInfo { error: Some("output ended without exit".into()), ..ExitInfo::default() });
+                        let lost = OutputEvent::Exit(ExitInfo {
+                            error: Some("output ended without exit".into()),
+                            ..ExitInfo::default()
+                        });
                         ended |= push(lost, &mut seq, &mut pending, &mut bytes);
                     }
                 }
@@ -291,10 +329,20 @@ impl Runner {
                 })
                 .map(|(c, _)| c.clone())
                 .collect();
-            let post = OutputPost { lease_id, fence, exec_id, chunks };
+            let post = OutputPost {
+                lease_id,
+                fence,
+                exec_id,
+                chunks,
+            };
             match self
                 .link
-                .post::<_, OutputAck>("/api/v1/machine/output", &post, true, Duration::from_secs(30))
+                .post::<_, OutputAck>(
+                    "/api/v1/machine/output",
+                    &post,
+                    true,
+                    Duration::from_secs(30),
+                )
                 .await
             {
                 Ok(ack) => {

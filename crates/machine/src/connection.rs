@@ -42,7 +42,11 @@ pub struct Config {
 pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>) -> Result<()> {
     let creds = Credentials::load(&config.dir)?;
     let link = Arc::new(Link::new(&creds.server)?);
-    let runner = Arc::new(Runner::new(config.backend, link.clone(), config.max_sandboxes));
+    let runner = Arc::new(Runner::new(
+        config.backend,
+        link.clone(),
+        config.max_sandboxes,
+    ));
     let boot_id = Uuid::new_v4();
     tracing::info!(machine = %creds.machine_id, server = %creds.server, "machine role starting");
     let result = tokio::select! {
@@ -56,7 +60,12 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
     result
 }
 
-async fn session_loop(creds: &Credentials, link: &Link, runner: &Arc<Runner>, boot_id: Uuid) -> Result<()> {
+async fn session_loop(
+    creds: &Credentials,
+    link: &Link,
+    runner: &Arc<Runner>,
+    boot_id: Uuid,
+) -> Result<()> {
     let mut backoff = Backoff::default();
     let mut last_ok = Instant::now();
     let mut lease_ttl = Duration::from_secs(90);
@@ -85,7 +94,12 @@ async fn session_loop(creds: &Credentials, link: &Link, runner: &Arc<Runner>, bo
                 leases: runner.reports(),
             };
             match link
-                .post::<_, SyncResponse>("/api/v1/machine/sync", &req, true, hold + Duration::from_secs(15))
+                .post::<_, SyncResponse>(
+                    "/api/v1/machine/sync",
+                    &req,
+                    true,
+                    hold + Duration::from_secs(15),
+                )
                 .await
             {
                 Ok(resp) => {
@@ -127,7 +141,14 @@ async fn expire_locally(runner: &Runner, last_ok: Instant, ttl: Duration) {
 async fn open_session(creds: &Credentials, link: &Link, boot_id: Uuid) -> Result<SessionGranted> {
     let t = Duration::from_secs(20);
     let SessionChallenge { challenge } = link
-        .post("/api/v1/machine/session/start", &SessionStart { machine_id: creds.machine_id }, false, t)
+        .post(
+            "/api/v1/machine/session/start",
+            &SessionStart {
+                machine_id: creds.machine_id,
+            },
+            false,
+            t,
+        )
         .await?;
     let finish = SessionFinish {
         machine_id: creds.machine_id,
@@ -136,7 +157,8 @@ async fn open_session(creds: &Credentials, link: &Link, boot_id: Uuid) -> Result
         boot_id,
         protocol: PROTOCOL_VERSION,
     };
-    link.post("/api/v1/machine/session/finish", &finish, false, t).await
+    link.post("/api/v1/machine/session/finish", &finish, false, t)
+        .await
 }
 
 /// Exponential backoff from 0.5 s to 30 s with up to 25 % random jitter.
@@ -166,6 +188,8 @@ pub fn default_dir() -> std::path::PathBuf {
     }
     let base = std::env::var_os("XDG_DATA_HOME")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| Path::new(&std::env::var_os("HOME").unwrap_or_default()).join(".local/share"));
+        .unwrap_or_else(|| {
+            Path::new(&std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
+        });
     base.join("calternal/machine")
 }

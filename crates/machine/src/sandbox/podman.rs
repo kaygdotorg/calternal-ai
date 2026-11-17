@@ -39,7 +39,11 @@ pub struct PodmanBackend {
 impl PodmanBackend {
     /// `podman` is the executable; work directories live under `root`;
     /// `default_image` is used when a spec names none.
-    pub fn new(podman: impl Into<PathBuf>, root: impl Into<PathBuf>, default_image: impl Into<String>) -> Self {
+    pub fn new(
+        podman: impl Into<PathBuf>,
+        root: impl Into<PathBuf>,
+        default_image: impl Into<String>,
+    ) -> Self {
         Self {
             podman: podman.into(),
             root: root.into(),
@@ -76,7 +80,11 @@ async fn podman(bin: &std::path::Path, args: &[&str]) -> SandboxResult<String> {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
     } else {
         let err = String::from_utf8_lossy(&out.stderr);
-        let line = err.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("failed");
+        let line = err
+            .lines()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("failed");
         Err(SandboxError(format!(
             "podman {}: {}",
             args.first().copied().unwrap_or(""),
@@ -90,7 +98,10 @@ impl Backend for PodmanBackend {
         "podman"
     }
 
-    fn start<'a>(&'a self, spec: &'a SandboxSpec) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
+    fn start<'a>(
+        &'a self,
+        spec: &'a SandboxSpec,
+    ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
             let name = Self::container_name(spec.thread_id);
             let dir = self.root.join(spec.thread_id.to_string());
@@ -98,7 +109,17 @@ impl Backend for PodmanBackend {
             tokio::fs::create_dir_all(&work)
                 .await
                 .map_err(|e| SandboxError(format!("cannot create work directory: {}", e.kind())))?;
-            let state = podman(&self.podman, &["container", "inspect", "--format", "{{.State.Status}}", &name]).await;
+            let state = podman(
+                &self.podman,
+                &[
+                    "container",
+                    "inspect",
+                    "--format",
+                    "{{.State.Status}}",
+                    &name,
+                ],
+            )
+            .await;
             match state.as_deref() {
                 Ok("running") => {}
                 Ok("paused") => {
@@ -108,16 +129,34 @@ impl Backend for PodmanBackend {
                     podman(&self.podman, &["start", &name]).await?;
                 }
                 Err(_) => {
-                    let Limits { memory_bytes, cpu_millis, pids } = spec.limits;
+                    let Limits {
+                        memory_bytes,
+                        cpu_millis,
+                        pids,
+                    } = spec.limits;
                     let image = spec.image.as_deref().unwrap_or(&self.default_image);
                     let label = format!("org.calternal.thread={}", spec.thread_id);
                     let mount = format!("{}:/work", work.display());
                     let memory = memory_bytes.unwrap_or(DEFAULT_MEMORY_BYTES).to_string();
                     let pids = pids.unwrap_or(DEFAULT_PIDS).to_string();
                     let mut args: Vec<String> = [
-                        "run", "-d", "--name", &name, "--label", &label, "--init",
-                        "--memory", &memory, "--pids-limit", &pids,
-                        "--volume", &mount, "--workdir", "/work", "--env", "HOME=/work",
+                        "run",
+                        "-d",
+                        "--name",
+                        &name,
+                        "--label",
+                        &label,
+                        "--init",
+                        "--memory",
+                        &memory,
+                        "--pids-limit",
+                        &pids,
+                        "--volume",
+                        &mount,
+                        "--workdir",
+                        "/work",
+                        "--env",
+                        "HOME=/work",
                     ]
                     .iter()
                     .map(|s| s.to_string())
@@ -132,7 +171,6 @@ impl Backend for PodmanBackend {
                 }
             }
             Ok(Arc::new(PodmanSandbox {
-                thread_id: spec.thread_id,
                 podman: self.podman.clone(),
                 name,
                 dir,
@@ -144,7 +182,6 @@ impl Backend for PodmanBackend {
 
 /// One thread's container.
 pub struct PodmanSandbox {
-    thread_id: Uuid,
     podman: PathBuf,
     name: String,
     dir: PathBuf,
@@ -153,10 +190,6 @@ pub struct PodmanSandbox {
 }
 
 impl Sandbox for PodmanSandbox {
-    fn thread_id(&self) -> Uuid {
-        self.thread_id
-    }
-
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>> {
         Box::pin(async move {
             if request.argv.is_empty() {
@@ -171,7 +204,8 @@ impl Sandbox for PodmanSandbox {
             cmd.as_std_mut().process_group(0);
             let (exec, pid) = super::spawn_streaming(cmd)?;
             let mut clients = self.clients.lock().expect("clients");
-            clients.retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
+            clients
+                .retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
             if let Some(pid) = pid {
                 clients.insert(pid as i32);
             }
@@ -184,7 +218,11 @@ impl Sandbox for PodmanSandbox {
     }
 
     fn resume(&self) -> BoxFuture<'_, SandboxResult<()>> {
-        Box::pin(async move { podman(&self.podman, &["unpause", &self.name]).await.map(drop) })
+        Box::pin(async move {
+            podman(&self.podman, &["unpause", &self.name])
+                .await
+                .map(drop)
+        })
     }
 
     fn stop(&self) -> BoxFuture<'_, SandboxResult<()>> {
@@ -195,7 +233,10 @@ impl Sandbox for PodmanSandbox {
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 // Files written by a mapped non-root container user may need
                 // `podman unshare` to remove; leave them and say so.
-                Err(e) => Err(SandboxError(format!("container removed, work directory kept: {}", e.kind()))),
+                Err(e) => Err(SandboxError(format!(
+                    "container removed, work directory kept: {}",
+                    e.kind()
+                ))),
             }
         })
     }

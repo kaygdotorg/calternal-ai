@@ -54,7 +54,11 @@ impl MachineKey {
 
     /// Sign a session challenge for `machine_id`; returns base64.
     pub fn sign_session(&self, machine_id: Uuid, challenge: &str) -> String {
-        B64.encode(self.pair.sign(&session_message(machine_id, challenge)).as_ref())
+        B64.encode(
+            self.pair
+                .sign(&session_message(machine_id, challenge))
+                .as_ref(),
+        )
     }
 }
 
@@ -133,6 +137,10 @@ impl Credentials {
 }
 
 /// Create `dir` (and parents) and set it to mode 0700.
+///
+/// Stand-in for `calternal_auth::private_fs::directory`, which this crate does
+/// not depend on (that would pull the whole auth crate onto machines); replace
+/// with `calternal_fsio`'s copy once `private_fs` moves there.
 pub fn create_private_dir(dir: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(dir)?;

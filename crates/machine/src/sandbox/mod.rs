@@ -29,11 +29,9 @@ use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use crate::protocol::{ExitInfo, SandboxSpec, Stream};
 use tokio::io::AsyncReadExt;
 use tokio::sync::mpsc;
-use uuid::Uuid;
-
-use crate::protocol::{ExitInfo, SandboxSpec, Stream};
 
 /// A boxed, sendable future; keeps the traits object-safe without extra crates.
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -88,13 +86,12 @@ pub trait Backend: Send + Sync + 'static {
     fn name(&self) -> &'static str;
     /// Start the thread's sandbox, or adopt the one left by an earlier run of the
     /// machine role (same thread id), resuming it if it was frozen.
-    fn start<'a>(&'a self, spec: &'a SandboxSpec) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
+    fn start<'a>(&'a self, spec: &'a SandboxSpec)
+    -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>>;
 }
 
 /// One thread's sandbox.
 pub trait Sandbox: Send + Sync {
-    /// The thread it belongs to.
-    fn thread_id(&self) -> Uuid;
     /// Run a command in the work directory and stream its output.
     fn exec(&self, request: ExecRequest) -> BoxFuture<'_, SandboxResult<Exec>>;
     /// Pause every process; memory stays resident.
@@ -118,11 +115,19 @@ pub(crate) fn spawn_streaming(
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| SandboxError(format!("cannot start command: {}", e.kind())))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| SandboxError(format!("cannot start command: {}", e.kind())))?;
     let pid = child.id();
     let (tx, rx) = mpsc::channel(OUTPUT_CHANNEL);
-    let out = child.stdout.take().map(|p| tokio::spawn(pump(p, Stream::Stdout, tx.clone())));
-    let err = child.stderr.take().map(|p| tokio::spawn(pump(p, Stream::Stderr, tx.clone())));
+    let out = child
+        .stdout
+        .take()
+        .map(|p| tokio::spawn(pump(p, Stream::Stdout, tx.clone())));
+    let err = child
+        .stderr
+        .take()
+        .map(|p| tokio::spawn(pump(p, Stream::Stderr, tx.clone())));
     tokio::spawn(async move {
         let status = child.wait().await;
         // Drain both pipes before announcing the exit so it is the last event.
@@ -158,7 +163,11 @@ async fn pump(
         match pipe.read(&mut buf).await {
             Ok(0) | Err(_) => return,
             Ok(n) => {
-                if tx.send(OutputEvent::Data(stream, buf[..n].to_vec())).await.is_err() {
+                if tx
+                    .send(OutputEvent::Data(stream, buf[..n].to_vec()))
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
@@ -176,8 +185,9 @@ pub fn failed_exec(reason: impl Into<String>) -> Exec {
     Exec { events: rx }
 }
 
-/// Collect an exec's output into (stdout, stderr, exit). Test and CLI helper.
-pub async fn collect(mut exec: Exec) -> (Vec<u8>, Vec<u8>, ExitInfo) {
+/// Collect an exec's output into (stdout, stderr, exit), for unit tests.
+#[cfg(test)]
+pub(crate) async fn collect(mut exec: Exec) -> (Vec<u8>, Vec<u8>, ExitInfo) {
     let (mut out, mut err) = (Vec::new(), Vec::new());
     while let Some(ev) = exec.events.recv().await {
         match ev {
@@ -186,5 +196,12 @@ pub async fn collect(mut exec: Exec) -> (Vec<u8>, Vec<u8>, ExitInfo) {
             OutputEvent::Exit(info) => return (out, err, info),
         }
     }
-    (out, err, ExitInfo { error: Some("output ended without exit".into()), ..ExitInfo::default() })
+    (
+        out,
+        err,
+        ExitInfo {
+            error: Some("output ended without exit".into()),
+            ..ExitInfo::default()
+        },
+    )
 }
