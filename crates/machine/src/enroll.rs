@@ -34,7 +34,7 @@ pub async fn enroll(server: &str, code: &str, dir: &Path, name: &str) -> Result<
     };
     let resp: EnrolResponse = link
         .post(
-            "/api/v1/machine/enrol",
+            "/api/v1/machine/enroll",
             &req,
             false,
             Duration::from_secs(30),

@@ -29,7 +29,7 @@ reply or an error and never prints results itself.
 |---|---|
 | 0 | Success. |
 | 1 | The command ran and failed (the `error.code` says why). |
-| 2 | Usage error: the command line does not parse. `calternal serve` also uses 2 when its state cannot be opened (storage, machines database, job recovery); the error text says which. |
+| 2 | Usage error: the command line does not parse. Nothing else uses 2. |
 | 3 | `calternal machine run` only: the server revoked this machine. The systemd unit from `scripts/install-machine.sh` does not restart on 3. |
 
 ### Error codes (`error.code`)
@@ -63,8 +63,9 @@ Global option on every command: `--json`.
 | `machine status [--dir DIR]` | Show this machine's identity and server. | Same block as `enroll`. Not enrolled: `not_found`. | as `enroll` |
 | `machine run [--dir DIR] [--backend podman\|process] [--image REF] [--podman PATH] [--max-sandboxes N]` | Connect to the server and run assigned threads until stopped (SIGINT/SIGTERM). Logs to stderr. | On clean stop: `Machine stopped.` Revoked: error `revoked`, exit 3. | `stopped` |
 
-`machine enrol` no longer exists (renamed `machine enroll`, no alias). The HTTP path
-`/api/v1/machine/enrol` is a wire name and is unchanged.
+`machine enrol` no longer exists (renamed `machine enroll`, no alias); the HTTP path is
+`/api/v1/machine/enroll`. Prefer `CALTERNAL_ENROLL_CODE` or `--code -` over `--code CODE`:
+an argument is visible in the process list for the few seconds it runs.
 
 Examples:
 

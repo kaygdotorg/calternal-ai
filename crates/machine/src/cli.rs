@@ -39,7 +39,8 @@ pub enum Command {
         /// Server base URL, for example `https://cal.example.org`.
         #[arg(long)]
         server: String,
-        /// One-time enrollment code from the server.
+        /// One-time enrollment code from the server, or `-` to read it from stdin.
+        /// Prefer the environment variable or `-`: an argument shows in the process list.
         #[arg(long, env = "CALTERNAL_ENROLL_CODE")]
         code: String,
         /// Machine directory (credentials and sandboxes).
@@ -161,6 +162,16 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
             let name = name.unwrap_or_else(enroll::host_name);
+            let code = if code == "-" {
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line).map_err(|e| {
+                    CliError::new("io", format!("cannot read the code from stdin: {e}"))
+                        .hint("Pipe the code in, or pass --code CODE.")
+                })?;
+                line.trim().to_owned()
+            } else {
+                code
+            };
             let creds = enroll::enroll(&server, &code, &dir, &name)
                 .await
                 .map_err(|e| fail("machine enroll", e))?;

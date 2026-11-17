@@ -4,7 +4,7 @@ exit: 1
   "error": {
     "code": "unavailable",
     "hint": "Check the --server URL and your network, then run the command again.",
-    "message": "machine enroll: cannot reach the server: error sending request for url (http://127.0.0.1:1/api/v1/machine/enrol)"
+    "message": "machine enroll: cannot reach the server: error sending request for url (http://127.0.0.1:1/api/v1/machine/enroll)"
   },
   "ok": false
 }

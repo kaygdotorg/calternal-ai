@@ -184,7 +184,7 @@ async fn serve(
         .map_err(|e| boot(1, "io", format!("data directory: {e}"), DATA_HINT))?;
     let store = Store::open(&data_dir).map_err(|e| {
         boot(
-            2,
+            1,
             "failed",
             e.message,
             "Is another server using this data directory? Check its log.",
@@ -198,7 +198,7 @@ async fn serve(
             Ok(Ok(m)) => m,
             Ok(Err(e)) => {
                 return Err(boot(
-                    2,
+                    1,
                     "failed",
                     format!("machines: {}", e.message),
                     DATA_HINT,
@@ -206,7 +206,7 @@ async fn serve(
             }
             Err(_) => {
                 return Err(boot(
-                    2,
+                    1,
                     "internal",
                     "the machines service did not start",
                     DATA_HINT,
@@ -304,7 +304,7 @@ async fn serve(
         }
     }
     let jobs =
-        plugins::Jobs::open(&data_dir).map_err(|e| boot(2, "failed", e.message, DATA_HINT))?;
+        plugins::Jobs::open(&data_dir).map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     let token_files = tokens.files.clone();
     let state = Arc::new(AppState {
         store: Mutex::new(store),
@@ -319,7 +319,7 @@ async fn serve(
         Ok(n) => tracing::info!(jobs = n, "resuming plugin jobs"),
         Err(e) => {
             return Err(boot(
-                2,
+                1,
                 "failed",
                 format!("job recovery: {}", e.message),
                 DATA_HINT,
