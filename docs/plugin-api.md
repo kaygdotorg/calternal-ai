@@ -82,6 +82,17 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   personal secrets are invisible to everyone else, managers included; a space's secrets
   are managed under a separate `secrets.manage` capability. How secrets are keyed (a
   server key, or keys derived from each person's passkey) is still open.
+- Entitlements come from groups (2026-11-17): groups are named after the plans offered; an
+  invite assigns its groups (existing app ADR 0059, 0060). A group decides access to the
+  shared pool of cloud machines and the limits that apply (concurrent agent runs, storage).
+  Limits are not arbitrary constants: product limits come from the plan and from real
+  capacity; the server keeps only high, operator-configurable safety ceilings against a
+  runaway plugin.
+- Machines: when a machine goes silent mid-run the work moves to another machine and the
+  person is told; while waiting for capacity they see their queue position.
+- Jobs: a running job stops only when its account loses access to the space, not when a
+  device signs out; any member who can read the space can watch its output; the person
+  who started it or a Manager can cancel.
 
 ## Open
 
