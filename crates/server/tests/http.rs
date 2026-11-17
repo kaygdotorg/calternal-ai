@@ -542,7 +542,7 @@ fn exclusive_data_dir_lock() {
         .stderr(Stdio::null())
         .status()
         .unwrap();
-    assert_eq!(st.code(), Some(2));
+    assert_eq!(st.code(), Some(1));
 }
 
 #[test]

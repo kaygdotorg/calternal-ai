@@ -330,8 +330,23 @@ impl Output {
     }
 }
 
+/// Rebuild `v` with object keys in alphabetical order, so the printed order is
+/// the same whether or not some crate in the build enabled `serde_json`'s
+/// `preserve_order`. Cost: one pass over the document.
+fn sorted(v: Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            let mut entries: Vec<_> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(entries.into_iter().map(|(k, v)| (k, sorted(v))).collect())
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
+        other => other,
+    }
+}
+
 fn pretty(doc: Value) -> String {
-    let mut s = serde_json::to_string_pretty(&doc).expect("JSON value serializes");
+    let mut s = serde_json::to_string_pretty(&sorted(doc)).expect("JSON value serializes");
     s.push('\n');
     s
 }
