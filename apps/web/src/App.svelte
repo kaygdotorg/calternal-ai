@@ -16,8 +16,8 @@
 
   const NONE: AppDef = { kind: "", name: "Calternal", icon: "apps", Sidebar: Unknown, Main: Unknown, panels: [{ id: "none", label: "Nothing", icon: "info", component: Unknown }] };
   const seg = $derived(segments());
-  // /settings/appearance opens the appearance sheet over the Settings app (its page is not built yet).
-  const settings = $derived(seg[0] === "settings" && seg[1] === "appearance");
+  // The appearance sheet (wallpaper, fonts) opens over the Settings app at /settings/appearance?sheet=1.
+  const settings = $derived(seg[0] === "settings" && seg[1] === "appearance" && route.query.get("sheet") === "1");
   const app = $derived(appFor(seg[0]) ?? NONE);
   // The commands, registered once. Each also exists as a button, a menu entry or a sheet, so a shortcut is never the only way.
   const threadIds = () => [...store.threads].filter((t) => !t.parentId).sort((x, y) => y.updatedAt - x.updatedAt).map((t) => t.id);
@@ -59,5 +59,5 @@
 {#if route.path !== "/"}<Shell {app} id={seg[1]} />{/if}
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
 <FirstRun />
-<SettingsSheet open={settings} onclose={() => navigate("/settings")} />
+<SettingsSheet open={settings} onclose={() => navigate("/settings/appearance")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

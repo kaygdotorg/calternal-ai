@@ -230,3 +230,19 @@ Screenshots are attached to issue #15 (review set: `desktop-light`, `desktop-dar
 | App capsule: labels only, three apps, pill glass | yes | `switcher-card` |
 
 Notes (2026-11-17): the default photographs are fetched when the app is built (`npm run build` runs `scripts/wallpapers.mjs`), so a build needs network access to unsplash.com once; offline, the generated looks stand in. The earlier committed stand-in photos were removed from the tree (they remain in older commits). Open: the auto-hide setting for the card switcher is not built (always visible); the Settings sections list awaits the study (issue #22).
+
+## Update 2026-11-17 (evening)
+
+| Item | Done | Evidence |
+| --- | --- | --- |
+| Changes, Files and Run rows share one anatomy; four right tabs with icon and label | yes | `PanelRow.svelte`, `panel-*` shots |
+| Default wallpaper EX_STserBZM; lighter renditions for the light scheme | yes | `scripts/wallpapers.mjs`, grids on #15 |
+| Stray underline: the active-children bar drawn bare; now a glass pill | yes | #15 comment |
+| First-run gallery reachable with `?firstrun=1`, tested | yes | `e2e/firstrun.mjs` |
+| Auto-hide setting for the card switcher (off by default) | yes | `appearance.app-switcher-auto-hide` |
+| Composer palette: plan, ported recogniser, search, palette surface | yes (composer itself not yet) | `docs/ui-composer-palette.md`, `e2e/palette.mjs` |
+| Veil from the study's function, on rendered pixels | yes | `e2e/veil-pixels.mjs` 16 of 16 |
+| Settings pages with stable ids, in the palette | yes | `apps/settings/registry.ts`, `settings-*` shots |
+| Documentation site themed with the design system | yes | `apps/docs/`, `/docs/` |
+
+Open: the ink flip makes a sidebar light next to a dark card in the dark scheme on bright photographs (Barrow, Hoefler): the owner should judge it on the preview; turning it off is one line (`solve` in `veil.ts`, the `other` argument). The card can be almost fully transparent on light generated looks (veil 0.02), because the floor is that low there.

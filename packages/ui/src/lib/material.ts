@@ -95,19 +95,26 @@ export function backdropRange(scheme: Scheme, r: Frac): { min: number; max: numb
   return max < min ? { min: 0.5, max: 0.5 } : { min, max };
 }
 
+// CSS composites in gamma-encoded sRGB, not in linear light: a veil of alpha a over a ground g is (1 - a) * enc(g) + a * enc(veil), per channel.
+const toEnc = (l: number): number => (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055);
+
 /**
- * The wash (0..1 alpha of the scheme's tint) a flat surface on the backdrop needs so its secondary ink (`ink-3`) reaches 4.5:1 over the
- * worst cell in `range`: white in the light scheme (dark ink needs a light ground), black in the dark scheme. Never below `base`, never above
- * 0.9 (a wallpaper is still meant to show). Derived from the wallpaper's own brightness, the way the owner's calternal-ui plugin does.
+ * The wash (0..1 alpha of the scheme's paper colour) a flat surface on the backdrop needs so its secondary ink (`ink-3`) reaches 4.5:1 over the
+ * worst cell in `range`: a light veil in the light scheme (dark ink needs a light ground), a dark one in the dark scheme. Never below `base`, never above
+ * 0.9. The mixing is done on encoded values, the way the browser composites it (an earlier version mixed in linear light and delivered 3.0 to 3.8:1 where it
+ * promised 4.5:1). Grey cells are assumed; `appearance/veil.ts` solves the shell's real surfaces from their pixels.
  */
 export function washFor(scheme: Scheme, range: { min: number; max: number }, base: number): number {
   const ink = luminance(tokens[scheme]["ink-3"]);
+  const veil = toEnc(luminance(tokens[scheme].paper));
   if (scheme === "light") {
-    const need = 4.5 * (ink + 0.05) - 0.05; // the lightest-needed ground
-    return Math.min(0.9, Math.max(base, (need - range.min) / (1 - range.min)));
+    const need = toEnc(4.5 * (ink + 0.05) - 0.05); // the lightest ground ink-3 may sit on, encoded
+    const w = toEnc(range.min);
+    return Math.min(0.9, Math.max(base, need <= w ? 0 : (need - w) / (veil - w)));
   }
-  const allow = (ink + 0.05) / 4.5 - 0.05; // the darkest-allowed ground's ceiling
-  return Math.min(0.9, Math.max(base, range.max <= allow ? 0 : 1 - allow / range.max));
+  const allow = toEnc((ink + 0.05) / 4.5 - 0.05); // the darkest ground ceiling, encoded
+  const w = toEnc(range.max);
+  return Math.min(0.9, Math.max(base, w <= allow ? 0 : (w - allow) / (w - veil)));
 }
 
 /** What a surface is drawn with: tint alpha (0..1) and blur radius (px, before the touch scale). */

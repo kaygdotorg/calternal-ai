@@ -7,12 +7,16 @@
   // The first-run sheet: a short gallery of presets, then straight in. Shown once per browser (the choice, or Skip, ends it); the same gallery stays in
   // Appearance settings.
   import { Button, Sheet } from "@calternal/ui";
+  import { route, setQuery } from "../lib/route.svelte";
   import { shell } from "../shell/shell.svelte";
   import PresetGallery from "./PresetGallery.svelte";
   const KEY = "cal.firstrun";
+  // Shown on a fresh browser, or on demand with ?firstrun=1 (so it can be looked at and tested).
   let open = $state(fresh);
+  $effect(() => { if (route.query.get("firstrun") === "1") open = true; });
   function done() {
     open = false;
+    if (route.query.has("firstrun")) setQuery("firstrun", null);
     try { localStorage.setItem(KEY, "1"); } catch { /* private mode: asked again next time */ }
   }
 </script>

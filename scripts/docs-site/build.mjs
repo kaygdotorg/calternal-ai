@@ -20,6 +20,8 @@ if (!await stat(path.join(root, 'node_modules/typescript')).catch(() => null)) {
   run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund']);
 }
 run('npm', ['run', 'build:plugins']);
+// The theme's fonts, colour tokens and presets come from the design system (apps/docs/scripts/prepare.mjs).
+run('node', ['apps/docs/scripts/prepare.mjs']);
 run('node', ['scripts/docs-site/generate.mjs', ...(check ? ['--check'] : [])]);
 if (check) process.exit(0);
 // Documentation needs no debug symbols or incremental object cache.

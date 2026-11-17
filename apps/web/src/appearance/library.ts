@@ -11,7 +11,7 @@ export interface Wallpaper {
   name: string;
   source: "builtin" | "upload" | "unsplash";
   url: string;
-  /** For a generated look, the dark scheme's rendition (the same recipe with lightness remapped); `url` is the light one. */
+  /** For a generated look or a photograph, the dark scheme's rendition (the same recipe with lightness remapped); `url` is the light one. */
   urlDark?: string;
   /** A small version for the picker. */
   thumb: string;
@@ -98,7 +98,7 @@ export class FixtureLibrary implements WallpaperLibrary {
         [{ id: "haze", name: "Haze" }, ...RECIPES].map(async (r) => ({ id: r.id, name: r.name, source: "builtin" as const, url: await renderRecipe(r.id, "light", 1600, 900), urlDark: await renderRecipe(r.id, "dark", 1600, 900), thumb: await renderRecipe(r.id, "light", 240, 150) })),
       );
       const credits: { id: string; name: string; author: string; link: string }[] = await fetch(`${BASE}wallpapers/credits.json`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
-      const photos = credits.map((c) => ({ id: c.id, name: `Photo by ${c.author}`, source: "builtin" as const, url: `${BASE}wallpapers/${c.id}.jpg`, thumb: `${BASE}wallpapers/${c.id}-thumb.jpg`, credit: { author: c.author, link: c.link } }));
+      const photos = credits.map((c) => ({ id: c.id, name: `Photo by ${c.author}`, source: "builtin" as const, url: `${BASE}wallpapers/${c.id}-light.jpg`, urlDark: `${BASE}wallpapers/${c.id}.jpg`, thumb: `${BASE}wallpapers/${c.id}-thumb.jpg`, credit: { author: c.author, link: c.link } }));
       // Photos first (the defaults), then the generated looks.
       return [...photos, ...looks];
     })();

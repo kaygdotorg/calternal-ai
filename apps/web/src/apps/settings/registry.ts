@@ -1,0 +1,204 @@
+/**
+ * Every setting is declared here as data: a stable id `<plugin>.<setting>` (the setting's name for addresses, the palette and agents: `/settings/<section>/<id>`),
+ * its label (a noun phrase), help text, the control it needs, and how it reads and writes. Pages are lists of groups of these; nothing else knows what a setting is.
+ * Follows docs/ui-craft-and-settings-study.md section 11: one decision per row, one control per row, no Save button, a Danger area last on admin pages.
+ * On fixtures: settings of things that exist (appearance, streaming) are wired to them; the rest keep their value in `values`.
+ */
+import type { IconName } from "@calternal/ui";
+import { appearance } from "../../appearance/prefs.svelte";
+import { registerManifest } from "../../palette/manifest";
+import { values } from "./store.svelte";
+import { navigate } from "../../lib/route.svelte";
+import { shell } from "../../shell/shell.svelte";
+
+export type Control =
+  | { type: "switch" }
+  | { type: "checkbox" }
+  | { type: "segmented"; options: { id: string; label: string }[] }
+  | { type: "popup"; options: { id: string; label: string }[] }
+  | { type: "text"; placeholder?: string }
+  | { type: "number"; min: number; max: number; unit?: string }
+  | { type: "slider"; min: number; max: number; unit?: string }
+  | { type: "scheme" }
+  | { type: "presets" }
+  | { type: "button"; text: string; danger?: boolean; run: () => void }
+  | { type: "drill"; summary: () => string; run: () => void }
+  | { type: "info"; text: () => string };
+
+/** One setting. `id` is `<plugin>.<setting>` and never changes. */
+export interface Setting {
+  id: string;
+  label: string;
+  help?: string;
+  control: Control;
+  get?: () => unknown;
+  set?: (v: unknown) => void;
+}
+export interface Group { title?: string; settings: Setting[]; danger?: boolean }
+export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[] }
+export interface Section { id: "user" | "space" | "server"; name: string; pages: Page[] }
+
+const fx = <T,>(id: string, def: T): Pick<Setting, "get" | "set"> => ({ get: () => values.get<T>(id, def), set: (v) => values.set(id, v) });
+const A = appearance;
+const ap = (f: (p: typeof A.prefs) => void) => A.change(f);
+const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
+
+const appearancePage: Page = {
+  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.",
+  groups: [
+    { title: "Look", settings: [
+      { id: "appearance.scheme", label: "Colour scheme", help: "Auto follows the system.", control: { type: "scheme" }, get: () => A.scheme, set: (v) => A.setScheme(v as never) },
+      { id: "appearance.preset", label: "Preset", help: "A preset sets the wallpaper and the colours together; each stays adjustable.", control: { type: "presets" } },
+      { id: "appearance.wallpaper", label: "Wallpaper and fonts", help: "Choose a photograph, upload your own, search Unsplash, pick fonts.", control: { type: "drill", summary: () => A.wallpaper?.name ?? "None", run: () => navigate("/settings/appearance?sheet=1") } },
+    ] },
+    { title: "Materials", settings: [
+      { id: "appearance.blur", label: "Blur", help: "Frosts the picture behind the sidebars and the card.", control: { type: "checkbox" }, get: () => A.prefs.materials.blur, set: (v) => ap((p) => (p.materials.blur = !!v)) },
+      { id: "appearance.dim", label: "Dim", help: "A neutral veil over the picture so text stays calm.", control: { type: "checkbox" }, get: () => A.prefs.materials.dim, set: (v) => ap((p) => (p.materials.dim = !!v)) },
+      { id: "appearance.tint", label: "Tint", help: "A veil in the colour scheme's paper, with a whisper of the picture's hue.", control: { type: "checkbox" }, get: () => A.prefs.materials.tint, set: (v) => ap((p) => (p.materials.tint = !!v)) },
+    ] },
+    { title: "Size and colour", settings: [
+      { id: "appearance.ui-size", label: "UI size", help: "One scale for type, spacing and controls together.", control: { type: "slider", min: 80, max: 150, unit: " %" }, get: () => A.prefs.uiSize, set: (v) => ap((p) => (p.uiSize = v as number)) },
+      { id: "appearance.accent", label: "Accent", help: "From the wallpaper, or one colour of your own.", control: { type: "segmented", options: [{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }] }, get: () => (A.prefs.accent === "theme" ? "wallpaper" : A.prefs.accent), set: (v) => ap((p) => (p.accent = v as never)) },
+      { id: "appearance.wordmark", label: "Wordmark", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
+    ] },
+    { title: "Layout", settings: [
+      { id: "appearance.app-switcher", label: "App switcher", help: "Where you switch between apps.", control: { type: "segmented", options: [{ id: "sidebar", label: "Sidebar" }, { id: "card", label: "Under the card" }] }, get: () => A.prefs.switcher, set: (v) => ap((p) => (p.switcher = v as never)) },
+      { id: "appearance.app-switcher-auto-hide", label: "Hide the switcher until needed", help: "Under the card only.", control: { type: "switch" }, get: () => A.prefs.switcherAutoHide, set: (v) => ap((p) => (p.switcherAutoHide = !!v)) },
+    ] },
+  ],
+};
+
+const agentsPage: Page = {
+  id: "agents", name: "Agents", icon: "spark", blurb: "How agents behave by default. Each can be changed per thread.",
+  groups: [
+    { title: "New threads", settings: [
+      { id: "agents.default-permission", label: "Permission mode", help: "What an agent may do without asking, for a new thread.", control: { type: "segmented", options: [{ id: "least", label: "Least access" }, { id: "approve", label: "Approve for me" }, { id: "full", label: "Full access" }] }, ...fx("agents.default-permission", "approve") },
+      { id: "agents.stream-text", label: "Stream messages as written", help: "Off: a working state shows, then the finished message appears at once.", control: { type: "switch" }, get: () => A.prefs.streamText, set: (v) => ap((p) => (p.streamText = !!v)) },
+    ] },
+    { title: "Retries and sandboxes", settings: [
+      { id: "agents.retry", label: "Retry failed turns", help: "Try again after a provider error.", control: { type: "switch" }, ...fx("agents.retry", true) },
+      { id: "agents.snooze-minutes", label: "Snooze", help: "How long a snoozed question stays quiet.", control: { type: "number", min: 1, max: 1440, unit: " min" }, ...fx("agents.snooze-minutes", 30) },
+      { id: "agents.sandbox-idle-minutes", label: "Sandbox idle time", help: "A thread's sandbox stops after this long without work.", control: { type: "number", min: 1, max: 240, unit: " min" }, ...fx("agents.sandbox-idle-minutes", 20) },
+    ] },
+    { title: "Decision service", settings: [
+      { id: "agents.decision-provider", label: "Provider", help: "A fast typed-decision model, used after Enter and never while typing. Off until a key is connected.", control: { type: "popup", options: [{ id: "off", label: "Off" }, { id: "openai", label: "OpenAI Decisions" }, { id: "typesafe", label: "TypeSafe Jev" }] }, ...fx("agents.decision-provider", "off") },
+    ] },
+  ],
+};
+
+const keyboardPage: Page = {
+  id: "keyboard", name: "Keyboard", icon: "terminal", blurb: "Shortcuts follow your account. Remap them in place.",
+  groups: [{ settings: [
+    { id: "keyboard.shortcuts", label: "Keyboard shortcuts", help: "Cmd-/ or ? opens the same sheet anywhere.", control: { type: "drill", summary: () => "View and remap", run: () => { shell.helpOpen = true; } } },
+    { id: "keyboard.hardware-help", label: "Show the shortcut sheet with a hardware keyboard", control: { type: "switch" }, ...fx("keyboard.hardware-help", true) },
+  ] }],
+};
+
+const machinesPage: Page = {
+  id: "machines", name: "Machines", icon: "terminal", blurb: "The machines your threads can run on.",
+  groups: [
+    { title: "Yours", settings: ["calternal-dev-02-std", "calternal-dev-01-compute02", "kayg-laptop"].map((m): Setting => ({ id: `machines.${m}`, label: m, help: "Sandboxed or direct", control: { type: "info", text: () => "Online" } })) },
+    { settings: [{ id: "machines.add", label: "Add a machine", help: "By SSH. The server never keeps your key.", control: { type: "button", text: "Add by SSH…", run: confirmLater("Add a machine") } }] },
+  ],
+};
+const listPage = (id: string, name: string, icon: IconName, blurb: string, plugin: string, items: [string, string][], empty: string): Page => ({
+  id, name, icon, blurb,
+  groups: [{ title: `Your ${name.toLowerCase()}`, settings: items.length ? items.map(([k, t]): Setting => ({ id: `${plugin}.${k}.enabled`, label: t, control: { type: "switch" }, ...fx(`${plugin}.${k}.enabled`, true) })) : [{ id: `${plugin}.none`, label: empty, control: { type: "info", text: () => "" } }] }],
+});
+const pluginsPage = listPage("plugins", "Plugins", "apps", "Your plugins and their per-person options.", "plugins", [["calternal-threads", "Threads"], ["calternal-notes", "Notes"], ["calternal-settings", "Settings"]], "No plugins");
+const skillsPage = listPage("skills", "Skills", "spark", "Skills agents can use for you.", "skills", [["review", "Code review"], ["release", "Release notes"]], "No skills yet");
+const automationsPage = listPage("automations", "Automations", "clock", "Schedules and triggers. Schedules use systemd timer expressions with a time zone.", "automations", [["morning-digest", "Morning digest (Mon-Fri 08:00, Europe/Berlin)"]], "No automations yet");
+
+const accountPage: Page = {
+  id: "account", name: "Account", icon: "user", blurb: "You, and what you have connected.",
+  groups: [
+    { title: "Profile", settings: [{ id: "account.name", label: "Name", control: { type: "text", placeholder: "Your name" }, ...fx("account.name", "Kay") }] },
+    { title: "Sign-in", settings: [
+      { id: "account.passkeys", label: "Passkeys", help: "How you prove it is you.", control: { type: "drill", summary: () => "2 passkeys", run: confirmLater("Passkeys") } },
+      { id: "account.providers", label: "Connected provider accounts", help: "What you sign in to. The server never stores them.", control: { type: "drill", summary: () => "Claude Code, Codex", run: confirmLater("Connected provider accounts") } },
+    ] },
+    { settings: [{ id: "account.sign-out", label: "Sign out", control: { type: "button", text: "Sign out…", run: confirmLater("Sign out") } }] },
+  ],
+};
+
+const danger = (id: string, label: string, help: string, text: string): Group => ({ title: "Danger area", danger: true, settings: [{ id, label, help, control: { type: "button", text, danger: true, run: confirmLater(text) } }] });
+const membersPage: Page = {
+  id: "members", name: "Members and roles", icon: "user", blurb: "Who is in this space and what each role may do.",
+  groups: [
+    { title: "Members", settings: [{ id: "space.members", label: "Members", help: "Roles are sets of capabilities.", control: { type: "drill", summary: () => "12 members", run: confirmLater("Members") } }, { id: "space.roles", label: "Roles", control: { type: "drill", summary: () => "Owner, Manager, Member, Reader", run: confirmLater("Roles") } }] },
+    danger("space.leave", "Leave this space", "You lose access to everything in it.", "Leave space…"),
+  ],
+};
+const invitesPage: Page = {
+  id: "invites", name: "Invites", icon: "link", blurb: "Invite people with a link that expires.",
+  groups: [
+    { settings: [{ id: "space.invites.create", label: "Invite someone", control: { type: "button", text: "Create invite…", run: confirmLater("Create invite") } }] },
+    { title: "Open invites", settings: [{ id: "space.invites.open", label: "Open invites", control: { type: "info", text: () => "None" } }] },
+    danger("space.invites.revoke-all", "Revoke every open invite", "Links already sent stop working.", "Revoke all…"),
+  ],
+};
+const secretsPage: Page = {
+  id: "secrets", name: "Secrets", icon: "key", blurb: "The space's secrets, by handle. Values are never shown.",
+  groups: [
+    { title: "Handles", settings: [{ id: "space.secrets.forge", label: "forge-token", control: { type: "info", text: () => "Set" } }, { id: "space.secrets.registry", label: "registry-key", control: { type: "info", text: () => "Set" } }] },
+    danger("space.secrets.delete-all", "Delete every secret", "Agents lose what they were given.", "Delete all…"),
+  ],
+};
+const instructionsPage: Page = {
+  id: "instructions", name: "Instructions and defaults", icon: "list", blurb: "What agents read first here, and the defaults members may override.",
+  groups: [
+    { title: "Agents", settings: [{ id: "space.instructions", label: "Instructions", help: "Read by every agent in this space.", control: { type: "text", placeholder: "For example: run tests before you commit." }, ...fx("space.instructions", "") }] },
+    { title: "Defaults", settings: [{ id: "space.default-preset", label: "Default look", help: "Members may override it.", control: { type: "popup", options: [{ id: "calternal", label: "Calternal" }, { id: "paper", label: "Paper" }, { id: "nord", label: "Nord" }] }, ...fx("space.default-preset", "calternal") }] },
+    danger("space.delete", "Delete this space", "Everything in it is deleted after 30 days.", "Delete space…"),
+  ],
+};
+const spacePluginsPage = listPage("space-plugins", "Space plugins", "apps", "Which plugins are on in this space.", "space.plugins", [["calternal-threads", "Threads"], ["calternal-notes", "Notes"]], "No plugins");
+spacePluginsPage.groups.push(danger("space.plugins.disable-all", "Turn off every plugin", "Members lose those apps here.", "Turn off all…"));
+
+const plansPage: Page = {
+  id: "plans", name: "Groups and plans", icon: "user", blurb: "Groups are named after plans; each says what it allows.",
+  groups: [
+    { settings: [{ id: "server.groups", label: "Groups", control: { type: "drill", summary: () => "Free, Team", run: confirmLater("Groups") } }] },
+    danger("server.groups.delete", "Delete a group", "Its members move to the default group.", "Delete group…"),
+  ],
+};
+const poolPage: Page = {
+  id: "pool", name: "Machine pool", icon: "terminal", blurb: "The cloud machines threads may use.",
+  groups: [
+    { title: "Pool", settings: [{ id: "server.pool.size", label: "Machines in the pool", control: { type: "info", text: () => "4 online" } }] },
+    danger("server.pool.drain", "Drain the pool", "Running sandboxes finish; no new ones start.", "Drain…"),
+  ],
+};
+const storagePage: Page = {
+  id: "storage", name: "Storage", icon: "folder", blurb: "The three roots and their health.",
+  groups: [
+    { title: "Roots", settings: [
+      { id: "server.storage.appdata", label: "appdata", help: "Databases and state, on the SSD.", control: { type: "info", text: () => "Healthy" } },
+      { id: "server.storage.userdata-ssd", label: "userdata-ssd", help: "People's files, on the SSD.", control: { type: "info", text: () => "Healthy" } },
+      { id: "server.storage.userdata-hdd", label: "userdata-hdd", help: "People's files, on disk.", control: { type: "info", text: () => "Healthy" } },
+    ] },
+    danger("server.storage.purge-trash", "Empty every trash", "Files in trash are deleted for good.", "Empty trash…"),
+  ],
+};
+
+/** The sidebar's groups, in order (docs/ui-craft-and-settings-study.md 11.1). */
+export const SECTIONS: Section[] = [
+  { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, machinesPage, pluginsPage, skillsPage, automationsPage, accountPage] },
+  { id: "space", name: "Admin: this space", pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
+  { id: "server", name: "Admin: server", pages: [plansPage, poolPage, storagePage] },
+];
+
+export const pageById = (id: string | undefined): Page | undefined => SECTIONS.flatMap((s) => s.pages).find((p) => p.id === id);
+/** Every setting with the page it lives on. */
+export const allSettings = (): { page: Page; setting: Setting }[] => SECTIONS.flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));
+export const settingById = (id: string | undefined) => allSettings().find((x) => x.setting.id === id);
+
+// The palette finds every setting by its label, help and section, and opens its address (decided: Settings has no search box of its own).
+registerManifest({
+  plugin: "calternal-settings",
+  commands: [
+    ...SECTIONS.flatMap((s) => s.pages.map((p) => ({ id: `settings.${p.id}`, label: p.name, group: "Settings", go: `/settings/${p.id}`, words: [p.blurb] }))),
+    ...allSettings().filter((x) => x.setting.control.type !== "info").map(({ page, setting }) => ({ id: setting.id, label: setting.label, group: `Settings · ${page.name}`, go: `/settings/${page.id}/${setting.id}`, words: [setting.help ?? ""] })),
+    { id: "settings.shortcuts", label: "Keyboard shortcuts", group: "Settings", op: "help.shortcuts", words: ["keys", "hotkeys"] },
+  ],
+});

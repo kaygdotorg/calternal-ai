@@ -58,7 +58,7 @@ describe("wallpaper field", () => {
     }
   });
   it("washes a dark wallpaper white for dark ink, and a bright one black for light ink", () => {
-    expect(washFor("light", { min: 0.02, max: 0.1 }, 0.35)).toBeGreaterThan(0.6);
+    expect(washFor("light", { min: 0.02, max: 0.1 }, 0.35)).toBeGreaterThan(0.55);
     expect(washFor("light", { min: 0.85, max: 0.9 }, 0.35)).toBe(0.35);
     expect(washFor("dark", { min: 0.7, max: 0.9 }, 0.35)).toBeGreaterThan(0.8);
     expect(washFor("dark", { min: 0.0, max: 0.02 }, 0.35)).toBe(0.35);

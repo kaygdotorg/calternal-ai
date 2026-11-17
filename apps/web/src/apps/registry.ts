@@ -29,6 +29,8 @@ export interface AttentionItem {
 export interface PanelDef {
   id: string;
   label: string;
+  /** A shorter name for the tab when four tabs must fit the narrow sidebar (the title keeps `label`). */
+  tab?: string;
   icon: IconName;
   component: Component<any>;
   props?: Record<string, unknown>;
@@ -61,7 +63,7 @@ export const APPS: AppDef[] = [
       { id: "changes", label: "Changes", icon: "changes", component: ThreadsPanels, props: { kind: "changes" } },
       { id: "run", label: "Run", icon: "pulse", component: ThreadsPanels, props: { kind: "run" } },
       { id: "files", label: "Files", icon: "files", component: ThreadsPanels, props: { kind: "files" } },
-      { id: "chat", label: "Side chat", icon: "threads", component: SideChat },
+      { id: "chat", label: "Side chat", tab: "Chat", icon: "threads", component: SideChat },
     ],
     attention: () =>
       threads.attention.map(({ thread, kinds }) => ({
