@@ -155,16 +155,41 @@ pub async fn dispatch<D: Directory>(
         let st = state.clone();
         let rid = request_id.to_owned();
         let operation = op.to_owned();
-        // Directory changes keep their own receipts in auth.db.
         return tokio::task::spawn_blocking(move || {
             // Accounts this change removes lose their private input for the space.
             let removed =
                 crate::account_input::revoked_targets(&st.directory, &p, &operation, &input)?;
-            let result = st.directory.space_operation(&p, &rid, &operation, &input);
+            let space = input
+                .get("space_id")
+                .and_then(Value::as_str)
+                .map(space_of)
+                .transpose()?;
+            let change = || st.directory.space_operation(&p, &rid, &operation, &input);
+            let result = match space {
+                // A write in a space is admitted through that space's receipts, the
+                // one admission every write there uses: one request ID cannot run
+                // both a content and a directory write in a space. The directory's
+                // own atomic receipt replays a change committed before a crash.
+                Some(space) if !matches!(operation.as_str(), "spaces.members") => {
+                    let fp = fingerprint(&operation, &input);
+                    st.store.content().admit(
+                        space,
+                        calternal_content::Request {
+                            account: p.id,
+                            id: &rid,
+                            operation: &operation,
+                            fingerprint: &fp,
+                        },
+                        change,
+                    )
+                }
+                // Reads, and account-level writes (spaces.create), whose receipt
+                // scope is the acting account.
+                _ => change(),
+            };
             if result.is_ok()
-                && let Some(space) = input.get("space_id").and_then(Value::as_str)
+                && let Some(space) = space
             {
-                let space = space_of(space)?;
                 for account in removed {
                     st.inputs.erase_space(account, space)?;
                 }

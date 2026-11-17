@@ -585,6 +585,45 @@ impl Content {
             Ok(response)
         })
     }
+    /// Admits one write whose effect lives outside this crate (a directory change
+    /// in a space) through the space's receipts, the same admission as every
+    /// content and control write there: a stored receipt replays (or conflicts),
+    /// otherwise `run` executes and its response becomes the receipt.
+    ///
+    /// The space's lock is held across `run` so that one request ID cannot start
+    /// two different writes in the space at once; `run` must be short and must
+    /// not touch this space's content. If the process stops after `run` commits
+    /// and before the receipt does, a retry calls `run` again, so `run` must
+    /// replay its own committed result (the directory keeps an atomic receipt).
+    /// Cost: the space's lock, one receipt read, `run`, and one FULL journal commit.
+    pub fn admit(
+        &self,
+        space: SpaceId,
+        request: Request<'_>,
+        run: impl FnOnce() -> Result<Value>,
+    ) -> Result<Value> {
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            if let Some(saved) = self.journals.receipt(&s.journal, request.account, request.id)? {
+                if saved.operation != request.operation || saved.fingerprint != request.fingerprint {
+                    return Err(Error::request_reused());
+                }
+                return Ok(saved.result);
+            }
+            let response = run()?;
+            self.journals.publish(
+                &s.journal,
+                request.account,
+                request.id,
+                request.operation,
+                request.fingerprint,
+                None,
+                "control",
+                response.clone(),
+            )?;
+            Ok(response)
+        })
+    }
     /// Commits generic bytes/metadata and finishes journal publication and placement.
     /// `id=None` creates a UUIDv7; updates require the current base token. The host
     /// supplies the operation response encoder and checks authority before calling.
