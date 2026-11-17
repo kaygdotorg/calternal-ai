@@ -43,6 +43,15 @@ class ThreadsStore {
     for (const t of this.threads) if (!t.parentId) (by.get(t.workspace) ?? by.set(t.workspace, []).get(t.workspace)!).push(t);
     return [...by].map(([workspace, threads]) => ({ workspace, threads: threads.sort((a, b) => b.updatedAt - a.updatedAt) }));
   }
+  /**
+   * Threads with something waiting on the person, newest request first, with what they are waiting on. The attention card shows the first three; the
+   * thread list leaves those out so a thread is never shown twice.
+   */
+  get attention(): { thread: ThreadSummary; kinds: Request["kind"][] }[] {
+    const by = new Map<string, Request["kind"][]>();
+    for (const r of this.requests) (by.get(r.threadId) ?? by.set(r.threadId, []).get(r.threadId)!).push(r.kind);
+    return [...by].flatMap(([id, kinds]) => { const thread = this.get(id); return thread ? [{ thread, kinds }] : []; });
+  }
   /** Open requests for one thread (a parent also sees its children's). */
   requestsFor(id: string): Request[] {
     const ids = new Set([id, ...this.threads.filter((t) => t.parentId === id).map((t) => t.id)]);

@@ -11,7 +11,7 @@
   {/each}
 {/snippet}
 
-<div class="md">
+<div class="md selectable">
   {#each blocks as b, bi}
     {#if b.t === "p"}<p>{@render inl(b.v)}{#if caret && bi === blocks.length - 1}<span class="caret" aria-hidden="true"></span>{/if}</p>
     {:else if b.t === "h"}<p class="h" role="heading" aria-level="2">{@render inl(b.v)}</p>

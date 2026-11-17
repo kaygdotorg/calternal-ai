@@ -7,6 +7,16 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const t = JSON.parse(readFileSync(join(root, "tokens/tokens.json"), "utf8"));
 
+// The phone's type scale comes from the measured iOS Dynamic Type table (default "Large" column), not from hand-typed sizes.
+const study = JSON.parse(readFileSync(join(root, "../../docs/native-ui-study.json"), "utf8"));
+const LARGE = study.ios.dynamicType.sizes.indexOf("large");
+for (const [token, style] of Object.entries(t.touchText)) {
+  if (token.startsWith("$")) continue;
+  const row = study.ios.dynamicType[style];
+  if (!row) throw new Error(`native-ui-study.json has no Dynamic Type style ${style}`);
+  t.touch[token] = `calc(${row[LARGE][0]} * var(--type-px))`;
+}
+
 const decl = (obj, pad = "  ") =>
   Object.entries(obj)
     .filter(([k]) => !k.startsWith("$"))

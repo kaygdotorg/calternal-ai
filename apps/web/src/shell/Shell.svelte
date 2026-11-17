@@ -32,11 +32,15 @@
   .shell {
     --sw: var(--side-w); --rw: var(--right-w);
     position: fixed; inset: 0; z-index: 1; display: grid; grid-template-columns: var(--sw) minmax(0, 1fr) var(--rw);
-    transition: grid-template-columns var(--dur-slow) var(--spring);
   }
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
   .side { min-width: 0; overflow: hidden; }
+  /* Opening or closing a sidebar changes the columns at once (animating them would re-lay-out the whole thread every frame); the sidebar's content eases in
+     and out with transform and opacity only, which stay on the compositor. */
+  .side > :global(.side), .right > :global(.rs) { transition: opacity var(--dur-base) var(--ease-out), translate var(--dur-slow) var(--spring); }
+  .shell[data-sidebar="false"] .side > :global(.side) { opacity: 0; translate: calc(var(--s-8) * -1) 0; }
+  .shell[data-right="false"] .right > :global(.rs) { opacity: 0; translate: var(--s-8) 0; }
   .side > :global(.side) { width: var(--side-w); }
   /* The middle card's top and bottom edges touch the viewport; it keeps one gap on each side. */
   .mid { min-width: 0; padding: 0 var(--inset); }

@@ -14,7 +14,7 @@
 
 {#if lines.length <= LIMIT}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <pre class="log" tabindex="0" aria-label={label}>{text}</pre>
+  <pre class="log selectable" tabindex="0" aria-label={label}>{text}</pre>
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div bind:this={box} class="log win" tabindex="0" role="region" aria-label="{label}, {lines.length} lines" style:--lh="1.6em" style:--view={view} onscroll={() => { top = Math.floor((box?.scrollTop ?? 0) / (box ? parseFloat(getComputedStyle(box).lineHeight) : 20)); }}>

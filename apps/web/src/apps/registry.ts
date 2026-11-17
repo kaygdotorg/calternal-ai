@@ -7,6 +7,7 @@ import type { Component } from "svelte";
 import type { IconName } from "@calternal/ui";
 import ThreadsMain from "./threads/Main.svelte";
 import ThreadsPanels from "./threads/Panels.svelte";
+import SideChat from "./threads/SideChat.svelte";
 import ThreadsSidebar from "./threads/Sidebar.svelte";
 import { store as threads } from "./threads/store.svelte";
 import Notes from "./notes/Notes.svelte";
@@ -46,8 +47,6 @@ export interface AppDef {
   start?: () => Promise<void>;
 }
 
-const ASK = { question: "question", approval: "shield", secret: "key" } as const;
-
 /** The installed apps, in switcher order. */
 export const APPS: AppDef[] = [
   {
@@ -60,14 +59,15 @@ export const APPS: AppDef[] = [
       { id: "changes", label: "Changes", icon: "changes", component: ThreadsPanels, props: { kind: "changes" } },
       { id: "run", label: "Run", icon: "pulse", component: ThreadsPanels, props: { kind: "run" } },
       { id: "files", label: "Files", icon: "files", component: ThreadsPanels, props: { kind: "files" } },
+      { id: "chat", label: "Side chat", icon: "threads", component: SideChat },
     ],
     attention: () =>
-      threads.requests.map((r) => ({
-        id: r.id,
-        icon: ASK[r.kind],
-        title: r.kind === "secret" ? r.label : r.title,
-        sub: threads.get(r.threadId)?.title ?? "",
-        href: `/threads/${r.threadId}`,
+      threads.attention.map(({ thread, kinds }) => ({
+        id: thread.id,
+        icon: kinds.includes("approval") ? "shield" : kinds.includes("secret") ? "key" : "question",
+        title: thread.title,
+        sub: kinds.map((k) => ({ question: "Question", approval: "Approval", secret: "Secret" })[k]).filter((v, i, a) => a.indexOf(v) === i).join(" and "),
+        href: `/threads/${thread.id}`,
       })),
     start: () => threads.start(),
   },
