@@ -42,10 +42,10 @@ Not a card: it sits directly on the tinted background.
 ### Right card
 
 - AI chat by default.
-- Also hosts app panels such as the Notes inspector and style sheet.
+- Tabs at the bottom of the card switch between AI chat and the current app's panels.
+  The app's plugin decides which panels exist (for Notes: the inspector and style sheet).
 
 ## Open
 
-- How the right card shows chat and an app panel at once.
 - The narrow-screen arrangement of the three regions.
 - The backdrop-sampling technique for adaptive blur and its frame cost.
