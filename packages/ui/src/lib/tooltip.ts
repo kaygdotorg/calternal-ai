@@ -17,7 +17,7 @@ export function keys(k: string): string {
   return k.replace(/⌘/g, "Ctrl+").replace(/⌥/g, "Alt+").replace(/⇧/g, "Shift+").replace(/⌫/g, "Backspace").replace(/↵/g, "Enter").replace(/⇥/g, "Tab");
 }
 /** One chip per key: "⌘⇧D" becomes ⌘ ⇧ D. */
-export function keyChips(k: string): string[] {
+function keyChips(k: string): string[] {
   return keys(k).split(/(?<=[⌘⇧⌥⌃])|\+/).filter(Boolean).map((c) => (c === "⇥" ? "Tab" : c));
 }
 

@@ -73,7 +73,7 @@ fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
             signature: key.sign_session(id, &challenge),
             challenge,
             boot_id: boot,
-            protocol: 2,
+            protocol: calternal_machine::protocol::PROTOCOL_VERSION,
             backend: "podman".into(),
         };
         let token = svc.session_finish(&finish).unwrap().token;
@@ -130,7 +130,7 @@ async fn sessions_need_the_machine_key() {
         signature: wrong.sign_session(id, &challenge),
         challenge,
         boot_id: Uuid::new_v4(),
-        protocol: 2,
+        protocol: calternal_machine::protocol::PROTOCOL_VERSION,
         backend: "podman".into(),
     };
     assert_eq!(
@@ -285,7 +285,7 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
             signature: key.sign_session(id, &challenge),
             challenge,
             boot_id: Uuid::new_v4(),
-            protocol: 2,
+            protocol: calternal_machine::protocol::PROTOCOL_VERSION,
             backend: backend.into(),
         })
     };
@@ -322,7 +322,7 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
             signature: pool_key.sign_session(pool, &challenge),
             challenge,
             boot_id: Uuid::new_v4(),
-            protocol: 2,
+            protocol: calternal_machine::protocol::PROTOCOL_VERSION,
             backend: "auto".into(),
         })
         .unwrap();

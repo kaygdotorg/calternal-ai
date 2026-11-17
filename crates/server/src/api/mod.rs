@@ -1,5 +1,5 @@
 //! HTTP surface: `/api/v1/describe`, `/api/v1/operations`, same-origin static
-//! files (`--web-dir`, no SPA fallback), Host/Origin checks, account sessions, optional development bearers
+//! files and application addresses (`--web-dir`), Host/Origin checks, account sessions, optional development bearers
 //! and security headers. Split by concern: `guard` (Host/Origin/session checks),
 //! `dispatch` (operation admission and host handlers) and `plugins` (plugin
 //! invocation and preview).
@@ -23,7 +23,6 @@ use calternal_core::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tower_http::services::ServeDir;
 
 use crate::auth::{Directory, Identity, StoredDirectory};
 use crate::authz::{self, Constraint};
@@ -39,6 +38,7 @@ use calternal_types::{AccountId, Error, SpaceId};
 mod dispatch;
 mod guard;
 mod plugins;
+mod web;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
 use dispatch::*;
@@ -46,7 +46,7 @@ use guard::*;
 use plugins::*;
 
 /// Same-origin development content security policy applied to every response.
-pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 /// Shared host services; `D` is the protected source of current identity and grants.
 /// The default preserves fixture integrations; stored directories plug in without
@@ -65,7 +65,8 @@ pub struct AppState<D: Directory = StoredDirectory> {
     pub directory: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,
-    /// Bounded pool of long-lived (plugin, space) workers; refuses calls without Node.
+    /// Bounded pool of long-lived (plugin, space) workers routed through enrolled
+    /// machines; explicit direct adapters serve disposable development and tests.
     pub workers: WorkerPool,
     /// Durable plugin jobs and their live streams; [`Jobs::disabled`] refuses jobs.
     pub jobs: Jobs,
@@ -113,7 +114,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     }
 
     if let Some(dir) = web_dir {
-        app = app.fallback_service(ServeDir::new(dir));
+        app = app.fallback_service(web::assets(dir, &state.registry));
     }
     let app = app
         .layer(middleware::from_fn_with_state(state.clone(), guard::<D>))

@@ -22,7 +22,7 @@ pub(super) fn open_stores(
     installation: uuid::Uuid,
     create: bool,
     receipt_retention: std::time::Duration,
-    plugin_root: std::path::PathBuf,
+    plugin_root: Option<std::path::PathBuf>,
     test_plugin_root: Option<std::path::PathBuf>,
 ) -> Result<
     (
@@ -56,11 +56,12 @@ pub(super) fn open_stores(
             "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
         )
     })?;
-    let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = match &test_root {
-        Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
-        None => Registry::load(&plugin_root),
+    let registry = if let Some(root) = plugin_root {
+        let root = std::fs::canonicalize(&root).unwrap_or(root);
+        Registry::load_with_tests(&root, test_root.as_deref())
+    } else {
+        Registry::load_server_defaults(test_root.as_deref())
     };
     Ok((store, data_dir, recovery, registry))
 }

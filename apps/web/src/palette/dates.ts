@@ -10,8 +10,6 @@ export function clockNow(d = new Date()): Now {
   return { today: `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`, h: d.getHours(), m: d.getMinutes() };
 }
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const parseIso = (s: string) => {
   const [y, m, d] = s.split("-").map(Number);
@@ -25,10 +23,6 @@ export const addDays = (s: string, n: number) => {
 };
 export const dow = (s: string) => parseIso(s).getDay();
 export const diffDays = (a: string, b: string) => Math.round((parseIso(a).getTime() - parseIso(b).getTime()) / 86_400_000);
-export const dayName = (i: number) => DAYS[i]!;
-export const monthName = (i: number) => MONTHS[i]!;
-const monthOf = (s: string) => parseIso(s).getMonth();
-const dayOf = (s: string) => parseIso(s).getDate();
 
 /** The next weekday on or after `from` (N1: a bare weekday includes today). */
 export const nextWeekday = (target: number, from: string) => addDays(from, (target - dow(from) + 7) % 7);
@@ -37,21 +31,4 @@ export const nextWeekday = (target: number, from: string) => addDays(from, (targ
 export function followingWeek(target: number, from: string) {
   const mon = addDays(from, (8 - dow(from)) % 7 || 7);
   return addDays(mon, (target + 6) % 7);
-}
-
-/** "5 pm", "5:30 pm". */
-export function fmtTime(t: string) {
-  const [h, m] = t.split(":").map(Number);
-  const hh = h! % 12 || 12;
-  return `${hh}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h! < 12 ? "am" : "pm"}`;
-}
-
-/** A day the short way: Today, Tomorrow, Fri (within a week), else "24 Oct". */
-export function fmtDay(s: string, today: string) {
-  const d = diffDays(s, today);
-  if (d === 0) return "Today";
-  if (d === 1) return "Tomorrow";
-  if (d === -1) return "Yesterday";
-  if (d > 1 && d < 7) return dayName(dow(s));
-  return `${dayOf(s)} ${monthName(monthOf(s))}`;
 }

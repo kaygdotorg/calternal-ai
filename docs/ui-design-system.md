@@ -156,14 +156,15 @@ Tests: `npm test --workspace @calternal/ui` (names, roles, keyboard, focus trap,
 - **Nothing out of bounds.** Menus and popovers place themselves with `lib/place.ts` (flip, shift, clamp to the window); rings are inset.
 - **Surfaces are never seen before their material is ready** (`lib/ready.ts`): a popover or sheet appears only after the blur and tint are in, and leaves with a fade.
 - **One state signal.** A thread's state is an icon in a row (spinner, bell, warning) or a word in the title pill, never both (`StateMark form`). Idle and done show nothing.
-- **Thread rows are one line:** title, time (hover only), compact state, provider mark. No second line, no automatic workspace labels; people make their own sections.
+- **Thread rows are one line:** the provider mark at the left, the title, the compact state at the right. Pointing at a row swaps the state for exactly three actions (copy link, archive, three dots = the right-click menu, one definition). No second line, no automatic workspace labels; people make their own sections.
+- **Swipe rows** (`apps/web/src/lib/swipe`, ported from the existing app's `rows/`, #400, same thresholds and springs): finger on a phone, two-finger sideways scroll on a desktop. Right shows Copy link; left shows Archive (a long swipe runs it) and More. Never from the screen's left or right 24 px (the shell's), a mostly vertical or slow drag is not a swipe, one row is open at a time, a drag in progress blocks it. One change from the existing app: only a scroll of the row's own container shuts an open row. Proof: `e2e/swipe-rows.mjs`.
 
 ## Primitives
 
 | Primitive | Role |
 | --- | --- |
 | `Panel` | the material for cards, panes, pills (radius token), floating or docked |
-| `Pill`, `IconButton` | round controls; both carry the tooltip and the bounce |
+| `Pill`, `IconButton` | round controls; both carry the tooltip and the press |
 | `Popover`, `Menu` (search, anchor), `Sheet` | floating surfaces on `Panel` |
 | `InlineEditor` | the one text-input surface (composer, side chat, rename); the Notes block editor's input replaces this file alone |
 | `Toasts` | ported from the existing app; mount once; T1 rule: toasts only for something to act on (Undo, Retry) or a result awaited |
@@ -176,10 +177,27 @@ words slide with blur on swap, keeps itself centred while the trigger moves, **k
 **Kept the existing app's**: same behaviour as the reference, no dependency, a longer warm window that suits a toolbar, and it already follows our
 keyboard rule. Ported to `lib/tooltip.ts` (`use:tip={{ label, kbd }}`); the label also names the control.
 
-## Pill bounce
+## Pill press
 
-Defined once (`lib/bounce.ts`, used by `Pill` and `IconButton`): after a pointer or touch click the control rebounds from `--press-scale` (0.96) to 1.035 and
-settles over `--dur-slow` on `--ease-out`. A keyboard activation (`detail` 0, or key modality) and reduced motion never move it; a new press cancels it.
+The existing app's press, as plain CSS on each control (`Pill`, `IconButton`, `Button`, `Row`, `Capsule`): `scale` goes to `--press-scale` while pressed and returns over
+`--dur-fast` on `--ease-out`, transform only. There is no rebound past 1 (owner, 2026-11-18: the overshoot was too much; the existing app has none). A keyboard activation never
+moves it (key modality makes every transition 0 s) and reduced motion keeps only the scale.
+
+## Popover morph
+
+`Popover` and `Menu` take `morph` (the composer's three chips use it): with a pointer or touch driving and motion not reduced, the popover covers its button (`place(..., { cover: true })`:
+left and bottom edges aligned, at least as wide) and grows out of the button's own shape, and shrinks back into it, as Apple's ⋯ menus do. Ported from the calternal-ui plugin
+(`frame/clip-morph.ts`, fitted from iOS 27): `lib/clip-morph.ts`. Open: a damped spring (response 330 ms, damping 0.74, settled 480 ms), a capsule until 75 % grown then the menu's radius, a 2 to 4 %
+overshoot as a scale about the button's corner, rows blurred 10 px to 0 and fading in between 75 % and 95 %. Close: rows out in 70 ms, the glass back into the button over 250 ms on
+cubic-bezier(0.2, 0, 0.5, 1), the button returns at 160 ms with a small swell. These are the fitted values, not motion tokens. The clip is on the glass layer and on the words, never on an ancestor of the
+glass (that would make a backdrop root and the blur would pop in at the end). Driven by a requestAnimationFrame loop, first frame painted synchronously. Interruptible: a reversal continues from the
+progress reached. Keyboard use and reduced motion place the popover beside the button and fade it (nothing moves). Proof: `e2e/morph.mjs`. Headless Chromium does not draw backdrop-filter, so the blur
+and the look of the morph are judged on a real GPU (the Mac).
+
+## Focus ring
+
+Keyboard only (`data-input="key"`), 2 px, inside the control, following the control's own radius (the rule sets no `border-radius`). A host that holds a text field draws the ring itself (`data-ring-host`,
+`--ring-offset`). A modifier on its own and a Meta or Control chord with a character (a screenshot shortcut) are not the keyboard. Proof: `e2e/focus-ring.mjs`.
 
 ## Motion, per transition (measured on the dev VM, p50 / p90 / p98 ms to reach the end value)
 
@@ -191,7 +209,6 @@ settles over `--dur-slow` on `--ease-out`. A keyboard activation (`detail` 0, or
 | Menu / popover | ready, then fade `--dur-base` 220; leave `--dur-leave` 200 | opens within a frame |
 | Toast | spring capsule (ported), arrive 260 | unchanged from the existing app |
 | Tooltip | pop 160, travel 320 on `--spring` | unchanged from the existing app |
-| Bounce | `--dur-slow` 300, `--ease-out` | n/a |
 
 All are interruptible (a reversal half way is continuous, checked in `e2e/motion.mjs`), and none run from the keyboard.
 

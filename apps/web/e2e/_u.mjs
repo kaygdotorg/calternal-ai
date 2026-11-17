@@ -1,0 +1,13 @@
+import { chromium } from "playwright";
+import { serve, BASE, DEVICES } from "./lib.mjs";
+const stop = await serve(); const b = await chromium.launch();
+const ctx = await b.newContext({ ...DEVICES.desktop }); await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
+const p = await ctx.newPage();
+await p.goto(BASE + "/notes/n-2?firstrun=0&test=1"); await p.waitForSelector(".cm-content"); await p.waitForTimeout(800); await p.locator(".cm-content").click(); await p.keyboard.press("Control+a"); await p.keyboard.press("Delete"); await p.waitForTimeout(700);
+const t = async (m) => console.log(m, JSON.stringify(await p.evaluate(() => window.__block.value)));
+await p.evaluate(() => navigator.clipboard.writeText("XY")); await p.keyboard.type("ab"); await t("typed");
+await p.keyboard.press("Control+v"); await t("pasted");
+await p.keyboard.press("Control+z"); await t("undo1");
+await p.keyboard.press("Control+z"); await t("undo2");
+await p.keyboard.press("Control+Shift+z"); await t("redo");
+await b.close(); stop();

@@ -28,6 +28,7 @@ mod drafts_cases;
 mod live_cases;
 mod perf_cases;
 mod simplify_review_cases;
+mod worker_cases;
 
 const ORIGIN: &str = "http://localhost:18080";
 const AUTH_ROUTES: &[(&str, &str)] = &[
@@ -131,6 +132,7 @@ struct Fixture {
     devices: Vec<Device>,
     spaces: Vec<String>,
     development: bool,
+    remote_workers: bool,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -149,12 +151,17 @@ impl Fixture {
         }
     }
     async fn start(&mut self) {
+        self.start_with_plugin_root(true).await;
+    }
+
+    async fn start_with_plugin_root(&mut self, explicit: bool) {
         let path = self.appdata().join("startup.json");
         let _ = std::fs::remove_file(&path);
         let binary = std::env::var("CALTERNAL_SERVER_BIN")
             .expect("set CALTERNAL_SERVER_BIN to built dev-VM binary");
         let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut command = Command::new(binary);
+        command.env_clear();
         if self.dir.path().join("node-gate").is_file() {
             command
                 .arg("serve")
@@ -163,8 +170,19 @@ impl Fixture {
         } else {
             command.arg("serve");
         }
+        if !self.remote_workers {
+            command.env("CALTERNAL_WORKER_TEST_BACKEND", "direct");
+        }
         if self.development {
             command.arg("--development");
+        }
+        if explicit {
+            command
+                .arg("--plugin-root")
+                .arg(repo.join("plugins"))
+                .current_dir(&repo);
+        } else {
+            command.current_dir(self.dir.path());
         }
         let crash = self.dir.path().join("thread-send-fault").is_file();
         self.child = Some(
@@ -177,13 +195,9 @@ impl Fixture {
                 .arg(self.dir.path().join("userdata-ssd"))
                 .arg("--userdata-hdd")
                 .arg(self.dir.path().join("userdata-hdd"))
-                .arg("--plugin-root")
-                .arg(repo.join("plugins"))
                 // The binary is built with `test-plugins`; see README.
                 .arg("--test-plugin-root")
                 .arg(repo.join("tests/plugins"))
-                .current_dir(repo)
-                .env_clear()
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env("RUST_LOG", "warn")
@@ -364,6 +378,7 @@ impl Fixture {
             devices: vec![],
             spaces: vec![],
             development: false,
+            remote_workers: false,
         };
         f.start().await;
         let token = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
@@ -425,7 +440,12 @@ impl Fixture {
         for i in [0, 3] {
             let s = f.op(i, "spaces.list", json!({})).await;
             s.ok();
-            assert_eq!(s.body["data"]["spaces"], json!([]));
+            let spaces = s.body["data"]["spaces"].as_array().unwrap();
+            assert_eq!(spaces.len(), 1);
+            assert_eq!(spaces[0]["personal"], true);
+            assert_eq!(spaces[0]["role"], "owner");
+            assert_eq!(spaces[0]["owner"], f.ids[i]);
+            assert_ne!(spaces[0]["id"], f.ids[i]);
         }
         f
     }
@@ -2682,7 +2702,7 @@ async fn machines_and_runs_are_owner_private() {
     let forged = MachineKey::generate()
         .unwrap()
         .sign_session(machine, &challenge);
-    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":2,"backend":"podman"});
+    let finish = |sig: String, ch: &str| json!({"machine_id":machine,"challenge":ch,"signature":sig,"boot_id":uuid::Uuid::now_v7(),"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":"podman"});
     assert_eq!(
         f.machine(
             "/api/v1/machine/session/finish",

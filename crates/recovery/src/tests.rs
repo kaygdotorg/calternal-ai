@@ -428,6 +428,24 @@ async fn account_creation_passkey_removal_and_session_revocation_use_the_barrier
     let coordinator = Arc::new(f.coordinator());
     auth.configure_recovery(coordinator.clone()).await.unwrap();
     let created = auth.create("new account").await.unwrap();
+    let spaces = auth.spaces();
+    let account = created.id;
+    let listed = tokio::task::spawn_blocking(move || spaces.list(account).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 1);
+    let personal = &listed[0];
+    assert!(personal.personal);
+    assert_eq!(personal.owner, created.id);
+    assert_ne!(personal.id.as_uuid(), created.id.as_uuid());
+    let signup = coordinator.validate_and_read().unwrap();
+    assert!(
+        ids(&signup, "spaces", "id")
+            .unwrap()
+            .contains(&personal.id.as_uuid())
+    );
+    assert_eq!(signup.tables, capture(&c, f.install, 1).unwrap().tables);
+
     assert!(
         ids(&coordinator.validate_and_read().unwrap(), "users", "id")
             .unwrap()

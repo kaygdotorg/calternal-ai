@@ -5,7 +5,11 @@ pub(super) struct Live {
     pub(super) buffer: Vec<u8>,
 }
 impl Live {
-    async fn open(f: &Fixture, who: usize, subscriptions: Value) -> Result<Self, (u16, Value)> {
+    pub(super) async fn open(
+        f: &Fixture,
+        who: usize,
+        subscriptions: Value,
+    ) -> Result<Self, (u16, Value)> {
         let response = f
             .client
             .get(format!("{}/api/v1/live", f.base))

@@ -14,7 +14,7 @@
 </script>
 
 <nav aria-label="Notes">
-  {#if notes.space}<p class="sp">{notes.space.name}{notes.live ? " · server" : ""}</p>{/if}
+  {#if notes.space}<p class="sp">{notes.space.name}{notes.live ? " (server)" : ""}</p>{/if}
   <ul>{#each notes.list as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">{notes.error || "No notes yet."}</li>{/each}</ul>
   <button type="button" class="new" onclick={create}>New note</button>
   {#if notes.waiting.length}

@@ -1,0 +1,32 @@
+// The Settings pages the record decides, on fixtures: Keyboard (every shortcut, remap, the shortcuts file), Machines (the list, sandboxed or direct, the guided add), Plugins (installed, available, access,
+// options), and that the pages waiting on a design round (skills, automations) are not there. Usage: node e2e/settings-pages.mjs (after `npm run build`).
+import { chromium } from "playwright";
+import { serve, BASE, DEVICES } from "./lib.mjs";
+const stop = await serve(); const b = await chromium.launch(); let bad = 0;
+const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
+const ctx = await b.newContext({ ...DEVICES.desktop }); const page = await ctx.newPage();
+const go = async (path) => { await page.goto(BASE + path); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(700); };
+await go("/settings/keyboard?firstrun=0");
+ok((await page.locator(".page kbd").count()) >= 8, "Keyboard: every shortcut is listed on the page, with its keys");
+await page.locator(".page li", { hasText: "Show or hide the sidebar" }).getByRole("button", { name: "Change" }).click();
+await page.keyboard.press("Control+Alt+KeyB"); await page.waitForTimeout(200);
+ok((await page.locator("#sc-file-text").innerText()).includes("sidebar: Mod+Alt+KeyB"), "…a change is written to the account's shortcuts file", (await page.locator("#sc-file-text").innerText()).replace(/\n/g, " | "));
+await page.getByRole("button", { name: "Reset all" }).last().click();
+ok(!(await page.locator("#sc-file-text").innerText()).includes("sidebar:"), "…and Reset all empties it");
+await go("/settings/machines?firstrun=0");
+ok((await page.locator(".page li[data-setting^='machines.']").count()) >= 3 && (await page.getByRole("radio", { name: "Direct" }).count()) >= 3, "Machines: the list, each with Sandboxed and Direct");
+await page.locator(".page li[data-setting='machines.kayg-laptop']").getByRole("radio", { name: "Direct" }).click(); await page.waitForTimeout(200);
+ok((await page.locator(".page li[data-setting='machines.kayg-laptop'] [aria-checked=true]").innerText()).trim() === "Direct", "…the choice is kept");
+await page.getByRole("button", { name: "Add a machine…" }).click(); await page.getByRole("button", { name: "Continue" }).click();
+await page.getByPlaceholder("build-01.example.org").fill("build-09.example.org"); await page.getByRole("button", { name: "Continue" }).click(); await page.getByRole("button", { name: "Add the machine" }).click(); await page.waitForTimeout(300);
+ok((await page.getByText("build-09.example.org").count()) > 0, "…and the guided flow (how, where, check) adds one");
+await go("/settings/plugins?firstrun=0");
+ok((await page.getByText("Installed").count()) > 0 && (await page.getByText("Available").count()) > 0 && (await page.getByText(/May: /).count()) >= 3, "Plugins: installed and available, with what each may reach");
+await page.getByRole("button", { name: "Threads options" }).click(); await page.waitForTimeout(200);
+ok((await page.getByText("Show the steps of a turn").count()) === 1, "…a plugin's own options open from its row");
+await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("button", { name: "Install" }).click(); await page.waitForTimeout(200);
+ok((await page.locator("li[data-setting='plugins.calternal-calendar']").getByRole("switch").count()) === 1 || (await page.getByRole("switch", { name: "Calendar" }).count()) === 1, "…and Install moves a plugin to Installed");
+const pages = await page.evaluate(() => [...document.querySelectorAll("aside.side nav a")].map((a) => a.textContent.trim()));
+ok(!pages.some((p) => /Skills|Automations/.test(p)), "Skills and automations are not in Settings (waiting on a design round)", pages.join(", "));
+await b.close(); stop();
+console.log(bad ? `${bad} FAIL` : "all pass"); process.exit(bad ? 1 : 0);

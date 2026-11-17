@@ -32,6 +32,26 @@ impl DirectBackend {
 }
 
 impl Backend for DirectBackend {
+    fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
+        Box::pin(async move {
+            match tokio::fs::read_dir(self.root.join("workers")).await {
+                Ok(mut entries) => {
+                    if entries
+                        .next_entry()
+                        .await
+                        .map_err(SandboxError::new)?
+                        .is_some()
+                    {
+                        Err(SandboxError("restore Podman to confirm cleanup of prior plugin workers before reconnecting".into()))
+                    } else {
+                        Ok(())
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(SandboxError::new(e)),
+            }
+        })
+    }
     fn name(&self) -> &'static str {
         "direct"
     }
@@ -44,11 +64,14 @@ impl Backend for DirectBackend {
                 .join(account.to_string())
                 .join("threads")
                 .join(thread.to_string());
-            match tokio::fs::remove_dir_all(dir).await {
-                Ok(()) => Ok(()),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                Err(e) => Err(SandboxError::new(e)),
+            for path in [dir, self.root.join("workers").join(thread.to_string())] {
+                match tokio::fs::remove_dir_all(path).await {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(SandboxError::new(e)),
+                }
             }
+            Ok(())
         })
     }
     fn start<'a>(
@@ -56,26 +79,48 @@ impl Backend for DirectBackend {
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async move {
-            let account = self.root.join("accounts").join(spec.account_id.to_string());
-            let home = account.join("home");
-            let dir = account.join("threads").join(spec.thread_id.to_string());
-            tokio::fs::create_dir_all(&home)
-                .await
-                .map_err(SandboxError::new)?;
-            use std::os::unix::fs::PermissionsExt;
-            tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
-                .await
-                .map_err(SandboxError::new)?;
-            let work = dir.join("work");
-            tokio::fs::create_dir_all(&work)
-                .await
-                .map_err(|e| SandboxError(format!("cannot create work directory: {}", e.kind())))?;
-            Ok(Arc::new(DirectSandbox {
-                dir,
-                work,
-                home,
-                groups: Mutex::new(HashSet::new()),
-            }) as Arc<dyn Sandbox>)
+            let result = async {
+                let account = self.root.join("accounts").join(spec.account_id.to_string());
+                let home = account.join("home");
+                let dir = if spec.worker.is_some() {
+                    self.root.join("workers").join(spec.thread_id.to_string())
+                } else {
+                    account.join("threads").join(spec.thread_id.to_string())
+                };
+                if spec.worker.is_none() {
+                    tokio::fs::create_dir_all(&home)
+                        .await
+                        .map_err(SandboxError::new)?;
+                }
+                use std::os::unix::fs::PermissionsExt;
+                if spec.worker.is_none() {
+                    tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
+                        .await
+                        .map_err(SandboxError::new)?;
+                }
+                let work = dir.join("work");
+                tokio::fs::create_dir_all(&work).await.map_err(|e| {
+                    SandboxError(format!("cannot create work directory: {}", e.kind()))
+                })?;
+                if let Some(worker) = &spec.worker {
+                    super::worker::prepare(&work, worker).await?;
+                }
+                Ok(Arc::new(DirectSandbox {
+                    dir,
+                    work: spec.code_directory.clone().unwrap_or(work),
+                    worker: spec.worker.is_some(),
+                    home,
+                    groups: Mutex::new(HashSet::new()),
+                }) as Arc<dyn Sandbox>)
+            }
+            .await;
+            if result.is_err() && spec.worker.is_some() {
+                let _ = tokio::fs::remove_dir_all(
+                    self.root.join("workers").join(spec.thread_id.to_string()),
+                )
+                .await;
+            }
+            result
         })
     }
 }
@@ -85,6 +130,7 @@ pub struct DirectSandbox {
     dir: PathBuf,
     work: PathBuf,
     home: PathBuf,
+    worker: bool,
     /// Process groups started here; pruned lazily when they no longer exist.
     groups: Mutex<HashSet<i32>>,
 }
@@ -124,8 +170,12 @@ impl Sandbox for DirectSandbox {
                 .env("PATH", path)
                 .env("HOME", &self.home)
                 .envs(request.env.iter().map(|(k, v)| (k, v)));
+            if self.worker {
+                cmd.env_clear().env("LANG", "C.UTF-8");
+            }
             cmd.as_std_mut().process_group(0);
-            let (exec, pid) = super::spawn_streaming(cmd, request.stdin)?;
+            let (exec, pid) =
+                super::spawn_streaming(cmd, request.stdin, request.interactive, self.worker)?;
             let mut groups = self.groups.lock().expect("groups");
             groups
                 .retain(|&g| Pid::from_raw(g).is_some_and(|p| test_kill_process_group(p).is_ok()));
@@ -181,6 +231,8 @@ mod tests {
 
     fn spec() -> SandboxSpec {
         SandboxSpec {
+            code_directory: None,
+            worker: None,
             account_id: Uuid::new_v4(),
             thread_id: Uuid::new_v4(),
             image: None,
@@ -190,6 +242,7 @@ mod tests {
 
     fn argv(a: &[&str]) -> ExecRequest {
         ExecRequest {
+            interactive: false,
             argv: a.iter().map(|s| s.to_string()).collect(),
             stdin: String::new(),
             env: vec![("ONLY".into(), "this".into())],

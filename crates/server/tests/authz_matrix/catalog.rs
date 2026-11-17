@@ -104,6 +104,8 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         ("threads.send", Capability::PluginsUse),
         ("threads.stop", Capability::PluginsUse),
         ("threads.archive", Capability::ContentWrite),
+        ("threads.rename", Capability::ContentWrite),
+        ("threads.unarchive", Capability::ContentWrite),
         ("threads.delete", Capability::ContentWrite),
     ];
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");

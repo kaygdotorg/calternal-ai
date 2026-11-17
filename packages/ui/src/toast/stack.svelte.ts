@@ -9,7 +9,7 @@ import type { Presenter } from "./presenter";
 type Clock = { left: number; since: number; timer?: ReturnType<typeof setTimeout> };
 
 /** How many toasts are drawn at once; older ones stay alive (and keep time) out of sight. */
-export const VISIBLE = 3;
+const VISIBLE = 3;
 
 /** Toast ids on screen, oldest first (the newest sits lowest). */
 export const ids = $state<string[]>([]);

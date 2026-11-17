@@ -27,6 +27,8 @@ import presets from '../presets.generated.json';
       if (pal) root.style.setProperty(`--cal-${k}`, pal[k]!);
       else root.style.removeProperty(`--cal-${k}`);
     }
+    // The wallpaper belongs to the default look; a themed preset is flat.
+    if (pal) root.style.setProperty('--cal-wall', 'none'); else root.style.removeProperty('--cal-wall');
   };
   scheme.value = localStorage.getItem('starlight-theme') || 'auto';
   preset.value = localStorage.getItem('cal-docs-preset') || 'calternal';

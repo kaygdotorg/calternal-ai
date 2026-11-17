@@ -29,6 +29,8 @@ async fn podman_exec_keeps_environment_values_out_of_host_argv() {
     let backend = PodmanBackend::new(&fake, dir.path().join("root"), "unused:image");
     let sandbox = backend
         .start(&SandboxSpec {
+            code_directory: None,
+            worker: None,
             account_id: Uuid::new_v4(),
             thread_id: Uuid::new_v4(),
             image: None,
@@ -39,6 +41,7 @@ async fn podman_exec_keeps_environment_values_out_of_host_argv() {
     let secret = "ct1_00000000-0000-0000-0000-000000000000_reviewsentinel";
     let exec = sandbox
         .exec(ExecRequest {
+            interactive: false,
             stdin: String::new(),
             argv: vec!["calternal-provider-claude-code".into()],
             env: vec![("CALTERNAL_AGENT_TOKEN".into(), secret.into())],

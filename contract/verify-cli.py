@@ -100,7 +100,7 @@ def smoke(data_dir, spawn):
         guest = cl('describe', principal='guest')['data']['principal']
         assert str(uuid.UUID(owner['id'])) == owner['id']
         assert owner['id'] != guest['id']
-        shared = guest['spaces'][0]['id']
+        shared = next(space['id'] for space in guest['spaces'] if space['role'] == 'reader')
         private = next(space['id'] for space in owner['spaces'] if space['id'] != shared)
         operation = ['--request-id', f'cli-smoke-create-{run_id}', 'notes', 'create', '--space', private, '--title', 'CLI conformance fixture', '--markdown', 'Initial Markdown\n']
         first = watched_create(private, operation)

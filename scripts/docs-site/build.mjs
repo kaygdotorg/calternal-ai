@@ -28,7 +28,8 @@ if (check) process.exit(0);
 process.env.CARGO_PROFILE_DEV_DEBUG ||= '0';
 process.env.CARGO_INCREMENTAL ||= '0';
 // Stable Rust still requires -Z unstable-options for JSON; use the allowed HTML fallback.
-run('cargo', ['doc', '--locked', '--workspace', '--no-deps', '-j6']);
+// DOCS_SKIP_CARGO=1 reuses the HTML of the last `cargo doc` (a theme-only rebuild); a release build never sets it.
+if (!process.env.DOCS_SKIP_CARGO) run('cargo', ['doc', '--locked', '--workspace', '--no-deps', '-j6']);
 const rust = path.join(site, 'public/dev/rust');
 await rm(rust, { recursive: true, force: true });
 await mkdir(path.dirname(rust), { recursive: true });

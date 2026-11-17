@@ -3,6 +3,7 @@
   // draws the block menu with the design system's Menu, and reports edits. The text is not mirrored into component state (that would copy a long document per keystroke): `onedit` gets it
   // and the parent debounces saving. Opening another note replaces the document and forgets the history.
   import { Menu, type MenuItem } from "@calternal/ui";
+  import { pickerKey as pk } from "../../../../../packages/editor/src/text/picker";
   import MentionPicker from "../../palette/MentionPicker.svelte";
   import { blockPool, mentionPool, notePool, pick, tagPool, type Mention } from "../../palette/mentions";
   import { onMount } from "svelte";
@@ -39,11 +40,7 @@
   }
   // While a picker is open it owns Up, Down, Enter, Tab and Escape.
   function pickerKey(e: KeyboardEvent): boolean {
-    if (!flat.length) return false;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); sel = (sel + (e.key === "ArrowDown" ? 1 : flat.length - 1)) % flat.length; return true; }
-    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(flat[sel]!); return true; }
-    if (e.key === "Escape") { e.preventDefault(); dismissed = trig?.from ?? null; return true; }
-    return false;
+    return pk(e, { count: flat.length, index: sel, set: (i) => (sel = i), choose: () => choose(flat[sel]!), dismiss: () => (dismissed = trig?.from ?? null) });
   }
   let timer = 0;
   const heads = () => { clearTimeout(timer); timer = window.setTimeout(() => ed && onheadings?.(ed.headings()), 250); };

@@ -204,6 +204,8 @@ class Appearance {
   async ensureThumbs(): Promise<void> {
     for (const w of this.wallpapers) {
       if (w.thumb || this.thumbs[w.id] || !this.library.thumbOf) continue;
+      // One picture per turn of the event loop, after the next frame: painting a generated look is real work, and opening Settings must not spend it all inside one frame.
+      await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
       const t = await this.library.thumbOf(w);
       this.thumbs = { ...this.thumbs, [w.id]: t };
     }

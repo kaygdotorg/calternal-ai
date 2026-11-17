@@ -128,10 +128,11 @@ enum Cmd {
         /// Comma-separated trusted proxy CIDRs; forwarded headers are ignored by default.
         #[arg(long, default_value = "")]
         trusted_proxies: String,
-        /// Root of repository-shipped trusted plugins.
-        #[arg(long, default_value = "plugins")]
-        plugin_root: PathBuf,
-        /// Absolute Node executable for plugin workers (default: node on PATH).
+        /// Root of trusted plugins. Defaults to ./plugins with the shipped Threads manifest available.
+        #[arg(long)]
+        plugin_root: Option<PathBuf>,
+        /// Explicit direct development worker runtime; requires --development.
+        /// Shipped servers route workers to enrolled machines.
         #[arg(long)]
         node: Option<PathBuf>,
         /// Root of the test-only plugins (`tests/plugins`); refused unless the server
@@ -312,7 +313,7 @@ async fn serve(
     receipt_retention: std::time::Duration,
     port: u16,
     web_dir: Option<PathBuf>,
-    plugin_root: PathBuf,
+    plugin_root: Option<PathBuf>,
     node: Option<PathBuf>,
     development: bool,
     origin: Option<String>,
@@ -345,6 +346,7 @@ async fn serve(
                 )
             })
         })?;
+    let has_test_root = test_plugin_root.is_some();
     let (store, data_dir, recovery, registry) = tokio::task::spawn_blocking(move || {
         startup_io::open_stores(
             roots,
@@ -357,15 +359,32 @@ async fn serve(
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
-    let node = match plugins::resolve_node(node.as_deref()).await {
-        Ok(n) => {
-            tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");
-            Some(n)
-        }
-        Err(why) => {
-            tracing::warn!(reason = %why, "Node unavailable; plugin workers disabled");
-            None
-        }
+    let local_test_workers = cfg!(feature = "test-plugins")
+        && has_test_root
+        && std::env::var_os("CALTERNAL_WORKER_TEST_BACKEND").is_some();
+    if node.is_some() && !development && !local_test_workers {
+        return Err(boot(
+            1,
+            "invalid_input",
+            "--node requires --development or test-only plugins",
+            "Use enrolled machines for plugin workers.",
+        ));
+    }
+    let node = if local_test_workers || node.is_some() {
+        let runtime = plugins::resolve_node(node.as_deref())
+            .await
+            .map_err(|why| {
+                boot(
+                    1,
+                    "unavailable",
+                    why,
+                    "Install Node >= 22.13 for direct development workers.",
+                )
+            })?;
+        tracing::info!(node = %runtime.path.display(), version = %runtime.version, "explicit development worker runtime");
+        Some(runtime)
+    } else {
+        None
     };
     let web_dir = tokio::task::spawn_blocking(move || {
         web_dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d))
@@ -509,7 +528,8 @@ async fn serve(
         .await
         .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
-        .with_security(directory.spaces.agents());
+        .with_security(directory.spaces.agents())
+        .with_thread_events(store.shared_content());
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         inputs: calternal_server::account_input::Inputs::new(
@@ -521,7 +541,11 @@ async fn serve(
         store,
         directory,
         registry,
-        workers: plugins::WorkerPool::new(node),
+        workers: if let Some(node) = node {
+            plugins::WorkerPool::new(Some(node))
+        } else {
+            plugins::WorkerPool::machines(machines.clone())
+        },
         jobs,
         allowed_hosts: hosts,
     });

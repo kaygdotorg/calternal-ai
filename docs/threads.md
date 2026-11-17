@@ -1,6 +1,6 @@
 # Saved threads
 
-The `calternal-orchestrator` manifest owns kind `threads` and its seven operations.
+The `calternal-orchestrator` manifest owns kind `threads` and its nine operations.
 Its Rust product engine uses the public content and turn engines; it has no separate
 file writer, journal, SQLite store, capability table or stream. Addresses are
 `/threads/<uuid>` and message references append the message UUID.
@@ -17,22 +17,27 @@ The small frontmatter uses these keys:
 calternal-id: 019a8c00-0000-7000-8000-000000000001
 title: "Plan"
 provider: "calternal-claude-code"
+model: "sonnet"
+message-count: 1
 mode: "approve_for_me"
 parent-thread: "019a8c00-0000-7000-8000-000000000002"
 spawned-by: "019a8c00-0000-7000-8000-000000000003"
 created-at: "2026-11-17T12:00:00.000Z"
 archived: false
 deleted: false
-updated-at: 2026-11-17T12:00:00.000Z
+updated-at: "2026-11-17T12:00:00.000Z"
+last-activity-at: "2026-11-17T12:00:00.000Z"
 ---
 
-<!-- message:019a8c00-0000-7000-8000-000000000004 role:person -->
+<!-- message:019a8c00-0000-7000-8000-000000000004 role:person time:2026-11-17T12:00:00.000Z -->
 Inspect this workspace.
 <!-- /message -->
 ```
 
 Parent and spawn keys are optional; together they identify the parent conversation
-and the message that spawned this one. A message marker carries a stable UUID.
+and the message that spawned this one. A message marker carries a stable UUID and an RFC 3339 UTC time. A person
+message is stamped on append. An agent message is stamped at its first saved
+checkpoint and retains that time when text is appended.
 An agent response uses its job UUID as a stable message ID across checkpoints.
 The rebuildable metadata stores the current output insertion offset, run and
 checkpoint; subsequent chunks extend that same message without scanning text.
@@ -52,7 +57,10 @@ Manifest input/output schemas, target fields, capabilities and risks are the
 single source of operation policy. `threads.create` makes an empty file;
 `threads.list` returns metadata; `threads.get` returns the Markdown and revision;
 `threads.send` commits a person's message before admitting the turn;
-`threads.stop` cancels current work; `threads.archive` keeps the file addressable;
+`threads.stop` cancels current work. `threads.rename` updates the title and filename
+while preserving the UUID and messages. `threads.archive` hides it from the
+ordinary sidebar and `threads.unarchive` returns it to that list. Both preserve
+its address.
 `threads.delete` moves a stopped file to its space's `.trash/<uuid>.md` and deletes
 all accounts' saved thread modes and credentials through the auth recovery barrier.
 Deleted IDs remain resolvable as deleted. Listing children by `parent_thread`
@@ -110,6 +118,59 @@ commit boundaries plus file placement; the job checkpoint adds one FULL commit.
 Checkpoint request IDs prevent duplicate text on replay; concurrent revisions
 retry at most four times. Empty checkpoints add no content write.
 
+## Client reads and live updates
+
+`threads.list` returns rows with `id`, `address`, `revision`, `turn_state` and
+`metadata`. The file-derived metadata includes `provider`, `model` (null until
+known), `mode`, `message_count`, `last_activity_at`, `archived` and an optional
+`parent_thread`. Last activity is the creation time or the time of the latest
+saved message text. Renames and archive changes update `updated_at`. The indexed
+mode is the last recorded thread choice. Send still uses the caller's protected
+mode when the input omits one.
+
+A warm list executes **one index query and zero thread file reads** for N threads.
+The bounded content index scan joins the space's current turn index with one
+indexed seek per candidate. It reads no message bytes or job checkpoint payloads
+and has zero flushes. The jobs connection attaches the same space's content
+database read-only, once per cached connection. A cold read also opens the
+existing indexes. Static metadata is mirrored in Markdown and can be indexed
+again from its envelope. Live state comes from the retained jobs index. Full
+file-only reconstruction is a separate foundation feature.
+
+`threads.get` returns `thread.turn_state` and the ordinary durable `job` view
+when a turn is nonfinal. Follow that job ID on the existing job event stream
+with the last job bookmark. When the stream resets, load its retained
+checkpoint. The turn labels are `idle`, `queued`, `running`, `waiting`,
+`interrupted` and `failed`. Admission and retry wait are queued, job waits are
+waiting, and successful or canceled work returns to idle. Final failure remains
+visible for the existing job retention period. The requests lane parks turns waiting on a person in this same durable
+`waiting` state. Reading a thread exposes its job state without exposing private
+request contents.
+
+Subscribe to the owning space on `/api/v1/live` and save its journal bookmark.
+Refresh the list or open thread for an entry whose `item` is the thread UUID and
+whose `kind` is one of these values.
+
+| Change | Journal kind |
+| --- | --- |
+| Created | `threads.create` |
+| Renamed | `threads.rename` |
+| Archived or unarchived | `threads.archive`, `threads.unarchive` |
+| Person message or agent text checkpoint saved | `threads.send`, `threads.checkpoint` |
+| Turn state changed | `threads.turn_state_changed` |
+| Deleted | `threads.delete` |
+
+The turn-state entry carries `data.job_id`, `data.state` (the sidebar label) and
+`data.job_state` (the underlying job lifecycle value). The same committed journal
+wakes both list and detail subscribers. The feed rechecks current space access and
+item ownership on replay and delivery. Turn state uses a space-local outbox
+written in the existing job transaction. One drain per cached space job connection reads at
+most 64 entries per page, appends each through the existing FULL journal commit,
+then retires the page in one jobs commit. The drain releases the jobs lock before
+taking the content lock or awaiting the writer. Publication retries on subsequent
+job transactions and recovery. Pending entries are eligible for pruning after
+seven days. The journal's operator-configured receipt retention bounds deduplication.
+
 ## Bounds and remaining integration
 
 The existing content ceiling is 2 MiB per thread file; growth fails visibly and
@@ -151,7 +212,9 @@ calternal threads --token-file person.token list --space-id <uuid>
 calternal threads --token-file person.token get <thread-uuid>
 calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace'
 calternal threads --token-file person.token stop <thread-uuid>
+calternal threads --token-file person.token rename <thread-uuid> --title "New title"
 calternal threads --token-file person.token archive <thread-uuid>
+calternal threads --token-file person.token unarchive <thread-uuid>
 calternal threads --token-file person.token delete <thread-uuid>
 ```
 
@@ -171,3 +234,9 @@ lock: one indexed current-run check precedes machine admission. Cancellation
 therefore either sees the saved lease ID or prevents admission. The callback
 never re-enters jobs/content; publication failure releases the lease. This also
 closes the stop race before the first lease checkpoint exists.
+
+The orchestrator is default-enabled for a fresh space. With the default server
+plugin path, the native manifest is available from the binary if the working
+directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
+using `--plugin-root` provide their own trusted plugin tree. An authorized
+fresh space lists zero threads before any conversation is created.

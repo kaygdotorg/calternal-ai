@@ -45,6 +45,11 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
     let creds = tokio::task::spawn_blocking(move || Credentials::load(&path))
         .await
         .map_err(|_| Error::Protocol("cannot load machine identity".into()))??;
+    config
+        .backend
+        .initialize()
+        .await
+        .map_err(|e| Error::Protocol(e.0))?;
     let link = Arc::new(Link::new(&creds.server)?);
     let runner = Arc::new(Runner::new(
         config.backend,

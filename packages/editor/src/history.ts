@@ -1,6 +1,6 @@
 /**
  * Undo and redo of the person's own changes only (ADR 0022): foreign changes (remote, replayed) are never undone by this person's undo, and positions are mapped through them.
- * Typing coalesces into one step while the keys keep coming (a pause of `idleMs`, a different kind of change, or a command ends a step); a command's change is always one step.
+ * `join` adds a change to the step before it (a drop that moves text is one step). Typing coalesces into one step while the keys keep coming (a pause of `idleMs`, a different kind of change, or a command ends a step); a command's change is always one step.
  * Bounded: at most `limit` steps. Pure: it records changes and returns the change to apply; it never touches the DOM.
  */
 import { invert, mapPos, type Change } from "./transaction";
@@ -18,7 +18,7 @@ export class History {
   constructor(o: HistoryOptions = {}) { this.idle = o.idleMs ?? 600; this.limit = o.limit ?? 200; this.now = o.now ?? (() => performance.now()); }
 
   /** Records that `c` was applied to `before` (the text before it) with `origin`. A foreign change only shifts what is already recorded. */
-  record(before: string, c: Change, origin: Origin): void {
+  record(before: string, c: Change, origin: Origin, opts: { join?: boolean } = {}): void {
     if (origin === "remote" || origin === "replay") {
       for (const s of this.undoStack) s.changes = s.changes.map((x) => ({ ...x, from: mapPos(x.from, c), to: mapPos(x.to, c) }));
       for (const s of this.redoStack) s.changes = s.changes.map((x) => ({ ...x, from: mapPos(x.from, c), to: mapPos(x.to, c) }));
@@ -29,6 +29,7 @@ export class History {
     const top = this.undoStack[this.undoStack.length - 1];
     const t = this.now();
     this.redoStack = [];
+    if (top && opts.join && top.kind === "command") { top.changes.unshift(inv); top.at = t; return; } // the second half of one step (a drop that moves text)
     if (top && kind === "typing" && top.kind === "typing" && t - top.at <= this.idle && contiguous(top.changes[0]!, c)) {
       top.changes.unshift(inv);
       top.at = t;
@@ -58,7 +59,10 @@ export class History {
       cur = cur.slice(0, c.from) + c.insert + cur.slice(c.to);
       applied.push(c);
     }
-    to.push({ changes: inverse, at: this.now(), kind: "command" });
+    // Undoing several steps in quick succession leaves ONE step to redo (as CodeMirror's history does for the block editor): the undos made within the group delay of each other join.
+    const t = this.now(), top = to[to.length - 1];
+    if (to === this.redoStack && top && t - top.at <= this.idle) { top.changes = [...inverse, ...top.changes]; top.at = t; }
+    else to.push({ changes: inverse, at: t, kind: "command" });
     return applied;
   }
 }

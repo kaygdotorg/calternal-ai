@@ -25,6 +25,7 @@ pub mod job_sql;
 mod job_streams;
 pub mod jobs;
 pub mod live;
+mod machine_worker;
 pub mod runner;
 pub mod session;
 pub mod worker;
@@ -258,13 +259,28 @@ impl Registry {
     /// built with the `test-plugins` feature (otherwise there are none to load).
     /// Cost: as [`Self::load`], per test entry as well.
     pub fn load_with_tests(plugin_root: &Path, test_root: Option<&Path>) -> Self {
+        Self::load_at(plugin_root, test_root, false)
+    }
+
+    /// Load ./plugins and use the shipped native Threads manifest when that
+    /// default directory lacks its copy. Explicit roots use `load_with_tests`.
+    /// Cost: normal startup registry reads and one embedded manifest parse on miss.
+    pub fn load_server_defaults(test_root: Option<&Path>) -> Self {
+        Self::load_at(Path::new("plugins"), test_root, true)
+    }
+
+    fn load_at(plugin_root: &Path, test_root: Option<&Path>, defaults: bool) -> Self {
         let mut plugins = Vec::new();
         let tests = test_root.map(|root| (root, test_entries()));
         let all = std::iter::once((plugin_root, registry_entries())).chain(tests);
         for (root, entry) in
             all.flat_map(|(root, entries)| entries.into_iter().map(move |e| (root, e)))
         {
-            match load_one(root, &entry) {
+            let fallback = (defaults && entry.id == "calternal-orchestrator").then_some(
+                include_bytes!("../../../../plugins/calternal-orchestrator/manifest.json")
+                    .as_slice(),
+            );
+            match load_one(root, &entry, fallback) {
                 Ok(p) => plugins.push(p),
                 Err(why) => {
                     tracing::warn!(plugin = %entry.id, reason = %why, "trusted plugin not loaded")
@@ -395,19 +411,26 @@ fn rel_path_ok(p: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-fn load_one(root: &Path, entry: &TrustedEntry) -> Result<Plugin, String> {
+fn load_one(root: &Path, entry: &TrustedEntry, fallback: Option<&[u8]>) -> Result<Plugin, String> {
     if !rel_path_ok(&entry.manifest) {
         return Err("registry manifest path invalid".into());
     }
     let path = root.join(&entry.manifest);
-    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("manifest: {e}"))?;
-    if !meta.file_type().is_file() {
-        return Err("manifest is not a regular file".into());
-    }
-    if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
-        return Err("manifest too large".into());
-    }
-    let bytes = std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?;
+    let bytes = match std::fs::symlink_metadata(&path) {
+        Ok(meta) => {
+            if !meta.file_type().is_file() {
+                return Err("manifest is not a regular file".into());
+            }
+            if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
+                return Err("manifest too large".into());
+            }
+            Cow::Owned(std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && fallback.is_some() => {
+            Cow::Borrowed(fallback.expect("checked fallback"))
+        }
+        Err(e) => return Err(format!("manifest: {e}")),
+    };
     let manifest = host::parse_manifest(&bytes).map_err(|e| format!("manifest invalid: {e}"))?;
     let mut unavailable = None;
     let worker = match &entry.worker {

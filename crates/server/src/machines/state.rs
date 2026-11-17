@@ -69,6 +69,7 @@ pub(super) struct Exec {
     pub account: AccountId,
     pub argv: Vec<String>,
     pub stdin: String,
+    pub interactive: bool,
     pub env: Vec<(String, String)>,
     pub state: ExecState,
     pub chunks: VecDeque<(Chunk, usize)>,
@@ -92,6 +93,7 @@ impl Exec {
             account,
             argv,
             stdin: String::new(),
+            interactive: false,
             env,
             state,
             chunks: VecDeque::new(),
@@ -136,6 +138,9 @@ pub(super) struct State {
     pub leases: HashMap<Uuid, Lease>,
     pub threads: HashMap<Uuid, Uuid>,
     pub execs: HashMap<Uuid, Exec>,
+    pub workers: HashMap<Uuid, calternal_machine::protocol::PluginWorker>,
+    pub worker_stops: HashMap<Uuid, (Uuid, [u8; 32], u64)>,
+    pub recovery_stops: HashSet<Uuid>,
     pub next_order: u64,
 }
 
@@ -175,6 +180,8 @@ impl State {
             space_id: l.row.space,
             account_id: l.row.account,
             spec: SandboxSpec {
+                code_directory: None,
+                worker: self.workers.get(&lease).cloned(),
                 account_id: l.row.account.as_uuid(),
                 thread_id: l.row.thread,
                 image: l.row.image.clone(),
@@ -200,6 +207,7 @@ impl State {
             if e.lease == lease && e.state != ExecState::Done && !e.argv.is_empty() {
                 e.state = ExecState::Sent;
                 msgs.push(Down::Exec {
+                    interactive: e.interactive,
                     lease_id: lease,
                     fence,
                     exec_id: *id,
@@ -253,15 +261,21 @@ impl State {
         let Some(l) = self.leases.get_mut(&lease) else {
             return;
         };
-        if l.state == LeaseState::Ended {
+        if matches!(l.state, LeaseState::Ended | LeaseState::Stopping) {
             return;
         }
         let machine = l.row.machine;
+        let worker = l.row.worker;
         l.row.fence += 1;
-        l.state = LeaseState::Ended;
+        l.state = if worker && machine.is_some() {
+            LeaseState::Stopping
+        } else {
+            LeaseState::Ended
+        };
         l.row.reason = Some(why.into());
         let thread = l.row.thread;
         self.threads.remove(&thread);
+        self.workers.remove(&lease);
         self.persist(lease);
         for e in self.execs.values_mut() {
             if e.lease == lease && e.state != ExecState::Done {
@@ -269,6 +283,14 @@ impl State {
             }
         }
         if let Some(m) = machine {
+            if worker {
+                let (session, seq) = self
+                    .machines
+                    .get(&m)
+                    .and_then(|m| m.live.as_ref())
+                    .map_or(([0; 32], u64::MAX), |live| (live.session, live.next_seq));
+                self.worker_stops.insert(lease, (m, session, seq));
+            }
             self.push(
                 m,
                 Down::Stop {
@@ -330,7 +352,8 @@ impl State {
 
     /// Assign waiting leases in arrival order. Preference: the machine that held
     /// the thread before, then the account's own machines, then the pool; ties go
-    /// to the machine with the most free slots. Cost: waiting × machines × leases
+    /// to the machine with the most free slots. Shared-space plugin workers are
+    /// restricted to operator pool machines pending their placement contract. Cost: waiting × machines × leases
     /// (the load count); one commit per assignment.
     pub fn place_waiting(&mut self, settings: &Settings) {
         let mut waiting: Vec<(u64, Uuid)> = self
@@ -345,6 +368,11 @@ impl State {
             let best = self
                 .machines
                 .values()
+                // Shared-space workers must not send another member's data to
+                // a participant-owned host after that host's owner is revoked.
+                // Until placement has a space-owned trust contract, use only
+                // operator-enrolled pool machines and the existing pool grant.
+                .filter(|m| !l.row.worker || m.row.owner == Owner::Pool)
                 .filter(|m| self.may_use(m, l.row.account))
                 .map(|m| (m, self.free(m)))
                 .filter(|(_, free)| *free > 0)
@@ -393,9 +421,10 @@ impl State {
                 );
                 continue;
             };
+            let keep_files = !l.row.worker;
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence
-                && l.state != LeaseState::Ended;
+                && !matches!(l.state, LeaseState::Ended | LeaseState::Stopping);
             if current {
                 match &r.sandbox {
                     SandboxState::Running | SandboxState::Frozen
@@ -424,7 +453,7 @@ impl State {
                     Down::Stop {
                         lease_id: r.lease_id,
                         reason: "lease no longer held by this machine".into(),
-                        keep_files: true,
+                        keep_files,
                     },
                 );
             }
