@@ -1,0 +1,11 @@
+exit: 0
+--- stdout ---
+{
+  "error": {
+    "code": "invalid_input",
+    "hint": "Use the exact public origin, for example https://cal.example.org.",
+    "message": "invalid --origin"
+  },
+  "ok": false
+}
+--- stderr ---

@@ -1,0 +1,11 @@
+exit: 0
+--- stdout ---
+{
+  "data": {
+    "code": "<CODE>",
+    "expires_at": "<TIME>",
+    "owner": "pool"
+  },
+  "ok": true
+}
+--- stderr ---

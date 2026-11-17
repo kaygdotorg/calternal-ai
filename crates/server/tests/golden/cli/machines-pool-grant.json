@@ -1,0 +1,10 @@
+exit: 0
+--- stdout ---
+{
+  "data": {
+    "account": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "pool_access": true
+  },
+  "ok": true
+}
+--- stderr ---

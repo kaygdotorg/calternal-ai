@@ -1,0 +1,5 @@
+exit: 1
+--- stdout ---
+--- stderr ---
+error: machine enroll: cannot reach the server: error sending request for url (http://127.0.0.1:1/api/v1/machine/enrol)
+hint: Check the --server URL and your network, then run the command again.

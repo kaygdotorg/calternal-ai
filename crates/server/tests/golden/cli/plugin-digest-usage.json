@@ -1,0 +1,11 @@
+exit: 2
+--- stdout ---
+{
+  "error": {
+    "code": "usage",
+    "hint": "run the command with --help to see its usage",
+    "message": "a value is required for '--plugin-root <PLUGIN_ROOT>' but none was supplied"
+  },
+  "ok": false
+}
+--- stderr ---

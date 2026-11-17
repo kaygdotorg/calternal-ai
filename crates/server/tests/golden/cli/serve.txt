@@ -1,0 +1,8 @@
+exit: 0
+--- stdout ---
+Calternal-AI development preview (disposable data; not production)
+url:               http://127.0.0.1:<PORT>
+owner token file:  <DATA>/dev-tokens/owner.token
+guest token file:  <DATA>/dev-tokens/guest.token
+startup info:      <DATA>/startup.json
+--- stderr ---

@@ -151,13 +151,15 @@ in memory only. `serve` takes `--machine-lease-ttl-ms` (default 90000) and
 | Path | Who | Purpose |
 |---|---|---|
 | `/api/v1/machine/{enrol,session/start,session/finish,sync,output}` | the machine (code, key, then bearer) | protocol v1, see `calternal_machine::protocol` |
-| `POST /api/v1/machines/codes`, `GET /api/v1/machines`, `POST /api/v1/machines/{id}/revoke`, `POST /api/v1/machines/{id}/drain` | signed-in owner | enrol and manage your machines |
+| `POST /api/v1/machines/codes`, `GET /api/v1/machines`, `POST /api/v1/machines/{id}/revoke`, `POST /api/v1/machines/{id}/drain` | signed-in owner | enroll and manage your machines |
 | `POST /api/v1/machines/runs`, `GET …/runs/{lease}`, `POST …/runs/{lease}/stop`, `POST …/runs/{lease}/execs`, `GET /api/v1/machines/execs/{exec}/output?after&wait_ms` | account with `plugins.use` in the space | place work, run commands, read output |
 
 Operator commands work on the data directory, with or without the server running
 (a running server applies them within a second):
 `calternal machines code --pool|--account <uuid>`, `machines list`,
 `machines revoke <machine>`, `machines pool-grant <account> [--remove]`.
+Every command prints a readable table or block, or one JSON document with `--json`:
+see [`docs/cli.md`](../../docs/cli.md).
 
 ## Tests
 
