@@ -273,3 +273,7 @@ Open: nothing in the adapter retries a dropped live stream beyond five attempts 
 ## The editor port, stage 1 (2026-11-17)
 
 Plan: `docs/editor-port-plan.md`. Built: `packages/editor` and `InlineEditor` on `FieldEditor`; `e2e/composer.mjs` (10 checks, now including undo and redo of a picked mention), `packages/editor/test` (16), `e2e/field-probe.mjs`. Not started, by instruction: stage 2 (the CodeMirror block editor in the Notes middle card) and stage 3 (live editing, which needs a server text-patch operation).
+
+## The editor, stage 2 completed (2026-11-17)
+
+Notes pickers for `@`, `[[`, `#` and `/` (one shared picker component with the composer); lazy frontmatter hiding, block ID markers (one module), table grid and code-block grammars; WebKit measured in the iOS Simulator (`docs/ui-performance.md`). Checks: `e2e/note-pickers.mjs` (8), `e2e/note-pieces.mjs` (12), `packages/editor/test/lazy.test.ts` (13 new). Details and what is not done: `docs/editor-port-plan.md`.

@@ -50,7 +50,9 @@
 
   onMount(() => {
     let dead = false;
-    void import("../../../../../packages/editor/src/block/index").then(({ createBlockEditor }) => {
+    void import("../../../../../packages/editor/src/block/index").then(async (m) => {
+      const { createBlockEditor } = m;
+      await m.prepare(text); // the lazy pieces this note needs (frontmatter, block IDs, tables, code grammars), so its first draw is right
       if (dead || !host) return;
       ed = createBlockEditor({
         parent: host, text, label,
@@ -71,8 +73,13 @@
     const t = text, i = id;
     if (!ed || (i === openedId && ed.value === t)) return;
     openedId = i;
-    ed.setValue(t);
-    onheadings?.(ed.headings());
+    const e = ed;
+    void import("../../../../../packages/editor/src/block/index").then(async (m) => {
+      await m.prepare(t);
+      if (ed !== e || openedId !== i) return;
+      e.setValue(t);
+      onheadings?.(e.headings());
+    });
   });
   export function scrollTo(pos: number) { ed?.scrollTo(pos); ed?.focus(); }
   export function setText(t: string) { ed?.setValue(t); }

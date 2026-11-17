@@ -94,7 +94,7 @@ Drafts and pending submissions (already wired) carry offline input. Exit: two br
 
 **Stage 2 as built.** `packages/editor/src/block`: `blocks` (derived from the parse tree; a nested list item is a block of its own; the host classifies kinds), `hidden` (syntax drawn away: headings, emphasis, code, quotes, links as chips, bullets, task boxes, rules, fenced code; blank lines as small gaps),
 `parse` (parse ahead of the frame, the rest at idle), `lists` (Enter continues, Tab indents), `headings` (for the rail), `triggers` (`@`, `[[`, `#`, `/`: the host draws the picker), `chrome` (one handle that moves with the pointer: press for the menu, drag to move a block), `editor` (`createBlockEditor`). 32 tests in `packages/editor/test`, 16 checks in `e2e/editor.mjs`.
-Notes (`apps/notes/NoteEditor.svelte`) supplies the document, says which blocks are tasks, draws the block menu with the design system's Menu, and saves: the text is autosaved after a pause (and kept as a private draft after a shorter one), with no Save button. Not built: tables, vim, embeds, frontmatter drawing, block ids (`^id` markers), the host's pickers for the triggers (the editor reports them; Notes does not draw one yet), code-block grammars.
+Notes (`apps/notes/NoteEditor.svelte`) supplies the document, says which blocks are tasks, draws the block menu with the design system's Menu, and saves: the text is autosaved after a pause (and kept as a private draft after a shorter one), with no Save button. Not built in stage 2 (added since, see below): tables, frontmatter, block ids, code-block grammars and the host's pickers. Still not built: vim, embeds.
 
 ## 6. Open points for the owner
 
@@ -106,3 +106,16 @@ Notes (`apps/notes/NoteEditor.svelte`) supplies the document, says which blocks 
 ## Simplification opportunities
 
 The existing editor carries three layers that this design removes (Yjs binding, the room protocol with nonces and receipts, the offline local copy), about 3,000 of the 3,300 lines in `sync/` and `offline/` (the transport and reconnect, the IME gate and honest save status stay) and their tests; an operation-based adapter replaces them with one small module.
+
+**Stage 2, the rest (2026-11-17).** The pickers: Notes draws `@` (people, agents, threads, notes), `[[` (notes), `#` (tags) and `/` (the insert menu: headings, list, task, quote, code block, table, divider) with the same `palette/MentionPicker.svelte` the thread composer now uses; choosing is one undoable change, and a tag does not reopen its own picker. Tags are fixture words until the server lists them.
+
+The lazy pieces (`packages/editor/src/block/features.ts` detects what a note needs with cheap patterns and `prepare(text)` loads it before the editor is created or a note replaced, so the first draw is right; a note that needs none fetches none):
+
+| Piece | Chunk (brotli-sized gzip) | What it does |
+| --- | --- | --- |
+| frontmatter | 0.4 KB | the leading `---` block is one hidden range, never drawn (existing ADR 0025); `frontmatterEnd` is pure |
+| block IDs (`ids.ts` + `ids-view.ts`) | 1.1 KB | `ids.ts` is the one module that parses and writes `^id` markers (ADR 0056: 16 Crockford characters, legacy shorter IDs valid, collision-checked inside the note). `ids-view.ts` hides markers (atomic), keeps typing before a marker, gives a new or edited task its ID (B1), and a pasted copy of an ID already in the note keeps none (a task gets a fresh one); copy and cut put marker-free text on the clipboard. Enter keeps the marker on the first part (B3). `ensureBlockId(pos)` is what the first link to a block calls |
+| tables | 1.3 KB | a table the caret is not in draws as a `<table>` (alignment from the delimiter row); the caret entering it, or a click, brings the raw rows back |
+| code grammars | 4.9 KB + one chunk per language (JavaScript 5.7 KB) | `@codemirror/language-data` loads a fence's grammar when a note names it; tokens are coloured from the design tokens |
+
+Not done, and why: cut-and-paste does not keep a block's ID (clipboard text is marker-free, which makes every paste a fresh copy); retiring IDs, aliases on join and Home-wide uniqueness belong to the server (B2, B3, B5); a task already in a loaded note gets its ID the first time it is edited, not on load; table cells are not editable in the grid (edit the raw rows) and column widths are not read from the frontmatter yet.

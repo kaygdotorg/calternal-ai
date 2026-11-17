@@ -159,3 +159,7 @@ Run with the in-page benchmark (`?bench=1&firstrun=0&test=1` on `/notes/n-1`, `s
 | Scroll the long note (200 frames, 800 px steps) | p50 17 ms, p95 18 ms, worst 29 ms, 0 frames over 50 ms | p95 frame 50 ms: met |
 
 Nothing breaches, so nothing was changed for WebKit. Playwright's WebKit does not run on the dev VMs: the build downloads, but the host lacks GTK 4, GStreamer and Pango libraries, and installing them needs root, which this lane does not use. The screenshot of the run is attached to issue #15. For a device number, run the same URL on a real phone.
+
+## Editor lazy pieces and pickers (2026-11-17)
+
+First paint is unchanged: the pieces are separate chunks fetched only when a note needs them (`e2e/note-pieces.mjs` checks that a plain note fetches none). Typing in the long note at 4x, key to next frame, three runs: median 12.0 to 13.9 ms, p95 18.9 to 20.3 ms (stage 2 recorded 8.2 and 9.4 median). Switching every piece off in the same session gives median 10.3 to 10.7 ms, so the pieces cost about 2 ms at 4x and the rest of the difference is the shared VM, which also moved the composer numbers today; the budget is 150 ms.
