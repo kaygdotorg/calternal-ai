@@ -133,9 +133,9 @@ enum Cmd {
         /// Comma-separated trusted proxy CIDRs; forwarded headers are ignored by default.
         #[arg(long, default_value = "")]
         trusted_proxies: String,
-        /// Root of repository-shipped trusted plugins.
-        #[arg(long, default_value = "plugins")]
-        plugin_root: PathBuf,
+        /// Root of trusted plugins. Defaults to ./plugins with the shipped Threads manifest available.
+        #[arg(long)]
+        plugin_root: Option<PathBuf>,
         /// Explicit direct development worker runtime; requires --development.
         /// Shipped servers route workers to enrolled machines.
         #[arg(long)]
@@ -321,7 +321,7 @@ async fn serve(
     receipt_retention: std::time::Duration,
     port: u16,
     web_dir: Option<PathBuf>,
-    plugin_root: PathBuf,
+    plugin_root: Option<PathBuf>,
     node: Option<PathBuf>,
     development: bool,
     origin: Option<String>,
@@ -377,11 +377,12 @@ async fn serve(
             "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
         )
     })?;
-    let plugin_root = std::fs::canonicalize(&plugin_root).unwrap_or(plugin_root);
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = match &test_root {
-        Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
-        None => Registry::load(&plugin_root),
+    let registry = if let Some(root) = plugin_root {
+        let root = std::fs::canonicalize(&root).unwrap_or(root);
+        Registry::load_with_tests(&root, test_root.as_deref())
+    } else {
+        Registry::load_server_defaults(test_root.as_deref())
     };
     let local_test_workers = cfg!(feature = "test-plugins")
         && test_root.is_some()

@@ -1541,7 +1541,11 @@ created: bigint,
 /**
  * Caller role, including the effective Owner role.
  */
-role: SpaceRole, };
+role: SpaceRole,
+/**
+ * Whether this is the personal space provisioned for the caller.
+ */
+personal: boolean, };
 /**
  * Account's visible spaces; server administration does not add memberships.
  */

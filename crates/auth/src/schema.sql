@@ -1,4 +1,4 @@
--- auth.db, version 1: the current schema in one definition (no migration chain).
+-- auth.db, version 6: the current schema in one definition (no migration chain).
 -- Accounts and their credentials, server roles, groups and invites (existing app
 -- ADR 0058-0060), and spaces with their memberships and directory receipts.
 -- Disposable preview data only: an auth.db at any other version is refused.
@@ -119,6 +119,7 @@ CREATE TABLE spaces(
  name TEXT NOT NULL,
  owner_account TEXT NOT NULL REFERENCES users(id),
  created INTEGER NOT NULL,
+ personal_for TEXT UNIQUE REFERENCES users(id),
  FOREIGN KEY(id,owner_account) REFERENCES space_memberships(space_id,account_id) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 CREATE TABLE space_memberships(

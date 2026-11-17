@@ -69,6 +69,10 @@
               "description": "Account UUID of the sole owner.",
               "type": "string"
             },
+            "personal": {
+              "description": "Whether this is the personal space provisioned for the caller.",
+              "type": "boolean"
+            },
             "role": {
               "allOf": [
                 {
@@ -83,6 +87,7 @@
             "id",
             "name",
             "owner",
+            "personal",
             "role"
           ],
           "type": "object"
@@ -184,6 +189,10 @@
               "description": "Account UUID of the sole owner.",
               "type": "string"
             },
+            "personal": {
+              "description": "Whether this is the personal space provisioned for the caller.",
+              "type": "boolean"
+            },
             "role": {
               "allOf": [
                 {
@@ -198,6 +207,7 @@
             "id",
             "name",
             "owner",
+            "personal",
             "role"
           ],
           "type": "object"

@@ -56,3 +56,22 @@ Paths are plain (no `#/`), rooted at `/`.
 - No legacy forms are supported: no `#/` conversion, six-character block IDs,
   `day-YYYY-MM-DD` items or old-route aliases.
 - A deleted item's ID keeps resolving to its Trash or deleted state and is never reused.
+
+## Serving the web app
+
+With `calternal serve --web-dir DIR`, existing assets take precedence. Missing
+GET and HEAD requests at recognized app addresses return `index.html` while
+keeping the browser URL. The shell resolves the address through the normal
+authorization checks. Missing asset and API paths retain their HTTP errors.
+
+The browser policy is:
+
+```text
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'
+```
+
+Serve the early scheme and font-preload bootstrap as a same-origin classic
+script in the document head, before the app module, and preserve asset base
+resolution. If the web build keeps it inline, the host would need the SHA-256
+hash of the exact emitted script body in `script-src`. Blob URLs are allowed
+for images.
