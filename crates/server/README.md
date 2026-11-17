@@ -170,3 +170,7 @@ see [`docs/cli.md`](../../docs/cli.md).
 - **`tests/race.rs`:** disabling a plugin while a call is in flight.
 
 Timings from these tests are development-host smoke numbers, not performance gates.
+
+Manual provider jobs and their CLI, scoped credentials, risk review, machine homes
+and durable retry waits are documented in [manual turns](../../docs/agent-turns.md).
+The provider test suite uses an account-free fake official CLI.

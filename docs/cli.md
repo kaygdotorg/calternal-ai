@@ -140,3 +140,12 @@ command and an error case each: `crates/cli/src/render.rs` (all of `cl`),
 `crates/server/tests/cli_golden.rs` (the real `calternal` binary, with the time zone
 forced to UTC+1 and codes, ids, paths and ports replaced by placeholders).
 `UPDATE_GOLDEN=1` rewrites them; review the diff.
+
+## Manual agents
+
+`calternal agent check|run|stop|resume` supervises an official CLI on an enrolled
+machine. `agent mode` and `agent approve` require a freshly verified person
+session. `run` and `resume` stream text/tool steps in human mode and NDJSON with
+`--json`. The same binary exposes `describe` and `invoke` inside a sandbox using
+its thread credential; no provider credential is passed to these commands.
+See [manual turns](agent-turns.md) for flags, settings and isolation limits.

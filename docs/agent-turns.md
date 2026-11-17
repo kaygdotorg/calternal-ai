@@ -1,0 +1,114 @@
+# Manual provider turns
+
+Step one runs Claude Code from `calternal agent check|run|stop|resume`; it does not
+create a conversation file. Supply a space UUID and a fresh thread UUID to check
+or run. All actions are operations on `/api/v1/operations`; the CLI, a person and
+an agent use that same path. `agent.events` is the bounded polling view over the
+existing job stream. JSON streaming is NDJSON, including errors and the terminal
+job record. Human output streams text and labelled tool steps.
+
+```
+calternal agent --base-url https://cal.example.org --token-file person.token \
+  check --space-id <uuid> --thread-id <uuid>
+calternal agent --base-url https://cal.example.org --token-file person.token \
+  run --space-id <uuid> --thread-id <uuid> --prompt 'Inspect this workspace'
+calternal agent --token-file person.token stop <job-id>
+calternal agent --token-file person.token resume <job-id>
+```
+
+The enrolled machine's image needs Node and the provider launcher on PATH; the
+person installs the official CLI and runs `claude auth login` inside that account's
+sandbox home. The machine injects `CALTERNAL_URL` and a thread-scoped credential
+for the Calternal CLI. Remote sandboxes use the server's HTTPS origin: a loopback
+URL names the sandbox itself. HTTP is accepted only for direct loopback previews.
+The server never receives the provider login.
+
+One thread has at most one active or interrupted job. Admission records the prompt
+before returning, reuses the same job on an identical request ID, and refuses a
+changed input or concurrent turn. Each space's existing jobs SQLite file holds
+the turn, checkpoints, scope hashes and approvals. Text is live output, not one
+file write per delta. Checkpoints store session identity, lease, last sequence and
+a bounded 16 KiB text tail after session discovery, every tool finish, at turn end
+and at least every three seconds of emitted output. Each such checkpoint is one
+FULL transaction. Live buffers hold at most 256 chunks / 1 MiB per job. Completed
+polling buffers last 30 seconds, with at most 64 retained completed streams.
+Durable final jobs and their access records last seven days (at most 1024 final
+jobs per space); at most 64 active jobs fit in a space.
+
+Machine exec already supplies numbered, acknowledged chunks and back-pressure.
+An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
+the lease and makes the turn interrupted; no machine automatically receives it.
+Only an explicit Resume starts interrupted work. Stop, completion and interruption
+end the token, stop processes and retain workspace files and the persistent account
+home. Container names and directories include the account UUID, preventing a
+caller reusing a thread UUID from adopting another account's mounts. Persistent
+provider homes are intentionally retained until the machine owner removes them;
+the provider owns the files, and Calternal does not inspect or clean login files.
+
+Permission mode is independent of execution isolation. Cloud/pool machines always
+use a sandbox. An account-owned machine defaults to sandboxed execution; its owner
+can choose direct execution with `machine enroll --direct` or
+`calternal machine set <id> --direct true --token-file person.token`. A direct
+backend runs as the machine user in the workspace directory, with no filesystem,
+network or resource isolation. The server refuses direct sessions in the pool or
+without the account owner's stored consent. Changing execution policy ends the
+machine session and its leases before new work can start.
+
+| Mode | Scope and review |
+| --- | --- |
+| Least access | Thread, workspace and originating app prefix; outside scopes ask |
+| Approve for me (default) | Person's current space access; read/reversible proceed, irreversible asks, external asks per scope, widening asks for each action |
+| Full access | Person's current space access, everywhere; widening still asks |
+
+Every operation rechecks person capabilities, token scope and declared risk.
+Sensitive action approvals conservatively bind canonical operation input; an
+irreversible or widening action also binds its request ID. Reuse that ID after
+approval. An external scope covers identical canonical input. App grants name a
+prefix and read/write. Scope approval currently lasts this turn; once-only and
+always-in-space grants need a later protected settings/recovery implementation.
+An old token cannot approve, change mode, or reissue itself. Token changes revoke
+the old credential immediately and pause the turn; explicit Resume delivers its
+replacement to a fresh process. Tokens expire after ten minutes or turn end.
+Only hashes persist. Worker callbacks recheck that hash, expiry and active turn,
+and least-access content calls remain inside the granted kind scope.
+
+`access.request` creates a bounded pending approval. Denied sensitive operations
+also create an approval and return its ID in the error details. `agent.events`
+shows requests. The person signs in again with a passkey, then runs
+`calternal agent ... approve <job-id> <approval-id>`; development bearers and
+agent credentials cannot approve. There is no approval UI in this lane. The
+reviewer trait permits future advice only for irreversible actions; the shipped
+rules-only implementation asks the person. No model reviewer is selected.
+
+Core instructions live in `plugins/calternal-orchestrator/skills/core.md`. The
+provider appends core, the generated one-line operation index, then the space's
+`<userdata-ssd>/spaces/<space-id>/.calternal/instructions.md` using the documented
+system-prompt append channel. The file is read through descriptor-relative fsio,
+with a 16 KiB cap and a visible truncation notice. Missing means no extra text.
+Instructions are context and never grant access. Personal instructions remain a
+one-line seam until accounts have userdata.
+
+Automatic provider recovery is separate from machine interruption. Explicit
+transient/usage-limit errors with no pending tool effect receive five retries,
+after waits of 30, 60, 120, 240 and 480 seconds. If retry five fails, API billing
+checks availability every three hours. A subscription limit with a reported reset
+snoozes until that reset; no reset is guessed. Auth failures, refusals, invalid
+configuration, adapter crashes, unknown outcomes, user stop and machine silence
+never enter this scheduler. Retried official sessions receive a continuation
+message, not a replay of the original task. A `retry_waiting` job has durable
+`checkpoint.retry` fields: retry count, reason, billing and next attempt in Unix
+milliseconds. It holds no provider process or execution permit; its same-machine
+lease remains fenced by the ordinary machine protocol. A silent waiting machine
+interrupts the job instead of moving it. Restart restores the wait deadline.
+
+The orchestrator manifest declares typed default booleans for provider-error
+retry and subscription-limit snoozing; both default on. `agent.settings` reads or
+updates account defaults in that account's private appdata SQLite file. A run's
+`retry_settings` overrides them, and `agent.settings` with a job ID updates that
+thread's recovery settings. Account defaults affect later turns. No credential is
+part of these settings.
+
+Simplification opportunities: use the same job stream subscription abstraction for
+CLI polling and SSE, and replace the manual-turn host seam with `threads.send`
+when the file-storage lane lands. Keep provider normalization separate from those
+changes so a Codex adapter reuses the machine, job, access and retry paths.
