@@ -298,6 +298,14 @@ fn scenario(
         format!("startup.{}_spaces", fixture.spaces.len()),
         vec![start],
     );
+    // External read-only evidence: startup must leave all space writers unopened
+    // before the first list can qualify as a genuinely cold-space activation.
+    std::fs::write(
+        root.join("startup-state.json"),
+        serde_json::to_vec_pretty(
+            &json!({"space_writer_threads_before_first_use":server.writers()?}),
+        )?,
+    )?;
     let (_, ms) = h.op("notes.list", json!({"space_id":space}))?;
     samples.insert("space.process_cold_open".into(), vec![ms]);
     let mut live = live::Live::open(

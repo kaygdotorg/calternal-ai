@@ -1,7 +1,8 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 mod admin_cli;
+mod startup_io;
 use admin_cli::MachinesCmd;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
@@ -10,6 +11,7 @@ use calternal_server::machines::MachineService;
 use calternal_server::plugins::{self, Registry};
 use calternal_server::store::Store;
 use clap::{Parser, Subcommand};
+use startup_io::write_private_atomic;
 
 #[derive(Parser)]
 #[command(
@@ -339,6 +341,7 @@ async fn serve(
                 )
             })
         })?;
+    let (store, data_dir, recovery, registry) = tokio::task::spawn_blocking(move || {
     let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
         boot(
             1,
@@ -366,6 +369,8 @@ async fn serve(
         Some(root) => Registry::load_with_tests(&plugin_root, Some(root)),
         None => Registry::load(&plugin_root),
     };
+        Ok::<_, CliError>((store, data_dir, recovery, registry))
+    }).await.map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
     let node = match plugins::resolve_node(node.as_deref()).await {
         Ok(n) => {
             tracing::info!(node = %n.path.display(), version = %n.version, "plugin worker runtime");
@@ -376,7 +381,11 @@ async fn serve(
             None
         }
     };
-    let web_dir = web_dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d));
+    let web_dir = tokio::task::spawn_blocking(move || {
+        web_dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d))
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?;
 
     let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
         Ok(l) => l,
@@ -412,18 +421,25 @@ async fn serve(
             "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
         ));
     }
-    let directory =
-        match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
-            Ok(t) => t,
-            Err(e) => {
-                return Err(boot(
-                    1,
-                    "failed",
-                    format!("account directory: {e}"),
-                    DATA_HINT,
-                ));
-            }
-        };
+    let directory_root = data_dir.clone();
+    let directory = tokio::task::spawn_blocking(move || {
+        let data_dir = directory_root;
+        let directory =
+            match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err(boot(
+                        1,
+                        "failed",
+                        format!("account directory: {e}"),
+                        DATA_HINT,
+                    ));
+                }
+            };
+        Ok::<_, CliError>(directory)
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
     {
         let keys = store.secrets();
         let spaces = directory.spaces.clone();
@@ -465,15 +481,21 @@ async fn serve(
     };
     let _sweeper = machines.spawn_sweeper();
     // Operator commands reach this server here instead of writing behind it.
-    let _admin =
-        calternal_server::machines::admin::serve_socket(&data_dir, installation, machines.clone())
-            .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let admin_root = data_dir.clone();
+    let admin_machines = machines.clone();
+    let _admin = tokio::task::spawn_blocking(move || {
+        calternal_server::machines::admin::serve_socket(&admin_root, installation, admin_machines)
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
+    .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
     let setup_file = if let Some(service) = calternal_server::auth::Directory::http_auth(&directory)
     {
         match service.auth.first_owner_token().await {
             Ok(Some(token)) => {
                 let path = data_dir.join("setup.token");
                 write_private_atomic(&path, token.as_bytes())
+                    .await
                     .map_err(|e| boot(1, "io", format!("setup token file: {e}"), DATA_HINT))?;
                 Some(path)
             }
@@ -496,7 +518,10 @@ async fn serve(
             hosts.push(authority);
         }
     }
-    let jobs = plugins::Jobs::open(&data_dir)
+    let jobs_root = data_dir.clone();
+    let jobs = tokio::task::spawn_blocking(move || plugins::Jobs::open(&jobs_root))
+        .await
+        .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
         .with_security(directory.spaces.agents());
     let token_files = directory.files.clone();
@@ -548,16 +573,16 @@ async fn serve(
         "web_dir": web_dir,
     });
     let startup_path = data_dir.join("startup.json");
-    write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap()).map_err(
-        |e| {
+    write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap())
+        .await
+        .map_err(|e| {
             boot(
                 1,
                 "io",
                 format!("cannot write startup.json: {e}"),
                 DATA_HINT,
             )
-        },
-    )?;
+        })?;
     let mut fields = vec![("url".to_owned(), base_url.clone())];
     fields.extend(
         token_files
@@ -582,7 +607,7 @@ async fn serve(
     )
     .with_graceful_shutdown(shutdown_signal())
     .await;
-    let _ = std::fs::remove_file(&startup_path);
+    let _ = tokio::fs::remove_file(&startup_path).await;
     served.map_err(|e| {
         boot(
             1,
@@ -591,10 +616,6 @@ async fn serve(
             "Look at the server log above for the cause.",
         )
     })
-}
-
-fn write_private_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    calternal_fsio::write_atomic_mode(path, bytes, 0o600)
 }
 
 async fn shutdown_signal() {
@@ -608,190 +629,4 @@ async fn shutdown_signal() {
 }
 
 #[cfg(test)]
-mod cli_output_tests {
-    use super::*;
-    use calternal_cli::testing::assert_golden;
-    use std::path::{Path, PathBuf};
-    use time::UtcOffset;
-
-    fn golden(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/golden/cli")
-            .join(name)
-    }
-
-    /// A paired, stopped installation (as `serve --create` leaves it) with the
-    /// given pool machines written before recovery is first attached.
-    fn installation(machines: &[(&str, &str)]) -> (tempfile::TempDir, admin_cli::Installation) {
-        use std::os::unix::fs::DirBuilderExt;
-        let dir = tempfile::tempdir().unwrap();
-        let roots = calternal_roots::Roots {
-            appdata: dir.path().join("appdata"),
-            userdata_ssd: dir.path().join("userdata-ssd"),
-            userdata_hdd: dir.path().join("userdata-hdd"),
-        };
-        let id = "00000000-0000-0000-0000-000000000001";
-        drop(
-            Store::open(
-                &roots,
-                uuid::Uuid::parse_str(id).unwrap(),
-                true,
-                calternal_content::DEFAULT_RECEIPT_RETENTION,
-            )
-            .unwrap(),
-        );
-        let c = calternal_auth::db::open_conn(&roots.appdata.join("system/auth.db")).unwrap();
-        for (machine, name) in machines {
-            c.execute(
-                "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms) VALUES(?1,NULL,?2,?3,'linux','x86_64',0)",
-                rusqlite::params![machine, vec![7u8; 32], name],
-            )
-            .unwrap();
-        }
-        drop(c);
-        std::fs::DirBuilder::new()
-            .mode(0o700)
-            .recursive(true)
-            .create(roots.userdata_ssd.join(".calternal/recovery"))
-            .unwrap();
-        let installation = admin_cli::Installation {
-            appdata: roots.appdata,
-            userdata_ssd: roots.userdata_ssd,
-            userdata_hdd: roots.userdata_hdd,
-            installation_id: id.into(),
-        };
-        (dir, installation)
-    }
-
-    fn redact_code_and_time(text: &str) -> String {
-        let mut cleaned = String::new();
-        for line in text.lines() {
-            if line.starts_with("code:") {
-                cleaned.push_str("code:     <CODE>\n");
-            } else if line.starts_with("expires:") {
-                cleaned.push_str("expires:  <TIME>\n");
-            } else {
-                cleaned.push_str(line);
-                cleaned.push('\n');
-            }
-        }
-        cleaned
-    }
-
-    #[test]
-    fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
-        let (_keep, installation) = installation(&[(
-            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            "build-machine-with-a-long-name",
-        )]);
-        for width in [120, 80, 40] {
-            let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
-            let machines = admin_cli::machines(
-                MachinesCmd::List {
-                    installation: installation.clone(),
-                },
-                &out,
-            )
-            .unwrap();
-            assert_golden(
-                &golden(&format!("machines-list-width-{width}.txt")),
-                &out.render(&machines),
-            );
-
-            let digest = admin_cli::plugin_digest(Path::new("/nonexistent-plugins"));
-            assert_golden(
-                &golden(&format!("plugin-digest-width-{width}.txt")),
-                &out.render(&digest),
-            );
-        }
-    }
-
-    #[test]
-    fn no_hints_is_a_global_calternal_option() {
-        use clap::Parser;
-
-        let cli = Cli::try_parse_from([
-            "calternal",
-            "machines",
-            "list",
-            "--appdata",
-            "/tmp/calternal/appdata",
-            "--userdata-ssd",
-            "/tmp/calternal/ssd",
-            "--userdata-hdd",
-            "/tmp/calternal/hdd",
-            "--installation-id",
-            "00000000-0000-0000-0000-000000000001",
-            "--no-hints",
-        ])
-        .unwrap();
-        assert!(cli.no_hints);
-    }
-
-    #[test]
-    fn machine_code_and_empty_list_hint_goldens_cover_enabled_and_disabled_hints() {
-        let (_keep, installation) = installation(&[]);
-        let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
-        let code = admin_cli::machines(
-            MachinesCmd::Code {
-                installation: installation.clone(),
-                pool: true,
-                account: None,
-                minutes: 60,
-            },
-            &out,
-        )
-        .unwrap();
-        assert_golden(
-            &golden("machines-code-hint.txt"),
-            &redact_code_and_time(&out.render(&code)),
-        );
-        let no_hints = Output::fixed_terminal(false, 80, UtcOffset::UTC, false);
-        assert_golden(
-            &golden("machines-code-no-hint.txt"),
-            &redact_code_and_time(&no_hints.render(&code)),
-        );
-
-        let (_keep_empty, empty_installation) = self::installation(&[]);
-        let empty = admin_cli::machines(
-            MachinesCmd::List {
-                installation: empty_installation,
-            },
-            &out,
-        )
-        .unwrap();
-        assert_golden(&golden("machines-list-empty-hint.txt"), &out.render(&empty));
-        assert_golden(
-            &golden("machines-list-empty-no-hint.txt"),
-            &no_hints.render(&empty),
-        );
-    }
-
-    #[test]
-    fn calternal_command_help_has_examples_and_see_also() {
-        use clap::Parser;
-
-        let commands: &[&[&str]] = &[
-            &["calternal", "--help"],
-            &["calternal", "serve", "--help"],
-            &["calternal", "machine", "--help"],
-            &["calternal", "machine", "enroll", "--help"],
-            &["calternal", "machine", "run", "--help"],
-            &["calternal", "machine", "status", "--help"],
-            &["calternal", "machines", "--help"],
-            &["calternal", "machines", "code", "--help"],
-            &["calternal", "machines", "list", "--help"],
-            &["calternal", "machines", "revoke", "--help"],
-            &["calternal", "machines", "pool-grant", "--help"],
-            &["calternal", "plugin-digest", "--help"],
-        ];
-        for args in commands {
-            let help = Cli::try_parse_from(args.iter().copied())
-                .err()
-                .expect("--help exits before running the command")
-                .to_string();
-            assert!(help.contains("Examples:"), "{args:?}: {help}");
-            assert!(help.contains("See also:"), "{args:?}: {help}");
-        }
-    }
-}
+mod cli_output_tests;

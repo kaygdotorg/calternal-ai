@@ -28,14 +28,19 @@ pub(crate) enum Cmd {
 
 /// Starts the writer thread and returns its drained connection for shutdown.
 /// It finishes queued commits before handing the connection to the flush
-/// worker. Old idempotency records are swept at start and after commits.
+/// worker. The readiness receiver resolves after startup receipt pruning, before
+/// readers may observe the store; later pruning runs after commits.
 pub(crate) fn spawn(
     conn: Connection,
     shared: Arc<Shared>,
     live: broadcast::Sender<Arc<JournalEntry>>,
     path: &Path,
     options: Options,
-) -> Result<(mpsc::Sender<Cmd>, std::thread::JoinHandle<Connection>)> {
+) -> Result<(
+    mpsc::Sender<Cmd>,
+    std::thread::JoinHandle<Connection>,
+    oneshot::Receiver<()>,
+)> {
     let (tx, mut rx) = mpsc::channel::<Cmd>(QUEUE);
     let name = format!(
         "store-{}",
@@ -44,11 +49,13 @@ pub(crate) fn spawn(
             .map(|n| n.to_string_lossy().chars().take(8).collect::<String>())
             .unwrap_or_default()
     );
+    let (ready, started) = oneshot::channel();
     let thread = std::thread::Builder::new()
         .name(name)
         .spawn(move || {
             let mut conn = conn;
             prune(&conn, options);
+            let _ = ready.send(());
             let mut last_prune = Instant::now();
             while let Some(cmd) = rx.blocking_recv() {
                 let head = &shared.head;
@@ -92,7 +99,7 @@ pub(crate) fn spawn(
             conn
         })
         .map_err(Error::internal)?;
-    Ok((tx, thread))
+    Ok((tx, thread, started))
 }
 
 /// Deletes idempotency records older than the retention window. A failure

@@ -159,8 +159,9 @@ impl Store {
     /// Unavailable for a refused or locked root, or a store that cannot open.
     ///
     /// Cost: the roots guard (marker reads, three locks), the catalog database open
-    /// and schema fsync, then startup-only pending publication and
-    /// materialization recovery per space.
+    /// and schema fsync. Per-space publication and materialization recovery
+    /// run on first use inside the existing bounded content cache. Call only on
+    /// a blocking thread, including during async server startup.
     pub fn open(
         roots: &calternal_roots::Roots,
         installation: Uuid,

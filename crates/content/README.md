@@ -64,7 +64,11 @@ Main modules are `types` (plain boundary values), `db` (bound metadata/history),
 calls into each space's inherited journal store), `pool` (pooled read connections),
 `collections` (collection records) and `lib` (service/cache/publication
 coordination). At most 64 spaces are open, released after 600 idle seconds in the
-server, with a 30-second background sweep; each open space owns its journal store. Name caches are capped by directory count, and inherited name
+server, with a 30-second background sweep; each open space owns its journal store.
+Startup opens only the identifier catalog. First use validates that space and
+replays its outbox before pending file placement, under the existing slot lock;
+failed recovery never exposes an opened slot. Root locks and authority recovery
+still complete eagerly before the server admits requests. Name caches are capped by directory count, and inherited name
 watchers avoid warm Linux directory rescans; their byte size is not separately
 metered. There is no performance qualification claim.
 

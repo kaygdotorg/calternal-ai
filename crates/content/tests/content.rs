@@ -471,3 +471,17 @@ fn a_request_id_is_new_again_after_receipt_retention() {
     let content = open_retaining(dir.path(), |_| {}, retention);
     write(&content, b"second\n").expect("a pruned receipt makes the ID new again");
 }
+
+/// Startup must not inspect inactive space databases. Their own first access
+/// validates them before exposing any data, without blocking a healthy space.
+#[test]
+fn startup_defers_inactive_space_validation_until_first_use() {
+    let dir = tempfile::tempdir().unwrap();
+    let broken = SpaceId::new();
+    let path = dir.path().join(format!("appdata/spaces/{broken}"));
+    std::fs::create_dir_all(&path).unwrap();
+    std::fs::write(path.join("content.db"), b"invalid sqlite").unwrap();
+    let content = open(dir.path(), |_| {});
+    assert!(content.list(broken, "notes", 1).is_err());
+    assert!(content.list(SpaceId::new(), "notes", 1).unwrap().is_empty());
+}

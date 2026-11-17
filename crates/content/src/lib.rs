@@ -31,7 +31,10 @@ mod collections;
 mod db;
 mod files;
 mod journal;
+mod lifecycle;
 mod pool;
+mod recovery;
+use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 mod types;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};
@@ -42,8 +45,6 @@ pub use pool::ReadPool;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde_json::Value;
 use std::{
-    collections::HashMap,
-    fs,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
@@ -54,24 +55,6 @@ pub use types::{
 };
 use uuid::Uuid;
 
-/// One cached space: opened on first use under its own lock, so a cold open in
-/// one space never blocks another.
-struct Slot {
-    space: Mutex<Option<Space>>,
-    last_used: Mutex<Instant>,
-}
-impl Slot {
-    /// Whether something outside the cache (a live subscriber) still holds this
-    /// space's journal. Cost: a try-lock and two counter reads; a slot being worked
-    /// on right now counts as in use.
-    fn in_use(&self) -> bool {
-        match self.space.try_lock() {
-            Ok(space) => space.as_ref().is_some_and(|s| !s.journal.is_unused()),
-            Err(_) => true,
-        }
-    }
-}
-type Cache = Arc<Mutex<HashMap<SpaceId, Arc<Slot>>>>;
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
@@ -83,39 +66,6 @@ pub struct Content {
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),
-}
-/// Closes idle spaces nobody holds. Closing drops the space's journal store, which
-/// drains its writer, outside the map lock.
-fn sweep(spaces: &Cache, idle: Duration) -> usize {
-    let mut closed = Vec::new();
-    {
-        let mut map = lock(spaces);
-        map.retain(|_, slot| {
-            let keep = Arc::strong_count(slot) > 1
-                || lock(&slot.last_used).elapsed() < idle
-                || slot.in_use();
-            if !keep {
-                closed.push(slot.clone());
-            }
-            keep
-        });
-    }
-    closed.len()
-}
-/// Sweeps `spaces` every 30 seconds until the cache is dropped.
-fn spawn_sweeper(spaces: &Cache, idle: Duration) -> Result<()> {
-    let weak = Arc::downgrade(spaces);
-    std::thread::Builder::new()
-        .name("content-sweep".into())
-        .spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_secs(30));
-                let Some(spaces) = weak.upgrade() else { return };
-                sweep(&spaces, idle);
-            }
-        })
-        .map(drop)
-        .map_err(internal)
 }
 /// BLAKE3 of an item file's bytes, as hex. Cost: O(bytes), one allocation.
 pub(crate) fn file_hash(bytes: &[u8]) -> String {
@@ -141,7 +91,7 @@ impl Content {
         self.roots.userdata_ssd.clone()
     }
 
-    /// Opens the identifier-only catalog and replays unfinished space intents.
+    /// Opens the identifier-only catalog; spaces recover lazily before first use.
     /// `receipt_retention` bounds how long each space keeps request receipts
     /// ([`DEFAULT_RECEIPT_RETENTION`] unless the operator sets another); a retry
     /// after that runs as a new request.
@@ -150,8 +100,8 @@ impl Content {
     /// test hooks; production callers pass a no-op.
     /// Cost: directory/catalog I/O and FULL schema syncs, two journal-driver threads
     /// and one sweeper thread;
-    /// startup visits existing space databases, then reads only pending intents.
-    /// Each recovered revision has [`Self::write`] publication/placement costs.
+    /// startup never scans or opens spaces. First use recovers that space's
+    /// outbox and pending files before exposing it, at [`Self::write`] costs.
     pub fn open(
         roots: Roots,
         secrets: PathBuf,
@@ -170,7 +120,7 @@ impl Content {
         let index = db::database(&roots.appdata.join("system/content-index.db"))?;
         index.execute_batch("CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,space TEXT NOT NULL,kind TEXT NOT NULL) STRICT;
             CREATE TABLE IF NOT EXISTS account_items(id TEXT PRIMARY KEY,account TEXT NOT NULL,kind TEXT NOT NULL) STRICT;").map_err(internal)?;
-        let spaces = Arc::new(Mutex::new(HashMap::new()));
+        let spaces = Arc::new(Mutex::new(std::collections::HashMap::new()));
         spawn_sweeper(&spaces, idle_after)?;
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
@@ -183,48 +133,6 @@ impl Content {
             journals,
             fault,
         };
-        let dir = content.roots.appdata.join("spaces");
-        if dir.exists() {
-            for entry in fs::read_dir(dir).map_err(internal)? {
-                let entry = entry.map_err(internal)?;
-                if !entry.file_type().map_err(internal)?.is_dir() {
-                    continue;
-                }
-                let Some(id) = entry
-                    .file_name()
-                    .to_str()
-                    .and_then(|s| s.parse::<SpaceId>().ok())
-                else {
-                    continue;
-                };
-                if entry.path().join("content.db").exists() {
-                    content.with_space(id, |space| {
-                        space.cleanup()?;
-                        content.publish_pending(space)?;
-                        let mut stmt = space
-                            .conn
-                            .prepare("SELECT id FROM items WHERE mat_state='pending'")
-                            .map_err(internal)?;
-                        let ids = stmt
-                            .query_map([], |r| r.get::<_, String>(0))
-                            .map_err(internal)?
-                            .collect::<std::result::Result<Vec<_>, _>>()
-                            .map_err(internal)?;
-                        drop(stmt);
-                        for id in ids {
-                            if let Err(e) =
-                                space.place(Uuid::parse_str(&id).map_err(internal)?, fault)
-                                && e.code != ErrorCode::Conflict
-                            {
-                                return Err(e);
-                            }
-                        }
-                        Ok(())
-                    })?;
-                    content.sweep();
-                }
-            }
-        }
         Ok(content)
     }
     /// Runs `f` on space `id` under that space's lock, opening the space first if it
@@ -262,12 +170,10 @@ impl Content {
         let mut held = lock(&slot.space);
         if held.is_none() {
             let journal = self.journals.open_store(id)?;
-            *held = Some(Space::open(
-                &self.roots.appdata,
-                &self.roots.userdata_ssd,
-                id,
-                journal,
-            )?);
+            let mut opened =
+                Space::open(&self.roots.appdata, &self.roots.userdata_ssd, id, journal)?;
+            self.recover_space(&mut opened)?;
+            *held = Some(opened);
         }
         let result = f(held.as_mut().expect("opened above"));
         *lock(&slot.last_used) = Instant::now();
