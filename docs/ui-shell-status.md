@@ -216,4 +216,17 @@ Screenshots are attached to issue #15 (review set: `desktop-light`, `desktop-dar
 | Toasts ported; Undo for Archive and for deleting a section | yes | `toast-archive-undo`, `toast-*.test.ts`, `layout.test.ts` |
 | Warm tooltip, pill bounce, title rename, InlineEditor | yes | `interact.mjs`, tooltip comparison in `docs/ui-design-system.md` |
 | Composer as a command palette | no | planned in `docs/ui-composer-palette.md` (next) |
-| Settings structure (sections, UI size, materials, Unsplash defaults) | in progress | `docs/settings.md` decisions, built after this table |
+| Settings is an app (User and Admin sections, empty pages) | yes | `settings-app`, `apps/settings/` |
+| Materials: three checkboxes (Blur, Dim, Tint), strength computed from the wallpaper | yes | `settings-appearance-sheet`, `SettingsSheet.test.ts`, `washFor` for the sidebars and for the card |
+| One UI size slider scales type, spacing and controls | yes | `--ui-scale` in `build-tokens.mjs`, `SettingsSheet.test.ts` |
+| Default wallpapers: the eight Unsplash photos by ID, fetched at build time, credited in a tooltip | yes | `apps/web/scripts/wallpapers.mjs`, `wallpapers.json`; images are gitignored |
+| First run: a preset gallery | yes | `FirstRun.svelte` (CAL_FIRSTRUN=1 in the e2e scripts shows it) |
+| App switcher experiment (sidebar footer or capsule under the middle card; `?switcher=card`) | yes | `switcher-card`, `switcher-card-dark`; Appearance has the same choice |
+| Icon controls sit in pills (sidebar toggle, search, close) | yes | `desktop-light` |
+| Font squish: cause (optical size follows font size, 5 % wider than bb) and fix (`opsz` pinned at 18) | yes | issue #15 comments, `e2e/font-squish.mjs` |
+| Message actions (copy, reply in side chat, more) beside the time, fade in on hover/focus, tooltips | yes | `message-actions-hover` |
+| Hover row actions, one calm pulse for running things, active-children bar | yes | `children-bar`, `base.css` `.pulse` |
+| "Threads" section for unsectioned threads, renamable | yes | `desktop-light`, `sidebar-sections` |
+| App capsule: labels only, three apps, pill glass | yes | `switcher-card` |
+
+Notes (2026-11-17): the default photographs are fetched when the app is built (`npm run build` runs `scripts/wallpapers.mjs`), so a build needs network access to unsplash.com once; offline, the generated looks stand in. The earlier committed stand-in photos were removed from the tree (they remain in older commits). Open: the auto-hide setting for the card switcher is not built (always visible); the Settings sections list awaits the study (issue #22).

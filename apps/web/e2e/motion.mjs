@@ -23,6 +23,7 @@ async function page(device, path) {
   const ctx = await browser.newContext({ ...DEVICES[device], colorScheme: "light", ...(videoDir ? { recordVideo: { dir: videoDir, size: device === "phone" ? { width: 390, height: 844 } : { width: 1280, height: 800 } } } : {}) });
   const p = await ctx.newPage();
   await p.addInitScript(SAMPLER);
+  await p.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ } });
   await p.goto(BASE + path);
   await p.waitForSelector("html[data-ready]");
   await p.waitForTimeout(800);
