@@ -1,29 +1,28 @@
 /**
- * People, groups, roles and invitations over the operations the people lane declares (origin/lane/people `contract/operations.json`, docs/people.md). The shapes below are copied from that contract until the
- * generated types for them arrive in `packages/contracts` with the merge, when each interface here is replaced by the generated one. Everything goes through `ServerClient.operate`, so failures are `ServerError`s
- * that say.ts words; nothing here touches the DOM. Lists are cursor-paged (50 rows); `all` follows the cursor for the lists a screen shows whole.
+ * People, groups, roles and invitations over the people operations (docs/people.md). The types are the generated ones from `packages/contracts`. Everything goes through `ServerClient.operate`, so failures are
+ * `ServerError`s that say.ts words; nothing here touches the DOM. Lists are cursor-paged (50 rows); `all` follows the cursor for the lists a screen shows whole.
  */
+import type { DirectoryGroup, DirectoryInvite, DirectoryPerson, RoleDefinition, SpaceGroupMember, SpaceMember, SpaceRole } from "../../../../packages/contracts/src/index";
 import { server } from "./client";
 
 /** A role a person or group can hold in a space. Owner is held by one person and never granted here. */
-export type Role = "reader" | "editor" | "manager" | "owner";
+export type Role = SpaceRole;
 /** A role that can be granted. */
 export type GrantRole = Exclude<Role, "owner">;
-
 /** A person in a space: a direct grant. */
-export interface Member { account_id: string; name: string; role: Role }
+export type Member = SpaceMember;
 /** A group granted a role in a space. */
-export interface GroupGrant { group_id: string; name: string; member_count: number; role: Role }
+export type GroupGrant = SpaceGroupMember;
 /** A space's grants: people, groups. */
 export interface SpaceGrants { members: Member[]; groups: GroupGrant[] }
 /** A role and what it allows. */
-export interface RoleInfo { name: string; capabilities: string[] }
+export type RoleInfo = RoleDefinition;
 /** A server account. */
-export interface Person { account_id: string; name: string; role: string; disabled: boolean }
+export type Person = DirectoryPerson;
 /** A group: local (made here) or from the directory (`source`). */
-export interface Group { group_id: string; name: string; source: string; members: string[]; members_next_cursor: string | null }
+export type Group = DirectoryGroup;
 /** An invitation: one use, one role, an expiry; the link is only present while it is live. */
-export interface Invite { invite_id: string; role: Role; created_at: number; expires_at: number; used_at: number | null; revoked_at: number | null; link: string | null }
+export type Invite = DirectoryInvite;
 
 type Page<K extends string, T> = { [P in K]: T[] } & { next_cursor: string | null };
 const op = <T,>(name: string, input: Record<string, unknown> = {}): Promise<T> => server.operate<T>(name, input);
