@@ -72,10 +72,6 @@ this direction.
   tool and needs a receipt-only replay path for the old invocation. A protected
   local credential socket or file avoids the restart and changes how each
   provider and CLI receives its credential.
-- Once approval for writers without a durable receipt. An operation can add a
-  recoverable intent and receipt before becoming eligible. An outside service
-  could supply a stable idempotency key and a result lookup instead, adding
-  service-specific delivery and reconciliation requirements.
 - Feed recovery across request and bookmark commits. A bounded outbox in each
   source store preserves precise invalidations across a crash and adds recovery
   coordination. An account snapshot on reconnect keeps the inbox authoritative

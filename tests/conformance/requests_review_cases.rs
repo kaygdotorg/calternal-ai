@@ -17,6 +17,10 @@ async fn start_turn(f: &Fixture, space: &str, thread: &Value, prompt: &str) -> S
     start.body["data"]["job"]["id"].as_str().unwrap().to_owned()
 }
 
+fn question_form() -> Value {
+    json!({"form":{"genui_version":2,"source":"$release=\"\"\nForm([Input($release,\"Which release?\")], \"Release selection\")"}})
+}
+
 async fn new_thread(f: &Fixture, space: &str) -> Value {
     let created = f
         .op(
@@ -29,13 +33,7 @@ async fn new_thread(f: &Fixture, space: &str) -> Value {
     created.body["data"]["thread"]["id"].clone()
 }
 
-/// A stopped turn's pending approval stays in the inbox. Approving it records a
-/// thread grant and rotates the thread credential (docs/requests.md: "The
-/// protected commit for a person's approval rotates the thread credential").
-/// The rule in docs/agent-turns.md is that token changes revoke the old
-/// credential and pause the turn so an explicit Resume delivers a replacement.
-/// Expectation: the thread's current running turn either keeps a working
-/// credential or is paused, never left running with a revoked one.
+/// A cancelled approval cannot change any successor's credential.
 #[tokio::test]
 async fn approving_a_stopped_turns_request_does_not_strand_the_current_turn() {
     let f = Fixture::new().await;
@@ -72,13 +70,23 @@ async fn approving_a_stopped_turns_request_does_not_strand_the_current_turn() {
         "precondition: current turn credential works: {body}"
     );
 
-    f.op(
-        1,
-        "requests.approve",
-        json!({"id":approval,"lifetime":"this_thread"}),
-    )
-    .await
-    .ok();
+    let stale = f
+        .op(
+            1,
+            "requests.approve",
+            json!({"id":approval,"lifetime":"this_thread"}),
+        )
+        .await;
+    assert_eq!(stale.status, 409, "{}", stale.body);
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    assert!(
+        !inbox.body["data"]["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| row["id"] == approval)
+    );
     let (status, _) = agent(
         &f,
         &token,
@@ -90,11 +98,11 @@ async fn approving_a_stopped_turns_request_does_not_strand_the_current_turn() {
     let state = f.op(1, "agent.events", json!({"job_id":second})).await;
     state.ok();
     let state = state.body["data"]["job"]["state"].clone();
-    assert!(
-        status == 200 || state != "running",
-        "approving the stopped turn's request revoked the running turn's credential \
-         (status {status}) while the turn stays {state}; no Resume can deliver a replacement"
+    assert_eq!(
+        status, 200,
+        "a cancelled request changed the successor's credential"
     );
+    assert_eq!(state, "running");
 }
 
 /// docs/agent-turns.md: "The current mode remains until superseded or the
@@ -112,7 +120,7 @@ async fn deleting_a_space_erases_its_requests_and_thread_authority() {
     let thread = new_thread(&f, &space).await;
     let job = start_turn(&f, &space, &thread, "ask").await;
     let token = machine.next_token(&f).await;
-    let form = json!({"form":{"genui_version":2,"source":"$release=\"\"\nForm([Input($release,\"Which release?\")], \"Release selection\")"}});
+    let form = question_form();
     let (status, body) = agent(&f, &token, "question", "requests.ask", form).await;
     assert_eq!(status, 200, "{body}");
     f.op(1, "agent.stop", json!({"job_id":job})).await.ok();
@@ -137,25 +145,28 @@ async fn deleting_a_space_erases_its_requests_and_thread_authority() {
     );
 }
 
-/// Same expectation for membership: a person who leaves a space (or is
-/// removed) can no longer list, answer or deny its requests, because every
-/// inbox entry rechecks current space access. The rows still count toward the
-/// 32-per-thread and 256-per-account bounds, and pending rows never age out.
-/// Expectation: leaving a space erases the person's request, grant and
-/// thread-authority rows there, as deleting the space already does.
+/// Losing membership erases the member's protected requests and authority.
 #[tokio::test]
 async fn leaving_a_space_erases_the_persons_requests_and_thread_authority() {
+    assert_membership_exit_erases_requests(false).await;
+}
+
+#[tokio::test]
+async fn removing_a_member_erases_the_persons_requests_and_thread_authority() {
+    assert_membership_exit_erases_requests(true).await;
+}
+
+async fn assert_membership_exit_erases_requests(removed: bool) {
     let mut f = Fixture::new().await;
     let mut machine = Machine::enroll(&f).await;
     let space = f.spaces[4].clone(); // A owns it; B is a Manager.
     let thread = new_thread(&f, &space).await;
-    let job = start_turn(&f, &space, &thread, "ask").await;
+    start_turn(&f, &space, &thread, "ask").await;
     let token = machine.next_token(&f).await;
-    let form = json!({"form":{"genui_version":2,"source":"$release=\"\"\nForm([Input($release,\"Which release?\")], \"Release selection\")"}});
+    let form = question_form();
     let (status, body) = agent(&f, &token, "question", "requests.ask", form).await;
     assert_eq!(status, 200, "{body}");
     let question = body["data"]["id"].clone();
-    f.op(1, "agent.stop", json!({"job_id":job})).await.ok();
     f.op(
         1,
         "spaces.transfer",
@@ -163,13 +174,23 @@ async fn leaving_a_space_erases_the_persons_requests_and_thread_authority() {
     )
     .await
     .ok();
-    f.op(1, "spaces.leave", json!({"space_id":space}))
+    if removed {
+        f.op(
+            2,
+            "spaces.remove_member",
+            json!({"space_id":space,"account_id":f.ids[1]}),
+        )
         .await
         .ok();
+    } else {
+        f.op(1, "spaces.leave", json!({"space_id":space}))
+            .await
+            .ok();
+    }
     let hidden = f
         .op(1, "requests.answer", json!({"id":question,"answer":{}}))
         .await;
-    assert_eq!(hidden.status, 404, "precondition: {}", hidden.body);
+    assert_eq!(hidden.status, 404, "{}", hidden.body);
 
     f.stop();
     let c = Connection::open(f.appdata().join("system/auth.db")).unwrap();
@@ -188,4 +209,95 @@ async fn leaving_a_space_erases_the_persons_requests_and_thread_authority() {
         "after leaving, the space keeps {requests} hidden request rows and {access} \
          thread-authority rows for the former member"
     );
+}
+
+#[tokio::test]
+async fn unreceipted_actions_replay_success_and_spend_approval_even_on_failure() {
+    let f = Fixture::new().await;
+    let mut machine = Machine::enroll(&f).await;
+    let space = &f.spaces[0];
+    let thread = new_thread(&f, space).await;
+    start_turn(&f, space, &thread, "withdraw a secret prompt").await;
+    let token = machine.next_token(&f).await;
+    let secret = f
+        .op(
+            1,
+            "secrets.request",
+            json!({
+                "space_id":space,"name":"review-secret","label":"Fixture","reason":"Review test"
+            }),
+        )
+        .await;
+    secret.ok();
+    let input = json!({"space_id":space,"request_id":secret.body["data"]["request_id"]});
+    let (status, denial) = agent(
+        &f,
+        &token,
+        "withdraw-existing",
+        "secrets.revoke",
+        input.clone(),
+    )
+    .await;
+    assert_eq!(status, 403, "{denial}");
+    let id = &denial["error"]["details"]["approval_id"];
+    f.op(1, "requests.approve", json!({"id":id,"lifetime":"once"}))
+        .await
+        .ok();
+    let token = machine.next_token(&f).await;
+    let (status, first) = agent(
+        &f,
+        &token,
+        "withdraw-existing",
+        "secrets.revoke",
+        input.clone(),
+    )
+    .await;
+    assert_eq!(status, 200, "{first}");
+    let (status, replay) = agent(&f, &token, "withdraw-existing", "secrets.revoke", input).await;
+    assert_eq!(status, 200, "{replay}");
+    assert_eq!(replay, first);
+
+    let input = json!({"space_id":space,"request_id":uuid::Uuid::now_v7()});
+    let (status, denial) = agent(
+        &f,
+        &token,
+        "withdraw-missing",
+        "secrets.revoke",
+        input.clone(),
+    )
+    .await;
+    assert_eq!(status, 403, "{denial}");
+    let id = denial["error"]["details"]["approval_id"].clone();
+    let persistent = f
+        .op(
+            1,
+            "requests.approve",
+            json!({"id":id,"lifetime":"this_thread"}),
+        )
+        .await;
+    assert_eq!(persistent.status, 400, "{}", persistent.body);
+    assert!(
+        persistent.body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("once")
+    );
+    f.op(1, "requests.approve", json!({"id":id,"lifetime":"once"}))
+        .await
+        .ok();
+    let token = machine.next_token(&f).await;
+    let (status, failure) = agent(
+        &f,
+        &token,
+        "withdraw-missing",
+        "secrets.revoke",
+        input.clone(),
+    )
+    .await;
+    assert_eq!(status, 404, "{failure}");
+    let (status, retry) = agent(&f, &token, "withdraw-missing", "secrets.revoke", input).await;
+    assert_eq!(status, 403, "{retry}");
+    let next = &retry["error"]["details"]["approval_id"];
+    assert!(next.is_string());
+    assert_ne!(next, &id);
 }

@@ -47,31 +47,33 @@ Questions and approvals have no pending time limit. Secret prompts expire
 after 15 minutes. There are at most 32 stored person-request and grant rows per
 thread across its accounts, and 256 per account, including completed decision receipts.
 An action or form and a form answer are independently limited to 16 KiB of
-serialized JSON. Completed answers, denials and used once claims are pruned
-when adding a request after the receipt window
+serialized JSON. Adding a request prunes completed answers, denials,
+cancellations and used once claims after the receipt window
 (`CALTERNAL_RECEIPT_RETENTION_DAYS`, seven days by default).
 
-Once approvals claim a matching operation's request ID and input fingerprint in
-the protected authority transaction. A concurrent attempt with a different
-identity cannot use the same grant. A retry of the claimed identity follows the
-operation's receipt. Receipt-capable native actions and reads are wired through
-this path. A read's first returned result is recorded in the ordinary journal
-receipt before delivery. The current preview leaves once approvals for
-unreceipted writers unsupported.
+A once approval is spent in the protected admission transaction before the
+action runs. This applies to reads and writers, including operations that
+have no receipt of their own. An identical retry can return a saved response.
+A failed, unconfirmed or expired result requires a new approval before another
+execution. Receipt expiry never makes a spent approval usable again.
 
-Thread approvals survive new turns and are erased with archive or deletion.
-Sensitive action scopes bind operation and input. Irreversible operations and
-access widening also bind the original request identity. The protected commit
-for a person's approval rotates the thread credential. The current claim
-implementation fences reuse of a once approval in the authority table, with
-credential rotation at the approval decision. Rotation at action consumption
-requires the remaining credential delivery work described in the lane report.
+Thread approvals survive new turns for reads, reversible changes, and external
+actions with identical canonical input. Irreversible and access-widening actions
+only allow once approval and bind the request identity. A person's approval
+rotates the parked turn's credential. Rotation at action consumption remains
+a separate credential delivery decision.
+
+Only the turn currently waiting on a request can accept a new decision.
+Stopping, archiving, deleting or superseding a turn cancels its pending
+requests. Archive or deletion also removes thread grants. Leaving a space,
+removal, or losing space read access erases the former member's protected
+requests, grants and saved thread authority in the membership commit.
 
 ## Standing instructions
 
 `AI/AGENTS.md` has one writer. Both operations on the file require the Manager
 or Owner capability `space.settings`. The file remains reserved from ordinary
 content placement and writes. The replacement accepts up to 16 KiB of Markdown
-and declares irreversible risk for replacement. It uses the per-space content lock, durable outbox, descriptor-relative file
-replacement and journal receipt. The journal event and receipt omit the text.
+and declares irreversible risk for replacement. It uses the per-space content
+lock, durable outbox, descriptor-relative replacement and journal receipt. The journal event and receipt omit the text.
 The previous filename is ignored.

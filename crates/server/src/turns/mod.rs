@@ -277,6 +277,7 @@ pub async fn dispatch<D: Directory>(
                 admission.apply(|| {
                     st.jobs.cancel(&sp, &id)?;
                     st.jobs.agent_revoke(&sp, &id)?;
+                    st.inputs.invalidate(ending.account)?;
                     release(&svc, &ending)?;
                     Ok(Value::Null)
                 })
@@ -323,11 +324,7 @@ pub async fn dispatch<D: Directory>(
                 admission.apply(|| {
                     let a = st.jobs.agent_scope(&sp, &id)?;
                     let create = || st.jobs.agent_request(&a, &app, write);
-                    let id = if agent.is_some() {
-                        crate::requests::park(&st, &machines, &a, create)?
-                    } else {
-                        create()?
-                    };
+                    let id = crate::requests::park(&st, &machines, &a, create)?;
                     st.inputs.invalidate(a.actor.account)?;
                     Ok(json!({"approval_id":id}))
                 })
@@ -348,15 +345,15 @@ pub async fn dispatch<D: Directory>(
             if job.state.is_final() {
                 return Err(Error::conflict("finished turns cannot change access"));
             }
-            // Revoke authority before stopping processes so no old token can act.
+            // Fence the job before changing its protected credential.
             let (st, sp, id) = (state.clone(), job.space.clone(), job.id.clone());
             let (svc, ending) = (machines.clone(), job.clone());
             blocking(move || {
                 admission.apply(|| {
                     let mut a = st.jobs.agent_scope(&sp, &id)?;
                     a.mode = i.mode;
-                    st.jobs.agent_scope_change(&a)?;
                     st.jobs.agent_interrupt(&sp, &id)?;
+                    st.jobs.agent_scope_change(&a)?;
                     release(&svc, &ending)?;
                     Ok(Value::Null)
                 })

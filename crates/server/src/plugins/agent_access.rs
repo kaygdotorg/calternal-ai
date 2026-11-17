@@ -23,13 +23,18 @@ impl Jobs {
         self.security_change(move |tx| {
             let recipients = {
                 let mut statement = tx.prepare(
-                    "SELECT DISTINCT account FROM agent_approvals WHERE space=?1 AND thread=?2 AND status='pending'",
+                    "SELECT DISTINCT account FROM agent_approvals WHERE space=?1 AND thread=?2 AND status IN ('pending','cancelled')",
                 ).map_err(db_err)?;
                 statement.query_map(params![space,thread], |r| r.get::<_,String>(0)).map_err(db_err)?
                     .map(|row| row.map_err(db_err)?.parse().map_err(|_| Error::internal("stored request account")))
                     .collect::<Result<Vec<_>,Error>>()?
             };
-            tx.execute("DELETE FROM agent_approvals WHERE space=?1 AND thread=?2", params![space,thread]).map_err(db_err)?;
+            tx.execute(
+                "UPDATE agent_approvals SET status='cancelled',resolved_ms=?3
+                 WHERE space=?1 AND thread=?2 AND status='pending'",
+                params![space,thread,now_ms()],
+            ).map_err(db_err)?;
+            tx.execute("DELETE FROM agent_approvals WHERE space=?1 AND thread=?2 AND status!='cancelled'", params![space,thread]).map_err(db_err)?;
             tx.execute("DELETE FROM agent_access WHERE space=?1 AND thread=?2", params![space,thread]).map_err(db_err)?;
             Ok(recipients)
         })
@@ -224,6 +229,7 @@ impl Jobs {
         self.with_current(&a.clone(),run,move |tx|{
             if let Some(previous)=retained_scope(tx,&a)? {
                 if previous.job==a.job{return with_grants(tx,previous)}
+                super::requests::cancel_pending_requests(tx,&a.space,&previous.job)?;
                 let next = a;
                 let scope = serde_json::to_string(&next).map_err(|_|Error::internal("access encoding"))?;
                 tx.execute("UPDATE agent_access SET job=?1,hash=NULL,scope=?2,expires_ms=0,run=?3,updated_ms=?4 WHERE account=?5 AND space=?6 AND thread=?7",
@@ -292,7 +298,15 @@ impl Jobs {
         if !active {
             return Err(Error::conflict("turn run is no longer current"));
         }
-        self.security_change(change)
+        let account = a.actor.account;
+        let space = a
+            .space
+            .parse()
+            .map_err(|_| Error::internal("stored agent space"))?;
+        self.security_change(move |tx| {
+            calternal_auth::agents::Agents::require_run_access(tx, account, space)?;
+            change(tx)
+        })
     }
     /// Recheck the sign-in that admitted a native turn. Static development/host
     /// callers stay live; an agent cannot delegate a new admitting identity.

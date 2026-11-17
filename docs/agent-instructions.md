@@ -50,7 +50,10 @@ permission mode, chosen in the composer:
   be undone ask; effects outside Calternal ask once per scope; anything that widens
   access always asks. Nothing inside the sandbox needs review. A reviewing model may be
   added later for the cannot-undo class only, able to allow or pass to the person.
-- Approvals appear in the request bar on a trusted form the agent cannot answer. The preview offers once and this-thread lifetimes.
+- Approvals appear in the request bar on a trusted form the agent cannot answer.
+  The preview offers once and this-thread lifetimes. Irreversible actions and
+  changes that widen access accept only once. An external this-thread approval
+  covers one exact action scope.
 - A mode requested with `agent.run` or `threads.send` applies directly to that
   turn, wider or narrower, and is saved as the thread mode (owner decision,
   2026-11-18). Choosing it on a send requires no additional passkey check.

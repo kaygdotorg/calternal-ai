@@ -135,41 +135,28 @@ pub(crate) async fn dispatch<D: Directory>(
                     }
                     _ => return Err(Error::not_found("operation not found")),
                 };
-                let route = st.jobs.personal_request_route(person.id, &id)?;
-                authorize(&st, person.id, &route.space, row.required)
-                    .map_err(|_| Error::not_found("request not found"))?;
-                if status == "once"
-                    && route
-                        .action
-                        .as_ref()
-                        .is_some_and(|(op, mutates)| !crate::api::supports_once(op, *mutates))
-                {
-                    return Err(Error::unavailable(
-                        "this operation does not support once approval",
-                    ));
-                }
-                let changed = st.jobs.agent_decide(person.id, &id, &rid, status, value)?;
+                let (space, job_id) =
+                    st.jobs
+                        .agent_decide(person.id, &id, &rid, status, value, |space| {
+                            authorize(&st, person.id, space, row.required)
+                                .map(|_| ())
+                                .map_err(|_| Error::not_found("request not found"))
+                        })?;
                 st.inputs.invalidate(person.id)?;
-                if let Some(machines) = machines
-                    && let Some(job) = st.jobs.get(&route.space, &route.job)?
+                if machines.is_some()
+                    && let Some(job) = st.jobs.get(&space, &job_id)?
                 {
                     if job.state == calternal_core::JobState::Waiting
                         && job.checkpoint["person_request"].as_str() == Some(&id)
                     {
-                        st.jobs.agent_wake_request(&route.space, &route.job, &id)?;
-                    } else if changed
-                        && value_is_approval(status)
-                        && job.state == calternal_core::JobState::Running
-                    {
-                        st.jobs.agent_interrupt(&route.space, &route.job)?;
-                        crate::turns::release(&machines, &job)?;
+                        st.jobs.agent_wake_request(&space, &job_id, &id)?;
                     }
                     if st
                         .jobs
-                        .get(&route.space, &route.job)?
+                        .get(&space, &job_id)?
                         .is_some_and(|j| j.state == calternal_core::JobState::Admitted)
                     {
-                        resume = Some(route);
+                        resume = Some((space, job_id));
                     }
                 }
                 let status = if value_is_approval(status) {
@@ -187,8 +174,8 @@ pub(crate) async fn dispatch<D: Directory>(
     })
     .await
     .map_err(|_| Error::internal("request task failed"))??;
-    if let (Some(machines), Some(route)) = (scheduler, resume) {
-        crate::turns::schedule_thread(&state, &machines, route.space, route.job, person.id);
+    if let (Some(machines), Some((space, job))) = (scheduler, resume) {
+        crate::turns::schedule_thread(&state, &machines, space, job, person.id);
     }
     Ok(result)
 }

@@ -186,12 +186,11 @@ impl Authority {
             .any(|g| g.action_hash.as_deref() == Some(action.as_str()));
         let approved = match risk {
             calternal_core::OperationRisk::Irreversible
-            | calternal_core::OperationRisk::External
-            | calternal_core::OperationRisk::WidensAccess => exact_grant,
+            | calternal_core::OperationRisk::WidensAccess => false,
+            calternal_core::OperationRisk::External => exact_grant,
             _ => app_grant || exact_grant,
         };
-        let allowed = exact_grant && risk == calternal_core::OperationRisk::WidensAccess
-            || risk_allowed(self.mode, risk, default, approved, &RulesOnly, op, input);
+        let allowed = risk_allowed(self.mode, risk, default, approved, &RulesOnly, op, input);
         if allowed {
             Ok(())
         } else {

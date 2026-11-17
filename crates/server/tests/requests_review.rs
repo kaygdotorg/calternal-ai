@@ -6,10 +6,7 @@
 mod support;
 use calternal_core::{AgentMode, JsonObject, OperationRisk};
 use calternal_server::{
-    plugins::{
-        Jobs, Session,
-        jobs::{Admission, RunEnd},
-    },
+    plugins::{Jobs, Session, jobs::Admission},
     turns::access::Authority,
 };
 use serde_json::json;
@@ -75,13 +72,7 @@ impl Fixture {
     }
 }
 
-/// `requests.approve` refuses `once` for `secrets.revoke` because the operation
-/// has no durable receipt, so `this_thread` is the only lifetime the person can
-/// pick. Approve for me says an irreversible action asks, and the grant binds
-/// the original request ID so that "a new action asks again". With no receipt,
-/// replaying that request ID is a new execution. Expectation: after the
-/// approved action's turn has ended, a later turn of the same thread cannot
-/// repeat the irreversible action under the retained grant without asking.
+/// Irreversible and access-widening actions can only receive a once approval.
 #[test]
 fn a_this_thread_grant_for_an_unreceipted_irreversible_action_does_not_authorize_later_turns() {
     let f = fixture();
@@ -100,21 +91,25 @@ fn a_this_thread_grant_for_an_unreceipted_irreversible_action_does_not_authorize
         .jobs
         .agent_action_request(&a, op, &input, rid, risk, true)
         .unwrap();
+    support::park_request(&f.jobs, &f.space, &job, &id);
+    let error = f
+        .jobs
+        .agent_decide(
+            a.actor.account,
+            &id,
+            "approve-revoke",
+            "this_thread",
+            None,
+            |_| Ok(()),
+        )
+        .unwrap_err();
+    assert!(error.message.contains("once"));
     f.jobs
-        .agent_decide(a.actor.account, &id, "approve-revoke", "this_thread", None)
+        .agent_decide(a.actor.account, &id, "approve-revoke", "once", None, |_| {
+            Ok(())
+        })
         .unwrap();
-    let approved = f.jobs.agent_scope(&f.space, &job).unwrap();
-    assert!(
-        approved
-            .check_operation(op, &input, rid, true, risk)
-            .is_ok(),
-        "precondition: the approved action may run once"
-    );
-    f.jobs
-        .finish(&f.space, &job, run, RunEnd::Done(json!({})))
-        .unwrap();
-    f.jobs.agent_revoke_run(&f.space, &job, run).unwrap();
-
+    f.jobs.cancel(&f.space, &job).unwrap();
     let (next, run) = f.turn(thread, "later-turn");
     let later = f
         .jobs

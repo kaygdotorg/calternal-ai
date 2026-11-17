@@ -1,12 +1,11 @@
 //! Bounded requests and grant transitions through the protected auth barrier.
 use super::{
     Jobs,
-    agent_access::replace_scope,
     job_sql::{db_err, now_ms},
     jobs::bounded_json,
 };
 use crate::turns::access::Authority;
-use calternal_core::{JsonObject, PersonRequest, RequestDetail};
+use calternal_core::{JsonObject, OperationRisk, PersonRequest, RequestDetail};
 use calternal_types::{AccountId, Error};
 use rusqlite::{OptionalExtension, params};
 use serde_json::Value;
@@ -16,11 +15,26 @@ const THREAD_LIMIT: i64 = 32;
 const ACCOUNT_LIMIT: i64 = 256;
 const DETAIL_LIMIT: usize = 16 * 1024;
 
-/// Server-owned routing data for a private request. Never accepted from the client.
-pub(crate) struct RequestRoute {
-    pub(crate) space: String,
-    pub(crate) job: String,
-    pub(crate) action: Option<(String, bool)>,
+/// Close pending prompts under the caller's existing protected transaction.
+pub(super) fn cancel_pending_requests(
+    tx: &rusqlite::Transaction<'_>,
+    space: &str,
+    job: &str,
+) -> Result<(), Error> {
+    tx.execute(
+        "UPDATE agent_approvals SET status='cancelled',resolved_ms=?3
+         WHERE space=?1 AND job=?2 AND status='pending'",
+        params![space, job, now_ms()],
+    )
+    .map_err(db_err)?;
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum OnceAdmission {
+    Fresh,
+    Replay,
+    Unapproved,
 }
 
 impl Jobs {
@@ -56,7 +70,7 @@ impl Jobs {
             }
             tx.execute(
                 "DELETE FROM agent_approvals WHERE (account=?1 OR (space=?3 AND thread=?4)) AND
-                 ((status IN ('answered','denied') AND resolved_ms<=?2)
+                 ((status IN ('answered','denied','cancelled') AND resolved_ms<=?2)
                  OR (status='once' AND claimed_ms<=?2))",
                 params![account,cutoff,space,thread],
             ).map_err(db_err)?;
@@ -109,25 +123,17 @@ impl Jobs {
 
     /// Locate one request owned by the authenticated account without exposing
     /// another account's ID. One indexed protected lookup.
-    pub(crate) fn personal_request_route(
+    fn personal_request_route(
         &self,
         account: AccountId,
         id: &str,
-    ) -> Result<RequestRoute, Error> {
+    ) -> Result<(String, String), Error> {
         let id = id.to_owned();
         self.security_read(move |c| {
             c.query_row(
-                "SELECT space,job,json_extract(action,'$.operation'),write_access FROM agent_approvals WHERE account=?1 AND id=?2",
+                "SELECT space,job FROM agent_approvals WHERE account=?1 AND id=?2",
                 params![account.to_string(), id],
-                |r| {
-                    let operation: Option<String> = r.get(2)?;
-                    let write: bool = r.get(3)?;
-                    Ok(RequestRoute {
-                        space: r.get(0)?,
-                        job: r.get(1)?,
-                        action: operation.map(|id| (id, write)),
-                    })
-                },
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
             .map_err(db_err)?
@@ -135,9 +141,11 @@ impl Jobs {
         })
     }
 
-    /// Resolve an owned request idempotently. Caller verifies membership and, for
-    /// approval, fresh person proof. Recording a grant and invalidating the old
-    /// token share the recovery commit; a failed commit never acknowledges either.
+    /// Resolve an owned request idempotently and return its space and job. The
+    /// callback authorizes that space. An approval also requires fresh person
+    /// proof at the caller. The space jobs lock keeps the named turn waiting on
+    /// that request across the recovery commit for grant publication and token
+    /// revocation. A failed commit acknowledges neither change.
     pub fn agent_decide(
         &self,
         account: AccountId,
@@ -145,48 +153,79 @@ impl Jobs {
         rid: &str,
         status: &'static str,
         value: Option<JsonObject>,
-    ) -> Result<bool, Error> {
+        authorize: impl FnOnce(&str) -> Result<(), Error>,
+    ) -> Result<(String, String), Error> {
         let cutoff = self.approval_cutoff();
         let (id, rid) = (id.to_owned(), rid.to_owned());
         let value = value
             .map(|v| bounded_json(&serde_json::json!(v), DETAIL_LIMIT))
             .transpose()?;
-        self.security_change(move |tx| {
-            let row = tx.query_row(
-                "SELECT a.kind,a.status,a.decision_request,a.decision_value,s.scope,a.resolved_ms
-                 FROM agent_approvals a JOIN agent_access s USING(account,space,thread) WHERE a.id=?1 AND a.account=?2",
-                params![id,account.to_string()],
-                |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?,r.get::<_,Option<i64>>(5)?))
-            ).optional().map_err(db_err)?.ok_or_else(|| Error::not_found("request not found"))?;
-            let (kind, prior, prior_rid, prior_value, scope, resolved_ms) = row;
-            if (kind == "question") != (status == "answered") {
-                return Err(Error::not_found("request not found"));
-            }
-            if prior != "pending" {
-                return if prior == status && prior_rid.as_deref() == Some(&rid) && prior_value == value
-                    && resolved_ms.is_some_and(|at| at > cutoff) {
-                    Ok(false)
-                } else {
-                    Err(Error::conflict("request already resolved"))
-                };
-            }
-            let reused: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM agent_approvals WHERE account=?1 AND decision_request=?2 AND id!=?3 AND resolved_ms>?4)",
-                params![account.to_string(),rid,id,cutoff], |r| r.get(0),
+        let (space, job) = self.personal_request_route(account, &id)?;
+        authorize(&space)?;
+        self.tx(&space, |jobs| {
+            let waiting: bool = jobs.query_row(
+                "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND account=?2 AND operation='agent.turn'
+                 AND state='waiting' AND json_extract(checkpoint,'$.person_request')=?3)",
+                params![job,account.to_string(),id], |r| r.get(0),
             ).map_err(db_err)?;
-            if reused {
-                return Err(Error::request_reused());
-            }
-            if matches!(status, "once" | "this_thread") {
-                let authority: Authority = serde_json::from_str(&scope).map_err(|_| Error::internal("invalid scope"))?;
-                replace_scope(tx, &authority)?;
-            }
-            tx.execute(
-                "UPDATE agent_approvals SET status=?1,decision_request=?2,decision_value=?3,resolved_ms=?4 WHERE id=?5",
-                params![status,rid,value,now_ms(),id],
-            ).map_err(db_err)?;
-            Ok(true)
-        })
+            let job = job.clone();
+            self.security_change(move |tx| {
+                let row = tx.query_row(
+                    "SELECT kind,status,decision_request,decision_value,resolved_ms,json_extract(action,'$.risk')
+                     FROM agent_approvals WHERE id=?1 AND account=?2 AND job=?3",
+                    params![id,account.to_string(),job],
+                    |r| Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?,
+                        r.get::<_,Option<String>>(3)?,r.get::<_,Option<i64>>(4)?,r.get::<_,Option<String>>(5)?)),
+                ).optional().map_err(db_err)?.ok_or_else(|| Error::not_found("request not found"))?;
+                let (kind, prior, prior_rid, prior_value, resolved_ms, risk) = row;
+                if (kind == "question") != (status == "answered") {
+                    return Err(Error::not_found("request not found"));
+                }
+                if status == "this_thread"
+                    && let Some(risk) = risk
+                {
+                    let risk: OperationRisk = serde_json::from_value(Value::String(risk))
+                        .map_err(|_| Error::internal("stored approval risk"))?;
+                    if !risk.allows_thread_approval() {
+                        return Err(Error::invalid_input("this action only allows once approval"));
+                    }
+                }
+                if prior != "pending" {
+                    return if prior == status && prior_rid.as_deref() == Some(&rid) && prior_value == value
+                        && resolved_ms.is_some_and(|at| at > cutoff) {
+                        Ok(())
+                    } else {
+                        Err(Error::conflict("request already resolved"))
+                    };
+                }
+                if !waiting {
+                    return Err(Error::conflict("turn is no longer waiting on this request"));
+                }
+                let reused: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM agent_approvals WHERE account=?1 AND decision_request=?2 AND id!=?3 AND resolved_ms>?4)",
+                    params![account.to_string(),rid,id,cutoff], |r| r.get(0),
+                ).map_err(db_err)?;
+                if reused {
+                    return Err(Error::request_reused());
+                }
+                if matches!(status, "once" | "this_thread") {
+                    // The jobs lock keeps the requesting turn parked while its credential ends.
+                    let changed = tx.execute(
+                        "UPDATE agent_access SET hash=NULL,expires_ms=0,updated_ms=?1 WHERE job=?2 AND account=?3",
+                        params![now_ms(),job,account.to_string()],
+                    ).map_err(db_err)?;
+                    if changed != 1 {
+                        return Err(Error::conflict("turn authority has ended"));
+                    }
+                }
+                tx.execute(
+                    "UPDATE agent_approvals SET status=?1,decision_request=?2,decision_value=?3,resolved_ms=?4 WHERE id=?5",
+                    params![status,rid,value,now_ms(),id],
+                ).map_err(db_err)?;
+                Ok(())
+            })
+        })?;
+        Ok((space, job))
     }
 
     /// Private form/approval outcomes for the next execution of this same job.
@@ -199,7 +238,7 @@ impl Jobs {
         let job = job.to_owned();
         self.security_read(move |c| {
             let mut stmt = c.prepare(
-                "SELECT id,kind,status,decision_value,action FROM agent_approvals WHERE account=?1 AND job=?2 AND status!='pending' ORDER BY resolved_ms DESC, id DESC LIMIT 1"
+                "SELECT id,kind,status,decision_value,action FROM agent_approvals WHERE account=?1 AND job=?2 AND status NOT IN ('pending','cancelled') ORDER BY resolved_ms DESC, id DESC LIMIT 1"
             ).map_err(db_err)?;
             let rows = stmt.query_map(params![account.to_string(),job], |r| {
                 Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,String>(4)?))
@@ -222,7 +261,7 @@ impl Jobs {
     /// Park a current turn with its chosen machine recorded in its checkpoint.
     /// Lock order is space jobs, then protected auth or machine release. Neither
     /// callback can re-enter jobs. A stale run cannot park its successor.
-    pub(crate) fn agent_park_request(
+    pub fn agent_park_request(
         &self,
         job: &super::jobs::Job,
         publish: impl FnOnce() -> Result<String, Error>,
@@ -283,7 +322,7 @@ impl Jobs {
                 };
                 let (checked_job, checked_request) = (job.clone(), request.clone());
                 let resolved: bool = self.security_read(move |conn| conn.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM agent_approvals WHERE id=?1 AND job=?2 AND status!='pending')",
+                    "SELECT EXISTS(SELECT 1 FROM agent_approvals WHERE id=?1 AND job=?2 AND status IN ('answered','denied','once','this_thread'))",
                     params![checked_request,checked_job], |r| r.get(0),
                 ).map_err(db_err))?;
                 if resolved && self.agent_wake_request(&space, &job, &request)? {
@@ -292,6 +331,33 @@ impl Jobs {
             }
         }
         Ok(woken)
+    }
+
+    /// Interrupt the removed member's active native jobs after the protected
+    /// membership commit. One space-local transaction; no other accounts stop.
+    pub(crate) fn interrupt_revoked_account(
+        &self,
+        space: &str,
+        account: AccountId,
+    ) -> Result<(), Error> {
+        if self.root.is_none() {
+            return Ok(());
+        }
+        let interrupted = self.tx(space, |tx| {
+            let mut update = tx.prepare(
+                "UPDATE jobs SET state='interrupted' WHERE operation='agent.turn' AND account=?1
+                 AND state IN ('admitted','running','waiting','retry_waiting') RETURNING id",
+            ).map_err(db_err)?;
+            update
+                .query_map([account.to_string()], |r| r.get::<_, String>(0))
+                .map_err(db_err)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(db_err)
+        })?;
+        for id in interrupted {
+            self.settle(&id);
+        }
+        Ok(())
     }
 
     /// Readmit a parked turn after its resolution, preserving the machine pin.
@@ -316,53 +382,72 @@ impl Jobs {
             .saturating_sub(i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX))
     }
 
-    /// Bind at most one operation identity to a once approval in the protected
-    /// transaction. A matching retry can still retrieve the action's receipt.
-    /// Distinct request identities contend through the same conditional update.
+    /// Spend one matching approval before its action runs. A spent claim can
+    /// identify a receipt, but cannot admit a handler again. An explicitly
+    /// approved retry may spend another grant if the prior result is absent.
+    /// The space jobs lock holds the running state stable across the one protected
+    /// admission commit, so a stopped run cannot spend the approval.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn claim_once(
         &self,
         a: &Authority,
         op: &str,
         input: &JsonObject,
         rid: &str,
-        risk: calternal_core::OperationRisk,
+        risk: OperationRisk,
         mutates: bool,
         token_hash: Vec<u8>,
-    ) -> Result<bool, Error> {
+        fingerprint: String,
+        has_receipt: bool,
+    ) -> Result<OnceAdmission, Error> {
         let account = a.actor.account.to_string();
         let (space, thread, job) = (a.space.clone(), a.thread()?.to_string(), a.job.clone());
         let app = crate::turns::access::app(op).to_owned();
         let action = crate::turns::access::action_scope(op, input, rid, risk);
-        let fingerprint = crate::api::fingerprint(op, input);
         let rid = rid.to_owned();
-        let high_risk = !matches!(
-            risk,
-            calternal_core::OperationRisk::Read | calternal_core::OperationRisk::Reversible
-        );
+        let app_scope = matches!(risk, OperationRisk::Read | OperationRisk::Reversible);
         let cutoff = self.approval_cutoff();
-        self.security_change(move |tx| {
-            let now = now_ms();
-            let valid: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM agent_access WHERE account=?1 AND space=?2 AND thread=?3 AND job=?4 AND hash=?5 AND expires_ms>?6)",
-                params![account,space,thread,job,token_hash,now], |r| r.get(0),
+        self.tx(&a.space, |jobs| {
+            let active: bool = jobs.query_row(
+                "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=?1 AND account=?2 AND state='running')",
+                params![job,account], |r| r.get(0),
             ).map_err(db_err)?;
-            if !valid {
+            if !active {
                 return Err(Error::forbidden("thread credential has ended"));
             }
-            if let Some(stored) = tx.query_row(
-                "SELECT claimed_hash FROM agent_approvals WHERE account=?1 AND space=?2 AND thread=?3 AND claimed_id=?4 AND claimed_ms>?5 LIMIT 1",
-                params![account,space,thread,rid,cutoff], |r| r.get::<_,String>(0),
-            ).optional().map_err(db_err)? {
-                return if stored == fingerprint { Ok(true) } else { Err(Error::request_reused()) };
-            }
-            let changed = tx.execute(
-                "UPDATE agent_approvals SET claimed_id=?1,claimed_hash=?2,claimed_ms=?3 WHERE id=(
-                 SELECT id FROM agent_approvals WHERE account=?4 AND space=?5 AND thread=?6 AND app=?7 AND status='once'
-                 AND claimed_id IS NULL AND (write_access=1 OR ?8=0)
-                 AND (action_hash=?9 OR (action_hash IS NULL AND ?10=0)) ORDER BY id LIMIT 1)",
-                params![rid,fingerprint,now,account,space,thread,app,mutates,action,high_risk],
-            ).map_err(db_err)?;
-            Ok(changed == 1)
+            self.security_change(move |tx| {
+                let now = now_ms();
+                let valid: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM agent_access WHERE account=?1 AND space=?2 AND thread=?3 AND job=?4 AND hash=?5 AND expires_ms>?6)",
+                    params![account,space,thread,job,token_hash,now], |r| r.get(0),
+                ).map_err(db_err)?;
+                if !valid {
+                    return Err(Error::forbidden("thread credential has ended"));
+                }
+                if let Some(stored) = tx.query_row(
+                    "SELECT claimed_hash FROM agent_approvals WHERE account=?1 AND space=?2 AND thread=?3 AND claimed_id=?4
+                     AND (claimed_ms>?5 OR ?6) LIMIT 1",
+                    params![account,space,thread,rid,cutoff,has_receipt], |r| r.get::<_,String>(0),
+                ).optional().map_err(db_err)? {
+                    if stored != fingerprint {
+                        return Err(Error::request_reused());
+                    }
+                    if has_receipt {
+                        return Ok(OnceAdmission::Replay);
+                    }
+                }
+                if has_receipt {
+                    return Ok(OnceAdmission::Unapproved);
+                }
+                let changed = tx.execute(
+                    "UPDATE agent_approvals SET claimed_id=?1,claimed_hash=?2,claimed_ms=?3 WHERE id=(
+                     SELECT id FROM agent_approvals WHERE account=?4 AND space=?5 AND thread=?6 AND app=?7 AND status='once'
+                     AND claimed_id IS NULL AND (write_access=1 OR ?8=0)
+                     AND (action_hash=?9 OR (action_hash IS NULL AND ?10)) ORDER BY id LIMIT 1)",
+                    params![rid,fingerprint,now,account,space,thread,app,mutates,action,app_scope],
+                ).map_err(db_err)?;
+                Ok(if changed == 1 { OnceAdmission::Fresh } else { OnceAdmission::Unapproved })
+            })
         })
     }
 }

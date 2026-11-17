@@ -45,7 +45,6 @@ pub(crate) use dispatch::fingerprint;
 use dispatch::*;
 use guard::*;
 use plugins::*;
-pub(crate) use request_action::supports_once;
 
 /// Same-origin development content security policy applied to every response.
 pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";

@@ -138,6 +138,13 @@ pub enum OperationRisk {
     WidensAccess,
 }
 
+impl OperationRisk {
+    /// Whether a person can retain approval for this class across a thread.
+    pub fn allows_thread_approval(self) -> bool {
+        matches!(self, Self::Read | Self::Reversible | Self::External)
+    }
+}
+
 /// Risk for a built-in operation; plugin risks come directly from their manifests.
 /// This classification feeds discovery and the agent reviewer, never substitutes
 /// for current capabilities. O(operation-name bytes), no I/O.

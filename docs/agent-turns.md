@@ -37,13 +37,13 @@ file write per delta. Checkpoints store session identity, lease, last sequence a
 a bounded 16 KiB text tail after session discovery, every tool finish, at turn end
 and at least every three seconds of emitted output. Each such checkpoint is one
 FULL transaction. Live buffers hold at most 256 chunks / 1 MiB per job. Completed
-completed buffers last 30 seconds, with at most 64 retained completed streams.
+buffers last 30 seconds, with at most 64 retained completed streams.
 Durable final jobs last seven days (at most 1024 final jobs per space); at most
 64 active jobs fit in a space. Agent authority is capped at 1024 records per
-account, with 32 approvals per turn. The current mode remains until superseded or
-the account or space is deleted, so later turns cannot recover a broader initial
-mode. Starting another turn replaces the token/grants row and removes old approvals;
-`threads.delete` removes saved modes and credentials for every account using that thread.
+account. The inbox retains up to 32 request and grant rows per thread and 256
+per account. Starting another turn rotates the token, cancels superseded
+pending requests, and carries forward eligible grants. Archiving or deleting a
+thread removes its saved modes, credentials, and grants for every account.
 
 Machine exec already supplies numbered, acknowledged chunks and back-pressure.
 An adapter crash or incomplete result ends outcome-unknown. Machine silence fences
@@ -105,13 +105,12 @@ action hash. Approvals created by denials use that hash in every mode. Sensitive
 action approvals conservatively bind canonical operation input; an
 irreversible or widening action also binds its request ID. Reuse that ID after
 approval. An external scope covers identical canonical input. App grants name a
-prefix and read/write. Current grants still last this turn and use protected recovery. The owner's
-2026-11-18 decision is once-only (consumed on use) and this-thread (until thread
-deletion); a separate approval-lifetimes lane will add their protected storage
-and atomic consumption. Always-in-space is later work.
-An old token cannot approve, change mode, or reissue itself. Token changes revoke
-the old credential immediately and pause the turn; explicit Resume delivers its
-replacement to a fresh process. Tokens expire after ten minutes or turn end.
+prefix and read/write. An irreversible or widening action only allows once approval. This-thread
+approval is available for reads, reversible actions and an exact external
+scope. See [person requests](requests.md).
+A thread token cannot approve, change mode, or reissue itself. An in-flight mode
+change interrupts the job. Explicit Resume delivers a replacement to a fresh
+process. Tokens expire after ten minutes or turn end.
 Only hashes persist. Authority uses the existing account directory handle and
 worker; no new installation-wide lock, worker or connection is added. Issuance
 holds its space's jobs lock across the authority commit to fence stop/resume;
@@ -119,12 +118,24 @@ auth callbacks never acquire job or content locks. Worker callbacks recheck that
 and least-access content calls remain inside the granted kind scope.
 
 `access.request` creates a bounded pending approval. Denied sensitive operations
-also create an approval and return its ID in the error details. `agent.events`
-shows requests. The person signs in again with a passkey, then runs
-`calternal agent ... approve <job-id> <approval-id>`; development bearers and
-agent credentials cannot approve. There is no approval UI in this lane. The
-reviewer trait permits future advice only for irreversible actions; the shipped
-rules-only implementation asks the person. No model reviewer is selected.
+create an approval and return its ID. The recipient lists it through
+`calternal requests list` and approves with `calternal requests approve ID`
+and the chosen lifetime, using an installation session with a fresh passkey
+proof. The shipped reviewer uses rules and asks for irreversible actions.
+
+| Change | Credential behavior |
+| --- | --- |
+| Approve once or this thread | The requesting job must be waiting on that request. Its old token is revoked before it is readmitted. |
+| New turn | Issuance replaces any prior token for this account and thread. |
+| In-flight mode change | The job is interrupted and its old token revoked. Explicit Resume issues a replacement. |
+| Resume or wake after a decision | A fresh token binds the new run. |
+| Stop, finish, or interrupt | The old run cannot use its credential. Stop and finish close pending requests. |
+| Archive or delete thread | Thread authority and grants are erased. Pending requests are recorded as cancelled. |
+| Once consumption | The protected claim authorizes one execution. An identical retry may replay a saved response while otherwise authorized. The live token remains in place. |
+| Deny or answer | The parked job resumes with a fresh run credential. |
+| Leave, removal, or loss of space read access | The membership transaction erases the former member's saved authority and requests. Active native jobs are interrupted. |
+| Role change that retains space read access | The current token is checked against the new capabilities on each operation. |
+| Sign-out | Installation liveness checks refuse the old credential. |
 
 Core instructions live in `plugins/calternal-orchestrator/skills/core.md`. The
 provider appends core, the generated one-line operation index, then the space's

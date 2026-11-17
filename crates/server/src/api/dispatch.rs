@@ -297,7 +297,17 @@ pub(super) async fn admitted_operation<D: Directory>(
                         .map_err(|e| Error::unavailable(e.to_string()))?;
                 }
                 for account in removed {
+                    if st
+                        .directory
+                        .capabilities(account, space)
+                        .is_some_and(|caps| caps.contains(calternal_types::Capability::SpaceRead))
+                    {
+                        continue;
+                    }
+                    st.jobs
+                        .interrupt_revoked_account(&space.to_string(), account)?;
                     st.inputs.erase_space(account, space)?;
+                    st.inputs.invalidate(account)?;
                 }
             }
             result

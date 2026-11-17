@@ -28,6 +28,7 @@
 
 mod checkpoint;
 mod claim;
+mod complete;
 mod database;
 pub(crate) use database::JobDatabase;
 
@@ -44,9 +45,7 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use super::Session;
-use super::job_sql::{
-    ACTIVE, COLUMNS, SCHEMA, all_reported, db_err, parse_state, report, retain, row, set_state,
-};
+use super::job_sql::{ACTIVE, COLUMNS, SCHEMA, db_err, parse_state, retain, row};
 use super::live::{Live, LiveMap};
 use super::worker::CancelFlag;
 use calternal_types::{AccountId, Error};
@@ -480,122 +479,5 @@ impl Jobs {
             }
             tx.query_row("SELECT checkpoints FROM jobs WHERE id=?1", [id], |r| r.get(0)).map_err(db_err)
         })
-    }
-
-    /// Finish run `run`. Late reports (cancelled job, superseded run) change nothing.
-    /// A final job reports exactly once to its parent; a parent whose children have all
-    /// reported is re-admitted. Returns the jobs to schedule.
-    /// Cost: one FULL transaction with a few indexed reads and writes.
-    pub fn finish(
-        &self,
-        space: &str,
-        id: &str,
-        run: u32,
-        end: RunEnd,
-    ) -> Result<Vec<String>, Error> {
-        let (state, result) = match end {
-            RunEnd::Done(v) => match bounded_json(&v, MAX_CHECKPOINT_BYTES) {
-                Ok(text) => (JobState::Done, text),
-                Err(_) => (JobState::Failed, "null".into()),
-            },
-            RunEnd::Waiting => (JobState::Waiting, "null".into()),
-            RunEnd::RetryWaiting => (JobState::RetryWaiting, "null".into()),
-            RunEnd::Interrupted => (JobState::Interrupted, "null".into()),
-            RunEnd::OutcomeUnknown => (JobState::OutcomeUnknown, "null".into()),
-            RunEnd::Failed => (JobState::Failed, "null".into()),
-        };
-        let wake = self.tx(space, |tx| {
-            let current: Option<(String, u32, Option<String>)> = tx
-                .query_row(
-                    "SELECT state,runs,parent FROM jobs WHERE id=?1",
-                    [id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )
-                .optional()
-                .map_err(db_err)?;
-            let Some((s, runs, parent)) = current else {
-                return Ok(vec![]);
-            };
-            if s != "running" || runs != run {
-                return Ok(vec![]);
-            }
-            let mut state = state;
-            if state == JobState::Waiting {
-                let children: i64 = tx
-                    .query_row("SELECT count(*) FROM jobs WHERE parent=?1", [id], |r| {
-                        r.get(0)
-                    })
-                    .map_err(db_err)?;
-                if children == 0 || runs >= MAX_RUNS {
-                    state = JobState::Failed;
-                }
-            }
-            set_state(tx, id, state, &result)?;
-            let mut wake = vec![];
-            if state == JobState::Waiting && all_reported(tx, id)? {
-                tx.execute("UPDATE jobs SET state='admitted' WHERE id=?1", [id])
-                    .map_err(db_err)?;
-                wake.push(id.to_owned());
-            }
-            if state.is_final()
-                && let Some(parent) = parent
-            {
-                wake.extend(report(tx, &parent, id, state, &result)?);
-            }
-            Ok(wake)
-        })?;
-        self.settle_run(id, run);
-        Ok(wake)
-    }
-
-    /// Cancel a job and every active descendant. Their runs are told to stop, their
-    /// later output is discarded, and the job reports `cancelled` to its parent unless
-    /// that parent was cancelled too. Returns the jobs to schedule (a woken parent).
-    /// Cost: one FULL transaction walking the descendant tree (at most
-    /// [`MAX_CHILDREN`] per level within the space's active-job bound).
-    pub fn cancel(&self, space: &str, id: &str) -> Result<Vec<String>, Error> {
-        let (cancelled, wake) = self.tx(space, |tx| {
-            let mut st = tx
-                .prepare(&format!(
-                    "WITH RECURSIVE tree(id) AS (SELECT ?1 UNION SELECT j.id FROM jobs j JOIN tree t ON j.parent=t.id) \
-                     SELECT j.id FROM jobs j JOIN tree t ON j.id=t.id WHERE j.state IN {ACTIVE}"
-                ))
-                .map_err(db_err)?;
-            let ids = st
-                .query_map([id], |r| r.get::<_, String>(0))
-                .map_err(db_err)?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(db_err)?;
-            drop(st);
-            for job in &ids {
-                set_state(tx, job, JobState::Cancelled, "null")?;
-            }
-            let mut wake = vec![];
-            if ids.iter().any(|j| j == id) {
-                let parent: Option<String> = tx
-                    .query_row("SELECT parent FROM jobs WHERE id=?1", [id], |r| r.get(0))
-                    .map_err(db_err)?;
-                if let Some(parent) = parent {
-                    wake = report(tx, &parent, id, JobState::Cancelled, "null")?;
-                }
-            }
-            Ok((ids, wake))
-        })?;
-        for job in cancelled {
-            let live = self
-                .live
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .get(&job)
-                .cloned();
-            if let Some(live) = live {
-                let cancel = live.lock().cancel.clone();
-                if let Some(c) = cancel {
-                    c.cancel();
-                }
-            }
-            self.settle(&job);
-        }
-        Ok(wake)
     }
 }

@@ -40,6 +40,26 @@ impl Agents {
         self.read(move|c|c.query_row("SELECT EXISTS(SELECT 1 FROM installations WHERE id=?1 AND user_id=?2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?3))",rusqlite::params![installation.to_string(),account.to_string(),calternal_types::now_ms()],|r|r.get(0)).map_err(|_|Error::unavailable("admitting sign-in unavailable")))
     }
 
+    /// Check current membership within a protected agent-authority callback.
+    /// Two indexed capability lookups on the existing transaction.
+    pub fn require_run_access(
+        tx: &Transaction<'_>,
+        account: calternal_types::AccountId,
+        space: calternal_types::SpaceId,
+    ) -> Result<(), Error> {
+        for capability in [
+            calternal_types::Capability::SpaceRead,
+            calternal_types::Capability::PluginsUse,
+        ] {
+            if !crate::spaces::has(tx, account, space, capability.name())
+                .map_err(|_| Error::unavailable("agent space authority unavailable"))?
+            {
+                return Err(Error::forbidden("turn no longer has space access"));
+            }
+        }
+        Ok(())
+    }
+
     /// Commit an agent authority change through the same recovery barrier as
     /// memberships and machines. Call only from a blocking task; the trusted host
     /// callback may mutate only agent authority tables and must bound every row.
