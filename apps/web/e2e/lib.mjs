@@ -1,5 +1,6 @@
 // Shared by the e2e scripts: starts `vite preview` of the built app, opens Chromium, and exposes small helpers.
 import { spawn } from "node:child_process";
+import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 import { chromium } from "playwright";
 
 export const PORT = 4174;
@@ -7,8 +8,24 @@ export const PORT = 4174;
 export const BASE = process.env.CAL_URL ?? `http://127.0.0.1:${PORT}`;
 
 /** Starts the preview server and resolves when it answers. Returns a stop function. */
+/** Stops any preview server already listening for this app on the port (a run that timed out leaves one behind, and it would serve an old build or the wrong proxy). Linux only; only processes whose directory is this app's. */
+function clearPort() {
+  if (process.platform !== "linux") return;
+  try {
+    for (const pid of readdirSync("/proc").filter((n) => /^\d+$/.test(n))) {
+      let cmd = "";
+      try { cmd = readFileSync(`/proc/${pid}/cmdline`, "utf8").replaceAll("\0", " "); } catch { continue; }
+      if (!cmd.includes("vite") || !cmd.includes("preview") || !cmd.includes(`--port ${PORT}`)) continue;
+      let cwd = "";
+      try { cwd = readlinkSync(`/proc/${pid}/cwd`); } catch { continue; }
+      if (cwd.startsWith(process.cwd())) { try { process.kill(Number(pid)); } catch { /* gone */ } }
+    }
+  } catch { /* no /proc */ }
+}
+
 export async function serve() {
   if (process.env.CAL_URL) return () => {};
+  clearPort();
   const p = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"], { stdio: "ignore", detached: true }); // its own process group, so stopping it also stops the node process npx starts
   for (let i = 0; i < 60; i++) {
     try { if ((await fetch(BASE)).ok) break; } catch { /* not yet */ }
