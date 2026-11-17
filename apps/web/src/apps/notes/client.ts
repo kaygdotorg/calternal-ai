@@ -27,9 +27,25 @@ const SEED: [string, string, string][] = [
   ["n-5", "Reading list", "# Reading list\n\nNative UI study, the Craft study."],
 ];
 
+/** A long fixture note of about `words` words (headings, paragraphs, lists, code), for measuring the editor on a document the size of a book chapter. */
+export function longNote(words = 50_000): string {
+  const out: string[] = ["# The long note", ""];
+  const sentence = "The journal is read once to find the tail and once more to verify it, so a restart with a long journal feels slow. ";
+  let n = 0, i = 0;
+  while (n < words) {
+    out.push(`## Section ${++i}`, "");
+    out.push(sentence.repeat(4) + "A **bold** claim, some `code`, and a [link](https://example.test/page).", "");
+    out.push("- the reader no longer calls `sync_all` per entry", "  - verified once over the tail", "- [ ] write it down", "- [x] measure it", "");
+    if (i % 5 === 0) out.push("```rust", "let tail = journal.read_tail(max_bytes)?;", "```", "");
+    if (i % 7 === 0) out.push("> A quoted line that records why.", "");
+    n += 4 * 21 + 30;
+  }
+  return out.join("\n");
+}
+
 /** The in-memory fixture backend. */
 export class FixtureNotes implements NotesClient {
-  private notes = new Map<string, Note>(SEED.map(([id, title, markdown], i) => [id, { id, spaceId: "home", title, markdown, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 17, 9, 50 - i)).toISOString() }]));
+  private notes = new Map<string, Note>([...SEED, ["n-long", "The long note", longNote()] as [string, string, string]].map(([id, title, markdown], i) => [id, { id, spaceId: "home", title, markdown, revision: "1", updatedAt: new Date(Date.UTC(2026, 10, 17, 9, 50 - i)).toISOString() }]));
   private listeners = new Set<() => void>();
   async spaces(): Promise<Space[]> { return [{ id: "home", name: "Home" }]; }
   async list(): Promise<NoteSummary[]> { return [...this.notes.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).map(({ markdown: _m, revision: _r, ...s }) => s); }

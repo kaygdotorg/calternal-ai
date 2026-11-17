@@ -1,27 +1,28 @@
 <script lang="ts">
-  // Notes placeholder: proves the middle card's second layout. A narrow centred column with no inner card, and a thin rail at the card's
-  // left edge that expands into a small table-of-contents card (hover, focus or press; Escape folds it). Fixture text only.
-  import { Panel } from "@calternal/ui";
+  // The note: the block editor in a narrow centred column with no inner card, and a thin rail at the card's left edge that expands into a small contents card (hover, focus or press;
+  // Escape folds it). The document is the note's Markdown (the fixture's or the server's); every edit is kept as the note's private draft after a short pause and saved after a longer one.
+  import { Button, IconButton, Panel } from "@calternal/ui";
   import { shell } from "../../shell/shell.svelte";
-  import { IconButton } from "@calternal/ui";
-  import { InlineEditor, Button } from "@calternal/ui";
-  import Md from "../../lib/Md.svelte";
+  import NoteEditor from "./NoteEditor.svelte";
   import { notes } from "./store.svelte";
   let { id }: { id?: string } = $props();
   $effect(() => { void notes.open(id); });
-  const sections = $derived((notes.note?.markdown.match(/^## .+$/gm) ?? []).map((h) => h.slice(3)));
-  let editing = $state(false);
-  let title = $state("");
-  let body = $state("");
-  const edit = (text?: string) => { title = notes.note?.title ?? ""; body = text ?? notes.note?.markdown ?? ""; editing = true; };
-  // What is typed is kept as the note's private draft (a complete replacement, saved after a short pause).
-  $effect(() => {
-    if (!editing) return;
-    const text = body;
-    const t = setTimeout(() => void notes.keepDraft(text), 600);
-    return () => clearTimeout(t);
-  });
-  async function done() { editing = false; if (notes.note && (title !== notes.note.title || body !== notes.note.markdown)) await notes.save(title, body); }
+  let heads = $state<{ level: number; text: string; from: number }[]>([]);
+  let editor = $state<NoteEditor>();
+  let latest = "";
+  let draftTimer = 0, saveTimer = 0;
+  const titleOf = (t: string) => /^# +(.+)$/m.exec(t)?.[1]?.trim() ?? notes.note?.title ?? "Untitled";
+  function edited(text: string) {
+    latest = text;
+    clearTimeout(draftTimer); clearTimeout(saveTimer);
+    draftTimer = window.setTimeout(() => void notes.keepDraft(text), 600);
+    saveTimer = window.setTimeout(() => void flush(), 1500);
+  }
+  async function flush() {
+    clearTimeout(saveTimer);
+    if (notes.note && latest && latest !== notes.note.markdown) await notes.save(titleOf(latest), latest);
+  }
+  $effect(() => () => { if (latest) void flush(); });
   let toc = $state(false);
   const uid = $props.id();
 </script>
@@ -29,11 +30,11 @@
 <div class="note">
   <div class="rail" role="presentation" onpointerenter={() => (toc = true)} onpointerleave={() => (toc = false)}>
     <button type="button" class="ticks" aria-expanded={toc} aria-controls="{uid}-toc" aria-label="Table of contents" onclick={() => (toc = !toc)} onfocus={() => (toc = true)} onkeydown={(e) => e.key === "Escape" && (toc = false)}>
-      {#each sections as _}<i></i>{/each}
+      {#each heads.filter((h) => h.level > 1) as _}<i></i>{/each}
     </button>
     {#if toc}
       <Panel class="tocard" radius="card" dense floating id="{uid}-toc" role="navigation" aria-label="Contents">
-        {#each sections as s, i}<a href="#s{i}" onclick={(e) => e.preventDefault()}>{s}</a>{/each}
+        {#each heads as h}<a href="#{h.from}" class="l{h.level}" onclick={(e) => { e.preventDefault(); editor?.scrollTo(h.from); toc = false; }}>{h.text}</a>{:else}<span class="empty">No headings yet</span>{/each}
       </Panel>
     {/if}
   </div>
@@ -47,18 +48,10 @@
 
   <article>
     {#if notes.note}
-      {#if notes.draft && !editing}
-        <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => edit(notes.draft?.text)} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
+      {#if notes.draft}
+        <p class="draft" role="status">You have an unsent draft of this note. <Button variant="quiet" text="Restore" onclick={() => { editor?.setText(notes.draft!.text); edited(notes.draft!.text); }} /> <Button variant="quiet" text="Discard" onclick={async () => { await notes.input.dropDraft(notes.note!.spaceId, notes.note!.id); await notes.reloadInput(); }} /></p>
       {/if}
-      {#if editing}
-        <InlineEditor class="t-edit" label="Title" bind:value={title} />
-        <InlineEditor class="b-edit" multiline maxRows={30} label="Note" bind:value={body} />
-        <div><Button variant="primary" text="Done" onclick={done} /></div>
-      {:else}
-        <h1 ondblclick={() => edit()}>{notes.note.title}</h1>
-        <Md text={notes.note.markdown.replace(/^# .+\n*/, "")} />
-        <div><Button variant="quiet" text="Edit" onclick={() => edit()} /></div>
-      {/if}
+      <NoteEditor bind:this={editor} id={notes.note.id} text={notes.note.markdown} onedit={edited} onheadings={(h) => (heads = h)} label={notes.note.title} />
       {#if notes.error}<p class="err" role="alert">{notes.error}</p>{/if}
     {:else}
       <h1>{id ? "Note not found" : "Notes"}</h1>
@@ -76,8 +69,8 @@
   article { max-width: 40rem; margin: 0 auto; padding: var(--s-5) var(--pad-region) calc(var(--s-10) + var(--bottom-inset, 0px)); display: grid; gap: var(--s-5); }
   .draft { padding: var(--s-3) var(--s-5); border-radius: var(--r-card); background: var(--accent-soft); font-size: var(--text-label); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
   .err { color: var(--danger); font-size: var(--text-label); }
-  :global(.t-edit) { font-size: var(--text-title); font-weight: var(--strong-weight); width: 100%; }
-  :global(.b-edit) { width: 100%; min-height: 12rem; line-height: 1.55; }
+  :global(.tocard) a.l2 { padding-left: var(--s-6); } :global(.tocard) a.l3 { padding-left: var(--s-8); }
+  .empty { padding: var(--s-3) var(--s-5); color: var(--ink-3); font-size: var(--text-label); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); line-height: 1.2; letter-spacing: -0.01em; }
   p { font-size: var(--text-ui); line-height: 1.65; font-weight: var(--body-weight); }
   .lede { color: var(--ink-3); }

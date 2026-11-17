@@ -3,9 +3,24 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "What every text field and the Notes block editor share: transactions with origins, history of the person's own changes, the input-method gate and the keystroke probe. No framework and no CodeMirror; stage 1 of docs/editor-port-plan.md.",
+  "description": "What every text field and the Notes block editor share (transactions with origins, history, the input-method gate, the keystroke probe), and, in ./block, the CodeMirror 6 block editor. Knows nothing about Notes: the host supplies the document, the block kinds and the pickers. Stages 1 and 2 of docs/editor-port-plan.md.",
   "license": "AGPL-3.0-only",
-  "exports": { ".": "./src/index.ts" },
+  "exports": {
+    ".": "./src/index.ts",
+    "./block": "./src/block/index.ts"
+  },
   "types": "./src/index.ts",
-  "scripts": { "test": "vitest run" }
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@lezer/common": "^1.5.5",
+    "@lezer/highlight": "^1.2.5",
+    "@lezer/markdown": "^1.8.1"
+  }
 }
