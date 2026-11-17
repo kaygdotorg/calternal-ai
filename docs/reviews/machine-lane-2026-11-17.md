@@ -87,6 +87,23 @@ Podman backend is rootless containers, not microVMs).
   active, the machine was online, and a re-run was idempotent. Everything was removed
   afterwards.
 
+## Secrets and conformance (after dev merged lane/secrets)
+
+- Secrets seam, documented but not wired: exec `env` is plain configuration only. Secret
+  values are to reach a sandbox only through `SecretStore::use_value` with
+  `Consumer::SandboxEnv { thread, variable }`, released right before the `Exec` message
+  is queued for the machine (`MachineService::exec` docs, `protocol::Down::Exec`). Wiring
+  it is one exec-input field plus a store reference, once the secrets lane says how the
+  server holds its `SecretStore`.
+- `tests/conformance/isolation.rs::machines_and_runs_are_owner_private` covers every
+  machine route, with a source inventory guard over `machines/http.rs`. It checks that a
+  foreign id gives the same answer as a missing one for accounts 0, 2 and 3; that
+  anonymous callers get 401; that a code works once; that a forged session signature is
+  refused; that a bad bearer gets 401; that runs need `plugins.use`; that another
+  account's machine is not used; and that revocation is immediate. The suite now depends
+  on `calternal-machine` for the Ed25519 key, which adds rustls and ring to its lock file.
+  The full suite passes: 29 of 29.
+
 ## Open
 
 - Who may use pool machines: implemented as explicit per-account operator grants (fail
