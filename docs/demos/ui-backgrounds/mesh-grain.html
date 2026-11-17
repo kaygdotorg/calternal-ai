@@ -10,6 +10,7 @@ figure{margin:0}figcaption{margin-top:6px;opacity:.75}
 .i{width:100%;aspect-ratio:16/10;border-radius:10px;display:block;background-size:cover}
 </style>
 <h2>Slop vs calm (same canvas size)</h2><div class=g id=a></div>
+<h2>Proposed default: the shell's own 3x3 token mesh (tokens.json "backdrop"), rendered once with grain</h2><div class=g id=c></div>
 <h2>Banding: CSS gradient vs generated, no grain vs grain (strip: pixel-difference revealer)</h2><div class=g id=b></div>
 <script>
 const lin=c=>c<=.04045?c/12.92:((c+.055)/1.055)**2.4,gam=c=>c<=.0031308?12.92*c:1.055*c**(1/2.4)-.055;
@@ -54,5 +55,8 @@ fig(B,css('linear-gradient(160deg,#241f3a,#6e5273 55%,#d9a58f)'),'CSS 3-stop gra
 {const c=mesh(sage,W,H,{seed:7,grain:2.5});fig(B,img(c),'Sage (light)',c)}
 {const c=mesh(slate,W,H,{seed:3,grain:2.5});fig(B,img(c),'Slate (dark)',c)}
 {const c=mesh(dusk,W,H,{seed:4,grain:6});fig(B,img(c),'Grain 6/255: visible film grain; costs bytes',c)}
+const lt=['#efe6dc','#ebe5ea','#e0e6ee','#eadfd2','#e9e3df','#dde3e8','#e5d9cb','#e7e0d6','#d9dfe4'],dk=['#2d2621','#26252c','#212830','#272119','#232227','#1d232a','#201c17','#1e1d21','#191e23'];
+{const C=document.getElementById('c');fig(C,img(mesh(lt,W,H,{seed:2,sigma:.42,warp:.03,grain:2.5})),'Light: the 9 token colours, OKLab blend');fig(C,img(mesh(dk,W,H,{seed:2,sigma:.42,warp:.03,grain:2.5})),'Dark: the 9 token colours, OKLab blend');
+ fig(C,css('linear-gradient(135deg,#efe6dc,#e0e6ee,#d9dfe4)'),'For comparison: a plain CSS 3-stop of the same colours')}
 document.title+=' ('+Math.round(performance.now()-t0)+' ms for 6 canvases)';
 </script>
