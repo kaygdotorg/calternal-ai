@@ -23,6 +23,8 @@ const sse = (frames: [string, unknown][], closeAfter = 40) => new Response(new R
 const ok = (data: unknown) => new Response(JSON.stringify({ request_id: "r", ok: true, data }), { headers: { "content-type": "application/json" } });
 const fail = (code: string, message: string) => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code, message } }), { status: 404 });
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Waits for the condition itself (polling every 5 ms, up to 5 s), never for a guessed time: a loaded machine makes it slower, not wrong. Absence is the only thing a fixed wait is used for. */
+const until = async (cond: () => boolean, what = "the condition") => { for (let i = 0; i < 1000; i++) { if (cond()) return; await wait(5); } throw new Error(`timed out waiting for ${what}`); };
 
 /** A double of the server: records every operation, answers from `handlers`; the space's journal is a stream the test pushes entries into. */
 function double(handlers: Record<string, (input: any, requestId: string) => unknown>) {
@@ -40,7 +42,7 @@ function double(handlers: Record<string, (input: any, requestId: string) => unkn
   }) as never;
   const client = new ServerThreads(new ServerClient({ token: () => "T", fetch }), () => SPACE);
   const push = (kind: string, item: string, data?: object) => live!.enqueue(frame("message", { type: "entry", space_id: SPACE, entry: { kind, item, data } }));
-  return { client, calls, eventUrls, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
+  return { client, calls, eventUrls, hasFeed: () => live !== null, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
 }
 
 describe("the saved thread's Markdown", () => {
@@ -97,7 +99,8 @@ describe("ServerThreads", () => {
     const d = double({ "threads.list": () => ({ threads: [row(T1)] }), "threads.get": () => thread(md()) });
     const off = d.client.watchThreads(() => {});
     const offWatch = d.client.watch(T1, { onMessage() {}, onStreamStart() {}, onDelta() {}, onStep() {}, onSummary() {} });
-    await wait(60);
+    await until(() => d.hasFeed() && d.ops("threads.get").length >= 1, "the first reads");
+    for (let still = 0, last = -1; still < 4; await wait(40)) { still = d.calls.length === last ? still + 1 : 0; last = d.calls.length; } // the opening reads have finished
     const n = d.calls.length;
     await wait(400);
     off(); offWatch();
@@ -108,10 +111,10 @@ describe("ServerThreads", () => {
     const seen: string[] = [];
     await d.client.listThreads();
     const off = d.client.watchThreads((l) => seen.push(l[0]!.state));
-    await wait(40);
+    await until(() => d.hasFeed(), "the journal subscription");
     const lists = d.ops("threads.list").length;
     d.push("threads.turn_state_changed", T1, { job_id: JOB, state: "running", job_state: "running" });
-    await wait(60);
+    await until(() => seen.includes("running"), "the state change");
     off();
     expect(seen).toContain("running");
     expect(d.ops("threads.list")).toHaveLength(lists);
@@ -119,10 +122,11 @@ describe("ServerThreads", () => {
   test("a created, renamed or archived thread re-reads the list once, however many entries arrive", async () => {
     const d = double({ "threads.list": () => ({ threads: [row(T1)] }) });
     const off = d.client.watchThreads(() => {});
-    await wait(40);
+    await until(() => d.hasFeed(), "the journal subscription");
     const lists = d.ops("threads.list").length;
     d.push("threads.rename", T1); d.push("threads.archive", T2); d.push("threads.create", T2);
-    await wait(300);
+    await until(() => d.ops("threads.list").length > lists, "the list re-read");
+    await wait(300); // absence: no second read follows the burst
     off();
     expect(d.ops("threads.list")).toHaveLength(lists + 1);
   });
@@ -131,10 +135,10 @@ describe("ServerThreads", () => {
     const d = double({ "threads.get": () => (rev === 1 ? thread(md(), "r1") : thread(md(agent), "r2")), "threads.list": () => ({ threads: [row(T1)] }) });
     const got: string[] = [];
     const off = d.client.watch(T1, { onMessage: (m, i) => got.push(`${i} ${m.role}`), onStreamStart() {}, onDelta() {}, onStep() {}, onSummary() {} });
-    await wait(80);
+    await until(() => got.includes("0 user") && d.hasFeed(), "the thread's first read and the journal subscription");
     rev = 2;
     d.push("threads.checkpoint", T1);
-    await wait(400);
+    await until(() => got.includes("1 agent"), "the changed message");
     off();
     expect(got).toContain("1 agent");
   });
@@ -144,7 +148,7 @@ describe("ServerThreads", () => {
     d.setEvents(sse([["chunk", { seq: 1, data: { version: 1, seq: 1, event: { type: "tool_started", summary: "Read a" } } }]], 5000));
     const started: string[] = [];
     const off = d.client.watch(T1, { onMessage() {}, onStreamStart: (id) => started.push(id), onDelta() {}, onStep() {}, onSummary() {} });
-    await wait(200);
+    await until(() => started.length > 0, "the turn being followed");
     off();
     expect(started).toEqual([JOB]);
     expect(d.eventUrls[0]).toContain(JOB);
@@ -166,12 +170,12 @@ describe("ServerThreads", () => {
     const ev: ThreadEvents = { onMessage: (m, i) => got.push(`message ${i} ${m.role}`), onStreamStart: () => got.push("start"), onDelta: (t) => got.push(`delta ${t}`), onStep: (s) => got.push(`step ${s.title} ${s.status}`), onSummary: () => {}, onStreamEnd: () => got.push("end") };
     await d.client.getThread(T1);
     const off = d.client.watch(T1, ev);
-    await wait(30);
+    await until(() => d.ops("threads.get").length >= 2, "the thread's first read");
     await d.client.setPermission(T1, "full");
     await d.client.setProvider(T1, "claude", "sonnet-5-5");
-    setTimeout(() => (revision = 1), 20); // the server's file has the answer once the turn ends
     await d.client.send(T1, "Inspect this workspace.", "req-1");
-    await wait(350);
+    revision = 1; // the server's file has the answer from here on; the stream ends 150 ms after it was built, and the client reads the file then
+    await until(() => got.includes("message 1 agent"), "the saved answer");
     off();
     const send = d.ops("threads.send")[0]!;
     expect(send.requestId).toBe("req-1");

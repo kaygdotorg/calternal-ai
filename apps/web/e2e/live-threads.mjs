@@ -13,7 +13,8 @@ await ctx.addInitScript(([t]) => { try { localStorage.setItem("cal.firstrun", "1
 const page = await ctx.newPage();
 const errors = []; page.on("pageerror", (e) => errors.push(e.message)); page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 const calls = []; page.on("response", async (r) => { if (r.url().includes("/api/v1/operations")) { try { const q = JSON.parse(r.request().postData() ?? "{}"); let why = ""; if (r.status() >= 400) { const j = await r.json().catch(() => null); why = ` (${j?.error?.code}: ${String(j?.error?.message ?? "").slice(0, 120)})`; } calls.push(`${q.operation} ${r.status()}${why}`); } catch {} } });
-process.on("exit", () => { console.log("    operations seen: " + [...new Set(calls)].join(" | ")); });
+const bad4 = []; page.on("response", (r) => { if (r.status() >= 400 && !r.url().includes("/api/v1/operations")) bad4.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+process.on("exit", () => { if (bad4.length) console.log("    other failed requests: " + [...new Set(bad4)].join(" | ")); console.log("    operations seen: " + [...new Set(calls)].join(" | ")); });
 const t0 = Date.now();
 await page.goto(BASE + "/threads?server=1"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(2500);
 const rows = page.locator("nav[aria-label=Threads] a.row");
@@ -22,7 +23,7 @@ ok("the list loads from the server (no fixture thread names)", (await page.locat
 await page.keyboard.press("Control+k"); await page.getByRole("dialog", { name: "Search and commands" }).waitFor();
 await page.locator(".pal-input").fill("new thread"); await page.waitForTimeout(250);
 await page.locator("[role=option]", { hasText: "New thread" }).first().click();
-await page.waitForTimeout(2500);
+await page.waitForURL(/\/threads\/[0-9a-f-]{36}/, { timeout: 15000 }).catch(() => {}); await page.waitForTimeout(500);
 console.log("    palette ops: " + calls.slice(-4).join(" | "));
 ok("a thread was created and opened", /\/threads\/[0-9a-f-]{36}/.test(page.url()), page.url().replace(/[0-9a-f-]{36}/, "<uuid>"));
 // Send
@@ -40,6 +41,15 @@ ok("an agent message arrives", first > 0, `after ~${first}s`);
 if (first) console.log("    agent said: " + (await page.locator(".msg.agent").last().innerText()).replace(/\s+/g, " ").slice(0, 160));
 ok("the thread is idle again after the turn", (await page.getByRole("button", { name: "Stop the turn" }).count()) === 0 && (await page.locator("text=/Running/").count()) === 0);
 await page.screenshot({ path: "/tmp/live-threads.png" });
+// A second message in the same thread (the provider session continues; the file has both turns)
+await f.click(); await f.fill("Reply with the single word: again"); await page.keyboard.press("Enter");
+let second = 0;
+for (let i = 0; i < 150 && !second; i++) { await page.waitForTimeout(1000); if ((await page.locator(".msg.agent").count()) >= 2) second = i + 1; }
+console.log("    last operations: " + calls.slice(-14).join(" | "));
+await page.screenshot({ path: "/tmp/live-second.png" });
+console.log(`    after the second message: roles=${(await page.locator(".msg").evaluateAll((e) => e.map((x) => x.className.replace("msg ", "")))).join(",")} running=${await page.locator("text=/Running/").count()} stopBtn=${await page.getByRole("button", { name: "Stop the turn" }).count()}`);
+ok("a second message in the same thread gets its own answer", second > 0, `after ~${second}s, messages=${await page.locator(".msg").count()}`);
+if (second) console.log("    second answer: " + (await page.locator(".msg.agent").last().innerText()).replace(/\s+/g, " ").slice(0, 120));
 // Quiet: nothing is polled (the journal tells what changed)
 const before = calls.length; await page.waitForTimeout(9000);
 const quiet = calls.slice(before);
@@ -47,11 +57,14 @@ ok("no polling: no operation in 9 s of quiet", quiet.length === 0, quiet.join(",
 // Rename (double-click the row), then it survives a reload
 const cur = page.locator("nav[aria-label=Threads] a.row[aria-current]").first();
 await cur.dblclick(); await page.getByLabel("Rename thread").fill("Renamed by the e2e"); await page.keyboard.press("Enter"); await page.waitForTimeout(1500);
-ok("rename shows in the list", (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by the e2e" }).count()) === 1);
+ok("rename shows in the list", (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by the e2e" }).count()) >= 1);
+await page.reload(); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1500);
+ok("the new title is the server's (it survives a reload)", (await page.locator("nav[aria-label=Threads] a.row", { hasText: "Renamed by the e2e" }).count()) >= 1);
 // A turn that is running when the page reloads is followed again
 await f.click(); await f.fill("Count slowly to 200, one number per line"); await page.keyboard.press("Enter");
-await page.waitForTimeout(1200);
-await page.reload(); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(3000);
+await page.getByRole("button", { name: "Stop the turn" }).waitFor({ timeout: 10000 }).catch(() => {});
+await page.reload(); await page.waitForSelector("html[data-ready]");
+for (let i = 0; i < 20 && !(await page.getByRole("button", { name: "Stop the turn" }).count()); i++) await page.waitForTimeout(100);
 const stopAfter = page.getByRole("button", { name: "Stop the turn" });
 const reloadedRunning = (await stopAfter.count()) + (await page.locator("text=/Running/").count());
 console.log(`    after reload mid-turn: stop button=${await stopAfter.count()}, "Running" labels=${await page.locator("text=/Running/").count()}, working row=${await page.locator("text=/Working/").count()}`);
@@ -65,11 +78,12 @@ if (await stopBtn.count()) {
 }
 // Archive, then Undo (un-archive)
 const first1 = rows.first(); const title = await first1.locator(".t").innerText().catch(() => "");
+const sameBefore = await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count();
 await first1.hover(); await page.getByRole("button", { name: "Archive" }).first().click(); await page.waitForTimeout(1500);
-const gone = (await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count()) === 0;
+const gone = (await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count()) === sameBefore - 1;
 ok("archive removes it from the list", gone, `"${title}"`);
 await page.getByRole("button", { name: "Undo" }).click().catch(() => {}); await page.waitForTimeout(2000);
-ok("Undo brings it back (threads.unarchive)", (await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count()) === 1);
+ok("Undo brings it back (threads.unarchive)", (await page.locator("nav[aria-label=Threads] a.row", { hasText: title }).count()) === sameBefore);
 console.log("    page errors: " + (errors.length ? [...new Set(errors)].slice(0, 6).join(" | ").slice(0, 600) : "none"));
 console.log(`    total ${((Date.now() - t0) / 1000).toFixed(0)}s`);
 await ctx.close(); await b.close(); stop(); process.exit(bad ? 1 : 0);
