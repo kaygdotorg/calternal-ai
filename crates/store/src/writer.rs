@@ -77,6 +77,14 @@ pub(crate) fn spawn(
                         {
                             tracing::warn!(%e, "journal retains stronger sync after a durable commit");
                         }
+                        #[cfg(all(feature = "test-timings", debug_assertions))]
+                        if durable && let Ok(entries) = &r {
+                            for entry in entries {
+                                if let Some(request) = &entry.request_id {
+                                    crate::timings::emit("journal_committed", request, None);
+                                }
+                            }
+                        }
                         if let Ok(entries) = &r
                             && let Some(last) = entries.last()
                         {

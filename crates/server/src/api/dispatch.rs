@@ -57,6 +57,8 @@ pub(super) async fn dispatch_scoped<D: Directory>(
     input: JsonObject,
     agent: Option<crate::turns::access::Authority>,
 ) -> Result<Value, Error> {
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    let admission_started = std::time::Instant::now();
     if calternal_core::is_account_input_operation(op) {
         if agent.is_some() {
             return Err(Error::forbidden(
@@ -158,6 +160,12 @@ pub(super) async fn dispatch_scoped<D: Directory>(
                 .map_err(|_| Error::internal("directory task failed"))??;
         }
     }
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    calternal_store::timings::emit(
+        "admission",
+        request_id,
+        Some(admission_started.elapsed().as_micros()),
+    );
     if let Some(a) = &agent {
         let declared = state
             .registry
@@ -416,7 +424,16 @@ pub(super) fn replay_receipt(
     op: &str,
     fp: &str,
 ) -> Result<Option<Value>, Error> {
-    let Some(r) = s.receipt(principal, space, rid)? else {
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    let lookup_started = std::time::Instant::now();
+    let receipt = s.receipt(principal, space, rid);
+    #[cfg(all(feature = "test-plugins", debug_assertions))]
+    calternal_store::timings::emit(
+        "receipt_lookup",
+        rid,
+        Some(lookup_started.elapsed().as_micros()),
+    );
+    let Some(r) = receipt? else {
         return Ok(None);
     };
     if r.operation != op || r.fingerprint != fp {

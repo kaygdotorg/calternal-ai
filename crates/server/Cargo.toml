@@ -15,7 +15,7 @@ path = "src/lib.rs"
 
 [features]
 # Trust the test-only plugins under tests/plugins (never in a shipped build).
-test-plugins = []
+test-plugins = ["calternal-store/test-timings"]
 
 [dependencies]
 calternal-types.workspace = true

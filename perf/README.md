@@ -94,3 +94,33 @@ the releasable memory cases while that is fixed, select
 `perf/summarize-evidence.py <suite>` reproduces the dated summary without exporting
 raw vectors. Its source selections intentionally exclude the first run's
 unsynced warm copies. See `docs/performance.md` for conditioning and qualifications.
+
+The performance-fixes lane records `startup-state.json` in each arm before first
+use. A zero space-writer count, together with lazy content initialization, makes
+`space.process_cold_open` a real first activation for that binary. The baseline
+may eagerly open spaces; its first-list observation keeps that qualification.
+
+Every measured update now checks the read-only content placement mark, written
+only after file and directory syncs. `userdata.write_to_durable_file` starts before
+the HTTP write, making it a conservative upper bound on acknowledgement-to-file
+lag; any observation over 1,000 ms fails the arm. This check runs after the timed
+acknowledgement, never inside its span. An independent library test checks that
+placement also completes without a follow-up request or receipt replay.
+
+`--fsync-probe` traces one warmed, same-title update using the already extracted
+strace on perf-01. Run separately under the lock, once with the baseline binary
+and once with the new binary, each in a fresh work directory. It records successful
+`fsync`/`fdatasync` calls by descriptor role, with witness/other work separated.
+The diagnostic takes four seconds and never contributes latency acceptance data.
+It needs the same `sudo -n` profiling permissions as `profile.sh`.
+
+A debug server built with `--features test-plugins` emits small `CALTERNAL_STAGE`
+JSON lines for capability admission, receipt lookup and a post-durable-commit
+marker before journal broadcast. The driver correlates that marker by request ID
+with SSE receipt. These hooks are absent from **all release builds**, even when
+`test-plugins` is enabled; they allocate nothing and read no clock in release.
+Admission includes item resolution/capability lookup but excludes HTTP sign-in
+and later agent scope review. Lookup includes its per-space lock and pending
+outbox check; cold recovery is visible rather than subtracted. Commit/delivery
+uses the shared millisecond clock, so its precision is 1 ms. These instrumented
+debug observations stay separate from plain-release latency qualification.

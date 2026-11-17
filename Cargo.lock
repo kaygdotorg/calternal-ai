@@ -541,8 +541,10 @@ name = "calternal-perf"
 version = "0.1.0"
 dependencies = [
  "calternal-cli",
+ "calternal-types",
  "clap",
  "reqwest",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

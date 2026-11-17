@@ -16,6 +16,8 @@ url.workspace = true
 tempfile.workspace = true
 uuid.workspace = true
 calternal-cli.workspace = true
+calternal-types.workspace = true
+rusqlite.workspace = true
 
 [dev-dependencies]
 calternal-cli = { workspace = true, features = ["testing"] }

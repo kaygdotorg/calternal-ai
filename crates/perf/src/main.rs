@@ -2,13 +2,16 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 mod fixtures;
+mod fsync_probe;
 mod http;
 mod idle;
 mod jobs;
 mod live;
+mod materialization;
 mod report;
 mod server;
 mod stats;
+mod timings;
 use clap::Parser;
 use http::Result;
 use serde_json::json;
@@ -47,6 +50,8 @@ struct Args {
     #[arg(long)]
     idle_only: bool,
     #[arg(long)]
+    fsync_probe: bool,
+    #[arg(long)]
     jobs_only: bool,
     #[arg(long)]
     prepare_only: bool,
@@ -79,16 +84,21 @@ fn run(a: &Args) -> Result<i32> {
     if a.samples > 10_000 || a.pairs > 20 || a.cold_pairs > 5 {
         return Err("limit samples to 10000, warm pairs to 20 and cold pairs to 5".into());
     }
-    if [a.prepare_only, a.jobs_only, a.idle_only]
+    if [a.prepare_only, a.jobs_only, a.idle_only, a.fsync_probe]
         .into_iter()
         .filter(|v| *v)
         .count()
         > 1
     {
-        return Err("choose one of --prepare-only, --jobs-only or --idle-only".into());
+        return Err(
+            "choose one of --prepare-only, --jobs-only, --idle-only or --fsync-probe".into(),
+        );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
         return Err("startup timeout must be 1..300 seconds".into());
+    }
+    if a.fsync_probe {
+        return fsync_probe::run(a);
     }
     if a.prepare_only {
         return fixtures::prepare(a);
@@ -294,6 +304,7 @@ fn scenario(
     let space = fixture.spaces[0].clone();
     let mut first = fixture.first.clone();
     let mut samples: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    let mut deliveries = BTreeMap::new();
     samples.insert(
         format!("startup.{}_spaces", fixture.spaces.len()),
         vec![start],
@@ -317,6 +328,8 @@ fn scenario(
         )],
     )?;
     live.wait_type("ready")?;
+    let placement =
+        materialization::Probe::open(root, space.as_str().ok_or("invalid fixture space")?)?;
     let mut account = live::Live::open(&h, "/api/v1/account/live", &[])?;
     account.wait_type("ready")?;
     for i in 0..a.samples {
@@ -335,19 +348,22 @@ fn scenario(
         let rid = format!("timed-save-{i}");
         let delivery = std::time::Instant::now();
         // Read the subscription concurrently: HTTP acknowledgement may follow delivery.
-        let (updated, ms, event, delivery_ms) = std::thread::scope(|scope| -> Result<_> {
-            let write = scope.spawn(|| {
-                h.op_id("notes.update", input.clone(), &rid)
-                    .map_err(|e| e.to_string())
-            });
-            let event = live.wait_type("entry")?;
-            let elapsed = delivery.elapsed().as_secs_f64() * 1000.;
-            let (updated, ms) = write
-                .join()
-                .map_err(|_| "write thread panicked")?
-                .map_err(|e| format!("update failed: {e}"))?;
-            Ok((updated, ms, event, elapsed))
-        })?;
+        let (updated, ms, event, delivery_ms, received_at_ms) =
+            std::thread::scope(|scope| -> Result<_> {
+                let write = scope.spawn(|| {
+                    h.op_id("notes.update", input.clone(), &rid)
+                        .map_err(|e| e.to_string())
+                });
+                let event = live.wait_type("entry")?;
+                let received_at_ms = calternal_types::now_ms();
+                let elapsed = delivery.elapsed().as_secs_f64() * 1000.;
+                let (updated, ms) = write
+                    .join()
+                    .map_err(|_| "write thread panicked")?
+                    .map_err(|e| format!("update failed: {e}"))?;
+                Ok((updated, ms, event, elapsed, received_at_ms))
+            })?;
+        deliveries.insert(rid.clone(), received_at_ms);
         samples.entry("notes.update".into()).or_default().push(ms);
         if event["entry"]["item"] != first["id"] || event["entry"]["request_id"] != rid {
             return Err("live event did not correlate with request and note".into());
@@ -356,6 +372,15 @@ fn scenario(
             .entry("live.update_to_client".into())
             .or_default()
             .push(delivery_ms);
+        placement.wait(&updated["note"])?;
+        let durable_file_ms = delivery.elapsed().as_secs_f64() * 1000.;
+        if durable_file_ms > 1000. {
+            return Err("write-to-file exceeded the conservative one-second bound".into());
+        }
+        samples
+            .entry("userdata.write_to_durable_file".into())
+            .or_default()
+            .push(durable_file_ms);
         first = updated["note"].clone();
         let (_, ms) = h.op_id("notes.update", input, &rid)?;
         samples
@@ -375,6 +400,7 @@ fn scenario(
             .or_default()
             .push(t.elapsed().as_secs_f64() * 1000.);
     }
+    timings::collect(&root.join("server.log"), &deliveries, &mut samples)?;
     drop(live);
     drop(account);
     for space in &fixture.spaces {

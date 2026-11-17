@@ -74,6 +74,9 @@ impl Server {
             std::thread::sleep(Duration::from_millis(2));
         }
     }
+    pub(crate) fn pid(&self) -> u32 {
+        self.child.id()
+    }
     pub(crate) fn writers(&self) -> Result<usize> {
         let mut writers = 0;
         for entry in std::fs::read_dir(format!("/proc/{}/task", self.child.id()))? {
