@@ -84,3 +84,53 @@ pub fn file(path: &Path) -> io::Result<File> {
     }
     Ok(file)
 }
+
+/// Publish private bytes atomically without replacing an existing destination.
+/// The parent must already be a trusted private directory. A synced temporary
+/// file is renamed exclusively, so a crash cannot leave a second hard link to
+/// published key material. An interrupted pre-publication temporary file holds
+/// unpublished bytes only. Returns `AlreadyExists` without altering the target.
+/// Cost: one bounded write, one file fsync, one rename and one directory fsync.
+pub fn publish(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    use std::io::Write;
+    let dir = path.parent().ok_or(io::ErrorKind::InvalidInput)?;
+    let tmp = crate::temp_path(path)?;
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        crate::move_exclusive(&tmp, path)?;
+        crate::sync_dir(dir)
+    })();
+    let _ = fs::remove_file(&tmp);
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::tmp;
+
+    #[test]
+    fn private_publication_never_replaces_a_key_or_leaves_an_extra_link() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let dir = tmp();
+        let path = dir.join("secret.key");
+        super::publish(&path, &[7u8; 32]).unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(std::fs::metadata(&path).unwrap().nlink(), 1);
+        assert_eq!(
+            super::publish(&path, &[9u8; 32]).unwrap_err().kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), [7u8; 32]);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
