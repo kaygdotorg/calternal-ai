@@ -5774,5 +5774,43 @@
         }
       }
     ]
+  },
+  "cleanup": {
+    "before_bytes": 8151183360,
+    "containers_remaining": "",
+    "images_remaining": "",
+    "deleted": [
+      "/home/kayg/calternal-ai-sandbox-measure/root",
+      "/home/kayg/calternal-ai-sandbox-measure/checkout",
+      "/home/kayg/calternal-ai-sandbox-measure/source",
+      "/home/kayg/calternal-ai-sandbox-measure/podman-root",
+      "/home/kayg/calternal-ai-sandbox-measure/podman-run",
+      "/home/kayg/calternal-ai-sandbox-measure/flow-source",
+      "/home/kayg/calternal-ai-sandbox-measure/flow-git",
+      "/home/kayg/calternal-ai-sandbox-measure/tmp",
+      "/home/kayg/calternal-ai-sandbox-measure/base.tar",
+      "/home/kayg/calternal-ai-sandbox-measure/base.ext4",
+      "/home/kayg/calternal-ai-sandbox-measure/checkout.tar",
+      "/home/kayg/calternal-ai-sandbox-measure/flow-checkout.tar",
+      "/home/kayg/calternal-ai-sandbox-measure/vmlinux",
+      "/home/kayg/calternal-ai-sandbox-measure/fc-a90b1cf3ed/rw.ext4"
+    ],
+    "after_bytes": 19910656,
+    "host_after": {
+      "MemAvailable": 6779953152,
+      "MemFree": 6037008384,
+      "Cached": 1342316544,
+      "SwapFree": 0,
+      "MemTotal": 8262774784,
+      "Slab": 349958144
+    }
+  },
+  "coverage_audit": {
+    "missing": [],
+    "start_observations": 660,
+    "fanout_requests": 240,
+    "profile_cases": 8,
+    "density_cases": 4,
+    "resume_cases": 2
   }
 }
