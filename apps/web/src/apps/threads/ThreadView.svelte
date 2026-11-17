@@ -2,7 +2,7 @@
   // The open thread in the middle card: header, the virtualised message list, then the sticky request bar and the composer.
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
-  import { cssPx, InlineEditor, Panel, Pill } from "@calternal/ui";
+  import { cssPx, InlineEditor, Panel, Pill, toast } from "@calternal/ui";
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
   import VirtualList from "../../lib/VirtualList.svelte";
@@ -116,7 +116,7 @@
       <div class="inner">
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a)} />
         <ActiveChildren {id} />
-        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID())} onstop={() => client.stop(id)} onprovider={(p, m) => client.setProvider(id, p, m)} />
+        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID()).catch((e: Error) => { toast(`Not sent: ${e.message}`); throw e; })} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>
   {/if}

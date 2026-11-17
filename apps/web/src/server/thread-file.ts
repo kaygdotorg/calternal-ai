@@ -62,9 +62,10 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, known: 
     workspace: "",
     updatedAt: known.updatedAt ?? ms(md.created_at, 0),
     provider: known.provider ?? PROVIDER_IDS[md.provider] ?? "claude",
-    model: known.model ?? "",
+    model: known.model ?? "default",
     permission: known.permission ?? MODES[md.mode] ?? "approve",
-    runsOn: known.runsOn ?? { machine: "", mode: "sandboxed" },
+    // The server picks the machine itself (no operation names it): say so rather than show a blank.
+    runsOn: known.runsOn ?? { machine: "Automatic", mode: "sandboxed" },
     messageCount: known.messageCount ?? 0,
   };
 }

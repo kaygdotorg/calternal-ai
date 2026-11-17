@@ -67,7 +67,7 @@ describe("ServerThreads", () => {
     const d = double({ "threads.list": () => ({ threads: [{ id: T1, address: "", revision: "r", metadata: meta() }, { id: T2, address: "", revision: "r", metadata: meta({ title: "Child", parent_thread: T1 }) }] }) });
     const l = await d.client.listThreads();
     expect(l.map((t) => [t.id, t.parentId])).toEqual([[T1, null], [T2, T1]]);
-    expect(d.calls[0]).toMatchObject({ operation: "threads.list", input: { space_id: SPACE } });
+    expect(d.calls.find((c) => c.operation === "threads.list")).toMatchObject({ input: { space_id: SPACE } });
   });
   test("opening reads the file once per revision and ranges come from the parse", async () => {
     let gets = 0;
@@ -89,9 +89,10 @@ describe("ServerThreads", () => {
     });
     d.setEvents(sse(
       ["snapshot", { job: { id: JOB, state: "running" }, epoch: "e" }],
-      ["chunk", { seq: 1, data: { type: "tool_started", summary: "Read src/lib.rs" } }],
-      ["chunk", { seq: 2, data: { type: "tool_finished", failed: false } }],
-      ["chunk", { seq: 3, data: { type: "text_delta", text: "I looked." } }],
+      ["chunk", { seq: 0, data: { type: "placement", note: "not a provider event" } }],
+      ["chunk", { seq: 1, data: { version: 1, seq: 1, event: { type: "tool_started", summary: "Read src/lib.rs" } } }],
+      ["chunk", { seq: 2, data: { version: 1, seq: 2, event: { type: "tool_finished", failed: false } } }],
+      ["chunk", { seq: 3, data: { version: 1, seq: 3, event: { type: "text_delta", text: "I looked." } } }],
     ));
     const got: string[] = [];
     const ev: ThreadEvents = { onMessage: (m, i) => got.push(`message ${i} ${m.role}`), onStreamStart: () => got.push("start"), onDelta: (t) => got.push(`delta ${t}`), onStep: (s) => got.push(`step ${s.title} ${s.status}`), onSummary: () => {}, onStreamEnd: () => got.push("end") };
@@ -111,7 +112,7 @@ describe("ServerThreads", () => {
   test("stop, archive and delete are one operation each, on the thread's own id", async () => {
     const d = double({ "threads.stop": () => thread(md()), "threads.archive": () => thread(md()), "threads.delete": () => thread(md()), "threads.list": () => ({ threads: [] }) });
     await d.client.stop(T1); await d.client.archive(T1); await d.client.deleteThread(T1);
-    expect(d.calls.filter((c) => c.operation !== "threads.list").map((c) => [c.operation, c.input.id])).toEqual([["threads.stop", T1], ["threads.archive", T1], ["threads.delete", T1]]);
+    expect(d.calls.filter((c) => /^threads\.(stop|archive|delete)$/.test(c.operation)).map((c) => [c.operation, c.input.id])).toEqual([["threads.stop", T1], ["threads.archive", T1], ["threads.delete", T1]]);
   });
   test("create sends the title, provider and parent", async () => {
     const d = double({ "threads.create": () => thread(""), "threads.list": () => ({ threads: [] }) });
@@ -166,6 +167,12 @@ describe("requests (issue #32's operations; the wire shape is the lane's stated 
     await d.client.answer("a1", { kind: "approval", decision: "once" });
     off();
     expect(seen).toEqual([0]);
+  });
+  test("a server without request operations answers not_found once: an empty list, and no more asking", async () => {
+    const d = double({});
+    expect(await d.client.requests()).toEqual([]);
+    expect(await d.client.requests()).toEqual([]);
+    expect(d.calls.filter((c) => c.operation === "requests.list")).toHaveLength(1);
   });
   test("a refused answer is thrown as the server said it", async () => {
     const d = double({ "requests.approve": () => fail("forbidden", "an agent cannot approve") });

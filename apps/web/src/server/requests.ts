@@ -7,7 +7,7 @@
 import { spaces } from "../shell/spaces.svelte";
 import type { RequestsClient } from "../apps/threads/client";
 import type { Answer, Request } from "../apps/threads/model";
-import { ServerClient } from "./client";
+import { ServerClient, ServerError } from "./client";
 
 /** One open request as the server lists it (assumed shape, see the file header). */
 export interface WireRequest {
@@ -56,13 +56,21 @@ export class ServerRequests implements RequestsClient {
   private timer = 0;
   constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) {}
 
+  /** Set when the server answered `not_found` to `requests.list`: it does not offer requests yet, so there is nothing to ask again until the page is reloaded. */
+  private absent = false;
   async requests(): Promise<Request[]> {
-    const { requests } = await this.server.operate<{ requests: WireRequest[] }>("requests.list", { space_id: this.space() });
-    return requests.flatMap((w) => requestOf(w) ?? []);
+    if (this.absent) return [];
+    try {
+      const { requests } = await this.server.operate<{ requests: WireRequest[] }>("requests.list", { space_id: this.space() });
+      return requests.flatMap((w) => requestOf(w) ?? []);
+    } catch (e) {
+      if (e instanceof ServerError && e.code === "not_found") { this.absent = true; return []; }
+      throw e;
+    }
   }
   watchRequests(cb: (r: Request[]) => void): () => void {
     this.watchers.add(cb);
-    if (!this.timer) this.timer = window.setInterval(() => { if (!document.hidden) void this.refresh(); }, EVERY);
+    if (!this.timer) this.timer = window.setInterval(() => { if (!document.hidden && !this.absent) void this.refresh(); }, EVERY);
     return () => { this.watchers.delete(cb); if (!this.watchers.size) { clearInterval(this.timer); this.timer = 0; } };
   }
   /** Re-reads and tells every watcher (after an answer, and on each tick). */

@@ -35,7 +35,7 @@
     thread: ThreadSummary;
     providers: ProviderOption[];
     machines: string[];
-    onsend: (text: string) => void;
+    onsend: (text: string) => void | Promise<void>;
     onstop: () => void;
     onprovider: (p: ThreadSummary["provider"], model: string) => void;
     onpermission: (p: Permission) => void;
@@ -116,9 +116,11 @@
   function send() {
     const v = text.trim();
     if (!v) return;
-    onsend(v);
+    const sent = onsend(v);
     text = "";
     drafts.delete(thread.id);
+    // A send the server refused gives the words back (unless the person has already typed something else).
+    if (sent) void sent.catch(() => { if (!text.trim()) text = v; });
   }
 </script>
 

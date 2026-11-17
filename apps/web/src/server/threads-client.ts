@@ -37,12 +37,19 @@ export class ServerThreads implements ThreadsClient {
 
   constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) { this.asks = new ServerRequests(server, space); }
 
+  /** The shell's space list is the server's, once: until it is, the current space is a fixture id the server has never heard of. */
+  private spacesLoaded: Promise<void> | null = null;
+  private loadSpaces(): Promise<void> {
+    return (this.spacesLoaded ??= this.server.spaces.list().then((r) => { spaces.setList(r.spaces.map((s) => ({ id: s.id, name: s.name }))); if (!spaces.list.some((s) => s.id === spaces.currentId)) spaces.switchTo(spaces.list[0]!.id); }).catch(() => { this.spacesLoaded = null; }));
+  }
+
   private known(id: string) { return this.local.get(id) ?? {}; }
   private patch(id: string, p: Partial<ThreadSummary> & { job?: string }) { this.local.set(id, { ...this.known(id), ...p }); }
 
   async providers(): Promise<ProviderOption[]> { return PROVIDERS; }
 
   async listThreads(): Promise<ThreadSummary[]> {
+    await this.loadSpaces();
     const space = this.space();
     const { threads } = await this.server.operate<{ threads: WireRow[] }>("threads.list", { space_id: space, limit: 1000 });
     this.lastList = threads.map((r) => summaryOf(r.id, space, r.metadata, this.known(r.id)));
@@ -92,7 +99,7 @@ export class ServerThreads implements ThreadsClient {
       const now = texts(open.messages);
       open.messages.forEach((m, i) => { if (now[i] !== seen[i]) ev.onMessage(m, i); });
       seen = now;
-      ev.onSummary(open.summary);
+      ev.onSummary({ ...open.summary, ...this.known(id) } as ThreadSummary); // what this page knows (state of a turn it started, composer choices) wins over the cached read
     };
     const timer = window.setInterval(() => { if (live && !document.hidden) void pull(); }, OPEN_EVERY);
     this.follows.set(id, { ev, pull });
@@ -117,7 +124,9 @@ export class ServerThreads implements ThreadsClient {
       await this.server.jobEvents(job, (name, data) => {
         if (name === "state") { const j = (data as { job?: WireJob })?.job; if (j) this.setState(id, stateOfJob(j.state)); return; }
         if (name !== "chunk") return;
-        const e = (data as { data?: { type?: string; text?: string; summary?: string; failed?: boolean } })?.data ?? {};
+        // The job stream's chunk is `{ seq, data }`; for a provider event `data` is the provider envelope `{ version, seq, event: { type, ... } }` (docs/dev-e2e.md); placement and
+        // notice chunks carry a plain `data.type` and are not provider events.
+        const e = (data as { data?: { event?: { type?: string; text?: string; summary?: string; failed?: boolean } } })?.data?.event ?? {};
         const ev = this.follows.get(id)?.ev;
         if (e.type === "text_delta" && e.text) ev?.onDelta(e.text);
         else if (e.type === "tool_started") { last = { title: e.summary ?? "Tool", at: Date.now() }; started.set(n++, last); }
@@ -152,16 +161,18 @@ export class ServerThreads implements ThreadsClient {
     if (k.model && k.model !== "default") input.model = k.model;
     const res = await this.server.operate<{ thread: WireThread; job?: WireJob }>("threads.send", input, requestId);
     this.opened.delete(id);
-    if (res.job) { this.patch(id, { state: "running", job: res.job.id }); void this.follow(id, res.job.id); }
+    if (res.job) { this.patch(id, { state: "running", job: res.job.id }); this.announce(id); void this.follow(id, res.job.id); }
     await this.follows.get(id)?.pull();
     void this.refreshList();
   }
 
   async stop(id: string): Promise<void> {
-    await this.server.operate("threads.stop", { id, space_id: this.space() });
+    // The stream goes first: a `state` frame that arrives while the server cancels must not put the thread back to running.
     this.streams.get(id)?.abort();
-    this.patch(id, { state: "idle" });
+    await this.server.operate("threads.stop", { id, space_id: this.space() });
+    this.patch(id, { state: "idle", job: undefined });
     this.follows.get(id)?.ev.onStreamEnd?.();
+    this.announce(id);
     await this.follows.get(id)?.pull();
     void this.refreshList();
   }
