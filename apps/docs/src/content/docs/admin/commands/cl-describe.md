@@ -29,6 +29,9 @@ title: "cl describe"
     {
       "id": "string",
       "description": "string",
+      "risk": "string",
+      "required_capability?": "string",
+      "target?": "string",
       "mutates": "bool",
       "input_schema": "any",
       "output_schema": "any"
@@ -43,7 +46,7 @@ Recorded test fixture:
 
 ```text
 protocol:   1
-genui:      1
+genui:      2
 principal:  acct-1
 
 SPACE    ROLE
@@ -60,14 +63,15 @@ Recorded test fixture:
 ```json
 {
   "data": {
-    "genui_version": 1,
+    "genui_version": 2,
     "operations": [
       {
         "description": "List notes",
         "id": "notes.list",
         "input_schema": {},
         "mutates": false,
-        "output_schema": {}
+        "output_schema": {},
+        "risk": "read"
       }
     ],
     "principal": {

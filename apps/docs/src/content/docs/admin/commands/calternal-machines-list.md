@@ -8,7 +8,7 @@ title: "calternal machines list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `machines list --data-dir DIR` | List enrolled machines, revoked ones included. | Table `ID OWNER NAME PLATFORM STATE` (state `enrolled`, `draining` or `revoked`), or a friendly empty result with the command to add one. | `machines[]`: `id`, `owner`, `name`, `os`, `arch`, `state` |
+| `machines list --appdata DIR --userdata-ssd DIR --userdata-hdd DIR` | List enrolled machines, revoked ones included. | Table `ID OWNER NAME PLATFORM STATE` (state `enrolled`, `draining` or `revoked`), or a friendly empty result with the command to add one. | `machines[]`: `id`, `owner`, `name`, `os`, `arch`, `state` |
 
 ## JSON data shape
 
@@ -36,7 +36,7 @@ exit: 0
 --- stdout ---
 ID                                    OWNER                                         NAME       PLATFORM       STATE
 aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa  pool                                          build-box  linux/x86_64   enrolled
-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb  account:cccccccc-cccc-4ccc-8ccc-cccccccccccc  laptop     macos/aarch64  enrolled
+bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb  account:cccccccc-cccc-7ccc-8ccc-cccccccccccc  laptop     macos/aarch64  enrolled
 --- stderr ---
 ```
 
@@ -63,7 +63,7 @@ exit: 0
         "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "name": "laptop",
         "os": "macos",
-        "owner": "account:cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+        "owner": "account:cccccccc-cccc-7ccc-8ccc-cccccccccccc",
         "state": "enrolled"
       }
     ]

@@ -12,6 +12,5 @@ kind placements and item writers, including Editor-level plugin operations.
 The previous filename is not an alias. Reads remain bounded and descriptor-relative;
 symlinks fail closed. Instructions provide context and never grant authority.
 
-The preview reads an operator-provisioned file. A Manager-only write operation
-still needs its public contract; the generic content API cannot be used as a
-workaround. See the instruction-writer question in morning-decisions.md.
+Managers and Owners can read or replace it through the journaled
+`space.instructions` operation. See person requests.

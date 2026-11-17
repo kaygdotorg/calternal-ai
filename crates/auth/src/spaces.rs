@@ -4,7 +4,19 @@
 //! acquire an IMMEDIATE transaction before checking current capability rows.
 //! State commits optionally pass through a protected recovery barrier before acknowledgement.
 use crate::{AccountId, Error, ErrorCode, Result, SpaceId};
-use calternal_types::{Capability, CapabilitySet};
+use calternal_core::PeopleOperation;
+use calternal_types::{Capability, CapabilitySet, GroupId};
+mod development;
+mod membership;
+mod receipt;
+mod recovery;
+pub use development::DevelopmentIds;
+use membership::*;
+pub use membership::{GroupMember, MemberPage, MemberTarget};
+pub(crate) use membership::{assignable_role, privileged};
+use receipt::{Receipt, apply_receipted};
+pub use recovery::RecoverySink;
+pub(crate) use recovery::{commit, commit_with};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -30,7 +42,9 @@ pub struct Space {
 pub struct Member {
     /// Stable account UUID.
     pub account_id: AccountId,
-    /// Effective role; the sole owner is derived from the space record.
+    /// Current account display name.
+    pub name: String,
+    /// Effective role for this direct grant; the sole owner is derived from the space record.
     pub role: String,
 }
 /// Protected stored directory. Clones share the bounded dedicated auth worker.
@@ -56,23 +70,26 @@ fn account(s: String) -> Result<AccountId> {
 fn space_id(s: String) -> Result<SpaceId> {
     SpaceId::parse(&s).map_err(|_| sql("invalid space UUID"))
 }
-fn role(c: &Connection, actor: AccountId, space: SpaceId) -> Result<Option<String>> {
+pub(crate) fn is_owner(c: &Connection, actor: AccountId, space: SpaceId) -> Result<bool> {
     c.query_row(
-        "SELECT CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
-        FROM space_memberships m JOIN spaces s ON s.id=m.space_id
-        WHERE m.account_id=?1 AND s.id=?2",
-        params![actor.to_string(), space.to_string()],
+        "SELECT EXISTS(SELECT 1 FROM spaces WHERE id=?1 AND owner_account=?2)",
+        params![space.to_string(), actor.to_string()],
         |r| r.get(0),
     )
-    .optional()
     .map_err(sql)
 }
+/// Tests an active account's effective direct or group capability in this space.
 pub(crate) fn has(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<bool> {
-    c.query_row("SELECT EXISTS(SELECT 1 FROM space_memberships m JOIN spaces s ON s.id=m.space_id
-        JOIN space_role_capabilities rc ON rc.role=CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
-        WHERE m.account_id=?1 AND s.id=?2 AND rc.capability=?3)", params![actor.to_string(),space.to_string(),cap], |r|r.get(0)).map_err(sql)
+    c.query_row(
+        "SELECT EXISTS(SELECT 1 FROM space_account_roles m
+        JOIN space_role_capabilities rc ON rc.role=m.role
+        WHERE m.account_id=?1 AND m.space_id=?2 AND rc.capability=?3)",
+        params![actor.to_string(), space.to_string(), cap],
+        |r| r.get(0),
+    )
+    .map_err(sql)
 }
-fn require(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<()> {
+pub(crate) fn require(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Result<()> {
     if has(c, actor, space, cap)? {
         Ok(())
     } else {
@@ -82,7 +99,7 @@ fn require(c: &Connection, actor: AccountId, space: SpaceId, cap: &str) -> Resul
 fn exists_account(c: &Connection, actor: AccountId) -> Result<()> {
     let exists: bool = c
         .query_row(
-            "SELECT EXISTS(SELECT 1 FROM users WHERE id=?1)",
+            "SELECT EXISTS(SELECT 1 FROM users WHERE id=?1 AND disabled_at IS NULL)",
             [actor.to_string()],
             |r| r.get(0),
         )
@@ -91,9 +108,20 @@ fn exists_account(c: &Connection, actor: AccountId) -> Result<()> {
 }
 fn list(c: &Connection, actor: AccountId) -> Result<Vec<Space>> {
     exists_account(c, actor)?;
-    let mut st=c.prepare("SELECT s.id,s.name,s.owner_account,s.created,
-        CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END, COALESCE(s.personal_for=?1,0)
-        FROM spaces s JOIN space_memberships m ON m.space_id=s.id WHERE m.account_id=?1 ORDER BY s.created,s.id").map_err(sql)?;
+    let mut st = c
+        .prepare_cached(
+            "WITH effective AS (
+           SELECT m.space_id,m.role, row_number() OVER (
+             PARTITION BY m.space_id ORDER BY m.role='owner' DESC,
+               (SELECT count(*) FROM space_role_capabilities rc WHERE rc.role=m.role) DESC,
+               m.role) AS preference
+           FROM space_account_roles m WHERE m.account_id=?1
+         )
+         SELECT s.id,s.name,s.owner_account,s.created,m.role,COALESCE(s.personal_for=?1,0)
+         FROM effective m JOIN spaces s ON s.id=m.space_id
+         WHERE m.preference=1 ORDER BY s.created,s.id",
+        )
+        .map_err(sql)?;
     let rows = st
         .query_map([actor.to_string()], |r| {
             Ok((
@@ -171,6 +199,25 @@ pub enum SpaceChange {
         /// Display name.
         name: String,
     },
+    /// Admit one visible account or group with an assignable space role.
+    Add {
+        /// Account or group receiving the direct grant.
+        target: MemberTarget,
+        /// Requested role; ownership requires transfer to an account.
+        role: String,
+    },
+    /// Change the role of a group already granted access.
+    SetGroupRole {
+        /// Group whose grant changes.
+        target: GroupId,
+        /// Requested role; a group cannot own a space.
+        role: String,
+    },
+    /// Revoke a group's grant to this space.
+    RemoveGroup {
+        /// Group whose grant is removed.
+        target: GroupId,
+    },
     /// Change an existing member's role; this never admits a new member.
     SetRole {
         /// Member account.
@@ -197,9 +244,15 @@ impl SpaceChange {
     fn capability(&self) -> &'static str {
         match self {
             Self::Create { .. } => "spaces.create",
-            Self::SetRole { .. } | Self::Remove { .. } => "members.manage",
+            Self::Add { .. } => PeopleOperation::AddSpaceMember.capability().name(),
+            Self::SetRole { .. } | Self::SetGroupRole { .. } => {
+                PeopleOperation::SetSpaceRole.capability().name()
+            }
+            Self::Remove { .. } | Self::RemoveGroup { .. } => {
+                PeopleOperation::RemoveSpaceMember.capability().name()
+            }
             Self::Leave => "space.read",
-            Self::Transfer { .. } => "space.transfer",
+            Self::Transfer { .. } => PeopleOperation::TransferOwnership.capability().name(),
             Self::Delete => "space.delete",
         }
     }
@@ -217,7 +270,7 @@ fn check(
     require(c, actor, space, change.capability())?;
     // Even a custom role with a transfer/delete grant cannot bypass sole ownership.
     if matches!(change, SpaceChange::Transfer { .. } | SpaceChange::Delete)
-        && role(c, actor, space)?.as_deref() != Some("owner")
+        && !is_owner(c, actor, space)?
     {
         return Err(denied());
     }
@@ -236,57 +289,68 @@ fn apply(
     let space = space.ok_or_else(Error::invalid_space)?;
     let sid = space.to_string();
     match change {
-        SpaceChange::SetRole {
-            target,
-            role: new_role,
-        } => {
-            protect_target(c, actor, space, *target)?;
-            let known: bool = c
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM space_roles WHERE name=?1 AND name<>'owner')",
-                    [new_role],
-                    |r| r.get(0),
+        SpaceChange::Add { target, role } => {
+            change_member(c, actor, space, *target, MemberEdit::Add(role))?
+        }
+        SpaceChange::SetRole { target, role } => change_member(
+            c,
+            actor,
+            space,
+            MemberTarget::Account(*target),
+            MemberEdit::SetRole(role),
+        )?,
+        SpaceChange::SetGroupRole { target, role } => change_member(
+            c,
+            actor,
+            space,
+            MemberTarget::Group(*target),
+            MemberEdit::SetRole(role),
+        )?,
+        SpaceChange::Remove { target } => change_member(
+            c,
+            actor,
+            space,
+            MemberTarget::Account(*target),
+            MemberEdit::Remove,
+        )?,
+        SpaceChange::RemoveGroup { target } => change_member(
+            c,
+            actor,
+            space,
+            MemberTarget::Group(*target),
+            MemberEdit::Remove,
+        )?,
+        SpaceChange::Leave => {
+            if is_owner(c, actor, space)? {
+                return Err(denied());
+            }
+            let removed = c
+                .execute(
+                    "DELETE FROM space_memberships WHERE space_id=?1 AND account_id=?2",
+                    params![sid, actor.to_string()],
                 )
                 .map_err(sql)?;
-            if !known {
-                return Err(Error::invalid("unknown or nonassignable space role"));
+            if removed == 0 {
+                return Err(denied());
             }
-            let privileged:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_role_capabilities WHERE role=?1 AND capability NOT IN ('space.read','content.write','plugins.use'))",[new_role],|r|r.get(0)).map_err(sql)?;
-            if privileged {
-                require(c, actor, space, "managers.manage")?;
-                if role(c, actor, space)?.as_deref() != Some("owner") {
-                    return Err(denied());
-                }
-            }
-            c.execute(
-                "UPDATE space_memberships SET role=?3 WHERE space_id=?1 AND account_id=?2",
-                params![sid, target.to_string(), new_role],
-            )
-            .map_err(sql)?;
         }
-        SpaceChange::Remove { target } => {
-            protect_target(c, actor, space, *target)?;
+        SpaceChange::Transfer { target } => {
+            if *target == actor || !has(c, *target, space, Capability::SpaceRead.name())? {
+                return Err(denied());
+            }
+            // Use separate insert and update statements. The recovery dirty-row
+            // triggers rely on their own conflict handling during UPDATE.
             c.execute(
-                "DELETE FROM space_memberships WHERE space_id=?1 AND account_id=?2",
+                "INSERT OR IGNORE INTO space_memberships VALUES(?1,?2,'manager')",
                 params![sid, target.to_string()],
             )
             .map_err(sql)?;
-        }
-        SpaceChange::Leave => {
-            if role(c, actor, space)?.as_deref() == Some("owner") {
-                return Err(denied());
-            }
             c.execute(
-                "DELETE FROM space_memberships WHERE space_id=?1 AND account_id=?2",
-                params![sid, actor.to_string()],
+                "UPDATE space_memberships SET role='manager'
+                 WHERE space_id=?1 AND account_id=?2 AND role<>'manager'",
+                params![sid, target.to_string()],
             )
             .map_err(sql)?;
-        }
-        SpaceChange::Transfer { target } => {
-            if *target == actor || role(c, *target, space)?.is_none() {
-                return Err(denied());
-            }
-            c.execute("UPDATE space_memberships SET role='manager' WHERE space_id=?1 AND account_id IN (?2,?3)",params![sid,actor.to_string(),target.to_string()]).map_err(sql)?;
             c.execute(
                 "UPDATE spaces SET owner_account=?2 WHERE id=?1",
                 params![sid, target.to_string()],
@@ -300,26 +364,6 @@ fn apply(
         SpaceChange::Create { .. } => unreachable!(),
     }
     Ok(serde_json::json!({}))
-}
-fn protect_target(
-    c: &Connection,
-    actor: AccountId,
-    space: SpaceId,
-    target: AccountId,
-) -> Result<()> {
-    let target_role = role(c, target, space)?.ok_or_else(denied)?;
-    if target_role == "owner" {
-        return Err(denied());
-    }
-    // Protect authority-bearing custom roles as well as the built-in Manager.
-    let privileged:bool=c.query_row("SELECT EXISTS(SELECT 1 FROM space_role_capabilities WHERE role=?1 AND capability NOT IN ('space.read','content.write','plugins.use'))",[&target_role],|r|r.get(0)).map_err(sql)?;
-    if privileged {
-        require(c, actor, space, "managers.manage")?;
-        if role(c, actor, space)?.as_deref() != Some("owner") {
-            return Err(denied());
-        }
-    }
-    Ok(())
 }
 impl Error {
     fn invalid_space() -> Self {
@@ -361,7 +405,7 @@ impl Spaces {
     pub fn configure_recovery(&self, sink: std::sync::Arc<dyn RecoverySink>) -> Result<()> {
         self.db.configure_recovery(sink)
     }
-    fn run<T: Send + 'static>(
+    pub(crate) fn run<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T> + Send + 'static,
     ) -> Result<T> {
@@ -421,42 +465,33 @@ impl Spaces {
     pub fn list(&self, actor: AccountId) -> Result<Vec<Space>> {
         self.run(move |c| list(c, actor))
     }
-    /// The actor's current capabilities in `space`, read on every call; `None` for
-    /// both a missing space and a missing membership. Stored names this build does
-    /// not know grant nothing. Cost: one worker round trip and two indexed reads
-    /// (role, then its capability rows) on cached statements; no allocation beyond
-    /// the role name.
+    /// The actor's current capabilities, derived from all live grants. A missing
+    /// or disabled account and a missing membership all return `None`.
+    /// Cost: one worker round trip and one indexed query on a cached statement.
     pub fn capabilities(&self, actor: AccountId, space: SpaceId) -> Result<Option<CapabilitySet>> {
-        self.run(move |c| {
-            let Some(role) = role(c, actor, space)? else {
-                return Ok(None);
-            };
+        self.db.read_blocking(move |c| {
             let mut st = c
-                .prepare_cached("SELECT capability FROM space_role_capabilities WHERE role=?1")
+                .prepare_cached(
+                    "SELECT DISTINCT rc.capability FROM space_account_roles m
+                 LEFT JOIN space_role_capabilities rc ON rc.role=m.role
+                 WHERE m.account_id=?1 AND m.space_id=?2",
+                )
                 .map_err(sql)?;
-            let mut rows = st.query([role]).map_err(sql)?;
-            let mut set = CapabilitySet::empty();
+            let mut rows = st
+                .query(params![actor.to_string(), space.to_string()])
+                .map_err(sql)?;
+            let mut set = None;
             while let Some(row) = rows.next().map_err(sql)? {
-                if let Some(capability) =
-                    Capability::from_name(row.get_ref(0).map_err(sql)?.as_str().map_err(sql)?)
+                let caps = set.get_or_insert_with(CapabilitySet::empty);
+                if let Some(name) = row.get::<_, Option<String>>(0).map_err(sql)?
+                    && let Some(capability) = Capability::from_name(&name)
                 {
-                    set = set.with(capability);
+                    *caps = caps.with(capability);
                 }
             }
-            Ok(Some(set))
+            Ok(set)
         })
     }
-    /// Lists members after checking `space.read` in one read snapshot.
-    pub fn members(&self, actor: AccountId, space: SpaceId) -> Result<Vec<Member>> {
-        self.run(move |c| {
-        let tx=c.transaction().map_err(sql)?;
-        require(&tx,actor,space,"space.read")?;
-        let out={let mut st=tx.prepare("SELECT m.account_id,CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END FROM space_memberships m JOIN spaces s ON s.id=m.space_id WHERE s.id=?1 ORDER BY m.account_id").map_err(sql)?;
-        st.query_map([space.to_string()],|r|Ok((r.get::<_,String>(0)?,r.get(1)?))).map_err(sql)?.map(|r|{let(id,role)=r.map_err(sql)?;Ok(Member{account_id:account(id)?,role})}).collect::<Result<Vec<_>>>()?};
-        tx.commit().map_err(sql)?; Ok(out)
-    })
-    }
-
     /// Executes a mutation with fresh capability and target checks under a write lock.
     pub fn change(
         &self,
@@ -477,6 +512,7 @@ impl Spaces {
     /// are acknowledged; a barrier error can follow an unacknowledged DB commit.
     /// Cost: one IMMEDIATE transaction on the auth worker: authority checks, one
     /// bounded indexed prune, one receipt read and, when new, the change and insert.
+    /// Queued role writes share a commit while keeping separate savepoints.
     pub fn change_with_receipt(
         &self,
         actor: AccountId,
@@ -484,198 +520,78 @@ impl Spaces {
         change: SpaceChange,
         receipt: Option<(&str, &str, &str)>,
     ) -> Result<serde_json::Value> {
-        let receipt = receipt.map(|(rid, op, fp)| (rid.to_owned(), op.to_owned(), fp.to_owned()));
-        let scope = space.map_or_else(|| actor.to_string(), |s| s.to_string());
-        let retention = self.receipt_retention.as_millis() as i64;
+        if matches!(
+            &change,
+            SpaceChange::SetRole { .. } | SpaceChange::SetGroupRole { .. }
+        ) {
+            let receipt = receipt.map(|r| Receipt::new(actor, space, self.receipt_retention, r));
+            return self.db.run_role_write_blocking(move |connection| {
+                check(connection, actor, space, &change)?;
+                let (value, _) = apply_receipted(connection, receipt.as_ref(), || {
+                    Ok((apply(connection, actor, space, &change)?, ()))
+                })?;
+                Ok(value)
+            });
+        }
+        self.mutate(actor, space, receipt, move |tx| {
+            check(tx, actor, space, &change)?;
+            Ok(move |tx: &rusqlite::Transaction<'_>| apply(tx, actor, space, &change))
+        })
+    }
+
+    /// Authorize, replay or apply a protected directory mutation in one transaction.
+    /// The admission closure prepares the mutation before any receipt is read.
+    pub(crate) fn mutate<F, A>(
+        &self,
+        actor: AccountId,
+        space: Option<SpaceId>,
+        receipt: Option<(&str, &str, &str)>,
+        admit: F,
+    ) -> Result<serde_json::Value>
+    where
+        F: FnOnce(&rusqlite::Transaction<'_>) -> Result<A> + Send + 'static,
+        A: FnOnce(&rusqlite::Transaction<'_>) -> Result<serde_json::Value>,
+    {
+        self.mutate_with(
+            actor,
+            space,
+            receipt,
+            move |tx| {
+                let apply = admit(tx)?;
+                Ok(move |tx: &rusqlite::Transaction<'_>| Ok((apply(tx)?, ())))
+            },
+            |_| {},
+        )
+    }
+
+    /// Pass transient effects to a callback immediately after database commit.
+    /// Callback state stays off disk and is absent on an ordinary receipt replay.
+    pub(crate) fn mutate_with<F, A, C, E>(
+        &self,
+        actor: AccountId,
+        space: Option<SpaceId>,
+        receipt: Option<(&str, &str, &str)>,
+        admit: F,
+        committed: C,
+    ) -> Result<serde_json::Value>
+    where
+        F: FnOnce(&rusqlite::Transaction<'_>) -> Result<A> + Send + 'static,
+        A: FnOnce(&rusqlite::Transaction<'_>) -> Result<(serde_json::Value, E)>,
+        C: FnOnce(E) + Send + 'static,
+    {
+        let receipt = receipt.map(|r| Receipt::new(actor, space, self.receipt_retention, r));
         self.run(move |c| {
             let tx = c
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(sql)?;
-            check(&tx, actor, space, &change)?;
-            let now = crate::db::now_ms();
-            if let Some((rid, op, fp)) = &receipt {
-                tx.execute(
-                    "DELETE FROM space_receipts WHERE actor=?1 AND at_ms<?2",
-                    params![actor.to_string(), now.saturating_sub(retention)],
-                )
-                .map_err(sql)?;
-                let saved: Option<(String, String, String)> = tx
-                    .query_row(
-                        "SELECT operation,fingerprint,result FROM space_receipts WHERE actor=?1 AND scope=?2 AND request_id=?3",
-                        params![actor.to_string(), scope, rid],
-                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                    )
-                    .optional()
-                    .map_err(sql)?;
-                if let Some((saved_op, saved_fp, result)) = saved {
-                    if saved_op != *op || saved_fp != *fp {
-                        return Err(Error::new(ErrorCode::Conflict, "request_id reused"));
-                    }
-                    let value = serde_json::from_str(&result).map_err(sql)?;
-                    commit(tx)?;
-                    return Ok(value);
+            let apply = admit(&tx)?;
+            let (value, effect) = apply_receipted(&tx, receipt.as_ref(), || apply(&tx))?;
+            commit_with(tx, || {
+                if let Some(effect) = effect {
+                    committed(effect);
                 }
-            }
-            let value = apply(&tx, actor, space, &change)?;
-            if let Some((rid, op, fp)) = &receipt {
-                tx.execute(
-                    "INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5,?6,?7)",
-                    params![actor.to_string(), scope, rid, op, fp, value.to_string(), now],
-                )
-                .map_err(sql)?;
-            }
-            commit(tx)?;
+            })?;
             Ok(value)
         })
     }
-}
-
-/// Persistent development fixture identities; only explicit preview startup uses this.
-#[derive(Debug, Clone)]
-pub struct DevelopmentIds {
-    /// Account associated with the development owner token.
-    pub owner: AccountId,
-    /// Account associated with the development guest token.
-    pub guest: AccountId,
-    /// The development owner's provisioned personal space UUID.
-    pub personal: SpaceId,
-    /// The space named `shared`, where the guest is a reader.
-    pub shared: SpaceId,
-}
-impl Spaces {
-    /// Creates development fixtures exactly once, preserving later revocations,
-    /// transfers and deletions across restart. Never call for real installations.
-    /// `development_directory` records what it created so a restart returns the same
-    /// IDs; nothing on the request path reads it, and requests never use the names.
-    /// Accounts and spaces each receive a separate freshly allocated UUIDv7.
-    /// A configured recovery barrier also covers this explicit fixture mutation.
-    pub fn seed_development(&self) -> Result<DevelopmentIds> {
-        self.run(move |c| {
-            let tx = c
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(sql)?;
-            let existing: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM development_directory)",
-                    [],
-                    |r| r.get(0),
-                )
-                .map_err(sql)?;
-            if !existing {
-                let owner = AccountId::new();
-                let guest = AccountId::new();
-                for (name, id) in [("owner", owner), ("guest", guest)] {
-                    let personal = crate::setup::insert_account(
-                        &tx,
-                        id,
-                        name,
-                        &format!("dev-{name}"),
-                        crate::db::now_ms(),
-                    )?;
-                    if id == owner {
-                        tx.execute(
-                            "INSERT INTO development_directory VALUES('personal',?1)",
-                            [personal.to_string()],
-                        )
-                        .map_err(sql)?;
-                    }
-                    tx.execute(
-                        "INSERT INTO development_directory VALUES(?1,?2)",
-                        params![name, id.to_string()],
-                    )
-                    .map_err(sql)?;
-                }
-                {
-                    let s = create(&tx, owner, "shared")?;
-                    tx.execute(
-                        "INSERT INTO development_directory VALUES(?1,?2)",
-                        params!["shared", s.id.to_string()],
-                    )
-                    .map_err(sql)?;
-                    tx.execute(
-                        "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
-                        params![s.id.to_string(), guest.to_string()],
-                    )
-                    .map_err(sql)?;
-                }
-            }
-            let get = |name| {
-                tx.query_row(
-                    "SELECT id FROM development_directory WHERE name=?1",
-                    [name],
-                    |r| r.get::<_, String>(0),
-                )
-                .map_err(sql)
-            };
-            let ids = DevelopmentIds {
-                owner: account(get("owner")?)?,
-                guest: account(get("guest")?)?,
-                personal: space_id(get("personal")?)?,
-                shared: space_id(get("shared")?)?,
-            };
-            commit(tx)?;
-            Ok(ids)
-        })
-    }
-}
-
-/// Host-injected durable recovery barrier for every protected auth transaction.
-/// Implementations reconcile earlier proposals through committed visibility, stage
-/// only affected protected records, insert their witness in `transaction`, and
-/// refuse ambiguous recovery. They must never replay a transaction's own witness.
-/// The host serializes the prepare/commit/complete interval; direct trait callers
-/// must do the same. Every durability failure prevents acknowledgement.
-/// With no configured sink, transaction behavior is unchanged.
-pub trait RecoverySink: Send + Sync {
-    /// Reconciles pending work against the still-authoritative database.
-    fn reconcile(&self, connection: &Connection) -> Result<()>;
-    /// Durably appends a proposed protected delta, adding its chain witness
-    /// to this transaction. An empty token denotes no protected-state change.
-    fn prepare(&self, transaction: &Connection) -> Result<String>;
-    /// Publishes only a witnessed committed delta before acknowledgement; an
-    /// empty token from prepare requires no filesystem publication.
-    fn complete(&self, connection: &Connection, intent: &str) -> Result<()>;
-    /// Held from prepare through complete, so no other commit stages an intent while
-    /// this one decides which witnesses are committed. It belongs to the sink, so
-    /// database handles sharing a sink share it too.
-    fn serial(&self) -> &std::sync::Mutex<()>;
-}
-
-/// Commits authority with its configured protected-publication barrier; no-op
-/// deltas retain normal SQLite durability without writing recovery versions.
-pub(crate) fn commit(transaction: rusqlite::Transaction<'_>) -> Result<()> {
-    commit_with(transaction, || {})
-}
-/// Runs the in-memory revoke fence immediately after durable SQLite commit,
-/// including when later recovery publication fails and no acknowledgement occurs.
-/// A refused preparation rolls back authority before reconciling an aborted proposal.
-pub(crate) fn commit_with(
-    mut transaction: rusqlite::Transaction<'_>,
-    committed: impl FnOnce(),
-) -> Result<()> {
-    let Some(sink) = crate::db::active_sink() else {
-        transaction.commit().map_err(sql)?;
-        committed();
-        return Ok(());
-    };
-    // Retain the sink's barrier across commit: another worker must not stage an
-    // intent while completion is deciding which witnesses are committed.
-    let _guard = sink.serial().lock().map_err(Error::internal)?;
-    let intent = match sink.prepare(&transaction) {
-        Ok(intent) => intent,
-        Err(error) => {
-            // An aborted proposal requires a writable autocommit connection to
-            // pin its abort marker. Reconcile only after rolling back authority.
-            transaction.execute_batch("ROLLBACK").map_err(sql)?;
-            transaction.set_drop_behavior(rusqlite::DropBehavior::Ignore);
-            sink.reconcile(&transaction)?;
-            return Err(error);
-        }
-    };
-    // Keep the original pinned SQLite connection available after COMMIT. On a
-    // failed COMMIT, the transaction still rolls back using its normal Drop.
-    transaction.execute_batch("COMMIT").map_err(sql)?;
-    transaction.set_drop_behavior(rusqlite::DropBehavior::Ignore);
-    committed();
-    sink.complete(&transaction, &intent)
 }

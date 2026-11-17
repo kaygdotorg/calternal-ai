@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "read",
   "id": "plugins.list",
   "description": "List registered plugins",
   "mutates": false
@@ -51,376 +52,828 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
-    "ExtensionPoint": {
-      "description": "Versioned host contribution slots in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
+    "HostCallKind": {
+      "description": "The only broker methods a worker may request.",
       "oneOf": [
         {
-          "description": "Contribute to the detail view of an authorized note.",
+          "description": "Read an authorized item.",
           "enum": [
-            "notes.detail"
+            "read_item"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Write an authorized item.",
+          "enum": [
+            "write_item"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "List an authorized collection.",
+          "enum": [
+            "list_collection"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Emit an authorized event.",
+          "enum": [
+            "emit_event"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Request durable job admission.",
+          "enum": [
+            "start_job"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Durably record a running job's checkpoint, from its run invocation.",
+          "enum": [
+            "checkpoint_job"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Request a scoped opaque handle, never secret bytes.",
+          "enum": [
+            "request_secret_handle"
           ],
           "type": "string"
         }
       ]
     },
-    "False": {
-      "const": false,
-      "type": "boolean"
-    },
-    "GenUiAction": {
+    "ManifestAttention": {
       "additionalProperties": false,
-      "description": "Button operation call in `plugins.preview` and `notes-insights.summarize` views or plugin manifests; dispatch still checks current authority.",
-      "properties": {
-        "input": {
-          "additionalProperties": true,
-          "description": "Operation-specific JSON object; must pass the selected operation schema before dispatch.",
-          "type": "object"
-        },
-        "operation": {
-          "description": "Versioned operation identifier; operation envelopes and actions require 1..128 UTF-8 bytes.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "input",
-        "operation"
-      ],
-      "type": "object"
-    },
-    "GenUiNode": {
-      "description": "Portable declarative nodes in plugin previews and `notes-insights.summarize` results. Validation bounds depth to 8, nodes to 128 and enforces unique IDs.",
-      "oneOf": [
-        {
-          "additionalProperties": false,
-          "description": "Ordered container of child nodes.",
-          "properties": {
-            "children": {
-              "description": "Ordered child nodes; the complete tree must remain within depth 8 and 128 nodes.",
-              "items": {
-                "$ref": "#/definitions/GenUiNode"
-              },
-              "type": "array"
-            },
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "stack"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "children",
-            "id",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Literal non-interactive text.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "text": {
-              "description": "Literal display text, limited to 8 KiB of UTF-8.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "text"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "text",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Labeled action dispatched through the operation boundary.",
-          "properties": {
-            "action": {
-              "allOf": [
-                {
-                  "$ref": "#/definitions/GenUiAction"
-                }
-              ],
-              "description": "Declared operation to dispatch on activation; no authority is embedded in the action."
-            },
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Accessible display label, 1..256 Unicode scalars.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "button"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "action",
-            "id",
-            "label",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Labeled statistic rendered as text.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Accessible display label, 1..256 Unicode scalars.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "stat"
-              ],
-              "type": "string"
-            },
-            "value": {
-              "description": "Display-formatted statistic value; rendering must treat it as text.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "label",
-            "type",
-            "value"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Link to a stable resource resolved through current access checks.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "label": {
-              "description": "Accessible display label, 1..256 Unicode scalars.",
-              "type": "string"
-            },
-            "resource_id": {
-              "description": "Stable UUID resource target; resolving it requires access to its space.",
-              "type": "string"
-            },
-            "space_id": {
-              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "resource"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "label",
-            "resource_id",
-            "space_id",
-            "type"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Host-owned document editor bound to an authorized resource.",
-          "properties": {
-            "id": {
-              "description": "Node identifier, 1..80 ASCII letters, digits or `_.:-`; unique across the complete view.",
-              "type": "string"
-            },
-            "resource_id": {
-              "description": "Stable UUID resource target; resolving it requires access to its space.",
-              "type": "string"
-            },
-            "space_id": {
-              "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
-              "type": "string"
-            },
-            "type": {
-              "enum": [
-                "document-editor"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "id",
-            "resource_id",
-            "space_id",
-            "type"
-          ],
-          "type": "object"
-        }
-      ]
-    },
-    "GenUiView": {
-      "additionalProperties": false,
-      "description": "Versioned portable view in plugin manifests, previews and `notes-insights.summarize`. Validation limits JSON to 64 KiB and string values to 32 KiB.",
-      "properties": {
-        "genui_version": {
-          "description": "Portable view contract version; exactly 1 in this preview.",
-          "format": "uint32",
-          "maximum": 1,
-          "minimum": 1,
-          "type": "integer"
-        },
-        "root": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/GenUiNode"
-            }
-          ],
-          "description": "Root node of the bounded portable tree; IDs are unique across the tree."
-        }
-      },
-      "required": [
-        "genui_version",
-        "root"
-      ],
-      "type": "object"
-    },
-    "PluginDependency": {
-      "additionalProperties": false,
-      "description": "Exact plugin dependency declaration in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
+      "description": "Authorized attention candidates; the shell selects at most three.",
       "properties": {
         "id": {
-          "description": "Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.",
+          "description": "Stable attention source identifier.",
           "type": "string"
         },
-        "version": {
-          "description": "Nonempty plugin version string; dependencies declare the exact version they require.",
+        "operation": {
+          "description": "Declared operation providing candidates.",
           "type": "string"
         }
       },
       "required": [
         "id",
-        "version"
+        "operation"
       ],
       "type": "object"
     },
-    "PluginManifest": {
+    "ManifestCapability": {
+      "description": "Closed host vocabulary, matching protected host capability names.",
+      "oneOf": [
+        {
+          "description": "Read authorized space content.",
+          "enum": [
+            "space.read"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Write authorized space content.",
+          "enum": [
+            "content.write"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Use installed plugins.",
+          "enum": [
+            "plugins.use"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Manage shared plugin installations.",
+          "enum": [
+            "plugins.manage"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Invite space members.",
+          "enum": [
+            "members.invite"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Manage ordinary space members.",
+          "enum": [
+            "members.manage"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Manage Managers; owner constraints still apply.",
+          "enum": [
+            "managers.manage"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Change shared settings.",
+          "enum": [
+            "space.settings"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Explicitly transfer ownership.",
+          "enum": [
+            "space.transfer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Delete a space.",
+          "enum": [
+            "space.delete"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "List the acting account memberships.",
+          "enum": [
+            "spaces.list"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Create a space for the acting account.",
+          "enum": [
+            "spaces.create"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ManifestCollection": {
       "additionalProperties": false,
-      "description": "Versioned trusted-plugin metadata exposed by `plugins.list`, `plugins.enable` and `plugins.disable`. Declarations do not themselves grant authority.",
+      "description": "Provisioning template; the host allocates a fresh Collection UUID per enable.",
+      "properties": {
+        "id": {
+          "description": "Globally unique template identifier, never a Collection address.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind of items in this collection.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name for provisioned collections.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ManifestHook": {
+      "additionalProperties": false,
+      "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
+      "properties": {
+        "id": {
+          "description": "Stable hook identifier.",
+          "type": "string"
+        },
+        "mode": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestHookMode"
+            }
+          ],
+          "description": "Watch or block only."
+        },
+        "operation": {
+          "description": "Declared operation implementing the hook.",
+          "type": "string"
+        },
+        "patterns": {
+          "description": "Exact operation IDs or namespace patterns ending in .* .",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "mode",
+        "operation",
+        "patterns"
+      ],
+      "type": "object"
+    },
+    "ManifestHookMode": {
+      "description": "Hooks observe or block; rewriting is unavailable.",
+      "oneOf": [
+        {
+          "description": "Observe permitted matching operations.",
+          "enum": [
+            "watch"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Return proceed, wait or reject under a host deadline.",
+          "enum": [
+            "block"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ManifestIdempotency": {
+      "description": "Retry behavior declared by an operation.",
+      "oneOf": [
+        {
+          "description": "Read with no durable effect.",
+          "enum": [
+            "read_only"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Host receipt required before durable effects.",
+          "enum": [
+            "request_id"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Automatic retry prohibited; reconcile uncertain outcomes.",
+          "enum": [
+            "never"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ManifestKind": {
+      "additionalProperties": false,
+      "description": "Kind identity remains independent of plugin identity.",
+      "properties": {
+        "claimed_text": {
+          "description": "True selects userdata-ssd for claimed text; false selects userdata-hdd for other files.",
+          "type": "boolean"
+        },
+        "extension": {
+          "description": "Lowercase ASCII file extension without the dot (1 to 16 letters or digits). Claimed-text kinds are Markdown: absent or `md`. Other kinds must declare one; the host stores their bytes unparsed under it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Stable kind name used in item addresses.",
+          "type": "string"
+        },
+        "schema": {
+          "description": "JSON Schema for the kind content; no executable code."
+        },
+        "storage": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestPlacement"
+            }
+          ],
+          "description": "Placement within the selected per-space userdata tree; never an appdata database path."
+        }
+      },
+      "required": [
+        "claimed_text",
+        "id",
+        "schema",
+        "storage"
+      ],
+      "type": "object"
+    },
+    "ManifestOperation": {
+      "additionalProperties": false,
+      "description": "Public operation declaration consumed by host policy.",
+      "properties": {
+        "id": {
+          "description": "Globally unique operation identifier.",
+          "type": "string"
+        },
+        "idempotency": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestIdempotency"
+            }
+          ],
+          "description": "Retry and host receipt contract."
+        },
+        "input_schema": {
+          "description": "JSON Schema of operation input."
+        },
+        "mutates": {
+          "description": "Whether this operation can produce durable effects.",
+          "type": "boolean"
+        },
+        "output_schema": {
+          "description": "JSON Schema of successful output."
+        },
+        "required_capability": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestCapability"
+            }
+          ],
+          "description": "Required current host capability."
+        },
+        "risk": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/OperationRisk"
+            }
+          ],
+          "description": "Required risk declaration; capability checks still apply in every mode."
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Item the operation targets; absent (or null) for a space-scoped operation, whose wire input names its space in `space_id`."
+        }
+      },
+      "required": [
+        "id",
+        "idempotency",
+        "input_schema",
+        "mutates",
+        "output_schema",
+        "required_capability",
+        "risk"
+      ],
+      "type": "object"
+    },
+    "ManifestPlacement": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "description": "Visible subtree claimed by one plugin, with at most eight safe components.",
+          "properties": {
+            "folder": {
+              "description": "One safe visible top-level folder.",
+              "type": "string"
+            },
+            "subdirectories": {
+              "description": "Safe directory components below the folder; never a filesystem path.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "folder",
+            "subdirectories"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "User-visible top-level folder; the host rejects cross-plugin folder claims.",
+          "properties": {
+            "folder": {
+              "description": "One NFC folder component, with no leading dot or reserved name.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "folder"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Plugin-owned files ordinary people need not see.",
+          "properties": {
+            "hidden": {
+              "description": "Must be true; placement is `.calternal/<plugin-id>/<kind>/` within userdata.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "hidden"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Placement inside a space userdata tree; hidden files belong to the declaring plugin."
+    },
+    "ManifestProvider": {
+      "additionalProperties": false,
+      "description": "Machine-side provider declaration; executable is installed in the sandbox image or account home, never downloaded or run by the server.",
+      "properties": {
+        "default_model": {
+          "description": "Default installed-CLI model identifier, at most 128 UTF-8 bytes.",
+          "type": "string"
+        },
+        "executable": {
+          "description": "Basename resolved inside the sandbox's PATH; no shell, path or arguments.",
+          "type": "string"
+        },
+        "protocol_version": {
+          "description": "Version of the bounded stdio contract, currently one.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "default_model",
+        "executable",
+        "protocol_version"
+      ],
+      "type": "object"
+    },
+    "ManifestRegion": {
+      "description": "Shell region populated by a component reference.",
+      "oneOf": [
+        {
+          "description": "App sidebar body.",
+          "enum": [
+            "sidebar"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Main card.",
+          "enum": [
+            "main"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Panel in the right card.",
+          "enum": [
+            "right_card"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ManifestSchedule": {
+      "additionalProperties": false,
+      "description": "Schedule declaration; durable execution belongs to the host.",
+      "properties": {
+        "expression": {
+          "description": "Schedule expression; activation awaits host scheduler validation.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable schedule identifier.",
+          "type": "string"
+        },
+        "operation": {
+          "description": "Declared operation to invoke.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expression",
+        "id",
+        "operation"
+      ],
+      "type": "object"
+    },
+    "ManifestSetting": {
+      "additionalProperties": false,
+      "description": "Typed space setting; secrets use separate handles.",
+      "properties": {
+        "default": {
+          "description": "Default setting value."
+        },
+        "id": {
+          "description": "Stable setting identifier.",
+          "type": "string"
+        },
+        "value_type": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ManifestSettingType"
+            }
+          ],
+          "description": "Primitive type of the default and stored values."
+        }
+      },
+      "required": [
+        "default",
+        "id",
+        "value_type"
+      ],
+      "type": "object"
+    },
+    "ManifestSettingType": {
+      "description": "Primitive setting value type.",
+      "oneOf": [
+        {
+          "description": "UTF-8 text.",
+          "enum": [
+            "string"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Boolean value.",
+          "enum": [
+            "boolean"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Finite JSON number.",
+          "enum": [
+            "number"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ManifestTarget": {
+      "additionalProperties": false,
+      "description": "The single item an operation acts on. The host reads the item ID from the named input field, resolves its owning space with the existence-hiding resolver and authorizes the caller in that space before any plugin code runs.",
+      "properties": {
+        "field": {
+          "description": "Top-level input property holding the item ID; the input schema must require it as a string.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Kind of the target item, such as `notes`; it may belong to another plugin.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ManifestTheme": {
+      "additionalProperties": false,
+      "description": "Network-free theme asset; protected surfaces cannot be themed.",
+      "properties": {
+        "id": {
+          "description": "Stable theme identifier.",
+          "type": "string"
+        },
+        "stylesheet": {
+          "description": "Relative packaged CSS asset; activation requires sealed theme validation.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "stylesheet"
+      ],
+      "type": "object"
+    },
+    "ManifestV1": {
+      "additionalProperties": false,
+      "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
       "properties": {
         "api_version": {
-          "description": "Supported plugin contract version; exactly 1 in this preview.",
+          "description": "Manifest API version, currently 1.",
           "format": "uint32",
-          "maximum": 1,
-          "minimum": 1,
+          "minimum": 0,
           "type": "integer"
         },
-        "capabilities": {
-          "description": "Declared capability names; actual authority remains host-controlled.",
+        "attention": {
+          "description": "Attention sources.",
+          "items": {
+            "$ref": "#/definitions/ManifestAttention"
+          },
+          "type": "array"
+        },
+        "collections": {
+          "description": "Collection provisioning templates.",
+          "items": {
+            "$ref": "#/definitions/ManifestCollection"
+          },
+          "type": "array"
+        },
+        "hooks": {
+          "description": "Space-scoped watch or block hooks.",
+          "items": {
+            "$ref": "#/definitions/ManifestHook"
+          },
+          "type": "array"
+        },
+        "host_calls": {
+          "description": "Broker calls the worker may request; each still needs live authorization.",
+          "items": {
+            "$ref": "#/definitions/HostCallKind"
+          },
+          "type": "array"
+        },
+        "icon": {
+          "description": "Registered icon identifier.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Stable plugin identifier.",
+          "type": "string"
+        },
+        "kinds": {
+          "description": "Kinds offered by this plugin.",
+          "items": {
+            "$ref": "#/definitions/ManifestKind"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Human-readable plugin name.",
+          "type": "string"
+        },
+        "operations": {
+          "description": "Public operation schemas and policy.",
+          "items": {
+            "$ref": "#/definitions/ManifestOperation"
+          },
+          "type": "array"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Machine-side provider adapter; omitted by plugins that offer no provider."
+        },
+        "schedules": {
+          "description": "Schedule declarations.",
+          "items": {
+            "$ref": "#/definitions/ManifestSchedule"
+          },
+          "type": "array"
+        },
+        "secrets": {
+          "description": "Requested secret names only; no values.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "dependencies": {
-          "description": "Required plugin IDs and exact versions; no ambient access is inherited from a dependency.",
+        "settings": {
+          "description": "Typed space settings.",
           "items": {
-            "$ref": "#/definitions/PluginDependency"
+            "$ref": "#/definitions/ManifestSetting"
           },
           "type": "array"
         },
-        "description": {
-          "description": "Human-readable description for discovery; carries no execution authority.",
-          "type": "string"
-        },
-        "id": {
-          "description": "Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.",
-          "type": "string"
-        },
-        "name": {
-          "description": "Nonempty plugin display name for discovery.",
-          "type": "string"
-        },
-        "operations": {
-          "description": "Declared/discovered operation contracts; dispatch still checks current permissions.",
+        "themes": {
+          "description": "Packaged theme declarations.",
           "items": {
-            "$ref": "#/definitions/PluginOperation"
+            "$ref": "#/definitions/ManifestTheme"
           },
           "type": "array"
         },
         "version": {
-          "description": "Nonempty plugin version string; dependencies declare the exact version they require.",
+          "description": "Exact package version.",
           "type": "string"
         },
         "views": {
-          "description": "Portable contributions registered for supported host extension points.",
+          "description": "Shell region component references.",
           "items": {
-            "$ref": "#/definitions/PluginView"
+            "$ref": "#/definitions/ManifestView"
+          },
+          "type": "array"
+        },
+        "webhooks": {
+          "description": "Webhook declarations.",
+          "items": {
+            "$ref": "#/definitions/ManifestWebhook"
           },
           "type": "array"
         }
       },
       "required": [
         "api_version",
-        "capabilities",
-        "dependencies",
-        "description",
+        "attention",
+        "collections",
+        "hooks",
+        "host_calls",
+        "icon",
         "id",
+        "kinds",
         "name",
         "operations",
+        "schedules",
+        "secrets",
+        "settings",
+        "themes",
         "version",
-        "views"
+        "views",
+        "webhooks"
       ],
       "type": "object"
     },
-    "PluginOperation": {
+    "ManifestView": {
       "additionalProperties": false,
-      "description": "Read-only extension operation declaration in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
+      "description": "Component reference only; component format is separately versioned.",
       "properties": {
-        "description": {
-          "description": "Human-readable description for discovery; carries no execution authority.",
+        "component": {
+          "description": "Registered component identifier; no inline code.",
           "type": "string"
         },
         "id": {
-          "description": "Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.",
+          "description": "Stable contribution identifier.",
           "type": "string"
         },
-        "mutates": {
+        "region": {
           "allOf": [
             {
-              "$ref": "#/definitions/False"
+              "$ref": "#/definitions/ManifestRegion"
             }
           ],
-          "description": "Whether this operation changes durable state; extension declarations are constrained to false."
+          "description": "Shell region."
         }
       },
       "required": [
-        "description",
+        "component",
         "id",
-        "mutates"
+        "region"
       ],
       "type": "object"
+    },
+    "ManifestWebhook": {
+      "additionalProperties": false,
+      "description": "Webhook declaration; this does not mount an HTTP route.",
+      "properties": {
+        "id": {
+          "description": "Stable webhook identifier.",
+          "type": "string"
+        },
+        "operation": {
+          "description": "Declared operation receiving authorized webhook input.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "operation"
+      ],
+      "type": "object"
+    },
+    "OperationRisk": {
+      "description": "Declared risk class, evaluated in addition to capabilities and token scope.",
+      "oneOf": [
+        {
+          "description": "Reads data without changing durable state.",
+          "enum": [
+            "read"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Changes that ordinary application history can undo.",
+          "enum": [
+            "reversible"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Effects that cannot reliably be undone; reviewer seam may advise here only.",
+          "enum": [
+            "irreversible"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Communicates or publishes outside the space; approval is scoped.",
+          "enum": [
+            "external"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Expands authority or changes access; always requires a person.",
+          "enum": [
+            "widens_access"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "PluginState": {
       "additionalProperties": false,
@@ -439,48 +892,16 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "manifest": {
           "allOf": [
             {
-              "$ref": "#/definitions/PluginManifest"
+              "$ref": "#/definitions/ManifestV1"
             }
           ],
-          "description": "Registered trusted-plugin metadata; enabling it does not replace host enforcement."
+          "description": "The plugin's full v1 manifest as registered; declarations grant no authority."
         }
       },
       "required": [
         "enabled",
         "generation",
         "manifest"
-      ],
-      "type": "object"
-    },
-    "PluginView": {
-      "additionalProperties": false,
-      "description": "Portable view contribution in manifests returned by `plugins.list`, `plugins.enable` and `plugins.disable`.",
-      "properties": {
-        "extension_point": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/ExtensionPoint"
-            }
-          ],
-          "description": "Host slot at which this contribution may be mounted."
-        },
-        "id": {
-          "description": "Stable plugin or contribution identifier, 1..80 ASCII letters, digits or `_.:-`.",
-          "type": "string"
-        },
-        "view": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/GenUiView"
-            }
-          ],
-          "description": "Validated portable presentation with bounded node, depth, text and serialized sizes."
-        }
-      },
-      "required": [
-        "extension_point",
-        "id",
-        "view"
       ],
       "type": "object"
     }

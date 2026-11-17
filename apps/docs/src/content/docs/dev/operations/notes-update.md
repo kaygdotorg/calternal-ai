@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "reversible",
   "id": "notes.update",
   "description": "Update a note against an opaque base revision",
   "mutates": true

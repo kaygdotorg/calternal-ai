@@ -8,7 +8,7 @@ title: "calternal machines revoke"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `machines revoke MACHINE --data-dir DIR` | Revoke a machine; a running server applies it within a second. | One sentence. Unknown machine: `not_found`. | `machine`, `revoked` |
+| `machines revoke MACHINE --appdata DIR --userdata-ssd DIR --userdata-hdd DIR` | Revoke a machine; it can no longer authenticate, and its leases end at once. | One sentence. Unknown machine: `not_found`. | `machine`, `revoked` |
 
 ## JSON data shape
 
@@ -26,7 +26,7 @@ Recorded test fixture:
 ```text
 exit: 0
 --- stdout ---
-Revoked machine aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa. A running server applies it within a second.
+Revoked machine aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.
 --- stderr ---
 ```
 

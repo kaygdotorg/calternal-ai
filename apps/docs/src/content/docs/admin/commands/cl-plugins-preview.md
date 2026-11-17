@@ -26,8 +26,8 @@ Recorded test fixture:
 ```text
 Preview of the plugin's GenUI view (nothing was changed):
 {
-  "text": "hello",
-  "type": "text"
+  "genui_version": 2,
+  "source": "Text(\"hello\")"
 }
 ```
 
@@ -40,8 +40,8 @@ Recorded test fixture:
   "data": {
     "preview": true,
     "view": {
-      "text": "hello",
-      "type": "text"
+      "genui_version": 2,
+      "source": "Text(\"hello\")"
     }
   },
   "ok": true,

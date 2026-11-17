@@ -1,29 +1,18 @@
 //! Real enrolled-machine plugin workers: authority stays with the host broker.
 use super::*;
+#[path = "../support/podman_guard.rs"]
+mod podman_guard;
 
 struct Machine {
     process: Child,
     dir: PathBuf,
     account: String,
+    _containers: podman_guard::PodmanGuard,
 }
 impl Drop for Machine {
     fn drop(&mut self) {
         let _ = self.process.kill();
         let _ = self.process.wait();
-        if let Ok(dirs) = std::fs::read_dir(self.dir.join("sandboxes/workers")) {
-            for dir in dirs.flatten() {
-                let name = format!(
-                    "calternal-account-{}-thread-{}",
-                    self.account,
-                    dir.file_name().to_string_lossy()
-                );
-                let _ = Command::new("podman")
-                    .args(["rm", "-f", "--ignore", &name])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
-            }
-        }
     }
 }
 
@@ -69,6 +58,7 @@ impl Fixture {
             .status()
             .unwrap();
         assert!(enroll.success());
+        let containers = podman_guard::PodmanGuard::new(dir.join("sandboxes"));
         let child = Command::new(binary)
             .args([
                 "machine",
@@ -88,6 +78,7 @@ impl Fixture {
             process: child,
             dir,
             account: self.ids[1].clone(),
+            _containers: containers,
         };
         machine
     }

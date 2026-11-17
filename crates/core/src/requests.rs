@@ -251,6 +251,8 @@ impl RequestOperation {
     /// Generate the transport schemas for the cached discovery catalog.
     pub(crate) fn description(&self) -> OperationDescription {
         OperationDescription {
+            required_capability: None,
+            target: None,
             id: self.id.into(),
             description: self.description.into(),
             mutates: self.risk != OperationRisk::Read,

@@ -1,0 +1,16 @@
+{
+  "data": {
+    "groups": [
+      {
+        "group_id": "01912345-6789-7abc-8123-000000000002",
+        "members": [
+          "01912345-6789-7abc-8123-000000000001"
+        ],
+        "name": "Studio",
+        "source": "local"
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "people-example"
+}

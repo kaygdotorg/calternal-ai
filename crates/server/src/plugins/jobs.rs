@@ -135,7 +135,7 @@ impl Job {
     }
 }
 
-/// A job just moved to running, with its fresh stream and cancellation handle.
+/// A claimed job with its fresh stream and cancellation handle.
 pub struct Claimed {
     /// The record after the claim (its `runs` is this run's number).
     pub job: Job,

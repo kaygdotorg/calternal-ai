@@ -91,3 +91,26 @@ this direction.
 
 [Worker execution](plugin-workers.md#placement-and-unresolved-contracts) lists the
 options, implementation costs and the placement revocation problem.
+
+## People and access follow-ups (issue #37)
+
+- **Server roles held by groups.** Keep the current server-role assignment with
+  the installation operator, which limits online escalation but needs local
+  provisioning, or add a protected role-grant operation with its own safeguards
+  for the last administrator.
+- **Local group managers.** Server group administrators can manage local
+  memberships in the preview. Expose the source ADR's delegated group-manager
+  workflow with its visible-people constraint, or keep group membership changes
+  operator-scoped if attaching a group to a space should keep that tighter
+  boundary.
+- **Disabled owners.** Disabling preserves the sole Owner record and makes its
+  grant inactive. Require transfer of shared spaces first, which can block
+  emergency disable, or add a separate recovery action with explicit policy for
+  shared and personal spaces.
+- **Invitation lifecycle.** Space invites support the requested role and expiry.
+  Extending expiry in place keeps the issued link alive, while revoking and
+  replacing issues a new credential. Server-plan invitations carrying group and
+  quota grants need an explicit server-scoped enrollment policy.
+- **Visible people picker.** A visibility-filtered picker can help non-admins
+  grant access to people whose accounts they can see. Inviting by link keeps
+  the directory smaller and requires no lookup by name.

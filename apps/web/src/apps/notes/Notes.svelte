@@ -4,14 +4,15 @@
   import { Button, IconButton, Panel } from "@calternal/ui";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
+  import TrashView from "./TrashView.svelte";
   import { notes } from "./store.svelte";
   import { store as threadStore } from "../threads/store.svelte";
-  import { navigate } from "../../lib/route.svelte";
+  import { navigate, route } from "../../lib/route.svelte";
   import { serverMode } from "../../server/client";
   import { link } from "../../server/link.svelte";
   // Tags in use: fixture words until the server lists them (its search index will).
-  // In server mode there is no tag list to read (no operation yet), so the # picker offers nothing rather than invented words.
-  const TAGS = serverMode() ? [] : ["design", "journal", "release", "storage", "reading"];
+  // Fixture words for the # picker; in server mode the editor asks the space's tag index instead.
+  const TAGS = ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
   // Leaving a note saves what is pending first (against that note), then the next one opens.
   $effect(() => { void notes.open(id); return () => { clearTimeout(saveTimer); if (latest) void flush(); latest = ""; }; });
@@ -47,6 +48,9 @@
   const uid = $props.id();
 </script>
 
+{#if route.query.get("view") === "trash"}
+  <TrashView />
+{:else}
 <div class="note">
   <div class="rail" role="presentation" onpointerenter={() => (toc = true)} onpointerleave={() => (toc = false)}>
     <button type="button" class="ticks" aria-expanded={toc} aria-controls="{uid}-toc" aria-label="Table of contents" onclick={() => (toc = !toc)} onfocus={() => (toc = true)} onkeydown={(e) => e.key === "Escape" && (toc = false)}>
@@ -85,6 +89,7 @@
   </article>
   </div>
 </div>
+{/if}
 
 <style>
   .note { position: absolute; inset: 0; }

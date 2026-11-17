@@ -70,6 +70,11 @@ fn error(e: Error) -> Response {
             "setup_token_invalid",
             "That setup link is invalid or expired.",
         ),
+        ErrorCode::InviteLimit => (
+            409,
+            "conflict",
+            "Revoke an outstanding invite before creating another.",
+        ),
         ErrorCode::LastPasskey => (409, "last_passkey", "Keep at least one passkey."),
         ErrorCode::PasskeyReverificationRequired => (
             403,

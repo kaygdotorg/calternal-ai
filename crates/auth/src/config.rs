@@ -46,6 +46,8 @@ pub struct AuthConfig {
     /// How long a directory request receipt is kept (7 days by default, the same
     /// retention as space receipts); a retry after that runs as a new request.
     pub receipt_retention: Duration,
+    /// How long to retain expired, revoked or redeemed invitation rows.
+    pub invite_retention: Duration,
     /// How long a passkey prompt may stay open.
     pub ceremony_ttl: Duration,
     /// Maximum prompts in each of the independent Login, Setup and Add pools.
@@ -106,6 +108,9 @@ impl AuthConfig {
             session_ttl: Duration::from_secs(90 * 24 * 3600),
             clock: Clock::system(),
             receipt_retention: crate::spaces::DEFAULT_RECEIPT_RETENTION,
+            invite_retention: Duration::from_secs(
+                u64::from(crate::invites::DEFAULT_INVITE_RETENTION_DAYS) * 86_400,
+            ),
             ceremony_ttl: Duration::from_secs(5 * 60),
             max_ceremonies: 10_000,
             setup_failures_per_minute: 20,

@@ -22,6 +22,7 @@ try {
   await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); const cdp = await ctx.newCDPSession(page);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+  if (process.env.HACK_TYPING) await ctx.addInitScript(() => { const f = window.addEventListener; window.addEventListener = function (t, fn, o) { if (t === "keydown" && String(fn).includes("isComposing")) return; return f.call(this, t, fn, o); }; });
   await page.goto(`${url}/?server=1`); await page.waitForSelector("html[data-ready]");
   await page.fill('input[name="token"]', token); await page.fill('input[name="name"]', "Tester"); await page.getByRole("button", { name: "Create passkey" }).click();
   await page.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
@@ -37,6 +38,8 @@ try {
   // Typing is saved: Not saved yet -> Saving -> Saved, and the server has the text.
   await page.locator(".cm-content").click(); await page.keyboard.press("Control+End"); await page.keyboard.type("\n\nHello from the browser.");
   ok(/Not saved yet|Saving/.test(await state()), "typing shows Not saved yet or Saving");
+  const ring = await page.evaluate(() => ({ mode: document.documentElement.dataset.input, outline: getComputedStyle(document.querySelector(".cm-content")).outlineStyle }));
+  ok(ring.mode === "pointer" && ring.outline === "none", "typing in the editor draws no focus outline (keys typed in a field do not switch to keyboard mode)", JSON.stringify(ring));
   await page.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
   let list = (await api("notes.list", { space_id: space })).data.notes;
   const id = list[0].id;
@@ -77,6 +80,48 @@ try {
   note = (await api("notes.get", { space_id: space, id })).data.note;
   ok(/Offline text\./.test(note.markdown), "back online: the text typed offline is saved", "");
 
+  // Tags, pickers, rename from the list, Trash with Undo and Restore.
+  if (!process.env.SKIP_LISTS) {
+  const tagged = (await api("notes.create", { space_id: space, title: "Planning", markdown: "# Planning\n\nQuarter goals #work/plans and #home\n" })).data.note;
+  await page.goto(`${url}/notes?server=1`); await page.waitForSelector("html[data-ready]");
+  await page.getByRole("button", { name: /^#work/ }).first().waitFor({ timeout: 8000 });
+  ok(true, "the tag list shows the space's tags");
+  { let n = 0; const on = (r) => r.url().includes("/api/v1/operations") && n++; page.on("request", on); await page.waitForTimeout(2000); page.off("request", on); ok(n < 6, "an idle Notes page makes no request storm", `${n} requests in 2 s`); }
+  await page.getByRole("button", { name: /^#work/ }).first().evaluate((el) => el.click()); // (the chips sit under the sidebar's header while it is scrolled; a script click does not care)
+  await page.waitForTimeout(600);
+  ok((await page.locator('nav[aria-label="Notes"] a.row').count()) === 1, "filtering by a tag lists only its notes");
+  await page.getByRole("button", { name: "All", exact: true }).evaluate((el) => el.click()); await page.waitForTimeout(500);
+  await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Planning" }).click(); await page.waitForSelector(".cm-h1");
+  await page.locator(".cm-content").click(); await page.keyboard.press("Control+End"); await page.keyboard.type("\nSee [[Unt");
+  await page.getByRole("option", { name: /Untitled/ }).first().waitFor({ timeout: 6000 });
+  ok(true, "the [[ picker finds notes from the server by title prefix");
+  await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  ok(/\[Untitled[^\]]*\]\(</.test(await page.locator(".cm-content").innerText()) || /Untitled/.test(await page.locator(".cm-content").innerText()), "choosing it inserts a link to the note");
+  await page.keyboard.type(" #wo"); await page.getByRole("option", { name: /#work/ }).first().waitFor({ timeout: 6000 });
+  ok(true, "the # picker finds tags from the server");
+  await page.keyboard.press("Escape");
+  await page.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
+  // Rename from the list.
+  const row = page.locator('nav[aria-label="Notes"] li', { hasText: "Planning" });
+  await row.getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Rename" }).click();
+  await page.fill('input[aria-label="Note title"]', "Quarter plan"); await page.keyboard.press("Enter");
+  await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
+  ok(true, "rename from the list");
+  // Trash with Undo.
+  await page.locator('nav[aria-label="Notes"] li', { hasText: "Quarter plan" }).getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Move to Trash" }).click();
+  await page.getByText(/Moved .* to the Trash/).first().waitFor({ timeout: 6000 });
+  ok((await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).count()) === 0, "delete moves the note out of the list");
+  await page.getByRole("button", { name: "Undo" }).click(); await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
+  ok(true, "Undo brings it back");
+  // Trash view and Restore.
+  await page.locator('nav[aria-label="Notes"] li', { hasText: "Quarter plan" }).getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Move to Trash" }).click();
+  await page.getByRole("link", { name: "Trash" }).click(); await page.getByRole("heading", { name: "Trash" }).waitFor();
+  await page.locator("article .t", { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
+  await page.getByRole("button", { name: "Restore" }).click(); await page.waitForTimeout(800);
+  ok((await page.locator("article .t", { hasText: "Quarter plan" }).count()) === 0, "Restore takes it out of the Trash");
+  await page.goto(`${url}/notes?server=1`); await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
+  ok(true, "the restored note is back in the list");
+  }
   // A note that is not there says so and offers the way back.
   await page.goto(`${url}/notes/00000000-0000-7000-8000-000000000000?server=1`); await page.waitForSelector("html[data-ready]");
   await page.getByRole("heading", { name: /Note not found|You can't open/ }).waitFor({ timeout: 8000 });
@@ -89,6 +134,9 @@ try {
   await page.evaluate(() => { performance.clearResourceTimings(); window.__keys = []; });
   await page.locator(".cm-content").click(); await page.keyboard.press("Control+Home");
   for (let i = 0; i < 25; i++) await page.keyboard.press("PageDown");
+  if (process.env.HACK_BLINK) await page.addStyleTag({ content: ".cm-cursorLayer, .cm-cursorLayer * { animation: none !important }" });
+  if (process.env.HACK_ANIM) await page.addStyleTag({ content: "*, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important }" });
+  if (process.env.HACK_KEY) await page.evaluate(() => { document.documentElement.dataset.input = "key"; });
   await page.evaluate(() => { window.__keys = []; });
   for (let round = 0; round < 3; round++) { await page.keyboard.type("the quick brown fox jumps over the lazy dog. ", { delay: 50 }); await page.waitForTimeout(1900); } // a save fires after each pause
   await page.getByText("Saved", { exact: true }).waitFor({ timeout: 15000 });

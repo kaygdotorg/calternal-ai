@@ -2,7 +2,7 @@
 title: "plugin-sdk: index/README"
 ---
 
-<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
+<!-- Generated from: packages/plugin-sdk/src/index.ts, packages/plugin-sdk/src/manifest-v1.ts, packages/plugin-sdk/src/space-paths.ts, packages/plugin-sdk/src/worker-v2.ts. Rebuild: npm run docs:site -->
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
@@ -18,18 +18,22 @@ title: "plugin-sdk: index/README"
 
 - [ContractValidationError](/docs/dev/typescript/plugin-sdk/module-index/classes/contractvalidationerror/)
 
+## Type Aliases
+
+- [ProviderBilling](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/)
+- [ProviderCommand](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercommand/)
+- [ProviderContext](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercontext/)
+- [ProviderEvent](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerevent/)
+- [ProviderEventKind](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providereventkind/)
+- [ProviderFailureClass](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/)
+- [ProviderRequest](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerrequest/)
+
 ## Variables
 
 - [GENUI\_VERSION](/docs/dev/typescript/plugin-sdk/module-index/variables/genui_version/)
 - [MAX\_BODY\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_body_bytes/)
 - [MAX\_DOCUMENT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_document_bytes/)
-- [MAX\_GENUI\_DEPTH](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_depth/)
-- [MAX\_GENUI\_NODES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_nodes/)
 - [MAX\_GENUI\_SERIALIZED\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_serialized_bytes/)
-- [MAX\_GENUI\_STRING\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_string_bytes/)
-- [MAX\_GENUI\_TEXT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_genui_text_bytes/)
-- [MAX\_WORKER\_INPUT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_worker_input_bytes/)
-- [MAX\_WORKER\_OUTPUT\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_worker_output_bytes/)
 - [MAX\_WORKER\_STDERR\_BYTES](/docs/dev/typescript/plugin-sdk/module-index/variables/max_worker_stderr_bytes/)
 - [PROTOCOL\_VERSION](/docs/dev/typescript/plugin-sdk/module-index/variables/protocol_version/)
 - [WORKER\_TIMEOUT\_MS](/docs/dev/typescript/plugin-sdk/module-index/variables/worker_timeout_ms/)
@@ -37,14 +41,8 @@ title: "plugin-sdk: index/README"
 ## Functions
 
 - [parseOperationRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/parseoperationrequest/)
-- [parseWorkerRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/parseworkerrequest/)
-- [parseWorkerResponse](/docs/dev/typescript/plugin-sdk/module-index/functions/parseworkerresponse/)
-- [validateExtensionView](/docs/dev/typescript/plugin-sdk/module-index/functions/validateextensionview/)
 - [validateGenUiView](/docs/dev/typescript/plugin-sdk/module-index/functions/validategenuiview/)
 - [validateOperationRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/validateoperationrequest/)
-- [~~validatePluginManifest~~](/docs/dev/typescript/plugin-sdk/module-index/functions/validatepluginmanifest/)
-- [validateWorkerRequest](/docs/dev/typescript/plugin-sdk/module-index/functions/validateworkerrequest/)
-- [validateWorkerResponse](/docs/dev/typescript/plugin-sdk/module-index/functions/validateworkerresponse/)
 
 ## References
 

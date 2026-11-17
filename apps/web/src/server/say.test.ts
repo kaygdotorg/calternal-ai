@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest";
-import { AuthError } from "./auth";
 import { ServerError } from "./client";
 import { say } from "./say";
 
@@ -12,10 +11,10 @@ describe("say: failures in plain words with the next step", () => {
     expect(say(new ServerError("unavailable", "x"))).toMatch(/keeps trying/);
   });
   test("sign-in failures: wrong or used code, closed prompt, unknown passkey", () => {
-    expect(say(new AuthError("setup_token_invalid", "x"))).toMatch(/wrong or already used/);
-    expect(say(new AuthError("invite_invalid", "x"))).toMatch(/wrong or already used/);
-    expect(say(new AuthError("cancelled", "x"))).toMatch(/closed or timed out/);
-    expect(say(new AuthError("passkey_failed", "x"))).toMatch(/not recognised/);
+    expect(say(new ServerError("setup_token_invalid", "x"))).toMatch(/wrong or already used/);
+    expect(say(new ServerError("invite_invalid", "x"))).toMatch(/wrong or already used/);
+    expect(say(new ServerError("cancelled", "x"))).toMatch(/closed or timed out/);
+    expect(say(new ServerError("passkey_failed", "x"))).toMatch(/not recognised/);
   });
   test("an unknown failure still names the thing and says to try again", () => {
     expect(say(new Error("boom"), "load the members")).toBe("Could not load the members. Try again.");

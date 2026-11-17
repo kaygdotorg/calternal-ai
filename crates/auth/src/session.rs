@@ -96,14 +96,19 @@ pub(crate) struct Sessions {
 
 impl Sessions {
     fn forget_installation(&self, id: InstallationId) {
+        self.forget_installations(vec![id]);
+    }
+
+    pub(crate) fn forget_installations(&self, ids: Vec<InstallationId>) {
+        if ids.is_empty() {
+            return;
+        }
         let now = now_ms();
         let mut revoked = self.revoked.write().unwrap_or_else(|p| p.into_inner());
         revoked.retain(|_, at| now - *at < REVOKED_KEEP_MS);
-        revoked.insert(id, now);
-        drop(revoked);
-        let mut c = self.cache.write().unwrap_or_else(|p| p.into_inner());
-        c.retain(|_, l| l.installation != id);
-        drop(c);
+        revoked.extend(ids.into_iter().map(|id| (id, now)));
+        let mut cache = self.cache.write().unwrap_or_else(|p| p.into_inner());
+        cache.retain(|_, live| !revoked.contains_key(&live.installation));
     }
 
     pub(crate) fn is_revoked(&self, id: InstallationId) -> bool {
@@ -127,7 +132,8 @@ impl Sessions {
     }
 }
 
-/// Creates an Installation inside a transaction and returns its token.
+/// Creates an installation for an active account in the caller’s transaction.
+/// Cost: one account status read and one session insert before protected commit.
 pub(crate) fn create(
     tx: &Transaction<'_>,
     user: AccountId,
@@ -136,6 +142,7 @@ pub(crate) fn create(
     ttl_ms: i64,
     asserted: bool,
 ) -> Result<(InstallationId, String)> {
+    crate::people::require_active(tx, user)?;
     let id = InstallationId::new();
     let token = new_session_token()?;
     let now = now_ms();
@@ -182,7 +189,7 @@ pub(crate) async fn identify(
         Some(l) => l,
         None => {
             let k = key.clone();
-            let found = inner.db.run(move |c| lookup(c, &k)).await.ok().flatten()?;
+            let found = inner.db.read(move |c| lookup(c, &k)).await.ok().flatten()?;
             inner.sessions.remember(key.clone(), found, now);
             found
         }
@@ -236,7 +243,7 @@ fn touch(inner: &std::sync::Arc<Inner>, key: Vec<u8>, mut live: Live, now: i64) 
     });
 }
 
-fn lookup(c: &mut rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
+fn lookup(c: &rusqlite::Connection, key: &[u8]) -> Result<Option<Live>> {
     c.query_row(
         "SELECT user_id, id, expires_at, last_seen_at FROM installations
          WHERE token_hash = ?1 AND revoked_at IS NULL AND kind <> 'dav'",

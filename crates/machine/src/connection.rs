@@ -5,11 +5,9 @@
 //! is held by the server for up to `poll_hold_ms` when there is nothing to send.
 //! An idle machine therefore makes about three requests a minute.
 //!
-//! Local lease expiry: when no `sync` has succeeded for `lease_ttl_ms`, every
-//! sandbox is frozen, because the server may have fenced the leases and given them
-//! to another machine. The first successful `sync` afterwards carries the server's
-//! verdict (`Stop` for fenced leases, a new `Assign` for re-granted ones); the
-//! remaining sandboxes are resumed.
+//! Local lease expiry removes containers after a lease TTL without a successful
+//! sync. Reconnect reports expired leases for reconciliation. Mounted workspaces
+//! and account homes survive, and fenced work requires explicit resumption.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -62,11 +60,17 @@ pub async fn run(config: Config, shutdown: impl std::future::Future<Output = ()>
         r = session_loop(&creds, &link, &runner, boot_id) => r,
         () = shutdown => Ok(()),
     };
-    match &result {
-        Err(Error::Revoked) => runner.stop_all().await,
-        _ => runner.release_all().await,
-    }
-    result
+    let closed = runner.release_all().await;
+    result.and_then(|()| {
+        if closed {
+            Ok(())
+        } else {
+            Err(Error::Protocol(
+                "sandbox teardown incomplete; restart the machine role to sweep its containers"
+                    .into(),
+            ))
+        }
+    })
 }
 
 async fn session_loop(
@@ -123,9 +127,8 @@ async fn session_loop(
                             runner.handle(env.message).await;
                         }
                     }
-                    if runner.any_frozen() {
-                        runner.resume_all().await;
-                    }
+                    let runner = runner.clone();
+                    tokio::spawn(async move { runner.park_idle(lease_ttl).await });
                 }
                 Err(Error::Revoked) => return Err(Error::Revoked),
                 Err(e) if e.status() == Some(401) => {
@@ -144,9 +147,8 @@ async fn session_loop(
 }
 
 async fn expire_locally(runner: &Runner, last_ok: Instant, ttl: Duration) {
-    if last_ok.elapsed() >= ttl && !runner.any_frozen() {
-        tracing::warn!("no contact with the server for a lease TTL; freezing sandboxes");
-        runner.freeze_all().await;
+    if last_ok.elapsed() >= ttl {
+        runner.release_all().await;
     }
 }
 

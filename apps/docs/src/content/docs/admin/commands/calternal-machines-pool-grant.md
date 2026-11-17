@@ -8,7 +8,7 @@ title: "calternal machines pool-grant"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `machines pool-grant ACCOUNT [--remove] --data-dir DIR` | Allow (or stop allowing) an account to use pool machines. | One sentence. | `account`, `pool_access` |
+| `machines pool-grant ACCOUNT [--remove] --appdata DIR --userdata-ssd DIR --userdata-hdd DIR` | Allow (or stop allowing) an account to use pool machines. | One sentence. | `account`, `pool_access` |
 
 ## JSON data shape
 
@@ -26,7 +26,7 @@ Recorded test fixture:
 ```text
 exit: 0
 --- stdout ---
-Account cccccccc-cccc-4ccc-8ccc-cccccccccccc may now use pool machines.
+Account cccccccc-cccc-7ccc-8ccc-cccccccccccc may now use pool machines.
 --- stderr ---
 ```
 
@@ -39,7 +39,7 @@ exit: 0
 --- stdout ---
 {
   "data": {
-    "account": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "account": "cccccccc-cccc-7ccc-8ccc-cccccccccccc",
     "pool_access": true
   },
   "ok": true

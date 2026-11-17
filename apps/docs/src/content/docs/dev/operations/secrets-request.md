@@ -14,6 +14,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 
 ```json
 {
+  "risk": "reversible",
   "id": "secrets.request",
   "description": "Ask for a secret; a person supplies the value through the trusted prompt",
   "mutates": true

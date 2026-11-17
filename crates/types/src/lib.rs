@@ -1,5 +1,5 @@
 //! Types every Calternal-AI crate shares: typed identifiers, the acting
-//! [`Actor`], the caller-safe error, the closed space capability vocabulary and the
+//! [`Actor`], the caller-safe error, the closed host capability vocabulary and the
 //! millisecond clock and shared worker-frame bound.
 //!
 //! The crate does no I/O, holds no locks and depends only on `serde`,
@@ -17,7 +17,7 @@ mod space_paths;
 pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, ErrorCode, Result};
-pub use id::{AccountId, InstallationId, SpaceId};
+pub use id::{AccountId, GroupId, InstallationId, InviteId, SpaceId};
 pub use space_paths::{SPACE_INSTRUCTIONS_PATH, is_reserved_space_path};
 
 /// Maximum JSON bytes in a plugin worker frame, excluding its newline (256 KiB).

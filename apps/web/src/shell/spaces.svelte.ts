@@ -9,7 +9,7 @@ import { server, serverMode } from "../server/client";
 const KEY = "cal.space";
 
 /** A space: a UUID and a name the person sees. */
-export interface SpaceInfo { id: string; name: string }
+export interface SpaceInfo { id: string; name: string; /** The person's role in it (`owner`, `manager`, `editor`, `reader`), from the server. */ role?: string }
 
 /** The fixture spaces. The first is the personal space everyone has. Ids are UUIDs; a name never stands in for one. */
 export const FIXTURE_SPACES: SpaceInfo[] = [
@@ -42,7 +42,7 @@ class Spaces {
       const { spaces: all } = await server.spaces.list();
       const byAge = [...all].sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : 0));
       const personal = byAge.find((s) => s.personal);
-      this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name })));
+      this.setList((personal ? [personal, ...byAge.filter((s) => s !== personal)] : byAge).map((s) => ({ id: s.id, name: s.name, role: s.role })));
     })().catch((e) => { this.loading = null; throw e; });
     return this.loading;
   }

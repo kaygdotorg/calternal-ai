@@ -4,6 +4,10 @@
 //! `CALTERNAL_TEST_IMAGE` (default `docker.io/library/alpine:3`) is not present
 //! locally; the tests never pull.
 
+#[path = "../../../tests/support/podman_guard.rs"]
+mod podman_guard;
+use podman_guard::PodmanGuard;
+
 use std::sync::Arc;
 
 use calternal_machine::protocol::{Limits, SandboxSpec};
@@ -83,6 +87,7 @@ async fn threads_are_isolated_and_limited() {
     let Some(b) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
     let limits = Limits {
         memory_bytes: Some(256 << 20),
         cpu_millis: Some(500),
@@ -161,25 +166,43 @@ async fn threads_are_isolated_and_limited() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn freeze_resume_and_adoption_after_restart() {
+async fn release_and_restart_remove_containers_but_keep_work() {
     let root = tempfile::tempdir().unwrap();
     let Some(b) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
     let s = spec(Limits::default());
     let sb = b.start(&s).await.unwrap();
     sh(&sb, "echo before > state").await;
     sb.freeze().await.unwrap();
-    // A new backend instance (a restarted machine role) adopts the paused container.
-    let again = PodmanBackend::new("podman", root.path(), image())
-        .start(&s)
-        .await
-        .unwrap();
+    sb.resume().await.unwrap();
+    let other_root = tempfile::tempdir().unwrap();
+    let other = backend(other_root.path()).await.unwrap();
+    let _foreign = PodmanGuard::new(other_root.path());
+    let foreign = other.start(&spec(Limits::default())).await.unwrap();
+    b.initialize().await.unwrap();
+    let name = PodmanBackend::container_name(s.account_id, s.thread_id);
+    let exists = || {
+        std::process::Command::new("podman")
+            .args(["container", "exists", &name])
+            .status()
+            .unwrap()
+            .success()
+    };
+    let orphan_was_removed = !exists();
+    let again = b.start(&s).await.unwrap();
     assert_eq!(sh(&again, "cat state").await, ("before\n".into(), 0));
-    again.freeze().await.unwrap();
-    again.resume().await.unwrap();
-    assert_eq!(sh(&again, "echo ok").await.1, 0);
+    assert_eq!(sh(&foreign, "echo ok").await.1, 0);
+    again.release().await.unwrap();
+    let released_was_removed = !exists();
     again.stop().await.unwrap();
+    foreign.stop().await.unwrap();
+    assert!(
+        orphan_was_removed,
+        "startup left its orphan container behind"
+    );
+    assert!(released_was_removed, "release retained its container");
 }
 
 #[tokio::test]
@@ -188,6 +211,7 @@ async fn persistent_homes_are_shared_only_with_the_same_account() {
     let Some(backend) = backend(root.path()).await else {
         return;
     };
+    let _containers = PodmanGuard::new(root.path());
     let first = spec(Limits::default());
     let mut same = spec(Limits::default());
     same.account_id = first.account_id;
@@ -209,4 +233,105 @@ async fn persistent_homes_are_shared_only_with_the_same_account() {
     assert_eq!(sh(&b, "cat \"$HOME/login-marker\"").await.0, "account-a\n");
     b.stop().await.unwrap();
     c.stop().await.unwrap();
+}
+
+#[tokio::test]
+async fn container_guard_cleans_up_during_unwind() {
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let guard = PodmanGuard::new(root.path());
+    let sandbox = spec(Limits::default());
+    let _active = backend.start(&sandbox).await.unwrap();
+    let panic = std::panic::catch_unwind(move || {
+        let _guard = guard;
+        panic!("synthetic test failure");
+    });
+    assert!(panic.is_err());
+    let name = PodmanBackend::container_name(sandbox.account_id, sandbox.thread_id);
+    let status = tokio::process::Command::new("podman")
+        .args(["container", "exists", &name])
+        .status()
+        .await
+        .unwrap();
+    assert_eq!(status.code(), Some(1));
+}
+
+#[tokio::test]
+async fn parking_a_lease_removes_its_container_and_restart_reuses_its_mount() {
+    use calternal_machine::{
+        link::Link,
+        protocol::{Down, SandboxState},
+        runner::Runner,
+    };
+    use calternal_types::{AccountId, SpaceId};
+    use std::time::Duration;
+
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let _guard = PodmanGuard::new(root.path());
+    let runner = Arc::new(Runner::new(
+        Arc::new(backend),
+        Arc::new(Link::new("http://127.0.0.1:1").unwrap()),
+        1,
+    ));
+    let account_id = AccountId::new();
+    let space_id = SpaceId::new();
+    let lease_id = Uuid::new_v4();
+    let mut sandbox = spec(Limits::default());
+    sandbox.account_id = account_id.as_uuid();
+    let assign = || Down::Assign {
+        lease_id,
+        fence: 1,
+        space_id,
+        account_id,
+        spec: sandbox.clone(),
+    };
+    let wait_running = || async {
+        tokio::time::timeout(Duration::from_secs(35), async {
+            loop {
+                match &runner.reports()[0].sandbox {
+                    SandboxState::Running => return,
+                    SandboxState::Failed { reason } => panic!("sandbox start failed: {reason}"),
+                    _ => tokio::time::sleep(Duration::from_millis(25)).await,
+                }
+            }
+        })
+        .await
+        .expect("sandbox did not start");
+    };
+    runner.handle(assign()).await;
+    wait_running().await;
+    let work = root.path().join(format!(
+        "accounts/{account_id}/threads/{}/work",
+        sandbox.thread_id,
+    ));
+    tokio::fs::write(work.join("marker"), "retained")
+        .await
+        .unwrap();
+
+    // Test cleanup without coupling the assertion to either side of a long poll.
+    runner.park_idle(Duration::ZERO).await;
+    let name = PodmanBackend::container_name(sandbox.account_id, sandbox.thread_id);
+    let status = tokio::process::Command::new("podman")
+        .args(["container", "exists", &name])
+        .status()
+        .await
+        .unwrap();
+    assert_eq!(status.code(), Some(1));
+    assert_eq!(runner.capacity().running_sandboxes, 1);
+
+    runner.handle(assign()).await;
+    wait_running().await;
+    let exec = tokio::process::Command::new("podman")
+        .args(["exec", &name, "cat", "/work/marker"])
+        .output()
+        .await
+        .unwrap();
+    assert!(exec.status.success());
+    assert_eq!(exec.stdout, b"retained");
+    assert!(runner.release_all().await);
 }

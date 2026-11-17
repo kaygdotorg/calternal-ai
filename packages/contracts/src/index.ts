@@ -1635,23 +1635,6 @@ space_id: string,
  */
 account_id: string, };
 /**
- * Change an existing member's role; assigning Owner requires transfer instead.
- */
-
-export type SpaceSetRoleInput = {
-/**
- * Space UUID; names are never accepted in its place.
- */
-space_id: string,
-/**
- * Stable target account UUID.
- */
-account_id: string,
-/**
- * Requested membership role; Owner is refused here.
- */
-role: SpaceRole, };
-/**
  * Space metadata and the caller's current effective role.
  */
 
@@ -1708,7 +1691,11 @@ export type SpaceMember = {
  */
 account_id: string,
 /**
- * Current effective role.
+ * Current account display name.
+ */
+name: string,
+/**
+ * Current directly granted role.
  */
 role: SpaceRole, };
 /**
@@ -1717,14 +1704,415 @@ role: SpaceRole, };
 
 export type SpaceMembersResult = {
 /**
- * Current account memberships, including exactly one Owner.
+ * Direct account grants on this page. Exactly one Owner has a direct grant.
  */
-members: Array<SpaceMember>, };
+members: Array<SpaceMember>,
+/**
+ * Direct group grants, including names and active member counts.
+ */
+groups: Array<SpaceGroupMember>,
+/**
+ * Continue after the last grant, omitted at the end.
+ */
+next_cursor: string | null, };
 /**
  * A completed membership mutation or directory-record deletion.
  */
 
 export type SpaceChangedResult = Record<string, never>;
+/**
+ * Admission boundary for the people operation.
+ */
+
+export type PeopleTarget = "server" | "account" | "space" | "invitation";
+/**
+ * A direct space grant identifies exactly one person or group.
+ */
+
+export type SpaceGrantInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Account UUID when the grant targets a person.
+ */
+account_id: string | null,
+/**
+ * Group UUID when the grant targets a group.
+ */
+group_id: string | null, };
+/**
+ * A role assignment to exactly one person or group.
+ */
+
+export type SpaceGrantRoleInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Account UUID when granting access directly to a person.
+ */
+account_id: string | null,
+/**
+ * Group UUID when granting access through current group membership.
+ */
+group_id: string | null,
+/**
+ * Requested role. Ownership uses explicit transfer.
+ */
+role: SpaceRole, };
+/**
+ * A group grant visible to current members of the space.
+ */
+
+export type SpaceGroupMember = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * Current group display name.
+ */
+name: string,
+/**
+ * The role assigned to the group.
+ */
+role: SpaceRole,
+/**
+ * Number of active people in the group.
+ */
+member_count: number, };
+/**
+ * An operation scoped to the authenticated account or server with no input fields.
+ */
+
+export type DirectoryInput = Record<string, never>;
+/**
+ * A continuation for a server directory.
+ */
+
+export type DirectoryPageInput = {
+/**
+ * The previous page's cursor. Omit it to start at the first row.
+ */
+cursor: string | null, };
+/**
+ * A continuation scoped to one space.
+ */
+
+export type SpaceDirectoryPageInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * The previous page's cursor for this space and operation.
+ */
+cursor: string | null, };
+/**
+ * List groups or continue an individual group's member page.
+ */
+
+export type GroupDirectoryPageInput = {
+/**
+ * Group UUID when reading one group's members.
+ */
+group_id: string | null,
+/**
+ * Use the group list cursor or, with `group_id`, its member cursor.
+ */
+cursor: string | null, };
+/**
+ * A space role and its currently declared capabilities.
+ */
+
+export type RoleDefinition = {
+/**
+ * The stored role name.
+ */
+name: string,
+/**
+ * Stable dotted capability names from the authority catalog.
+ */
+capabilities: Array<string>, };
+/**
+ * Space role catalog result.
+ */
+
+export type RolesResult = {
+/**
+ * Role definitions, ordered by name.
+ */
+roles: Array<RoleDefinition>, };
+/**
+ * The current account's new display name.
+ */
+
+export type ProfileInput = {
+/**
+ * Name shown to other people.
+ */
+name: string, };
+/**
+ * The updated profile's public display fields.
+ */
+
+export type ProfileResult = {
+/**
+ * The unchanged account UUID.
+ */
+account_id: string,
+/**
+ * The normalized name.
+ */
+name: string, };
+/**
+ * Target of a server people operation.
+ */
+
+export type PersonInput = {
+/**
+ * Account UUID.
+ */
+account_id: string, };
+/**
+ * A person in the authorized server directory.
+ */
+
+export type DirectoryPerson = {
+/**
+ * The account's stable UUID.
+ */
+account_id: string,
+/**
+ * Current display name.
+ */
+name: string,
+/**
+ * Server role, independent of space access.
+ */
+role: string,
+/**
+ * Whether the account may sign in and exercise its grants.
+ */
+disabled: boolean, };
+/**
+ * Server people visible to the operator.
+ */
+
+export type PeopleResult = {
+/**
+ * Current accounts, including disabled records.
+ */
+people: Array<DirectoryPerson>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
+/**
+ * A completed account disable.
+ */
+
+export type DisabledPerson = {
+/**
+ * Disabled account UUID.
+ */
+account_id: string,
+/**
+ * Always true on a successful disable.
+ */
+disabled: boolean, };
+/**
+ * A group's display name on creation.
+ */
+
+export type GroupCreateInput = {
+/**
+ * Printable name shown to authorized people.
+ */
+name: string, };
+/**
+ * Target group UUID.
+ */
+
+export type GroupInput = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string, };
+/**
+ * Rename a local group.
+ */
+
+export type GroupRenameInput = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * Its new name.
+ */
+name: string, };
+/**
+ * One membership in a local group.
+ */
+
+export type GroupPersonInput = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * The person's account UUID.
+ */
+account_id: string, };
+/**
+ * A server group and its active members.
+ */
+
+export type DirectoryGroup = {
+/**
+ * The group's stable UUID.
+ */
+group_id: string,
+/**
+ * Current display name.
+ */
+name: string,
+/**
+ * Local or identity-provider managed.
+ */
+source: string,
+/**
+ * Account UUIDs for each active member.
+ */
+members: Array<string>,
+/**
+ * Continue these members with this group's UUID, omitted at the end.
+ */
+members_next_cursor: string | null, };
+/**
+ * Server group directory result.
+ */
+
+export type GroupsResult = {
+/**
+ * Groups ordered by UUID.
+ */
+groups: Array<DirectoryGroup>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
+/**
+ * Create a single-use invitation to a space.
+ */
+
+export type InviteCreateInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Role granted on redemption. Owner is never assignable by invitation.
+ */
+role: SpaceRole,
+/**
+ * Absolute Unix milliseconds; omission defaults to seven days.
+ */
+expires_at: number, };
+/**
+ * Identify an invitation within its owning space.
+ */
+
+export type InviteInput = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Invitation record UUID.
+ */
+invite_id: string, };
+/**
+ * A created invitation. Use the authorized list to copy the link.
+ */
+
+export type InviteCreated = {
+/**
+ * Invitation record UUID.
+ */
+invite_id: string,
+/**
+ * Absolute expiry in Unix milliseconds.
+ */
+expires_at: number, };
+/**
+ * An invitation visible to an authorized space manager or owner.
+ */
+
+export type DirectoryInvite = {
+/**
+ * Invitation record UUID.
+ */
+invite_id: string,
+/**
+ * Role granted upon successful redemption.
+ */
+role: SpaceRole,
+/**
+ * Creation time in Unix milliseconds.
+ */
+created_at: number,
+/**
+ * Expiration time in Unix milliseconds.
+ */
+expires_at: number,
+/**
+ * Redemption time in Unix milliseconds, or null before redemption.
+ */
+used_at: number | null,
+/**
+ * Revocation time in Unix milliseconds, or null before revocation.
+ */
+revoked_at: number | null,
+/**
+ * Bearer link, present only for a usable invitation.
+ */
+link: string | null, };
+/**
+ * Current invitation directory, including unexpired used and revoked records.
+ */
+
+export type InvitesResult = {
+/**
+ * Authorized invitation records.
+ */
+invites: Array<DirectoryInvite>,
+/**
+ * Continuation after the last row, omitted at the end.
+ */
+next_cursor: string | null, };
+/**
+ * A revoked invitation's public identity.
+ */
+
+export type InviteRevoked = {
+/**
+ * Invitation record UUID.
+ */
+invite_id: string, };
+/**
+ * Redeem a link as the signed-in account.
+ */
+
+export type InviteRedeemInput = {
+/**
+ * The secret from the invite URL, passed in the HTTP body.
+ */
+secret: string, };
 /**
  * Ask for a secret; the value is supplied later through the trusted surface.
  */
@@ -1924,6 +2312,14 @@ export type OperationDescription = {
  * Declared risk used by the permission-mode reviewer, independent of capabilities.
  */
 risk: OperationRisk,
+/**
+ * Current capability required by the operation, when declared in discovery.
+ */
+required_capability: string | null,
+/**
+ * Authority scope, when declared in discovery.
+ */
+target: PeopleTarget | null,
 /**
  * Versioned operation identifier used for dispatch; never a URL or executable path.
  */

@@ -1,8 +1,8 @@
 //! Protected identity storage primitives ported from Calternal's auth crate.
 //!
-//! `auth.db` has one current schema (`schema.sql`, version 1); there is no migration
+//! `auth.db` has one current schema (`schema.sql`); there is no migration
 //! chain and no sharing, DAV or host-cookie state.
-//! It supplies stored space authority, but no login endpoints or recovery coordinator.
+//! It supplies protected account and space authority to the host HTTP adapter.
 //! Callers must validate and lock installation roots before opening the DB;
 //! opening a missing path creates it and is not safe recovery of lost state.
 #![deny(missing_docs)]
@@ -14,10 +14,13 @@ mod ceremony;
 mod config;
 pub mod db;
 mod http_facing;
+mod invite_key;
+pub mod invites;
 pub mod limit;
 pub mod machines;
 mod passkey;
 mod passkeys;
+pub mod people;
 mod secret_keys;
 mod session;
 mod setup;
@@ -33,6 +36,7 @@ pub use setup::Created;
 struct Inner {
     db: db::Db,
     config: AuthConfig,
+    invite_key: invite_key::Key,
     webauthn: webauthn_rs::prelude::Webauthn,
     ceremonies: ceremony::Ceremonies,
     sessions: session::Sessions,
@@ -57,6 +61,8 @@ pub enum ErrorCode {
     PasskeyFailed,
     /// Admission/back-off limit exceeded.
     TooManyRequests,
+    /// The space already holds the maximum number of live invitations.
+    InviteLimit,
     /// Setup token is unknown, used or expired.
     SetupTokenInvalid,
     /// Removing this key would leave the account without a passkey.
