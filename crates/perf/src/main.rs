@@ -27,6 +27,9 @@ struct Args {
     work: PathBuf,
     #[arg(long, default_value = "plugins")]
     plugins: PathBuf,
+    /// Matching historical bundle when the baseline pins an older worker digest.
+    #[arg(long)]
+    baseline_plugins: Option<PathBuf>,
     #[arg(long, default_value = "perf/budgets.json")]
     budgets: PathBuf,
     #[arg(long, default_value = "1000,10000,100000")]
@@ -135,7 +138,7 @@ fn run(a: &Args) -> Result<i32> {
         .arg(&a.baseline)
         .arg(std::env::current_exe()?)
         .output()?;
-    let run_info = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"seed":a.seed,"sizes":a.sizes,"spaces":a.spaces,"warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"samples":a.samples,"machine":String::from_utf8_lossy(&machine.stdout),"binary_sha256":String::from_utf8_lossy(&hashes.stdout)});
+    let run_info = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"seed":a.seed,"sizes":a.sizes,"spaces":a.spaces,"warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"samples":a.samples,"machine":String::from_utf8_lossy(&machine.stdout),"binary_sha256":String::from_utf8_lossy(&hashes.stdout)});
     std::fs::write(
         a.work.join("run-info.json"),
         serde_json::to_vec_pretty(&run_info)?,
@@ -219,7 +222,17 @@ fn run(a: &Args) -> Result<i32> {
                 if pair >= a.cold_pairs && !std::process::Command::new("sync").status()?.success() {
                     return Err("warm fixture sync failed".into());
                 }
-                let samples = match scenario(a, bin, &root, &fixture) {
+                let samples = match scenario(
+                    a,
+                    bin,
+                    if arm == "head" {
+                        &a.plugins
+                    } else {
+                        a.baseline_plugins.as_ref().unwrap_or(&a.plugins)
+                    },
+                    &root,
+                    &fixture,
+                ) {
                     Ok(samples) => samples,
                     Err(error) => {
                         let failure = json!({"size":size,"spaces":spaces,"pair":pair,"arm":arm,"error":error.to_string(),"startup_timeout_seconds":a.startup_timeout_seconds,"log":root.join("server.log")});
@@ -286,7 +299,7 @@ fn run(a: &Args) -> Result<i32> {
             (k, pct)
         })
         .collect();
-    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"binary_sha256":String::from_utf8_lossy(&hashes.stdout),"machine":String::from_utf8_lossy(&machine.stdout),"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
+    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":String::from_utf8_lossy(&hashes.stdout),"machine":String::from_utf8_lossy(&machine.stdout),"noise_pct":noise,"qualification":"incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites","seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
     std::fs::write(
         a.work.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
@@ -298,13 +311,14 @@ fn run(a: &Args) -> Result<i32> {
 fn scenario(
     a: &Args,
     bin: &std::path::Path,
+    plugins: &std::path::Path,
     root: &std::path::Path,
     fixture: &fixtures::Fixture,
 ) -> Result<BTreeMap<String, Vec<f64>>> {
     let (server, mut h, start) = server::Server::start(
         bin,
         root,
-        &a.plugins,
+        plugins,
         a.test_plugin_root.as_deref(),
         a.startup_timeout_seconds,
     )?;

@@ -129,3 +129,9 @@ debug observations stay separate from plain-release latency qualification.
 conditioning, first-use writer evidence and first-list timing, then stops the
 scenario before subscriptions and write loops. Use it for a focused startup
 comparison; it cannot qualify update, delivery or idle-memory budgets.
+
+When the baseline pins an older trusted worker digest, use
+`--baseline-plugins /absolute/matching/baseline/plugins`. Head fixture provisioning
+uses `--plugins`; each measured arm validates its own pinned bundle. Both bundle
+paths are recorded in the summary. Keep this difference explicit when catalog or
+worker changes affect comparability; never bypass trusted-worker validation.
