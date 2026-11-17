@@ -234,3 +234,9 @@ lock: one indexed current-run check precedes machine admission. Cancellation
 therefore either sees the saved lease ID or prevents admission. The callback
 never re-enters jobs/content; publication failure releases the lease. This also
 closes the stop race before the first lease checkpoint exists.
+
+The orchestrator is default-enabled for a fresh space. With the default server
+plugin path, the native manifest is available from the binary if the working
+directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
+using `--plugin-root` provide their own trusted plugin tree. An authorized
+fresh space lists zero threads before any conversation is created.

@@ -150,6 +150,10 @@ impl Fixture {
         }
     }
     async fn start(&mut self) {
+        self.start_with_plugin_root(true).await;
+    }
+
+    async fn start_with_plugin_root(&mut self, explicit: bool) {
         let path = self.appdata().join("startup.json");
         let _ = std::fs::remove_file(&path);
         let binary = std::env::var("CALTERNAL_SERVER_BIN")
@@ -171,6 +175,14 @@ impl Fixture {
         if self.development {
             command.arg("--development");
         }
+        if explicit {
+            command
+                .arg("--plugin-root")
+                .arg(repo.join("plugins"))
+                .current_dir(&repo);
+        } else {
+            command.current_dir(self.dir.path());
+        }
         let crash = self.dir.path().join("thread-send-fault").is_file();
         self.child = Some(
             command
@@ -182,12 +194,9 @@ impl Fixture {
                 .arg(self.dir.path().join("userdata-ssd"))
                 .arg("--userdata-hdd")
                 .arg(self.dir.path().join("userdata-hdd"))
-                .arg("--plugin-root")
-                .arg(repo.join("plugins"))
                 // The binary is built with `test-plugins`; see README.
                 .arg("--test-plugin-root")
                 .arg(repo.join("tests/plugins"))
-                .current_dir(repo)
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env("RUST_LOG", "warn")
