@@ -194,7 +194,8 @@ CREATE TABLE agent_approvals(
  id TEXT PRIMARY KEY, job TEXT NOT NULL REFERENCES agent_access(job) ON DELETE CASCADE,
  account TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  app TEXT NOT NULL, write_access INTEGER NOT NULL, approved INTEGER NOT NULL,
- action TEXT NOT NULL CHECK(length(action)<=16384)
+ action TEXT NOT NULL CHECK(length(action)<=16384),
+ action_hash TEXT CHECK(action_hash IS NULL OR length(action_hash)=64)
 ) STRICT;
 CREATE INDEX agent_approvals_job ON agent_approvals(job);
 CREATE INDEX agent_approvals_account ON agent_approvals(account);

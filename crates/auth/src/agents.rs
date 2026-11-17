@@ -29,6 +29,17 @@ impl Agents {
             .map_err(|_| Error::unavailable("agent authority unavailable"))?
     }
 
+    /// Whether the admitting account sign-in is still live, using the same
+    /// revocation and expiry predicates as account installations. One indexed
+    /// read on the existing auth worker; lookup failures fail closed to callers.
+    pub fn installation_live(
+        &self,
+        account: calternal_types::AccountId,
+        installation: calternal_types::InstallationId,
+    ) -> Result<bool, Error> {
+        self.read(move|c|c.query_row("SELECT EXISTS(SELECT 1 FROM installations WHERE id=?1 AND user_id=?2 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>?3))",rusqlite::params![installation.to_string(),account.to_string(),calternal_types::now_ms()],|r|r.get(0)).map_err(|_|Error::unavailable("admitting sign-in unavailable")))
+    }
+
     /// Commit an agent authority change through the same recovery barrier as
     /// memberships and machines. Call only from a blocking task; the trusted host
     /// callback may mutate only agent authority tables and must bound every row.

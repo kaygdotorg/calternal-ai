@@ -12,7 +12,7 @@ pub enum AgentMode {
     /// Current space access, reviewed by rules; high-risk classes require approval.
     #[default]
     ApproveForMe,
-    /// Current space access without approvals except scope widening; sandboxing is separate.
+    /// Current space access; high-risk effects require exact approval, independently of sandboxing.
     FullAccess,
 }
 

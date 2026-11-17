@@ -188,3 +188,17 @@ async fn manual_turns_share_request_admission_with_content_and_directory_writes(
     let turn=f.op_id(1,"agent.run",json!({"space_id":f.spaces[0],"thread_id":uuid::Uuid::now_v7(),"prompt":"receipt probe"}),other).await;
     assert_eq!(turn.status, 409);
 }
+
+#[tokio::test]
+async fn source_app_requires_an_enabled_plugin_or_a_native_operation_group() {
+    let f = Fixture::new().await;
+    for (source, status) in [
+        ("invented-app", 400),
+        ("notes-insights", 403),
+        ("notes", 200),
+        ("spaces", 200),
+    ] {
+        let answer=f.op(1,"agent.run",json!({"space_id":f.spaces[0],"thread_id":uuid::Uuid::now_v7(),"source_app":source,"prompt":"source scope probe"})).await;
+        assert_eq!(answer.status, status, "{source}: {}", answer.body);
+    }
+}

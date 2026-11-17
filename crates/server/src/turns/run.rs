@@ -156,7 +156,7 @@ async fn execute<D: Directory>(
     let acquire = state.jobs.permits().acquire_owned();
     tokio::pin!(acquire);
     let (machine_id, _permit) = loop {
-        if !live.is_current(job.runs) {
+        if !live.is_current(job.runs) || !super::session_live(state, job).await? {
             return Ok(RunEnd::Failed);
         }
         super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
@@ -260,15 +260,25 @@ async fn execute<D: Directory>(
     }
     let (st, scope) = (state.clone(), scope.clone());
     let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
+    let mut redactor = super::redact::Redactor::new(token.clone());
+    let mut published_seq = 0;
     let (m, env) = (
         machines.clone(),
         vec![("CALTERNAL_AGENT_TOKEN".into(), token)],
     );
-    if !live.is_current(job.runs) {
+    if !live.is_current(job.runs) || !super::session_live(state, job).await? {
         return Ok(RunEnd::Failed);
     }
-    let exec =
-        blocking(move || m.exec_input(account, lease_id, vec![executable], env, stdin)).await?;
+    let exec = blocking(move || {
+        m.exec_input(
+            account,
+            lease_id,
+            super::launch::argv(executable),
+            env,
+            stdin,
+        )
+    })
+    .await?;
     let mut cursor = 0;
     let mut pending = Vec::new();
     let mut provider_seq = 0;
@@ -280,7 +290,7 @@ async fn execute<D: Directory>(
     let mut text_flush = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(600);
     loop {
-        if !live.is_current(job.runs) {
+        if !live.is_current(job.runs) || !super::session_live(state, job).await? {
             return Ok(RunEnd::Failed);
         }
         if super::authorize(state, &who, &job.space, Capability::PluginsUse)
@@ -338,7 +348,7 @@ async fn execute<D: Directory>(
                         if byte != b'\n' {
                             continue;
                         }
-                        let e: ProviderEvent = serde_json::from_slice(&pending)
+                        let mut e: ProviderEvent = serde_json::from_slice(&pending)
                             .map_err(|_| Error::invalid_input("invalid provider event"))?;
                         e.validate()?;
                         pending.clear();
@@ -346,68 +356,88 @@ async fn execute<D: Directory>(
                             return Err(Error::invalid_input("provider event sequence failed"));
                         }
                         provider_seq = e.seq;
-                        match &e.event {
-                            ProviderEventKind::Session { session_id } => {
-                                checkpoint["session_id"] = json!(session_id)
+                        let first = redactor.event(&mut e.event);
+                        let first = first.or_else(|| {
+                            if matches!(e.event, ProviderEventKind::Done { .. }) {
+                                redactor.finish()
+                            } else {
+                                None
                             }
-                            ProviderEventKind::TextDelta { text } => {
-                                let tail = checkpoint
-                                    .get("text_tail")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("");
-                                let merged = format!("{tail}{text}");
-                                let mut start = merged.len().saturating_sub(16 * 1024);
-                                while !merged.is_char_boundary(start) {
-                                    start += 1;
+                        });
+                        let flush = first.map(|text| ProviderEvent {
+                            version: 1,
+                            seq: 0,
+                            event: ProviderEventKind::TextDelta { text },
+                        });
+                        for mut e in flush.into_iter().chain(std::iter::once(e)) {
+                            published_seq += 1;
+                            e.seq = published_seq;
+                            match &e.event {
+                                ProviderEventKind::Session { session_id } => {
+                                    checkpoint["session_id"] = json!(session_id)
                                 }
-                                checkpoint["text_tail"] = json!(&merged[start..]);
-                            }
-                            ProviderEventKind::ToolStarted { id, name, summary } => {
-                                if pending_tools.len() >= 128 || pending_tools.contains(id) {
-                                    return Err(Error::invalid_input(
-                                        "provider pending tool limit or duplicate tool id",
-                                    ));
+                                ProviderEventKind::TextDelta { text } => {
+                                    let tail = checkpoint
+                                        .get("text_tail")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("");
+                                    let merged = format!("{tail}{text}");
+                                    let mut start = merged.len().saturating_sub(16 * 1024);
+                                    while !merged.is_char_boundary(start) {
+                                        start += 1;
+                                    }
+                                    checkpoint["text_tail"] = json!(&merged[start..]);
                                 }
-                                checkpoint["last_tool"] = json!({"id":id,"name":name,"summary":summary,"state":"started"});
-                                pending_tools.insert(id.clone());
-                            }
-                            ProviderEventKind::ToolFinished { id, failed, .. } => {
-                                checkpoint["last_tool"]["state"] = json!("finished");
-                                checkpoint["last_tool"]["failed"] = json!(failed);
-                                pending_tools.remove(id);
-                            }
-                            ProviderEventKind::Error {
-                                class,
-                                billing,
-                                reset_at_ms,
-                                ..
-                            } => {
-                                retry_forbidden |= !matches!(
+                                ProviderEventKind::ToolStarted { id, name, summary } => {
+                                    if pending_tools.len() >= 128 || pending_tools.contains(id) {
+                                        return Err(Error::invalid_input(
+                                            "provider pending tool limit or duplicate tool id",
+                                        ));
+                                    }
+                                    checkpoint["last_tool"] = json!({"id":id,"name":name,"summary":summary,"state":"started"});
+                                    pending_tools.insert(id.clone());
+                                }
+                                ProviderEventKind::ToolFinished { id, failed, .. } => {
+                                    checkpoint["last_tool"]["state"] = json!("finished");
+                                    checkpoint["last_tool"]["failed"] = json!(failed);
+                                    pending_tools.remove(id);
+                                }
+                                ProviderEventKind::Error {
                                     class,
-                                    calternal_core::ProviderFailureClass::Transient
-                                        | calternal_core::ProviderFailureClass::UsageLimit
-                                );
-                                failure = Some((*class, *billing, *reset_at_ms));
+                                    billing,
+                                    reset_at_ms,
+                                    code,
+                                    message,
+                                } => {
+                                    checkpoint["error"] = json!({"code":code,"message":message});
+                                    retry_forbidden |= !matches!(
+                                        class,
+                                        calternal_core::ProviderFailureClass::Transient
+                                            | calternal_core::ProviderFailureClass::UsageLimit
+                                    );
+                                    failure = Some((*class, *billing, *reset_at_ms));
+                                }
+                                ProviderEventKind::Done { outcome: o } => outcome = Some(o.clone()),
+                                ProviderEventKind::Check { .. } => checked = true,
+                                _ => {}
                             }
-                            ProviderEventKind::Done { outcome: o } => outcome = Some(o.clone()),
-                            ProviderEventKind::Check { .. } => checked = true,
-                            _ => {}
-                        }
-                        let value = serde_json::to_value(&e)
-                            .map_err(|_| Error::internal("provider encoding"))?;
-                        if !live.publish(job.runs, &value) {
-                            return Err(Error::conflict("turn stopped accepting output"));
-                        }
-                        if matches!(
-                            e.event,
-                            ProviderEventKind::Session { .. }
-                                | ProviderEventKind::ToolFinished { .. }
-                                | ProviderEventKind::Done { .. }
-                        ) || text_flush.elapsed() >= Duration::from_secs(3)
-                        {
-                            checkpoint["provider_seq"] = json!(provider_seq);
-                            save(state, job, live, &checkpoint).await?;
-                            text_flush = Instant::now();
+                            let value = serde_json::to_value(&e)
+                                .map_err(|_| Error::internal("provider encoding"))?;
+                            if !live.publish(job.runs, &value) {
+                                return Err(Error::conflict("turn stopped accepting output"));
+                            }
+                            if matches!(
+                                e.event,
+                                ProviderEventKind::Session { .. }
+                                    | ProviderEventKind::ToolFinished { .. }
+                                    | ProviderEventKind::Done { .. }
+                            ) || text_flush.elapsed() >= Duration::from_secs(3)
+                            {
+                                checkpoint["provider_seq"] = json!(provider_seq);
+                                redactor.checkpoint(&mut checkpoint);
+                                save(state, job, live, &checkpoint).await?;
+                                text_flush = Instant::now();
+                            }
                         }
                     }
                 }
@@ -452,6 +482,7 @@ async fn execute<D: Directory>(
                             crate::plugins::job_sql::now_ms(),
                         ) {
                             checkpoint["retry"] = wait;
+                            redactor.checkpoint(&mut checkpoint);
                             save(state, job, live, &checkpoint).await?;
                             return Ok(RunEnd::RetryWaiting);
                         }

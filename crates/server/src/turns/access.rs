@@ -18,7 +18,41 @@ pub struct Authority {
     /// Operation prefix of the originating app.
     pub source_app: String,
     /// Approved additional app prefixes and whether writes are permitted.
-    pub grants: Vec<(String, bool)>,
+    pub grants: Vec<Grant>,
+}
+
+/// A person-approved app scope, optionally bound to one exact action digest.
+/// App grants cover ordinary reads/reversible changes; high-risk effects require
+/// the action digest regardless of mode. All grants currently last one turn.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Grant {
+    /// Operation prefix selected by the trusted person or denial request.
+    pub app: String,
+    /// Whether mutations are included in the grant.
+    pub write: bool,
+    /// Exact operation/input digest, with retry identity where required.
+    pub action_hash: Option<String>,
+}
+
+/// One operation prefix, shared by source validation and both grant forms.
+pub(crate) fn app(op: &str) -> &str {
+    op.split_once('.').map_or(op, |(prefix, _)| prefix)
+}
+
+/// Narrowing is immediate on a new turn. A wider requested mode keeps the saved
+/// mode until the owner settles the wider-mode policy; no I/O or allocation.
+pub(crate) fn narrower(requested: AgentMode, saved: AgentMode) -> AgentMode {
+    let rank = |m| match m {
+        AgentMode::LeastAccess => 0,
+        AgentMode::ApproveForMe => 1,
+        AgentMode::FullAccess => 2,
+    };
+    if rank(requested) <= rank(saved) {
+        requested
+    } else {
+        saved
+    }
 }
 
 /// Automatic reviewer seam, restricted to irreversible effects. It cannot widen
@@ -49,20 +83,14 @@ pub fn risk_allowed(
     input: &JsonObject,
 ) -> bool {
     use calternal_core::OperationRisk::*;
-    if risk == WidensAccess {
-        return false;
-    }
-    if mode == AgentMode::FullAccess {
-        return true;
-    }
-    if mode == AgentMode::LeastAccess {
-        return in_default_scope || approved_scope;
-    }
+    // An app grant or a permissive mode never authorizes a high-risk effect.
+    // Reviewer advice is reserved for the trusted approval surface; it cannot
+    // substitute for an exact person-approved action here.
+    let _ = (reviewer, op, input);
     match risk {
-        Read | Reversible => true,
-        External => approved_scope,
-        Irreversible => approved_scope || reviewer.allows_irreversible(op, input),
+        Irreversible | External => approved_scope,
         WidensAccess => false,
+        Read | Reversible => mode != AgentMode::LeastAccess || in_default_scope || approved_scope,
     }
 }
 
@@ -120,30 +148,30 @@ impl Authority {
         if input.get("space_id").and_then(|v| v.as_str()) != Some(self.space.as_str()) {
             return Err(Error::not_found("space not found"));
         }
-        let app = op.split_once('.').map(|(a, _)| a).unwrap_or("");
+        let app = app(op);
         let default = !self.source_app.is_empty() && app == self.source_app;
-        let granted = self
+        let action = action_scope(op, input, rid, risk);
+        let matching = self
             .grants
             .iter()
-            .any(|(p, w)| p == app && (!mutates || *w));
-        let action = action_scope(op, input, rid, risk);
-        let approved_action = self.grants.iter().any(|(p, _)| p == &action);
-        let allowed = if risk == calternal_core::OperationRisk::WidensAccess {
-            approved_action
-        } else {
-            risk_allowed(
+            .filter(|g| g.app == app && (!mutates || g.write));
+        let app_grant = matching.clone().any(|g| g.action_hash.is_none());
+        let exact_grant = matching
+            .into_iter()
+            .any(|g| g.action_hash.as_deref() == Some(action.as_str()));
+        let allowed = match risk {
+            calternal_core::OperationRisk::Irreversible
+            | calternal_core::OperationRisk::External
+            | calternal_core::OperationRisk::WidensAccess => exact_grant,
+            _ => risk_allowed(
                 self.mode,
                 risk,
                 default,
-                if self.mode == AgentMode::LeastAccess {
-                    granted
-                } else {
-                    approved_action
-                },
+                app_grant || exact_grant,
                 &RulesOnly,
                 op,
                 input,
-            )
+            ),
         };
         if allowed {
             Ok(())
@@ -175,7 +203,7 @@ mod tests {
             };
             assert_eq!(
                 check(AgentMode::FullAccess, false, false),
-                risk != WidensAccess
+                matches!(risk, Read | Reversible)
             );
             assert_eq!(
                 check(AgentMode::ApproveForMe, false, false),
@@ -188,7 +216,7 @@ mod tests {
             assert!(!check(AgentMode::LeastAccess, false, false));
             assert_eq!(
                 check(AgentMode::LeastAccess, true, false),
-                risk != WidensAccess
+                matches!(risk, Read | Reversible)
             );
             assert_eq!(
                 check(AgentMode::LeastAccess, false, true),
@@ -212,14 +240,11 @@ pub fn action_scope(
     } else {
         rid
     };
-    format!(
-        "action:{op}:{}",
-        crate::store::sha256_hex(
-            format!(
-                "{retry}\n{}",
-                calternal_core::canonical_request_input(input)
-            )
-            .as_bytes()
+    crate::store::sha256_hex(
+        format!(
+            "{op}\n{retry}\n{}",
+            calternal_core::canonical_request_input(input)
         )
+        .as_bytes(),
     )
 }

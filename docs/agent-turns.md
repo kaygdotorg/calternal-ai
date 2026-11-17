@@ -89,10 +89,16 @@ machine session and its leases before new work can start.
 | --- | --- |
 | Least access | Thread, workspace and originating app prefix; outside scopes ask |
 | Approve for me (default) | Person's current space access; read/reversible proceed, irreversible asks, external asks per scope, widening asks for each action |
-| Full access | Person's current space access, everywhere; widening still asks |
+| Full access | Person's current space access; irreversible/external/widening effects still require an exact action approval |
 
-Every operation rechecks person capabilities, token scope and declared risk.
-Sensitive action approvals conservatively bind canonical operation input; an
+Every operation rechecks person capabilities, token scope, the admitting sign-in
+and declared risk. Revocation or expiry of that sign-in stops thread credentials
+and execution. In every mode, irreversible/external effects require an exact
+action grant; an app grant or originating app never substitutes for it. Least
+access also asks outside its originating app or approved scopes.
+One grant shape contains an app prefix, read/write permission and an optional
+action hash. Approvals created by denials use that hash in every mode. Sensitive
+action approvals conservatively bind canonical operation input; an
 irreversible or widening action also binds its request ID. Reuse that ID after
 approval. An external scope covers identical canonical input. App grants name a
 prefix and read/write. Scope approval currently lasts this turn; once-only and
@@ -160,3 +166,12 @@ account are retained, one per thread. Delivery/acknowledgement rows in machines.
 are operational state, not grants: they cannot authorize a delete by themselves.
 Local machine-owner deletion remains a filesystem administration command guarded
 against a running machine role; it grants no Calternal access.
+
+Provider output is scrubbed against the issued Calternal credential before event
+publication or checkpoint folding. A bounded pending prefix handles a credential
+split across text deltas; any extra flush keeps ordered event numbering and the
+4 KiB text bound. Checkpoints are scrubbed again before durable saves. Provider
+login handling and the choice of token transport remain outside this change.
+A later turn applies a narrower requested mode; a wider request retains the saved
+mode pending the owner's decision. Source apps must match an enabled registered
+plugin prefix/kind or a built-in operation group.

@@ -46,3 +46,9 @@ then set `CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-provider-fixture` fo
 `cargo test -j6 -p calternal-server --test provider_container`. The fixture builder
 uses a bounded context and an empty registry auth file. It installs only the fake
 CLI and never signs in. The test removes only its fresh account's containers.
+
+Before Rust provider-turn tests, run `npm run build:plugins`. Those tests fail at
+entry with that command if `dist/main.js` is absent. The sandbox launcher emits a
+permanent `adapter_not_built` error with the same command when compiled output is
+missing; an absent launcher reports `adapter_missing`. Both end as failed setup,
+with the message retained in the checkpoint, rather than outcome-unknown.

@@ -247,7 +247,9 @@ impl<D: Directory> SpaceHost<D> {
         };
         a.mode != calternal_core::AgentMode::LeastAccess
             || a.source_app == kind
-            || a.grants.iter().any(|(p, w)| p == kind && (!write || *w))
+            || a.grants
+                .iter()
+                .any(|g| g.app == kind && g.action_hash.is_none() && (!write || g.write))
     }
 
     fn has(&self, capability: Capability) -> bool {

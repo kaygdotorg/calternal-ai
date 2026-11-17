@@ -3,6 +3,8 @@
 pub mod access;
 mod admission;
 mod instructions;
+mod launch;
+mod redact;
 pub mod retry;
 mod run;
 
@@ -125,6 +127,7 @@ pub async fn dispatch<D: Directory>(
         serde_json::from_value(json!(&i)).map_err(|_| Error::internal("turn input encoding"))?;
     if matches!(op, "agent.run" | "agent.check") {
         authorize(&state, &who, &i.space_id, Capability::PluginsUse).await?;
+        validate_source_app(&state, &i.space_id, &i.source_app).await?;
         let (st, account, request, scope) = (
             state.clone(),
             who.id.to_string(),
@@ -505,4 +508,61 @@ pub(super) async fn enabled_generation<D: Directory>(
         Ok(row.generation)
     })
     .await
+}
+
+/// Origin labels select context scope, never introduce an unknown or disabled app.
+/// Plugin identity/kind/operation prefixes come from the registry; native groups
+/// derive from the built-in catalog. One activation read per matching plugin.
+async fn validate_source_app<D: Directory>(
+    state: &Shared<D>,
+    space: &str,
+    source: &str,
+) -> Result<(), Error> {
+    if source.is_empty() {
+        return Ok(());
+    }
+    let (st, space, source) = (
+        state.clone(),
+        SpaceId::parse(space).map_err(|_| Error::not_found("space not found"))?,
+        source.to_owned(),
+    );
+    blocking(move || {
+        let mut found = false;
+        for plugin in st.registry.plugins() {
+            if plugin.manifest.id == source
+                || plugin.manifest.kinds.iter().any(|k| k.id == source)
+                || plugin
+                    .manifest
+                    .operations
+                    .iter()
+                    .any(|o| crate::turns::access::app(&o.id) == source)
+            {
+                found = true;
+                if !crate::plugins::activation(&st.store, space, plugin)?.enabled {
+                    return Err(Error::forbidden("source app is disabled"));
+                }
+            }
+        }
+        if found
+            || calternal_core::cached_operation_catalog()
+                .iter()
+                .any(|o| crate::turns::access::app(&o.id) == source)
+        {
+            Ok(())
+        } else {
+            Err(Error::invalid_input(
+                "source_app must name an enabled plugin or built-in app",
+            ))
+        }
+    })
+    .await
+}
+
+/// The job keeps its admitting proof; token use and execution share this check.
+pub(super) async fn session_live<D: Directory>(
+    state: &Shared<D>,
+    job: &Job,
+) -> Result<bool, Error> {
+    let (st, account, session) = (state.clone(), job.account, job.session.clone());
+    blocking(move || st.jobs.admitting_session_live(account, &session)).await
 }

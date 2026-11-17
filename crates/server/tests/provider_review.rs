@@ -9,7 +9,7 @@ use calternal_server::{
         Jobs, Session,
         jobs::{Admission, RunEnd},
     },
-    turns::access::{Authority, action_scope},
+    turns::access::{Authority, Grant, action_scope},
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -80,7 +80,14 @@ fn scope(mode: AgentMode, source: &str, grants: Vec<(String, bool)>) -> Authorit
         job: Uuid::now_v7().to_string(),
         mode,
         source_app: source.into(),
-        grants,
+        grants: grants
+            .into_iter()
+            .map(|(app, write)| Grant {
+                app,
+                write,
+                action_hash: None,
+            })
+            .collect(),
     }
 }
 
@@ -151,9 +158,8 @@ fn least_access_accepts_the_action_approval_its_denial_created() {
         .unwrap();
     f.jobs.agent_approve(&mut a, &id).unwrap();
     assert!(
-        a.grants
-            .iter()
-            .any(|(p, _)| *p == action_scope("notes.list", &input, "r1", OperationRisk::Read)),
+        a.grants.iter().any(|g| g.action_hash.as_deref()
+            == Some(action_scope("notes.list", &input, "r1", OperationRisk::Read).as_str())),
         "approval recorded the action scope"
     );
     assert!(
@@ -208,4 +214,47 @@ fn thread_token_stops_when_the_admitting_person_session_is_not_live() {
         f.jobs.agent_authenticate(&token).unwrap().is_none(),
         "a thread token authenticated although its admitting person session is not live"
     );
+    // A real stored admitting proof works until revocation, then both credential
+    // entry points refuse it immediately; expiry uses the same account predicate.
+    let live = calternal_types::InstallationId::new();
+    let c = rusqlite::Connection::open(f._dir.path().join("system/auth.db")).unwrap();
+    let now = calternal_types::now_ms();
+    c.execute("INSERT INTO installations(id,user_id,kind,name,token_hash,created_at,last_seen_at,expires_at,assertion_at) VALUES(?1,?2,'cli','fixture',?3,?4,?4,?5,?4)",rusqlite::params![live.to_string(),f.account.to_string(),vec![7u8;32],now,now+60000]).unwrap();
+    let thread = Uuid::now_v7();
+    let (job, run) = f.turn(
+        thread,
+        Session::Installation {
+            account: f.account,
+            installation: live,
+        },
+        "live-proof",
+    );
+    let a = f.authority(thread, &job, AgentMode::ApproveForMe, "");
+    let token = f.jobs.agent_token(&a, run).unwrap();
+    let digest = calternal_auth::token::hash(&token);
+    assert!(f.jobs.agent_authenticate(&token).unwrap().is_some());
+    assert!(
+        f.jobs
+            .agent_current(&f.space, &job, &digest)
+            .unwrap()
+            .is_some()
+    );
+    c.execute(
+        "UPDATE installations SET revoked_at=1 WHERE id=?1",
+        [live.to_string()],
+    )
+    .unwrap();
+    assert!(f.jobs.agent_authenticate(&token).unwrap().is_none());
+    assert!(
+        f.jobs
+            .agent_current(&f.space, &job, &digest)
+            .unwrap()
+            .is_none()
+    );
+    c.execute(
+        "UPDATE installations SET revoked_at=NULL,expires_at=1 WHERE id=?1",
+        [live.to_string()],
+    )
+    .unwrap();
+    assert!(f.jobs.agent_authenticate(&token).unwrap().is_none());
 }

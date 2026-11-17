@@ -9,6 +9,15 @@ use std::{
 };
 use uuid::Uuid;
 
+fn require_adapter_build() {
+    let built = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins/calternal-claude-code/dist/main.js");
+    assert!(
+        built.is_file() && built.with_file_name("adapter.js").is_file(),
+        "Claude Code adapter build is missing; run npm run build:plugins."
+    );
+}
+
 async fn op(server: &Server, operation: &str, input: Value) -> Value {
     op_as(server, &server.owner, operation, input).await
 }
@@ -75,6 +84,7 @@ async fn until(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explicit_resume() {
+    require_adapter_build();
     let data = TempDir::new("provider-data");
     let server = Server::start_with_plugins(
         &data.0,
@@ -320,6 +330,7 @@ fn expedite(data: &Path, space: &str, id: &str) {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn classified_provider_retries_are_durable_and_do_not_repeat_unknown_effects() {
+    require_adapter_build();
     let data = TempDir::new("provider-retry-data");
     let port = free_port();
     let plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
@@ -420,6 +431,7 @@ async fn classified_provider_retries_are_durable_and_do_not_repeat_unknown_effec
 
 #[tokio::test(flavor = "multi_thread")]
 async fn offline_account_placement_does_not_hold_another_accounts_execution_slot() {
+    require_adapter_build();
     let data = TempDir::new("provider-placement-data");
     let plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
     let server = Server::start_with_plugins(&data.0, free_port(), &plugins);
@@ -474,5 +486,78 @@ async fn offline_account_placement_does_not_hold_another_accounts_execution_slot
     }
     for id in waiting {
         op(&server, "agent.stop", json!({"job_id":id})).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn missing_adapter_and_missing_build_are_clear_failed_turns() {
+    // This regression intentionally needs neither a built adapter nor an account.
+    // It runs the launcher from a fixture with no dist directory.
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for missing_executable in [true, false] {
+        let data = TempDir::new("provider-missing-data");
+        let plugins = TempDir::new("provider-missing-plugins");
+        for name in ["calternal-orchestrator", "calternal-claude-code"] {
+            std::fs::create_dir_all(plugins.join(name)).unwrap();
+            let mut manifest: Value = serde_json::from_slice(
+                &std::fs::read(repo.join("plugins").join(name).join("manifest.json")).unwrap(),
+            )
+            .unwrap();
+            if missing_executable && name == "calternal-claude-code" {
+                manifest["provider"]["executable"] = json!("calternal-definitely-missing-provider");
+            }
+            std::fs::write(
+                plugins.join(name).join("manifest.json"),
+                serde_json::to_vec(&manifest).unwrap(),
+            )
+            .unwrap();
+        }
+        let server = Server::start_with_plugins(&data.0, free_port(), &plugins.0);
+        let bin = TempDir::new("provider-missing-bin");
+        std::fs::create_dir_all(bin.join("bin")).unwrap();
+        std::fs::copy(
+            repo.join("plugins/calternal-claude-code/bin/calternal-provider-claude-code"),
+            bin.join("bin/calternal-provider-claude-code"),
+        )
+        .unwrap();
+        let mdir = TempDir::new("provider-missing-machine");
+        let code = server.code(&server.owner).await;
+        assert_eq!(enrol(&server.url(), &code, &mdir.0), 0);
+        let _machine = machine_with_adapter(&mdir.0, &bin.join("bin"));
+        wait_online(&server, &server.owner, 1).await;
+        let space = server.owned_space(&server.owner).await;
+        let start = op(
+            &server,
+            "agent.run",
+            json!({"space_id":space,"thread_id":Uuid::now_v7(),"prompt":"setup probe"}),
+        )
+        .await;
+        let id = start["job"]["id"].as_str().unwrap();
+        let (job, events) = until(&server, id, |j| {
+            j["state"] == "failed" || j["state"] == "outcome_unknown"
+        })
+        .await;
+        assert_eq!(job["state"], "failed", "{job}; {events:?}");
+        let expected = if missing_executable {
+            "adapter_missing"
+        } else {
+            "adapter_not_built"
+        };
+        assert_eq!(job["checkpoint"]["error"]["code"], expected);
+        assert!(
+            job["checkpoint"]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("npm run build:plugins")
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| e["event"]["type"] == "error" && e["event"]["code"] == expected)
+        );
+        assert!(
+            job["checkpoint"]["retry"].is_null(),
+            "setup failures must not retry"
+        );
     }
 }

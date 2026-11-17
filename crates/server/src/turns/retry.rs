@@ -149,6 +149,7 @@ pub(super) fn schedule<D: Directory>(
                     false
                 };
                 if !machine_ok
+                    || !super::session_live(&st, &job).await.unwrap_or(false)
                     || super::authorize(&st, &who, &space, Capability::PluginsUse)
                         .await
                         .is_err()
