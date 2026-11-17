@@ -12,7 +12,7 @@ lane's crate was removed from the VM workspace. No subagents or new threads were
   deployment ceilings, API/field comments, package tests and extraction/documentation/parity tools.
 - `crates/genui`: `calternal-genui`, pure Rust AST/parser/validator/evaluator, identity-preserving
   local values, bounded diagnostics, same embedded catalog, fixture suite and parity adapter.
-- `contract/genui-fixtures`: 394 explicit language-neutral golden cases, generator, provenance,
+- `contract/genui-fixtures`: 397 explicit language-neutral golden cases, generator, provenance,
   licenses/notices, format/count documentation and this handoff.
 - `scripts/check-docs.sh`: parent-authorized additions of `-p calternal-genui` to both Rust gates
   and the package TypeScript reference gate. The adjacent content-crate addition belongs to its lane.
@@ -27,10 +27,10 @@ All listed final checks exited 0.
 | Exact command | Result |
 | --- | --- |
 | `nix develop -c npm install --ignore-scripts --no-audit --no-fund` | Installed workspace dependencies; VM-only npm lockfile regeneration. |
-| `nix develop -c npm test --workspace @calternal/genui` | **396 passed**, 0 failed: 394 JSON fixtures + 2 JS-only defensive/catalog checks. |
-| `nix develop -c ./scripts/with-toolchain.sh cargo test -j4 -p calternal-genui -- --nocapture` | **394 fixtures passed** in 1 integration test; unit/doc harnesses also pass; 0 ignores in this crate. |
+| `nix develop -c npm test --workspace @calternal/genui` | **399 passed**, 0 failed: 397 JSON fixtures + 2 JS-only defensive/catalog checks. |
+| `nix develop -c ./scripts/with-toolchain.sh cargo test -j4 -p calternal-genui -- --nocapture` | **397 fixtures passed** in 1 integration test; unit/doc harnesses also pass; 0 ignores in this crate. |
 | `nix develop -c ./scripts/with-toolchain.sh cargo build -j4 -p calternal-genui --example conformance` | Fixture JSON-lines adapter built. |
-| `nix develop -c node packages/genui/scripts/conformance.mjs` | **394 complete AST/compile-diagnostic/evaluation snapshots agree exactly**, including all source positions and native keys. |
+| `nix develop -c node packages/genui/scripts/conformance.mjs` | **397 complete AST/compile-diagnostic/evaluation snapshots agree exactly**, including all source positions and native keys. |
 | `nix develop -c ./scripts/with-toolchain.sh cargo test -j4 --workspace` | **385 passed, 0 failed, 4 ignored** in this VM snapshot. No ignored test was added by this lane. This snapshot includes concurrent lanes' source. |
 | `nix develop -c npm run build --workspace @calternal/plugin-sdk` | Built SDK declarations required by the existing Notes worker documentation gate. |
 | `nix develop -c ./scripts/check-docs.sh` | Rust check/rustdoc and existing + GenUI TypeScript documentation gates passed. Two existing core rustdoc HTML-tag warnings remain outside this lane. |
@@ -45,7 +45,7 @@ The first full documentation script then failed because SDK declarations were un
 the SDK resolved the worker import errors. Final checks above pass. No expected snapshot was
 replaced wholesale by output from either implementation.
 
-Corpus: parsing 8, language/initialization 115, catalog/accessibility 256, budgets 15 = **394**.
+Corpus: parsing 8, language/initialization 115, catalog/accessibility 256, budgets 18 = **397**.
 Extra budget regressions cover nested interpreted loops and a cached component expanded to more
 than 2000 emitted occurrences. State cannot inject interpreter-tagged native nodes/actions.
 
@@ -105,3 +105,21 @@ remain proposals, with no new component enabled:
    component definitions (scope, parameter schemas, recursion, accessibility propagation and upgrades).
 
 Issue #3 has been updated. No other external message or publication was sent.
+
+## Fixture corrections decided against the original GenUI (lane/genui, 2026-11-17)
+
+Checked by running the upstream `core` at commit d8cac8d on the dev VM.
+
+- `syntax-unexpected` (`Text(@)`): upstream reports one diagnostic (`unexpected character`, 1:6); no
+  second one. The one-diagnostic fixture is right; the earlier two-diagnostic expectation was wrong.
+- `evaluate-budget-nodes`: upstream reports the node ceiling at the component call that crosses it
+  (`Text` at 1:26, columns are 1-based). Expected 25 was an off-by-one; 26 is right.
+- Depth: upstream reports nesting limits at the offending expression, so expected column 6 (the
+  literal inside `Text("ok")` with depth 1) was right and the implementations were wrong (they
+  reported 1:1). Static ceilings (nodes, depth, listLength) now report at the first expression, in
+  source order, that crosses them, in both languages. `serializedBytes` and `stateEntries` stay at 1:1.
+  Fixtures changed: `compile-budget-listLength` (1:6), `evaluate-budget-depth` (1:6),
+  `initialize-validates-full-program` (2:6); added `compile-budget-{depth,nodes,listLength}-located`.
+
+Corpus now: parsing 8, language 115, catalog/accessibility 256, budgets 18 = 397 (399 TypeScript tests).
+`check-docs.sh` now includes `-p calternal-genui`; its plugin-sdk step fails on unrelated `ManifestV1` errors.

@@ -7,7 +7,7 @@
 - [x] TypeScript client core; bb host integrations removed
 - [x] Required accessibility fields and compile/evaluation budgets
 - [x] Three initial fixture-position expectations corrected
-- [x] 394 fixtures pass in both languages; full AST/diagnostic/evaluation snapshots agree
+- [x] 397 fixtures pass in both languages; full AST/diagnostic/evaluation snapshots agree
 - [x] TypeScript reference documentation gate
 - [x] Workspace: 385 passed, 0 failed, 4 ignores; documentation gate and handoff
 - [ ] Parent integration: merge/regenerate VM-only lockfile entries

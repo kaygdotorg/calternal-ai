@@ -86,6 +86,9 @@ impl Budgets {
         }
         Ok(())
     }
+    /// Enforces AST node/depth/list/state/byte ceilings before validation or evaluation. O(AST
+    /// size) with a bounded traversal stack. Node, depth and list ceilings are positioned at the
+    /// first expression (source order) that crosses them; byte and state ceilings at 1:1.
     pub(crate) fn check_program(&self, p: &Program) -> Result<(), Failure> {
         let pos = Pos::start();
         if p.serialized_bytes > self.serialized_bytes {
@@ -94,6 +97,8 @@ impl Budgets {
         if p.states.len() > self.state_entries {
             return Err(Failure::limit(pos, "stateEntries"));
         }
+        // Source order (statements, then children left to right): a ceiling is reported at the
+        // first expression that crosses it, as in the original GenUI.
         let mut stack: Vec<_> = p
             .states
             .iter()
@@ -101,21 +106,22 @@ impl Budgets {
             .map(|d| (&d.value, 1))
             .chain(p.roots.iter().map(|e| (e, 1)))
             .collect();
+        stack.reverse();
         let mut count = 0;
         while let Some((e, depth)) = stack.pop() {
             count += 1;
             if count > self.nodes {
-                return Err(Failure::limit(pos, "nodes"));
+                return Err(Failure::limit(e.pos, "nodes"));
             }
             if depth > self.depth {
-                return Err(Failure::limit(pos, "depth"));
+                return Err(Failure::limit(e.pos, "depth"));
             }
             if let ExprKind::List { items } = &e.kind {
                 if items.len() > self.list_length {
-                    return Err(Failure::limit(pos, "listLength"));
+                    return Err(Failure::limit(e.pos, "listLength"));
                 }
             }
-            stack.extend(e.children().into_iter().map(|c| (c, depth + 1)));
+            stack.extend(e.children().into_iter().rev().map(|c| (c, depth + 1)));
         }
         Ok(())
     }

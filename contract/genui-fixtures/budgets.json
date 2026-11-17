@@ -69,7 +69,7 @@
           {
             "severity": "error",
             "line": 1,
-            "column": 1,
+            "column": 6,
             "message": "budget exceeded: listLength"
           }
         ]
@@ -128,7 +128,7 @@
           {
             "severity": "error",
             "line": 1,
-            "column": 1,
+            "column": 6,
             "message": "budget exceeded: depth"
           }
         ]
@@ -251,6 +251,63 @@
       },
       "evaluationBudgets": {
         "nodes": 12
+      }
+    },
+    {
+      "name": "compile-budget-depth-located",
+      "kind": "validate",
+      "source": "Text(1+(2+3))",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 9,
+            "message": "budget exceeded: depth"
+          }
+        ]
+      },
+      "budgets": {
+        "depth": 3
+      }
+    },
+    {
+      "name": "compile-budget-nodes-located",
+      "kind": "validate",
+      "source": "Text(\"a\")\nText(\"b\")",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 2,
+            "column": 6,
+            "message": "budget exceeded: nodes"
+          }
+        ]
+      },
+      "budgets": {
+        "nodes": 3
+      }
+    },
+    {
+      "name": "compile-budget-listLength-located",
+      "kind": "validate",
+      "source": "Text([[1,2]])",
+      "expected": {
+        "accepted": false,
+        "diagnostics": [
+          {
+            "severity": "error",
+            "line": 1,
+            "column": 7,
+            "message": "budget exceeded: listLength"
+          }
+        ]
+      },
+      "budgets": {
+        "listLength": 1
       }
     },
     {

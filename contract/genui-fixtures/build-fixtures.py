@@ -97,10 +97,10 @@ invalid('syntax-unicode-column','Text("🚀"); @',[diag('unexpected character `@
 # Resource ceilings: validation and evaluation must both fail closed.
 for key,source in [('nodes','Text("ok")'),('depth','Text("ok")'),('stateEntries','$a=1\n$b=2\nText($a)'),('listLength','Text([1,2])'),('serializedBytes','Text("🚀")')]:
  limit=1 if key in ['stateEntries','listLength'] else 0
- invalid('compile-budget-'+key,source,[diag('budget exceeded: '+key)],budgets={key:limit})
+ invalid('compile-budget-'+key,source,[diag('budget exceeded: '+key,1,6 if key=='listLength' else 1)],budgets={key:limit})
 for name,source,limits,state,position in [
  ('steps','Text("ok")',{'steps':0},None,(1,1)),
- ('depth','Text("ok")',{'depth':1},None,(1,1)),
+ ('depth','Text("ok")',{'depth':1},None,(1,6)),
  ('listLength','Text(range(0,4))',{'listLength':3},None,(1,6)),
  ('stateEntries','Text("ok")',{'stateEntries':1},{'a':1,'b':2},(1,1)),
  ('state-depth','Text("ok")',{'depth':3},{'a':{'b':{'c':{'d':1}}}},(1,1)),
@@ -109,6 +109,11 @@ for name,source,limits,state,position in [
 ]:
  ev('evaluate-budget-'+name,source,[],diagnostics=[diag('budget exceeded: '+('depth' if name=='state-depth' else name),*position)],evaluationBudgets=limits)
  if state is not None:cases[-1]['state']=state
+# Static ceilings are reported at the first expression (source order) that crosses them,
+# as the original GenUI reports its parser and evaluator limits at the offending expression.
+invalid('compile-budget-depth-located','Text(1+(2+3))',[diag('budget exceeded: depth',1,9)],budgets={'depth':3})
+invalid('compile-budget-nodes-located','Text("a")\nText("b")',[diag('budget exceeded: nodes',2,6)],budgets={'nodes':3})
+invalid('compile-budget-listLength-located','Text([[1,2]])',[diag('budget exceeded: listLength',1,7)],budgets={'listLength':1})
 # Non-budget runtime failures become local Error nodes; resource failures never do.
 message='range step cannot be zero'
 ev('runtime-component-error','Text(range(0,3,0))',[node('Error',{'message':message})],diagnostics=[diag(message,1,6)])
@@ -187,7 +192,7 @@ for c in list(cases):
 source='a=Text("leaf")\n'+'\n'.join(chr(98+i)+'=Stack(['+chr(97+i)+','+chr(97+i)+'])' for i in range(10))+'\nk'
 ev('evaluate-budget-reused-nodes',source,[],diagnostics=[diag('budget exceeded: nodes')])
 add('initialize-only','initialize','$n=2\nText($n)',{'state':{'n':2},'diagnostics':[]})
-add('initialize-validates-full-program','initialize','$n=2\nText($n)',{'state':{},'diagnostics':[diag('budget exceeded: nodes')]},evaluationBudgets={'nodes':2})
+add('initialize-validates-full-program','initialize','$n=2\nText($n)',{'state':{},'diagnostics':[diag('budget exceeded: nodes',2,6)]},evaluationBudgets={'nodes':2})
 invalid('invalid-budget-ceiling','Text("ok")',[diag('invalid budget: steps')],budgets={'steps':200001})
 ev('invalid-evaluation-budget','Text("ok")',[],diagnostics=[diag('invalid budget: steps')],evaluationBudgets={'steps':200001})
 

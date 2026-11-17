@@ -2248,8 +2248,8 @@
         "diagnostics": [
           {
             "severity": "error",
-            "line": 1,
-            "column": 1,
+            "line": 2,
+            "column": 6,
             "message": "budget exceeded: nodes"
           }
         ]

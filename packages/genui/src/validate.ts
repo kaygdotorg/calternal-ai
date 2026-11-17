@@ -38,7 +38,8 @@ export function children(expr: Expr): readonly Expr[] {
     }
 }
 /** Enforce AST node/depth/list/state/byte budgets before validation or evaluation.
- * O(AST size), allocating a bounded traversal stack; throws Failure on a ceiling.
+ * O(AST size), allocating a bounded traversal stack; throws Failure on a ceiling, positioned at the
+ * first expression (source order) crossing a node/depth/list ceiling, else at 1:1.
  * No locks, I/O, fsyncs or network. Accepts only parser-produced acyclic ASTs. */
 export function checkProgram(program: Program, limits: Budgets): void {
     const start = { line: 1, column: 1 };
@@ -46,17 +47,19 @@ export function checkProgram(program: Program, limits: Budgets): void {
         throw new Failure(start, 'budget exceeded: serializedBytes', true);
     if (program.states.length > limits.stateEntries)
         throw new Failure(start, 'budget exceeded: stateEntries', true);
-    const stack = [...program.states.map(d => d.value), ...[...program.named.values()].map(d => d.value), ...program.roots].map(expr => ({ expr, depth: 1 }));
+    // Expressions are visited in source order (statements, then children left to right); a
+    // ceiling is reported at the first expression that crosses it, as the original GenUI does.
+    const stack = [...program.states.map(d => d.value), ...[...program.named.values()].map(d => d.value), ...program.roots].map(expr => ({ expr, depth: 1 })).reverse();
     let count = 0;
     while (stack.length) {
         const { expr, depth } = stack.pop()!;
         if (++count > limits.nodes)
-            throw new Failure(start, 'budget exceeded: nodes', true);
+            throw new Failure(expr.pos, 'budget exceeded: nodes', true);
         if (depth > limits.depth)
-            throw new Failure(start, 'budget exceeded: depth', true);
+            throw new Failure(expr.pos, 'budget exceeded: depth', true);
         if (expr.type === 'list' && expr.items.length > limits.listLength)
-            throw new Failure(start, 'budget exceeded: listLength', true);
-        stack.push(...children(expr).map(expr => ({ expr, depth: depth + 1 })));
+            throw new Failure(expr.pos, 'budget exceeded: listLength', true);
+        stack.push(...children(expr).map(expr => ({ expr, depth: depth + 1 })).reverse());
     }
 }
 /** Associate arguments with catalog parameter names; first occurrence wins after static duplicate checks.

@@ -17,13 +17,13 @@ arrays, scalar values, source positions, messages, state, keys and properties ag
 | `parsing.json` | 8 | Explicit AST goldens, precedence, state, malformed syntax, UTF-16 positions |
 | `language.json` | 115 | Operators, functions, methods, state, composition, initialization, bindings, actions, validation and runtime diagnostics |
 | `catalog.json` | 256 | Every retained component plus missing/blank/null accessibility fields |
-| `budgets.json` | 15 | Source/AST/state/step/depth/list/node/byte limits, nested iteration and cached-node expansion |
-| **Total** | **394** | Same corpus in both languages |
+| `budgets.json` | 18 | Source/AST/state/step/depth/list/node/byte limits, nested iteration and cached-node expansion |
+| **Total** | **397** | Same corpus in both languages |
 
 The TypeScript suite adds two JS-only checks for catalog metadata and non-JSON/cyclic state,
-which JSON fixtures cannot encode. Rust runs the 394 cases in one integration test. The direct
+which JSON fixtures cannot encode. Rust runs the 397 cases in one integration test. The direct
 comparison helper additionally compares **complete statement ASTs, compile diagnostics and
-initialization/evaluation snapshots for all 394 cases**, including cases whose golden expectation
+initialization/evaluation snapshots for all 397 cases**, including cases whose golden expectation
 only checks activation. This catches parser representation drift beyond the three explicit AST
 goldens. JSON numbers are compared as numbers, rather than serde_json's integer/float storage kinds.
 
