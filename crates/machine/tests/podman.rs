@@ -35,6 +35,8 @@ async fn backend(root: &std::path::Path) -> Option<PodmanBackend> {
 
 fn spec(limits: Limits) -> SandboxSpec {
     SandboxSpec {
+        code_directory: None,
+        worker: None,
         account_id: Uuid::new_v4(),
         thread_id: Uuid::new_v4(),
         image: None,
@@ -53,6 +55,7 @@ async fn command(
 ) -> (String, i32) {
     let exec = sb
         .exec(ExecRequest {
+            interactive: false,
             stdin: String::new(),
             argv,
             env,

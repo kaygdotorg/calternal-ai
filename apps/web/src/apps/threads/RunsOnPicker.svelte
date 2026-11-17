@@ -10,7 +10,7 @@
 
 <div class="picker">
   <h2 id="ro-m">Machine</h2>
-  <div class="s"><Icon inline name="search" /><input type="search" placeholder="Search machines" aria-label="Search machines" bind:value={q} autocomplete="off" spellcheck="false" /></div>
+  <div class="s" data-ring-host><Icon inline name="search" /><input type="search" placeholder="Search machines" aria-label="Search machines" bind:value={q} autocomplete="off" spellcheck="false" /></div>
   <div role="radiogroup" aria-labelledby="ro-m" class="machines">
     {#each shown as m (m)}
       <button type="button" role="radio" aria-checked={value.machine === m} class="mrow" onclick={() => onchange({ ...value, machine: m })}>

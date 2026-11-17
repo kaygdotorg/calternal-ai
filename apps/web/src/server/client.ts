@@ -118,7 +118,7 @@ export class ServerClient {
   }
 
   /** Follows a plugin job's events (`GET /api/v1/jobs/<id>/events`, SSE): `snapshot` first, then `chunk`s, possibly a `reset`, and `end`. `after` resumes (`<epoch>:<seq>`). */
-  async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {
+  async jobEvents(jobId: string, onEvent: (name: "snapshot" | "chunk" | "reset" | "state" | "end", data: unknown, id?: string) => void, o: { after?: string; signal?: AbortSignal } = {}): Promise<void> {
     const q = o.after ? `?after=${encodeURIComponent(o.after)}` : "";
     const res = await this.f(`${this.base}/api/v1/jobs/${encodeURIComponent(jobId)}/events${q}`, { headers: this.headers({ accept: "text/event-stream" }), signal: o.signal }).catch((e: Error) => { throw new ServerError("unavailable", e.message); });
     if (!res.ok || !res.body) throw new ServerError(res.status === 404 ? "not_found" : "unavailable", `job stream refused (${res.status})`, res.status);

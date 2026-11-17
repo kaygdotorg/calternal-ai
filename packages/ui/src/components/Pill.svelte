@@ -5,7 +5,6 @@
   import Glass from "./Glass.svelte";
   import Icon from "./Icon.svelte";
   import { adaptive } from "../lib/material";
-  import { bounce } from "../lib/bounce";
   import { tip } from "../lib/tooltip";
   import type { IconName } from "../icons";
   let {
@@ -20,7 +19,7 @@
   }: { el?: HTMLButtonElement; label: string; icon?: IconName; showLabel?: boolean; glass?: boolean; children?: import("svelte").Snippet; class?: string } & Omit<HTMLButtonAttributes, "aria-label"> = $props();
 </script>
 
-<button bind:this={el} type="button" class={["pill", klass]} class:wide={showLabel} class:flat={!glass} aria-label={showLabel && !children ? undefined : label} use:adaptive use:bounce use:tip={{ label: showLabel && !children ? "" : label }} {...rest}>
+<button bind:this={el} type="button" class={["pill", klass]} class:wide={showLabel} class:flat={!glass} aria-label={showLabel && !children ? undefined : label} use:adaptive use:tip={{ label: showLabel && !children ? "" : label }} {...rest}>
   {#if glass}<Glass />{/if}
   {#if icon}<Icon name={icon} />{/if}
   {#if showLabel}{#if children}{@render children()}{:else}<span>{label}</span>{/if}{/if}
