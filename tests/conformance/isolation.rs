@@ -22,6 +22,7 @@ mod agent_cases;
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
 mod requests_cases;
+mod requests_review_cases;
 mod threads_cases;
 
 mod drafts_cases;

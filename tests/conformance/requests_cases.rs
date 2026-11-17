@@ -11,7 +11,7 @@ pub(super) const OPERATIONS: &[&str] = &[
     "space.instructions",
 ];
 
-struct Machine {
+pub(super) struct Machine {
     id: uuid::Uuid,
     key: MachineKey,
     boot: uuid::Uuid,
@@ -21,7 +21,7 @@ struct Machine {
 }
 
 impl Machine {
-    async fn enroll(f: &Fixture) -> Self {
+    pub(super) async fn enroll(f: &Fixture) -> Self {
         let key = MachineKey::generate().unwrap();
         let code = f
             .req(
@@ -76,7 +76,7 @@ impl Machine {
         self.leases.clear();
     }
 
-    async fn next_token(&mut self, f: &Fixture) -> String {
+    pub(super) async fn next_token(&mut self, f: &Fixture) -> String {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
             assert!(
@@ -108,7 +108,13 @@ impl Machine {
     }
 }
 
-async fn agent(f: &Fixture, token: &str, rid: &str, op: &str, input: Value) -> (u16, Value) {
+pub(super) async fn agent(
+    f: &Fixture,
+    token: &str,
+    rid: &str,
+    op: &str,
+    input: Value,
+) -> (u16, Value) {
     let r = f
         .client
         .post(format!("{}/api/v1/operations", f.base))
