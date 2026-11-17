@@ -116,17 +116,15 @@ Mac system sizes are smaller than iOS: the standard text is **13 pt**.
 | Item | Value | Source |
 |---|---|---|
 | Large title | ink 30 pt (cap + descender) at the default size = **34 pt bold**; ink left edge at 18 pt (text origin 16) | px, fit |
-| Bottom search (Messages, Settings): a floating glass **capsule** | **about 347 x 49 pt**, inset **27 pt** from each side and **27 pt** above the bottom edge; magnifier left, mic right; 17 pt placeholder | px |
+| Bottom search (Messages, Settings): a floating glass **capsule** | **346 x 48 pt** (accessibility frame; pass 1 pixel scan said about 347 x 49), inset **28 pt** from each side and **28 pt** above the bottom edge; magnifier left, mic right; 17 pt placeholder | px |
 | Safari bottom bar: three floating glass pieces | back circle 35 to 80 pt (about 45), address capsule 91 to 311 (**220 x 49**), tabs circle 321 to 367 (about 46); gaps about 10 pt; bottom edge 34 pt above the screen bottom (the home-indicator inset) | px |
-| Grouped list (Settings) | page #F2F2F7, cards white, **17 pt** side margin (16 plus anti-alias), rows **52 pt** pitch, 1 pt separators, icon tile **28 x 28** at 13 pt inside the card, separator starts 72 pt from the card's left (icon rows) | px |
+| Grouped list (Settings) | page #F2F2F7, cards white, **17 pt** side margin (16 plus anti-alias), rows **52 pt** pitch, 1 pt separators, icon tile **28 x 28** at 14 pt inside the card (accessibility frames, pass 3), separator starts 72 pt from the card's left (icon rows) | px |
 | Row title text | digits and parentheses span 15.7 pt = 17 pt (Body) | px, fit |
 | Chevron | right end, about 9 pt wide, secondary colour | px |
 | Reminders first-run sheet | edge-to-edge sheet, top about 62 pt below the screen top, large top corners (not measured; the mockup's earlier 40 pt measurement of Safari's sheet is the better number), primary action a blue **capsule** button 326 x 51 pt with 38 pt side margins ([ios27-reminders.png](https://git.kayg.org/attachments/0e0817aa-be8d-43e6-9a31-6618d0c60fbf)) | px (approx, from the screenshot) |
 | Status bar | time at 177 to 311 px = x about 59 to 104 pt; battery right edge about 276 pt (island layout) | px |
 
-Safe areas were **not** read from the system (no accessibility tree). Known for this class of
-device (doc): top about 62 pt, bottom 34 pt. The bottom 34 pt value agrees with the Safari bar's
-measured bottom gap.
+Safe areas are now read from the system (section 13.1): top 62, bottom 34, left and right 0.
 
 ### 3.1 Dynamic Type (measured on Messages; title ink heights)
 
@@ -242,7 +240,7 @@ Regions follow `docs/ui-shell.md`. "Mockup" is
 | Toolbar | `--pill-h` 28, top toolbar 32, `--bar-h` 44 | toolbar band 52, capsule buttons 38 | desktop toolbar 52 with 38 buttons (or 44 / 32 if density wins) |
 | Desktop text | `--text-ui` 14 | Mac 13 | 13 for a native-feel Mac theme; 14 reads larger than the system |
 | Title | `--text-title` 30 | iOS large title 34 bold; Mac window title 22 | phone title 34 at default size |
-| Bottom pill | `--tier-cap` 52 | search and Safari bar 49 high, 27 to 34 above bottom | `--tier-cap` 49, offset 27 (+ safe-area) |
+| Bottom pill | `--tier-cap` 52 | search pill 48 high, 28 above the bottom edge; Safari bar about 49 (pixels) | `--tier-cap` 48, offset 28 (+ safe-area) |
 | Phone circle buttons | `--tier-top` 44 | Safari circles about 45 to 49 | 46 or the same 49 as the capsule |
 | Dynamic Type | `--type-px` scaling | iOS reflows at accessibility sizes (stack, wrap); the bottom capsule does not grow | keep scaling to XXXL, switch to stacked rows beyond about 1.35x and cap capsule height |
 | Notes reading column | narrow centred column | system Notes runs full width of the pane (text inset 22) | the narrow centred column is a Calternal choice, not native; keep, but make the width a plugin setting |
@@ -379,7 +377,7 @@ Escape did not close the popover through the driver's `press_key`, and while it 
 
 Not completed on the Mac: sheet, popover, push-like page change in Settings and selection timings. The harness ran, but the click sequence was not stable (a matching element was missing on repeat runs; frame differences from Terminal's own window changes polluted the first seconds), so those numbers are **not** reported. The measuring method is sound and cheap now (section 11.1); the remaining Mac transitions are a short follow-up.
 
-### 11.5 iPhone: what is still missing
+### 11.5 iPhone: what was missing (resolved in section 13)
 
 Everything that needs touches: push and sheet timing, detents, swipe actions, context menus, share sheet, pull to refresh, keyboard, reduced motion, per-row Dynamic Type for list rows with real lists, safe areas read from the system. Options:
 
@@ -395,15 +393,97 @@ Everything that needs touches: push and sheet timing, detents, swipe actions, co
 - Reminders first-run sheet: top corner radius removed (not measured).
 - Everything else in sections 2 to 8 was re-checked against the stored measurements and the JSON; no further numeric mismatch found. The JSON now carries a `trust` field per group.
 
+## 13. Third pass: touch-driven iPhone items and Mac gaps (2026-11-17, later)
+
+### 13.1 How the iPhone numbers were obtained
+
+Xcode 27.2 has no `Simulator.app`, so a small XCUITest project (`docs/native-ui-study-runner/`) drives system apps on a simulator created for this study. Every number tagged **AX** below is an element frame from the real accessibility tree (points, exact); **video** means 60 fps `simctl recordVideo` analysed by frame differences (a transition's "progress" is the cumulative share of changed pixels, so it times a slide well but is a proxy, not a position). A SwiftUI host app read the system's own values: **safe area top 62, bottom 34, leading and trailing 0** on the 402 x 874 pt screen (3x), and `UIFont.preferredFont` sizes (13.2).
+
+### 13.2 Bars, sheets, menus, keyboard (AX)
+
+| Item | Value | Source |
+|---|---|---|
+| Large-title navigation bar (Settings, Messages) | y = 62, height **106** (title text 133 x 40.7 at x = 16, y = 119.7) | AX |
+| Small-title navigation bar (Contacts) | y = 62, height **54**; back button 44 x 44 at x = 16 | AX |
+| Glass circle buttons in a bar | 44 x 44 (back), 36 x 36 (sheet close and Done), "Edit" pill 54.3 x 36 | AX |
+| Bottom search | pill 346 x 48 at x = 28, y = 798 (bottom 28 above the screen edge); the text field inside is 346 x 28 at y = 808; Add button 38 x 38 at x = 331, y = 803 | AX |
+| Grouped list | cards x = 16, width 370 (402 - 32), rows 52, icon 28 at 14 in, separator from x = 72, width 298 | AX |
+| Messages row | 86.7 high; photo 45 x 45 at x = 26, y = +20; separator from x = 83 to 386 | AX |
+| Swipe actions (Messages) | two 50 x 50 round buttons 10 apart, trailing 10 from the edge (x = 282 and 342), the row slides left by 130 | AX, [ios27-messages-swipe-actions](https://git.kayg.org/attachments/4b2b72c5-4304-41d5-a262-9b4baf4d5055) |
+| Context menu (long-press a row) | preview card 370 x 528 at (16, 78); menu 250 wide at x = 16, rows **42** high, 10 pt padding top and bottom, 16 pt below the preview; the page behind is blurred and dimmed | AX, [ios27-messages-context-menu](https://git.kayg.org/attachments/2977793f-d869-4ba7-99ba-ea033148ae04) |
+| Full-height sheet (New Contact) | grabber 100 x 24 at y = 58; sheet runs to the screen edges below y = 62; its navigation bar is 54 high at y = 78; close and Done are 36 x 36 glass circles 20 in from the sides | AX, [ios27-contacts-new-contact-sheet-keyboard](https://git.kayg.org/attachments/8b61021c-ae53-40eb-8e8c-40c386a260f9) |
+| Share sheet (medium detent) | an **inset glass card** (9, 479.7) size 384 x 385.3: 9 pt in from both sides and from the bottom, about 44 % of the screen | AX, [ios27-contacts-share-sheet-medium](https://git.kayg.org/attachments/ad1e6d53-5001-4c6b-a420-acb0ab1dcfb8) |
+| Keyboard | 402 x 226 at y = 590 (keys 39.3 x 54, first key at x = 4.7, y = 597); the rest down to y = 874 is the bottom safe area and accessory row; the search field rises with it (y 808 to 498 in Settings) | AX, [ios27-settings-search-keyboard](https://git.kayg.org/attachments/e4fc8120-6144-4c89-bba5-909d1c793a3e) |
+
+Not obtained: a second detent for the share sheet (my drag did not enlarge it, so only the medium detent is recorded) and the pull-to-refresh spinner (the Messages list in the simulator has no refresh; [ios27-messages-after-pull](https://git.kayg.org/attachments/950f851f-dfe2-4fcd-becd-5de30828e415) shows the list after the gesture).
+
+### 13.3 Dynamic Type on real lists (AX plus system API)
+
+Sizes are `UIFont.preferredFont(forTextStyle:)` read by the host app; row and bar numbers are accessibility frames.
+
+| Style | xSmall | Large (default) | xxxLarge | AX5 (largest) |
+|---|---|---|---|---|
+| Large Title | 31 / 37.0 | **34 / 40.6** | 40 / 47.7 | 60 / 71.6 |
+| Title 1 | 25 / 29.8 | 28 / 33.4 | 34 / 40.6 | 58 / 69.2 |
+| Title 2 | 19 / 22.7 | 22 / 26.3 | 28 / 33.4 | 56 / 66.8 |
+| Title 3 | 17 / 20.3 | 20 / 23.9 | 26 / 31.0 | 55 / 65.6 |
+| Headline, Body | 14 / 16.7 | **17 / 20.3** | 23 / 27.4 | 53 / 63.2 |
+| Callout | 13 / 15.5 | 16 / 19.1 | 22 / 26.3 | 51 / 60.9 |
+| Subheadline | 12 / 14.3 | 15 / 17.9 | 21 / 25.1 | 49 / 58.5 |
+| Footnote | 12 / 14.3 | 13 / 15.5 | 19 / 22.7 | 44 / 52.5 |
+| Caption 1 | 11 / 13.1 | 12 / 14.3 | 18 / 21.5 | 43 / 51.3 |
+| Caption 2 | 11 / 13.1 | 11 / 13.1 | 17 / 20.3 | 40 / 47.7 |
+
+(size / line height in points. The line height is 1.193 x the size in every row.)
+
+| Layout at each size | xSmall | Large | xxxLarge | AX3 (accessibility XXXL) |
+|---|---|---|---|---|
+| Large-title bar height | 106 | 106 | 108 | 127 |
+| Settings row | 49 | 52 | 59 | 221 (labels wrap) |
+| Settings account card | 90 | 90.3 | 133.7 | 577 |
+| Messages row | 73.7 | 86.7 | 110 | 216.3 |
+| Large title text height | 37 | 40.7 | 48 | 71.7 |
+
+Rows scale with the text up to xxxLarge and then reflow: at the accessibility sizes the row stacks (name above, date below) and the title can wrap. The bottom search pill (346 x 48) is the same at every size (it was captured at all four in the Messages dumps). These corrected the pass-1 table: the style sizes there came from memory and match the system read.
+
+### 13.4 Timing on iPhone (video, 60 fps)
+
+| Transition | Result | Source |
+|---|---|---|
+| Push (Settings, tap General), 4 runs | 10 % of the visual change by 0.03 s, **50 % by 0.10 s, 90 % by 0.23 s, 98 % by 0.32 s**; settled by about 0.40 s. A fast start with a long, soft tail: a spring or ease-out, not a linear slide | video |
+| Pop (back) | 50 % by 0.11 s, 90 % by 0.27 to 0.29 s, 98 % by 0.35 to 0.47 s, settled about 0.46 to 0.49 s: slightly slower and longer than the push | video |
+| Sheet present (New Contact, includes the keyboard rising because the first field focuses) | visible change lasts 0.46 to 0.70 s | video (variable; keyboard included) |
+| Sheet dismiss | 0.34 to 0.47 s | video |
+| Keyboard appear with search focus | burst 0.5 to 0.66 s (the search field morphs as the keyboard rises) | video |
+| Row swipe actions open or close | 0.41 to 0.50 s, soft tail | video (small area, low signal) |
+| Context menu present | 0.26 to 0.33 s; dismiss 0.39 s | video, two runs |
+| App launch or switch | 0.25 s (pass 1) | video |
+
+Cubic-bezier fits to the push and pop curves (best fit (0.4, 0.4, 0.15, 0.8) over 0.34 s for the push) are not worth quoting: the curve is a spring, and a spring (response about 0.35 s with a little overshoot) describes it better than a bezier does. Use the percentiles above as the target.
+
+**Reduced motion.** The Reduce Motion switch was turned on through Settings (the switch read 1) and the simulator rebooted. The Settings push then showed the **same** profile as before (0.40 to 0.47 s, identical decay). Either iOS 27 keeps the push slide for this app under Reduce Motion or the simulator does not apply the preference to it; the two cannot be told apart from here, so no reduced-motion behaviour is claimed. Apple's guidance (cross-fades instead of slides and zooms) is unverified.
+
+### 13.5 Mac gaps filled
+
+| Item | Result | Source |
+|---|---|---|
+| Inspector pane (Finder Preview pane) | about **251 wide**, flush to the window's right edge, a hairline to its left (x = 949 of 1200); content inset 10 left and 9 right; title and kind lines 13 pt (title semibold), section header "Information" 13 semibold, label and value rows 16 high, a "More…" button row at the bottom; no card, no shadow ([macos26-finder-preview-pane](https://git.kayg.org/attachments/3e4cdeec-4298-4792-89ff-2f94beb04f00)) | AX, px |
+| Finder list view | row 20 high, header 28, name column text at x = 46 | AX |
+| Mail (no account needed, "Inbox (Read Only)") | three panes: sidebar about 200 wide, message list **314** wide, reading pane the rest; 52 pt toolbar with glass capsule groups; category pills 28 high ([macos26-mail-three-panes-add-account-sheet](https://git.kayg.org/attachments/83a33fa0-a376-4556-99cd-678585e84852)) | AX, px |
+| Mac sheet (Mail "Add Account") | **470 x 416**, centred in the window, corner radius about 40, the window behind dimmed; a primary button, a "?" glass circle 24 pt and a Cancel button 66 x 24 at the bottom | AX, px |
+| Text-field focus ring | 2 px solid #63ACFC plus a 1 px lighter edge (about 3 pt outside the field), field fill #F7F7F7 | px |
+| Selection (Finder list row) | the highlight changes in **one frame** (no animation); the preview pane content cross-fades in about **0.27 s** | video |
+| Menu open (Finder action menu) | appears in one frame; closing is a fade of about **0.2 s** (13 frames, decaying) | video |
+| Sheet (TextEdit Save, cmd-S) | slides down from the title bar in about **0.18 to 0.20 s**, accelerating then easing out (fit cubic-bezier (0.1, 0.3, 0.8, 1) over 0.18 s, rms 0.012); the whole burst including fades about 0.30 s; dismiss about 0.28 s | video, edge tracked |
+| Popover (Notes Format) and Notes "format panel" | the geometry is in 11.3; its open and close timing was not captured stably | n/a |
+
+Hover and pressed states and keyboard focus rings on buttons could not be captured: the driver's pointer is a virtual agent cursor that does not produce hover, mouse-down is not exposed, and full keyboard access is off. The text-field focus ring above is the one state seen. No further attempt was made.
+
 ## 12. Sources for "(doc)" values
 
-Pointers recalled from memory, **not re-fetched or re-verified in this pass**; treat the values marked (doc) as unconfirmed until checked against these pages.
+**Checked in pass 3.** Fetching the Human Interface Guidelines pages (typography, layout) and the Liquid Glass overview returned only their titles: the pages are rendered by script, so the URLs below cannot be confirmed from here and **no numeric claim is backed by them**. The values that were "(doc)" are now measured from the system instead: iPhone safe areas and every Dynamic Type size and line height (13.1, 13.3). What is still "(doc)" and unconfirmed: the Mac text-style tracking and line heights (2.4), SF tracking values, and Apple's reduced-motion guidance.
 
-- iOS and macOS text styles, Dynamic Type size tables: https://developer.apple.com/design/human-interface-guidelines/typography
-- Layout, safe areas, device sizes: https://developer.apple.com/design/human-interface-guidelines/layout
-- Liquid Glass overview and adoption: https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass and https://developer.apple.com/documentation/TechnologyOverviews/adopting-liquid-glass
-- Motion and reduced motion: https://developer.apple.com/design/human-interface-guidelines/motion and https://developer.apple.com/design/human-interface-guidelines/accessibility
-- SF Pro tracking table: https://developer.apple.com/fonts/
+URLs (existence unconfirmed from here): https://developer.apple.com/design/human-interface-guidelines/typography , https://developer.apple.com/design/human-interface-guidelines/layout , https://developer.apple.com/documentation/TechnologyOverviews/liquid-glass , https://developer.apple.com/design/human-interface-guidelines/motion , https://developer.apple.com/fonts/
 
 ## Simplification opportunities
 

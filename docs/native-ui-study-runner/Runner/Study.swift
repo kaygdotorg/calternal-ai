@@ -157,7 +157,7 @@ final class Study: XCTestCase {
     func testHostReport() {
         let app = XCUIApplication(); app.launch(); sleep(1)
         let t = app.staticTexts["report"].firstMatch
-        logLine("REPORT " + t.label.replacingOccurrences(of: "\n", with: " | "))
+        logLine("REPORT exists=\(t.exists) " + t.label.replacingOccurrences(of: "\n", with: " | "))
     }
 
     func testShareSheet() {
