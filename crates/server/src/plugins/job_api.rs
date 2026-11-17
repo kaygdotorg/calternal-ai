@@ -330,7 +330,7 @@ impl<D: Directory> Stream<D> {
                 vec![]
             };
             let current = json!({"job":job.view(),"requests":requests});
-            if job.operation=="agent.turn" && current != self.last_state {
+            if job.operation == "agent.turn" && current != self.last_state {
                 self.last_state = current.clone();
                 out.push_str(&event("state", None, &current));
             }
