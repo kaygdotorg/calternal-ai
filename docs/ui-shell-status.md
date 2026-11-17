@@ -269,3 +269,7 @@ a wrong token is refused. The jobs stream is covered by unit tests on a mocked r
 | account, passkeys | `/api/v1/auth/*` exists; the web sign-in flow is not built |
 
 Open: nothing in the adapter retries a dropped live stream beyond five attempts after a `reset`; a visible "reconnecting" state belongs with the real sign-in work.
+
+## The editor port, stage 1 (2026-11-17)
+
+Plan: `docs/editor-port-plan.md`. Built: `packages/editor` and `InlineEditor` on `FieldEditor`; `e2e/composer.mjs` (10 checks, now including undo and redo of a picked mention), `packages/editor/test` (16), `e2e/field-probe.mjs`. Not started, by instruction: stage 2 (the CodeMirror block editor in the Notes middle card) and stage 3 (live editing, which needs a server text-patch operation).

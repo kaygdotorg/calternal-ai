@@ -19,7 +19,8 @@ Counts below are lines of TypeScript measured on that checkout.
   Stable block ids follow ADR 0056 rules B1-B5 (only linked blocks get an id; delete wins; the server is the single authority).
 - Around them: `tables/` (2,664: a grid editor), `syntax/` (2,380: hiding, links, embeds, frontmatter, headings), `transforms/` (1,050: link, tag and task transforms, the inline picker for
   `/`, `[[`, `@`, `#`), `lists/` (603: tree lines, Enter), `code/` (490 plus lezer grammars), `vim/` (674), `daily/` (400), `insert/` (259), `markdown/` (243), `input/ios-keys` (86).
-- Total source about 13,000 lines in `src` plus 59 test files (7,874 lines); the host component is 618 lines.
+- Total source: **118 files, 13,841 lines** in `src`, plus 59 test files (7,874 lines, 391 cases); the host component is 618 lines. (A separate read of the module map, written by a research agent and checked against the line counts above, is in this lane's notes; the figures here are measured.)
+- Block identity, as found: a block is *derived from the lezer tree* (`blocks/blocks.ts`), it has no stored id; a stable id is a `^id` marker in the text (ADR 0056), and server jobs address a block by a Yjs relative position plus a line hash (`sync/anchor.ts`). The B1-B5 rules are **not enforced inside the editor package** (the server and the markers module own them), so the port builds the client side of them once, as one module.
 
 ## 2. What to keep, simplify or drop for Calternal-AI
 
@@ -32,10 +33,10 @@ is the swap point** for every field.
 | CodeMirror 6 view, state, commands, markdown language | **Keep** for the block editor (stage 2) | It is the fast, accessible, IME-correct text engine the existing editor is tuned on; rewriting a text engine is the wrong place to spend. Tree-shake: bare Markdown language, no HTML/CSS/JS bundles (the existing editor already does this, about 50 KB saved). |
 | Native `<textarea>`/`<input>` | **Keep for stage 1** (inline fields) | A field of a few lines needs no CodeMirror: native editing is fastest, has perfect IME and accessibility, and costs no bundle. It sits behind the same interface as CM. |
 | Yjs / Yrs, `y-codemirror.next`, `note.ts` binding | **Drop** | State lives on the server. Replace with an **operation-based document adapter**: the editor emits text changes tagged with an origin and a base revision; the server orders them and echoes accepted changes; the client applies remote changes as CM transactions. The server contract needs a patch operation (see section 5). |
-| `sync/` live room protocol, receipts, coverage, nonces | **Drop**; keep the *ideas*: Saved is decided by a server receipt only; remote changes wait while an IME composes (`ImeGate`, 40 lines worth keeping) | The server's account feed, `pending.*` and `drafts.*` already cover durability and replay. |
+| `sync/` live room protocol, receipts, coverage, nonces | **Drop**; keep the *ideas* and the reconnect logic: Saved is decided by a server receipt only; remote changes wait while an IME composes (`ImeGate`, 40 lines worth keeping) | The server's account feed, `pending.*` and `drafts.*` already cover durability and replay. |
 | `offline/` local copy and recovery | **Drop** (replaced by `drafts.*` and `pending.*`, already wired for notes) | Out of scope by decision. |
 | `syntax/hidden.ts`, `parse-ahead`, headings, links, frontmatter, embeds | **Keep, simplify, port** (stage 2) | This is what makes the editor feel like a document. Port the decoration builders and the "parse only drawn lines" idea; drop code paths for features not shipped (embeds gallery first). |
-| `blocks/` (chrome, selection, hidden blocks, swipe, drag) | **Keep selectively** (stage 2) | Handles, selection and drag are the block editor. Swipe and `follow` are phone-specific and ride on the gestures already built. Block ids: port the ADR 0056 rules into one module with shared vectors; the server is the authority (B5). |
+| `blocks/` (chrome, selection, hidden blocks, swipe, drag) | **Keep selectively** (stage 2) | Handles, selection and drag are the block editor. Swipe and `follow` are phone-specific and ride on the gestures already built. Block ids: derive blocks from the parse tree as the existing editor does, keep ids as `^id` markers in the text, and put the ADR 0056 rules in one module with shared vectors; the server is the authority (B5). Block addresses for server jobs replace the Yjs relative position with a revision plus line hash. |
 | `lists/` (tree lines, Enter) | **Keep** (stage 2) | Small, high value, well tested. |
 | `transforms/` (links, tags, tasks, picker) | **Keep the picker core; reuse the palette's engine** | The `@`, `/` and `#` pickers already exist in the shell on the palette engine (`palette/mentions.ts`); the editor consumes one picker API instead of a second one. Link and tag ranking (`link-rank`, `tag-rank`) are ported as data for the palette. |
 | `tables/` (2,664 lines) | **Defer**, then simplify | Tables are a grid editor on their own; they come after the block editor works (lazy chunk, as in the existing app). |
@@ -75,6 +76,10 @@ One small package, `packages/editor` (TypeScript, no framework, no CodeMirror), 
 
 ## 5. Stages
 
+**Status 2026-11-17: stage 1 is built and measured; the work stops here for review before stage 2.** What exists: `packages/editor` (`origins`, `transaction`, `history`, `ime`, `probe`, `field`; 16 tests), `InlineEditor` running on `FieldEditor`
+(callers unchanged; a picked mention is one undo step), the probe wired to `?test=1`, and numbers in `docs/ui-performance.md` (key to paint median 7.3 ms at 4x CPU, 2.0 KB brotli).
+
+
 **Stage 1: the minimal fast inline editor** (built now). Package `packages/editor` with the transaction model, history, IME gate and the probe, tests ported or written for each guard that applies to a field
 (origin rules, undo of own changes only, IME hold, UTF-16 positions, never splitting a character), and `InlineEditor` moved onto `FieldEditor` with no change for callers. Exit: all existing tests pass; the
 composer, rename and palette fields work as before; the keystroke probe is in place and the numbers are recorded in `docs/ui-performance.md`; the editor adds under 3 KB brotli to the first paint.
@@ -96,4 +101,4 @@ Drafts and pending submissions (already wired) carry offline input. Exit: two br
 
 ## Simplification opportunities
 
-The existing editor carries three layers that this design removes (Yjs binding, the room protocol with nonces and receipts, the offline local copy), about 2,400 lines of source and their tests; an operation-based adapter replaces them with one small module.
+The existing editor carries three layers that this design removes (Yjs binding, the room protocol with nonces and receipts, the offline local copy), about 3,000 of the 3,300 lines in `sync/` and `offline/` (the transport and reconnect, the IME gate and honest save status stay) and their tests; an operation-based adapter replaces them with one small module.
