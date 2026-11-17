@@ -2,6 +2,8 @@
  * @module
  */
 import type { ManifestV1 } from "@calternal/contracts";
+import { SPACE_INSTRUCTIONS_PATH } from "./space-paths.js";
+const reservedInstructionParts=SPACE_INSTRUCTIONS_PATH.toLowerCase().split("/");
 
 const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
@@ -54,8 +56,17 @@ export function validateManifestV1(value: unknown): ManifestV1 {
     if (!r.storage || typeof r.storage !== "object" || Array.isArray(r.storage)) fail();
     const placement = r.storage as Record<string, unknown>;
     if (Object.hasOwn(placement, "folder")) {
-      record(placement, ["folder"]); const folder = text(placement.folder, 255);
+      record(placement, ["folder"], ["subdirectories"]); const folder = text(placement.folder, 255);
       if (folder !== folder.trim() || folder.startsWith(".") || /[/\\:\p{Cc}]/u.test(folder) || folder.normalize("NFC") !== folder || folder.toLowerCase() === "trash") fail();
+      if (placement.subdirectories !== undefined) {
+        if (!Array.isArray(placement.subdirectories) || placement.subdirectories.length < 1 || placement.subdirectories.length > 8) fail();
+        const components=[folder,...placement.subdirectories];
+        if (reservedInstructionParts.every((part,index)=>typeof components[index] === "string" && (components[index] as string).normalize("NFC").toLowerCase() === part)) fail();
+        for (const component of placement.subdirectories) {
+          const name = text(component, 255);
+          if (name !== name.trim() || name.startsWith(".") || /[/\\:\p{Cc}]/u.test(name) || name.normalize("NFC") !== name || name.toLowerCase() === "trash") fail();
+        }
+      }
     } else { record(placement, ["hidden"]); if (placement.hidden !== true) fail(); }
   }, ["extension"]);
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency", "risk"], r => {

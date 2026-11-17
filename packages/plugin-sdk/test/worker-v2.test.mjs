@@ -60,3 +60,17 @@ test('operation risk is required, closed, and consistent with mutations',()=>{
     const value=structuredClone(manifest);change(value);assert.throws(()=>validateManifestV1(value));
   }
 });
+
+test('visible subtrees share the host bounded component rules',()=>{
+ const m=structuredClone(manifest);m.kinds=[{id:'threads',schema:true,storage:{folder:'AI',subdirectories:['Chats']},claimed_text:true}];
+ assert.doesNotThrow(()=>validateManifestV1(m));
+ for(const subdirectories of [[],Array(9).fill('Chats'),['..'],['a/b'],['.hidden'],['Trash'],['a\\b'],['Cafe\u0301'],[1]]) {
+  const bad=structuredClone(m);bad.kinds[0].storage.subdirectories=subdirectories;assert.throws(()=>validateManifestV1(bad));
+ }
+});
+
+test('standing instruction files cannot become kind directories',()=>{
+ const m=structuredClone(manifest);m.kinds=[{id:'threads',schema:true,storage:{folder:'AI',subdirectories:['AGENTS.md']},claimed_text:true}];
+ assert.throws(()=>validateManifestV1(m));
+ m.kinds[0].storage={folder:'ai',subdirectories:['agents.md','child']};assert.throws(()=>validateManifestV1(m));
+});

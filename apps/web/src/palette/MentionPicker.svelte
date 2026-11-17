@@ -8,9 +8,17 @@
   } = $props();
   const ICON: Record<string, IconName> = { person: "user", agent: "spark", thread: "threads", item: "notes", skill: "wrench", tag: "list", block: "plus" };
   const flat = $derived(groups.flatMap((g) => g.entries));
+  // The list appears one frame after the key that asked for it, so that key paints its own character first and the popover's layout is its own frame; it closes at once.
+  let shown = $state(false);
+  $effect(() => {
+    if (!groups.length) { shown = false; return; }
+    if (shown) return;
+    const id = requestAnimationFrame(() => (shown = true));
+    return () => cancelAnimationFrame(id);
+  });
 </script>
 
-<Popover open={groups.length > 0} {anchor} {prefer} role="listbox" {label} {onclose}>
+<Popover open={shown && groups.length > 0} {anchor} {prefer} role="listbox" {label} {onclose}>
   <div class="mp">
     {#each groups as g (g.kind)}
       <div class="mg" role="group" aria-label={g.title}>

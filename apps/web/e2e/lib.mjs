@@ -25,6 +25,11 @@ function clearPort() {
 
 export async function serve() {
   if (process.env.CAL_URL) return () => {};
+  // A `dist` built for another base (the preview host's /ai/) serves assets from addresses this preview does not have: every script 404s and the page never becomes ready. Say so at once.
+  try {
+    const html = readFileSync("dist/index.html", "utf8");
+    if (/(?:src|href)="\/[a-z0-9-]+\/assets\//.test(html)) { console.error("dist/ was built for a sub-path (CAL_BASE). Run `npm run build` (base /) before the e2e scripts; the preview host build goes to dist-preview."); process.exit(2); }
+  } catch { console.error("No dist/ yet: run `npm run build` first."); process.exit(2); }
   clearPort();
   const p = spawn("npx", ["vite", "preview", "--port", String(PORT), "--strictPort", "--host", "127.0.0.1"], { stdio: "ignore", detached: true }); // its own process group, so stopping it also stops the node process npx starts
   for (let i = 0; i < 60; i++) {

@@ -25,7 +25,7 @@
   }
 </script>
 
-<Sheet {open} label="Choose a look" onclose={done} side={shell.narrow ? "bottom" : "right"}>
+<Sheet {open} label="Choose a look" onclose={done} side={shell.narrow ? "bottom" : "center"}>
   <div class="in">
     <h1>Choose a look</h1>
     <p class="note">A preset sets the backdrop and the colours together. You can change any part later in Appearance.</p>

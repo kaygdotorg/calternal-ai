@@ -1,5 +1,7 @@
 //! Official CLI fixture through the real server, machine role and provider adapter.
 mod machines_common;
+#[path = "provider_turns/saved_threads.rs"]
+mod saved_threads;
 use machines_common::*;
 use serde_json::{Value, json};
 use std::{
@@ -94,7 +96,10 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
     let bin = TempDir::new("provider-bin");
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../plugins/calternal-claude-code/test/fake-claude.mjs");
-    std::fs::copy(fixture, bin.join("claude")).unwrap();
+    let fixture = std::fs::read_to_string(fixture).unwrap();
+    let fixture=fixture.replace("const scenarioFile=", r#"if(prompt.includes('checkpoint-story')) {for(let i=0;i<6;i++)emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'segment-'+i+':'+String(i).repeat(8192)+'\n'}}});}
+const scenarioFile="#);
+    std::fs::write(bin.join("claude"), fixture).unwrap();
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o700)).unwrap();
     let mdir = TempDir::new("provider-machine");
@@ -128,6 +133,7 @@ async fn fake_official_cli_streams_checkpoints_crashes_stops_and_requires_explic
             .unwrap()
             .contains("PRIVATE_LOGIN_SENTINEL")
     );
+    saved_threads::exercise(&server, &data, &space).await;
     // Exercise the public CLI through the full transport in both output modes.
     for json_output in [false, true] {
         let mut command = tokio::process::Command::new(BIN);

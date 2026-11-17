@@ -3,6 +3,7 @@
  * here is fabricated and deterministic apart from the secret request's expiry (a fixed 15 minutes from page load) and the streaming
  * timers. Fixture-only; none of it ships with the real client.
  */
+import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 import type { ThreadEvents, ThreadsClient } from "./client";
 import { messageAt } from "./generate";
 import { permissionLabel, runsOnLabel } from "./permissions";
@@ -20,7 +21,7 @@ const PROVIDERS: ProviderOption[] = [
 ];
 
 function thread(id: string, title: string, state: ThreadState, workspace: string, ago: number, count: number, parentId: string | null = null, provider: "claude" | "codex" = "claude", model = "sonnet-5-5"): ThreadSummary {
-  return { id, title, parentId, state, workspace, updatedAt: BASE + 5 * 3600_000 - ago * MIN, provider, model, permission: "approve", runsOn: { machine: "calternal-dev-02-std", mode: "sandboxed" }, messageCount: count };
+  return { id, spaceId: workspace === "infraternal" ? FIXTURE_SPACES[1]!.id : FIXTURE_SPACES[0]!.id, title, parentId, state, workspace, updatedAt: BASE + 5 * 3600_000 - ago * MIN, provider, model, permission: "approve", runsOn: { machine: "calternal-dev-02-std", mode: "sandboxed" }, messageCount: count };
 }
 
 function seedThreads(): ThreadSummary[] {
@@ -33,6 +34,7 @@ function seedThreads(): ThreadSummary[] {
     thread("t-fail", "Conformance run on dev-02", "failed", "calternal-ai", 40, 12),
     thread(LONG_THREAD, "Journal replay is slow after restart", "idle", "calternal-ai", 95, 10_000, null, "claude", "opus-5-5"),
     { ...thread("t-idle", "Expired invite test", "idle", "calternal-ai", 180, 8, null, "codex", "gpt-6-1-sol"), permission: "least" as const },
+    thread("t-mesh-plan", "Plan the mesh rollout", "done", "infraternal", 400, 9),
     { ...thread("t-mesh", "Mesh idle-peer RSS guard", "idle", "infraternal", 320, 12), permission: "full" as const, runsOn: { machine: "kayg-laptop", mode: "direct" as const } },
   ];
 }

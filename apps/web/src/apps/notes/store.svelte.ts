@@ -2,6 +2,7 @@
  * Reactive state for the Notes app: the spaces, the current space's note list, the open note, kept current by the backend's change feed. The backend is the
  * fixture by default and the real server in server mode (`?server=1`, development token; server/client.ts).
  */
+import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";
 import { FixtureNotes, ServerNotes, type Note, type NoteSummary, type NotesClient, type Space } from "./client";
 import { FixtureInput, ServerInput, type Draft, type InputClient, type PendingWrite } from "./input";
@@ -31,7 +32,8 @@ class NotesStore {
     this.started = true;
     try {
       this.spaces = await this.client.spaces();
-      this.space = this.spaces[0] ?? null;
+      if (serverMode()) shellSpaces.setList(this.spaces); // the server's list is the shell's
+      this.space = this.spaces.find((s) => s.id === shellSpaces.current.id) ?? this.spaces[0] ?? null;
       await this.refresh();
       if (this.space) this.stop = this.client.watch(this.space.id, () => void this.refresh());
       await this.reloadInput();
@@ -39,6 +41,15 @@ class NotesStore {
     } catch (e) {
       this.error = (e as Error).message;
     }
+  }
+  /** Follows the shell's current space: the list is that space's notes. The open note stays open. */
+  async useSpace(id: string): Promise<void> {
+    const next = this.spaces.find((s) => s.id === id);
+    if (!next || next.id === this.space?.id) return;
+    this.space = next;
+    this.stop?.();
+    this.stop = this.client.watch(next.id, () => void this.refresh());
+    await this.refresh();
   }
   async refresh(): Promise<void> {
     if (!this.space) return;
@@ -62,7 +73,11 @@ class NotesStore {
   /** Opens a note by id (null clears it). */
   async open(id: string | undefined): Promise<void> {
     if (!id || !this.space) { this.note = null; return; }
-    try { this.note = await this.client.get(this.space.id, id); this.error = ""; } catch (e) { this.note = null; this.error = (e as Error).message; }
+    try {
+      this.note = await this.client.get(this.space.id, id);
+      this.error = "";
+      if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
+    } catch (e) { this.note = null; this.error = (e as Error).message; }
     await this.reloadInput();
   }
   /** Saves the open note. A conflict reloads it and says so. */

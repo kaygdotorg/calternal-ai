@@ -10,6 +10,19 @@ use rusqlite::{OptionalExtension, params};
 use uuid::Uuid;
 
 impl Jobs {
+    /// Forget every account's saved mode and credential for a deleted space-owned
+    /// thread. Caller commits its tombstone and fences active work first, then
+    /// retries cleanup before acknowledging deletion. One protected FULL transaction and
+    /// recovery barrier; no jobs/content lock is taken by the auth callback.
+    pub(crate) fn agent_delete_thread(&self, space: &str, thread: &str) -> Result<(), Error> {
+        let (space, thread) = (space.to_owned(), thread.to_owned());
+        self.security_change(move |tx| {
+            tx.execute("DELETE FROM agent_approvals WHERE job IN (SELECT job FROM agent_access WHERE space=?1 AND thread=?2)", params![space,thread]).map_err(db_err)?;
+            tx.execute("DELETE FROM agent_access WHERE space=?1 AND thread=?2", params![space,thread]).map_err(db_err)?;
+            Ok(())
+        })
+    }
+
     /// Issue a token for a turn, revoking the thread's previous token in one FULL
     /// transaction. Only its hash is stored. Lifetime: ten minutes or turn end.
     pub fn agent_token(&self, a: &Authority, run: u32) -> Result<String, Error> {
@@ -62,6 +75,35 @@ impl Jobs {
     pub fn agent_revoke(&self, space: &str, job: &str) -> Result<(), Error> {
         let (space, job) = (space.to_owned(), job.to_owned());
         self.security_change(move |tx| {tx.execute("UPDATE agent_access SET hash=NULL,expires_ms=0,updated_ms=?3 WHERE job=?1 AND space=?2",params![job,space,now_ms()]).map_err(db_err)?;Ok(())})
+    }
+
+    /// Current account's saved mode for one thread, used only when a send omits
+    /// its mode. Shared Markdown metadata must never choose another member's
+    /// approval policy. Cost: one protected indexed read and bounded scope decode;
+    /// missing state returns None and storage/encoding errors fail closed.
+    pub(crate) fn agent_saved_mode(
+        &self,
+        space: &str,
+        thread: &str,
+        account: calternal_types::AccountId,
+    ) -> Result<Option<calternal_core::AgentMode>, Error> {
+        let (space, thread) = (space.to_owned(), thread.to_owned());
+        let scope: Option<String> = self.security_read(move |c| {
+            c.query_row(
+                "SELECT scope FROM agent_access WHERE space=?1 AND thread=?2 AND account=?3",
+                params![space, thread, account.to_string()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(db_err)
+        })?;
+        scope
+            .map(|scope| {
+                serde_json::from_str::<Authority>(&scope)
+                    .map(|a| a.mode)
+                    .map_err(|_| Error::internal("invalid stored authority"))
+            })
+            .transpose()
     }
 
     /// Current server-owned thread state, bounded to 1024 threads per account.
@@ -255,13 +297,15 @@ impl Jobs {
 
 impl Jobs {
     /// Store the turn scope while queued without a live credential. One FULL
-    /// transaction. The token lifetime starts only when the machine is ready to execute.
+    /// transaction. A new turn applies and saves its requested mode in either
+    /// direction without another passkey check; replacing the old row ends its
+    /// credential. A resume keeps the current turn's saved mode and grants.
+    /// The token lifetime starts only when the machine is ready to execute.
     pub fn agent_prepare_scope(&self, a: &Authority, run: u32) -> Result<Authority, Error> {
-        let mut a = a.clone();
+        let a = a.clone();
         self.with_current(&a.clone(),run,move |tx|{
             if let Some(previous)=retained_scope(tx,&a)? {
                 if previous.job==a.job{return Ok(previous)}
-                a.mode=crate::turns::access::narrower(a.mode,previous.mode);
                 tx.execute("DELETE FROM agent_access WHERE job=?1 AND account=?2 AND space=?3",params![previous.job,a.actor.account.to_string(),a.space]).map_err(db_err)?;
             }
             let scope=serde_json::to_string(&a).map_err(|_|Error::internal("access encoding"))?;

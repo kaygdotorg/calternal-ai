@@ -1,0 +1,33 @@
+// Sidebar resize: the handle is in the gap beside the card at the vertical centre, shows on hover, drags (pointer) and moves with the keyboard, is limited to a range, resets on double-click or Enter,
+// and the width is remembered for this device. Usage: node e2e/resize.mjs (after `npm run build`).
+import { chromium } from "playwright";
+import { serve, BASE, DEVICES } from "./lib.mjs";
+const stop = await serve(); const b = await chromium.launch(); let bad = 0;
+const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
+const ctx = await b.newContext({ ...DEVICES.desktop }); const page = await ctx.newPage();
+await page.goto(BASE + "/threads/t-idle?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+const w = (s) => page.evaluate((s) => document.querySelector(s).getBoundingClientRect().width, s);
+const L = page.getByRole("separator", { name: "Resize the sidebar" }), R = page.getByRole("separator", { name: "Resize the side panel" });
+const lb = await L.boundingBox(); const card = await page.evaluate(() => document.querySelector(".mid-card").getBoundingClientRect().toJSON());
+ok(Math.abs(lb.y + lb.height / 2 - 450) < 2 && lb.x <= card.left && lb.x + lb.width >= card.left - 12, "The left handle is at the vertical centre, beside the card's edge", `${lb.x.toFixed(0)}..${(lb.x + lb.width).toFixed(0)} vs card ${card.left}`);
+ok((await L.locator("i").evaluate((e) => +getComputedStyle(e).opacity)) === 0, "It is hidden until hover");
+await L.hover(); await page.waitForTimeout(400);
+ok((await L.locator("i").evaluate((e) => +getComputedStyle(e).opacity)) > 0.9, "…and shows on hover");
+const w0 = await w("aside.side");
+await page.mouse.move(lb.x + lb.width / 2, 450); await page.mouse.down(); await page.mouse.move(lb.x + lb.width / 2 + 60, 450, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(200);
+ok(Math.abs((await w("aside.side")) - (w0 + 60)) <= 3, "Dragging the left handle resizes the sidebar", `${w0} -> ${await w("aside.side")}`);
+const lb2 = await L.boundingBox(); await page.mouse.move(lb2.x + lb2.width / 2, 450); await page.mouse.down(); await page.mouse.move(lb2.x + 1000, 450, { steps: 4 }); await page.mouse.up();
+const wmax = await w("aside.side"); ok(wmax <= 421 && wmax >= 419, "It stops at the widest the sidebar may be", String(wmax));
+await page.reload(); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
+ok(Math.abs((await w("aside.side")) - 420) <= 1, "The width is remembered for this device");
+await L.dblclick(); await page.waitForTimeout(200);
+ok(Math.abs((await w("aside.side")) - 240) <= 1, "A double-click puts the default width back");
+await L.focus(); await page.keyboard.press("ArrowRight"); await page.keyboard.press("Shift+ArrowRight");
+ok(Math.abs((await w("aside.side")) - 320) <= 1, "Keyboard: Right 16 px, with Shift 64 px", String(await w("aside.side")));
+await page.keyboard.press("Home"); ok(Math.abs((await w("aside.side")) - 200) <= 1, "Home goes to the narrowest");
+await page.keyboard.press("Enter"); ok(Math.abs((await w("aside.side")) - 240) <= 1, "Enter resets");
+const r0 = await w("aside.right"); const rb = await R.boundingBox();
+await page.mouse.move(rb.x + rb.width / 2, 450); await page.mouse.down(); await page.mouse.move(rb.x + rb.width / 2 - 80, 450, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(200);
+ok(Math.abs((await w("aside.right")) - (r0 + 80)) <= 3, "Dragging the right handle (leftwards) widens the side panel", `${r0} -> ${await w("aside.right")}`);
+await b.close(); stop();
+console.log(bad ? `${bad} FAIL` : "all pass"); process.exit(bad ? 1 : 0);

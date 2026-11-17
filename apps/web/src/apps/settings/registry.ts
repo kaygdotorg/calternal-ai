@@ -10,6 +10,7 @@ import { registerManifest } from "../../palette/manifest";
 import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
+import { spaces } from "../../shell/spaces.svelte";
 
 export type Control =
   | { type: "switch" }
@@ -60,6 +61,16 @@ const appearancePage: Page = {
       { id: "appearance.ui-size", label: "UI size", help: "One scale for type, spacing and controls together.", control: { type: "slider", min: 80, max: 150, unit: " %" }, get: () => A.prefs.uiSize, set: (v) => ap((p) => (p.uiSize = v as number)) },
       { id: "appearance.accent", label: "Accent", help: "From the wallpaper, or one colour of your own.", control: { type: "segmented", options: [{ id: "wallpaper", label: "From wallpaper" }, { id: "custom", label: "Custom" }] }, get: () => (A.prefs.accent === "theme" ? "wallpaper" : A.prefs.accent), set: (v) => ap((p) => (p.accent = v as never)) },
       { id: "appearance.wordmark", label: "Wordmark", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
+    ] },
+    { title: "Chat", settings: [
+      { id: "appearance.chat-width", label: "Chat layout", help: "Wide: messages and the composer use the whole card, yours on the right, the agent's from the left. Centred: a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
+    ] },
+    { title: "Motion", settings: [
+      { id: "appearance.motion", label: "Animations", help: "Follows the system's reduce-motion setting; this switch turns them off as well.", control: { type: "switch" }, get: () => A.prefs.motion, set: (v) => ap((p) => (p.motion = !!v)) },
+    ] },
+    { title: "Compare (temporary: removed after the decision)", settings: [
+      { id: "appearance.compare-floor", label: "Readability floor", help: "Current: text keeps 7:1 over the picture and flips light or dark where it must. Lower: 4.5:1, so more of the wallpaper shows.", control: { type: "segmented", options: [{ id: "current", label: "7:1, text flips" }, { id: "low", label: "4.5:1, more wallpaper" }] }, get: () => A.prefs.compare.floor, set: (v) => ap((p) => (p.compare.floor = v === "low" ? "low" : "current")) },
+      { id: "appearance.compare-light", label: "Light mode surfaces", help: "Current: a lighter copy of the photo under the solved veil. Craft: the unchanged photo under a nearly opaque white (0.92) over the blur. Light scheme only.", control: { type: "segmented", options: [{ id: "derived", label: "Lighter photo" }, { id: "craft", label: "Craft, 0.92 white" }] }, get: () => A.prefs.compare.light, set: (v) => ap((p) => (p.compare.light = v === "craft" ? "craft" : "derived")) },
     ] },
     { title: "Layout", settings: [
       { id: "appearance.app-switcher", label: "App switcher", help: "Where you switch between apps.", control: { type: "segmented", options: [{ id: "sidebar", label: "Sidebar" }, { id: "card", label: "Under the card" }] }, get: () => A.prefs.switcher, set: (v) => ap((p) => (p.switcher = v as never)) },
@@ -145,9 +156,9 @@ const secretsPage: Page = {
   ],
 };
 const instructionsPage: Page = {
-  id: "instructions", name: "Instructions and defaults", icon: "list", blurb: "What agents read first here, and the defaults members may override.",
+  id: "instructions", name: "Instructions and defaults", icon: "list", blurb: "What agents read first here (AI/AGENTS.md), and the defaults members may override.",
   groups: [
-    { title: "Agents", settings: [{ id: "space.instructions", label: "Instructions", help: "Read by every agent in this space.", control: { type: "text", placeholder: "For example: run tests before you commit." }, ...fx("space.instructions", "") }] },
+    { title: "Agents", settings: [{ id: "space.instructions", label: "Instructions", help: "The space's standing instructions, kept in AI/AGENTS.md and read by every agent in it. Only Managers and the Owner may edit it.", control: { type: "text", placeholder: "For example: run tests before you commit." }, ...fx("space.instructions", "") }] },
     { title: "Defaults", settings: [{ id: "space.default-preset", label: "Default look", help: "Members may override it.", control: { type: "popup", options: [{ id: "calternal", label: "Calternal" }, { id: "paper", label: "Paper" }, { id: "nord", label: "Nord" }] }, ...fx("space.default-preset", "calternal") }] },
     danger("space.delete", "Delete this space", "Everything in it is deleted after 30 days.", "Delete space…"),
   ],
@@ -184,8 +195,9 @@ const storagePage: Page = {
 /** The sidebar's groups, in order (docs/ui-craft-and-settings-study.md 11.1). */
 export const SECTIONS: Section[] = [
   { id: "user", name: "User", pages: [appearancePage, agentsPage, keyboardPage, machinesPage, pluginsPage, skillsPage, automationsPage, accountPage] },
-  { id: "space", name: "Admin: this space", pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
-  { id: "server", name: "Admin: server", pages: [plansPage, poolPage, storagePage] },
+  // Admin is the server (for its operator); the third section is the current space, whose name it shows (decided 2026-11-18).
+  { id: "server", name: "Admin", pages: [plansPage, poolPage, storagePage] },
+  { id: "space", get name() { return `Space: ${spaces.current.name}`; }, pages: [membersPage, invitesPage, secretsPage, instructionsPage, spacePluginsPage] },
 ];
 
 export const pageById = (id: string | undefined): Page | undefined => SECTIONS.flatMap((s) => s.pages).find((p) => p.id === id);

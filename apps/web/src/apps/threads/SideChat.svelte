@@ -5,7 +5,7 @@
   import { IconButton, InlineEditor } from "@calternal/ui";
   import Md from "../../lib/Md.svelte";
   import { bridge } from "./compose.svelte";
-  let { id }: { id?: string } = $props();
+  let { id, about = "thread" }: { id?: string; about?: "thread" | "note" } = $props();
   type Msg = { role: "user" | "agent"; text: string };
   let messages = $state<Msg[]>([]);
   let draft = $state("");
@@ -26,17 +26,17 @@
     if (!t) return;
     messages = [...messages, { role: "user", text: t }];
     draft = "";
-    setTimeout(() => (messages = [...messages, { role: "agent", text: "This is a fixture reply. The side chat answers questions about the open thread without adding to it." }]), 700);
+    setTimeout(() => (messages = [...messages, { role: "agent", text: "This is a fixture reply. The side chat answers questions about what is open without adding to it." }]), 700);
   }
 </script>
 
 <div class="side">
   <div class="log" role="log" aria-label="Side chat" aria-live="polite">
-    {#if !messages.length}<p class="empty">Select text in the thread and choose “Ask in Side Chat”, or type a question about {id ? "this thread" : "a thread"}.</p>{/if}
+    {#if !messages.length}<p class="empty">{about === "thread" ? "Select text in the thread and choose “Ask in Side Chat”, or type a question about " + (id ? "this thread" : "a thread") + "." : "Ask a question about " + (id ? "this note" : "a note") + "."}</p>{/if}
     {#each messages as m}<div class="m {m.role} selectable"><Md text={m.text} /></div>{/each}
   </div>
   <div class="in">
-    <InlineEditor id="side-field" class="side-input" multiline label="Ask in side chat" bind:el={field} bind:value={draft} onsubmit={() => send()} placeholder="Ask about this thread…" />
+    <InlineEditor id="side-field" class="side-input" multiline label="Ask in side chat" bind:el={field} bind:value={draft} onsubmit={() => send()} placeholder={`Ask about this ${about}…`} />
     <IconButton icon="send" label="Send to side chat" tone="accent" disabled={!draft.trim()} onclick={send} />
   </div>
 </div>

@@ -22,11 +22,11 @@
 <div class="backdrop" aria-hidden="true"><div class="wash l"></div><div class="wash r"></div><div class="grain" style:background-image={tile ? `url(${tile})` : "none"}></div></div>
 
 <style>
-  .backdrop { position: fixed; inset: 0; z-index: 0; background: var(--wall-side, var(--backdrop)) center / cover no-repeat; }
-  /* Each sidebar has its own veil (appearance/veil.ts): a tint layer then a dim layer, solved from the pixels under it. The middle card covers what lies between. */
+  .backdrop { position: fixed; inset: 0; z-index: 0; background: var(--wall-side, var(--wall-fallback, var(--backdrop))) center / cover no-repeat; }
+  /* Each sidebar has its own veil (appearance/veil.ts): a tint layer then a dim layer, solved from the pixels under it. The veil runs on under the gap beside the card (one inset wide), so there is no strip of bare wallpaper and no edge between the sidebar and the area around the card: the sidebars are flat. */
   .wash { position: absolute; top: 0; bottom: 0; }
-  .wash.l { left: 0; width: var(--side-w); background: var(--veil-l, linear-gradient(rgb(var(--tint) / 0.5) 0 0)); }
-  .wash.r { right: 0; width: var(--right-w); background: var(--veil-r, linear-gradient(rgb(var(--tint) / 0.5) 0 0)); }
+  .wash.l { left: 0; width: calc(var(--side-w) + var(--inset)); background: var(--veil-l, linear-gradient(rgb(var(--tint) / 0.5) 0 0)); }
+  .wash.r { right: 0; width: calc(var(--right-w) + var(--inset)); background: var(--veil-r, linear-gradient(rgb(var(--tint) / 0.5) 0 0)); }
   @media (max-width: 759px) { .wash.l { width: 100%; } .wash.r { display: none; } }
   .grain { position: absolute; inset: 0; opacity: var(--grain-a, 0); background-size: 256px 256px; pointer-events: none; }
 </style>

@@ -131,7 +131,15 @@ pub enum ManifestSettingType {
 /// Placement inside a space userdata tree; hidden files belong to the declaring plugin.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(untagged, deny_unknown_fields)]
+#[ts(untagged)]
 pub enum ManifestPlacement {
+    /// Visible subtree claimed by one plugin, with at most eight safe components.
+    VisibleTree {
+        /// One safe visible top-level folder.
+        folder: String,
+        /// Safe directory components below the folder; never a filesystem path.
+        subdirectories: Vec<String>,
+    },
     /// User-visible top-level folder; the host rejects cross-plugin folder claims.
     Visible {
         /// One NFC folder component, with no leading dot or reserved name.

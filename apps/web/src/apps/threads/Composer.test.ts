@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import Composer from "./Composer.svelte";
 import type { ProviderOption, ThreadSummary } from "./model";
 
-const thread: ThreadSummary = { id: "t", title: "T", parentId: null, state: "idle", workspace: "w", updatedAt: 0, provider: "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "dev-02", mode: "sandboxed" }, messageCount: 0 };
+const thread: ThreadSummary = { id: "t", spaceId: "s", title: "T", parentId: null, state: "idle", workspace: "w", updatedAt: 0, provider: "claude", model: "sonnet-5-5", permission: "approve", runsOn: { machine: "dev-02", mode: "sandboxed" }, messageCount: 0 };
 const providers: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "sonnet-5-5", name: "Sonnet 5.5" }, { id: "opus-5-5", name: "Opus 5.5" }] }];
 const props = (o = {}) => ({ thread, providers, machines: ["dev-02", "laptop"], onsend() {}, onstop() {}, onprovider() {}, onpermission() {}, onrunson() {}, ...o });
 
@@ -26,6 +26,15 @@ describe("composer", () => {
     await userEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
     expect(onpermission).toHaveBeenCalledWith("full");
     expect(onrunson).not.toHaveBeenCalled();
+  });
+  it("a mode picked applies at once, wider or narrower, with no confirmation, and says it is for the next turn while one runs", async () => {
+    const onpermission = vi.fn();
+    render(Composer, props({ onpermission, thread: { ...thread, state: "running", permission: "least" } }));
+    await userEvent.click(screen.getByRole("button", { name: "Least access, applies to the next turn" }));
+    expect(screen.getByRole("menu", { name: "Permission mode for the next turn" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("menuitemradio", { name: /Full access/ }));
+    expect(onpermission).toHaveBeenCalledWith("full");
+    expect(screen.queryByRole("dialog")).toBeNull(); // no "are you sure"
   });
   it("where it runs is two choices, a machine then Sandboxed or Direct, in one picker", async () => {
     const onrunson = vi.fn();
