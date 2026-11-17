@@ -54,10 +54,14 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 pub struct AppState<D: Directory = StoredDirectory> {
     /// Per-account input databases (drafts, pending submissions, the account feed).
     pub inputs: crate::account_input::Inputs,
-    /// Durable preview store, shared without an outer lock: work in one space never
-    /// waits for another (see [`Store`] for the locks it takes).
+    /// Durable preview store, shared without an outer lock. Content, plugin state
+    /// and receipts take only their space's lock; a new item's first catalog route
+    /// takes the one catalog writer (see [`Store`]).
     pub store: Store,
-    /// Identity and membership directory; read for every authorization.
+    /// Identity and membership directory; read for every authorization. The stored
+    /// directory runs every read and write on one bounded auth worker (one
+    /// connection), so authorization queues behind other auth work, including
+    /// recovery fsyncs: it is installation-wide, not per space.
     pub directory: D,
     /// Immutable registry of trusted plugins and their manifest-derived policy rows.
     pub registry: Registry,

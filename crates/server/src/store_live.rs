@@ -8,8 +8,8 @@ impl Store {
     }
 
     /// Clones the generic service once during router construction. Cost: one Arc
-    /// increment, no database work, journal bridge or fsync. The router holds the
-    /// handle so live requests never take the installation-wide adapter mutex.
+    /// increment, no database work or fsync. Live routes hold this handle and take
+    /// only the followed spaces' locks.
     pub fn shared_content(&self) -> std::sync::Arc<Content> {
         self.content.clone()
     }

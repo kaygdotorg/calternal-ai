@@ -15,8 +15,10 @@
 //! Callers must retain installation root locks and enforce current authority.
 //! SQL and file work belong on blocking host threads, never on async executor workers.
 //!
-//! Locks: work in one space never waits for another space. The space cache map
-//! lock is held only to find or insert an entry (no I/O). Each space has its own
+//! Locks: work in one space never waits for another space's work, except that a
+//! new item's first catalog route takes the one catalog writer (below). The space
+//! cache map lock is held only to find, insert or remove an entry (no I/O: an
+//! evicted space is closed after the map lock is released). Each space has its own
 //! lock, held for that space's whole operation, including its SQLite, journal and
 //! file fsyncs; it serializes work within the space only. Catalog reads use a
 //! [`ReadPool`]; the one catalog writer connection is locked only when an item is
@@ -223,6 +225,9 @@ impl Content {
     /// opens SQLite and its journal under its own lock only. Refuses with
     /// unavailable when 64 spaces are open and all are in use.
     fn with_space<T>(&self, id: SpaceId, f: impl FnOnce(&mut Space) -> Result<T>) -> Result<T> {
+        // A capacity-evicted space is dropped (draining its journal writer) only
+        // after the map lock is released, so no other space waits on that drain.
+        let mut evicted = None;
         let slot = {
             let mut map = lock(&self.spaces);
             match map.get(&id) {
@@ -235,7 +240,7 @@ impl Content {
                             .min_by_key(|(_, s)| *lock(&s.last_used))
                             .map(|(k, _)| *k)
                             .ok_or_else(|| Error::unavailable("content cache is busy"))?;
-                        map.remove(&idle);
+                        evicted = map.remove(&idle);
                     }
                     let slot = Arc::new(Slot {
                         space: Mutex::new(None),
@@ -246,6 +251,7 @@ impl Content {
                 }
             }
         };
+        drop(evicted);
         let mut held = lock(&slot.space);
         if held.is_none() {
             let journal = self.journals.open_store(id)?;
@@ -604,8 +610,12 @@ impl Content {
     ) -> Result<Value> {
         self.with_space(space, |s| {
             self.publish_pending(s)?;
-            if let Some(saved) = self.journals.receipt(&s.journal, request.account, request.id)? {
-                if saved.operation != request.operation || saved.fingerprint != request.fingerprint {
+            if let Some(saved) = self
+                .journals
+                .receipt(&s.journal, request.account, request.id)?
+            {
+                if saved.operation != request.operation || saved.fingerprint != request.fingerprint
+                {
                     return Err(Error::request_reused());
                 }
                 return Ok(saved.result);

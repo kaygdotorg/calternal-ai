@@ -32,7 +32,9 @@ pub(crate) async fn dispatch<D: Directory>(
     op: &str,
     input: JsonObject,
 ) -> Result<Value, Error> {
-    // One parse into the typed input; nothing below decodes it again.
+    // The account-input operation's own input is parsed once, here. A submitted
+    // pending envelope is then dispatched (and validated) as the ordinary
+    // operation it carries, and its stored record is decoded from the database.
     let parsed = parse_account_input(op, input)?;
     if !session.is_live(&state.directory).await {
         return Err(Error::unauthorized("session expired or revoked"));
