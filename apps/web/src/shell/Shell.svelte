@@ -143,7 +143,7 @@
   .shell[data-sidebar="false"] { --sw: 0px; }
   .shell[data-right="false"] { --rw: 0px; }
   /* Each surface carries its own secondary inks, solved from the pixels under it (appearance/veil.ts). */
-  .side { min-width: 0; overflow: hidden; --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); }
+  .side { min-width: 0; overflow: clip; --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); }
   .right { --ink-2: var(--r-ink2, currentcolor); --ink-3: var(--r-ink3, currentcolor); }
   .mid { --ink-2: var(--c-ink2, currentcolor); --ink-3: var(--c-ink3, currentcolor); }
   .narrow .right { --ink-2: var(--l-ink2, currentcolor); --ink-3: var(--l-ink3, currentcolor); }
