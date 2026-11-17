@@ -28,6 +28,7 @@ mod threads_cases;
 mod drafts_cases;
 #[path = "live_cases.rs"]
 mod live_cases;
+mod notes_cases;
 mod simplify_review_cases;
 mod worker_cases;
 
@@ -185,7 +186,14 @@ impl Fixture {
         } else {
             command.current_dir(self.dir.path());
         }
-        let crash = self.dir.path().join("thread-send-fault").is_file();
+        let crash =
+            std::fs::read_to_string(self.dir.path().join("content-fault")).unwrap_or_else(|_| {
+                if self.dir.path().join("thread-send-fault").is_file() {
+                    "after_thread_message".into()
+                } else {
+                    String::new()
+                }
+            });
         self.child = Some(
             command
                 .args(["--port", "0", "--origin", ORIGIN, "--create"])
@@ -202,10 +210,7 @@ impl Fixture {
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
                 .env("RUST_LOG", "warn")
-                .env(
-                    "CALTERNAL_FAULT",
-                    if crash { "after_thread_message" } else { "" },
-                )
+                .env("CALTERNAL_FAULT", crash)
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())
@@ -507,7 +512,7 @@ async fn all_operations_hide_foreign_ids() {
     )
     .await;
     let missing = uuid::Uuid::now_v7().to_string();
-    let cases = vec![
+    let mut cases = vec![
         ("jobs.get", json!({"job_id":job}), json!({"job_id":missing})),
         (
             "jobs.cancel",
@@ -611,6 +616,7 @@ async fn all_operations_hide_foreign_ids() {
             json!({"space_id":missing,"name":"probe"}),
         ),
     ];
+    cases.extend(notes_cases::foreign_cases(&f.spaces[0], &n, &missing));
     let catalog = f
         .req(
             "GET",

@@ -117,12 +117,6 @@ pub const POLICIES: &[Policy] = &[
         constraint: Constraint::None,
     },
     Policy {
-        operation: Cow::Borrowed("notes.list"),
-        required: Capability::SpaceRead,
-        scope: Scope::Space,
-        constraint: Constraint::None,
-    },
-    Policy {
         operation: Cow::Borrowed("notes.get"),
         required: Capability::SpaceRead,
         scope: Scope::Item,
@@ -228,8 +222,21 @@ pub fn policy(operation: &str) -> Option<&'static Policy> {
             }))
             .collect()
     });
+    static NOTES: std::sync::OnceLock<Vec<Policy>> = std::sync::OnceLock::new();
+    let notes = NOTES.get_or_init(|| {
+        calternal_core::NOTE_OPERATIONS
+            .iter()
+            .map(|op| Policy {
+                operation: Cow::Borrowed(op.id),
+                required: op.capability,
+                scope: if op.item { Scope::Item } else { Scope::Space },
+                constraint: Constraint::None,
+            })
+            .collect()
+    });
     POLICIES
         .iter()
+        .chain(notes)
         .chain(account)
         .chain(agent_policies())
         .find(|p| p.operation == operation)
