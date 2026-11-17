@@ -17,7 +17,7 @@
     {#key panel.id}<panel.component {id} {...panel.props} />{/key}
   </div>
   {#if !shell.narrow}
-    <div class="tabs"><Capsule label="{app.name} panels" morph={app.panels.length > 3} items={app.panels.map((p) => ({ id: p.id, label: p.label, icon: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
+    <div class="tabs"><Capsule label="{app.name} panels" items={app.panels.map((p) => ({ id: p.id, label: p.tab ?? p.label, icon: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
   {/if}
 </div>
 
@@ -25,7 +25,7 @@
   .rs { --foot-h: calc(var(--pill-h) + 2 * var(--s-2) + var(--s-4) + max(var(--s-4), var(--safe-bottom))); position: relative; height: 100%; min-height: 0; }
   header { position: absolute; z-index: 2; top: 0; left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--s-6); }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
-  .content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: var(--bar-h) var(--s-4) var(--foot-h); --fade-t: var(--bar-h); --fade-b: var(--foot-h); }
+  .content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: calc(var(--bar-h) + var(--s-4)) var(--s-4) var(--foot-h); --fade-t: var(--bar-h); --fade-b: var(--foot-h); }
   .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) max(var(--s-4), var(--safe-bottom)); }
   .tabs :global(.cap) { width: 100%; }
 </style>

@@ -7,7 +7,7 @@
 
 {#snippet inl(xs: Inline[])}
   {#each xs as x}
-    {#if x.t === "text"}{x.v}{:else if x.t === "code"}<code>{x.v}</code>{:else if x.t === "b"}<strong>{x.v}</strong>{:else if x.t === "i"}<em>{x.v}</em>{:else}<a href={x.href} target="_blank" rel="noopener noreferrer">{x.v}</a>{/if}
+    {#if x.t === "text"}{x.v}{:else if x.t === "code"}<code spellcheck="false" translate="no">{x.v}</code>{:else if x.t === "b"}<strong>{x.v}</strong>{:else if x.t === "i"}<em>{x.v}</em>{:else}<a href={x.href} target="_blank" rel="noopener noreferrer">{x.v}</a>{/if}
   {/each}
 {/snippet}
 
@@ -17,7 +17,7 @@
     {:else if b.t === "h"}<p class="h" role="heading" aria-level="2">{@render inl(b.v)}</p>
     {:else if b.t === "ul"}<ul>{#each b.v as li}<li>{@render inl(li)}</li>{/each}</ul>
     {:else if b.t === "ol"}<ol>{#each b.v as li}<li>{@render inl(li)}</li>{/each}</ol>
-    {:else}<!-- svelte-ignore a11y_no_noninteractive_tabindex --><pre tabindex="0" aria-label="Code{b.lang ? `, ${b.lang}` : ''}"><code>{b.v}</code></pre>{/if}
+    {:else}<!-- svelte-ignore a11y_no_noninteractive_tabindex --><pre tabindex="0" spellcheck="false" translate="no" autocapitalize="off" aria-label="Code{b.lang ? `, ${b.lang}` : ''}"><code>{b.v}</code></pre>{/if}
   {/each}
   {#if caret && !(blocks.at(-1)?.t === "p")}<span class="caret" aria-hidden="true"></span>{/if}
 </div>
@@ -30,6 +30,8 @@
   li::marker { color: var(--ink-3); }
   code { font-family: var(--font-mono); font-size: var(--text-code); padding: 0 var(--s-2); border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); }
   pre { margin: 0; padding: var(--s-5) var(--s-6); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.06); overflow-x: auto; font-size: var(--text-label); line-height: 1.6; }
+  /* Code is never underlined: no spell-check squiggle, no auto-detected link, no translation, whatever the browser would add. */
+  pre, pre *, code { text-decoration: none !important; text-decoration-line: none !important; -webkit-text-decoration: none; text-underline-offset: 0; }
   pre code { padding: 0; background: none; font-size: inherit; }
   a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
   strong { font-weight: var(--strong-weight); }
