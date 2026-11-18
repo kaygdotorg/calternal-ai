@@ -23,12 +23,13 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Search uses SQLite and per-space generation 2. Wallpaper cache follows its rendition catalogue. |
 | SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
 | SSD space `AI/AGENTS.md`, `AI/Skills/*/SKILL.md` | Authority | Space instructions and the person write raw Markdown. Skill descriptors use the external Agent Skills format and may be provisioned on disk. These formats pass through byte-for-byte. |
-| SSD `spaces/<id>/.calternal/` plugin settings file | Authority | The plugin settings adapter writes `calternal-plugin-settings/v1`. The adapter owns the JSON representation and documents its choice. |
+| SSD `spaces/<id>/.calternal/settings.json` | Authority | The plugin settings adapter writes `calternal-plugin-settings/v1`. JSON preserves typed nested values, including unknown settings during an older writer’s update. |
 | SSD automation definitions, account shortcuts, themes and other settings files | Authority when introduced | No durable server writer in this lane. Use `calternal-shortcuts/v1` for account shortcuts and `calternal-theme/v1` for themes. Automation definitions, custom components and starred prompts need their own versioned formats when their writers land. |
 | SSD `.calternal/recovery/snapshot.json` and `log-*.bin` | Authority | Recovery coordinator writes v3 snapshots and checksummed frames, paired with the auth DB witness. |
 | HDD originals and each root's `.calternal-install-id` | Authority | HDD originals are opaque. There is no general HDD placement writer today. Roots writes `calternal-install-root/v1` with installation UUID and role. |
 | Machine `credentials`, `pending-enrollment/credentials`, and `machine-handoff/{request.json,enrolled}` | Authority during use | Machine enrollment writes `calternal-machine-credentials/v1`. Both roles use `calternal-machine-enrollment/v1` for the handoff. Protected files stay on the machine. |
 | Machine `sandboxes/accounts/`, worker/container state | Mixed | Sandbox, harness and person write per-space homes, transcripts, account provider login and thread workspaces. Provider bytes are opaque. Worker containers, temporary login work and execution state are disposable. |
+| Appdata `system/upgrade-intent.json` and role-local `.calternal-upgrade/` | Temporary authority | Deploy writes the private `calternal-upgrade-intent/v1` decision and one restore point. The manifest binds installation, both image digests and the raw file proofs. The gate supplies `calternal-upgrade-proof/v1` evidence for the two images. |
 | Appdata `startup.json`, `setup.token`, operator and release config | Mixed | Server startup publishes `calternal-startup/v1` and a replaceable setup code. Auth retains its hash and expiry. Operator owns the pinned installation ID and deployment secrets. Deploy owns image IDs, units and release pointers. |
 
 ## Forward changes
@@ -61,16 +62,17 @@ Unattended updates allow additive changes with proof that release N can run
 against N+1 data. An incompatible upgrade requires the owner's explicit go and
 a full restore point. There are no reverse transforms or dual writers.
 
-Stage and probe the candidate while N serves. Drain writes and machine work
+Stage the candidate image and its compatibility evidence while N serves. Drain writes and machine work
 at handoff, lock the roots, check versions, and publish a durable intent and
 snapshot of changed authorities with their witnesses. Apply migrations and
 verify integrity and private readiness. A durable committed-intent marker
-ends the snapshot restore window. Failure before that marker restores N and
+ends the snapshot restore window. The intent is limited to 32 MiB. Its private backup
+bytes are retired before serving writes. Failure before that marker restores N and
 its data through the deployment rollback path. Afterwards, a compatible N
 can resume on live data, including any new acknowledgements. An incompatible
 downgrade refuses newer data. Retain one restore point during handoff and one
-prior release. The release-to-release and fault-injection gates land in
-stages 2 and 3.
+prior release. The deployment script and the server unit share the local
+recovery command. The cross-release evidence gate lands in stage 3.
 
 The working budget is five seconds of unavailable writes for an ordinary
 additive update. Measure it on the locked perf VM before publishing a service

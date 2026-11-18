@@ -44,6 +44,7 @@ mod plugin_slot_cases;
 mod search_cases;
 mod setup_code_cases;
 mod simplify_review_cases;
+mod upgrade_handoff_cases;
 mod wallpaper_cases;
 mod worker_cases;
 mod worker_delivery_cases;

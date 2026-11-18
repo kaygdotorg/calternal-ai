@@ -65,12 +65,13 @@ scoped to the space.
 The production upgrade gate and durable inventory are tracked in
 [Data-preserving upgrades](upgrades.md).
 
-Deploy and rollback reuse the three data roots. A schema mismatch can refuse
-startup, including when an older binary opens data initialized by a newer one.
-Per-space stores that open lazily may first report a mismatch when used.
-Automatic rollback switches code and units. Recovering data requires a
-coordinated backup and an operator decision. See **Decisions before real data**
-below.
+From the durable baseline, ordinary updates require `--compatibility-proof FILE`
+from the release gate for the exact current and candidate images. Use
+`--allow-incompatible` only with the owner's approval. The latter stages a full
+restore point before changing data. An incomplete preparation fences server
+startup. A deployment retry, rollback, or the server unit's recovery hook can
+restore the staged bytes before either release starts. After the cutover marker,
+rollback keeps live data and the older build must pass its version check.
 
 ## Backups and service controls
 
