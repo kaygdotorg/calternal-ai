@@ -227,14 +227,14 @@ async fn verify_cut(point: &str, committed: bool, job_committed: bool, claimed: 
         "{point}: duplicate attempt after restart"
     );
     let machine_db = Connection::open(f.appdata().join("system/machines.db")).unwrap();
-    let lease_count: usize = machine_db
+    let lease_count: i64 = machine_db
         .query_row(
             "SELECT COUNT(*) FROM leases WHERE space=?1 AND thread=?2",
             params![space, saved.id],
             |row| row.get(0),
         )
         .unwrap();
-    let expected_leases = usize::from(point != "automation_after_turn_claim");
+    let expected_leases = i64::from(point != "automation_after_turn_claim");
     assert_eq!(
         lease_count, expected_leases,
         "{point}: unexpected machine leases"
