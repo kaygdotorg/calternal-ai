@@ -29,17 +29,15 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     assert!(!markdown.contains("PRIVATE_LOGIN_SENTINEL"));
     let markers: Vec<_> = markdown
         .lines()
-        .filter(|line| line.starts_with("<!-- message:"))
+        .filter(|line| line.starts_with("<!-- id:"))
         .collect();
     assert_eq!(markers.len(), 2);
-    for marker in markers {
-        let stamp = marker
-            .split(" time:")
-            .nth(1)
-            .unwrap()
-            .trim_end_matches(" -->");
-        time::OffsetDateTime::parse(stamp, &time::format_description::well_known::Rfc3339)
-            .expect("message timestamp must be RFC 3339");
+    for message in saved["thread"]["messages"].as_array().unwrap() {
+        time::OffsetDateTime::parse(
+            message["at"].as_str().unwrap(),
+            &time::format_description::well_known::Rfc3339,
+        )
+        .expect("message timestamp must be RFC 3339");
     }
     assert_eq!(saved["thread"]["metadata"]["message_count"], 2);
     assert_eq!(saved["thread"]["turn_state"], "idle");

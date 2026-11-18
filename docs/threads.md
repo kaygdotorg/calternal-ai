@@ -10,54 +10,11 @@ file writer, journal, SQLite store, capability table or stream. Addresses are
 Each conversation is one UTF-8 Markdown file at
 `userdata-ssd/spaces/<space-uuid>/AI/Chats/<title>.md`. Content assigns filenames
 and the `calternal-id` UUID, preserves immutable history, and refuses outside edits.
-The small frontmatter uses these keys:
+The file uses the format, historical headings and byte-count markers defined in
+[Readable file format](#readable-file-format). No reader for the previous
+development format is included.
 
-```markdown
----
-calternal-id: 019a8c00-0000-7000-8000-000000000001
-title: "Plan"
-provider: "calternal-claude-code"
-model: "claude-sonnet-5-5"
-message-count: 2
-mode: "approve_for_me"
-parent-thread: "019a8c00-0000-7000-8000-000000000002"
-spawned-by: "019a8c00-0000-7000-8000-000000000003"
-created-at: "2026-11-17T12:00:00.000Z"
-archived: false
-deleted: false
-updated-at: "2026-11-17T12:00:00.000Z"
-last-activity-at: "2026-11-17T12:00:00.000Z"
----
-
-<!-- message:019a8c00-0000-7000-8000-000000000004 role:person time:2026-11-17T12:00:00.000Z -->
-Inspect this workspace.
-<!-- /message -->
-
-<!-- message:019a8c00-0000-7000-8000-000000000005 role:agent turn:019a8c00-0000-7000-8000-000000000005 provider:calternal-claude-code model:claude-sonnet-5-5 reasoning:high machine:72c16856719dbd545329e7c00d4445bd2ba045066533774b1315572ec50da38e time:2026-11-17T12:00:01.000Z -->
-The workspace has one project.
-<!-- turn-timing duration-ms:1200 reasoning-ms:400 queued-ms:10 sandbox-ms:100 tool-ms:200 -->
-<!-- /message -->
-```
-
-Parent and spawn keys are optional; together they identify the parent conversation
-and the message that spawned this one. A message marker carries a stable UUID and an RFC 3339 UTC time. A person
-message is stamped on append. An agent message is stamped at its first saved
-checkpoint and retains that time when text is appended.
-The first attempt uses the job UUID as its message ID. A later attempt gets
-its own message ID and the same `turn` UUID so provenance stays attached to the
-output of its machine. Each opening agent marker holds the manifest provider
-and model IDs, the requested reasoning level, and a thread-scoped reference to
-its personal machine. The reference is stable for the account and thread and
-keeps the real machine UUID private. A dash means provider-default effort or
-an anonymous pool placement. The same
-marker grammar allows missing attributes in earlier conversation files.
-The rebuildable metadata stores the current output insertion offset, run and
-checkpoint. Later chunks extend that attempt's message without scanning text.
-Markers and message text are for display. Authority never comes from the Markdown. Frontmatter string values use
-JSON-quoted YAML scalars so titles cannot inject keys. The host writes exactly
-one `calternal-id` key. No migration or alternate reader is supported.
-
-The rebuildable content metadata mirrors the envelope and holds the pending send
+The content index caches the envelope, derived list fields and the pending send
 identity (account, request ID, fingerprint and creation time). Message text lives
 in the body. The pending intent does not grant authority; admission uses the
 current caller, current space capabilities and plugin activation.
@@ -218,16 +175,13 @@ For example, the operation input is
 ```
 
 The response contains `delta` with `id`, `base_revision`, `revision`,
-`offset` and `markdown`. Insert the returned UTF-8 bytes into the cached
+`offset`, `markdown` and `messages`. Insert the returned UTF-8 bytes into the cached
 Markdown body at `offset` and advance its revision. Exclude frontmatter when
-applying the insertion. The first checkpoint includes a new message's markers.
-Later checkpoints can insert before its closing marker, which rules out a
-message index or a whole-file suffix as the cursor. `start` and `length` are
-the byte range in the target revision and are echoed from the journal entry.
-Clients can copy `data` into `since` as before. The read uses the revision
-and append range, and ignores the accompanying actor.
-A session-only checkpoint has a zero-byte addition. A full get still returns
-the document, metadata and active job.
+applying the insertion. The insertion contains complete new records, with
+the same fields as `thread.messages` in a full get. A session-only checkpoint
+has a zero-byte addition and no messages. A checkpoint extending or finishing
+an existing message changes its heading or byte count and has no insertion
+delta. Refresh the full document for those revisions.
 
 Apply journal entries in order. Each pair describes one committed transition and
 can be read after newer checkpoints arrive. If the client lacks the matching
@@ -273,25 +227,21 @@ saved. Provider frames retain `{version, seq, event}`. A reasoning block emits
 `reasoning_finished` with monotonic `duration_ms`. Stream time measures
 observed work and can include transport or back-pressure.
 
-The terminal checkpoint adds one short `turn-timing` comment before the agent
-message's closing marker, at most one per attempt. The worked duration excludes
-queue time, person waits and retry delays. The marker also records observed
-reasoning, queue, sandbox and tool durations in milliseconds. Abrupt stops may
-leave a checkpoint without final timing. Claude exposes thinking as provider
-text on the live stream. The file retains timing only. Both reads expose the
-same opening and timing markers in Markdown. Apply checkpoint deltas in order
-before parsing message markers. Ordinary assistant Markdown is untrusted display
-content.
+The terminal checkpoint updates the agent heading with worked time and, when
+observed, thought time. The marker records both durations in milliseconds.
+A process stop before the terminal checkpoint can leave final timing absent.
+Reasoning text is available on the live stream after filtering and is omitted
+from saved messages. Both read forms expose the same structured agent
+provenance: provider plugin ID, model ID, requested reasoning level,
+thread-scoped machine reference, worked duration and reasoning duration.
 
-Send checks the loaded manifest, placement adds a fixed-size hash on its existing
-blocking worker, and live phases reuse the job buffer. These add zero indexed reads and zero
-flushes. Timing piggybacks on the terminal checkpoint with no added job flush.
-If the terminal checkpoint otherwise had no Markdown to save, the timing
-marker makes it one content checkpoint. That adds the usual capability check,
-one activation read, one receipt lookup, and one content head read, followed by
-the normal indexed write checks and three FULL commits
-(content, journal and outbox retirement), plus the normal file and directory
-syncs. No per-frame filesystem work is added.
+Send adds one indexed author display-name lookup. The catalog validates the
+selection in memory. Each changed output checkpoint loads the existing body
+once and reuses the indexed tail cursor, with no per-frame reads or flushes.
+Timing uses the normal terminal checkpoint. When timing is the only change,
+it adds one ordinary content write with its existing file and directory syncs,
+three FULL commits and its standard capability, activation, receipt and head
+checks. It adds no separate job flush.
 
 ### Tool steps and the saved output limit
 
@@ -355,7 +305,7 @@ following reason payloads use Unix milliseconds for timestamps.
 | `idle`, `queued`, `completed`, `cancelled` | No turn, pending admission, completed work, or cancelled work |
 | `no_machine`, `waiting_for_capacity` | Placement wait with `queue_position` |
 | `machine_offline` | Placement wait with `queue_position` and `since_ms` (last contact when known) |
-| `provider_signed_out` | `provider` and the reported `sign_in_command` |
+| `provider_signed_out` | `provider`, the re-authentication `message` and the reported `sign_in_command` |
 | `waiting_on_person` | Private `request_id` visible to the turn account |
 | `retrying` | `attempt`, `next_attempt_ms`, and `rule` (`provider_backoff`, `api_availability`, or `subscription_reset`) |
 | `failed` | `class` (`transient`, `usage_limit`, or `permanent`) and `reset_at_ms` when the provider reports it. A storage-limit failure includes `why: "thread_full"` and its `message`. |
@@ -407,140 +357,134 @@ directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
 using `--plugin-root` provide their own trusted plugin tree. An authorized
 fresh space lists zero threads before any conversation is created.
 
-## Proposed readable file format
+## Readable file format
 
-This proposal is for owner review before changes to the writer. The materialized
-file is still `AI/Chats/<title>.md`, with the thread UUID as its permanent
-`calternal-id`. The unsuffixed `format: calternal-thread` follows the existing
-app's [Money ADR 0057] and [Contacts ADR 0063]. The contact note and original
-card also provide the precedent for a journaled pair. The task and calendar
-rules in [ADR 0068] retain authored bytes and keep identities independent of
-display text. On acceptance the writer and reader move together to this one
-format.
+The owner approved the heading layout and one file per thread. A conversation
+lives at `AI/Chats/<title>.md`. The reader uses one format.
 
-### Visible Markdown
+### Frontmatter and headings
 
-The only frontmatter keys are `format`, `calternal-id`, `title`, `created-at`,
-`updated-at`, and `archived`. Times use RFC 3339 UTC in frontmatter. The file
-shows each message as an ordinary Markdown H2 with the body beneath it. The H2
-shows the historical display name of the author, automation, or harness. An
-agent heading uses `via` to name the service that handled inference. The
-billing label is optional and describes a known subscription or API route.
-For a routed call, this names the gateway the harness actually used. The model
-name can still identify the model family. Never infer a service or billing
-route from the model name, login configuration, or harness name.
+The existing app settles these conventions:
+
+> Frontmatter also holds `date:` (created) and `last edited:`, written as ISO 8601 with a timezone offset.
+
+That is [Notes ADR 0025]. The same paragraph says the first H1 is the title
+and the server synchronizes the `title:` property with it. [Notes ADR 0023]
+says “Notes live as `Notes/<Title>.md`, with a `calternal-id` in frontmatter.”
+[Money ADR 0057] says “Participating notes carry `format: calternal-money`.”
+[Contacts ADR 0063] says “Frontmatter contains only `format: calternal-contact`,
+`calternal-id`, and optional `tags` for groups or Google labels.”
+The contact companion in ADRs 0063 and 0064 holds original vCard data. Threads
+keep one Markdown file by the owner's later decision.
+
+[Tasks ADR 0066] and [Calendar ADR 0067] delegate field formats to [ADR 0068],
+which requires “Boolean means true/false only” and gives tags as “String lists;
+tags omit `#`, retain `/` nesting; default `[]`.” Its task-specific identity
+promotion does not rename the host-owned `calternal-id` used for this
+transcript. The Money specification uses `archived: true` or `false` and
+defaults to false. The old app's ordinary note fixture orders the host ID,
+title, creation, edit and optional tags. Insert the format tag after the
+host ID and the archive flag after the dates. Use bare UUID and offset-aware
+timestamp values, JSON-quoted strings where YAML needs quoting, and a plain
+Boolean. The normal writer omits an unset tags list and a false archive flag.
+The H1 and the frontmatter title agree on every managed write.
+
+Each message starts with an H2. Person and automation headings name their
+historical author and time. Agent headings name the harness, serving provider,
+model, reasoning, time and attempt duration. The service is the one actually
+reported by the harness. A gateway may serve a model from another company.
+Show `Unknown provider`, `Unknown model` or `Unknown effort` when those facts
+are missing. Use `Provider default` only when no explicit level was requested.
+When an explicit level's effective value is unreported, add `requested` to the
+requested level.
 
 ```text
 person     = "## " label sep time
 automation = "## Automation " label sep time
 agent      = "## " label " via " label [billing]
-             sep label sep effort sep time sep elapsed [sep outcome] [sep continuation]
+             sep label sep effort sep time sep elapsed [sep outcome] [sep continuation] [sep thought]
 sep        = " · "
 billing    = " (subscription)" | " (API)"
-time       = YYYY-MM-DD SP HH:MM:SS SP "UTC"
-effort     = label | "Provider default" | "Unknown effort"
+time       = YYYY-MM-DD SP HH:MM:SS SP sign HH ":" MM
 elapsed    = integer " s" | integer " min " integer " s"
              | "In progress" | "Duration unavailable"
 outcome    = "Failed" | "Interrupted" | "Cancelled"
 continuation = "Resumed" | "Retry " positive-integer
+thought    = "Thought for " decimal " s"
 ```
 
-The agent labels in order are harness, serving provider, and model. When a
-serving provider is unreported, use `Unknown provider`. Absent effort uses
-`Provider default` only when the harness default was requested. If an explicit
-effort was requested and its effective value is unknown, display the requested
-level followed by ` requested`. Use the measured execution time for that
-attempt, excluding queue, person wait, and backoff. Use floor seconds for
-measured values. Put an attempt's starting time in its heading. A resume or
-retry has a new heading if it has text or a recorded outcome. An empty failed
-attempt can have a heading without an invented response. The stable turn ID
-ties the attempts together in the companion. Each subagent writes to its own
-thread file and uses that thread's actual harness, provider and model.
+Each author uses their account's time zone, falling back to the submitting
+client's zone. Agent attempts keep the initiating person's zone. The client supplies the resolved offset via `client_offset_minutes`. The CLI
+supplies its local offset and the server defaults omitted offsets to +00:00.
+Account time zone settings are pending. The server saves the supplied offset
+in each heading. A thread
+can show several offsets at once. Previously written offsets are historical.
+Attempt durations use elapsed work excluding queue, person waits and backoff.
+Message order follows committed records.
 
-The writer normalizes generated labels to a single display line and escapes
-Markdown metacharacters in the heading only. Reserved separators inside labels,
-including a literal ` · ` or ` via `, use numeric entities for the middle dot
-or the initial `v`. Parentheses in labels are Markdown-escaped before appending
-a billing suffix. The companion stores the original display strings and the
-heading's kind. It defines boundaries by byte range, so a person's name may
-start with `Automation` without being classified as an automation.
+### Identity and exact body bytes
 
-The writer emits one blank line after the H2, then the original UTF-8 body
-bytes. It adds separation outside the body before a following record. The
-stored body ranges preserve the author's line endings, leading and trailing
-blank lines, headings and code exactly. A streamed attempt can have multiple
-body ranges when annotations occur between chunks. A body can contain a line identical
-to a generated heading. Readers use the companion's ranges and never scan the
-body for delimiters.
+Put one HTML comment directly below the H2. A person or automation marker has
+`id:<uuid> role:<person|automation> bytes:<count>`. An agent marker adds
+`turn:<uuid>` and compact `meta:<json>` after the byte count. This comment saves
+provider and model IDs, requested effort, a thread-scoped machine reference,
+and worked and reasoning durations. The marker is outside the body. After the
+marker and its blank line, read exactly the stated number of UTF-8 bytes,
+then consume the writer's record separator before reading the next H2. A
+matching heading or whole marker inside those bytes is ordinary authored
+Markdown. The branch uses full refreshes for checkpoints that replace a
+heading or update an existing body's byte count. A new record that only
+extends the transcript can still use its existing insertion delta.
 
-Trusted tool and reasoning notes are separate Markdown paragraphs in the
-attempt, with their own ranges. Examples are blockquotes beginning with
-`Tool — ` or `Reasoning summary — `. Tool output remains bounded to the
-existing short status and byte count. A reasoning summary appears only when
-the adapter supplies a distinct summary eligible for persistence. Live
-reasoning deltas are never copied into that paragraph. Sign-in writes at most
-one line per flow in the thread. It uses
-`> Sign-in was attempted for <provider> at <time>.` or
-`> Sign-in was done for <provider> at <time>.` with the same UTC form.
-A successful flow records the completion line. The file contains no sign-in URL,
-credential, prompt or form data from the flow.
+Display names are snapshots. Escape generated heading punctuation and the
+literal separators inside labels. Body bytes, including punctuation, code
+fences, blank lines and line endings, remain exact. An optional managed
+comment after the H1 carries the private provider-session binding. Public
+reads exclude that binding. Message count comes from records. Last activity
+comes from the corresponding content revision and headings. Placement and
+the existing revision journal guard the one file. An attempt's turn UUID
+associates retries and resumes. Child threads have their own files and the
+parent may link to authorized child output.
 
-### Companion and journal
+Tool statuses and explicit provider reasoning summaries are Markdown
+blockquotes. A sign-in result is a single readable line, for example
+`> Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.` An
+unsuccessful attempt uses `attempted` instead of `done`. The re-authentication
+prompt reads `<Provider> needs you to sign in again`, for example
+`Claude needs you to sign in again`. No link or credential from that flow
+goes into the file.
 
-Use `.calternal/threads/<calternal-id>.md` in the same space, with a Markdown
-frontmatter map and ordered message and annotation records. The companion is
-host-owned and excluded from generic content access, listings and search. It
-holds the thread UUID, committed revision and transcript SHA-256, plus:
+### Failure cases
 
-- Stable message and turn UUIDs, actor IDs, attempt numbers, automation and
-  parent/child bindings, and heading, body and annotation ranges.
-- Stable harness, provider and model IDs when reported, requested and known
-  effective effort, billing route, phase durations, result, and protected
-  placement information. Personal machines can be correlated within a thread.
-  Hosted readers cannot see pool identities.
-- The provider session binding and the existing pending send, output cursor,
-  message count, last-activity, deleted flag and last mode and mode owner.
-  Current permission and per-account saved modes remain under the existing
-  protected authority. The companion's recorded mode never grants access.
+| Case | Handling |
+| --- | --- |
+| Hand edit removes or duplicates an ID | The existing external-edit guard preserves the file and blocks writes. A parser presented with an invalid managed snapshot refuses the ID or framing. It never mints a replacement ID. |
+| A body includes an identical generated H2 or marker | The byte count puts the line inside the body. It has no structural meaning there. |
+| Two devices append concurrently | The existing per-space revision guard admits one write. A stale caller retries against the new head with the existing receipt rules. |
+| The file is renamed or moved by hand | The missing recorded path blocks writes. A move is not inferred from a title or body. The blocked state awaits explicit reconciliation. Restoring the path alone does not clear that state. |
+| A title contains filesystem punctuation or collides | Keep the title as written. The inherited safe filename and NFC/case-fold collision allocator choose the path, including a numeric suffix when needed. |
+| A turn reaches the file ceiling | Decline the overflowing checkpoint and retain the previous revision. The existing `thread_full` reason explains the next step. |
+| The clock changes or a DST boundary is crossed | Use the saved offset with each civil timestamp and keep journal order. Monotonic duration remains independent of the clock change. |
+| A person changes their name or is deleted | Name changes affect subsequent headings. Historical labels remain display text. The existing account-erasure policy governs protected account data and journal attribution. |
+| A provider omits model or effort | Show the corresponding unknown label. Keep a known requested selection distinct from a reported effective value. |
+| A message has only attachments | An empty text range is valid and keeps its message ID. Attachment links use the normal Markdown body once attachment addresses exist. |
+| A thread is forked or a message is edited later | A fork has a new `calternal-id` and can retain source references. The byte-count framing supports a separately authorized format-preserving edit. Edit history behavior remains an open decision. |
 
-For each range, store a zero-based UTF-8 byte offset and byte length relative
-to the visible body after frontmatter. Ranges are ordered, disjoint and on
-character boundaries. Apply the existing document size ceiling to the transcript
-and companion independently. Bound generated labels and annotation text before
-encoding. Refuse a pair that exceeds either limit before committing.
-Before accepting a pair as a snapshot, check the thread
-UUID, revision, transcript digest and range bounds. The reader only parses
-generated headings at those ranges. A service without the companion can still
-display the file as Markdown. It cannot guess stable message identities.
+### Automatic thread title
 
-Stage both versions under the same thread revision, in one per-space content
-transaction and one outbox intent. Adapt the existing linked placement path
-used by Notes, with the pair as the unit of placement and retry. Check both
-expected heads before committing and use guarded replacement for each file.
-Publish one thread journal entry and acknowledge the receipt only after both
-placements are verified. Rename leaves the UUID-addressed companion path
-alone. A normal delete or restore moves the visible file and updates the
-companion lifecycle in the same commit.
+The accepted policy calls for a title after about five messages. Queue one short background turn through the
+person's authorized provider. Prefer a Codex subscription using GPT-6 Luna
+(`gpt-6-luna`) at medium reasoning and fast tier. When Claude is the person's
+only provider, use Haiku 5.5 (`claude-haiku-5-5`) at low effort. The turn
+receives only the thread text, runs in an isolated sandbox with tools disabled,
+and never blocks the conversation. The cost is one short provider turn.
+Automatic execution and menu regeneration are pending. An automatic title never replaces a manual rename. The thread menu can
+explicitly regenerate it. Applying the result uses the existing Notes-style
+journaled rename, keeps the thread UUID, and rewrites relative links.
+[OpenAI model reference] [Claude Code model configuration]
 
-A crash between the two file replacements can leave a partial view to an
-external editor. Recovery recognizes a member that already matches the staged
-digest and completes the other against its expected predecessor. Calternal
-only serves matched revisions. A hand edit, hand deletion or unexpected
-replacement of either file blocks writes under the existing external-edit
-rule. Preserve the surviving bytes and companion; never repair by guessing
-where a message begins or by generating a new ID. Restoring the exact committed
-pair clears the discrepancy. Any future import of hand edits needs its own
-owner-approved action.
-
-The existing insertion delta can carry an appended body while its heading is
-stable. Completing an in-progress heading changes existing bytes. The choices
-are one full refresh on that revision, which keeps the existing wire cursor
-and reloads long threads, or bounded replacement ranges using the same
-immutable revision pair, which preserves a small read but requires a coordinated
-client update. In either case full and delta reads must refer to the same
-committed pair. Placement needs an extra guarded file write and parent-directory
-sync for the companion at existing checkpoints. The proposal supplies no new
-per-token writes or second journal commit.
+A plan's compute entitlement is a sandbox size in CPUs and RAM plus hours
+per month.
 
 ### Five example threads
 
@@ -548,21 +492,24 @@ per-token writes or second journal commit.
 
 ```markdown
 ---
-format: calternal-thread
 calternal-id: 019a8c00-0000-7000-8000-000000000011
+format: calternal-thread
 title: "Release checklist"
-created-at: "2026-11-18T14:00:00Z"
-updated-at: "2026-11-18T14:00:18Z"
-archived: false
+date: 2026-11-18T19:30:00+05:30
+last edited: 2026-11-18T19:30:18+05:30
 ---
 
-## Maya Chen · 2026-11-18 14:00:00 UTC
+# Release checklist
+
+## Maya Chen · 2026-11-18 19:30:00 +05:30
+<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:101 -->
 
 Which release checks are still open?
 
-> Sign-in was done for Anthropic at 2026-11-18 14:00:04 UTC.
+> Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.
 
-## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-18 14:00:06 UTC · 12 s
+## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-18 19:30:06 +05:30 · 12 s · Thought for 4.0 s
+<!-- id:019a8c00-0000-7000-8000-000000000101 role:agent bytes:161 turn:019a8c00-0000-7000-8000-000000000110 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":"high","machine_id":null,"duration_ms":12000,"reasoning_ms":4000} -->
 
 The accessibility review is the only open check.
 
@@ -575,23 +522,27 @@ The accessibility review is the only open check.
 
 ```markdown
 ---
-format: calternal-thread
 calternal-id: 019a8c00-0000-7000-8000-000000000012
+format: calternal-thread
 title: "Launch note"
-created-at: "2026-11-18T14:10:00Z"
-updated-at: "2026-11-18T14:12:09Z"
-archived: false
+date: 2026-11-18T19:40:00+05:30
+last edited: 2026-11-18T19:42:09+05:30
 ---
 
-## Mira Patel · 2026-11-18 14:10:00 UTC
+# Launch note
+
+## Mira Patel · 2026-11-18 19:40:00 +05:30
+<!-- id:019a8c00-0000-7000-8000-000000000120 role:person bytes:37 -->
 
 Draft a sentence for the launch note.
 
-## fx via Vercel AI Gateway (API) · Claude Sonnet 5.5 · Medium · 2026-11-18 14:10:01 UTC · 8 s
+## fx via Vercel AI Gateway (API) · Claude Sonnet 5.5 · Medium · 2026-11-18 19:40:01 +05:30 · 8 s
+<!-- id:019a8c00-0000-7000-8000-000000000121 role:agent bytes:58 turn:019a8c00-0000-7000-8000-000000000131 meta:{"provider_id":"calternal-fx","model_id":"claude-sonnet-5-5","reasoning_level":"medium","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 The release makes shared project updates easier to follow.
 
-## Jules Rivera · 2026-11-18 14:12:00 UTC
+## Jules Rivera · 2026-11-18 09:12:00 -05:00
+<!-- id:019a8c00-0000-7000-8000-000000000122 role:person bytes:65 -->
 
 Use this structure for the draft:
 
@@ -599,30 +550,34 @@ Use this structure for the draft:
 
 - A short summary.
 
-## Codex via OpenAI · GPT-5.5 · High · 2026-11-18 14:12:01 UTC · 8 s
+## Codex via OpenAI · GPT-5.5 · High · 2026-11-18 09:12:01 -05:00 · 8 s
+<!-- id:019a8c00-0000-7000-8000-000000000123 role:agent bytes:49 turn:019a8c00-0000-7000-8000-000000000133 meta:{"provider_id":"calternal-codex","model_id":"gpt-5.5","reasoning_level":"high","machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 Shared projects now show recent updates together.
 ```
 
-The `## Changes` line belongs to Jules's body and is preserved byte for byte.
+The `## Changes` line belongs to Jules’s body. Its bytes are unchanged.
 
 #### 3. Parent thread links to work delegated to a subagent
 
 ```markdown
 ---
-format: calternal-thread
 calternal-id: 019a8c00-0000-7000-8000-000000000013
+format: calternal-thread
 title: "Compare onboarding notes"
-created-at: "2026-11-18T14:20:00Z"
-updated-at: "2026-11-18T14:20:21Z"
-archived: false
+date: 2026-11-18T19:50:00+05:30
+last edited: 2026-11-18T19:50:21+05:30
 ---
 
-## Maya Chen · 2026-11-18 14:20:00 UTC
+# Compare onboarding notes
+
+## Maya Chen · 2026-11-18 19:50:00 +05:30
+<!-- id:019a8c00-0000-7000-8000-000000000140 role:person bytes:49 -->
 
 Compare the setup steps with the short reference.
 
-## Claude Code via Anthropic (subscription) · Claude Opus 5.5 · High · 2026-11-18 14:20:01 UTC · 20 s
+## Claude Code via Anthropic (subscription) · Claude Opus 5.5 · High · 2026-11-18 19:50:01 +05:30 · 20 s
+<!-- id:019a8c00-0000-7000-8000-000000000141 role:agent bytes:114 turn:019a8c00-0000-7000-8000-000000000150 meta:{"provider_id":"calternal-claude-code","model_id":"claude-opus-5-5","reasoning_level":"high","machine_id":null,"duration_ms":20000,"reasoning_ms":null} -->
 
 The reference is missing the account setup step. See [Reference review](<Reference review.md>) for the comparison.
 ```
@@ -631,51 +586,64 @@ The reference is missing the account setup step. See [Reference review](<Referen
 
 ```markdown
 ---
-format: calternal-thread
 calternal-id: 019a8c00-0000-7000-8000-000000000014
+format: calternal-thread
 title: "Reference review"
-created-at: "2026-11-18T14:20:02Z"
-updated-at: "2026-11-18T14:20:19Z"
+date: 2026-11-18T19:50:02+05:30
+last edited: 2026-11-18T19:50:19+05:30
 archived: true
 ---
 
-## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 14:20:02 UTC · 5 s · Interrupted
+# Reference review
+
+## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 19:50:02 +05:30 · 5 s · Interrupted
+<!-- id:019a8c00-0000-7000-8000-000000000160 role:agent bytes:53 turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":5000,"reasoning_ms":null} -->
 
 I found the reference and saved the first comparison.
 
-## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 14:20:12 UTC · 7 s · Resumed
+## fx via Vercel AI Gateway (API) · Claude Haiku 5.5 · Low · 2026-11-18 19:50:12 +05:30 · 7 s · Resumed
+<!-- id:019a8c00-0000-7000-8000-000000000161 role:agent bytes:77 turn:019a8c00-0000-7000-8000-000000000170 meta:{"provider_id":"calternal-fx","model_id":"claude-haiku-5-5","reasoning_level":"low","machine_id":null,"duration_ms":7000,"reasoning_ms":null} -->
 
 The setup note includes account setup. The reference starts at project setup.
 ```
 
-The two attempts share a turn ID. Their protected placement references differ
-because the resume ran on a different machine.
+The two attempts share a turn UUID. The placements are kept private.
 
 #### 5. Automation, a failed attempt and retry
 
 ```markdown
 ---
-format: calternal-thread
 calternal-id: 019a8c00-0000-7000-8000-000000000015
+format: calternal-thread
 title: "Weekly release review"
-created-at: "2026-11-18T15:00:00Z"
-updated-at: "2026-11-18T15:00:41Z"
-archived: false
+date: 2026-11-18T20:30:00+05:30
+last edited: 2026-11-18T20:30:41+05:30
 ---
 
-## Automation Weekly release review · 2026-11-18 15:00:00 UTC
+# Weekly release review
+
+## Automation Weekly release review · 2026-11-18 20:30:00 +05:30
+<!-- id:019a8c00-0000-7000-8000-000000000180 role:automation bytes:43 -->
 
 Summarize the release checks due this week.
 
-## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 15:00:01 UTC · 2 s · Failed
+## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 20:30:01 +05:30 · 2 s · Failed
+<!-- id:019a8c00-0000-7000-8000-000000000181 role:agent bytes:38 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":2000,"reasoning_ms":null} -->
 
 Anthropic was temporarily unavailable.
 
-## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 15:00:33 UTC · 8 s · Retry 2
+## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · Provider default · 2026-11-18 20:30:33 +05:30 · 8 s · Retry 2
+<!-- id:019a8c00-0000-7000-8000-000000000182 role:agent bytes:29 turn:019a8c00-0000-7000-8000-000000000190 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":null,"machine_id":null,"duration_ms":8000,"reasoning_ms":null} -->
 
 Two checks are due on Friday.
 ```
 
+[Notes ADR 0023]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0023-notes-are-flat-files-with-stable-ids.md
+[Notes ADR 0025]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0025-title-properties-and-frontmatter.md
 [Money ADR 0057]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0057-money-files.md
 [Contacts ADR 0063]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0063-contact-notes-keep-original-vcard-lines.md
+[Tasks ADR 0066]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0066-tasks.md
+[Calendar ADR 0067]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0067-calendar.md
 [ADR 0068]: https://git.kayg.org/kayg/calternal/src/branch/dev/docs/adr/0068-frontmatter-and-lines.md
+[OpenAI model reference]: https://developers.openai.com/api/docs/models/gpt-6-luna
+[Claude Code model configuration]: https://code.claude.com/docs/en/model-config

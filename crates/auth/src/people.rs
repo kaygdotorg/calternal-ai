@@ -162,6 +162,21 @@ impl Spaces {
         })
     }
 
+    /// Snapshot the authenticated account's active display name for authored
+    /// content. Call only for the authenticated actor, never a client-supplied
+    /// target. One indexed read on the account authority worker.
+    pub fn own_display_name(&self, actor: AccountId) -> Result<Option<String>> {
+        self.run(move |c| {
+            c.query_row(
+                "SELECT name FROM users WHERE id=?1 AND disabled_at IS NULL",
+                [actor.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(sql)
+        })
+    }
+
     /// List at most 50 accounts in UUID order after checking people authority.
     /// Cost: one authorization check and one bounded indexed seek.
     pub fn people_list(&self, actor: AccountId, after: Option<AccountId>) -> Result<Value> {

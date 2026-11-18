@@ -55,8 +55,9 @@ pub(super) fn read(
     }
     let markdown =
         String::from_utf8(bytes).map_err(|_| Error::internal("invalid checkpoint encoding"))?;
+    let messages = super::records::read(&markdown)?;
     Ok(json!({
         "delta": {"id":id, "base_revision":append.base_revision, "revision":revision,
-                  "offset":append.offset,"markdown":markdown}
+                  "offset":append.offset,"markdown":markdown,"messages":messages}
     }))
 }
