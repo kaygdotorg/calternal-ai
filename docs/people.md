@@ -81,8 +81,8 @@ Membership and role changes take effect on the next authorization check.
 
 `spaces.members`, `people.list`, `groups.list`, and `invites.list` return
 at most 50 entries per page. Continue by passing the response's `next_cursor`
-as `cursor` with the same operation and scope. Space grants share one bound
-across people and groups. Account grants come first, then group grants, in UUID
+as `cursor` with the same account, operation and scope. A server restart invalidates cursors.
+Space grants share one bound across people and groups. Account grants come first, then group grants, in UUID
 order within each kind. A group's member list is independently bounded to 50.
 Continue it through `groups.list` with that `group_id` and its
 `members_next_cursor`. The server checks current authority for every page.

@@ -8,7 +8,7 @@ title: "calternal trash list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `trash list --space UUID` | List trashed notes. | Note table with deletion time | `notes[]` |
+| `trash list --space UUID [--cursor CURSOR]` | List trashed notes. | Note table with deletion time | `notes[]` |
 
 ## JSON data shape
 
@@ -22,7 +22,8 @@ title: "calternal trash list"
       "revision": "string",
       "updated_at": "string"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 
@@ -33,6 +34,8 @@ Recorded test fixture:
 ```text
 ID                                    TITLE     DELETED                     REVISION
 019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview
+
+next cursor:  c-next
 ```
 
 ## JSON example
@@ -42,6 +45,7 @@ Recorded test fixture:
 ```json
 {
   "data": {
+    "next_cursor": "c-next",
     "notes": [
       {
         "id": "019aabb0-1100-7111-8111-111111111111",

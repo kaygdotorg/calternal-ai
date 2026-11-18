@@ -867,10 +867,9 @@
       "properties": {
         "cursor": {
           "description": "The previous page's cursor. Omit it to start at the first row.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "maxLength": 524288,
+          "minLength": 1
         }
       },
       "additionalProperties": false
@@ -1064,10 +1063,9 @@
       "properties": {
         "cursor": {
           "description": "Use the group list cursor or, with `group_id`, its member cursor.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "maxLength": 524288,
+          "minLength": 1
         },
         "group_id": {
           "description": "Group UUID when reading one group's members.",
@@ -2428,6 +2426,12 @@
         "space_id"
       ],
       "properties": {
+        "cursor": {
+          "description": "Opaque cursor from the preceding page with the same space and filters.",
+          "type": "string",
+          "maxLength": 524288,
+          "minLength": 1
+        },
         "space_id": {
           "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
           "type": "string",
@@ -2449,6 +2453,13 @@
         "notes"
       ],
       "properties": {
+        "next_cursor": {
+          "description": "Opaque continuation for the next page, omitted at the end.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "notes": {
           "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
           "type": "array",
@@ -3239,10 +3250,9 @@
       "properties": {
         "cursor": {
           "description": "The previous page's cursor for this space and operation.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "maxLength": 524288,
+          "minLength": 1
         },
         "space_id": {
           "description": "Space UUID.",

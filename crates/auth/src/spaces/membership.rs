@@ -179,7 +179,7 @@ impl Spaces {
                 Some(_) => return Err(Error::invalid("invalid member cursor")),
             };
             let limit = calternal_core::DIRECTORY_PAGE_SIZE;
-            let mut members = if let Some(after) = after_account {
+            let members = if let Some(after) = after_account {
                 let mut stmt = tx.prepare_cached(
                     "SELECT m.account_id,u.name,CASE WHEN s.owner_account=m.account_id THEN 'owner' ELSE m.role END
                      FROM space_memberships m JOIN spaces s ON s.id=m.space_id JOIN users u ON u.id=m.account_id
@@ -194,10 +194,10 @@ impl Spaces {
                 Vec::new()
             };
             let mut groups = Vec::new();
-            let mut more = members.len() > limit;
-            members.truncate(limit);
-            if !more {
-                let slots = limit - members.len();
+            let accounts = calternal_types::Page::from_lookahead(members, limit, |m| format!("account:{}", m.account_id));
+            let mut next_cursor = accounts.next;
+            if next_cursor.is_none() {
+                let slots = limit - accounts.rows.len();
                 let mut stmt = tx.prepare_cached(
                     "SELECT m.group_id,g.name,m.role,
                       (SELECT count(*) FROM group_members p JOIN users u ON u.id=p.user_id
@@ -211,16 +211,18 @@ impl Spaces {
                         let group_id = GroupId::parse(&id).map_err(sql)?;
                         Ok(GroupMember { group_id, name, role, member_count })
                     }).collect::<Result<Vec<_>>>()?;
-                more = groups.len() > slots;
-                groups.truncate(slots);
+                let has_groups = !groups.is_empty();
+                let page = calternal_types::Page::from_lookahead(groups, slots, |g| format!("group:{}", g.group_id));
+                groups = page.rows;
+                next_cursor = page.next.or_else(|| {
+                    if slots == 0 && has_groups {
+                        accounts.rows.last().map(|m| format!("account:{}", m.account_id))
+                    } else {
+                        None
+                    }
+                });
             }
-            let next_cursor = if more {
-                groups.last().map(|g| format!("group:{}", g.group_id))
-                    .or_else(|| members.last().map(|m| format!("account:{}", m.account_id)))
-            } else {
-                None
-            };
-            Ok(MemberPage { members, groups, next_cursor })
+            Ok(MemberPage { members: accounts.rows, groups, next_cursor })
         })
     }
 }

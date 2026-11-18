@@ -6,7 +6,7 @@ title: "tags.lookup"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Find tags by name prefix
+Find a page of up to 100 tags by name prefix
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "tags.lookup",
-  "description": "Find tags by name prefix",
+  "description": "Find a page of up to 100 tags by name prefix",
   "mutates": false
 }
 ```
@@ -29,6 +29,12 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "additionalProperties": false,
   "description": "Space-scoped lookup of notes or tags by literal prefix.",
   "properties": {
+    "cursor": {
+      "description": "Opaque cursor from the preceding page with the same space and filters.",
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
+    },
     "prefix": {
       "description": "Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.",
       "maxLength": 256,
@@ -79,6 +85,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Bounded tag lookup result.",
   "properties": {
+    "next_cursor": {
+      "description": "Opaque continuation for the same space and prefix, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "tags": {
       "description": "Up to 100 tag names and counts, in literal name order.",
       "items": {

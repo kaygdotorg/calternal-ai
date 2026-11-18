@@ -8,7 +8,7 @@ title: "calternal notes list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `notes list --space UUID [--tag TAG]` | List active notes, optionally under a tag. | Note table | `notes[]` |
+| `notes list --space UUID [--tag TAG] [--cursor CURSOR]` | List up to 100 active notes, optionally under a tag. | Note table | `notes[]` |
 
 ## JSON data shape
 
@@ -22,7 +22,8 @@ title: "calternal notes list"
       "revision": "string",
       "updated_at": "string"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 
@@ -33,6 +34,8 @@ Recorded test fixture:
 ```text
 ID                                    TITLE     UPDATED                     REVISION
 019aabb0-1100-7111-8111-111111111111  New Plan  2026-11-17 06:12:03 +00:00  v2.preview
+
+next cursor:  c-next
 ```
 
 ## JSON example
@@ -42,6 +45,7 @@ Recorded test fixture:
 ```json
 {
   "data": {
+    "next_cursor": "c-next",
     "notes": [
       {
         "id": "019aabb0-1100-7111-8111-111111111111",
