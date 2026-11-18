@@ -89,6 +89,11 @@ try {
     assert.ok(response.ok(), `${path}: HTTP ${response.status()}`);
     return response.json();
   };
+  const assertSignedIn = async () => {
+    const { setup, signed_in: signedIn } = await api("auth/status");
+    assert.equal(setup, false);
+    assert.equal(signedIn, true);
+  };
   const op = async (operation, input = {}) => (await api("operations", {
     operation, input, request_id: crypto.randomUUID(),
   })).data;
@@ -128,7 +133,7 @@ try {
         publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options),
       })).toJSON(), start.options.publicKey);
     await api("auth/setup/finish", { ceremony: start.ceremony, credential, device: "Dev rehearsal" });
-    assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
+    await assertSignedIn();
     if (phase === "upgrade-setup") {
       // Start the measured browser visit as an owner who finished onboarding.
       assert.deepEqual(await op("onboarding.finish"), { finished: true });
@@ -155,7 +160,7 @@ try {
     const evidence = JSON.parse(readFileSync(proof, "utf8"));
     assert.equal(previous, evidence.previous);
     await page.locator("html[data-ready]").waitFor({ timeout: 15_000 });
-    assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
+    await assertSignedIn();
     await wait("enrolled machine online", async () => (await op("machines.onboarding")).ready);
     const space = (await op("spaces.list")).spaces.find(s => s.personal && s.role === "owner").id;
     const deployArgs = ["--target", target, "--image", tag, "--compatibility-proof"];
@@ -171,7 +176,7 @@ try {
     });
     assert.equal(execFileSync("podman", ["container", "inspect", "--format", "{{.State.Pid}}", unit],
       { encoding: "utf8" }), beforePid);
-    assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
+    await assertSignedIn();
     console.log("Invalid proof was refused while the original container and owner session stayed up.");
 
     assert.equal(imageId(), previous);
@@ -249,7 +254,7 @@ try {
       "no write failure was sampled during the stop");
     assert.equal((await op("notes.get", { id: old.note.id })).note.id, old.note.id);
     assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
-    assert.equal((await api("auth/status")).signed_in, true);
+    await assertSignedIn();
     console.log(JSON.stringify({
       run, gap_ms: Number((next.at - old.at).toFixed(1)),
       lost_samples: samples.filter(sample => !sample.note).length,
@@ -286,7 +291,7 @@ try {
       console.log("Enrolled machine completed a fixture turn, saved its Markdown and released its container.");
     }
   } else {
-    assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
+    await assertSignedIn();
     const saved = JSON.parse(readFileSync(marker, "utf8"));
     assert.equal((await job(saved.id)).state, "done");
     const output = join(root, "userdata-ssd/spaces", saved.space, "AI/Chats", `${saved.title}.md`);
