@@ -99,36 +99,94 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<ManifestV1, Error> {
 /// Validate declaration identity, references, primitive defaults and retry consistency.
 /// Compiles JSON Schemas with HTTP/file reference retrieval disabled; invalid schemas fail closed.
 pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
-    crate::bounded::check(m, MAX_MANIFEST_BYTES)?;
-    if m.api_version != 1
-        || !identifier(&m.id)
-        || !identifier(&m.icon)
-        || m.name.trim().is_empty()
-        || m.name.len() > 256
-        || m.version.trim().is_empty()
-        || m.version.len() > 80
-    {
-        return Err(Error::Invalid);
+    validate_manifest_detailed(m).map_err(|problem| {
+        if problem.starts_with("/: manifest exceeds") {
+            Error::TooLarge
+        } else {
+            Error::Invalid
+        }
+    })
+}
+
+/// Validate the same manifest rules as registration, with a JSON Pointer and
+/// a plain-language rule on failure. Diagnostics contain declaration paths,
+/// never worker input or user data. Cost: bounded validation and schema compilation.
+pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
+    crate::bounded::check(m, MAX_MANIFEST_BYTES)
+        .map_err(|_| "/: manifest exceeds 256 KiB".to_owned())?;
+    let invalid = |path: &str, rule: &str| Err(format!("{path}: {rule}"));
+    for (path, valid, rule) in [
+        (
+            "/api_version",
+            m.api_version == 1,
+            "expected manifest API version 1",
+        ),
+        (
+            "/id",
+            identifier(&m.id),
+            "expected a lowercase package identifier",
+        ),
+        (
+            "/icon",
+            identifier(&m.icon),
+            "expected a lowercase icon identifier",
+        ),
+        (
+            "/name",
+            !m.name.trim().is_empty() && m.name.len() <= 256,
+            "expected a nonempty name of at most 256 bytes",
+        ),
+        (
+            "/version",
+            !m.version.trim().is_empty() && m.version.len() <= 80,
+            "expected a nonempty version of at most 80 bytes",
+        ),
+    ] {
+        if !valid {
+            return invalid(path, rule);
+        }
     }
     let groups = [
-        m.kinds.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
-        m.operations.iter().map(|x| x.id.as_str()).collect(),
-        m.collections.iter().map(|x| x.id.as_str()).collect(),
-        m.views.iter().map(|x| x.id.as_str()).collect(),
-        m.attention.iter().map(|x| x.id.as_str()).collect(),
-        m.settings.iter().map(|x| x.id.as_str()).collect(),
-        m.schedules.iter().map(|x| x.id.as_str()).collect(),
-        m.webhooks.iter().map(|x| x.id.as_str()).collect(),
-        m.hooks.iter().map(|x| x.id.as_str()).collect(),
-        m.themes.iter().map(|x| x.id.as_str()).collect(),
-        m.secrets.iter().map(String::as_str).collect(),
+        (
+            "/kinds",
+            m.kinds.iter().map(|x| x.id.as_str()).collect::<Vec<_>>(),
+        ),
+        (
+            "/operations",
+            m.operations.iter().map(|x| x.id.as_str()).collect(),
+        ),
+        (
+            "/collections",
+            m.collections.iter().map(|x| x.id.as_str()).collect(),
+        ),
+        ("/views", m.views.iter().map(|x| x.id.as_str()).collect()),
+        (
+            "/attention",
+            m.attention.iter().map(|x| x.id.as_str()).collect(),
+        ),
+        (
+            "/settings",
+            m.settings.iter().map(|x| x.id.as_str()).collect(),
+        ),
+        (
+            "/schedules",
+            m.schedules.iter().map(|x| x.id.as_str()).collect(),
+        ),
+        (
+            "/webhooks",
+            m.webhooks.iter().map(|x| x.id.as_str()).collect(),
+        ),
+        ("/hooks", m.hooks.iter().map(|x| x.id.as_str()).collect()),
+        ("/themes", m.themes.iter().map(|x| x.id.as_str()).collect()),
+        ("/secrets", m.secrets.iter().map(String::as_str).collect()),
     ];
-    if groups
-        .iter()
-        .any(|g| g.len() > 128 || !unique(g.iter().copied()))
-        || m.host_calls.iter().collect::<BTreeSet<_>>().len() != m.host_calls.len()
-    {
-        return Err(Error::Invalid);
+    for (path, group) in groups {
+        if group.len() > 128 || !unique(group.iter().copied()) {
+            return invalid(path, "expected at most 128 entries with unique valid IDs");
+        }
+    }
+    if m.host_calls.iter().collect::<BTreeSet<_>>().len() != m.host_calls.len() {
+        return invalid("/host_calls", "host calls must be unique");
     }
     if m.provider.as_ref().is_some_and(|p| {
         p.protocol_version != 1
@@ -150,7 +208,10 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
                         .any(|level| !selector(level, 32))
             })
     }) {
-        return Err(Error::Invalid);
+        return invalid(
+            "/provider",
+            "check protocol version, executable name, default model and model declarations",
+        );
     }
     if let Some(menu) = &m.palette {
         let label =
@@ -182,48 +243,16 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
                 .iter()
                 .any(|s| !label(&s.label) || !address(&s.go))
         {
-            return Err(Error::Invalid);
+            return invalid(
+                "/palette",
+                "check command and section IDs, labels, routes and command targets",
+            );
         }
     }
-    if !crate::slots::valid(m) {
-        return Err(Error::Invalid);
-    }
-    if let Some(menu) = &m.palette {
-        let label =
-            |s: &str| !s.trim().is_empty() && s.len() <= 256 && !s.chars().any(char::is_control);
-        let address =
-            |s: &str| label(s) && s.starts_with('/') && !s.starts_with("//") && !s.contains('\\');
-        if menu.commands.len() > 128
-            || menu.settings_sections.len() > 128
-            || !unique(
-                menu.commands.iter().map(|c| c.id.as_str()).chain(
-                    menu.settings_sections
-                        .iter()
-                        .map(|section| section.id.as_str()),
-                ),
-            )
-            || menu.commands.iter().any(|c| {
-                !label(&c.label)
-                    || !label(&c.group)
-                    || c.words.len() > 32
-                    || c.words.iter().any(|word| !label(word))
-                    || !match (&c.go, &c.op) {
-                        (Some(go), None) => address(go),
-                        (None, Some(op)) => identifier(op),
-                        _ => false,
-                    }
-            })
-            || menu
-                .settings_sections
-                .iter()
-                .any(|s| !label(&s.label) || !address(&s.go))
-        {
-            return Err(Error::Invalid);
-        }
-    }
+    crate::slots::validate(m)?;
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
-    if m.kinds.iter().any(|x| {
-        x.searchable == Some(true) && !x.claimed_text
+    for (index, x) in m.kinds.iter().enumerate() {
+        if x.searchable == Some(true) && !x.claimed_text
             || !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
             || !match &x.storage {
@@ -245,49 +274,116 @@ pub fn validate_manifest(m: &ManifestV1) -> Result<(), Error> {
                 }
                 ManifestPlacement::Hidden { hidden } => *hidden,
             }
-    }) || m.operations.iter().any(|x| {
-        !x.target.as_ref().is_none_or(|t| target(t, &x.input_schema))
-            || !schema(&x.input_schema)
-            || !schema(&x.output_schema)
-            || x.mutates == (x.risk == calternal_core::OperationRisk::Read)
-            || x.mutates == (x.idempotency == ManifestIdempotency::ReadOnly)
-            || (x.mutates && x.required_capability == ManifestCapability::SpaceRead)
-    }) {
-        return Err(Error::Invalid);
+        {
+            return invalid(
+                &format!("/kinds/{index}"),
+                "check the JSON schema, file extension, text claim and storage path",
+            );
+        }
     }
-    if m.collections
-        .iter()
-        .any(|x| !identifier(&x.kind) || x.name.trim().is_empty() || x.name.len() > 256)
-        || m.views.iter().any(|x| !identifier(&x.component))
-        || m.attention.iter().any(|x| !op(&x.operation))
-        || m.schedules.iter().any(|x| {
-            !op(&x.operation) || x.expression.trim().is_empty() || x.expression.len() > 256
-        })
-        || m.webhooks.iter().any(|x| !op(&x.operation))
-    {
-        return Err(Error::Invalid);
+    for (index, x) in m.operations.iter().enumerate() {
+        for (field, valid, rule) in [
+            (
+                "target",
+                x.target.as_ref().is_none_or(|t| target(t, &x.input_schema)),
+                "the item target must refer to a required string field in input_schema",
+            ),
+            (
+                "input_schema",
+                schema(&x.input_schema),
+                "expected a valid JSON Schema",
+            ),
+            (
+                "output_schema",
+                schema(&x.output_schema),
+                "expected a valid JSON Schema",
+            ),
+            (
+                "risk",
+                x.mutates != (x.risk == OperationRisk::Read),
+                "read operations must use read risk and mutations must declare a write risk",
+            ),
+            (
+                "idempotency",
+                x.mutates != (x.idempotency == ManifestIdempotency::ReadOnly),
+                "use read_only for reads and request_id or never for mutations",
+            ),
+            (
+                "required_capability",
+                !x.mutates || x.required_capability != ManifestCapability::SpaceRead,
+                "a mutation requires a write capability",
+            ),
+        ] {
+            if !valid {
+                return invalid(&format!("/operations/{index}/{field}"), rule);
+            }
+        }
     }
-    if m.settings.iter().any(|x| !x.accepts(&x.default)) {
-        return Err(Error::Invalid);
-    }
-    if m.hooks.iter().any(|x| {
-        !op(&x.operation)
-            || x.patterns.is_empty()
-            || x.patterns.len() > 128
-            || x.patterns
+    for (path, valid, rule) in [
+        (
+            "/collections",
+            m.collections
                 .iter()
-                .any(|p| !identifier(p.strip_suffix(".*").unwrap_or(p)))
-    }) || m.themes.iter().any(|x| {
-        x.stylesheet.trim().is_empty()
-            || x.stylesheet.len() > 4096
-            || x.stylesheet.starts_with('/')
-            || x.stylesheet.contains([':', '\\'])
-            || x.stylesheet
-                .split('/')
-                .any(|p| p.is_empty() || p == ".." || p == ".")
-            || !x.stylesheet.ends_with(".css")
-    }) {
-        return Err(Error::Invalid);
+                .all(|x| identifier(&x.kind) && !x.name.trim().is_empty() && x.name.len() <= 256),
+            "each collection requires a valid kind ID and a nonempty name of at most 256 bytes",
+        ),
+        (
+            "/views",
+            m.views.iter().all(|x| identifier(&x.component)),
+            "each view requires a valid component ID",
+        ),
+        (
+            "/attention",
+            m.attention.iter().all(|x| op(&x.operation)),
+            "each entry must point to a declared operation",
+        ),
+        (
+            "/schedules",
+            m.schedules.iter().all(|x| {
+                op(&x.operation) && !x.expression.trim().is_empty() && x.expression.len() <= 256
+            }),
+            "each schedule requires a declared operation and a nonempty expression of at most 256 bytes",
+        ),
+        (
+            "/webhooks",
+            m.webhooks.iter().all(|x| op(&x.operation)),
+            "each webhook must point to a declared operation",
+        ),
+        (
+            "/settings",
+            m.settings.iter().all(|x| x.accepts(&x.default)),
+            "each default must match its declared value_type",
+        ),
+        (
+            "/hooks",
+            m.hooks.iter().all(|x| {
+                op(&x.operation)
+                    && !x.patterns.is_empty()
+                    && x.patterns.len() <= 128
+                    && x.patterns
+                        .iter()
+                        .all(|p| identifier(p.strip_suffix(".*").unwrap_or(p)))
+            }),
+            "each hook requires a declared operation and 1 to 128 valid ID patterns",
+        ),
+        (
+            "/themes",
+            m.themes.iter().all(|x| {
+                !x.stylesheet.trim().is_empty()
+                    && x.stylesheet.len() <= 4096
+                    && !x.stylesheet.starts_with('/')
+                    && !x.stylesheet.contains([':', '\\'])
+                    && x.stylesheet
+                        .split('/')
+                        .all(|p| !p.is_empty() && p != ".." && p != ".")
+                    && x.stylesheet.ends_with(".css")
+            }),
+            "each stylesheet must use a safe relative CSS path",
+        ),
+    ] {
+        if !valid {
+            return invalid(path, rule);
+        }
     }
     Ok(())
 }

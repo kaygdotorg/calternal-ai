@@ -14,29 +14,36 @@ use std::{
 pub(crate) struct Args {
     /// Source directory created by calternal plugin new.
     dir: PathBuf,
+    #[command(flatten)]
+    target: Target,
+    /// Activate one build and exit.
+    #[arg(long)]
+    once: bool,
+}
+
+#[derive(clap::Args)]
+struct Target {
     /// Protected appdata directory of the running development server.
     #[arg(long, env = "APPDATA", num_args = 0..=1, default_missing_value = "")]
     appdata: Option<OsString>,
-    /// Development space UUID.
-    #[arg(long, env = "SPACE_ID", num_args = 0..=1, default_missing_value = "")]
+    /// Development space UUID. Defaults to SPACE_ID.
+    #[arg(long, num_args = 0..=1, default_missing_value = "")]
     space: Option<OsString>,
     /// Enrolled account with access to manage plugins in that space.
     #[arg(long, env = "ACCOUNT_ID", num_args = 0..=1, default_missing_value = "")]
     account: Option<OsString>,
-    /// Activate one build and exit.
-    #[arg(long)]
-    once: bool,
 }
 
 struct Draft {
     dir: PathBuf,
     appdata: PathBuf,
     space: SpaceId,
+    space_source: &'static str,
     account: AccountId,
     once: bool,
 }
 
-fn draft(args: Args) -> Result<Draft, CliError> {
+fn target(args: Target) -> Result<(PathBuf, SpaceId, &'static str, AccountId), CliError> {
     let hint = "Source your development server's env file in this shell, or pass --appdata, --space and --account explicitly.";
     let appdata = args
         .appdata
@@ -47,8 +54,14 @@ fn draft(args: Args) -> Result<Draft, CliError> {
             )
             .hint(hint)
         })?;
-    let space = args
-        .space
+    let (space, space_source) = match args.space {
+        Some(value) => (Some(value), "--space"),
+        None => (
+            std::env::var_os("SPACE_ID"),
+            "SPACE_ID environment variable",
+        ),
+    };
+    let space = space
         .as_deref()
         .and_then(|value| value.to_str())
         .and_then(|value| SpaceId::parse(value).ok())
@@ -67,10 +80,16 @@ fn draft(args: Args) -> Result<Draft, CliError> {
             )
             .hint(hint)
         })?;
+    Ok((appdata.into(), space, space_source, account))
+}
+
+fn draft(args: Args) -> Result<Draft, CliError> {
+    let (appdata, space, space_source, account) = target(args.target)?;
     Ok(Draft {
         dir: args.dir,
-        appdata: appdata.into(),
+        appdata,
         space,
+        space_source,
         account,
         once: args.once,
     })
@@ -90,9 +109,12 @@ fn activate(args: &Draft) -> Result<Reply, CliError> {
     };
     npm(&args.dir, &["run", build, "--silent"])?;
     let draft_error = |message| {
-        CliError::new("plugin_draft", message).hint(
-            "Check the package and the running development server's appdata, space and account.",
+        CliError::new(
+            "plugin_draft",
+            format!("{message} (space {} from {})", args.space, args.space_source),
         )
+        .details(serde_json::json!({"space_id":args.space,"space_source":args.space_source}))
+        .hint("Check that APPDATA and the space and account UUIDs come from the same development server.")
     };
     let built = Instant::now();
     let package = Package::read(&args.dir).map_err(draft_error)?;
@@ -109,10 +131,11 @@ fn activate(args: &Draft) -> Result<Reply, CliError> {
     let build_ms = built.duration_since(start).as_secs_f64() * 1000.0;
     let activation_ms = built.elapsed().as_secs_f64() * 1000.0;
     Ok(Reply::new(serde_json::json!({
-        "id":id, "status":"ready", "space_id":args.space,
+        "id":id, "status":"ready", "space_id":args.space, "space_source":args.space_source,
         "build_ms":build_ms, "activation_ms":activation_ms
     }))
     .fields([("Plugin", id.as_str()), ("Status", "Ready")])
+    .fields([("Space", format!("{} ({})", args.space, args.space_source))])
     .fields([
         ("Build", format!("{build_ms:.0} ms")),
         ("Activate", format!("{activation_ms:.0} ms")),

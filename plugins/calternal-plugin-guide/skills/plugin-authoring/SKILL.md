@@ -40,8 +40,8 @@ calternal invoke calternal-plugin-guide.explain --input "{\"space_id\":\"$SPACE_
 A space-targeted plugin invocation includes `space_id` in its HTTP or CLI
 input. The host resolves it and removes it before invoking your handler.
 Your handler reads fields declared in the operation schema. Item-targeted
-operations can resolve the space from the item ID. Host job lookups use
-`{ "job_id": "…" }` alone. `calternal describe --json` shows the schemas for
+operations can resolve the space from the item ID. For a job returned as
+`JOB_ID`, use `calternal invoke jobs.get --json --input "{\"job_id\":\"$JOB_ID\"}"`. `calternal describe --json` shows the schemas for
 the host operations.
 
 Declare capabilities and broker calls in the manifest. Durable writes
@@ -66,7 +66,8 @@ supplied connection and verify its effect or generated view. Omit
 `--once` to watch the package. A rejected build leaves the last ready
 draft available. If an invocation reports a busy worker, wait for its
 current invocations to finish. Reuse the request ID when retrying the
-same durable write.
+same durable write. If an operation returns `committed_write`, the
+save happened. Use its ID and string revision to reconcile the result.
 
 ## Shared settings and generated contributions
 

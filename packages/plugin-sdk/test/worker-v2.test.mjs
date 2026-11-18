@@ -9,6 +9,9 @@ const invoke = id => frame(id,{type:'invoke',operation:'notes-insights.summarize
 const tick = () => new Promise(resolve => setImmediate(resolve));
 test('manifest strict nested rejection and closed authority vocabulary', () => {
   assert.equal(validateManifestV1(manifest),manifest);
+  const { kinds: _kinds, ...stateless } = manifest;
+  assert.deepEqual(validateManifestV1(stateless).kinds, []);
+  assert.throws(() => validateManifestV1({ ...stateless, kinds: null }));
   for (const mutate of [m=>m.extra=true,m=>m.operations[0].extra=true,m=>m.host_calls.push('shell'),m=>m.operations[0].required_capability='admin',m=>m.operations[0].mutates=true,m=>m.operations.push(m.operations[0]),m=>m.hooks.push({id:'h',mode:'rewrite',patterns:['notes.*'],operation:'notes-insights.summarize'}),m=>m.themes.push({id:'t',stylesheet:'https://x/a.css'}),m=>m.settings.push({id:'s',value_type:'boolean',default:0})]) { const m=structuredClone(manifest); mutate(m); assert.throws(()=>validateManifestV1(m)); }
 });
 test('protocol round trips reject versions, unknown keys, sizes and invalid UTF8', () => {

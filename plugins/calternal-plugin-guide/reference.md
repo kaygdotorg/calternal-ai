@@ -133,6 +133,24 @@ own kinds using `list_items_v1`. The result has `items` and
 and an optional title. Pass the cursor unchanged with the same kind
 and filter. Render a GenUI list from the resulting summaries.
 
+The broker checks operation input and write arguments before applying a
+write. `write_item` returns a UUID `id` and an opaque **string**
+`revision`. Match those types in your output schema and fixture replies.
+If a validated mutation commits a content write but the worker response
+fails validation or does not arrive, the server returns its durable
+acknowledgment as `{ "committed_write": { "id": "...", "revision": "..." } }`.
+Treat this as a successful save. Retrying with the same request ID and
+input returns the same acknowledgment. A new request ID can create a new
+item. This envelope acknowledges the first committed content write and
+does not certify that subsequent callbacks ran.
+
+Omit `kinds` or use `"kinds": []` for a plugin with no stored kinds. A
+generated slot targets a read-only operation whose output schema both
+declares `properties.view` and includes `"view"` in `required`. For
+`typedHandlers` inference, use single primitive `type` names on properties.
+For example, declare a cursor as an optional string and omit it when
+there is no next page.
+
 ## Durable jobs and progress
 
 Use a mutating start operation with a request ID. Declare `start_job` in
@@ -161,7 +179,11 @@ running job. Use `await context.chunk(job_id, data)` for each progress
 update. Return `{status: "done", result: { /* final payload */ }}` to
 store a final result. `{status: "waiting"}` parks the job.
 
-Invoke `jobs.get` with `{job_id}` to read state and final result.
+Read state and the final result with the ordinary CLI operation.
+
+```sh
+calternal invoke jobs.get --json --input "{\"job_id\":\"$JOB_ID\"}"
+```
 Subscribe to `GET /api/v1/jobs/<job_id>/events` using the normal
 authenticated same-origin connection. The SSE `chunk` event includes
 `seq` and `data`. The `snapshot` and `end` events include the job.

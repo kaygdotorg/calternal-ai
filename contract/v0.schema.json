@@ -2057,7 +2057,6 @@
         "host_calls",
         "icon",
         "id",
-        "kinds",
         "name",
         "operations",
         "schedules",
@@ -2112,7 +2111,8 @@
           "type": "string"
         },
         "kinds": {
-          "description": "Kinds offered by this plugin.",
+          "description": "Kinds offered by this plugin. An omitted list declares no kinds.",
+          "default": [],
           "type": "array",
           "items": {
             "$ref": "#/definitions/ManifestKind"

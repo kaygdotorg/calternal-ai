@@ -175,7 +175,11 @@ pub(crate) async fn call(
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .unwrap_or_else(|| "internal".into());
             let reason = api.details.as_ref().and_then(|d| d.get("reason")).and_then(Value::as_str);
-            let hint = if api.code == calternal_types::ErrorCode::InvalidInput {
+            let space_not_found = api.code == calternal_types::ErrorCode::NotFound
+                && api.message == "space not found";
+            let hint = if space_not_found {
+                "Check the space shown by plugin dev or spaces.list. In SSH, expand SPACE_ID in the shell where you sourced the env file."
+            } else if api.code == calternal_types::ErrorCode::InvalidInput {
                 "Correct the field shown above. Check the plugin manifest or run `calternal describe --json` for host operation schemas."
             } else if reason == Some("worker_busy") {
                 "Retry when the current invocations finish. For a write, repeat with the same request ID."
@@ -186,6 +190,26 @@ pub(crate) async fn call(
             } else {
                 "Check that the operation is available in the selected space and that your account can use it."
             };
+            if space_not_found {
+                if let Some(space) = request.input.get("space_id").and_then(Value::as_str) {
+                    let source = if std::env::var("SPACE_ID").as_deref() == Ok(space) {
+                        "--input (matches the SPACE_ID environment variable)"
+                    } else {
+                        "--input"
+                    };
+                    let selected = if space.is_empty() {
+                        "empty space ID".to_owned()
+                    } else if let Ok(id) = calternal_types::SpaceId::parse(space) {
+                        format!("space {id}")
+                    } else {
+                        "invalid space ID".to_owned()
+                    };
+                    return CliError::new(code, format!("Space not found for {selected} from {source}."))
+                        .request_id(request.request_id.clone())
+                        .details(json!({"space_id":space, "space_source":source}))
+                        .hint(hint);
+                }
+            }
             let mut failure = CliError::new(code, api.message)
                 .request_id(request.request_id.clone())
                 .hint(hint);

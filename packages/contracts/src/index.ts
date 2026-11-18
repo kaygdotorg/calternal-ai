@@ -1516,7 +1516,7 @@ version: string,
  */
 api_version: number,
 /**
- * Kinds offered by this plugin.
+ * Kinds offered by this plugin. An omitted list declares no kinds.
  */
 kinds: Array<ManifestKind>,
 /**

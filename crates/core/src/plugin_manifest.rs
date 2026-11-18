@@ -480,7 +480,8 @@ pub struct ManifestV1 {
     pub version: String,
     /// Manifest API version, currently 1.
     pub api_version: u32,
-    /// Kinds offered by this plugin.
+    /// Kinds offered by this plugin. An omitted list declares no kinds.
+    #[serde(default)]
     pub kinds: Vec<ManifestKind>,
     /// Public operation schemas and policy.
     pub operations: Vec<ManifestOperation>,

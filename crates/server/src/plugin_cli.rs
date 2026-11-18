@@ -1,6 +1,6 @@
 //! Local TypeScript author commands. Author scripts run as the invoking user.
 use calternal_cli::output::{CliError, Reply};
-use calternal_plugin_host::{CompiledSchemas, MAX_MANIFEST_BYTES};
+use calternal_plugin_host::MAX_MANIFEST_BYTES;
 use calternal_server::plugins::{
     live_catalog::{self, Change},
     package_store::{self, Package},
@@ -356,7 +356,7 @@ fn check(dir: &Path) -> Result<Reply, CliError> {
         CliError::new("invalid_input", format!("manifest.json: {error}"))
             .hint("Compare the field with the plugin API reference.")
     })?;
-    CompiledSchemas::compile(&manifest).map_err(|problem| {
+    calternal_plugin_host::validate_manifest_detailed(&manifest).map_err(|problem| {
         CliError::new("invalid_input", format!("manifest.json: {problem}"))
             .hint("Check IDs, schemas, operation capabilities and risks against the plugin API reference.")
     })?;
