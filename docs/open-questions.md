@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 23:30 IST.
+[glossary](glossary.md). Updated 2026-11-19 00:50 IST.
 
 ## Waiting now
 
@@ -37,6 +37,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Plugin network access (2026-11-19): four kinds, each its own permission. Named connections: a Manager approves the plugin's envelope once and people add their own hosts inside it; built-in mail handling plus generic TCP to an approved host and port. Content fetch (images in mail, previews): any plugin may declare it, shown at install, always anonymous, restricted and proxied by the server. Open internet: one broad permission approved by the space's Owner or a Manager. Private network: a separate grant that can name hosts, ranges and the space's machines. It must stay wide enough that people's own plugins can do a lot.
 - Interface details (kayg, 2026-11-18 night): every segmented choice uses the existing app's Selector, ported (an outer pill with the selected item as a pill inside it), including Inbox and All Threads; no search button beside those tabs; the full-screen control is hidden when a window is already full; window width and look leave the three-dot menu and their defaults live in Settings, Appearance; Settings shows nested sections as a split inside the card when there is width (the same primitive a mail plugin would use); no setting appears twice.
 - Production is not deployed again until data survives upgrades (kayg, 2026-11-18): migrations for everything that cannot be rebuilt, a version on every format, and a tested rollback come first; kayg signs up after that. The scaling measurement for message search (10 million, 100 million, 1 billion if the disk allows; many threads and few long ones) is accepted as enough.
 - Materials (#24, 2026-11-18): the readability floor is 7:1 with text flipping light or dark; light mode uses the lighter copy of the photo; the temporary Compare section is removed. Closed 2026-11-18: the Compare section, both toggles and the old paths are deleted; Clear to tinted is in Materials (docs/ui-design-system.md, "Readability floor and Clear to tinted").
