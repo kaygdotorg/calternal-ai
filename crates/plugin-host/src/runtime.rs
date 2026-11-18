@@ -230,6 +230,20 @@ impl CompiledSchemas {
             .map(Self)
     }
 }
+/// A rejected worker frame or an output schema diagnostic for its operation.
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ReceiveError {
+    /// A bounded protocol or authority failure.
+    #[error(transparent)]
+    Protocol(#[from] Error),
+    /// A completion violated the cached output schema. Values are omitted.
+    #[error("plugin output does not match its schema at {path}")]
+    Output {
+        /// JSON Pointer into the manifest's output schema, never a submitted value.
+        path: String,
+    },
+}
+
 /// Worker admission failure before any callback or worker effect.
 #[derive(Debug, PartialEq, thiserror::Error)]
 pub enum InvokeError {
@@ -358,7 +372,11 @@ impl WorkerSession {
     /// At most one broker effect plus two authority checks; no library I/O or locks.
     /// Receive one worker frame. Full queues refuse before callbacks or state changes.
     /// Undeclared/forged calls are refused before effects; malformed secret replies are redacted.
-    pub fn receive(&mut self, frame: Frame, broker: &mut impl HostBroker) -> Result<(), Error> {
+    pub fn receive(
+        &mut self,
+        frame: Frame,
+        broker: &mut impl HostBroker,
+    ) -> Result<(), ReceiveError> {
         check_frame(&frame)?;
         let invocation = self
             .active
@@ -372,7 +390,7 @@ impl WorkerSession {
                 authority,
             } => {
                 if self.outgoing.len() >= MAX_QUEUE {
-                    return Err(Error::BackPressure);
+                    return Err(Error::BackPressure.into());
                 }
                 if !self.manifest.host_calls.contains(method)
                     || authority != &invocation.authority
@@ -380,7 +398,7 @@ impl WorkerSession {
                     || invocation.calls.contains(call_id)
                     || invocation.calls.len() >= MAX_CALLBACKS
                 {
-                    return Err(Error::Refused);
+                    return Err(Error::Refused.into());
                 }
                 if *method == HostCallKind::WriteItem
                     && !self
@@ -389,7 +407,7 @@ impl WorkerSession {
                         .iter()
                         .any(|op| op.id == invocation.operation && op.mutates)
                 {
-                    return Err(Error::Refused);
+                    return Err(Error::Refused.into());
                 }
                 if *method == HostCallKind::RequestSecretHandle
                     && !(input.as_object().is_some_and(|o| o.len() == 1)
@@ -398,10 +416,10 @@ impl WorkerSession {
                             .and_then(Value::as_str)
                             .is_some_and(|name| self.manifest.secrets.iter().any(|s| s == name)))
                 {
-                    return Err(Error::Refused);
+                    return Err(Error::Refused.into());
                 }
                 if !broker.authorize(authority, invocation.required) {
-                    return Err(Error::Refused);
+                    return Err(Error::Refused.into());
                 }
                 // Reserve replay identity before any effect; even a failed broker effect cannot be retried blindly.
                 invocation.calls.insert(call_id.clone());
@@ -460,13 +478,13 @@ impl WorkerSession {
                 job_id, sequence, ..
             } => {
                 if self.deliveries.len() >= MAX_QUEUE {
-                    return Err(Error::BackPressure);
+                    return Err(Error::BackPressure.into());
                 }
                 if *sequence != invocation.sequence || !invocation.jobs.contains(job_id) {
-                    return Err(Error::Invalid);
+                    return Err(Error::Invalid.into());
                 }
                 if !broker.authorize_pinned(&invocation.authority, invocation.required) {
-                    return Err(Error::Refused);
+                    return Err(Error::Refused.into());
                 }
                 invocation.sequence = invocation.sequence.checked_add(1).ok_or(Error::Invalid)?;
                 self.deliveries.push_back((
@@ -477,14 +495,16 @@ impl WorkerSession {
             }
             Message::Complete { .. } | Message::Failed {} => {
                 if self.deliveries.len() >= MAX_QUEUE {
-                    return Err(Error::BackPressure);
+                    return Err(Error::BackPressure.into());
                 }
                 if !broker.authorize_pinned(&invocation.authority, invocation.required) {
-                    return Err(Error::Refused);
+                    return Err(Error::Refused.into());
                 }
                 if let Message::Complete { data } = &frame.message {
-                    if !self.schemas.0[&invocation.operation].1.is_valid(data) {
-                        return Err(Error::Invalid);
+                    if let Err(error) = self.schemas.0[&invocation.operation].1.validate(data) {
+                        return Err(ReceiveError::Output {
+                            path: crate::input_diagnostics::output_path(&error),
+                        });
                     }
                 }
                 let authority = invocation.authority.clone();
@@ -492,7 +512,7 @@ impl WorkerSession {
                 self.active.remove(&frame.invocation_id);
                 self.deliveries.push_back((frame, authority, required));
             }
-            _ => return Err(Error::Invalid),
+            _ => return Err(Error::Invalid.into()),
         }
         Ok(())
     }

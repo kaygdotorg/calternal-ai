@@ -42,6 +42,7 @@ mod mutations;
 mod pool;
 mod publication;
 mod recovery;
+pub use recovery::ReceiptPruningIssue;
 mod rename_job;
 mod search;
 pub use search::{
