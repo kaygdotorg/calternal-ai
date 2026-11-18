@@ -1,7 +1,9 @@
 <script lang="ts">
   // One setting as a row: the label on the left with its help text under it, one control on the right edge. The control is chosen by the setting's data
   // (registry.ts), by the rules of docs/ui-craft-and-settings-study.md 11.2. Changes apply when made: there is no Save.
-  import { Button, Capsule, Icon, InlineEditor, Menu, Pill, StepSlider, Switch } from "@calternal/ui";
+  import { Button, Icon, IconButton, InlineEditor, Menu, Pill, Selector, StepSlider, Switch } from "@calternal/ui";
+  import { APPS } from "../registry";
+  import { applyOrder, move } from "../../shell/appOrder";
   import PresetGallery from "../../appearance/PresetGallery.svelte";
   import Slider from "../../appearance/Slider.svelte";
   import type { Setting } from "./registry";
@@ -32,6 +34,17 @@
   <div class="row col" class:hl={highlighted} data-setting={s.id}>
     <StepSlider label={s.label} steps={c.steps} value={Number(value)} onchange={(i) => s.set?.(i)} hint={s.help} />
   </div>
+{:else if c.type === "order"}
+  <div class="row col" class:hl={highlighted} data-setting={s.id}>
+    <div class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</div>
+    <ol class="order" aria-label={s.label}>
+      {#each applyOrder(APPS, (value as string[]) ?? []) as a, i (a.kind)}
+        <li><span class="n">{a.name}</span>
+          <IconButton icon="up" label="Move {a.name} up" disabled={i === 0} onclick={() => s.set?.(move(applyOrder(APPS, (value as string[]) ?? []).map((x) => x.kind), a.kind, -1))} />
+          <IconButton icon="down" label="Move {a.name} down" disabled={i === APPS.length - 1} onclick={() => s.set?.(move(applyOrder(APPS, (value as string[]) ?? []).map((x) => x.kind), a.kind, 1))} /></li>
+      {/each}
+    </ol>
+  </div>
 {:else if c.type === "checkbox"}
   <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
 {:else}
@@ -39,9 +52,9 @@
     <span class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</span>
     <span class="ctl">
       {#if c.type === "scheme"}
-        <Capsule label={s.label} kind="radio" glass={false} items={[{ id: "system", label: "Auto" }, { id: "light", label: "Light" }, { id: "dark", label: "Dark" }]} value={String(value)} onchange={(v) => s.set?.(v)} />
+        <Selector label={s.label} fill={false} options={[{ value: "system", label: "Auto" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={String(value)} onchange={(v) => s.set?.(v)} />
       {:else if c.type === "segmented"}
-        <Capsule label={s.label} kind="radio" glass={false} items={c.options} value={String(value)} onchange={(v) => s.set?.(v)} />
+        <Selector label={s.label} fill={false} options={c.options.map((o) => ({ value: o.id, label: o.label }))} value={String(value)} onchange={(v) => s.set?.(v)} />
       {:else if c.type === "popup"}
         <Pill label={s.label} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)}><span>{c.options.find((o) => o.id === value)?.label ?? String(value)}</span><Icon inline name="chevron" /></Pill>
         <Menu open={menu} items={c.options.map((o) => ({ id: o.id, label: o.label, checked: o.id === value }))} label={s.label} {trigger} onclose={() => (menu = false)} onpick={(id) => s.set?.(id)} />
@@ -70,8 +83,6 @@
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .h { font-size: var(--text-label); color: var(--ink-3); max-width: 38rem; }
   .ctl { flex: none; display: inline-flex; align-items: center; justify-content: flex-end; min-width: 10rem; }
-  /* A segmented control keeps each choice's full word. */
-  .ctl :global(.cap .seg) { flex: 1 0 auto; padding-inline: var(--s-5); }
   /* A phone: the control goes under the words and takes the row's width, so nothing runs past the card (found in real Safari). */
   @media (max-width: 600px) {
     .row { flex-direction: column; align-items: stretch; gap: var(--s-3); }
@@ -86,4 +97,7 @@
   .drill { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--pill-h); }
   /* A hairline between rows, inset from the label's edge. */
   :global(.sg > .row + .row)::before, :global(.sg > .row + .row)::before { content: ""; position: absolute; top: 0; left: var(--s-6); right: 0; height: 1px; background: var(--line); }
+  .order { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+  .order li { display: flex; align-items: center; gap: var(--s-3); }
+  .order .n { flex: 1; }
 </style>

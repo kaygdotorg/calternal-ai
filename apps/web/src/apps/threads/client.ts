@@ -51,6 +51,10 @@ export interface RequestsClient {
   watchRequests(cb: (requests: Request[]) => void): () => void;
   /** Answers a request. For a secret the value leaves the client here and is not kept. */
   answer(requestId: string, answer: Answer): Promise<void>;
+  /** Where a provider sign-in stands: `pending`, `done`, `failed`, or `gone` (unknown or expired; the server answers not_found). Absent when the server has no provider sign-in. */
+  signInStatus?(id: string): Promise<"pending" | "done" | "failed" | "gone">;
+  /** The person started typing in a thread: the server may offer a sign-in the provider will need (it shows up in the open requests). Called once per focus; absent when there is no provider sign-in. */
+  signInTyping?(threadId: string): Promise<void>;
 }
 
 /** The right panel's tabs (Changes, Run). */

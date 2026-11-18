@@ -3,6 +3,8 @@
  *   - `requests.list` `{}` -> `{ requests: [{ id, space_id|null, thread_id|null, detail }] }`, account-wide; `detail.kind` is `question` (`label`, `form: { genui_version: 2, source }`),
  *     `approval` (`app`, `write`, `action: { operation, input, request_id, risk }`) or `secret` (`name`, `label`, `reason`, `expires_at_ms`).
  *   - `requests.answer` `{ id, answer }` (a question's form values), `requests.approve` `{ id, lifetime: "once" | "this_thread" }`, `requests.deny` `{ id }`.
+ *   - Provider sign-in (`docs/requests.md`, lane #48): `requests.list` also carries `detail.kind: "provider_sign_in"` (`provider_id`, `label`, `url`, `display_code`, `needs_code`, `expires_at_ms`; url and code may be null), private to the person. `provider.sign_in.answer`
+ *     `{ id, code }`, `provider.sign_in.status` `{ id }` -> `{ id, status: "pending" | "done" | "failed" }` (missing or expired: `not_found`), `provider.sign_in.typing` `{ space_id, thread_id }` -> `{ id, status }` or null. Nothing of a sign-in is kept: the thread file carries one line.
  *   - A secret's value is not an operation: it goes to `POST /api/v1/auth/secrets/provide` `{ space_id?, request_id, value }` (a signed-in session with a fresh passkey check), and is not kept here.
  * Approving needs a fresh passkey proof on an installation session, so a development bearer is refused: the refusal reaches the person as the server's own words.
  * Which lifetimes an approval allows is the server's rule (`detail.lifetimes`, in display order; irreversible and access-widening actions are single-use): `lifetimesOf` reads that list and nothing else,
@@ -26,7 +28,8 @@ export interface WireRequest {
   detail:
     | { kind: "question"; label: string; form: { genui_version: number; source: string } }
     | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string }; lifetimes: string[] }
-    | { kind: "secret"; name: string; label: string; reason: string; expires_at_ms: number };
+    | { kind: "secret"; name: string; label: string; reason: string; expires_at_ms: number }
+    | { kind: "provider_sign_in"; provider_id: string; label: string; url: string | null; display_code: string | null; needs_code: boolean; expires_at_ms: number };
 }
 
 /**
@@ -55,6 +58,7 @@ export function requestOf(w: WireRequest): Request | null {
       };
     }
     case "secret": return { id: w.id, kind: "secret", threadId, name: d.name, label: d.label || d.name, why: d.reason, scope: w.space_id ? "space" : "personal", spaceId: w.space_id ?? undefined, required: true, expiresAt: d.expires_at_ms };
+    case "provider_sign_in": return { id: w.id, kind: "signin", threadId, providerId: d.provider_id, label: d.label, url: d.url ?? null, displayCode: d.display_code ?? null, needsCode: !!d.needs_code, expiresAt: d.expires_at_ms };
     default: return null;
   }
 }
@@ -64,6 +68,7 @@ export function answerInput(id: string, a: Answer): { operation: string; input: 
   switch (a.kind) {
     case "question": return { operation: "requests.answer", input: { id, answer: a.values } };
     case "approval": return a.decision === "deny" ? { operation: "requests.deny", input: { id } } : { operation: "requests.approve", input: { id, lifetime: a.decision === "thread" ? "this_thread" : "once" } };
+    case "signin": return { operation: "provider.sign_in.answer", input: { id, code: a.code } };
     default: return null;
   }
 }
@@ -118,6 +123,19 @@ export class ServerRequests implements RequestsClient {
     else if (a.kind === "secret-skip") this.skipped.add(id);
     else { const call = answerInput(id, a)!; const run = () => this.server.operate(call.operation, call.input); await (call.operation === "requests.approve" ? this.fresh(run) : run()); }
     await this.refresh();
+  }
+  async signInStatus(id: string): Promise<"pending" | "done" | "failed" | "gone"> {
+    try { return (await this.server.operate<{ status: "pending" | "done" | "failed" }>("provider.sign_in.status", { id })).status; } catch (e) {
+      if (e instanceof ServerError && e.code === "not_found") return "gone";
+      throw e;
+    }
+  }
+  /** Asks the server whether this thread's provider will need a sign-in; if it offers one the request appears in the list, so the list is read again. Failures are ignored: typing is never blocked by this. */
+  async signInTyping(threadId: string): Promise<void> {
+    try {
+      const r = await this.server.operate<{ id: string; status: string } | null>("provider.sign_in.typing", { space_id: this.space(), thread_id: threadId });
+      if (r) await this.refresh();
+    } catch { /* not offered, or the server is away */ }
   }
   /** Sends a secret's value to the trusted endpoint. The value is not kept; a refusal (no fresh passkey check, expired) is thrown as the server said it. */
   private async provide(id: string, value: string): Promise<void> {

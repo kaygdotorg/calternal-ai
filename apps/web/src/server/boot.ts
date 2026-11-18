@@ -12,12 +12,13 @@ import { clearCache, readCache, writeCache } from "./cache";
 import { inviteSecret, redeemInvite } from "./people";
 import { devToken, server } from "./client";
 import { link } from "./link.svelte";
+import { load as savedOnboarding } from "../shell/onboarding/flow";
 
 /** The protocol this build speaks (`PROTOCOL_VERSION` in crates/core, in `describe`). A different number on the server means the two cannot be trusted to agree. */
 export const EXPECTED_PROTOCOL = 1;
 
 /** Where start-up goes next. */
-export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean; invite?: string } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
+export type Boot = { screen: "app" } | { screen: "signin"; needsSetup: boolean; invite?: string } | { screen: "onboarding" } | { screen: "offline" } | { screen: "version"; server: number; expected: number };
 
 async function check(): Promise<Boot> {
   link.quiet = true;
@@ -33,6 +34,7 @@ async function run(): Promise<Boot> {
     const cached = readCache();
     applyCapabilities(me.user.capabilities);
     if (cached && cached.account !== me.user.id) { clearCache(); location.reload(); return { screen: "app" }; } // another person on this device: start again from the server's answer
+    if (savedOnboarding()) return { screen: "onboarding" }; // the person was part-way through the onboarding when the page reloaded: resume it
     if (invite) await redeem(invite);
     await spaces.load().catch(() => {});
     writeCache({ account: me.user.id, capabilities: me.user.capabilities, spaces: spaces.list });

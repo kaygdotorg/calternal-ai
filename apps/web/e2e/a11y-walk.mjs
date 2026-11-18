@@ -16,7 +16,7 @@ async function walk(page, name, max = 60) {
       const cs = getComputedStyle(e), r = e.getBoundingClientRect();
       const child = [...e.children].some((c) => { const k = getComputedStyle(c); return k.outlineStyle !== "none" && parseFloat(k.outlineWidth) > 0; });
       const ring = child || (cs.outlineStyle !== "none" && parseFloat(cs.outlineWidth) > 0) || (cs.boxShadow && cs.boxShadow !== "none") || (e.matches(":focus-visible") && !!e.closest("[data-ring]"));
-      const label = (e.getAttribute("aria-label") || e.labels?.[0]?.textContent || e.textContent || e.getAttribute("placeholder") || e.getAttribute("title") || "").trim().slice(0, 40);
+      const label = (e.getAttribute("aria-label") || (e.getAttribute("aria-labelledby") && document.getElementById(e.getAttribute("aria-labelledby"))?.textContent) || e.labels?.[0]?.textContent || e.textContent || e.getAttribute("placeholder") || e.getAttribute("title") || "").trim().slice(0, 40);
       return { tag: e.tagName.toLowerCase() + (e.getAttribute("role") ? `[${e.getAttribute("role")}]` : ""), label, ring: !!ring, visible: r.width > 0 && r.height > 0, inView: r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth, id: e.id };
     });
     if (s.body) { if (i > 0) break; continue; } // wrapped round to the browser chrome

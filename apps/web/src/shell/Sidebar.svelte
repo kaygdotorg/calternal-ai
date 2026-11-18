@@ -4,7 +4,7 @@
   // the wordmark row and the footer (no opaque band); the footer holds the account picture, the app switcher and search. Switching apps happens here.
   import { Menu, Pill, type MenuItem } from "@calternal/ui";
   import { appearance } from "../appearance/prefs.svelte";
-  import { APPS, type AppDef } from "../apps/registry";
+  import type { AppDef } from "../apps/registry";
   import { navigate } from "../lib/route.svelte";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import Attention from "./Attention.svelte";
@@ -15,14 +15,14 @@
   import { shell } from "./shell.svelte";
 
   let { app }: { app: AppDef } = $props();
-  // The switcher is here unless the experiment moved it under the middle card (a phone keeps it here; its bottom bar is the app's panels).
   // One scroller serves every app: a new app starts at the top (an offset left by another app's list would put this one's first row under the wordmark).
   let scroller = $state<HTMLElement>();
   $effect(() => { void app.kind; if (scroller) scroller.scrollTop = 0; });
-  const inFooter = $derived(shell.narrow || appearance.prefs.switcher === "sidebar");
+  // The account picture: on a wide screen it opens Settings; on a phone, where the footer has no room for the dots, it opens a menu with the spaces (the current one checked) and Settings.
   let menu = $state(false);
   let trigger = $state<HTMLButtonElement>();
-  const items = $derived<MenuItem[]>(APPS.map((a) => ({ id: a.kind, label: a.name, icon: a.icon, checked: a.kind === app.kind })));
+  const items = $derived<MenuItem[]>([...spaces.list.map((s) => ({ id: `space:${s.id}`, label: s.name, checked: s.id === spaces.current.id })), { id: "settings", label: "Settings", icon: "settings" as const }]);
+  function pick(id: string) { if (id === "settings") navigate("/settings/appearance"); else { spaces.switchTo(id.slice(6)); navigate("/threads"); } }
 </script>
 
 <div class="side">
@@ -37,14 +37,9 @@
   </div>
 
   <footer>
-    <button type="button" class="avatar" aria-label="Account and settings: Kay" onclick={() => navigate("/settings/appearance")}><span aria-hidden="true">K</span></button>
-    <span class="switch">
-      {#if inFooter}
-        <Pill label={app.name} icon={app.icon} showLabel glass={false} aria-haspopup="menu" aria-expanded={menu} bind:el={trigger} onclick={() => (menu = !menu)} />
-        <Menu open={menu} {items} label="Switch app" {trigger} onclose={() => (menu = false)} onpick={(k) => navigate(`/${k}`)} />
-      {/if}
-      <SpaceDots />
-    </span>
+    <button type="button" class="avatar" bind:this={trigger} aria-label={shell.narrow ? "Account, spaces and settings: Kay" : "Account and settings: Kay"} aria-haspopup={shell.narrow ? "menu" : undefined} aria-expanded={shell.narrow ? menu : undefined} onclick={() => (shell.narrow ? (menu = !menu) : navigate("/settings/appearance"))}><span aria-hidden="true">K</span></button>
+    {#if shell.narrow}<Menu open={menu} {items} label="Account" {trigger} onclose={() => (menu = false)} onpick={pick} />{/if}
+    <span class="switch">{#if !shell.narrow}<SpaceDots />{/if}</span>
     <Pill icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
   </footer>
 </div>
