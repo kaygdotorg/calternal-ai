@@ -158,6 +158,23 @@ pub(super) enum Cmd {
         #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
         installation_id: String,
     },
+    /// Issue an enrollment grant after verifying an account owner's identity.
+    AccountRecover {
+        /// Account UUID from the operator directory.
+        account: String,
+        /// Operator audit reason: lost_passkeys, compromised, or mail_unavailable.
+        #[arg(long)]
+        reason: String,
+        /// Confirms that the operator verified the caller's identity out of band.
+        #[arg(long, required = true)]
+        identity_verified: bool,
+        /// The running server's appdata directory.
+        #[arg(long)]
+        appdata: PathBuf,
+        /// The installation UUID configured for the running server.
+        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
+        installation_id: String,
+    },
     /// Inspect receipt-pruning health for one space through the private admin socket.
     ReceiptStatus {
         /// Space UUID to inspect.

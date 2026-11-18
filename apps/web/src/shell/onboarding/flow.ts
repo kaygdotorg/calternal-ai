@@ -3,24 +3,25 @@
  * "Onboarding"). Pure: no screens here. The style is infraternal's setup wizard: numbered steps that turn into ticks, a step confirms and moves on by itself, waits show a count-up, nothing is faked.
  */
 /** One step. */
-export type StepId = "you" | "look" | "machine" | "provider" | "repos" | "cli" | "direct" | "done";
+export type StepId = "you" | "recovery" | "passkey2" | "look" | "machine" | "provider" | "repos" | "cli" | "direct" | "done";
 /** Who is onboarding: the first owner of a fresh installation, or a person who followed an invitation. */
 export type Who = "owner" | "invited";
 
 /** What a step is called in the stepper and as its heading's name. */
-export const NAMES: Record<StepId, string> = { you: "You", look: "Look", machine: "Machine", provider: "Provider", repos: "Repositories", cli: "CLI", direct: "Direct", done: "Done" };
+export const NAMES: Record<StepId, string> = { you: "You", recovery: "Recovery", passkey2: "Second passkey", look: "Look", machine: "Machine", provider: "Provider", repos: "Repositories", cli: "CLI", direct: "Direct", done: "Done" };
 
 /** The steps in order: one path for everyone (who you are and your passkey, a look, a machine, a provider's sign-in, done), and for a person who writes code (the switch "I write code") three more before done: repositories, the CLI, and direct mode on their own machine. */
-export function path(coder: boolean): StepId[] { return coder ? ["you", "look", "machine", "provider", "repos", "cli", "direct", "done"] : ["you", "look", "machine", "provider", "done"]; }
+export function path(coder: boolean): StepId[] { return coder ? ["you", "recovery", "passkey2", "look", "machine", "provider", "repos", "cli", "direct", "done"] : ["you", "recovery", "passkey2", "look", "machine", "provider", "done"]; }
 
 /**
  * Whether a step may be skipped. Who you are cannot (it makes the account); the look is a preference (skipping keeps the default); a machine and a provider can be added later in Settings (skipping says what is
  * lost: no thread can run until there is one); the coding steps are all optional. Done is the end.
  */
-export const skippable: Record<StepId, boolean> = { you: false, look: true, machine: true, provider: true, repos: true, cli: true, direct: true, done: false };
+export const skippable: Record<StepId, boolean> = { you: false, recovery: false, passkey2: true, look: true, machine: true, provider: true, repos: true, cli: true, direct: true, done: false };
 
 /** What a skipped step costs, in words, shown beside Skip. */
 export const SKIP_NOTE: Partial<Record<StepId, string>> = {
+  passkey2: "With one passkey, losing that device means using a recovery code. You can add another any time in Settings, Account.",
   look: "You can change the look any time in Settings, Appearance.",
   machine: "Without a machine no thread can run. You can add one later in Settings, Machines.",
   provider: "Without a provider a machine cannot answer. You can sign in later in Settings, Machines.",
@@ -55,11 +56,11 @@ export function clear(storage: Pick<Storage, "removeItem"> = localStorage): void
 
 /**
  * Matches a stored record to the signed-in account. A record of another account is another installation's (or another person's) and is dropped. A record with no account is only believable at the first step, written
- * before the account existed: the passkey was made and the page reloaded before the step moved on, so who-you-are is done. A record with no account at any later step cannot be this person's and is dropped.
+ * before the account existed: the passkey was made and the page reloaded before the step moved on, so who-you-are is done and the recovery codes (shown once, never kept) are the next thing. A record with no account at any later step cannot be this person's and is dropped.
  */
 export function reconcile(s: Saved | null, account: string): Saved | null {
   if (!s) return null;
   if (s.account) return s.account === account ? s : null;
   if (s.step !== "you") return null;
-  return { ...s, account, step: "look", done: s.done.includes("you") ? s.done : [...s.done, "you"] };
+  return { ...s, account, step: "recovery", done: s.done.includes("you") ? s.done : [...s.done, "you"] };
 }

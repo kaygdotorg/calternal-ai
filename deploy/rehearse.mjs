@@ -118,8 +118,8 @@ try {
     await api("auth/setup/finish", { ceremony: start.ceremony, credential, device: "Dev rehearsal" });
     assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
     if (phase === "upgrade-setup") {
-      // Setup used the real API and a software passkey. Start the measured
-      // browser visit in the same state as a returning owner.
+      // Start the measured browser visit as an owner who finished onboarding.
+      assert.deepEqual(await op("onboarding.finish"), { finished: true });
       await page.evaluate(() => localStorage.removeItem("cal.onboarding"));
     }
     await context.storageState({ path: session });

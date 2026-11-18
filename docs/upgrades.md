@@ -1,7 +1,7 @@
 # Data-preserving upgrades
 
-The production schema baseline is dev `9f8005646448233b0ab1bbe46767bb1f8b7598d6`,
-installed fresh as image tag `9f8005646448`. The markers below describe that
+The production schema baseline is dev `c98705d74bcf9f9cb2a1292b849b9b44c64b2714`,
+installed fresh as image tag `c98705d74bcf`. The markers below describe that
 release. The update proof uses the actual running image ID, which the operator
 captures in the [deployment runbook](deploy.md#first-ordinary-update-from-the-production-baseline).
 Preserve the earlier steps in the migration registry. Unsupported preview
@@ -14,13 +14,13 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
-| Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 7. Leases, fences, drain, work locations, machine leases for automatic thread titles, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 4. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls and thread snooze state. Listing, labels and links are derived. |
+| Appdata `system/auth.db` | Authority | Auth, SQLite 14. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. Versions 12 and 13 add account recovery and provider sign-in. Version 14 adds dormant sharing grants. |
+| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
 | Appdata `accounts/<id>/input.db`, `content.db`, `agent-settings.db` | Authority | Account input, content and jobs. SQLite 2 for drafts and pending input, 1 for protected collections and 1 for retry settings. |
-| Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, new SQLite 1 baseline through the shared runner. The production baseline has no marker. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
+| Appdata `accounts/<id>/onboarding.db` | Authority | Account onboarding, SQLite 1 when a person finishes onboarding. Missing files read as unfinished. The completion marker rides with account settings and is removed by account erasure. |
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
 | Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, SQLite 1. Installed and retained archives, digests, approvals and revision counters are authoritative. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
@@ -76,8 +76,8 @@ unsent edits can be lost during a system crash or power loss.
    the baseline number, initial batches, and previously shipped steps fixed.
 2. Append a `(version, SQL batch)` entry to that store's descriptor. The
    runner checks for consecutive versions and writes `PRAGMA user_version`
-   in the same immediate transaction as the batch. Leave transaction control and version
-   writes to the runner. Include any required deterministic backfill and
+   in the same immediate transaction as the batch. Leave transaction control
+   and version writes to the runner. Include any required deterministic backfill and
    preserve ownership, references, and receipt replay. A new store starts
    with an explicit baseline and an inventory row.
 3. Keep the preceding release's reads and writes valid for unattended
@@ -201,3 +201,24 @@ write, then checks rollback retains the candidate's write.
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.
+
+## Account onboarding and recovery
+
+Auth schema 12 adds account-owned email state, challenges, recovery
+proofs and grants, and audit history through the shared runner. Account
+erasure cascades to these rows. The protected recovery inventory captures
+the new tables under their account UUIDs. Invite-bound email challenges
+without an account expire after ten minutes and are owned by the
+installation until consumed or pruned. Preserve `system/invite.key`,
+which also provides separate derived keys for account proofs and sealed
+provider credentials. Auth schema 13 adds provider definitions with
+sealed credentials, issuer-bound identity links and session origins.
+Definitions belong to the installation. Links and session origins belong
+to the account.
+
+Updating a schema-11 installation to these releases requires an
+incompatible handoff because the old protected recovery table inventory is
+closed. The current production baseline already includes these versions. Take the full restore
+point with explicit owner approval and use the locked deployment
+coordinator for any remaining schema-11 installation. A v11 process must
+refuse the newer authority rather than discard unknown records.

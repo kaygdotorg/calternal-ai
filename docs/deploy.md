@@ -288,8 +288,14 @@ checkout. Run the commands in one Bash session using the existing
 `calternal` SSH deployment account. Confirm the current backup includes appdata, SSD, HDD and machine
 state. Keep the proof and both image IDs with the deployment record.
 
+The intended first candidate combines automations and interface changes. The
+automations scheduler introduces `system/automations.db` at SQLite 1. Its
+writer initializes that store through the shared runner. Build the final
+approved revision containing both changes and generate a proof for its image
+before using the commands below.
+
 1. Read the exact image ID from the running production container. Check the
-   deployed revision for baseline tag `9f8005646448` and confirm the running
+   deployed revision for baseline tag `c98705d74bcf` and confirm the running
    container and `:current` resolve to the same image. Copy that exact image
    to dev-01 for the proof.
 
@@ -306,7 +312,7 @@ state. Keep the proof and both image IDs with the deployment record.
    deployed_revision=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      "podman image inspect --format '{{ index .Labels \"org.opencontainers.image.revision\" }}' $previous")
    test "${previous#sha256:}" = "${current#sha256:}"
-   test "$deployed_revision" = 9f8005646448233b0ab1bbe46767bb1f8b7598d6
+   test "$deployed_revision" = c98705d74bcf9f9cb2a1292b849b9b44c64b2714
    ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      podman save --format oci-archive "$previous" | podman load --quiet
    imported=$(podman image inspect --format '{{.Id}}' "$previous")
@@ -364,6 +370,8 @@ state. Keep the proof and both image IDs with the deployment record.
    note or thread in a signed-in tab, save a small edit in an operator-owned
    test note, and reload to verify the edit persisted. Confirm the pool
    machine is online and can complete a disposable turn.
+   For the automations release, list definitions in an operator-owned space
+   and preview a schedule in the account's time zone without saving it.
 
    ```bash
    deployed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
