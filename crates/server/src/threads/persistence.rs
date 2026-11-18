@@ -51,6 +51,7 @@ pub(crate) fn checkpoint<D: Directory>(
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| Error::internal("invalid saved thread"))?;
+    let actor = calternal_types::Actor::agent(job.account, id);
     let seq = checkpoint["provider_seq"].as_u64().unwrap_or(0);
     let rid = format!("thread-output/{}/{}/{seq}", job.id, job.runs);
     let session = serde_json::to_value(session)
@@ -113,7 +114,8 @@ pub(crate) fn checkpoint<D: Directory>(
             metadata,
             bytes.as_bytes(),
             Request {
-                account: job.account,
+                account: actor.account,
+                via: actor.via.as_ref(),
                 id: &rid,
                 operation: "threads.checkpoint",
                 fingerprint: &fp,

@@ -33,6 +33,7 @@ fn guarded_trash_preserves_identity_history_and_refuses_new_admission() {
         .unwrap();
     let req = |id| Request {
         account,
+        via: None,
         id,
         operation: "example.lifecycle",
         fingerprint: id,

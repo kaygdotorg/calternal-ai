@@ -84,6 +84,10 @@ pub async fn dispatch<D: Directory>(
             .map_err(|_| Error::invalid_input("input does not match readiness schema"))?;
         return readiness::read(state, machines, who, target).await;
     }
+    let actor = agent
+        .as_ref()
+        .map(|scope| scope.actor.clone())
+        .unwrap_or_else(|| calternal_types::Actor::account(who.id));
     let mut i: AgentInput = serde_json::from_value(json!(input))
         .map_err(|_| Error::invalid_input("input does not match agent schema"))?;
     if op == "agent.check" && agent.is_some() {
@@ -116,7 +120,7 @@ pub async fn dispatch<D: Directory>(
         let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
         let admission = admission::ManualAdmission::new(
             state.store.shared_content(),
-            who.id,
+            actor,
             space,
             rid,
             op,
@@ -198,7 +202,7 @@ pub async fn dispatch<D: Directory>(
         let space = SpaceId::parse(&scope).map_err(|_| Error::not_found("space not found"))?;
         let admission = admission::ManualAdmission::new(
             state.store.shared_content(),
-            who.id,
+            actor,
             space,
             rid,
             op,
@@ -269,7 +273,7 @@ pub async fn dispatch<D: Directory>(
     let space = SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?;
     let admission = admission::ManualAdmission::new(
         state.store.shared_content(),
-        who.id,
+        actor,
         space,
         rid,
         op,

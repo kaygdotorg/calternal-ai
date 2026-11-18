@@ -124,6 +124,10 @@ async fn checkpoint_replay_reads_only_its_own_append_and_stop_keeps_the_step() {
             continue;
         }
         let since = &frame["entry"]["data"];
+        assert_eq!(
+            since["actor"],
+            json!({"account":f.ids[1],"via":{"Agent":{"thread":thread}}})
+        );
         assert_eq!(since["append"]["base_revision"], revision);
         let input = json!({"id":thread,"since":since});
         let chunk = f.op(2, "threads.get", input.clone()).await;

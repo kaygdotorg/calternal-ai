@@ -129,6 +129,7 @@ pub(super) async fn dispatch<D: Directory>(
                 space,
                 calternal_content::Request {
                     account: actor,
+                    via: None,
                     id: &request_id,
                     operation: op,
                     fingerprint: &fp,

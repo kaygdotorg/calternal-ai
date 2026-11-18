@@ -360,3 +360,69 @@ async fn pool_readiness_requires_entitlement_and_omits_host_identity() {
     revoked.ok();
     assert_eq!(revoked.body["data"]["pool"], json!([]));
 }
+
+#[tokio::test]
+async fn journal_attributes_person_and_agent_content_writes() {
+    use crate::live_cases::Live;
+    use crate::requests_cases::{Machine, agent};
+
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let mut feed = Live::open(&f, 1, json!([{"space_id":space}]))
+        .await
+        .unwrap();
+    assert_eq!(feed.next().await.unwrap()["type"], "ready");
+    let mut machine = Machine::enroll(&f).await;
+    let thread = uuid::Uuid::now_v7();
+    let run = f
+        .op(
+            1,
+            "agent.run",
+            json!({"space_id":space,"thread_id":thread,
+        "prompt":"attribute the note write","mode":"full_access"}),
+        )
+        .await;
+    run.ok();
+    let token = machine.next_token(&f).await;
+    let person = f
+        .op(
+            1,
+            "notes.create",
+            json!({"space_id":space,"title":"Person note","markdown":"Personal contribution"}),
+        )
+        .await;
+    person.ok();
+    let (status, automated) = agent(
+        &f,
+        &token,
+        "journal-agent-note",
+        "notes.create",
+        json!({"space_id":space,"title":"Agent note","markdown":"Agent contribution"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{automated}");
+    for (id, via) in [
+        (&person.body["data"]["note"]["id"], Value::Null),
+        (
+            &automated["data"]["note"]["id"],
+            json!({"Agent":{"thread":thread}}),
+        ),
+    ] {
+        loop {
+            let frame = feed.next().await.expect("a saved note journal event");
+            if frame["entry"]["kind"] == "notes.create" && frame["entry"]["item"] == *id {
+                let actor = &frame["entry"]["data"]["actor"];
+                assert_eq!(actor["account"], f.ids[1]);
+                assert_eq!(actor["via"], via);
+                break;
+            }
+        }
+    }
+    f.op(
+        1,
+        "agent.stop",
+        json!({"job_id":run.body["data"]["job"]["id"]}),
+    )
+    .await
+    .ok();
+}

@@ -90,6 +90,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
     state: Shared<D>,
     p: Identity,
     session: Session,
+    actor: calternal_types::Actor,
     request_id: &str,
     op: &str,
     policy: authz::Policy,
@@ -171,7 +172,6 @@ pub(super) async fn invoke_plugin<D: Directory>(
         );
     }
     let st = state.clone();
-    let caller = p.id;
     tokio::task::spawn_blocking(move || policy.authorize_space(&st.directory, &p, space))
         .await
         .map_err(|_| Error::internal("directory task failed"))??;
@@ -181,7 +181,7 @@ pub(super) async fn invoke_plugin<D: Directory>(
         // Only a delivered result is receipted: a refused or failed call may be
         // retried, and its brokered writes replay by their own receipts.
         let (principal, rid, op, result) =
-            (caller, request_id.to_owned(), op.to_owned(), value.clone());
+            (actor, request_id.to_owned(), op.to_owned(), value.clone());
         blocking(&state, move |s| {
             s.record_plugin_receipt(principal, &rid, &op, &fp, space, result)
         })

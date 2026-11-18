@@ -271,7 +271,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -287,8 +287,10 @@ impl Store {
             },
             calternal_content::FileFormat::Markdown,
         )?;
+        let actor = actor.into();
         let request = Request {
-            account: account,
+            account: actor.account,
+            via: actor.via.as_ref(),
             id: request_id,
             operation,
             fingerprint,
@@ -318,7 +320,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -331,8 +333,10 @@ impl Store {
         let id = item_id(id)?;
         let current = self.content.live_metadata(space_id, "notes", id)?;
         let old_title = current["title"].as_str().unwrap_or("");
+        let actor = actor.into();
         let request = Request {
-            account: account,
+            account: actor.account,
+            via: actor.via.as_ref(),
             id: request_id,
             operation,
             fingerprint,
@@ -381,15 +385,17 @@ impl Store {
     /// Cost: one per-space journal append with FULL durability.
     pub fn record_plugin_receipt(
         &self,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
         space_id: SpaceId,
         result: serde_json::Value,
     ) -> Result<(), Error> {
+        let actor = actor.into();
         let request = Request {
-            account: account,
+            account: actor.account,
+            via: actor.via.as_ref(),
             id: request_id,
             operation,
             fingerprint,
@@ -423,7 +429,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn write_item(
         &self,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         request_id: &str,
         fingerprint: &str,
         space_id: SpaceId,
@@ -436,8 +442,10 @@ impl Store {
         if let Some(id) = id {
             self.read_item(space_id, kind, &id.to_string())?;
         }
+        let actor = actor.into();
         let request = Request {
-            account: account,
+            account: actor.account,
+            via: actor.via.as_ref(),
             id: request_id,
             operation: "plugin.write_item",
             fingerprint,
@@ -461,7 +469,7 @@ impl Store {
     pub fn provision_plugin(
         &self,
         space_id: SpaceId,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         kinds: &[(
             String,
             calternal_content::Placement,
@@ -470,6 +478,7 @@ impl Store {
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
         let space = space_id;
+        let actor = actor.into();
         for (kind, placement, format) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())?;
@@ -490,7 +499,7 @@ impl Store {
         )?;
         for (kind, key, title) in collections {
             self.content
-                .ensure_standard_collection(space, account, kind, key, title)?;
+                .ensure_standard_collection(space, actor.clone(), kind, key, title)?;
         }
         Ok(())
     }
@@ -517,7 +526,7 @@ impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn set_plugin_enabled(
         &self,
-        account: AccountId,
+        actor: impl Into<calternal_types::Actor>,
         request_id: &str,
         operation: &str,
         fingerprint: &str,
@@ -527,8 +536,10 @@ impl Store {
         enabled: bool,
         result: impl FnOnce(&PluginRow) -> serde_json::Value,
     ) -> Result<serde_json::Value, Error> {
+        let actor = actor.into();
         let request = Request {
-            account,
+            account: actor.account,
+            via: actor.via.as_ref(),
             id: request_id,
             operation,
             fingerprint,

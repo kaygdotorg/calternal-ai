@@ -63,6 +63,8 @@ pub struct Summary {
 pub struct Request<'a> {
     /// Acting account, distinct from the selected space.
     pub account: AccountId,
+    /// Trusted non-person attribution from the host's admission. It grants no authority.
+    pub via: Option<&'a calternal_types::Via>,
     /// Stable account-qualified request identity.
     pub id: &'a str,
     /// Operation being applied.
@@ -70,6 +72,20 @@ pub struct Request<'a> {
     /// Canonical input digest for mismatched-retry detection.
     pub fingerprint: &'a str,
 }
+impl Request<'_> {
+    // The existing outbox holds both result and optional provenance in one value.
+    // A direct person's result normally needs no wrapper. The reserved key is
+    // escaped even when the trusted result generator returns it as ordinary data.
+    pub(crate) fn outbox_result(self, result: &Value) -> String {
+        if self.via.is_some() || result.get(crate::publication::OUTBOX_VIA).is_some() {
+            serde_json::json!({(crate::publication::OUTBOX_VIA):self.via,"payload":result})
+                .to_string()
+        } else {
+            result.to_string()
+        }
+    }
+}
+
 /// Replayable response retained by the owning space's journal store.
 #[derive(Debug, Clone)]
 pub struct Receipt {

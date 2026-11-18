@@ -102,6 +102,7 @@ pub(crate) async fn dispatch<D: Directory>(
                             space,
                             calternal_content::Request {
                                 account: person.id,
+                                via: None,
                                 id: &rid,
                                 operation: row.id,
                                 fingerprint: &fp,
