@@ -46,6 +46,7 @@
 
 pub mod admin;
 mod admission;
+mod capacity;
 /// Local deployment enrollment and the first-owner onboarding operation.
 pub mod colocated;
 pub mod db;
