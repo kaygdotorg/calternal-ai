@@ -45,7 +45,7 @@
   let stuck = true;
   let raf = 0;
   /** When the list last scrolled itself (to the end), and when the person last moved it (wheel, finger, key, press): a scroll the list made, or one that followed content growing under it, must not un-stick it from the end; only the person does. */
-  let driven = 0, intent = 0;
+  let driven = 0, intent = 0, drivenTop = 0; // when and where the list last scrolled itself to the end, and when the person last wheeled, touched or pressed a key
   const touch = () => { intent = performance.now(); };
   const rows = new Map<number, HTMLElement>();
 
@@ -77,7 +77,8 @@
     if (!v) return;
     if (inside) stuck = false;
     else if (v.scrollHeight - v.scrollTop - v.clientHeight < 24) stuck = true;
-    else if (performance.now() - intent < 800 && performance.now() - driven > 100) stuck = false;
+    // The person's own scroll lets go of the end. A scroll that comes within 100 ms of the list's own is only theirs if it went above where the list put itself (the wheel can arrive while a streaming turn is moving the end).
+    else if (performance.now() - intent < 800 && (performance.now() - driven > 100 || v.scrollTop < drivenTop - 4)) stuck = false;
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); });
   }
 
@@ -111,7 +112,7 @@
   }
 
   function toBottom() {
-    if (scroller && stuck) { driven = performance.now(); scroller.scrollTop = scroller.scrollHeight; }
+    if (scroller && stuck) { driven = performance.now(); scroller.scrollTop = scroller.scrollHeight; drivenTop = scroller.scrollTop; }
   }
 
   /**
@@ -156,7 +157,7 @@
       const wasEmpty = heights.length === 0;
       resize(n);
       if (wasEmpty) stuck = !inside && startAtBottom;
-      if (wasEmpty && startAtBottom && scroller) { driven = performance.now(); scroller.scrollTop = total + topInset + bottomInset; }
+      if (wasEmpty && startAtBottom && scroller) { driven = performance.now(); scroller.scrollTop = total + topInset + bottomInset; drivenTop = scroller.scrollTop; }
       update();
       onrange?.(first, last); // the count changed: a list read a page at a time asks again whether the window is near its end
     });

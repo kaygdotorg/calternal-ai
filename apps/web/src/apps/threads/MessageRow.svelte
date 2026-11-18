@@ -7,6 +7,7 @@
   import Md from "../../lib/Md.svelte";
   import MessageActions from "./MessageActions.svelte";
   import ProviderMark from "./ProviderMark.svelte";
+  import "./lead-mark.css";
   import Steps from "./Steps.svelte";
   import Thought from "./Thought.svelte";
   import type { Message, ProviderId } from "./model";
@@ -41,6 +42,8 @@
   }
   // The mark sits on the first text line's centre for a text message and on the row's centre when the message starts with a block row (a thought, tool steps).
   const rowFirst = $derived(message.role === "agent" && (message.blocks[0]?.type === "thought" || message.blocks[0]?.type === "steps"));
+  // What the message starts with decides where the mark goes (lead-mark.css): inline in the first paragraph, inside a first row, or on a line of its own before a list, code, picture or card.
+  const lead = $derived(rowFirst ? "lead-row" : message.blocks[0]?.type === "text" && !/^\s*([-*+]\s|\d+[.)]\s|```|~~~|\||>|!\[)/.test(message.blocks[0].text) ? "lead-text" : "lead-own");
   // Message actions are created on first hover or focus (touch has no hover: they are there from the start).
   let armed = $state(typeof matchMedia === "function" && matchMedia("(hover: none)").matches);
 </script>
@@ -57,8 +60,8 @@
       <MessageActions {message} {armed} onedit={canEdit && !editing ? edit : undefined} onversion={version} />
     </div>
   {:else}
-    <div class="lead" class:row={rowFirst}><ProviderMark by={message.by} {provider} {providers} row={rowFirst} /></div>
-    <div class="agent" id={message.id}>
+    <div class="agent lead-host {lead}" id={message.id}>
+      <div class="lead" class:row={rowFirst}><ProviderMark by={message.by} {provider} {providers} row={rowFirst} /></div>
       {#each message.blocks as b}
         {#if b.type === "text"}<Md text={clip(b.text)} />
         {:else if b.type === "thought"}<Thought text={b.text} ms={b.ms} />
@@ -83,10 +86,7 @@
   .msg[data-hit] { animation: hit 2s ease-out; }
   @keyframes hit { from { background: color-mix(in oklab, var(--accent) 16%, transparent); } to { background: transparent; } }
   .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: flex; }
-  .msg.agent-row { display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
-  /* The mark sits in a line of the message's own font and line height, so its centre is the first line's x-height centre at every text size and zoom (ProviderMark.svelte). */
-  .lead.row { display: grid; align-items: center; height: calc(var(--s-9) + var(--s-3)); line-height: 1; }
-  .lead { font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); }
+  .msg.agent-row { display: block; }
   .user { justify-content: flex-end; }
   .bubble { position: relative; max-width: 82%; padding: var(--s-4) var(--s-6); border-radius: var(--r-pane); background: rgb(var(--ink-rgb) / 0.07); }
   /* Your messages get an iMessage tail in the bubble's own fill (ported from the calternal-ui plugin): the bottom-right corner is square and a rounded point flares from that edge a little below the bubble. */

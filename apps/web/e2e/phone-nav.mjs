@@ -1,6 +1,6 @@
 // Phone navigation: the sidebar and the side panel are history entries (Back closes them, Forward reopens them); a swipe from the edge is the same navigation, the card follows the finger,
 // and a touch while it settles takes hold of it where it is. Usage: node e2e/phone-nav.mjs (after `npm run build`).
-import { launch, serve, open } from "./lib.mjs";
+import { launch, serve, open, win } from "./lib.mjs";
 const stop = await serve(); const b = await launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const { page } = await open(b, "phone", "light", "/notes/n-1");
@@ -21,7 +21,7 @@ const lift = () => page.evaluate(() => document.querySelector("main.mid, .peek, 
 
 // 1. The button: the list is a history entry.
 const len0 = await page.evaluate(() => history.length);
-await page.getByRole("button", { name: "Show notes" }).click(); await settle();
+await win(page).getByRole("button", { name: "Show notes" }).click(); await settle();
 ok((await side()) === "true" && (await over()) === "list", "the Show notes button opens the list as a history entry");
 ok((await page.evaluate(() => history.length)) === len0 + 1, "one entry was added");
 await page.evaluate(() => history.back()); await settle();
@@ -31,7 +31,7 @@ ok((await side()) === "true", "Forward opens it again");
 await page.evaluate(() => history.back()); await settle();
 
 // 2. Choosing a note: it opens, the list goes away, and Back returns to the list.
-await page.getByRole("button", { name: "Show notes" }).click(); await settle();
+await win(page).getByRole("button", { name: "Show notes" }).click(); await settle();
 await page.locator('nav[aria-label="Notes"] a[href$="n-2"]').click(); await settle();
 ok(page.url().endsWith("/notes/n-2") && (await side()) === "false", "choosing a note shows it and closes the list");
 await page.evaluate(() => history.back()); await settle();
@@ -60,7 +60,7 @@ if (process.env.CAL_GATE && (speed < 0.45 || slow)) console.log(`info  a short f
 else ok((await side()) === "true", "a short fast flick opens the list", `${speed.toFixed(2)} px/ms`);
 if ((await side()) === "true") { await page.evaluate(() => history.back()); await settle(); } // (a flick that was not judged may have left it closed: nothing to go back from)
 // 6. Interrupt: a touch while the card is settling holds it where it is.
-await page.getByRole("button", { name: "Show notes" }).click();
+await win(page).getByRole("button", { name: "Show notes" }).click();
 await page.waitForTimeout(120);
 const before = await midX();
 await finger(w - 20, w - 20, { steps: 0, hold: true });
