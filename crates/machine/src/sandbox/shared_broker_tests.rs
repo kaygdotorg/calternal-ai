@@ -222,6 +222,8 @@ async fn shared_broker_keeps_claude_and_codex_credentials_out_of_tools() {
         )
         .unwrap();
 
+        let fixture = bridge_fixture(&broker);
+        let (mut bridge, bridge_url) = bridge_gateway(&broker, &fixture).await;
         let probe = format!(
             r#"
 set -eu
@@ -243,14 +245,13 @@ const denied = input => new Promise(resolve => {{
   req.setTimeout(1500,()=>req.destroy());
   req.on('error', resolve);
 }});
-Promise.all([denied('{base}'), denied({{socketPath:'/run/calternal-broker/gateway.sock',path:'/'}})])
+Promise.all([denied('{base}'), denied('{bridge_url}'), denied({{socketPath:'/run/calternal-broker/gateway.sock',path:'/'}})])
   .then(()=>{{fs.writeFileSync('/work/isolated','yes');console.log('boundary intact');}});
 JS
 "#,
             login = login.to_string_lossy(),
             host_pid = std::process::id(),
         );
-        let fixture = bridge_fixture(&broker);
         let tool = mcp_tool(&broker, &fixture, &probe).await;
         let reply = tool["result"]["content"][0]["text"].as_str().unwrap();
         assert_eq!(tool["result"]["isError"], false);
@@ -275,7 +276,6 @@ JS
         );
 
         let mock_url = format!("{base}{path}");
-        let (mut bridge, bridge_url) = bridge_gateway(&broker, &fixture).await;
         let relayed_url = format!("{bridge_url}{path}");
         let mut overhead = Vec::new();
         for _ in 0..100 {
