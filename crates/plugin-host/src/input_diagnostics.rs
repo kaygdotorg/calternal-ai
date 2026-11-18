@@ -80,3 +80,27 @@ fn expected_required(types: Option<&Value>) -> String {
         )
     }
 }
+
+/// Point into declared output fields without reflecting worker-supplied keys.
+/// Cost: one bounded diagnostic allocation on validation failure.
+pub(crate) fn output_path(error: &ValidationError<'_>) -> String {
+    let schema_path = error.schema_path().to_string();
+    let path = if let ValidationErrorKind::Required { property } = error.kind()
+        && let Some(parent) = schema_path.strip_suffix("/required")
+        && let Some(key) = property.as_str()
+    {
+        format!(
+            "{parent}/properties/{}",
+            key.replace('~', "~0").replace('/', "~1")
+        )
+    } else {
+        schema_path
+    };
+    if path.is_empty() {
+        return "/".into();
+    }
+    path.chars()
+        .take(160)
+        .flat_map(char::escape_debug)
+        .collect()
+}

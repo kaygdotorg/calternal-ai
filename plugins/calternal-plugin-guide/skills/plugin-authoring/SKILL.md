@@ -69,6 +69,13 @@ current invocations to finish. Reuse the request ID when retrying the
 same durable write. If an operation returns `committed_write`, the
 save happened. Use its ID and string revision to reconcile the result.
 
+When an operation fails and the message is not enough, run
+`calternal plugin diagnostics <package-id> <operation>` with the same env.
+It shows the loaded revision, the validate, handshake and publish times, the
+last five errors for you and that operation with the schema field path, and
+why the last rejected edit stopped (validation, handshake or publication).
+It never shows values your worker returned. Nothing is stored on disk.
+
 ## Shared settings and generated contributions
 
 Declare the key, primitive `value_type` and default in `settings`. Declare

@@ -38,6 +38,11 @@ One model everywhere, nothing more complex:
 - The default provider and model are per thread, remembering the last choice.
 - Onboarding: pick a look, name your space, sign in to an AI provider. It also asks whether
   you are a developer; what follows from that is its own round.
+- Onboarding completion follows the signed-in account. Call `onboarding.state` with
+  `{}` to read `{finished: false}` for an unfinished account. Call
+  `onboarding.finish` with `{}` once to persist `{finished: true}`. Both use
+  `POST /api/v1/operations` and derive the account from the person session.
+  Repeating finish returns the same state.
 - No separate history or export features: settings are files, so version history is the
   record of changes (with undo) and copying the files is export and import.
 

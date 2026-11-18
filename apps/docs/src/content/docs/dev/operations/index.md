@@ -8,6 +8,8 @@ title: "Operation catalogue"
 
 Generated operation schemas. Capability and risk are shown only when the catalogue declares them; absence is not a grant.
 
+- [onboarding.state](./onboarding-state/): Read your onboarding status
+- [onboarding.finish](./onboarding-finish/): Mark your onboarding finished
 - [wallpapers.list](./wallpapers-list/): List built-in wallpapers with Unsplash attribution
 - [spaces.list](./spaces-list/): List current account memberships
 - [spaces.create](./spaces-create/): Create an owned space

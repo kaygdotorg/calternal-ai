@@ -225,17 +225,29 @@ impl Thread {
             frame.message,
             Message::Complete { .. } | Message::Failed {} | Message::Chunk { .. }
         );
+        use calternal_plugin_host::{Error as Protocol, ReceiveError};
         match self.session.receive(frame, &mut Broker(&self.active)) {
             Ok(()) => {}
-            Err(calternal_plugin_host::Error::Refused) => {
+            Err(ReceiveError::Protocol(Protocol::Refused)) => {
                 // Undeclared/forged host call, or authority no longer current.
                 let _ = self.session.cancel(&id);
                 self.finish(&id, Outcome::Refused);
             }
-            Err(calternal_plugin_host::Error::BackPressure) => {
+            Err(ReceiveError::Protocol(Protocol::BackPressure)) => {
                 return Err("extension exceeded its queue");
             }
-            Err(_) => {
+            Err(ReceiveError::Output { path }) => {
+                let _ = self.session.cancel(&id);
+                self.finish(
+                    &id,
+                    Outcome::Failed(
+                        Error::unavailable("extension returned invalid output").with_details(
+                            serde_json::json!({"reason":"output_schema", "path":path}),
+                        ),
+                    ),
+                );
+            }
+            Err(ReceiveError::Protocol(_)) => {
                 let _ = self.session.cancel(&id);
                 self.finish(
                     &id,

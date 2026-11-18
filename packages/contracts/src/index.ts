@@ -2945,6 +2945,20 @@ genui_version: 2,
  */
 source: string, };
 /**
+ * Both operations derive their account from the authenticated session.
+ */
+
+export type OnboardingInput = Record<string, never>;
+/**
+ * Durable completion status. Accounts without a completion record start unfinished.
+ */
+
+export type OnboardingState = {
+/**
+ * True once this account has finished onboarding.
+ */
+finished: boolean, };
+/**
  * Empty input for the built-in catalog.
  */
 

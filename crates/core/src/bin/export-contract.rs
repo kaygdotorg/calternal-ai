@@ -196,6 +196,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Stats,
         SummarizeResult,
         GenUiView,
+        OnboardingInput,
+        OnboardingState,
         WallpapersListInput,
         WallpaperCredit,
         WallpapersListResult,
