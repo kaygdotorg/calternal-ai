@@ -112,8 +112,8 @@ const labels = (presence: Awareness | null): Extension => ViewPlugin.fromClass(c
 /** The look of another person's cursor, in the app's own type and radii (the plugin's defaults are serif and black). */
 const theme = EditorView.baseTheme({
   '.cm-ySelectionCaret': { borderLeftWidth: '2px', borderRightWidth: '0', marginRight: '0' },
-  '&[data-labels] .cm-ySelectionInfo': { opacity: '1', transitionDelay: '0s' },
-  '.cm-ySelectionInfo': { transition: 'opacity var(--dur-base) var(--ease-out)', fontFamily: 'inherit', fontSize: '11px', fontWeight: '600', lineHeight: '1.3', padding: '1px 6px', borderRadius: '6px 6px 6px 0', top: '-1.5em', left: '-2px', whiteSpace: 'nowrap' },
+  '&.cm-editor[data-labels] .cm-ySelectionInfo': { opacity: '1', transitionDelay: '0s' },
+  '&.cm-editor .cm-ySelectionInfo': { transition: 'opacity var(--dur-base) var(--ease-out)', fontFamily: 'inherit', fontSize: '11px', fontWeight: '600', lineHeight: '1.3', padding: '1px 6px', borderRadius: '6px 6px 6px 0', top: '-1.5em', left: '-2px', whiteSpace: 'nowrap' },
 })
 
 /**

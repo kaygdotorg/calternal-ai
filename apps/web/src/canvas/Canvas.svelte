@@ -12,6 +12,7 @@
   import { notes } from "../apps/notes/store.svelte";
   import { openShare } from "../apps/notes/share/share.svelte";
   import { incoming } from "../apps/notes/share/incoming.svelte";
+  import { collectionList } from "../apps/notes/share/collections-list.svelte";
   import { runThreadItem, threadItems } from "../apps/threads/thread-menu";
   import { href, navigate, route, segments } from "../lib/route.svelte";
   import { ariaKeys, show as showChord, shortcuts } from "../lib/shortcuts.svelte";
@@ -289,7 +290,7 @@
     const t = to.trim(), cur = store.get(w.item);
     if (t && cur && t !== cur.title) void threadClient.rename(cur.id, t).catch((e: Error) => toast(`Not renamed: ${e.message}`));
   }
-  const titleOf = (kind: string, item: string) => (kind === "threads" ? store.get(item)?.title : notes.list.find((n) => n.id === item)?.title) ?? appFor(kind)?.name ?? kind;
+  const titleOf = (kind: string, item: string) => (kind === "threads" ? store.get(item)?.title : kind === "collections" ? collectionList.items.find((c) => c.id === item)?.title : notes.list.find((n) => n.id === item)?.title) ?? appFor(kind)?.name ?? kind;
   /** The next thread or note that has no window yet. */
   function nextOf(kind: string): string | null {
     const open = new Set(canvas.all().filter((w) => w.kind === kind).map((w) => w.item));
@@ -354,8 +355,8 @@
     if (!w) return;
     if (a === "max") toggleMax(id, source);
     else if (a === "lock") canvas.toggleLock(id);
-    // A note's Share is the note's own sheet (people, groups, links): the same one its header pill opens; a thread keeps the link menu.
-    else if (a === "share" && w.kind === "notes") openShare({ kind: "notes", id: w.item }, titleOf(w.kind, w.item), target);
+    // A note's or collection's Share is its own sheet (people, groups, links): the same one its header pill opens; a thread keeps the link menu.
+    else if (a === "share" && (w.kind === "notes" || w.kind === "collections")) openShare({ kind: w.kind, id: w.item }, titleOf(w.kind, w.item), target);
     else { const r = target.getBoundingClientRect(); menu = { x: r.right, y: r.bottom, id, kind: a === "share" ? "share" : "window" }; }
   }
   function pick(item: string) {

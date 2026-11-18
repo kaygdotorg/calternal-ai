@@ -2,7 +2,7 @@
  * Reactive state for the Threads app: the thread list, the open requests and the provider list, kept current by watching the client.
  * One instance per page. The client is the only thing that changes when the real operations arrive.
  */
-import { inboxOf, snoozedOf, type InboxItem, type SnoozedItem } from "./inbox";
+import { inboxOf, jobPromptsOf, snoozedOf, type InboxItem, type JobPrompt, type SnoozedItem } from "./inbox";
 import type { SignInRequest } from "./model";
 import type { ThreadsClient } from "./client";
 import { FixtureClient } from "./fixtures";
@@ -80,6 +80,9 @@ class ThreadsStore {
   get snoozed(): SnoozedItem[] {
     return snoozedOf(this.threads, this.now);
   }
+  /** What plugin jobs wait on, for the Inbox (they belong to no thread). */
+  get jobPrompts(): JobPrompt[] { return jobPromptsOf(this.requests); }
+
   /** Open requests for one thread (a parent also sees its children's). */
   requestsFor(id: string): Request[] {
     const ids = new Set([id, ...this.threads.filter((t) => t.parentId === id).map((t) => t.id)]);

@@ -42,6 +42,8 @@ export interface PanelDef {
 export interface AppDef {
   /** The kind in addresses (`/threads/<id>`). */
   kind: string;
+  /** Other kinds whose addresses this app answers (`/collections/<id>` is a Notes page). */
+  aliases?: string[];
   name: string;
   icon: IconName;
   Sidebar: Component<any>;
@@ -75,6 +77,7 @@ export const APPS: AppDef[] = [
   },
   {
     kind: "notes",
+    aliases: ["collections"],
     name: "Notes",
     icon: "notes",
     Sidebar: NotesSidebar,
@@ -93,4 +96,4 @@ export const APPS: AppDef[] = [
 APPS.push({ kind: "settings", name: "Settings", icon: "settings", Sidebar: SettingsSidebar, Main: SettingsMain, panels: [] });
 
 /** The app that opens an address kind, or undefined for a kind no installed app handles. */
-export const appFor = (kind: string | undefined): AppDef | undefined => APPS.find((a) => a.kind === kind);
+export const appFor = (kind: string | undefined): AppDef | undefined => APPS.find((a) => a.kind === kind || a.aliases?.includes(kind ?? ""));
