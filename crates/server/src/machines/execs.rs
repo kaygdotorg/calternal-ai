@@ -28,6 +28,37 @@ impl MachineService {
         env: Vec<(String, String)>,
         stdin: String,
     ) -> Result<Uuid, Error> {
+        self.exec_scoped(account, lease, argv, env, stdin, false)
+    }
+
+    /// Run the selected provider's title entry point without environment
+    /// credentials on its private lease. Uses the ordinary bounded exec queue.
+    pub(crate) fn title_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        executable: String,
+        stdin: String,
+    ) -> Result<Uuid, Error> {
+        self.exec_scoped(
+            account,
+            lease,
+            vec![executable, "--title".into()],
+            vec![],
+            stdin,
+            true,
+        )
+    }
+
+    fn exec_scoped(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        argv: Vec<String>,
+        env: Vec<(String, String)>,
+        stdin: String,
+        background_title: bool,
+    ) -> Result<Uuid, Error> {
         if stdin.len() > 128 * 1024 {
             return Err(Error::invalid_input("exec input exceeds 128 KiB"));
         }
@@ -39,7 +70,12 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         let _steps = match st.leases.get(&lease) {
-            Some(l) if l.row.account == account && (l.row.worker || l.provider_login) => {
+            Some(l)
+                if l.row.account == account
+                    && (l.row.worker
+                        || l.provider_login
+                        || l.row.background_title != background_title) =>
+            {
                 return Err(Error::forbidden(
                     "internal machine execs are host-controlled",
                 ));

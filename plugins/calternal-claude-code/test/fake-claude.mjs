@@ -23,13 +23,22 @@ if (args.join(' ') === 'auth login') {
 }
 if(args.join(' ')==='auth status'){
   // Raw status and stderr must never reach the adapter's caller.
-  console.log(JSON.stringify({authMethod:existsSync(join(process.env.HOME,'subscription'))?'claude.ai':'api_key',private:'PRIVATE_LOGIN_SENTINEL'})); console.error('PRIVATE_LOGIN_SENTINEL');
+  console.log(JSON.stringify({authMethod:existsSync(join(process.env.HOME,'subscription'))?'claude.ai':'api_key',subscriptionType:existsSync(join(process.env.HOME,'managed'))?'team':'max',private:'PRIVATE_LOGIN_SENTINEL'},null,2)); console.error('PRIVATE_LOGIN_SENTINEL');
   process.exit(existsSync(join(process.env.HOME,'signed-in')) || existsSync(loginFile)?0:1);
 }
 // The machine supplies the same operation CLI inside both execution backends.
 if(process.env.CALTERNAL_AGENT_TOKEN) execFileSync('calternal',['--help'],{stdio:'ignore'});
 let prompt='';for await(const data of process.stdin)prompt+=data;
 const emit=m=>process.stdout.write(JSON.stringify(m)+'\n');
+if(args.includes('--safe-mode')){
+  if(!['--disable-slash-commands','--no-session-persistence','--include-hook-events','--system-prompt'].every(arg=>args.includes(arg))||
+     args[args.indexOf('--tools')+1]!==''||args[args.indexOf('--effort')+1]!=='low'||
+     args[args.indexOf('--model')+1]!=='claude-haiku-5-5'||process.env.CALTERNAL_AGENT_TOKEN||
+     !prompt.includes('balcony'))process.exit(95);
+  emit({type:'system',subtype:'init',model:'claude-haiku-5-5',tools:[],skills:[],mcp_servers:[],slash_commands:[]});
+  emit({type:'result',subtype:'success',result:'Three-Pot Balcony Garden'});
+  process.exit(0);
+}
 if(prompt.includes('require-resume')&&!args.includes('--resume'))process.exit(88);
 if(prompt.includes('require-fresh')&&args.includes('--resume'))process.exit(89);
 if(!args.includes('--append-system-prompt')||!args.includes('--disallowedTools')||process.env.ANTHROPIC_API_KEY||process.env.CLAUDE_CODE_OAUTH_TOKEN)process.exit(93);

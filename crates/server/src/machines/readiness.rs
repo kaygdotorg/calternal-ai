@@ -130,6 +130,31 @@ pub(super) fn connected(machine: &Machine, settings: &Settings) -> bool {
 }
 
 impl MachineService {
+    /// Cache one title policy result on the current personal machine lease.
+    /// One in-memory update; an unrelated lease cannot record this reason.
+    pub(crate) fn record_title_policy(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        machine: Uuid,
+        provider: String,
+        reason: Option<&str>,
+    ) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        if !st.leases.get(&lease).is_some_and(|l| {
+            l.row.background_title
+                && l.row.account == account
+                && l.assigned_machine() == Some(machine)
+        }) {
+            return Ok(());
+        }
+        if let Some(m) = st.machines.get_mut(&machine) {
+            m.title_blocked = reason.map(|reason| (provider, reason.to_owned()));
+            st.readiness.change(account);
+        }
+        Ok(())
+    }
+
     /// Snapshot the caller's indexed machine candidates and cached checks, with
     /// no SQL, filesystem I/O, or machine round trips. One registry lock.
     /// An optional saved-thread pin applies only to this account's own lease.
@@ -172,6 +197,11 @@ impl MachineService {
                             enabled: *enabled,
                             check,
                             ready,
+                            title_blocked: machine
+                                .title_blocked
+                                .as_ref()
+                                .filter(|(id, _)| id == provider)
+                                .map(|(_, reason)| reason.clone()),
                         },
                     )
                 })
