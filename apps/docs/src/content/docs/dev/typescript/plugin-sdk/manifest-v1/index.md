@@ -16,10 +16,13 @@ title: "plugin-sdk: manifest-v1/README"
 
 Data-only manifest v1 validation; requests never issue grants.
 
-## Type Aliases
-
-- [HostCallKind](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/)
-
 ## Functions
 
+- [isHostCallKind](/docs/dev/typescript/plugin-sdk/manifest-v1/functions/ishostcallkind/)
 - [validateManifestV1](/docs/dev/typescript/plugin-sdk/manifest-v1/functions/validatemanifestv1/)
+
+## References
+
+### HostCallKind
+
+Re-exports [HostCallKind](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/)

@@ -25,7 +25,7 @@ Unhandled callbacks fail closed. The deadline bounds fixture waits.
 | Parameter | Type |
 | ------ | ------ |
 | `child` | `Child` |
-| `fixtures?` | `Partial`\<`Record`\<[`HostCallKind`](/docs/dev/typescript/plugin-sdk/manifest-v1/type-aliases/hostcallkind/), (`input`) => `unknown`\>\> |
+| `fixtures?` | `Partial`\<`Record`\<[`HostCallKind`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/hostcallkind/), (`input`) => `unknown`\>\> |
 
 ## Returns
 

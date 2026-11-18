@@ -76,7 +76,7 @@ pub(super) async fn admitted_operation<D: Directory>(
 
 /// One bounded token scope. A cursor carries only a previously delivered key;
 /// account, operation and filter values are authenticated without being encoded.
-struct CursorScope {
+pub(crate) struct CursorScope {
     key: hmac::Key,
     scope: String,
 }
@@ -88,7 +88,7 @@ fn invalid() -> Error {
 impl CursorScope {
     /// Open an authenticated cursor in-place after normal operation admission.
     /// No storage reads or writes, and no issuer detail on invalid input.
-    fn open(
+    pub(crate) fn open(
         key: &hmac::Key,
         account: AccountId,
         op: &str,
@@ -135,7 +135,8 @@ impl CursorScope {
         String::from_utf8(position.to_owned()).map_err(|_| invalid())
     }
 
-    fn seal(&self, cursor: &mut Value) {
+    /// Authenticate a returned position in place. One MAC and no storage access.
+    pub(crate) fn seal(&self, cursor: &mut Value) {
         if let Some(position) = cursor.as_str() {
             let mut bytes = self.mac(position.as_bytes()).as_ref().to_vec();
             bytes.extend_from_slice(position.as_bytes());

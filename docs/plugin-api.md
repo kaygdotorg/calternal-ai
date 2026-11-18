@@ -221,6 +221,32 @@ frame isolation contracts. Owned mounts accept only operation-backed
 contributions. Web and Swift mounting belong to the client renderers.
 See the [interface proposal](plugin-interface-proposal.md).
 
+## Page a plugin's own kinds
+
+Declare `list_items_v1` in `host_calls`. In a worker handler, call
+`listItems(context, { kind, limit, label, cursor })` from the SDK.
+Only `kind` is required. It must be declared by this package, and the
+caller needs current read access to the invocation's space and kind.
+The host takes the space from the invocation.
+
+Each page contains item IDs, revisions, update timestamps and optional
+titles. It uses descending update time and then ascending item ID.
+`limit` defaults to 100 and accepts 1 through 100. `label` is an optional
+exact indexed key of at most 256 bytes. Titles carry up to 256 Unicode
+scalars with control characters removed. A warm page reads the index
+without loading bodies or flushing content.
+
+Continue with the returned `next_cursor` and the same kind and label.
+Each token is authenticated for that account, space, package, kind and
+filter. A null cursor marks the final page. The existing worker broker
+rechecks session, activation and grants before and after the read.
+
+An enrolled worker uses only initialized operator pool containers.
+A cold call can return `unavailable` with `details.reason` set to
+`worker_machine_required`, `worker_machine_offline` or `worker_capacity`.
+The message gives the caller a next step without exposing machine
+identifiers or other accounts' grants.
+
 ## Palette discovery
 
 A Markdown kind can declare `searchable: true` to index its title and body.

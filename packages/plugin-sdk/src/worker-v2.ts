@@ -1,8 +1,8 @@
 /** Bounded worker-v2 peer; effects and current authority remain in the trusted host.
  * @module
  */
-import type { ManifestV1 } from "@calternal/contracts";
-import { validateManifestV1, type HostCallKind } from "./manifest-v1.js";
+import type { ManifestV1, PluginItemPageInput, PluginItemPageResult } from "@calternal/contracts";
+import { isHostCallKind, validateManifestV1, type HostCallKind } from "./manifest-v1.js";
 
 /** Maximum serialized frame bytes, excluding newline. */
 export const MAX_V2_FRAME_BYTES = 256 * 1024;
@@ -114,7 +114,7 @@ function validateFrame(value: unknown): WorkerFrameV2 {
   const m = exact(raw, ["type", ...fields[type]!]);
   for (const k of ["operation", "call_id", "job_id"]) if (Object.hasOwn(m, k) && (typeof m[k] !== "string" || !id.test(m[k] as string))) invalid();
   if (Object.hasOwn(m, "authority")) { const a = exact(m.authority, ["account_id", "space_id", "grant"]); if (typeof a.account_id !== "string" || !uuid7.test(a.account_id) || typeof a.space_id !== "string" || !uuid7.test(a.space_id) || a.account_id === a.space_id || typeof a.grant !== "string" || !a.grant || new TextEncoder().encode(a.grant).length > 256) invalid(); }
-  if (type === "host_call" && !["read_item", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"].includes(String(m.method))) invalid();
+  if (type === "host_call" && !isHostCallKind(m.method)) invalid();
   if (type === "host_reply" && typeof m.ok !== "boolean") invalid();
   if (type === "chunk" && (typeof m.sequence !== "number" || !Number.isInteger(m.sequence) || m.sequence < 0 || m.sequence > 0xffff_ffff)) invalid();
   return frame as unknown as WorkerFrameV2;
@@ -144,6 +144,17 @@ export interface WorkerContextV2 {
    * invocation names in `input.job_id`; await before emitting another. */
   chunk(jobId: string, data: unknown): Promise<void>;
 }
+
+/** List one indexed page from a kind the plugin declares. Declare
+ * `list_items_v1` in the manifest. Costs one bounded broker round trip.
+ */
+export async function listItems(
+  context: WorkerContextV2,
+  input: PluginItemPageInput,
+): Promise<PluginItemPageResult> {
+  return await context.call("list_items_v1", input) as PluginItemPageResult;
+}
+
 /** Handler implementing one declared operation. Cost is plugin-defined and sandbox-limited; each host effect uses a bounded broker RPC. */
 export type WorkerHandlerV2 = (input: unknown, context: WorkerContextV2) => Promise<unknown>;
 /** Long-lived peer for one plugin/space pair. Transport send promises must apply back pressure.
