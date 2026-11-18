@@ -92,7 +92,7 @@ const appearancePage: Page = {
       { id: "appearance.fonts", label: "Fonts", help: "A family for each kind of text; each row shows its own font.", control: { type: "custom", load: () => import("../../appearance/FontsText.svelte") } },
     ] },
     { title: "Wordmark", settings: [
-      { id: "appearance.wordmark", label: "Wordmark", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
+      { id: "appearance.wordmark", label: "Name", help: "The name at the top of the sidebar.", control: { type: "text", placeholder: "Calternal" }, get: () => A.prefs.brand, set: (v) => ap((p) => (p.brand = String(v).slice(0, 24))) },
       { id: "appearance.wordmark-font", label: "Font", help: "The wordmark's own typeface.", control: { type: "custom", load: () => import("../../appearance/FontsWordmark.svelte") } },
     ] },
     { title: "Chat", settings: [
@@ -174,7 +174,7 @@ const membersPage: Page = {
       { id: "space.add-person", label: "Add a person", help: "Give a person a role in this space.", control: { type: "button", text: "Add a person…", run: confirmLater("Add a person") } },
       { id: "space.add-group", label: "Add a group", help: "A role can be given to a group as well as to a person: everyone in the group (and anyone who joins it later) has the role here. The group's own members are managed under Admin.", control: { type: "button", text: "Add a group…", run: confirmLater("Add a group") } },
     ] },
-    { title: "Members", settings: [{ id: "space.members", label: "Members", help: "Roles are sets of capabilities.", control: { type: "drill", summary: () => "12 members", run: confirmLater("Members") } }, { id: "space.roles", label: "Roles", control: { type: "drill", summary: () => "Owner, Manager, Member, Reader", run: confirmLater("Roles") } }] },
+    { title: "Members", settings: [{ id: "space.members", label: "People", help: "Roles are sets of capabilities.", control: { type: "drill", summary: () => "12 members", run: confirmLater("Members") } }, { id: "space.roles", label: "Roles", control: { type: "drill", summary: () => "Owner, Manager, Member, Reader", run: confirmLater("Roles") } }] },
     danger("space.leave", "Leave this space", "You lose access to everything in it.", "Leave space…"),
   ],
 };
@@ -182,7 +182,7 @@ const invitesPage: Page = {
   id: "invites", name: "Invites", icon: "link", blurb: "Invite people with a link that expires.",
   groups: [
     { settings: [{ id: "space.invites.create", label: "Invite someone", control: { type: "button", text: "Create invite…", run: confirmLater("Create invite") } }] },
-    { title: "Open invites", settings: [{ id: "space.invites.open", label: "Open invites", control: { type: "info", text: () => "None" } }] },
+    { title: "Open invites", settings: [{ id: "space.invites.open", label: "Links not used yet", control: { type: "info", text: () => "None" } }] },
     danger("space.invites.revoke-all", "Revoke every open invite", "Links already sent stop working.", "Revoke all…"),
   ],
 };
