@@ -45,10 +45,14 @@ $how="Squash"
 $tests=true
 Form([Input($branch,"Branch name"), Choice($how,["Rebase","Merge","Squash"],"How should I land it?"), Toggle($tests,"Run the full suite first")], "Before I open the pull request")`;
 
+const JOB_FORM = `$channel="announcements"\nForm([Choice($channel,["announcements","engineering","general"],"Post to")], "Release notes")`;
+
 function seedRequests(): Request[] {
   return [
     { id: "r-q", kind: "question", threadId: "t-wait", title: "Before I open the pull request", form: QUESTION_FORM },
     { id: "r-a", kind: "approval", threadId: "t-wait", title: "Run a command outside the workspace", action: "Push the branch to the Forgejo remote", command: "git push origin lane/invites", lifetimes: ["once", "thread"] },
+    { id: "r-jq", kind: "question", threadId: "", jobId: "j-notes", title: "Release notes: which channel should I post to?", form: JOB_FORM },
+    { id: "r-ja", kind: "approval", threadId: "", jobId: "j-sync", title: "Approval needed", action: "Calendar sync wants to delete 3 stale events", command: "calendar.events.delete (3 events)", lifetimes: ["once"] },
     { id: "r-s", kind: "secret", threadId: "t-secret", name: "FORGEJO_TOKEN", label: "Forgejo access token", why: "To publish pages to the wiki. The agent gets a handle, never the value.", scope: "personal", required: true, expiresAt: Date.now() + 15 * MIN },
   ];
 }

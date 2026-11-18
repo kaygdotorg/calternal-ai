@@ -1,23 +1,11 @@
 /**
- * What the Skills and Automations pages list, per space. On fixtures it is kept in memory and creating one really writes the file as a note (so the Notes editor opens it); on the real server the
- * operations below do not exist yet, so the pages say so (see `NEEDS`) instead of pretending. Every list is read by the space's id.
+ * What the Skills and Automations pages list on fixtures, per space: kept in memory, and creating one really writes the file as a note (so the Notes editor opens it). The real server's lists are read by the panels
+ * themselves through server/automations.ts. Every list is read by the space's id.
  */
-import { serverMode } from "../../../server/client";
 import { startThread } from "../../threads/store.svelte";
 import { automationPath, renderAutomation, type Automation } from "./automation";
 import { nextWords, parseSchedule } from "./schedule";
 import { renderSkill, skillPath, type Skill } from "./skill";
-
-/** The server operations these pages need (none exists yet): the list the pages are built against. */
-export const NEEDS = [
-  "skills.list {space_id} exists (name, description): it also needs the agents that use each skill and the file's note id so Open file works",
-  "skills.create / skills.update / skills.delete {space_id, name, ...}: write AI/Skills/<name>/SKILL.md (a folder; optional scripts/, references/, assets/)",
-  "agents.list {space_id} -> [{id, label}]: the agents a skill can be given to",
-  "automations.list {space_id} -> [{id, name, schedule, timezone, enabled, next_run_ms, last:{ok, at_ms, thread_id}}]: read from AI/Automations/*.md",
-  "automations.create / update / delete / pause {space_id, ...}: write the file and (re)arm the systemd timer",
-  "automations.run_now {space_id, id} -> {thread_id}: starts the automation's prompt as a new thread now",
-  "notes.create with a path (not only a title), so a file can be written to AI/Skills/<name>/SKILL.md and opened in the Notes editor",
-];
 
 const tz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const seed = (): { skills: Skill[]; automations: Automation[] } => {
@@ -36,14 +24,6 @@ const seed = (): { skills: Skill[]; automations: Automation[] } => {
 class SkillsStore {
   /** Each space's lists, made on first read (a plain map: a reactive one cannot be filled while a page is deriving from it); the lists inside are reactive. */
   private by = new Map<string, { skills: Skill[]; automations: Automation[] }>();
-  /** True on the real server, where the automation operations in `NEEDS` are still missing (skills are listed with `skills.list`). */
-  get unavailable(): boolean { return serverMode(); }
-  /** The real server's skills for a space (`skills.list`: name and one line each; the file is `AI/Skills/<name>/SKILL.md` by the standard). Throws the server's error. */
-  async loadSkills(space: string): Promise<Skill[]> {
-    const { server } = await import("../../../server/client");
-    const r = await server.operate<{ skills: { name: string; description: string }[] }>("skills.list", { space_id: space });
-    return r.skills.map((k) => ({ name: k.name, description: k.description, agents: [], path: skillPath(k.name) }));
-  }
   private of(space: string) { let v = this.by.get(space); if (!v) { const fresh = $state(seed()); v = fresh; this.by.set(space, v); } return v; }
   /** The space's skills. */ skills(space: string): Skill[] { return this.of(space).skills; }
   /** The space's automations. */ automations(space: string): Automation[] { return this.of(space).automations; }

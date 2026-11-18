@@ -36,7 +36,7 @@ interface Net { cut(): void; restore(): void; revoke(): void }
 /** The transport for a note's fixture room, made (with its scripted collaborator) the first time it is asked for. */
 export function fixtureTransport(noteId: string, text: string, lineage: () => string | null, onLineage: (l: string) => void): Transport {
   let room = rooms.get(noteId);
-  if (!room) { room = roomFor(noteId, text); rooms.set(noteId, room); if (new URLSearchParams(location.search).get("peer") !== "0") collaborator(room); } // `?peer=0`: alone in the room (the typing measurement)
+  if (!room) { room = roomFor(noteId, text); rooms.set(noteId, room); const q = new URLSearchParams(location.search); if (q.get("peer") !== "0") { collaborator(room); for (let k = 2; k <= Math.min(12, Number(q.get("peers") ?? 1)); k++) joiner(room, k); } } // `?peer=0`: alone in the room (the typing measurement)
   const r = room;
   const t = memoryTransport(() => r, lineage, onLineage);
   let down = false;
@@ -47,6 +47,15 @@ export function fixtureTransport(noteId: string, text: string, lineage: () => st
   t.connect = () => { if (!down) connect(); };
   if (new URLSearchParams(location.search).has("test")) (globalThis as unknown as { __net: Net }).__net = { cut() { down = true; t.drop(); }, restore() { down = false; t.connect(); }, revoke() { down = true; closes.forEach((f) => f(4403, "access_revoked")); } };
   return t;
+}
+
+/** `?peers=N`: N people in the room in all (Maya and N - 1 more who only sit there), to see how a crowd fits the presence strip. */
+function joiner(room: Room, k: number): void {
+  const doc = new Y.Doc();
+  const awareness = new Awareness(doc);
+  const client = new SyncClient({ doc, transport: memoryTransport(() => room), gate: new ImeGate(), channel: null, awareness, checkDelayMs: 50 });
+  awareness.setLocalState({ account_id: `acc-guest-${k}` });
+  client.connect();
 }
 
 /** Maya: joins, moves her cursor around the first lines now and then, and types one line a little while after. */

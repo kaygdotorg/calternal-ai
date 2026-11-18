@@ -29,7 +29,15 @@ const hue = (s: string) => { let h = 0; for (const c of s) h = (h * 31 + c.charC
 /** A person's colour from their account: the same everywhere, in every tab. */
 export const colourOf = (account: string): { color: string; colorLight: string } => ({ color: `hsl(${hue(account)} 62% 42%)`, colorLight: `hsl(${hue(account)} 62% 42% / 0.25)` });
 
+/** The one live socket of this page (a window per note shares it). */
+let pageSocket: import("../../../../../../packages/editor/src/sync/live").LiveSocket | null = null;
+
+/** The one line about a rescue (where a person's edits went, or that they are kept), shown in whichever note is open. */
+export const liveNotice = $state({ text: "" });
+
+/** One note's live room. Several can be open at once (a window in the canvas each); they share the page's socket. */
 class LiveNotes {
+  constructor(private readonly forget: () => void) {}
   session = $state.raw<NoteSession | null>(null);
   /** The editor extension for the open note (bumped by `epoch` when its document is replaced). */
   binding = $state.raw<{ extension: import("@codemirror/state").Extension } | null>(null);
@@ -40,12 +48,9 @@ class LiveNotes {
   private names = new Map<string, string>(Object.entries(FIXTURE_NAMES));
   private stops: (() => void)[] = [];
   private bindStops: (() => void)[] = [];
-  /** One line for the person when the room ended because they lost access: where their edits went. */
-  notice = $state("");
   /** What this person wrote that the room has not confirmed (never other people's words): the only thing a rescue may take. */
   private intent: { blocks(): string[]; clear(): void } | null = null;
   private id = "";
-  private socket: import("../../../../../../packages/editor/src/sync/live").LiveSocket | null = null;
 
   private resolve = (account: string): Person => ({ name: this.names.get(account) ?? "Someone", ...colourOf(account) });
 
@@ -66,8 +71,8 @@ class LiveNotes {
       onAccessRevoked: () => void this.revoked(noteId),
       transport: (lineage, onLineage) => {
         if (fixture) return fixture.fixtureTransport(noteId, text, lineage, onLineage);
-        this.socket ??= new live.LiveSocket(() => { const u = new URL("/api/v1/live", location.href); u.protocol = u.protocol === "https:" ? "wss:" : "ws:"; return u.href; }, "calternal-live-rooms.v1");
-        return this.socket.room(`${spaceId}/notes/${noteId}`, { lineage, onLineage });
+        pageSocket ??= new live.LiveSocket(() => { const u = new URL("/api/v1/live", location.href); u.protocol = u.protocol === "https:" ? "wss:" : "ws:"; return u.href; }, "calternal-live-rooms.v1");
+        return pageSocket.room(`${spaceId}/notes/${noteId}`, { lineage, onLineage });
       },
     }).catch(() => null);
     if (!session || id !== this.id) { session?.destroy(); return; }
@@ -107,13 +112,7 @@ class LiveNotes {
     const session = this.session;
     if (!session || noteId !== this.id) return;
     const blocks = this.intent?.blocks() ?? [];
-    this.notice = await rescueBlocks(noteId, notes.note?.title ?? "this note", blocks, `${noteId}:${textKey(blocks.join("\n"))}`);
-  }
-
-  /** Sends every rescue still owed (see share/owed.ts); the line for each one that went through is shown, whichever note is open. Called when Notes loads and whenever the browser comes back online. */
-  async settleOwed(): Promise<void> {
-    const lines = await settleOwed().catch(() => []);
-    if (lines.length) this.notice = lines.at(-1)!;
+    liveNotice.text = await rescueBlocks(noteId, notes.note?.title ?? "this note", blocks, `${noteId}:${textKey(blocks.join("\n"))}`);
   }
 
   private async loadNames(spaceId: string): Promise<void> {
@@ -125,9 +124,20 @@ class LiveNotes {
     this.stops.splice(0).forEach((f) => f());
     this.bindStops.splice(0).forEach((f) => f());
     this.session?.destroy();
-    this.session = null; this.binding = null; this.here = []; this.save = ""; this.notice = ""; this.intent = null;
+    this.session = null; this.binding = null; this.here = []; this.save = ""; this.intent = null;
+    this.forget();
   }
 }
 
-/** The one live room (one note is open at a time per Notes app). */
-export const live = new LiveNotes();
+const rooms = new Map<string, LiveNotes>();
+/** The live room of a note (made on first ask; `close()` on it removes it). */
+export function liveOf(noteId: string): LiveNotes {
+  let r = rooms.get(noteId);
+  if (!r) rooms.set(noteId, (r = new LiveNotes(() => rooms.delete(noteId))));
+  return r;
+}
+/** Sends every rescue still owed (share/owed.ts) and shows the line for each one that went through; no room needed. */
+export async function settleOwedNow(): Promise<void> {
+  const lines = await settleOwed().catch(() => []);
+  if (lines.length) liveNotice.text = lines.at(-1)!;
+}
