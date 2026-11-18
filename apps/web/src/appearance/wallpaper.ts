@@ -13,7 +13,7 @@
 import { cssPx, luminance, scheduleMaterial, setBackdropField, currentScheme, type Field } from "@calternal/ui";
 import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "json" };
 import { surfaces } from "./surfaces.svelte";
-import { solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
+import { scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -198,13 +198,13 @@ export function updateVeil(want: Flags): void {
   const out: Record<string, Veil> = {};
   for (const [k, role, pixels] of jobs) {
     const v: Veil = craftLight && scheme === "light" ? { scheme: "light", tint: { a: 0.92, rgb: [255, 255, 255] }, dim: { a: 0, rgb: [0, 0, 0] }, ink2: T.ink2, ink3: T.ink3, total: 0.92, ratio: 99 } : solve(scheme, role, flags, pixels, T, other);
-    if (veilScale !== 1 && !(craftLight && scheme === "light")) { v.tint = { ...v.tint, a: Math.min(0.92, v.tint.a * veilScale) }; v.dim = { ...v.dim, a: Math.min(0.92, v.dim.a * veilScale) }; }
-    out[k] = v;
-    const ink2 = v.scheme === scheme ? v.ink2 : v.ink2, ink3 = v.ink3;
-    root().setProperty(`--${k}-tint`, rgbCss(v.tint.rgb));
-    root().setProperty(`--${k}-tint-a`, v.tint.a.toFixed(3));
-    root().setProperty(`--${k}-dim`, rgbCss(v.dim.rgb));
-    root().setProperty(`--${k}-dim-a`, v.dim.a.toFixed(3));
+    const w: Veil = craftLight && scheme === "light" ? v : scaled(v, veilScale);
+    out[k] = w;
+    const ink2 = w.ink2, ink3 = w.ink3;
+    root().setProperty(`--${k}-tint`, rgbCss(w.tint.rgb));
+    root().setProperty(`--${k}-tint-a`, w.tint.a.toFixed(3));
+    root().setProperty(`--${k}-dim`, rgbCss(w.dim.rgb));
+    root().setProperty(`--${k}-dim-a`, w.dim.a.toFixed(3));
     root().setProperty(`--${k}-ink2`, `rgb(${rgbCss(ink2)})`);
     root().setProperty(`--${k}-ink3`, `rgb(${rgbCss(ink3)})`);
     root().setProperty(`--veil-${k}`, `linear-gradient(rgb(var(--${k}-dim) / var(--${k}-dim-a)) 0 0), linear-gradient(rgb(var(--${k}-tint) / var(--${k}-tint-a)) 0 0)`);

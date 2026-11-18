@@ -1,7 +1,7 @@
 <script lang="ts">
   // One setting as a row: the label on the left with its help text under it, one control on the right edge. The control is chosen by the setting's data
   // (registry.ts), by the rules of docs/ui-craft-and-settings-study.md 11.2. Changes apply when made: there is no Save.
-  import { Button, Capsule, Icon, InlineEditor, Menu, Pill, Switch } from "@calternal/ui";
+  import { Button, Capsule, Icon, InlineEditor, Menu, Pill, StepSlider, Switch } from "@calternal/ui";
   import PresetGallery from "../../appearance/PresetGallery.svelte";
   import Slider from "../../appearance/Slider.svelte";
   import type { Setting } from "./registry";
@@ -27,6 +27,10 @@
   <div class="row col" class:hl={highlighted} data-setting={s.id}>
     <Slider label={s.label} unit={c.unit ?? ""} min={c.min} max={c.max} value={Number(value)} onchange={(v) => s.set?.(v)} />
     {#if s.help}<span class="h">{s.help}</span>{/if}
+  </div>
+{:else if c.type === "steps"}
+  <div class="row col" class:hl={highlighted} data-setting={s.id}>
+    <StepSlider label={s.label} steps={c.steps} value={Number(value)} onchange={(i) => s.set?.(i)} hint={s.help} />
   </div>
 {:else if c.type === "checkbox"}
   <label class="row chk" class:hl={highlighted} data-setting={s.id}>

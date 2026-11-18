@@ -124,7 +124,7 @@ class Appearance {
   /** Clear to tinted, 0 to 1. The person's choice, else from the system: reduced transparency or more contrast mean tinted (1); otherwise the middle (0.5), where the solved veil is untouched. */
   get clarity(): number {
     const c = this.prefs.compare.clarity;
-    if (typeof c === "number") return c;
+    if (typeof c === "number") return Math.round(Math.min(1, Math.max(0, c)) * 4) / 4; // five steps: Clear, Light, Balanced, Dense, Tinted
     return matchMedia("(prefers-reduced-transparency: reduce)").matches || matchMedia("(prefers-contrast: more)").matches ? 1 : 0.5;
   }
 
