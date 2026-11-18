@@ -143,6 +143,7 @@ try {
     const previous = imageId();
     const evidence = JSON.parse(readFileSync(proof, "utf8"));
     assert.equal(previous, evidence.previous);
+    await page.locator("html[data-ready]").waitFor({ timeout: 15_000 });
     assert.deepEqual(await api("auth/status"), { setup: false, signed_in: true });
     await wait("enrolled machine online", async () => (await op("machines.onboarding")).ready);
     const space = (await op("spaces.list")).spaces.find(s => s.personal && s.role === "owner").id;
@@ -167,6 +168,7 @@ try {
     await wait("old machine online", async () => (await op("machines.onboarding")).ready);
     const samples = [];
     let deployResult;
+    let deployError;
     const schedule = () => ({
       operation: "notes.create",
       input: { space_id: space, title: `Upgrade ${run} ${crypto.randomUUID()}`, markdown: "Acknowledged write probe" },
@@ -197,25 +199,33 @@ try {
     const banner = page.getByRole("status").filter({ hasText: "Reconnecting…" });
     // Start watching before the switch. The request probe also works when the
     // app doesn't visibly display the banner during a short handoff.
-    const bannerSeen = banner.waitFor({ state: "visible", timeout: 25_000 })
+    const bannerSeen = banner.waitFor({ state: "visible", timeout: 0 })
       .then(() => true, () => false);
-    const child = spawn(deploy, [...deployArgs, proof], { stdio: "inherit" });
+    const child = spawn(deploy, [...deployArgs, proof], {
+      stdio: "inherit", detached: true,
+    });
     const done = new Promise((resolve, reject) => {
       child.once("error", reject);
       child.once("exit", (code, signal) => resolve({ code, signal }));
     });
-    void done.then(value => { deployResult = value; }).catch(() => {});
+    void done.then(value => { deployResult = value; }, error => { deployError = error; });
     const started = performance.now();
     try {
       while (!deployResult || !samples.at(-1).note) {
         assert.ok(performance.now() - started < 120_000, "deploy and first new write timed out");
         await sleep(40);
         await write();
+        if (deployError) throw deployError;
         if (deployResult) assert.equal(deployResult.code, 0, "deploy failed");
       }
     } finally {
-      if (!deployResult) {
-        child.kill();
+      if (!deployResult && child.pid) {
+        // This private process group includes the driver and the lab SSH shim.
+        try {
+          process.kill(-child.pid, "SIGTERM");
+        } catch (error) {
+          if (error.code !== "ESRCH") throw error;
+        }
         await done;
       }
     }

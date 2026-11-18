@@ -284,8 +284,8 @@ rollback keeps live data and the older build must pass its version check.
 ### First ordinary update from the production baseline
 
 Run the build and gate on x86_64 dev-01 from the clean, approved candidate
-checkout. The commands below use the existing `calternal` SSH deployment
-account. Confirm the current backup includes appdata, SSD, HDD and machine
+checkout. Run the commands in one Bash session using the existing
+`calternal` SSH deployment account. Confirm the current backup includes appdata, SSD, HDD and machine
 state. Keep the proof and both image IDs with the deployment record.
 
 1. Read the exact image ID from the running production container. Check the
@@ -316,8 +316,9 @@ state. Keep the proof and both image IDs with the deployment record.
 2. Build the approved candidate once and run the signed-in compatibility
    gate against that exact pair. Keep the deployed provider sandbox tag for
    an ordinary server update. A provider image change has its own staging
-   and verification steps. Check `df -h ~` before building and stop if
-   dev-01 has less than 15 GB free.
+   and verification steps. Run `df -h ~` and `free -h` on dev-01 before
+   building. Stop if free disk is below 15 GB or available memory is below
+   8 GB. Use gate slot 2 for this run.
 
    ```bash
    test -z "$(git status --porcelain)"
@@ -330,9 +331,16 @@ state. Keep the proof and both image IDs with the deployment record.
 
    flock -o -w 14400 /tmp/calternal-gate-2.lock bash -c '
      set -euo pipefail
+     export CARGO_TARGET_DIR="$4/target"
+     cleanup_target() {
+       if [[ -d $CARGO_TARGET_DIR ]]; then
+         find "$CARGO_TARGET_DIR" -depth -delete
+       fi
+     }
+     trap cleanup_target EXIT
      nix develop .#deploy -c deploy/build-image.sh "$1"
      nix develop -c scripts/verify-additive-upgrade.sh "$2" "$1" "$3"
-   ' -- "$candidate" "$previous" "$proof"
+   ' -- "$candidate" "$previous" "$proof" "$proof_dir"
    candidate_id=$(podman image inspect --format '{{.Id}}' "$candidate")
    test -s "$proof"
    ```
@@ -383,8 +391,12 @@ state. Keep the proof and both image IDs with the deployment record.
    test "${restored#sha256:}" = "${previous#sha256:}"
    ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
      systemctl --user is-active calternal-ai.service calternal-ai-machine.service
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" podman healthcheck run calternal-ai
    curl -fsS https://calternal.cloud/api/v1/auth/status
+   curl -fsS -o /dev/null https://calternal.cloud/
    ```
+
+   Repeat the applicable browser and machine checks from step 4.
 
 ## Backups and service controls
 
