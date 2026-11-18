@@ -50,7 +50,7 @@
 {#snippet picker()}
       {#if view}
         <h2>{ROLE[view]} font</h2>
-        <Selector class="sources" label="Font source" fill={false} options={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ value: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
+        <Selector class="sources row-selector" label="Font source" options={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ value: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
         {#if source !== "system" && source !== "upload"}
           <label class="visually-hidden" for="f-q">Search fonts</label>
           <input id="f-q" class="field" type="search" use:textField={{ kind: "search" }} placeholder="Search {SOURCE_LABEL[source]}" bind:value={fq} autocomplete="off" />

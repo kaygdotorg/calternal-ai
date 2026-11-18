@@ -2,7 +2,7 @@
   // A Settings page: the title, one line of purpose, then groups of rows in a centred column (at most 560 px, like Notes). `/settings/<section>/<setting-id>`
   // opens the page with that row highlighted for a moment and scrolled into view. Admin pages end with a Danger area.
   import { tick } from "svelte";
-  import { SplitView } from "@calternal/ui";
+  import { SplitView, chromeTrack } from "@calternal/ui";
   import { route, segments } from "../../lib/route.svelte";
   import SettingGroup from "./SettingGroup.svelte";
   import SettingRow from "./SettingRow.svelte";
@@ -33,12 +33,12 @@
   });
 </script>
 
-<div class="scroller edge-fade" style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
+<div class="scroller edge-fade" use:chromeTrack style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
 {#if width === 0}
   <!-- the card is not measured yet: nothing, so the page never flashes the wrong arrangement -->
 {:else if page?.split && wide}
   <div class="page split">
-    <h1>{page.name}</h1>
+    <h1 data-chrome-title>{page.name}</h1>
     <p class="blurb">{page.blurb}</p>
     <div class="sp">
       <SplitView listLabel="{page.name} sections" detailLabel={sel !== null ? page.groups[sel]?.title : page.name}>
@@ -63,7 +63,7 @@
 {:else}
 <div class="page">
   {#if page}
-    <h1>{page.name}</h1>
+    <h1 data-chrome-title>{page.name}</h1>
     <p class="blurb">{page.blurb}</p>
     {#each page.groups as g}
       <SettingGroup title={g.title} danger={g.danger}>

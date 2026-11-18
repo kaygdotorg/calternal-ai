@@ -31,7 +31,7 @@
     <h1>Add a machine</h1>
     {#if step === 0}
       <p class="h">Step 1 of 3. How will it connect?</p>
-      <Selector label="Connection" fill={false} options={[{ value: "ssh", label: "SSH" }]} value="ssh" onchange={() => {}} />
+      <Selector class="row-selector" label="Connection" options={[{ value: "ssh", label: "SSH" }]} value="ssh" onchange={() => {}} />
       <div class="f"><Button text="Continue" variant="primary" onclick={() => (step = 1)} /></div>
     {:else if step === 1}
       <p class="h">Step 2 of 3. Where is it?</p>

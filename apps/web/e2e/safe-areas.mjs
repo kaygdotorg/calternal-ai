@@ -16,7 +16,7 @@ for (const [orient, i] of Object.entries(INSETS)) for (const scheme of ["light",
   ok(r.padL === i.left && r.padR === i.right, `${tag}: the shell pads its regions by the side insets`, `${r.padL}/${r.padR}`);
   ok(r.cardLeft >= i.left - 0.5 && r.cardRight <= r.iw - i.right + 0.5, `${tag}: the card stays between the notches`, `${r.cardLeft.toFixed(0)}..${r.cardRight.toFixed(0)} of ${r.iw}`);
   if (r.hdTop !== null) ok(r.hdTop >= i.top - 0.5, `${tag}: the card's header sits below the status bar`, `${r.hdTop.toFixed(0)} >= ${i.top}`);
-  ok(/^rgb\(\d+ \d+ \d+\)$/.test(r.theme) && r.theme !== (scheme === "dark" ? "#1f1f1f" : "#f7f7f7"), `${tag}: the browser's bars take the page's top colour (theme-color)`, r.theme);
+  ok(/^#[0-9a-f]{6}$/.test(r.theme) && r.theme !== (scheme === "dark" ? "#1f1f1f" : "#f7f7f7"), `${tag}: the browser's bars take the page's top colour (theme-color)`, r.theme);
   await ctx.close();
 }
 {

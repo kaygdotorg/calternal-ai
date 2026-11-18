@@ -28,9 +28,13 @@ export function setRootVar(name: string, value: string | null): void {
   const s = root().style;
   if (value === null) { if (s.getPropertyValue(name) !== "") s.removeProperty(name); } else if (s.getPropertyValue(name) !== value) s.setProperty(name, value);
 }
-/** Sets every `theme-color` meta tag to `color`, only where it differs (see the note above on flicker). */
+/** Sets the browser's bar colour: every `theme-color` meta tag to `color` (a hex colour: Safari does not read the space-separated `rgb()` form, and then keeps the fixed one from index.html, which showed as a separate band above the page), only where it differs (see the note above on flicker). */
 export function setThemeColor(color: string): void {
   for (const m of document.querySelectorAll('meta[name="theme-color"]')) if (m.getAttribute("content") !== color) m.setAttribute("content", color);
+  // iOS 26 and 27 Safari ignore `theme-color` and tint the status bar and toolbar from the page's own background at the edges (checked on the Simulator: a body background reaches under the status bar and the bars take it),
+  // so the root's background is the same solved colour: the app runs edge to edge with no separate band.
+  setRootVar("--bars", color); // read by `:root:root { background-color: var(--bars) }` (styles/base.css); the page's own `body` background would otherwise colour the canvas and show as a band
+  try { const k = root().dataset.scheme ?? "light", all = JSON.parse(localStorage.getItem("cal.bars") || "{}") as Record<string, string>; if (all[k] !== color) localStorage.setItem("cal.bars", JSON.stringify({ ...all, [k]: color })); } catch { /* storage off */ } // for the next load (public/boot.js)
 }
 
 /** The screen's own height when the app covers the whole screen (under the status bar, or turned on its side), else 0. */
