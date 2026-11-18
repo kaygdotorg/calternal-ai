@@ -18,6 +18,8 @@ mod read;
 mod restore;
 mod schema;
 mod shared;
+#[cfg(all(feature = "test-timings", debug_assertions))]
+pub mod timings;
 mod token;
 mod writer;
 
@@ -327,8 +329,10 @@ impl SpaceStore {
             restore::rotate(&mut conn, &shared, &epoch, known_head)?;
         }
         let (live, _) = broadcast::channel(LIVE_BUFFER);
-        let (tx, writer_thread) =
+        let (tx, writer_thread, ready) =
             writer::spawn(conn, shared.clone(), live.clone(), &path, options)?;
+        // Receipt reads must not race the writer's startup retention cleanup.
+        ready.await.map_err(Error::internal)?;
         let inner = Arc::new(Inner {
             space,
             strict,

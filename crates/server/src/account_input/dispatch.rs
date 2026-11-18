@@ -72,6 +72,7 @@ pub(crate) async fn dispatch<D: Directory>(
     .await?;
     tokio::task::spawn_blocking(move || {
         let mut c = state.inputs.open(p.id)?;
+        let before = c.total_changes();
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(internal)?;
@@ -96,7 +97,9 @@ pub(crate) async fn dispatch<D: Directory>(
             .map_err(internal)?;
         }
         state.inputs.change(&tx)?;
+        let changed = tx.total_changes() > before;
         tx.commit().map_err(internal)?;
+        if changed { state.inputs.wakes.committed(p.id); }
         Ok(Inputs::result(None, Some(result)))
     }).await.map_err(internal)?
 }
@@ -110,6 +113,7 @@ fn prepare<D: Directory>(
     let service = &st.inputs;
     let mut c = service.open(identity.id)?;
     service.clean(&mut c, &st.directory, &identity)?;
+    let before = c.total_changes();
     let tx = c
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(internal)?;
@@ -283,6 +287,10 @@ fn prepare<D: Directory>(
             }
         }
     };
+    let changed = tx.total_changes() > before;
     tx.commit().map_err(internal)?;
+    if changed {
+        service.wakes.committed(identity.id);
+    }
     Ok(value)
 }

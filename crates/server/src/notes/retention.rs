@@ -1,6 +1,7 @@
 //! Hourly bounded Notes retention over physical space directories.
 use crate::store::Store;
 use calternal_types::{Error, SpaceId};
+use rusqlite::{Connection, OpenFlags};
 use std::{fs, time::Duration};
 use time::OffsetDateTime;
 
@@ -15,7 +16,9 @@ impl Store {
     ///
     /// The caller keeps the task handle for the server lifetime. Cost: one
     /// task and config read, then an hourly walk of space directories and
-    /// bounded SQL pages with the normal purge costs for expired items.
+    /// bounded SQL pages with the normal purge costs for expired items. Closed
+    /// spaces get one short read-only eligibility probe, not a journal/cache open;
+    /// only spaces containing expired Trash activate the shared content lifecycle.
     pub fn start_notes_retention(&self) -> Result<tokio::task::JoinHandle<()>, Error> {
         let days = match std::env::var("CALTERNAL_NOTES_TRASH_RETENTION_DAYS") {
             Ok(value) => value
@@ -60,6 +63,14 @@ impl Store {
                         let Some(space) = id.to_str().and_then(|id| SpaceId::parse(id).ok()) else {
                             continue;
                         };
+                        match has_expired(&entry.path().join("content.db"), &cutoff) {
+                            Ok(false) => continue,
+                            Ok(true) => {},
+                            Err(error) => {
+                                tracing::warn!(%space, %error, "Notes Trash eligibility probe failed");
+                                continue;
+                            }
+                        }
                         if let Err(e) = content.expire_trash(space, "notes", &cutoff, super::TRASH_EXPIRY_EVENT) {
                             tracing::warn!(%space, code=?e.code, "Notes Trash sweep could not finish");
                         }
@@ -75,4 +86,20 @@ impl Store {
             }
         }))
     }
+}
+
+/// Probe one closed space without creating its database, updating its schema or
+/// opening a content journal. SQLite may map its existing WAL sidecars. One read-only connection/statement at a time; the mutation rechecks
+/// eligibility under the existing space lock, so concurrent restores stay safe.
+fn has_expired(path: &std::path::Path, cutoff: &str) -> rusqlite::Result<bool> {
+    if !fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+        return Err(rusqlite::Error::InvalidPath(path.to_owned()));
+    }
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM items WHERE kind='notes' AND updated_at < ?1
+         AND substr(path,1,7)='.trash/' AND mat_state NOT IN ('purged','blocked'))",
+        [cutoff],
+        |row| row.get(0),
+    )
 }

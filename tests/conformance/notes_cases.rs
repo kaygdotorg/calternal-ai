@@ -54,6 +54,13 @@ async fn notes_index_and_trash_follow_the_current_space_and_head() {
     let trashed = paths
         .join(".trash")
         .join(format!("{}.md", id.as_str().unwrap()));
+    // Ordinary save acknowledgment precedes the bounded userdata placement.
+    for _ in 0..100 {
+        if old.is_file() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
     assert!(old.is_file());
     let visible = data(f.op(2, "tags.list", tags(space)).await);
     assert_eq!(

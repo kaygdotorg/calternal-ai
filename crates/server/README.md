@@ -131,15 +131,15 @@ Each space's `appdata/spaces/<space-uuid>/content.db` (WAL, `synchronous=FULL`) 
 A write proceeds as follows:
 
 1. **Commit.** One transaction commits the full revision, the receipt `(principal, request_id) → operation, SHA-256 fingerprint of canonical input, result` and `mat_state=pending`.
-2. **Check the existing file.** It must be missing on a first write, or match the SHA-256 recorded at the last placement. Symlinks and non-regular files never pass.
-3. **Place the new bytes.** Write a temp file, fsync it, rename it over the target, then fsync the directory. Newly created directory ancestry is also fsynced.
-4. **Mark and acknowledge.** Set `mat_state=materialized` with the new hash, then return the acknowledgement.
+2. **Check the existing file.** It must be missing on a first write, or match the BLAKE3 recorded at the last placement. Symlinks and non-regular files never pass.
+3. **Acknowledge durable SSD state.** Content/history, journal/receipt and outbox retirement are durable before the response. Retirement stays FULL so a power loss cannot resurrect an intent after its receipt expires.
+4. **Place and mark within one second.** The existing content lifecycle worker wakes after commit, writes a temp file, fsyncs it, renames it over the target, and fsyncs the directory. Newly created ancestry is also fsynced. It marks `mat_state=materialized` with the new hash using NORMAL, replayable bookkeeping. The oldest pending age never resets; overdue placement blocks further writes until the disk recovers. Pending slots pin the existing 64-space cache, and the worker pins installation root locks during I/O.
 
 Recovery and retries:
 
-- **Startup.** The server takes an exclusive lock on the data directory (a second instance exits with code 2). It removes only its own `.<uuid>.<12hex>.tmp` files, then replays pending notes before serving.
+- **Startup.** The server locks installation roots and completes authority/recovery reconciliation before serving. Content stores open lazily; before first use of each space they remove only owned `.<uuid>.<12hex>.tmp` files, publish pending intents, then recover pending placement. Inactive spaces do not delay readiness.
 - **Crash after rename.** If replay finds the new bytes already in place, it fsyncs the file and the directory before marking.
-- **Retry with the same input.** It returns the original result, finishing any pending placement. It is reauthorized against current grants and does not re-run the old base-revision check.
+- **Retry with the same input.** It returns the original durable SSD result; a later userdata placement failure cannot change that result. It is reauthorized against current grants and does not re-run the old base-revision check.
 - **Retry with different input.** It returns 409 `request_id_reused`.
 - **Plugin enable/disable.** These are receipted in the same way, so retrying an old enable cannot undo a later disable.
 - **Mutating plugin operations.** Receipted after delivery: a retry with the same request ID and input returns the original result without running the worker; different input is 409. Each brokered `write_item` also carries its own receipt (`plugin/<plugin>/<request>/<n>`), so a retry after an undelivered result replays those writes instead of duplicating them.
@@ -230,11 +230,43 @@ implemented in separate owner-local modules; see [account input](../../docs/acco
 The live space/subscriber defaults above are operator-configurable through
 `CALTERNAL_LIVE_SPACES` and `CALTERNAL_LIVE_LISTENERS`.
 
+The private account feed subscribes before replay and wakes only after a committed
+input change. Each admitted stream retains its existing SQLite connection with a
+64 KiB page-cache setting; no SQL transaction remains open between wakes. This
+avoids last-connection WAL checkpoint/delete/reopen between saves. Disconnect
+closes SQLite on the host blocking pool, retaining the admission lease and root
+guards until close finishes. Active plus closing readers therefore share the
+existing per-account listener ceiling. There is no second account cache or new
+background thread. The reference app's TCP_NODELAY listener policy is also retained
+for small live frames; changing that option alone did not remove the database
+connection costs in the measured control.
+Ordinary commit wakes replay bookmarks without repeating the mutation's cleanup
+scan. Maintenance still runs on authority changes and an absolute one-second
+heartbeat, including during continuous writes; actual content operations always
+recheck current authority. An idle-feed test advances the seven-day confirmation
+state without issuing another operation.
+
 Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.
 
+Canonical request fingerprinting for Notes, plugin activation and plugin calls
+uses the existing blocking pool. The parsed input moves into that task and returns
+unchanged with its digest; handoff adds no body clone and the canonical digest is
+computed once. The existing canonical encoder still materializes sorted JSON
+trees. Synchronous callers retain the same canonical helper. CLI argument
+definitions live in `src/cli.rs`; `main.rs` keeps startup and dispatch.
 
 ## People over HTTP
 
 See the [people and access reference](../../docs/people.md) for account profiles,
 space grants, groups and single-use passkey invitations. The people operations use
 the same protected authority and recovery publication as existing space changes.
+
+The Notes retention task probes one closed space at a time with a read-only
+SQLite connection, opening its content/journal lifecycle only for expired work.
+Purge eligibility is rechecked under that space's lock. This preserves startup
+and hourly expiration without filling the lazy space cache during installations
+with no expired Trash. Such probes can warm SQLite metadata; cold-space latency
+measurements retain that qualification. A matching HTTP receipt replay checks
+permanent-deletion state without forcing file placement: purge suppresses prior
+body receipts, while later outside-file conflicts do not revoke an acknowledged
+SSD result. The shared content receipt type carries the existing item UUID.

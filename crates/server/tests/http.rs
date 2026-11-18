@@ -265,9 +265,22 @@ fn note_file(data: &Path, space: &str, id: &str) -> PathBuf {
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
-    let relative: String = conn
-        .query_row("SELECT path FROM items WHERE id=?1", [id], |r| r.get(0))
-        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let relative = loop {
+        let (relative, state): (String, String) = conn
+            .query_row("SELECT path,mat_state FROM items WHERE id=?1", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        if state != "pending" {
+            break relative;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "userdata placement exceeded one second for {id}"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    };
     data.join("userdata-ssd/spaces").join(space).join(relative)
 }
 fn note_body(path: PathBuf) -> String {
@@ -472,6 +485,9 @@ fn crash_points_recover_without_duplicates() {
         let (id, base, personal) = {
             let srv = start(&d.0, None);
             let n = create(&srv, "c", &srv.personal, "before\n");
+            // Arm faults against the next revision, after this acknowledged base
+            // has actually reached userdata under the deferred placement contract.
+            note_file(&d.0, &srv.personal, n["id"].as_str().unwrap());
             (
                 n["id"].as_str().unwrap().to_string(),
                 n["revision"].clone(),
@@ -483,12 +499,27 @@ fn crash_points_recover_without_duplicates() {
         {
             let mut srv = start(&d.0, Some(point));
             let r = try_op(&srv, &srv.owner.clone(), "u", "notes.update", input.clone());
-            assert!(r.is_none(), "{point}: expected crash, got response");
+            if matches!(point, "after_commit" | "before_reply") {
+                assert!(r.is_none(), "{point}: expected crash before reply");
+            } else if let Some(reply) = r {
+                assert_eq!(
+                    reply.status, 200,
+                    "{point}: acknowledged reply must succeed"
+                );
+            }
             let st = srv.child.wait().unwrap();
             assert!(!st.success(), "{point}: process should abort");
         }
         let srv = start(&d.0, None);
-        // Startup replay placed the committed revision.
+        // Lazy first-use recovery places the committed revision before exposure.
+        let recovered = op(
+            &srv,
+            &srv.owner,
+            "recovery-get",
+            "notes.get",
+            json!({"id":id}),
+        );
+        assert_eq!(recovered.status, 200);
         assert_eq!(
             note_body(note_file(&d.0, &srv.personal, &id)),
             "after\n",
@@ -796,7 +827,7 @@ fn plugin_enable_disable_receipts_survive_opposite_mutation() {
 }
 
 #[test]
-fn startup_cleanup_only_removes_owned_temp_files() {
+fn first_space_access_cleans_only_owned_temp_files() {
     let d = TempDir::new("tmpclean");
     let (id, personal) = {
         let srv = start(&d.0, None);
@@ -804,6 +835,9 @@ fn startup_cleanup_only_removes_owned_temp_files() {
             .as_str()
             .unwrap()
             .to_string();
+        // Stop only after the baseline has reached userdata; this test examines
+        // owned temp cleanup, independently of interrupted placement recovery.
+        note_file(&d.0, &srv.personal, &id);
         (id, srv.personal.clone())
     };
     let dir = note_dir(&d.0, &personal);
@@ -818,7 +852,13 @@ fn startup_cleanup_only_removes_owned_temp_files() {
     for f in foreign {
         std::fs::write(dir.join(f), "keep").unwrap();
     }
-    let _srv = start(&d.0, None);
+    let srv = start(&d.0, None);
+    assert!(
+        owned.exists(),
+        "startup must leave inactive spaces unopened"
+    );
+    let read = op(&srv, &srv.owner, "activate", "notes.get", json!({"id":id}));
+    assert_eq!(read.status, 200);
     assert!(!owned.exists());
     for f in foreign {
         assert!(dir.join(f).exists(), "{f} must be preserved");
@@ -971,7 +1011,11 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
                 "notes.create",
                 json!({"space_id": srv.personal,"title":"First","markdown":"one"}),
             );
-            assert!(response.is_none());
+            if point == "after_commit" {
+                assert!(response.is_none());
+            } else if let Some(reply) = response {
+                assert_eq!(reply.status, 200);
+            }
             assert!(!srv.child.wait().unwrap().success());
         }
         let (id, revision, personal) = {
@@ -995,16 +1039,18 @@ fn interrupted_create_and_title_rename_recover_fixed_paths() {
         let input = json!({"space_id": personal,"id":id,"base_revision":revision,"title":"FIRST","markdown":"two"});
         {
             let mut srv = start(&d.0, Some(point));
-            assert!(
-                try_op(
-                    &srv,
-                    &srv.owner.clone(),
-                    "rename",
-                    "notes.update",
-                    input.clone()
-                )
-                .is_none()
+            let reply = try_op(
+                &srv,
+                &srv.owner.clone(),
+                "rename",
+                "notes.update",
+                input.clone(),
             );
+            if point == "after_commit" {
+                assert!(reply.is_none());
+            } else if let Some(reply) = reply {
+                assert_eq!(reply.status, 200);
+            }
             assert!(!srv.child.wait().unwrap().success());
         }
         let srv = start(&d.0, None);
@@ -1145,4 +1191,37 @@ fn server_refuses_empty_swapped_or_foreign_roots() {
         log.join("snapshot.json").is_file(),
         "recovery log provisioned"
     );
+}
+
+/// Once SSD state was acknowledged, a later userdata conflict cannot change that
+/// request's durable replay result or authorize replacing the outside bytes.
+#[test]
+fn acknowledged_receipt_replays_after_userdata_becomes_blocked() {
+    let data = TempDir::new("replay-blocked-placement");
+    let server = start(&data.0, None);
+    let first = create(&server, "create", &server.personal, "before\n");
+    let input =
+        json!({"id":first["id"],"base_revision":first["revision"],"markdown":"acknowledged\n"});
+    let saved = op(
+        &server,
+        &server.owner,
+        "saved",
+        "notes.update",
+        input.clone(),
+    );
+    assert_eq!(saved.status, 200);
+    let path = note_file(&data.0, &server.personal, first["id"].as_str().unwrap());
+    std::fs::write(&path, "outside bytes").unwrap();
+    let blocked = op(
+        &server,
+        &server.owner,
+        "later",
+        "notes.update",
+        json!({"id":first["id"],"base_revision":saved.body["data"]["note"]["revision"],"markdown":"must not overwrite"}),
+    );
+    assert_eq!(blocked.status, 409);
+    let replay = op(&server, &server.owner, "saved", "notes.update", input);
+    assert_eq!(replay.status, 200);
+    assert_eq!(replay.body, saved.body);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), "outside bytes");
 }

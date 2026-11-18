@@ -4,10 +4,26 @@ use crate::{Error, Item, Result, SpaceId, Summary};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
+
+/// Shared eviction ceiling for per-space kind/name caches; eviction affects cost only.
+pub(crate) const KIND_CACHE: usize = 32;
+
+/// One current revision's header, loaded under the selected space lock. Reused
+/// for admission, the outside-edit guard and placement; contains no body bytes.
+pub(crate) struct Header {
+    pub(crate) kind: String,
+    pub(crate) revision: String,
+    pub(crate) seq: i64,
+    pub(crate) path: String,
+    pub(crate) state: String,
+    pub(crate) file_hash: Option<String>,
+    pub(crate) old_path: Option<String>,
+}
 
 pub(crate) struct Space {
     pub(crate) id: SpaceId,
@@ -15,6 +31,11 @@ pub(crate) struct Space {
     pub(crate) journal: calternal_store::SpaceStore,
     pub(crate) conn: Connection,
     pub(crate) files: PathBuf,
+    /// Oldest acknowledged head awaiting file durability; never reset by new writes.
+    pub(crate) pending_since: Option<std::time::Instant>,
+    /// Immutable kind definitions, shared by validation, naming and placement;
+    /// bounded like the existing name cache and dropped with this space.
+    pub(crate) registrations: RefCell<HashMap<String, (crate::Placement, crate::FileFormat)>>,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
 pub(crate) fn database(path: &Path) -> Result<Connection> {
@@ -83,8 +104,34 @@ impl Space {
             conn,
             files: userdata_ssd.join("spaces").join(id.to_string()),
             names: HashMap::new(),
+            registrations: RefCell::new(HashMap::new()),
+            pending_since: None,
         })
     }
+    /// Load one indexed header without body or file reads. Missing items fail;
+    /// callers decide whether Trash/purge states are visible for their operation.
+    pub(crate) fn header(&self, id: Uuid) -> Result<Header> {
+        self.conn
+            .query_row(
+                "SELECT kind,revision,seq,path,mat_state,file_hash,old_path FROM items WHERE id=?1",
+                [id.to_string()],
+                |r| {
+                    Ok(Header {
+                        kind: r.get(0)?,
+                        revision: r.get(1)?,
+                        seq: r.get(2)?,
+                        path: r.get(3)?,
+                        state: r.get(4)?,
+                        file_hash: r.get(5)?,
+                        old_path: r.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(internal)?
+            .ok_or_else(missing)
+    }
+
     pub(crate) fn get(&self, id: Uuid) -> Result<Item> {
         self.get_selected(id, false)
     }
@@ -193,4 +240,17 @@ impl Space {
         };
         Ok((versions, cursor))
     }
+}
+
+/// Replayable bookkeeping never owns original bytes. NORMAL may lose these
+/// changes after power loss; durable intents and file hashes make replay safe.
+/// Always restore FULL before admitting another content/history transaction.
+pub(crate) fn bookkeeping(conn: &Connection, run: impl FnOnce() -> Result<()>) -> Result<()> {
+    conn.pragma_update(None, "synchronous", "NORMAL")
+        .map_err(internal)?;
+    let result = run();
+    let restored = conn
+        .pragma_update(None, "synchronous", "FULL")
+        .map_err(internal);
+    restored.and(result)
 }

@@ -79,10 +79,10 @@ pub(super) async fn mutate<D: Directory>(
     actor: Identity,
     rid: &str,
     op: &str,
-    mut input: JsonObject,
+    input: JsonObject,
 ) -> Result<Value, Error> {
     use calternal_core::{NoteRenameInput, NoteTarget};
-    let fp = fingerprint(op, &input);
+    let (fp, mut input) = super::request::fingerprint(op, input).await?;
     let space = space_of(
         input
             .remove("space_id")

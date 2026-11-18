@@ -30,19 +30,11 @@ pub struct Store {
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
     // Dropped last: every database and file handle above closes first.
-    _roots: calternal_roots::RootLocks,
+    _roots: std::sync::Arc<calternal_roots::RootLocks>,
 }
-/// Replayable account-qualified result; note responses live in their space journal.
-pub struct Receipt {
-    /// Operation that committed the response.
-    pub operation: String,
-    /// Canonical operation/input digest.
-    pub fingerprint: String,
-    /// Previously committed response, private to its acting account.
-    pub result: serde_json::Value,
-    /// Item whose file placement must finish before replay.
-    pub note_id: Option<String>,
-}
+/// Shared account-qualified durable result, including its associated item UUID.
+/// The HTTP replay boundary checks current authority and permanent-deletion state.
+pub use calternal_content::Receipt;
 /// Persisted plugin enablement and asynchronous-result invalidation generation.
 #[derive(Debug, Clone)]
 pub struct PluginRow {
@@ -165,16 +157,19 @@ impl Store {
     /// Unavailable for a refused or locked root, or a store that cannot open.
     ///
     /// Cost: the roots guard (marker reads, three locks), the catalog database open
-    /// and schema fsync, then startup-only pending publication and
-    /// materialization recovery per space.
+    /// and schema fsync. Per-space publication and materialization recovery
+    /// run on first use inside the existing bounded content cache. Call only on
+    /// a blocking thread, including during async server startup.
     pub fn open(
         roots: &calternal_roots::Roots,
         installation: Uuid,
         create: bool,
         receipt_retention: Duration,
     ) -> Result<Self, Error> {
-        let locks = calternal_roots::prepare(roots, installation, create)
-            .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?;
+        let locks = std::sync::Arc::new(
+            calternal_roots::prepare(roots, installation, create)
+                .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?,
+        );
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
         let secrets = root.join("secrets");
@@ -185,6 +180,7 @@ impl Store {
             receipt_retention,
             content_fault,
         )?;
+        content.retain_root_guard(locks.clone());
         // Owner keys are opened on access. The host attaches recovery and validates
         // protected fingerprints before admission through secrets::configure_keys.
         let secrets = calternal_secrets::LocalStore::open(&root)
@@ -267,18 +263,12 @@ impl Store {
         space: SpaceId,
         request_id: &str,
     ) -> Result<Option<Receipt>, Error> {
-        self.content.receipt(space, account, request_id).map(|r| {
-            r.map(|r| Receipt {
-                operation: r.operation,
-                fingerprint: r.fingerprint,
-                result: r.result,
-                note_id: r.item.map(|id| id.to_string()),
-            })
-        })
+        self.content.receipt(space, account, request_id)
     }
     /// Creates a globally UUIDv7-identified Notes item with a human filename and
     /// frontmatter identity. Cost: generic write allocations/locks, FULL content and
-    /// journal commits, fsio file+directory fsync, placement/outbox SQL commits.
+    /// journal and outbox-retirement commits. File/directory durability and
+    /// replayable placement bookkeeping follow on the existing lifecycle worker.
     #[allow(clippy::too_many_arguments)]
     pub fn create(
         &self,
@@ -321,9 +311,11 @@ impl Store {
     /// Updates only the current base revision, preserving external edits/deletes.
     /// Title changes stage the path and link edits in the same content transaction.
     /// Warm content-only saves project tags and links once and load head metadata
-    /// without its previous body. Cost: two file hashes, one guarded placement and
-    /// the shared revision and receipt commits. A linked rename also reads its
-    /// bounded indexed source set.
+    /// without its previous body. Cost: one metadata read plus one shared write
+    /// header, and two checked file reads (admission and deferred placement).
+    /// Three FULL SSD commits precede acknowledgment; file/directory syncs follow
+    /// within one second. A linked rename reads its bounded indexed source set
+    /// and completes guarded placement synchronously.
     #[allow(clippy::too_many_arguments)]
     pub fn update(
         &self,
@@ -383,14 +375,6 @@ impl Store {
             )?
         };
         Ok(note(&updated))
-    }
-    /// Finishes checked placement before retry replay. Cost: catalog lookup and
-    /// generic materialization locks/reads, with file+directory fsync only if pending.
-    pub fn materialize(&self, id: &str) -> Result<(), Error> {
-        let space = self
-            .locate("notes", id)?
-            .ok_or_else(|| Error::not_found("item not found"))?;
-        self.content.materialize(space, item_id(id)?)
     }
     /// Records the result of a mutating plugin operation under the caller's request ID,
     /// so a retry replays it through [`Self::receipt`] instead of running the plugin

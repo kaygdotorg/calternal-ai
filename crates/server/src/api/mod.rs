@@ -40,6 +40,7 @@ mod guard;
 mod notes;
 pub(crate) mod people;
 mod plugins;
+mod request;
 mod request_action;
 mod web;
 pub use dispatch::dispatch;

@@ -196,3 +196,59 @@ async fn account_feed_second_client_restart_foreign_bookmark_and_logout() {
         .unwrap();
     assert_eq!(unauth.status().as_u16(), 401);
 }
+
+/// Wake hints may coalesce; durable pages still replay every retained bookmark,
+/// and a bookmark outside the bounded history produces an account-local reset.
+#[tokio::test]
+async fn account_feed_burst_replay_and_history_overflow() {
+    let f = Fixture::new().await;
+    let mut live = super::live_cases::Live {
+        response: account_live(&f, 1, None).await,
+        buffer: Vec::new(),
+    };
+    let old = live.next().await.unwrap()["bookmark"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    drop(live);
+    let item = uuid::Uuid::now_v7().to_string();
+    for _ in 0..1030 {
+        f.op(1, "drafts.save", draft(&f.spaces[0], &item))
+            .await
+            .ok();
+    }
+    let mut expired = super::live_cases::Live {
+        response: account_live(&f, 1, Some(&old)).await,
+        buffer: Vec::new(),
+    };
+    assert_eq!(expired.next().await.unwrap()["type"], "reset");
+    let mut live = super::live_cases::Live {
+        response: account_live(&f, 1, None).await,
+        buffer: Vec::new(),
+    };
+    let bookmark = live.next().await.unwrap()["bookmark"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for _ in 0..8 {
+        f.op(1, "drafts.save", draft(&f.spaces[0], &item))
+            .await
+            .ok();
+    }
+    let mut replay = super::live_cases::Live {
+        response: account_live(&f, 1, Some(&bookmark)).await,
+        buffer: Vec::new(),
+    };
+    let mut bookmarks = std::collections::BTreeSet::new();
+    for _ in 0..8 {
+        let event = replay.next().await.unwrap();
+        assert_eq!(event["type"], "changed");
+        assert!(bookmarks.insert(event["bookmark"].as_str().unwrap().to_owned()));
+    }
+    assert_eq!(replay.next().await.unwrap()["type"], "ready");
+    let mut foreign = super::live_cases::Live {
+        response: account_live(&f, 2, Some(&bookmark)).await,
+        buffer: Vec::new(),
+    };
+    assert_eq!(foreign.next().await.unwrap()["type"], "reset");
+}

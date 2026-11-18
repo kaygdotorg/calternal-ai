@@ -224,12 +224,17 @@ async fn manifest_policy_gates_dispatch_and_enable_provisions_kinds_and_collecti
     )
     .await
     .unwrap();
-    // Enable registered the hidden kind and created the standard collection file.
+    // Enable durably registers the hidden kind and standard collection; userdata
+    // follows the same one-second placement policy as other content writes.
     let ssd = f.root.join("userdata-ssd");
-    assert!(
-        find(&ssd, "All tags.json"),
-        "standard collection not provisioned"
-    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    while !find(&ssd, "All tags.json") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "standard collection placement exceeded one second"
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
 
     // The guest is a Reader in `shared`: the manifest requires content.write.
     let e = f

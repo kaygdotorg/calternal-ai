@@ -1,0 +1,11 @@
+{
+  "baseline_commit": "2ab2665",
+  "binary_sha256": "879aa14d09469186887666b4ab9668550f1e27f0c178ebd1384abd734c01b12f  bin/calternal\n5ed0970abb4a98cb98fa549adafa47ddcc910b2380735d25a368d4d19d9155c9  bin/calternal-perf\n",
+  "commit": "2ab2665",
+  "completed_startup_observations": 12,
+  "control_exit": 1,
+  "maximum_space_writers_before_first_use": 0,
+  "qualification": "warm same-artifact control; read-only Trash eligibility probes may warm SQLite metadata; no cold/1000-space/idle recertification",
+  "remaining_credential_root_directories": 0,
+  "retention": "raw logs/vectors and copied binaries: 30 days; credential roots removed after runs"
+}

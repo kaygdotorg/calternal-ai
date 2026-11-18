@@ -22,6 +22,32 @@ fn open_retaining(path: &Path, fault: fn(FaultPoint), retention: Duration) -> Co
     )
     .unwrap()
 }
+/// Observe the post-fsync bookkeeping mark without forcing publication or placement.
+fn wait_for_placement(path: &Path, space: SpaceId, item: uuid::Uuid) {
+    let conn = rusqlite::Connection::open_with_flags(
+        path.join(format!("appdata/spaces/{space}/content.db")),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    loop {
+        let done: bool = conn
+            .query_row(
+                "SELECT mat_state='materialized' FROM items WHERE id=?1",
+                [item.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        if done {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "userdata placement exceeded one second"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
 fn request(account: AccountId, id: &str) -> Request<'_> {
     Request {
         account,
@@ -223,6 +249,7 @@ fn human_names_collisions_renames_and_registered_hidden_placement() {
         )
         .unwrap();
     assert_eq!(renamed.id, one.id);
+    wait_for_placement(dir.path(), space, one.id);
     let path = content.file_path(space, "notes", one.id).unwrap();
     assert_eq!(path.file_name().unwrap(), "CAFÉ.md");
     assert_eq!(
@@ -470,4 +497,58 @@ fn a_request_id_is_new_again_after_receipt_retention() {
     std::thread::sleep(retention * 4);
     let content = open_retaining(dir.path(), |_| {}, retention);
     write(&content, b"second\n").expect("a pruned receipt makes the ID new again");
+}
+
+/// Startup must not inspect inactive space databases. Their own first access
+/// validates them before exposing any data, without blocking a healthy space.
+#[test]
+fn startup_defers_inactive_space_validation_until_first_use() {
+    let dir = tempfile::tempdir().unwrap();
+    let broken = SpaceId::new();
+    let path = dir.path().join(format!("appdata/spaces/{broken}"));
+    std::fs::create_dir_all(&path).unwrap();
+    std::fs::write(path.join("content.db"), b"invalid sqlite").unwrap();
+    let content = open(dir.path(), |_| {});
+    assert!(content.list(broken, "notes", 1).is_err());
+    assert!(content.list(SpaceId::new(), "notes", 1).unwrap().is_empty());
+}
+
+/// Acknowledgement needs the SSD transactions, while the lifecycle worker makes
+/// the real file durable without requiring another request to that space.
+#[test]
+fn acknowledged_content_materializes_without_another_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = open_retaining(
+        dir.path(),
+        |_| {},
+        calternal_content::DEFAULT_RECEIPT_RETENTION,
+    );
+    let (space, actor) = (SpaceId::new(), AccountId::new());
+    content
+        .register_kind(
+            space,
+            "notes",
+            Placement::Visible {
+                folder: "Notes".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    let item = content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title":"Async"}),
+            b"durable",
+            request(actor, "async"),
+            |_| json!({}),
+        )
+        .unwrap();
+    let path = dir
+        .path()
+        .join(format!("userdata-ssd/spaces/{space}/Notes/Async.md"));
+    wait_for_placement(dir.path(), space, item.id);
+    assert!(std::fs::read_to_string(path).unwrap().ends_with("durable"));
 }

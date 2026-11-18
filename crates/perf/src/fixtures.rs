@@ -16,14 +16,28 @@ pub(crate) fn build(a: &Args, root: &Path, notes: usize, spaces: usize) -> Resul
         a.startup_timeout_seconds,
     )?;
     h.enroll(&std::fs::read_to_string(root.join("appdata/setup.token"))?)?;
+    // Account enrollment provisions one owned space in the same authority commit.
+    // Reuse its UUID so fixture cardinality includes every space in the account.
+    let (directory, _) = h.op("spaces.list", json!({}))?;
+    let personal = directory["spaces"]
+        .as_array()
+        .filter(|rows| rows.len() == 1)
+        .and_then(|rows| rows.first())
+        .filter(|row| row["personal"] == true)
+        .map(|row| row["id"].clone())
+        .ok_or("fixture enrollment must provision exactly one personal space; use a matching server build")?;
     let mut ids = Vec::new();
     let mut first = Value::Null;
     for s in 0..spaces {
-        let (space, _) = h.op(
-            "spaces.create",
-            json!({"name":format!("Performance fixture {s}")}),
-        )?;
-        let id = space["space"]["id"].clone();
+        let id = if s == 0 {
+            personal.clone()
+        } else {
+            let (space, _) = h.op(
+                "spaces.create",
+                json!({"name":format!("Performance fixture {s}")}),
+            )?;
+            space["space"]["id"].clone()
+        };
         for i in 0..notes {
             let body = format!(
                 "# Note {i}\n\nseed: {}\n#perf #work\n- [ ] deterministic task\n{}\n",

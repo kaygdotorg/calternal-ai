@@ -1,233 +1,18 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 mod admin_cli;
+mod cli;
 mod people_maintenance;
-use admin_cli::MachinesCmd;
+mod startup_io;
+mod transport;
 use calternal_cli::output::{CliError, Output, Reply};
 use calternal_server::api::{self, AppState};
 use calternal_server::auth::StoredDirectory;
 use calternal_server::machines::MachineService;
-use calternal_server::plugins::{self, Registry};
-use calternal_server::store::Store;
-use clap::{Parser, Subcommand};
-
-#[derive(Parser)]
-#[command(
-    name = "calternal",
-    about = "Run a Calternal server or manage its enrolled machines",
-    after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal serve --help, calternal machine --help, calternal machines --help."
-)]
-struct Cli {
-    /// Print one JSON document instead of text (errors too, on stdout); see docs/cli.md.
-    #[arg(long, global = true)]
-    json: bool,
-    /// Hide the short next-step line shown after successful terminal output.
-    #[arg(
-        long,
-        global = true,
-        help = "Hide terminal hints (also CALTERNAL_NO_HINTS=1)"
-    )]
-    no_hints: bool,
-    #[command(subcommand)]
-    cmd: Cmd,
-}
-
-#[derive(Subcommand)]
-enum Cmd {
-    /// Create, read, send to, stop, archive and delete saved conversations.
-    Threads {
-        #[command(flatten)]
-        args: calternal_cli::threads::Args,
-    },
-    /// Find, rename, delete and restore notes.
-    Notes {
-        #[command(flatten)]
-        connection: calternal_cli::agent::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::notes::Notes,
-    },
-    /// List and look up note tags in a space.
-    Tags {
-        #[command(flatten)]
-        connection: calternal_cli::agent::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::notes::Tags,
-    },
-    /// List or permanently delete notes in Trash.
-    Trash {
-        #[command(flatten)]
-        connection: calternal_cli::agent::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::notes::Trash,
-    },
-    /// Run, watch and control official provider sessions in machine sandboxes.
-    Agent {
-        #[command(flatten)]
-        args: calternal_cli::agent::Args,
-    },
-    /// Invoke a discovered operation with structured JSON input.
-    Invoke {
-        #[command(flatten)]
-        connection: calternal_cli::agent::Connection,
-        operation: String,
-        #[arg(long, default_value = "{}")]
-        input: String,
-    },
-    /// Discover available operations using the current person or thread credential.
-    Describe {
-        #[command(flatten)]
-        connection: calternal_cli::agent::Connection,
-    },
-    /// Save, read and erase private account compositions.
-    Drafts {
-        #[command(flatten)]
-        connection: calternal_cli::account_input::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::account_input::Drafts,
-    },
-    /// Queue, edit, confirm, submit or cancel private pending input.
-    Pending {
-        #[command(flatten)]
-        connection: calternal_cli::account_input::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::account_input::Pending,
-    },
-    /// Manage space grants, role definitions, profiles, and server people.
-    People {
-        #[command(flatten)]
-        connection: calternal_cli::account_input::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::people::People,
-    },
-    /// List and manage server groups and their members.
-    Groups {
-        #[command(flatten)]
-        connection: calternal_cli::account_input::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::people::Groups,
-    },
-    /// Create, copy, revoke and redeem space invitations.
-    Invites {
-        #[command(flatten)]
-        connection: calternal_cli::account_input::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::people::Invites,
-    },
-    /// List, answer, approve or deny the requests waiting on you.
-    Requests {
-        #[command(flatten)]
-        connection: calternal_cli::account_input::Connection,
-        #[command(subcommand)]
-        cmd: calternal_cli::requests::Command,
-    },
-    /// Follow a space journal; --json prints one compact JSON object per event.
-    Watch {
-        space: String,
-        #[arg(long, env = "CALTERNAL_URL", default_value = "http://127.0.0.1:3210")]
-        base_url: String,
-        #[arg(long, env = "CALTERNAL_TOKEN_FILE")]
-        token_file: PathBuf,
-        #[arg(
-            long,
-            help = "Bookmark cache directory exclusive to this server and account"
-        )]
-        bookmarks: Option<PathBuf>,
-    },
-    /// Serve the development preview on 127.0.0.1.
-    #[command(
-        about = "Start the development-preview server",
-        after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal serve --appdata /srv/calternal/appdata --userdata-ssd /srv/calternal/ssd --userdata-hdd /mnt/hdd/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
-    )]
-    Serve {
-        /// Protected databases and state (normally on SSD).
-        #[arg(long)]
-        appdata: PathBuf,
-        /// Space trees of claim-validated text files (normally on SSD).
-        #[arg(long)]
-        userdata_ssd: PathBuf,
-        /// Space trees of other original files (normally on HDD).
-        #[arg(long)]
-        userdata_hdd: PathBuf,
-        /// First setup: pair three empty or missing roots. Without it every root must
-        /// already belong to this installation; harmless on a paired installation.
-        #[arg(long)]
-        create: bool,
-        /// This installation's UUID, kept in the server's configuration outside every
-        /// root (ADR 0062). Each root's marker must carry it; required.
-        #[arg(long, env = "CALTERNAL_INSTALLATION_ID")]
-        installation_id: Option<String>,
-        /// Days each space keeps request receipts; a retry after that runs as a new
-        /// request.
-        #[arg(long, env = "CALTERNAL_RECEIPT_RETENTION_DAYS", default_value_t = 7)]
-        receipt_retention_days: u32,
-        /// Days to retain an invitation after expiry, revocation or redemption.
-        #[arg(long, env = "CALTERNAL_INVITE_RETENTION_DAYS",
-            default_value_t = calternal_auth::invites::DEFAULT_INVITE_RETENTION_DAYS,
-            value_parser = clap::value_parser!(u32).range(1..))]
-        invite_retention_days: u32,
-        /// Loopback port; 0 picks a free port (see startup.json).
-        #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
-        port: u16,
-        /// Built web assets served same-origin (any static directory).
-        #[arg(long)]
-        web_dir: Option<PathBuf>,
-        /// Enable disposable development accounts and bearer token files (off by default).
-        #[arg(long)]
-        development: bool,
-        /// Exact public WebAuthn origin; defaults to `http://localhost:<bound-port>`.
-        #[arg(long)]
-        origin: Option<String>,
-        /// Comma-separated trusted proxy CIDRs; forwarded headers are ignored by default.
-        #[arg(long, default_value = "")]
-        trusted_proxies: String,
-        /// Root of trusted plugins. Defaults to ./plugins with the shipped Threads manifest available.
-        #[arg(long)]
-        plugin_root: Option<PathBuf>,
-        /// Explicit direct development worker runtime; requires --development.
-        /// Shipped servers route workers to enrolled machines.
-        #[arg(long)]
-        node: Option<PathBuf>,
-        /// Root of the test-only plugins (`tests/plugins`); refused unless the server
-        /// was built with the `test-plugins` feature.
-        #[arg(long)]
-        test_plugin_root: Option<PathBuf>,
-        /// How long a machine's leases survive without a sync, in milliseconds.
-        #[arg(long, default_value_t = 90_000)]
-        machine_lease_ttl_ms: u64,
-        /// Longest hold of a machine's long-poll, in milliseconds.
-        #[arg(long, default_value_t = 20_000)]
-        machine_poll_hold_ms: u64,
-    },
-    /// Machine role: enroll this computer and run threads for a server.
-    #[command(
-        about = "Enroll this computer and run assigned threads",
-        after_help = "Examples:\n  calternal machine enroll --help\n  calternal machine status\n\nSee also: calternal machines code, calternal machine enroll."
-    )]
-    Machine {
-        #[command(subcommand)]
-        cmd: calternal_machine::cli::Command,
-    },
-    /// Operator administration of execution machines in a data directory.
-    #[command(
-        about = "Manage machines enrolled with this server",
-        after_help = "Examples:\n  calternal machines list --appdata /srv/calternal/appdata\n\nSee also: calternal machines code, calternal machine --help."
-    )]
-    Machines {
-        #[command(subcommand)]
-        cmd: MachinesCmd,
-    },
-    /// Print SHA-256 of trusted worker bundles for pinning in trusted-plugins.json.
-    #[command(
-        about = "Show worker bundle hashes and their trust status",
-        after_help = "Examples:\n  calternal plugin-digest\n  calternal plugin-digest --plugin-root ./plugins\n\nSee also: calternal serve --help."
-    )]
-    PluginDigest {
-        /// Directory containing the trusted plugin bundles.
-        #[arg(long, default_value = "plugins")]
-        plugin_root: PathBuf,
-    },
-}
+use calternal_server::plugins;
+use cli::{Cli, Cmd};
+use startup_io::{DATA_HINT, write_private_atomic};
 
 fn main() {
     tracing_subscriber::fmt()
@@ -408,8 +193,6 @@ async fn serve(
     machine_settings: calternal_server::machines::Settings,
     out: &Output,
 ) -> Result<(), CliError> {
-    const DATA_HINT: &str =
-        "Check that --appdata exists (or can be created) and that you can write to it.";
     // The roots guard runs first: a missing, swapped or foreign root is refused
     // before any directory, lock or database is created.
     const PIN_HINT: &str = "Put this installation's UUID in the server configuration as \
@@ -434,36 +217,21 @@ async fn serve(
                 )
             })
         })?;
-    let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
-        boot(
-            1,
-            "failed",
-            e.message,
-            "Pass the three roots this installation was set up with (--create only for \
-             first setup), and make sure no other server is using them.",
+    let has_test_root = test_plugin_root.is_some();
+    let (store, data_dir, recovery, registry) = tokio::task::spawn_blocking(move || {
+        startup_io::open_stores(
+            roots,
+            installation,
+            create,
+            receipt_retention,
+            plugin_root,
+            test_plugin_root,
         )
-    })?;
-    let data_dir = std::fs::canonicalize(&roots.appdata)
-        .map_err(|e| boot(1, "io", format!("appdata: {e}"), DATA_HINT))?;
-    // Every security change is written to this log in userdata-ssd before it is
-    // acknowledged (crates/recovery), so auth.db can be rebuilt if appdata is lost.
-    let recovery = store.open_recovery(create).map_err(|e| {
-        boot(
-            1,
-            "failed",
-            e.message,
-            "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
-        )
-    })?;
-    let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
-    let registry = if let Some(root) = plugin_root {
-        let root = std::fs::canonicalize(&root).unwrap_or(root);
-        Registry::load_with_tests(&root, test_root.as_deref())
-    } else {
-        Registry::load_server_defaults(test_root.as_deref())
-    };
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
     let local_test_workers = cfg!(feature = "test-plugins")
-        && test_root.is_some()
+        && has_test_root
         && std::env::var_os("CALTERNAL_WORKER_TEST_BACKEND").is_some();
     if node.is_some() && !development && !local_test_workers {
         return Err(boot(
@@ -489,7 +257,11 @@ async fn serve(
     } else {
         None
     };
-    let web_dir = web_dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d));
+    let web_dir = tokio::task::spawn_blocking(move || {
+        web_dir.map(|d| std::fs::canonicalize(&d).unwrap_or(d))
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?;
 
     let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
         Ok(l) => l,
@@ -526,18 +298,25 @@ async fn serve(
             "Use comma-separated CIDR ranges, for example 10.0.0.0/8,fd00::/8.",
         ));
     }
-    let directory =
-        match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
-            Ok(t) => t,
-            Err(e) => {
-                return Err(boot(
-                    1,
-                    "failed",
-                    format!("account directory: {e}"),
-                    DATA_HINT,
-                ));
-            }
-        };
+    let directory_root = data_dir.clone();
+    let directory = tokio::task::spawn_blocking(move || {
+        let data_dir = directory_root;
+        let directory =
+            match StoredDirectory::open(&data_dir, config, development, Some(Arc::new(recovery))) {
+                Ok(t) => t,
+                Err(e) => {
+                    return Err(boot(
+                        1,
+                        "failed",
+                        format!("account directory: {e}"),
+                        DATA_HINT,
+                    ));
+                }
+            };
+        Ok::<_, CliError>(directory)
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
     {
         let keys = store.secrets();
         let spaces = directory.spaces.clone();
@@ -579,9 +358,14 @@ async fn serve(
     };
     let _sweeper = machines.spawn_sweeper();
     // Operator commands reach this server here instead of writing behind it.
-    let _admin =
-        calternal_server::machines::admin::serve_socket(&data_dir, installation, machines.clone())
-            .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
+    let admin_root = data_dir.clone();
+    let admin_machines = machines.clone();
+    let _admin = tokio::task::spawn_blocking(move || {
+        calternal_server::machines::admin::serve_socket(&admin_root, installation, admin_machines)
+    })
+    .await
+    .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
+    .map_err(|e| boot(1, "io", format!("admin socket: {e}"), DATA_HINT))?;
     let mut invite_tasks = tokio::task::JoinSet::new();
     if let Some(service) = calternal_server::auth::Directory::http_auth(&directory) {
         let auth = service.auth.clone();
@@ -597,6 +381,7 @@ async fn serve(
             Ok(Some(token)) => {
                 let path = data_dir.join("setup.token");
                 write_private_atomic(&path, token.as_bytes())
+                    .await
                     .map_err(|e| boot(1, "io", format!("setup token file: {e}"), DATA_HINT))?;
                 Some(path)
             }
@@ -619,7 +404,10 @@ async fn serve(
             hosts.push(authority);
         }
     }
-    let jobs = plugins::Jobs::open(&data_dir)
+    let jobs_root = data_dir.clone();
+    let jobs = tokio::task::spawn_blocking(move || plugins::Jobs::open(&jobs_root))
+        .await
+        .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?
         .with_security(directory.spaces.agents())
         .with_receipt_retention(store.content().receipt_retention())
@@ -685,16 +473,16 @@ async fn serve(
         "web_dir": web_dir,
     });
     let startup_path = data_dir.join("startup.json");
-    write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap()).map_err(
-        |e| {
+    write_private_atomic(&startup_path, &serde_json::to_vec_pretty(&startup).unwrap())
+        .await
+        .map_err(|e| {
             boot(
                 1,
                 "io",
                 format!("cannot write startup.json: {e}"),
                 DATA_HINT,
             )
-        },
-    )?;
+        })?;
     let mut fields = vec![("url".to_owned(), base_url.clone())];
     fields.extend(
         token_files
@@ -714,7 +502,7 @@ async fn serve(
     );
 
     let served = axum::serve(
-        listener,
+        transport::listener(listener),
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
@@ -726,7 +514,7 @@ async fn serve(
         }
     })
     .await;
-    let _ = std::fs::remove_file(&startup_path);
+    let _ = tokio::fs::remove_file(&startup_path).await;
     served.map_err(|e| {
         boot(
             1,
@@ -735,10 +523,6 @@ async fn serve(
             "Look at the server log above for the cause.",
         )
     })
-}
-
-fn write_private_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    calternal_fsio::write_atomic_mode(path, bytes, 0o600)
 }
 
 async fn shutdown_signal() {
@@ -752,190 +536,4 @@ async fn shutdown_signal() {
 }
 
 #[cfg(test)]
-mod cli_output_tests {
-    use super::*;
-    use calternal_cli::testing::assert_golden;
-    use std::path::{Path, PathBuf};
-    use time::UtcOffset;
-
-    fn golden(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/golden/cli")
-            .join(name)
-    }
-
-    /// A paired, stopped installation (as `serve --create` leaves it) with the
-    /// given pool machines written before recovery is first attached.
-    fn installation(machines: &[(&str, &str)]) -> (tempfile::TempDir, admin_cli::Installation) {
-        use std::os::unix::fs::DirBuilderExt;
-        let dir = tempfile::tempdir().unwrap();
-        let roots = calternal_roots::Roots {
-            appdata: dir.path().join("appdata"),
-            userdata_ssd: dir.path().join("userdata-ssd"),
-            userdata_hdd: dir.path().join("userdata-hdd"),
-        };
-        let id = "00000000-0000-0000-0000-000000000001";
-        drop(
-            Store::open(
-                &roots,
-                uuid::Uuid::parse_str(id).unwrap(),
-                true,
-                calternal_content::DEFAULT_RECEIPT_RETENTION,
-            )
-            .unwrap(),
-        );
-        let c = calternal_auth::db::open_conn(&roots.appdata.join("system/auth.db")).unwrap();
-        for (machine, name) in machines {
-            c.execute(
-                "INSERT INTO machines(id,owner_account,public_key,name,os,arch,enrolled_ms) VALUES(?1,NULL,?2,?3,'linux','x86_64',0)",
-                rusqlite::params![machine, vec![7u8; 32], name],
-            )
-            .unwrap();
-        }
-        drop(c);
-        std::fs::DirBuilder::new()
-            .mode(0o700)
-            .recursive(true)
-            .create(roots.userdata_ssd.join(".calternal/recovery"))
-            .unwrap();
-        let installation = admin_cli::Installation {
-            appdata: roots.appdata,
-            userdata_ssd: roots.userdata_ssd,
-            userdata_hdd: roots.userdata_hdd,
-            installation_id: id.into(),
-        };
-        (dir, installation)
-    }
-
-    fn redact_code_and_time(text: &str) -> String {
-        let mut cleaned = String::new();
-        for line in text.lines() {
-            if line.starts_with("code:") {
-                cleaned.push_str("code:     <CODE>\n");
-            } else if line.starts_with("expires:") {
-                cleaned.push_str("expires:  <TIME>\n");
-            } else {
-                cleaned.push_str(line);
-                cleaned.push('\n');
-            }
-        }
-        cleaned
-    }
-
-    #[test]
-    fn machine_and_plugin_list_goldens_cover_120_80_and_40_columns() {
-        let (_keep, installation) = installation(&[(
-            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            "build-machine-with-a-long-name",
-        )]);
-        for width in [120, 80, 40] {
-            let out = Output::fixed_terminal(false, width, UtcOffset::UTC, true);
-            let machines = admin_cli::machines(
-                MachinesCmd::List {
-                    installation: installation.clone(),
-                },
-                &out,
-            )
-            .unwrap();
-            assert_golden(
-                &golden(&format!("machines-list-width-{width}.txt")),
-                &out.render(&machines),
-            );
-
-            let digest = admin_cli::plugin_digest(Path::new("/nonexistent-plugins"));
-            assert_golden(
-                &golden(&format!("plugin-digest-width-{width}.txt")),
-                &out.render(&digest),
-            );
-        }
-    }
-
-    #[test]
-    fn no_hints_is_a_global_calternal_option() {
-        use clap::Parser;
-
-        let cli = Cli::try_parse_from([
-            "calternal",
-            "machines",
-            "list",
-            "--appdata",
-            "/tmp/calternal/appdata",
-            "--userdata-ssd",
-            "/tmp/calternal/ssd",
-            "--userdata-hdd",
-            "/tmp/calternal/hdd",
-            "--installation-id",
-            "00000000-0000-0000-0000-000000000001",
-            "--no-hints",
-        ])
-        .unwrap();
-        assert!(cli.no_hints);
-    }
-
-    #[test]
-    fn machine_code_and_empty_list_hint_goldens_cover_enabled_and_disabled_hints() {
-        let (_keep, installation) = installation(&[]);
-        let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
-        let code = admin_cli::machines(
-            MachinesCmd::Code {
-                installation: installation.clone(),
-                pool: true,
-                account: None,
-                minutes: 60,
-            },
-            &out,
-        )
-        .unwrap();
-        assert_golden(
-            &golden("machines-code-hint.txt"),
-            &redact_code_and_time(&out.render(&code)),
-        );
-        let no_hints = Output::fixed_terminal(false, 80, UtcOffset::UTC, false);
-        assert_golden(
-            &golden("machines-code-no-hint.txt"),
-            &redact_code_and_time(&no_hints.render(&code)),
-        );
-
-        let (_keep_empty, empty_installation) = self::installation(&[]);
-        let empty = admin_cli::machines(
-            MachinesCmd::List {
-                installation: empty_installation,
-            },
-            &out,
-        )
-        .unwrap();
-        assert_golden(&golden("machines-list-empty-hint.txt"), &out.render(&empty));
-        assert_golden(
-            &golden("machines-list-empty-no-hint.txt"),
-            &no_hints.render(&empty),
-        );
-    }
-
-    #[test]
-    fn calternal_command_help_has_examples_and_see_also() {
-        use clap::Parser;
-
-        let commands: &[&[&str]] = &[
-            &["calternal", "--help"],
-            &["calternal", "serve", "--help"],
-            &["calternal", "machine", "--help"],
-            &["calternal", "machine", "enroll", "--help"],
-            &["calternal", "machine", "run", "--help"],
-            &["calternal", "machine", "status", "--help"],
-            &["calternal", "machines", "--help"],
-            &["calternal", "machines", "code", "--help"],
-            &["calternal", "machines", "list", "--help"],
-            &["calternal", "machines", "revoke", "--help"],
-            &["calternal", "machines", "pool-grant", "--help"],
-            &["calternal", "plugin-digest", "--help"],
-        ];
-        for args in commands {
-            let help = Cli::try_parse_from(args.iter().copied())
-                .err()
-                .expect("--help exits before running the command")
-                .to_string();
-            assert!(help.contains("Examples:"), "{args:?}: {help}");
-            assert!(help.contains("See also:"), "{args:?}: {help}");
-        }
-    }
-}
+mod cli_output_tests;
