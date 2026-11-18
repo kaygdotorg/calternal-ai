@@ -120,10 +120,10 @@ This installs a separate binary and pairs three roots under
 `service.sh stop-browser` stops just those two units. `service.sh logs`
 includes both installations. The fixture reset only resets the seeded
 installation.
-After a refresh, the rehearsal uses a third installation with its own roots,
-machine unit, and software passkey. The same post-setup script verifies a
-fixture turn and prints the login command. The live browser token stays
-available for the owner.
+After a refresh, rehearse with a third installation that has its own roots,
+machine unit, and software passkey. The rehearsal can exercise direct
+Claude Code startup or the optional fixture proof. The live browser token
+stays available for the owner.
 
 Inside the coordinator’s existing `preview.calternal.cloud` Caddy site,
 route the absolute API paths ahead of the static SPA fallback:
@@ -161,21 +161,18 @@ in Settings.
    `https://preview.calternal.cloud/ai/?server=1#setup=SETUP_CODE`, with the
    code from the file below in the fragment. You can also open
    [the preview](https://preview.calternal.cloud/ai/?server=1) and paste the
-   code into the form.
-2. Create your passkey and stay signed in. In **Settings → Machines**, select
+   code into the form. Create your passkey and stay signed in.
+2. In **Settings → Machines**, select
    **Make a code**. Copy the one-time enrollment code shown in the command.
 3. Run the post-setup script and paste the enrollment code when prompted.
+   It starts dev-01 on the Claude Code image and prints your sandbox home
+   and login command.
 
    ```sh
    ssh -t claude@calternal-dev-01-compute02 'cd ~/Developer/lanes/e2e-dev && ./scripts/dev-e2e/after-owner-setup.sh'
    ```
 
-4. While the script waits, open a new Thread in the preview and send
-   `Verify the fixture machine`. Wait for **Hello 🌏** and for the turn to
-   finish, then press Enter in the script. The script verifies the fixture
-   created a fresh workspace marker on dev-01, switches the machine to
-   Claude Code, and prints the private sandbox home.
-5. Sign in to Claude Code in that home. The coordinator can place a reduced
+4. Sign in to Claude Code in that home. The coordinator can place a reduced
    sign-in copy there using the file names and modes above. Alternatively,
    run the interactive SSH command printed by the script. It has this
    form with the account UUID filled in. The container mounts the same
@@ -186,7 +183,17 @@ in Settings.
    ssh -t claude@calternal-dev-01-compute02 'podman run --rm -it -e HOME=/home/agent -v /home/claude/calternal-e2e/browser/machine/sandboxes/accounts/ACCOUNT_UUID/home:/home/agent localhost/calternal-e2e-claude:dev claude auth login'
    ```
 
-6. Back in the preview, open a new Thread in your space and send a message.
+   Your first message in a new Thread in the preview is the live check.
+
+### Optional fixture verification
+
+Before placing provider sign-in files, operators can append
+`--verify-fixture` to the post-setup script command. While the script waits,
+open a new Thread in the preview and send `Verify the fixture machine`.
+After **Hello 🌏** appears and the turn finishes, press Enter in the script.
+It checks for a fresh fixture workspace marker on dev-01 and waits for the
+fixture container to be removed before switching to Claude Code. It then
+prints the sandbox home and login command.
 
 The enrollment code comes from the signed-in browser’s
 `POST /api/v1/machines/codes` request. The script feeds it to
