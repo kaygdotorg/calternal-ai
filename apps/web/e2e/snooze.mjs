@@ -8,7 +8,7 @@ try {
   const { page: p, ctx } = await open(browser, "desktop", "light", "/threads/t-idle");
   await p.clock.install({ time: new Date(2026, 10, 18, 10, 0, 0) }); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(800);
   const showSnoozed = async () => { const g = p.locator("aside.side .snz .sg"); if ((await g.getAttribute("aria-expanded")) !== "true") await g.click(); await p.waitForTimeout(200); };
-  const inbox = () => p.locator("aside.side [role=tabpanel] ul[aria-label='Waiting for you'] > li");
+  const inbox = () => p.locator("aside.side [role=tabpanel] ul[aria-label='Waiting for you'] > li[data-thread]");
   const n0 = await inbox().count();
   ok(n0 >= 2, "the Inbox lists threads that wait on the person", String(n0));
   const first = inbox().first();
