@@ -245,7 +245,7 @@ fn advance(
     if let Some(after) = current.scan_after {
         // An empty space can have content metadata before it has a userdata
         // directory. Only the content writer provisions that private directory.
-        let folder = calternal_fsio::beneath::Folder::open(&content.roots.userdata_ssd)
+        let folder = calternal_fsio::beneath::Folder::open_existing(&content.roots.userdata_ssd)
             .and_then(|root| root.open_sub(&format!("spaces/{space}"), false))
             .ok();
         let snapshot = source.transaction().map_err(internal)?;

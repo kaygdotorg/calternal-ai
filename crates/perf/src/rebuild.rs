@@ -26,7 +26,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
     if !source.join("search-summary.json").is_file() || a.work.exists() {
         return Err("use a stopped, generated search fixture and a fresh --work directory".into());
     }
-    std::fs::create_dir(&a.work)?;
+    fixtures::private_work(&a.work)?;
     let template = a.work.join("template");
     fixtures::copy(source, &template)?;
     let (space, first) = prepare(a, &template)?;

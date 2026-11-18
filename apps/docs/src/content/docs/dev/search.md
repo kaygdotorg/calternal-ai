@@ -89,6 +89,8 @@ from the same bounded read snapshot. The journal catches changes during the
 scan before the worker publishes readiness. A change to the release version,
 schema generation, searchable kinds, or journal epoch invalidates the
 projection.
+The scan opens existing userdata directories only. The content writer
+provisions missing directories with fsio's owner-only mode.
 Foreground Notes list, ID reads and saves keep using existing head metadata
 and the journal during rebuild. This covers the Notes search projection.
 Other indexes use their existing lifecycle.
