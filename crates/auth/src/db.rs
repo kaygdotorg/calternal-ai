@@ -319,6 +319,26 @@ mod port_tests {
     use std::task::{Context, Poll, Waker};
 
     #[test]
+    fn note_purge_migration_grants_only_manager_and_owner() {
+        use calternal_store::migrations::{Schema, inspect, migrate_release};
+
+        let conn = Connection::open_in_memory().unwrap();
+        let previous = Schema::new("auth.db", 11, &[include_str!("schema.sql")], &[]);
+        migrate_release(&conn, previous, false).unwrap();
+        migrate_release(&conn, MIGRATIONS, true).unwrap();
+        assert_eq!(inspect(&conn, previous).unwrap(), 12);
+        let mut query = conn
+            .prepare("SELECT role FROM space_role_capabilities WHERE capability='content.purge' ORDER BY role")
+            .unwrap();
+        let roles = query
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(roles, ["manager", "owner"]);
+    }
+
+    #[test]
     fn a_database_at_another_version_is_refused() {
         let dir = TempDir::new();
         let path = dir.path().join("auth.db");
