@@ -12,11 +12,12 @@ const json = (route, body, status = 200) => route.fulfill({ status, contentType:
 const ME = (id, extra = {}) => ({ user: { id, name: "Kay", username: "kay", role: "owner", capabilities: ["spaces.read"] }, installation: "inst-1", ...extra });
 async function mock(page, { setup, signedIn, account = "acc-1", me = {} }) {
   await page.route("**/api/v1/auth/status", (r) => json(r, { setup, signed_in: signedIn }));
-  await page.route("**/api/v1/describe", (r) => json(r, { protocol_version: 1, genui_version: 1, principal: {}, operations: [] }));
+  await page.route("**/api/v1/describe", (r) => json(r, { protocol_version: 1, genui_version: 1, principal: {}, operations: [{ id: "onboarding.state" }] }));
   await page.route("**/api/v1/auth/me", (r) => signedIn ? json(r, ME(account, me)) : json(r, { error: { code: "unauthorized", message: "no session" } }, 401));
   await page.route("**/api/v1/operations", async (r) => {
     const op = JSON.parse(r.request().postData() ?? "{}").operation;
     if (op === "spaces.list") return json(r, { ok: true, data: { spaces: [{ id: "sp-1", name: "Personal", personal: true, role: "owner" }] } });
+    if (op === "onboarding.state") return json(r, { ok: true, data: { finished: !!globalThis.__finished } });
     if (op === "machines.onboarding") return json(r, { ok: true, data: { attached: true, ready: false, machine_id: null } });
     return json(r, { ok: false, error: { code: "not_found", message: "none" } });
   });
@@ -85,6 +86,17 @@ try {
     ok(await onboardingUp(page), "(c) a device that knows the account still shows the onboarding");
     ok(mounted.length === 0, "(c) the app never painted, not even for a moment");
     await ctx.close(); }
+  // (e) the server remembers: an account it says has not finished onboarding resumes it on any browser (no local record), and one that has finished goes to the app
+  for (const finished of [false, true]) {
+    globalThis.__finished = finished;
+    const { ctx, page } = await fresh({ fn: () => localStorage.setItem("cal.firstrun", "1") });
+    await mock(page, { setup: false, signedIn: true });
+    await page.goto(BASE + "/?server=1"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200);
+    const onb = (await page.locator("main ol.steps").count()) > 0;
+    ok(finished ? !onb && (await page.locator(".shell").count()) > 0 : onb && /Recovery/i.test(await page.locator("ol.steps li[aria-current=step]").innerText()), `(e) the server says finished=${finished}: ${finished ? "the app" : "the onboarding resumes at the recovery codes"}`);
+    await ctx.close();
+  }
+  globalThis.__finished = undefined;
   // (d) the server's policy needs a verified email and this signed-in account has none: ask before the app (the login was not refused), and on a server with no mail say so plainly
   for (const mail of [true, false]) {
     const { ctx, page } = await fresh({ fn: () => localStorage.setItem("cal.firstrun", "1") });
