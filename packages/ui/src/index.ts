@@ -22,6 +22,7 @@ export { tip, type Tip } from "./lib/tooltip";
 export { cssPx } from "./lib/css";
 export { default as InlineEditor } from "./components/InlineEditor.svelte";
 export { default as Switch } from "./components/Switch.svelte";
+export { default as SplitView } from "./components/SplitView.svelte";
 export { default as Badge } from "./components/Badge.svelte";
 export { default as Spinner } from "./components/Spinner.svelte";
 export { ICONS, type IconName } from "./icons";

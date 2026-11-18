@@ -1,5 +1,5 @@
 // Switching from an open thread (or note) to Settings through the app capsule shows the Settings page in the middle, and every Settings item then opens its own page there: with the card (canvas off) and with the canvas
-// (canvas on, which is the default against the real server). A window for Settings used to be refused, so the sidebar followed the capsule and the middle kept the thread; direct loads of /settings/... never exercised the switch.
+// (on only after ?canvas=1, remembered for the visit: it stays an experiment; the owner hit the bug on a visit that had it on, so both modes are checked). A window for Settings used to be refused, so the sidebar followed the capsule and the middle kept the thread; direct loads of /settings/... never exercised the switch.
 // Also back: the capsule's Threads returns to the thread that had focus. Usage: node e2e/settings-switch.mjs (after `npm run build`, through with-preview).
 import { chromium } from "playwright";
 import { BASE, serve } from "./lib.mjs";
