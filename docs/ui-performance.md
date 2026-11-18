@@ -271,10 +271,24 @@ Changed because of the measurement: members, invitations and people fetch one se
 
 | Screen | Usable | Requests | KB | What it shows |
 | --- | --- | --- | --- | --- |
-| Notes: list opens | 0.36 s | 13 | 264 | 200 rows listed (the sentinel is in view, so a second page follows at once); 14 tag chips of 2,000 tags |
-| Notes: scrolled to the end | - | 111 | 2,264 | all 10,000 rows after 28 s of scrolling (100 pages, about 280 ms each including a 30 ms pause between pages); 110,263 DOM nodes, heap 257 MB; scrolling the whole list: worst frame 167 ms, p95 100 ms |
-| Trash: scrolled to the end | 0.43 s | 27 | 525 | all 1,500 rows after 1.8 s |
+| Notes: list opens | 0.36 s | 14 | 281 | 53 rows listed (the window plus its margin); 14 tag chips of 2,000 tags |
+| Notes: scrolled to the end | - | 111 | 2,257 | all 10,000 rows loaded after 12 s of scrolling (100 pages); 54 rows in the DOM, heap 23 MB at the end |
+| Trash: scrolled to the end | 0.60 s | 27 | 533 | all 1,500 rows loaded in 1.8 s; 46 rows in the DOM |
+| Settings > Members, Invites, Admin > People | 0.34 to 0.77 s | 13 to 15 | 241 to 281 | 200, 100 and 200 rows loaded after scrolling to the end; 15, 15 and 27 rows in the DOM |
 
-The first page is as cheap as before. The end of a 10,000-row list is not: every row stays in the page (about 11 DOM nodes a row), and a software-rendered headless browser drops frames scrolling it (`content-visibility: auto` on the rows took the p95 from 133 ms to 100 ms and the worst frame from 217 ms to 167 ms). Windowing the list (render only the rows near the view, with a spacer for the rest) would bring the DOM and heap back to the size of the first page; it is not built (a question for the owner: nobody scrolls 10,000 rows by hand, and find, tags and `[[` reach any note).
+**One windowed list for every long list (2026-11-18).** The Threads app's virtualised list (`VirtualList`, a Fenwick tree of row heights, one ResizeObserver, scroll corrected once per frame) moved to `packages/ui` and is the only implementation. It has a second mode, `inside`, for a list that sits in an existing scrollable (a sidebar, a Settings page, a card): the window follows that ancestor's scroll and the rows above and below keep their place. Notes, Trash, Members, Invites and People use it; the conversation uses its own-scroller mode. `onrange` tells a screen which rows are drawn, so it reads the next page when the window is within 40 rows of the last loaded one (Invites keeps reading while the pages add only invitations that are hidden).
+
+Before and after at 10,000 notes (dev-01, shared and loaded, so development numbers; frames are one display tick = 16.7 ms):
+
+| | rows in the DOM | DOM nodes | JS heap at the end | scrolling the whole list |
+| --- | --- | --- | --- | --- |
+| rows all in the page | 10,000 | 110,263 | 257 MB | worst frame 167 to 217 ms, p95 100 to 133 ms |
+| windowed | 54 | 913 (page) | 23 MB | steady 60 px a frame: worst 17 ms, p95 17 ms; held Page Down (800 px a frame): worst 67 ms, p95 17 ms; a fling over the whole list (3,336 px a frame): worst 50 ms, p95 33 ms |
+
+The DOM is bounded by the viewport and no longer depends on the number of notes. The target of one tick for the worst frame holds for steady scrolling; the Page Down and fling cases still show an occasional slower frame on this loaded machine (each builds a new window of about 50 rows), which a quiet perf VM should settle.
+
+**Memory.** Rows are kept as plain objects (not reactive proxies), about 150 bytes a row, so memory grows with how far the person has scrolled, not with the DOM: 10,000 rows are about 1.5 MB. Releasing far pages was not built: a keyset cursor only goes forward from a page's own cursor, so a released page could be read again only by remembering every page's cursor, and the saving is small beside the DOM. If a hard cap is wanted, the `Paged` list is the one place to add it.
+
+**A note removed elsewhere.** The change feed carries the kind and item of each journal entry. When the item is a row the list already holds (scrolled past, so the first-page read does not show it), the list asks about that one note: gone or in the Trash, the row leaves (and an open Trash list reads again); otherwise the row takes the new title. Checked by `e2e/notes-remote.mjs` (a second session trashes a row several pages down; the first list drops it without a reload).
 
 **Space dots with 50 spaces (a question, not redesigned).** The row is one 24 px dot per space, 1,200 px wide, in a 240 px sidebar footer: the row overflows both sides of the centred footer, so about 7 dots show, partly over the account picture and the search button, and the other 43 spaces cannot be reached from the footer, but the palette (Cmd-K) lists every space ("Space: Name") and switching from it works in server mode (checked in `e2e/notes-server.mjs`), so none is unreachable. Screenshot on issue #15. Options for the owner: a scrolling row, "current plus the most recent N" with a menu for the rest, or a list in the space section of Settings.

@@ -6,7 +6,7 @@
   import { Button, cssPx, InlineEditor, Panel, Pill, toast } from "@calternal/ui";
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
-  import VirtualList from "../../lib/VirtualList.svelte";
+  import { VirtualList } from "@calternal/ui";
   import { href, navigate } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { bridge } from "./compose.svelte";
