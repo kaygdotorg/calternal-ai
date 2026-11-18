@@ -96,7 +96,7 @@ try {
     ok(finished ? !onb && (await page.locator(".shell").count()) > 0 : onb && /Recovery/i.test(await page.locator("ol.steps li[aria-current=step]").innerText()), `(e) the server says finished=${finished}: ${finished ? "the app" : "the onboarding resumes at the recovery codes"}`);
     await ctx.close();
   }
-  globalThis.__finished = undefined;
+  globalThis.__finished = true; // (d) is about an account that finished onboarding
   // (d) the server's policy needs a verified email and this signed-in account has none: ask before the app (the login was not refused), and on a server with no mail say so plainly
   for (const mail of [true, false]) {
     const { ctx, page } = await fresh({ fn: () => localStorage.setItem("cal.firstrun", "1") });
