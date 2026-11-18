@@ -68,6 +68,12 @@ as soon as they expire.
 
 ## Account and server directory
 
+`account.set_time_zone` sets the signed-in account's private IANA time zone.
+Pass `{"time_zone":"Asia/Kolkata"}` to choose a zone, or pass
+`{"time_zone":null}` to follow the device. `GET /api/v1/auth/me` returns this
+field for the session's own account. Space member and thread projections keep
+the setting private. The CLI command is `calternal people set-time-zone [ZONE]`.
+
 `account.set_profile` edits the signed-in account's display name. Login
 identity is unchanged. The same Unicode and look-alike checks used for
 enrollment apply to profile edits.

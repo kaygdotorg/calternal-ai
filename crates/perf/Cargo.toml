@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+calternal-server = { path = "../server", features = ["rebuild-probe"] }
 serde.workspace = true
 serde_json.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }

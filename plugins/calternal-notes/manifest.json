@@ -27,6 +27,7 @@
   "kinds": [
     {
       "id": "notes",
+      "searchable": true,
       "storage": { "folder": "Notes" },
       "claimed_text": true,
       "schema": { "type": "object" }

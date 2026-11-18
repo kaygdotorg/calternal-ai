@@ -40,6 +40,11 @@ mod mutations;
 mod pool;
 mod publication;
 mod recovery;
+mod search;
+pub use search::{
+    IndexedHit, IndexedPage, SearchConfig, SearchConfigSource, SearchKey, SearchKind, SearchMatch,
+    SearchProbe, fold_title, typo_expression,
+};
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 mod trash;
@@ -67,6 +72,9 @@ use uuid::Uuid;
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
     roots: Roots,
+    search_readers: search::Readers,
+    search_writers: search::Writers,
+    search_worker: std::sync::OnceLock<std::sync::mpsc::SyncSender<SpaceId>>,
     lifecycle: calternal_types::OwnerLifecycle,
     index: Mutex<Connection>,
     catalog: ReadPool,
@@ -160,6 +168,9 @@ impl Content {
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
         let catalog = ReadPool::new(roots.appdata.join("system/content-index.db"));
         let content = Self {
+            search_readers: search::Readers::default(),
+            search_writers: search::Writers::default(),
+            search_worker: std::sync::OnceLock::new(),
             roots,
             lifecycle,
             index: Mutex::new(index),
@@ -242,6 +253,8 @@ impl Content {
     /// witness publication. Call from a blocking worker.
     pub fn retire_space(&self, space: SpaceId) {
         self.lifecycle.drain(space.as_uuid());
+        self.search_readers.forget(space);
+        self.search_writers.forget(space);
         let slot = lock(&self.spaces).remove(&space);
         drop(slot);
     }

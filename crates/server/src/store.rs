@@ -230,6 +230,7 @@ impl Store {
     pub fn content(&self) -> &Content {
         &self.content
     }
+
     /// Resolves identifier-only catalog routing for any stored kind. No content is read
     /// and no authority is granted. A malformed ID is simply absent.
     /// Cost: catalog mutex and one indexed read; no membership scan or fsync.

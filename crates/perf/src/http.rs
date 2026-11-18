@@ -31,6 +31,18 @@ impl Http {
             nonce: uuid::Uuid::new_v4(),
         })
     }
+    /// Reuse this test session and client pool with an independent request namespace.
+    pub(crate) fn peer(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            base: self.base.clone(),
+            cookie: self.cookie.clone(),
+            bearer: self.bearer.clone(),
+            counter: 0,
+            nonce: uuid::Uuid::new_v4(),
+        }
+    }
+
     pub(crate) fn request(&self, path: &str, body: Option<Value>) -> Result<(Value, String, f64)> {
         let mut r = if body.is_some() {
             self.client.post(format!("{}{path}", self.base))

@@ -517,12 +517,17 @@ async fn saved_thread_events_replay_and_stay_in_the_owning_space() {
         .join("userdata-ssd/spaces")
         .join(space)
         .join("AI/Chats");
-    assert!(!chats.join("Original.md").exists());
-    assert!(
-        std::fs::read_to_string(chats.join("Renamed.md"))
-            .unwrap()
-            .contains("title: \"Renamed\"")
-    );
+    // The save acknowledgment can precede the deferred placement worker.
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while chats.join("Original.md").exists()
+            || !std::fs::read_to_string(chats.join("Renamed.md"))
+                .is_ok_and(|body| body.contains("title: \"Renamed\""))
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the renamed thread file should finish placement");
     f.op(1, "threads.archive", json!({"id":thread})).await.ok();
     let restored = f.op(1, "threads.unarchive", json!({"id":thread})).await;
     restored.ok();

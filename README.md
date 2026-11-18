@@ -54,6 +54,9 @@ Notes, Tags and Trash list and lookup commands return up to 100 rows per page.
 Reuse the same arguments with `--cursor` to continue.
 See [Notes operations](docs/notes-operations.md).
 
+Use `calternal search` to find text across readable spaces and browse picker
+and palette data. See [Search and palette lookups](docs/search.md).
+
 Use `calternal people`, `calternal groups`, and `calternal invites` to
 manage space access through the same HTTP transport. See [people and access](docs/people.md).
 
