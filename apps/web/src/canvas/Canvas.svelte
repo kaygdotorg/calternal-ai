@@ -106,17 +106,26 @@
   });
   // The app behind a window starts when its first window opens (Notes loads its list and space).
   $effect(() => { for (const k of new Set(canvas.all().map((w) => w.kind))) void appFor(k)?.start?.(); });
-  // First visit: a second thread beside the first and a note below it, so there is something to arrange (the person's own arrangement is kept after that).
+  // First visit: a thread, a second thread beside it and a note below that, so there is something to arrange (the person's own arrangement is kept after that). With an address that names an item, that window is the first.
+  // Notes loads its list and space when its first window opens; the canvas needs a note to seed, so it starts it at once.
   onMount(() => { void appFor("notes")?.start?.(); });
   let seeded = (() => { try { return localStorage.getItem("cal.canvas.seeded") === "1"; } catch { return true; } })();
   $effect(() => {
-    if (seeded || canvas.cols.length === 0) return;
+    if (seeded) return;
     const open = untrack(() => new Set(canvas.all().map((w) => `${w.kind}/${w.item}`)));
-    const t = store.threads.find((x) => x.spaceId === spaces.current.id && !x.parentId && !open.has(`threads/${x.id}`));
+    const mine = store.threads.filter((x) => x.spaceId === spaces.current.id && !x.parentId && !open.has(`threads/${x.id}`));
     const n = notes.list[0];
-    if (!t || !n) return;
+    const need = untrack(() => (canvas.cols.length === 0 ? 2 : 1));
+    if (mine.length < need || !n) return;
     seeded = true; try { localStorage.setItem("cal.canvas.seeded", "1"); } catch { /* storage is off */ }
-    untrack(() => { const keep = canvas.focus; canvas.addRight("threads", t.id, width()); canvas.addBelow("notes", n.id, width()); if (keep) canvas.setFocus(keep); });
+    untrack(() => {
+      const keep = canvas.focus;
+      if (canvas.cols.length === 0) canvas.addRight("threads", mine.shift()!.id, width());
+      const first = canvas.focus;
+      canvas.addRight("threads", mine[0]!.id, width());
+      canvas.addBelow("notes", n.id, width());
+      canvas.setFocus(keep ?? first!);
+    });
   });
 
   // ---- the wheel and touch ----
@@ -249,7 +258,7 @@
   .canvas[data-max] .fade { display: none; }
   .view { position: absolute; inset: 0; z-index: 1; }
   .strip { position: absolute; z-index: 1; top: 0; bottom: 0; left: 0; will-change: transform; }
-  .col { position: absolute; top: 36px; bottom: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .col { position: absolute; top: 36px; bottom: var(--canvas-bottom, 12px); display: flex; flex-direction: column; gap: 12px; }
   .col.max { top: 0; bottom: 0; }
   .col.hidden { display: none; }
   .slot { position: relative; min-height: 0; }

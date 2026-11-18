@@ -14,6 +14,16 @@ const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
 try {
   // off without the flag
   { const { page, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle"); ok((await page.locator("[data-canvas]").count()) === 0, "without ?canvas=1 nothing changes (no canvas)"); await ctx.close(); }
+  // a fresh visit with no item in the address: the three windows are there, and the canvas runs to the card's bottom edge with the capsule floating over it (no band)
+  {
+    const { page, ctx } = await open(browser, "desktop", "dark", "/threads?canvas=1");
+    await page.waitForTimeout(2000);
+    ok((await wins(page).count()) === 3, "a fresh visit with no item in the address opens three windows", String(await wins(page).count()));
+    const g = await page.evaluate(() => { const c = document.querySelector("[data-canvas]").getBoundingClientRect(), card = document.querySelector(".mid-card").getBoundingClientRect(), bar = document.querySelector(".appbar")?.getBoundingClientRect(); return { cb: c.bottom, kb: card.bottom, bt: bar?.top, bb: bar?.bottom, wb: Math.max(...[...document.querySelectorAll("[data-win]")].map((w) => w.getBoundingClientRect().bottom)) }; });
+    ok(Math.abs(g.cb - g.kb) < 1 && g.bt >= g.cb - 90 && g.bt < g.cb, "the canvas runs to the card's bottom edge; the capsule floats over it", JSON.stringify(g));
+    ok(g.wb <= g.bt, "the windows stop above the capsule", `${g.wb} <= ${g.bt}`);
+    await ctx.close();
+  }
   for (const scheme of ["dark", "light"]) {
     console.log(`-- ${scheme}`);
     const { page, ctx } = await open(browser, "desktop", scheme, "/threads/t-idle?canvas=1");
