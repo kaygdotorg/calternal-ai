@@ -38,6 +38,7 @@ pub struct PodmanBackend {
     default_image: String,
     guest: bool,
     kvm_fallback: bool,
+    guest_network: bool,
 }
 
 impl PodmanBackend {
@@ -54,6 +55,7 @@ impl PodmanBackend {
             default_image: default_image.into(),
             guest: false,
             kvm_fallback: false,
+            guest_network: false,
         }
     }
 
@@ -67,6 +69,7 @@ impl PodmanBackend {
     pub(super) fn in_microvm(root: PathBuf, image: String) -> Self {
         let mut backend = Self::new("podman", root, image);
         backend.guest = true;
+        backend.guest_network = std::env::var_os("CALTERNAL_GUEST_NETWORK").is_some();
         backend
     }
 
@@ -309,7 +312,11 @@ impl Backend for PodmanBackend {
                     args.retain(|arg| arg != "--pull=never");
                     if spec.worker.is_none() {
                         args.extend([
-                            "--network=none".into(),
+                            if self.guest_network {
+                                "--network=slirp4netns:allow_host_loopback=false"
+                            } else {
+                                "--network=none"
+                            }.into(),
                             "--log-driver=none".into(),
                             "--volume".into(),
                             "/opt/calternal:/usr/local/bin/calternal:ro".into(),
@@ -331,6 +338,9 @@ impl Backend for PodmanBackend {
                     if tokio::fs::try_exists("/nix/store").await.unwrap_or(false) {
                         args.extend(["--volume".into(), "/nix/store:/nix/store:ro".into()]);
                     }
+                }
+                if self.kvm_fallback && spec.worker.is_none() {
+                    args.push("--network=none".into());
                 }
                 if let Some(m) = cpu_millis {
                     args.push("--cpus".into());

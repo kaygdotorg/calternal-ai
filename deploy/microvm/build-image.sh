@@ -14,7 +14,7 @@ for binary in "$1" "$2"; do
 done
 # Unpack the verified local image with the OCI-aware tool. Nix's builder
 # forbids restoring set-ID bits present in upstream distro layers.
-scratch=$(mktemp -d "$(dirname -- "$(realpath -m "$4")")/.guest-oci.XXXXXXXX")
+scratch=$(mktemp -d "$(realpath -- "$(dirname -- "$4")")/.guest-oci.XXXXXXXX")
 trap 'rm -rf -- "$scratch"' EXIT
 skopeo --insecure-policy copy "docker-archive:$(realpath "$3")" "oci:$scratch/oci:standard"
 umoci unpack --rootless --image "$scratch/oci:standard" "$scratch/bundle"

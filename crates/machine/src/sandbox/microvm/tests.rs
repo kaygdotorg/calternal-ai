@@ -237,3 +237,57 @@ async fn offline_fallback_removes_only_the_erased_accounts_disk() {
     assert!(!disk.exists());
     assert!(foreign.exists());
 }
+
+#[tokio::test]
+async fn networked_guest_can_use_only_the_declared_egress() {
+    if let Err(error) = super::probe_kvm().await {
+        eprintln!("SKIP Firecracker TAP conformance: {error}");
+        return;
+    }
+    let Some(path) = std::env::var_os("CALTERNAL_MICROVM_EGRESS_TEST_CONFIG") else {
+        eprintln!("SKIP Firecracker TAP conformance: no disposable firewall namespace configured");
+        return;
+    };
+    let config = Config::load(Path::new(&path)).await.unwrap();
+    assert!(config.network_policy.is_some());
+    let dir = tempfile::tempdir().unwrap();
+    let backend = MicrovmBackend::new(dir.path().to_owned(), config);
+    backend.initialize().await.unwrap();
+    let sandbox = backend
+        .start(&SandboxSpec {
+            space_id: Some(SpaceId::new()),
+            provider_login: false,
+            account_id: Uuid::new_v4(),
+            thread_id: Uuid::new_v4(),
+            code_directory: None,
+            image: None,
+            worker: None,
+            limits: Limits::default(),
+        })
+        .await
+        .unwrap();
+    shell(
+        &*sandbox,
+        r#"node --input-type=module -e '
+          import {connect} from "node:net";
+          import {resolve4} from "node:dns/promises";
+          const canConnect = (host, port) => new Promise(resolve => {
+            const conn = connect({host, port});
+            conn.on("connect", () => { conn.destroy(); resolve(true); });
+            conn.on("error", () => resolve(false));
+            conn.setTimeout(600, () => { conn.destroy(); resolve(false); });
+          });
+          const answer = await resolve4("egress.test");
+          if (answer[0] !== "192.0.2.2") process.exit(1);
+          if (!await canConnect(answer[0], 18080)) process.exit(2);
+          if (await canConnect(answer[0], 18081)) process.exit(3);
+          if (await canConnect("10.213.0.1", 18080)) process.exit(4);
+          if (await canConnect("169.254.169.254", 18080)) process.exit(5);
+          if (await canConnect("203.0.113.3", 18080)) process.exit(6);
+          if (await canConnect("10.213.0.6", 18080)) process.exit(7);
+        '"#,
+    )
+    .await;
+    sandbox.release().await.unwrap();
+    backend.shutdown().await.unwrap();
+}

@@ -37,7 +37,42 @@ On dev-01 the plugin build, test-plugin server build, all-features
 workspace tests, integration, plugins, GenUI, contract, docs, publication,
 and formatting gates passed. The serial conformance rerun passed 117 cases
 with the live KVM case visibly skipped when no image was configured. An
-explicit 512 MiB image run under the leak checker and strace passed all
-three microVM conformance cases. Before that run, two live attempts failed
-with ENOENT at sandbox start. The machine-level live suite passed five
-cases and ignored the perf-only benchmark. Both leak checks passed.
+explicit 512 MiB image run under the leak checker passed all three
+microVM conformance cases in 12.23 seconds. An earlier traced run also
+passed. Two preceding live attempts failed with ENOENT at sandbox start
+and the cause was not isolated. The machine-level live suite passed
+five cases and ignored the perf-only benchmark. Both leak checks passed.
+
+## Stage 3
+
+The operator installs one IPv4 policy in a dedicated firewall namespace.
+The machine accepts its root-owned installation receipt only for the
+current host boot and network namespace. It parses the policy once at
+initialization and attaches one leased TAP to each networked VMM. The
+microVM's rootless thread container uses its guest-local user-mode network.
+Worker containers and the KVM fallback have no network. The role needs
+access to KVM and its assigned TAPs. Firewall administration and namespace
+setup stay with the operator.
+
+On dev-01, `python3 deploy/microvm/test-egress.py` passed both policy
+compiler tests. `tests/support/microvm-egress.sh VM_CONFIG MACHINE_TEST_BINARY`
+passed with the real KVM guest under the leak checker. The thread resolved
+an approved DNS record and opened its declared TCP service. Unlisted TCP,
+the host gateway, the peer TAP route, the operator-denied control plane
+address, and metadata were denied. nftables counters confirmed the peer
+route and unsolicited ingress drops. The native suite tests explicit
+missing policy and missing receipt. A separate mount namespace covering
+`/dev/kvm` with `/dev/null` verified that an unusable KVM device produces the
+visible isolation skip.
+
+The negative tests used synthetic upstream services. A separate dev-01
+run used the same guest image and firewall installer with real IPv4
+egress. The installed policy allowed the resolved addresses for Anthropic
+and the npm registry only, plus its configured DNS resolver. It returned
+HTTP 200 from the npm registry. Official Claude Code 2.1.326 completed a
+one-answer turn (3.04 seconds) and a coding turn (7.59 seconds) in rootless
+thread containers. The coding turn read the fixture modules, corrected a
+bug and passed the Node test suite, which the harness reran independently.
+Both completed with zero cgroup OOM kills and no guest swap. These are
+development-host observations. The fixture provisioned the Firecracker TAP
+directly and exercised the shipped guest agent and container launcher.

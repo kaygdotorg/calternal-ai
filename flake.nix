@@ -58,7 +58,7 @@
           # Host dependencies for the Firecracker backend. Install into the
           # machine operator's profile or use this lane-local shell.
           microvm = pkgs.mkShell {
-            packages = [ pkgs.firecracker pkgs.e2fsprogs pkgs.binutils pkgs.skopeo pkgs.umoci ];
+            packages = [ pkgs.firecracker pkgs.e2fsprogs pkgs.binutils pkgs.skopeo pkgs.umoci pkgs.iproute2 pkgs.nftables pkgs.python3 ];
           };
           # The shipped machine CLI also runs on Debian and inside provider images.
           # Link libc and OpenSSL statically so neither needs the build host's Nix store.

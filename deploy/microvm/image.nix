@@ -2,7 +2,7 @@
 # executables are input store paths so the builder has no network dependency.
 { pkgs, agent, cli, standardRoot }:
 let
-  runtime = with pkgs; [ busybox podman conmon crun catatonit socat shadow coreutils ];
+  runtime = with pkgs; [ busybox podman conmon crun catatonit socat shadow coreutils slirp4netns ];
   closure = pkgs.closureInfo { rootPaths = runtime; };
   kernel = pkgs.fetchurl {
     url = "https://s3.amazonaws.com/spec.ccfc.min/firecracker-ci/20261111-778a26c0594c-0/x86_64/vmlinux-6.1.188";
@@ -21,9 +21,10 @@ pkgs.runCommand "calternal-microvm-x86_64-v2" {
   for applet in $(${pkgs.busybox}/bin/busybox --list); do
     ln -s ${pkgs.busybox}/bin/busybox "root/bin/$applet"
   done
-  for program in podman socat; do
+  for program in podman socat slirp4netns; do
     case "$program" in
       podman) programPath=${pkgs.podman}/bin/podman ;;
+      slirp4netns) programPath=${pkgs.slirp4netns}/bin/slirp4netns ;;
       socat) programPath=${pkgs.socat}/bin/socat ;;
     esac
     ln -s "$programPath" "root/usr/bin/$program"
@@ -42,6 +43,7 @@ pkgs.runCommand "calternal-microvm-x86_64-v2" {
   printf 'root:x:0:\nagent:x:1000:\n' > root/etc/group
   printf 'agent:100000:65536\n' > root/etc/subuid
   cp root/etc/subuid root/etc/subgid
+  ln -s /run/calternal-resolv.conf root/etc/resolv.conf
   printf '127.0.0.1 localhost\n' > root/etc/hosts
   printf '{"default":[{"type":"reject"}]}\n' > root/etc/containers/policy.json
   cat > root/etc/containers/containers.conf <<CONF

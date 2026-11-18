@@ -1,12 +1,13 @@
 //! Linux Firecracker guests, one persistent data disk per machine and account.
-//! Only the dedicated control port is attached. The guest runs each thread via
-//! the same rootless Podman backend used on hosts without KVM.
+//! The dedicated control port is always attached. Online guests also lease an
+//! operator-managed TAP. A rootless Podman container runs each thread.
 
 mod guest;
 mod image;
 mod kvm;
 #[cfg(test)]
 mod measure;
+mod network;
 mod vmm;
 mod wire;
 
@@ -71,6 +72,9 @@ pub struct Config {
     pub warm_guests: usize,
     /// Maximum VMMs, including idle and unassigned guests, between 1 and 64.
     pub max_guests: usize,
+    /// Absolute operator policy path for a networked guest. Omit for offline guests.
+    #[serde(default)]
+    pub network_policy: Option<PathBuf>,
 }
 
 impl Config {
@@ -82,6 +86,10 @@ impl Config {
         if !config.firecracker.is_absolute()
             || !config.image_directory.is_absolute()
             || !config.mkfs_ext4.is_absolute()
+            || config
+                .network_policy
+                .as_ref()
+                .is_some_and(|path| !path.is_absolute())
             || !(1..=32).contains(&config.vcpus)
             || GuestSize::from_mib(config.memory_mib).is_none()
             || !(1024..=65536).contains(&config.disk_mib)
@@ -111,6 +119,7 @@ struct State {
     config: Config,
     root: PathBuf,
     owned: OnceCell<Arc<File>>,
+    network: OnceCell<Option<Arc<network::Pool>>>,
     accounts: Mutex<HashMap<Uuid, AccountSlot>>,
     warm: AsyncMutex<Vec<Guest>>,
     capacity: Arc<tokio::sync::Semaphore>,
@@ -131,6 +140,7 @@ impl MicrovmBackend {
             config,
             root: root.join("microvm"),
             owned: OnceCell::new(),
+            network: OnceCell::new(),
             accounts: Mutex::new(HashMap::new()),
             warm: AsyncMutex::new(Vec::new()),
             capacity,
@@ -310,6 +320,12 @@ impl State {
 
     async fn initialize(&self) -> SandboxResult<()> {
         probe_kvm().await?;
+        self.network
+            .set(
+                network::Pool::load(self.config.network_policy.clone(), self.config.max_guests)
+                    .await?,
+            )
+            .map_err(|_| SandboxError("microVM network already initialized".into()))?;
         image::check(&self.config).await?;
         let root = self.root.clone();
         let lock = tokio::task::spawn_blocking(move || {
@@ -413,6 +429,11 @@ impl State {
             disk,
             owned.clone(),
             permit,
+            self.network
+                .get()
+                .and_then(Option::as_ref)
+                .map(|pool| pool.lease())
+                .transpose()?,
         )
         .await
     }

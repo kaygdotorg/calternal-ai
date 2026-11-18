@@ -1,4 +1,4 @@
-//! Firecracker process and persistent block device. No API socket or network device.
+//! Firecracker process, persistent block device and optional TAP device.
 
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -26,6 +26,7 @@ pub(super) struct Guest {
     child: Child,
     pub(super) key: Arc<hmac::Key>,
     _permit: OwnedSemaphorePermit,
+    _network: Option<super::network::Lease>,
 }
 
 impl Guest {
@@ -35,6 +36,7 @@ impl Guest {
         disk: PathBuf,
         owned: Arc<File>,
         permit: OwnedSemaphorePermit,
+        network: Option<super::network::Lease>,
     ) -> SandboxResult<Self> {
         let socket = run.join(format!(
             "{}.sock",
@@ -61,25 +63,33 @@ impl Guest {
             .map_err(SandboxError::new)?;
         drive.write_all(&token).await.map_err(SandboxError::new)?;
         drop(drive);
-        tokio::fs::write(
-            &definition,
-            json!({
-                "boot-source": {
-                    "kernel_image_path": config.image_directory.join("vmlinux"),
-                    "boot_args": "root=/dev/vda ro rootfstype=ext4 init=/init reboot=k panic=1 pci=off console=ttyS0 quiet"
-                },
-                "drives": [
-                    {"drive_id":"system","path_on_host":config.image_directory.join("root.ext4"),"is_root_device":true,"is_read_only":true},
-                    {"drive_id":"data","path_on_host":disk,"is_root_device":false,"is_read_only":false},
-                    {"drive_id":"control","path_on_host":token_drive,"is_root_device":false,"is_read_only":true}
-                ],
-                "machine-config":{"vcpu_count":config.vcpus,"mem_size_mib":config.memory_mib,"smt":false},
-                "vsock":{"guest_cid":3,"uds_path":socket}
-            })
-            .to_string(),
-        )
-        .await
-        .map_err(SandboxError::new)?;
+        let mut launch = json!({
+            "boot-source": {
+                "kernel_image_path": config.image_directory.join("vmlinux"),
+                "boot_args": "root=/dev/vda ro rootfstype=ext4 init=/init reboot=k panic=1 pci=off console=ttyS0 quiet"
+            },
+            "drives": [
+                {"drive_id":"system","path_on_host":config.image_directory.join("root.ext4"),"is_root_device":true,"is_read_only":true},
+                {"drive_id":"data","path_on_host":disk,"is_root_device":false,"is_read_only":false},
+                {"drive_id":"control","path_on_host":token_drive,"is_root_device":false,"is_read_only":true}
+            ],
+            "machine-config":{"vcpu_count":config.vcpus,"mem_size_mib":config.memory_mib,"smt":false},
+            "vsock":{"guest_cid":3,"uds_path":socket}
+        });
+        if let Some(lease) = &network {
+            let tap = lease.tap();
+            let boot = launch["boot-source"]["boot_args"]
+                .as_str()
+                .expect("boot arguments");
+            launch["boot-source"]["boot_args"] = json!(format!(
+                "{boot} net.ifnames=0 calternal_net={}/{},{},{}",
+                tap.address, tap.prefix, tap.gateway, tap.dns
+            ));
+            launch["network-interfaces"] = json!([{"iface_id":"eth0","host_dev_name":tap.name}]);
+        }
+        tokio::fs::write(&definition, launch.to_string())
+            .await
+            .map_err(SandboxError::new)?;
         let mut command = Command::new(&config.firecracker);
         command
             .arg("--no-api")
@@ -118,6 +128,7 @@ impl Guest {
             child,
             key,
             _permit: permit,
+            _network: network,
         };
         let ready = tokio::time::timeout(Duration::from_secs(60), async {
             loop {

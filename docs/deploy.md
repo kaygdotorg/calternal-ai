@@ -53,7 +53,7 @@ Podman on pool machines. `direct` runs processes as the machine user with the
 owner's consent and gives those processes the user's filesystem and network
 access.
 
-`microvm` is an opt-in Linux x86-64 pool backend for offline isolation testing.
+`microvm` is an opt-in Linux x86-64 pool backend for isolation testing.
 It follows the [hybrid measurements](measurements/sandbox-hybrid.md) with
 Firecracker and rootless Podman. Each account has its own booted kernel, a
 private ext4 data disk and one container per thread. Spaces have separate homes
@@ -66,9 +66,8 @@ the shared lower layer and skips per-account image import. Change the pinned
 image as a unit with a machine-role restart. Keep one active image and at most
 one rollback image rooted per machine. Drop older deployment roots so the
 operator’s normal Nix garbage collection can reclaim them.
-The guest has a host-initiated vsock control channel and no NIC or host mounts.
-Provider OAuth, package downloads and the command-line tool's remote operations
-need a validated egress path.
+The guest uses vsock for control and has no host filesystem mounts. It
+boots offline unless the operator installs a TAP egress policy.
 
 Run Firecracker as the machine user with read/write access to `/dev/kvm`.
 An installer can grant access through the device's `kvm` group or a persistent
@@ -84,6 +83,39 @@ Firecracker bridges vsock to a Unix socket in the machine's private runtime
 directory. A private boot device authenticates the host to the guest agent
 before it decodes a control request. The guest supplies init, an unprivileged UID with guest-local
 subuid/subgid ranges, and delegated cgroups for rootless Podman.
+
+### Install guest egress
+
+Use a dedicated, operator-managed Linux network namespace for the networked
+machine role. The namespace needs an uplink that can reach the app server for
+the role's own control plane traffic. The operator enables IPv4 forwarding
+there and creates each persistent TAP for the machine UID, with one routed
+subnet per TAP. For each entry in [the policy example](../deploy/microvm/egress.example.json),
+use `ip tuntap add dev TAP mode tap user MACHINE_UID`, assign the entry's
+`gateway/prefix` to that device with `ip addr add`, and bring the link up.
+Run these operations inside the declared namespace.
+
+Keep one root-owned, readable policy JSON file for the role. Name a TAP slot
+for each configured guest slot. List approved IPv4 destinations as explicit
+CIDRs, TCP or UDP, and ports. Each slot declares its approved public DNS
+resolver. The allowlist starts empty. List public control-plane and other
+operator-managed service ranges in `deny` before adding any allowed ranges. The host firewall drops incoming guest
+connections, traffic between guests, host-local access, private destinations
+and metadata traffic. It permits replies to authorized egress and NATs approved
+traffic on the uplink. The operator owns changes to provider and package IPs.
+
+With the role stopped, run `deploy/microvm/install-egress.py POLICY.json`
+as the namespace operator. It installs the firewall transaction and writes
+a bounded receipt beside the policy. Set `network_policy` in the machine
+config to the absolute JSON path and run the unprivileged machine role in the
+same namespace. The role verifies that the receipt matches the policy,
+namespace and current host boot before opening a TAP. Missing or mismatched
+files prevent networked startup. Guests run without a NIC when the setting
+is omitted. A KVM fallback uses network-disabled Podman containers.
+
+To roll back, stop the machine role, remove its policy receipt, and remove
+`network_policy` before restarting offline. Remove the dedicated namespace
+only after the role has stopped. Retain the current policy and receipt only.
 
 ### Build and configure a disposable guest
 
@@ -152,7 +184,7 @@ checkpoint. A durable account erasure stops the guest and unlinks its disk
 before the machine acknowledges it. Thread erasure removes only the workspace
 and flushes the guest disk before acknowledgement. Account disks persist through
 normal idle stops and restarts. Treat any backups of these disks as private
-account data. Use a fresh enrollment for the offline preview to avoid splitting
+account data. Use a fresh enrollment for the preview to avoid splitting
 one machine identity's storage across backend types.
 
 ## Deploy and roll back

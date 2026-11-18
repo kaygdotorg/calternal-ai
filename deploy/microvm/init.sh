@@ -19,6 +19,29 @@ mount -t ext4 -o nodev,nosuid /dev/vdb /data
 chown 1000:1000 /dev/vdc
 chmod 400 /dev/vdc
 ip link set lo up
+for arg in $(cat /proc/cmdline); do
+  case "$arg" in
+    calternal_net=*)
+      settings=${arg#calternal_net=}
+      address=${settings%%,*}
+      settings=${settings#*,}
+      gateway=${settings%%,*}
+      dns=${settings#*,}
+      # slirp runs as the guest agent. It opens the guest-local TUN device
+      # and does not receive the host TAP or host network privileges.
+      chown 1000:1000 /dev/net/tun
+      chmod 600 /dev/net/tun
+      ip link set eth0 up
+      ip addr add "$address" dev eth0
+      ip route add default via "$gateway" dev eth0
+      printf 'nameserver %s\n' "$dns" > /run/calternal-resolv.conf
+      export CALTERNAL_GUEST_NETWORK=1
+      ;;
+  esac
+done
+if [ ! -e /run/calternal-resolv.conf ]; then
+  touch /run/calternal-resolv.conf
+fi
 
 echo "+cpu +memory +pids" > /sys/fs/cgroup/cgroup.subtree_control
 mkdir /sys/fs/cgroup/agent
