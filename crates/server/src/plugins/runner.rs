@@ -3,9 +3,10 @@
 //! A run invokes the job's declared run operation with
 //! `{ job_id, input, checkpoint, children }`, where `checkpoint` is the last durable
 //! checkpoint (null on the first run) and `children` the reports of finished child
-//! jobs. The operation answers `{ "status": "done", "result": … }` or
-//! `{ "status": "waiting" }` (parked until all its children have reported); anything
-//! else fails the job. Every host call, chunk and the completion are checked against
+//! jobs. The operation can finish, wait for its children, or return a durable
+//! park result with a checkpoint and signal source. A resumed signal wait
+//! receives its accepted `signal` alongside the saved checkpoint. Every host
+//! call, chunk and the completion are checked against
 //! the starting account's sign-in, its current capability in the space, the plugin's
 //! activation at the admitted generation, and the run still being current.
 //!
@@ -62,8 +63,9 @@ pub fn schedule<D: Directory>(state: &Shared<D>, space: String, job: String) {
 }
 
 /// After a restart: mark interrupted runs for resumption (or `outcome_unknown`) and
-/// schedule every admitted job. Call once at startup inside the runtime.
-/// Cost: see [`super::jobs::Jobs::recover`], on a blocking task.
+/// schedule every admitted job. Restore timers for jobs parked on signals.
+/// Call once at startup inside the runtime. Costs the existing jobs recovery
+/// transaction and one indexed pending-wait scan per space, on a blocking task.
 pub async fn recover<D: Directory>(state: &Shared<D>) -> Result<usize, Error> {
     let st = state.clone();
     let woken = crate::blocking::spawn(move || {

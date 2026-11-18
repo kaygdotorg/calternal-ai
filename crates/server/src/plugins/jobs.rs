@@ -7,6 +7,8 @@
 //! the plugin, the starting account and its sign-in ([`Session`], an installation ID,
 //! never a token), the run operation and input, the state, the last checkpoint and
 //! the final result. Child results are recorded once per (parent, child) pair.
+//! A job can park on a typed signal with a deadline. The first outcome and
+//! its replay receipt commit in the same space transaction as readmission.
 //!
 //! Stream chunks are not stored: each running job has a bounded in-memory buffer
 //! ([`MAX_BUFFERED_CHUNKS`] chunks and [`MAX_BUFFERED_BYTES`] bytes; the oldest are
