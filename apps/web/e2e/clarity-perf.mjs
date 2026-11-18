@@ -10,7 +10,7 @@ for (const scheme of ["dark", "light"]) {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
   await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage();
-  await page.goto(`${BASE}/settings/appearance/appearance.clarity?firstrun=0`); await page.waitForSelector("html[data-ready]");
+  await page.goto(`${BASE}/settings/appearance/appearance.clarity?firstrun=0${process.env.CAL_PERF_QS ?? ""}`); await page.waitForSelector("html[data-ready]");
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-side").includes("blob"), null, { timeout: 20000 }); await page.waitForTimeout(800);
   const slider = page.getByRole("slider", { name: /Clear to tinted/ }); await slider.scrollIntoViewIfNeeded();
   const walls = () => page.evaluate(() => ["--wall-side", "--wall-card"].map((k) => getComputedStyle(document.documentElement).getPropertyValue(k)).join("|"));

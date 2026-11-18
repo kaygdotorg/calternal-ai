@@ -287,7 +287,10 @@ async fn nothing_about_the_server_leaks_before_sign_in() {
     let app = app();
     first_owner(&app, "Very Secret Name").await;
     let s = get(&app, "/api/v1/auth/status", None).await;
-    assert_eq!(s.body, json!({ "setup": false, "signed_in": false }));
+    assert_eq!(
+        s.body,
+        json!({ "setup": false, "signed_in": false, "email_required": false, "mail_available": false })
+    );
     let start = post(&app, "/api/v1/auth/login/start", None, json!({})).await;
     let text = start.body.to_string();
     assert!(

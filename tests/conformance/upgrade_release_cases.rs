@@ -164,7 +164,47 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     })).await;
     new.ok();
     let id = new.body["data"]["note"]["id"].clone();
+
+    // The candidate adds this store at version 1. The previous release must
+    // still run and make writes with the candidate's store and file present.
+    let space = &shape["space"];
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let minute = (now / 60 + 720) % 1440;
+    let words = format!("daily at {}:{:02}", minute / 60, minute % 60);
+    let preview = f
+        .op(
+            0,
+            "automations.preview_schedule",
+            json!({"space_id":space,"schedule_text":words}),
+        )
+        .await;
+    preview.ok();
+    let timing = &preview.body["data"];
+    let automation = f
+        .op(
+            0,
+            "automations.create",
+            json!({
+                "space_id":space,"name":"Upgrade smoke test","prompt":"Verify the handoff.",
+                "schedule_text":words,"schedule":timing["schedule"],"timezone":timing["timezone"],
+            }),
+        )
+        .await;
+    automation.ok();
+    let automation = &automation.body["data"]["automation"];
     f.stop();
+    let store = f.appdata().join("system/automations.db");
+    let db =
+        rusqlite::Connection::open_with_flags(&store, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    let version: i64 = db
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, 1);
+    drop(db);
     answer(upgrade(&f, &previous, &["verify"], None));
     prove_visible(&mut f, &previous, &shape).await;
     f.start().await;
@@ -193,6 +233,25 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
         newer_reopened.body["data"]["note"]["markdown"],
         "Previous release acknowledged this.\n"
     );
+    let reopened = f
+        .op(
+            0,
+            "automations.read",
+            json!({"space_id": space,"id":automation["id"]}),
+        )
+        .await;
+    reopened.ok();
+    let reopened = &reopened.body["data"]["automation"];
+    for field in [
+        "id",
+        "revision",
+        "schedule",
+        "schedule_text",
+        "timezone",
+        "next_run_ms",
+    ] {
+        assert_eq!(reopened[field], automation[field], "{field}");
+    }
 }
 
 /// Measure from the last acknowledged write on N to the first on N+1. Run only

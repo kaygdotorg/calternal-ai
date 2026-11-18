@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // Seeds a disposable server for the scale measurements (e2e/scale-measure.mjs) through the product's own surfaces: the owner signs up with a virtual passkey; 10,000 notes carrying 2,000 distinct tags go in through
 // `notes.create`; 49 more spaces through `spaces.create`; 199 more accounts join the first space by redeeming invitations in their own browser contexts (so 200 members); 100 live invitations stay open; 30 machines are
 // enrolled from codes. Writes the owner's session to <dir>/state.json (cookie only). Env: CAL_BIN, CAL_DIST, CAL_SCALE_PORT, CAL_SCALE_DIR, SEED_NOTES/SEED_MEMBERS/SEED_MACHINES/SEED_TRASH (notes deleted into the Trash, default 1500) to shrink a run.
@@ -20,7 +21,7 @@ const mk = async () => { const ctx = await b.newContext(); await ctx.addInitScri
 const t0 = Date.now(); const log = (m) => console.log(`[${Math.round((Date.now() - t0) / 1000)}s] ${m}`);
 const { ctx, p } = await mk();
 await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Scale Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
+await signUp(p, token, "Scale Owner");
 await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 20000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1500);
 const op = (operation, input) => p.evaluate(async ([operation, input]) => (await (await fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input }) })).json()), [operation, input]);
 const space = (await op("spaces.list", {})).data.spaces[0].id;
@@ -51,7 +52,7 @@ for (let i = 1; i < MEMBERS; i++) {
     const g = await mk();
     try {
       await g.p.goto(`${url}${new URL(link).pathname}`); await g.p.waitForSelector("html[data-ready]");
-      await g.p.fill('input[name="name"]', `Member ${String(i).padStart(3, "0")}`); await g.p.getByRole("button", { name: "Create passkey and join" }).click();
+      await signUp(g.p, "", `Member ${String(i).padStart(3, "0")}`);
       await g.p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Join"), null, { timeout: 20000 });
       joined = true;
     } catch (e) { log(`member ${i}: attempt ${attempt + 1} failed: ${(await g.p.locator('[role="alert"]').allInnerTexts().catch(() => [])).join(" ").slice(0, 120) || String(e.message).split("\n")[0]}`); await new Promise((r) => setTimeout(r, 20000)); }
