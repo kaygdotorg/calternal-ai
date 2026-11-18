@@ -5,8 +5,8 @@ const store = () => { const m = new Map<string, string>(); return { getItem: (k:
 
 describe("onboarding path", () => {
   it("one path for everyone, and three more steps for someone who writes code", () => {
-    expect(path(false)).toEqual(["you", "look", "machine", "provider", "done"]);
-    expect(path(true)).toEqual(["you", "look", "machine", "provider", "repos", "cli", "direct", "done"]);
+    expect(path(false)).toEqual(["you", "recovery", "passkey2", "look", "machine", "provider", "done"]);
+    expect(path(true)).toEqual(["you", "recovery", "passkey2", "look", "machine", "provider", "repos", "cli", "direct", "done"]);
   });
   it("moves forward and back along the path", () => {
     expect(after(false, "provider")).toBe("done"); expect(after(true, "provider")).toBe("repos"); expect(after(true, "direct")).toBe("done"); expect(after(false, "done")).toBeNull();
@@ -38,7 +38,7 @@ describe("a record belongs to an account", () => {
   });
   it("a record with no account is believed only at the first step (the passkey was made, the page reloaded), and then who-you-are is done", () => {
     const r = reconcile({ ...rec, step: "you", done: [] }, "a");
-    expect(r).toMatchObject({ account: "a", step: "look" });
+    expect(r).toMatchObject({ account: "a", step: "recovery" });
     expect(r?.done).toContain("you");
     expect(reconcile({ ...rec }, "a")).toBeNull();
   });

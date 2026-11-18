@@ -82,7 +82,12 @@ const SPACE_INITIAL: &[&str] = &[
     crate::linked_write::SCHEMA,
     crate::trash::SCHEMA,
 ];
-const SPACE_CHANGES: &[&str] = &[THREAD_SNOOZE, crate::thread_append::revision::SCHEMA];
+const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
+const SPACE_CHANGES: &[&str] = &[
+    THREAD_SNOOZE,
+    COLLECTION_MEMBERS,
+    crate::thread_append::revision::SCHEMA,
+];
 const CONTENT_BASELINE: i64 = 3;
 const CONTENT_SCHEMA_NAME: &str = "space content.db";
 
@@ -360,17 +365,25 @@ mod tests {
     use super::*;
     use calternal_store::migrations::{Schema, migrate_release};
 
+    const BASELINE: Schema<'_> =
+        Schema::new(CONTENT_SCHEMA_NAME, CONTENT_BASELINE, SPACE_INITIAL, &[]);
+    const SNOOZE_RELEASE: Schema<'_> = Schema::new(
+        CONTENT_SCHEMA_NAME,
+        CONTENT_BASELINE,
+        SPACE_INITIAL,
+        &[THREAD_SNOOZE],
+    );
+    const SHARING_RELEASE: Schema<'_> = Schema::new(
+        CONTENT_SCHEMA_NAME,
+        CONTENT_BASELINE,
+        SPACE_INITIAL,
+        &[THREAD_SNOOZE, COLLECTION_MEMBERS],
+    );
+
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
         let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new(CONTENT_SCHEMA_NAME, CONTENT_BASELINE, SPACE_INITIAL, &[]);
-        let snooze_release = Schema::new(
-            CONTENT_SCHEMA_NAME,
-            CONTENT_BASELINE,
-            SPACE_INITIAL,
-            &[THREAD_SNOOZE],
-        );
-        migrate_release(&conn, previous, false).unwrap();
+        migrate_release(&conn, BASELINE, false).unwrap();
         conn.execute_batch(
             "INSERT INTO items VALUES ('thread','threads','{\"title\":\"Existing\"}', 'v1',1,'now','thread.md','thread.md',NULL,'current',NULL);
              INSERT INTO versions VALUES ('thread',1,'v1','{\"title\":\"Existing\"}',X'41','now','owner');",
@@ -381,9 +394,9 @@ mod tests {
             "CREATE TRIGGER thread_snooze_update BEFORE UPDATE ON items BEGIN SELECT 1; END;",
         )
         .unwrap();
-        assert!(migrate_release(&conn, snooze_release, true).is_err());
+        assert!(migrate_release(&conn, SNOOZE_RELEASE, true).is_err());
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, previous).unwrap(),
+            calternal_store::migrations::inspect(&conn, BASELINE).unwrap(),
             3
         );
         let inserted_trigger: bool = conn
@@ -397,7 +410,7 @@ mod tests {
         conn.execute_batch("DROP TRIGGER thread_snooze_update;")
             .unwrap();
 
-        migrate_release(&conn, snooze_release, true).unwrap();
+        migrate_release(&conn, SNOOZE_RELEASE, true).unwrap();
         let original: Vec<u8> = conn
             .query_row("SELECT bytes FROM versions WHERE revision='v1'", [], |r| {
                 r.get(0)
@@ -412,7 +425,7 @@ mod tests {
             .is_err()
         );
         assert_eq!(
-            calternal_store::migrations::inspect(&conn, previous).unwrap(),
+            calternal_store::migrations::inspect(&conn, BASELINE).unwrap(),
             4
         );
         conn.execute(
@@ -433,5 +446,48 @@ mod tests {
             )
             .unwrap();
         assert_eq!(deadline, 5000);
+    }
+
+    #[test]
+    fn sharing_migration_backfills_collections_and_accepts_previous_writer() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, SNOOZE_RELEASE, false).unwrap();
+        let metadata = r#"{"item_kind":"notes","standard_key":null,"members":["old-note"]}"#;
+        conn.execute(
+            "INSERT INTO items VALUES ('collection','collections',?1,'v1',1,'now','collections/x.json','collections/x.json',NULL,'materialized',NULL)",
+            [metadata],
+        ).unwrap();
+        conn.execute("CREATE TABLE note_collection_members(collision TEXT)", [])
+            .unwrap();
+        assert!(migrate_release(&conn, SHARING_RELEASE, true).is_err());
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SNOOZE_RELEASE).unwrap(),
+            4
+        );
+        conn.execute("DROP TABLE note_collection_members", [])
+            .unwrap();
+        migrate_release(&conn, SHARING_RELEASE, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SNOOZE_RELEASE).unwrap(),
+            5
+        );
+        let member = || {
+            conn.query_row(
+                "SELECT note_id FROM note_collection_members WHERE collection_id='collection'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+        };
+        assert_eq!(member().as_deref(), Some("old-note"));
+        conn.execute(
+            "UPDATE items SET metadata=json_set(metadata,'$.members',json_array('replacement'))",
+            [],
+        )
+        .unwrap();
+        assert_eq!(member().as_deref(), Some("replacement"));
+        conn.execute("UPDATE items SET path='.trash/collection.json'", [])
+            .unwrap();
+        assert!(member().is_none());
     }
 }

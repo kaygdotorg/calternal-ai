@@ -99,6 +99,7 @@ const appearancePage: Page = {
       { id: "appearance.chat-width", label: "Width", help: "One choice for every page: Wide (the default on a desktop) uses the whole card, for chat and for Settings, with descriptions kept to a readable line; Centred keeps a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
     ] },
     { title: "Windows", settings: [
+      { id: "appearance.windows", label: "Use windows", help: "Several apps side by side on a canvas (one window at a time on a phone). Off shows one app in a single card.", control: { type: "checkbox" }, get: () => canvasPrefs.enabled, set: (v) => canvasPrefs.setEnabled(!!v) },
       { id: "appearance.window-look", label: "Window look", help: "How every window on the canvas looks: the middle card as it is, a transparent card, or a solid one.", control: { type: "segmented", options: LOOKS.map((l) => ({ id: l.value, label: l.label })) }, get: () => canvasPrefs.look, set: (v) => canvasPrefs.setLook(v as Look) },
       { id: "appearance.window-width", label: "New window width", help: "How wide a new window opens, as a share of the canvas. Drag a window's edge to change one.", control: { type: "popup", options: OPEN_WIDTHS.map((w) => ({ id: String(w.value), label: w.label })) }, get: () => String(canvasPrefs.width), set: (v) => canvasPrefs.setWidth(v === "null" ? null : Number(v)) },
     ] },
