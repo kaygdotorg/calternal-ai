@@ -1,6 +1,6 @@
 //! One physically space-bound metadata/history database, with no space predicates.
 use crate::types::{internal, missing};
-use crate::{Error, Item, Result, SpaceId, Summary};
+use crate::{Error, Item, Result, SpaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::{
@@ -147,37 +147,6 @@ impl Space {
             updated_at: row.4,
         })
     }
-    pub(crate) fn list(&self, kind: &str, limit: u32, trashed: bool) -> Result<Vec<Summary>> {
-        let mut stmt = self.conn.prepare_cached(if trashed {
-            "SELECT id,metadata,revision,updated_at,path FROM items WHERE kind=?1 AND substr(path,1,7) = '.trash/' AND mat_state NOT IN ('purging','purged') ORDER BY updated_at DESC,id LIMIT ?2"
-        } else {
-            "SELECT id,metadata,revision,updated_at,path FROM items WHERE kind=?1 AND substr(path,1,7) <> '.trash/' ORDER BY updated_at DESC,id LIMIT ?2"
-        }).map_err(internal)?;
-        let rows = stmt
-            .query_map(params![kind, limit.min(1000)], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
-                    r.get::<_, String>(4)?,
-                ))
-            })
-            .map_err(internal)?;
-        rows.map(|row| {
-            let (id, metadata, revision, updated_at, path) = row.map_err(internal)?;
-            Ok(Summary {
-                id: Uuid::parse_str(&id).map_err(internal)?,
-                space: self.id,
-                kind: kind.into(),
-                path,
-                metadata: serde_json::from_str(&metadata).map_err(internal)?,
-                revision,
-                updated_at,
-            })
-        })
-        .collect()
-    }
     pub(crate) fn history(
         &self,
         id: Uuid,
@@ -217,7 +186,7 @@ impl Space {
                 ))
             })
             .map_err(internal)?;
-        let mut versions: Vec<Item> = rows
+        let versions: Vec<Item> = rows
             .map(|row| {
                 let (meta, bytes, revision, updated_at) = row.map_err(internal)?;
                 Ok(Item {
@@ -231,14 +200,10 @@ impl Space {
                 })
             })
             .collect::<Result<_>>()?;
-        let more = versions.len() > limit as usize;
-        versions.truncate(limit as usize);
-        let cursor = if more {
-            versions.last().map(|v| format!("h{}", v.revision))
-        } else {
-            None
-        };
-        Ok((versions, cursor))
+        let page = calternal_types::Page::from_lookahead(versions, limit as usize, |v| {
+            format!("h{}", v.revision)
+        });
+        Ok((page.rows, page.next))
     }
 }
 

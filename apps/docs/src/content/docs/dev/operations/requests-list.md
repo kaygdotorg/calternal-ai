@@ -39,6 +39,25 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "definitions": {
+    "ApprovalLifetime": {
+      "description": "How long approved authority remains usable.",
+      "oneOf": [
+        {
+          "description": "The first matching action may use the grant.",
+          "enum": [
+            "once"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The grant survives turns until the thread is archived or deleted.",
+          "enum": [
+            "this_thread"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "GenUiView": {
       "additionalProperties": false,
       "description": "A generated-UI view: a program in the GenUI language (`crates/genui`, `packages/genui`) that each client compiles and evaluates with its own native components. The host compiles it before delivery and refuses a view with any diagnostic; actions in it describe operations, which dispatch checks again.",
@@ -148,6 +167,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
               ],
               "type": "string"
             },
+            "lifetimes": {
+              "description": "Choices enforced by the server for this action, in display order.",
+              "items": {
+                "$ref": "#/definitions/ApprovalLifetime"
+              },
+              "type": "array"
+            },
             "write": {
               "description": "Whether the proposed grant includes writes.",
               "type": "boolean"
@@ -157,6 +183,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
             "action",
             "app",
             "kind",
+            "lifetimes",
             "write"
           ],
           "type": "object"

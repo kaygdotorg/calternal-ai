@@ -29,6 +29,8 @@ pub struct Store {
     roots: calternal_roots::Roots,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
+    /// Process-lifetime key for authenticated, stateless list cursors.
+    pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
     _roots: std::sync::Arc<calternal_roots::RootLocks>,
 }
@@ -185,7 +187,11 @@ impl Store {
         // protected fingerprints before admission through secrets::configure_keys.
         let secrets = calternal_secrets::LocalStore::open(&root)
             .map_err(|e| Error::unavailable(e.to_string()))?;
+        let cursor_key =
+            ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &ring::rand::SystemRandom::new())
+                .map_err(|_| Error::unavailable("cursor entropy unavailable"))?;
         Ok(Self {
+            cursor_key,
             content: std::sync::Arc::new(content),
             appdata: root.clone(),
             roots: roots.clone(),
@@ -209,13 +215,6 @@ impl Store {
             return Ok(None);
         };
         self.content.locate(kind, id)
-    }
-    /// Lists bounded Notes metadata in one authorized space. Cost: generic cache/space
-    /// locks and O(log N + page) indexed read, allocating at most 1,000 rows; no file I/O.
-    pub fn list(&self, space_id: SpaceId, limit: u32) -> Result<Vec<NoteSummary>, Error> {
-        self.content
-            .list(space_id, "notes", limit)
-            .map(|rows| rows.into_iter().map(note_summary).collect())
     }
     /// Gets one Notes item from its selected physical database. A foreign ID is absent.
     /// Cost: generic cache/space locks, indexed head join and body allocation; no fsync.

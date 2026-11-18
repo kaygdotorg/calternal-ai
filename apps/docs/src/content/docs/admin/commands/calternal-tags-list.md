@@ -8,7 +8,7 @@ title: "calternal tags list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `tags list --space UUID` | List tags and note counts. | Tag and count table | `tags[]` |
+| `tags list --space UUID [--cursor CURSOR]` | List tags and note counts. | Tag and count table | `tags[]` |
 
 ## JSON data shape
 
@@ -19,7 +19,8 @@ title: "calternal tags list"
       "name": "string",
       "count": "integer"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 
@@ -30,6 +31,8 @@ Recorded test fixture:
 ```text
 TAG   NOTES
 work  3
+
+next cursor:  c-next
 ```
 
 ## JSON example
@@ -39,6 +42,7 @@ Recorded test fixture:
 ```json
 {
   "data": {
+    "next_cursor": "c-next",
     "tags": [
       {
         "count": 3,

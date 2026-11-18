@@ -1,6 +1,6 @@
 //! Per-space Trash queries and recoverable permanent removal.
 use crate::{
-    Content, Error, FaultPoint, Item, Request, Result, Summary,
+    Content, Error, FaultPoint, Item, Request, Result,
     db::Space,
     types::{blocked, internal, missing},
 };
@@ -72,12 +72,6 @@ impl Content {
                 .map_err(internal)?
                 .ok_or_else(missing)
         })
-    }
-
-    /// Read the newest bounded Trash summaries of a kind after space authorization.
-    /// No current or historical version bodies are loaded.
-    pub fn list_trash(&self, space: SpaceId, kind: &str, limit: u32) -> Result<Vec<Summary>> {
-        self.with_space(space, |s| s.list(kind, limit, true))
     }
 
     /// Purge a trashed item and all its content versions. A durable intent precedes

@@ -30,6 +30,7 @@ use crate::types::{internal, missing};
 mod collections;
 mod db;
 mod discovery;
+pub use discovery::ItemOrder;
 mod files;
 mod instructions;
 mod journal;
@@ -293,7 +294,17 @@ impl Content {
     /// Cost: cache/space locks, O(log N + page) indexed read and page allocations;
     /// a cold space pays SQLite open cost. No fsync or per-row filesystem stats.
     pub fn list(&self, space: SpaceId, kind: &str, limit: u32) -> Result<Vec<Summary>> {
-        self.with_space(space, |s| s.list(kind, limit, false))
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        self.item_page(
+            space,
+            kind,
+            ItemOrder::Updated { label: None },
+            None,
+            limit as usize,
+        )
+        .map(|p| p.rows)
     }
     /// Reads a bounded immutable history page; cursors bind to this exact item.
     /// Cost: cache/space locks, two or three indexed reads and at most 1,001

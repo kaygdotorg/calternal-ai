@@ -33,10 +33,9 @@ Capability: members.invite.
   "properties": {
     "cursor": {
       "description": "The previous page's cursor for this space and operation.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
     },
     "space_id": {
       "description": "Space UUID.",
