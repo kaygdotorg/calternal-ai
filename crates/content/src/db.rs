@@ -80,7 +80,11 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             crate::linked_write::SCHEMA,
             crate::trash::SCHEMA,
         ],
-        &[THREAD_SNOOZE],
+        &[
+            THREAD_SNOOZE,
+            crate::trash_job::SCHEMA,
+            crate::rename_job::SCHEMA,
+        ],
     );
 
 pub(crate) fn database(
@@ -308,7 +312,7 @@ mod tests {
         );
         assert_eq!(
             calternal_store::migrations::inspect(&conn, previous).unwrap(),
-            4
+            SPACE_SCHEMA.version()
         );
         conn.execute(
             "UPDATE items SET metadata=json_set(metadata,'$.snoozed_until_ms',5000)",

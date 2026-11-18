@@ -124,6 +124,41 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         Ok(item.bytes.clone())
     }
 }
+const DESTINATION_OCCUPIED: &str = "destination_occupied";
+
+fn occupied_destination() -> Error {
+    blocked().with_details(serde_json::json!({"reason":DESTINATION_OCCUPIED}))
+}
+
+pub(crate) fn destination_occupied(error: &Error) -> bool {
+    error
+        .details
+        .as_ref()
+        .and_then(|value| value["reason"].as_str())
+        == Some(DESTINATION_OCCUPIED)
+}
+
+// A case-only move uses a fixed staging name so startup can resume it. If
+// the destination was claimed in the meantime, preserve the competing file
+// and put the original back exclusively when its old name is still free.
+fn finish_case_move(staged: &Path, original: &Path, destination: &Path) -> Result<()> {
+    let Err(error) = rename_safely(staged, destination) else {
+        return Ok(());
+    };
+    if error.kind() != std::io::ErrorKind::AlreadyExists {
+        return Err(internal(error));
+    }
+    if rename_safely(staged, original).is_ok() {
+        return Err(occupied_destination());
+    }
+    Err(Error::conflict(
+        "the competing file was preserved and the original note is in its staging file",
+    )
+    .with_details(
+        serde_json::json!({"staged_name":staged.file_name().and_then(|name|name.to_str())}),
+    ))
+}
+
 impl Space {
     fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
         if let Some(definition) = self.registrations.borrow().get(kind) {
@@ -243,12 +278,6 @@ impl Space {
         };
         Ok(format!("{folder}/{candidate}"))
     }
-    pub(crate) fn check_file(&mut self, id: Uuid) -> Result<Option<String>> {
-        let head = self.header(id)?;
-        self.check_header(id, &head)
-    }
-    /// Check the current file once against an already loaded header. The caller
-    /// holds the space lock; conflicts durably block this item and preserve bytes.
     pub(crate) fn check_header(
         &mut self,
         id: Uuid,
@@ -308,6 +337,7 @@ impl Space {
             file_hash: expected,
             old_path: old,
             path,
+            revision,
             ..
         } = head;
         if state == "purged" || state == "purging" {
@@ -353,11 +383,11 @@ impl Space {
                         if !moving.exists() {
                             rename_safely(&old, &moving).map_err(internal)?;
                         }
-                        rename_safely(&moving, &path).map_err(internal)?;
+                        finish_case_move(&moving, &old, &path)?;
                     } else {
                         rename_safely(&old, &path).map_err(|e| {
                             if e.kind() == std::io::ErrorKind::AlreadyExists {
-                                blocked()
+                                occupied_destination()
                             } else {
                                 internal(e)
                             }
@@ -365,7 +395,7 @@ impl Space {
                     }
                     moved = true;
                 } else if hash(&moving)? == expected && expected.is_some() {
-                    rename_safely(&moving, &path).map_err(internal)?;
+                    finish_case_move(&moving, &old, &path)?;
                     moved = true;
                 }
             }
@@ -420,7 +450,10 @@ impl Space {
             Ok(())
         })();
         if let Err(e) = result {
-            if e.code == calternal_types::ErrorCode::Conflict {
+            if e.code == calternal_types::ErrorCode::Conflict
+                && !(destination_occupied(&e)
+                    && crate::rename_job::owns_unpublished_root(&self.conn, id, &revision)?)
+            {
                 self.block(id)?;
             }
             return Err(e);
@@ -482,5 +515,34 @@ impl Space {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_case_move_collision_preserves_the_competing_file_and_the_original() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("Name.md");
+        let new = dir.path().join("name.md");
+        let stage = dir.path().join(".calternal-move-fixture");
+        fs::write(&new, b"competing destination").unwrap();
+        fs::write(&stage, b"original note").unwrap();
+        assert!(finish_case_move(&stage, &old, &new).is_err());
+        assert_eq!(fs::read(&old).unwrap(), b"original note");
+        assert_eq!(fs::read(&new).unwrap(), b"competing destination");
+
+        fs::write(&old, b"competing original path").unwrap();
+        fs::write(&stage, b"original note").unwrap();
+        let error = finish_case_move(&stage, &old, &new).unwrap_err();
+        assert_eq!(
+            error.details.unwrap()["staged_name"],
+            ".calternal-move-fixture"
+        );
+        assert_eq!(fs::read(&old).unwrap(), b"competing original path");
+        assert_eq!(fs::read(&new).unwrap(), b"competing destination");
+        assert_eq!(fs::read(&stage).unwrap(), b"original note");
     }
 }

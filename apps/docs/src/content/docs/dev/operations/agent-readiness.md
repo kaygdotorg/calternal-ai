@@ -242,6 +242,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "ready": {
           "description": "The machine has capacity and the enabled provider reports a login.",
           "type": "boolean"
+        },
+        "title_blocked": {
+          "description": "Safe reason an automatic title was skipped on this machine, when observed.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

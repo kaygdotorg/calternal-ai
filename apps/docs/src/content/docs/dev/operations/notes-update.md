@@ -119,6 +119,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
   "properties": {
+    "job_id": {
+      "description": "Durable link rewrite job when this write changes the note's title.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "note": {
       "allOf": [
         {

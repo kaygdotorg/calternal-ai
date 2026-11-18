@@ -83,6 +83,22 @@ pub enum Notes {
         #[arg(long)]
         title: String,
     },
+    /// Read a rename job's link rewrite or undo progress.
+    RenameStatus {
+        /// Owning space UUID.
+        #[arg(long)]
+        space: String,
+        /// Stable job UUID returned by rename.
+        job_id: String,
+    },
+    /// Undo a rename using its saved revisions.
+    UndoRename {
+        /// Owning space UUID.
+        #[arg(long)]
+        space: String,
+        /// Stable job UUID returned by rename.
+        job_id: String,
+    },
 }
 
 impl Notes {
@@ -103,6 +119,14 @@ impl Notes {
             }
             Self::Delete { id } => ("notes.delete", json!({"id":id})),
             Self::Restore { id } => ("notes.restore", json!({"id":id})),
+            Self::RenameStatus { space, job_id } => (
+                "notes.rename.status",
+                json!({"space_id":space,"job_id":job_id}),
+            ),
+            Self::UndoRename { space, job_id } => (
+                "notes.rename.undo",
+                json!({"space_id":space,"job_id":job_id}),
+            ),
             Self::Rename {
                 id,
                 base_revision,
@@ -166,6 +190,23 @@ pub enum Trash {
         #[command(flatten)]
         scope: Space,
     },
+    /// Preview all trashed Notes, or permanently empty the confirmed selection.
+    Empty {
+        /// Owning space UUID.
+        #[arg(long)]
+        space: String,
+        /// Confirmation returned by the preview. This action cannot be undone.
+        #[arg(long)]
+        confirm: Option<String>,
+    },
+    /// Read progress of an Empty Trash job.
+    Status {
+        /// Owning space UUID.
+        #[arg(long)]
+        space: String,
+        /// Job UUID returned when the confirmed operation starts.
+        job_id: String,
+    },
     /// Permanently delete a trashed note and its versions.
     #[command(
         after_help = "Example: calternal trash purge NOTE_UUID\nSee also: calternal trash list, calternal notes restore"
@@ -182,6 +223,21 @@ impl Trash {
         match self {
             Self::List { scope } => ("trash.list", scope.input()),
             Self::Purge { id } => ("trash.purge", json!({"id":id})),
+            Self::Empty {
+                space,
+                confirm: None,
+            } => ("trash.empty.preview", json!({"space_id":space})),
+            Self::Empty {
+                space,
+                confirm: Some(token),
+            } => (
+                "trash.empty",
+                json!({"space_id":space,"confirmation":token}),
+            ),
+            Self::Status { space, job_id } => (
+                "trash.empty.status",
+                json!({"space_id":space,"job_id":job_id}),
+            ),
         }
     }
 }
@@ -219,6 +275,8 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
         let mut columns = vec!["ID", "TITLE", time, "REVISION"];
         if op == "notes.lookup" {
             columns.push("LINK TARGET");
+        } else if op == "trash.list" {
+            columns.push("DAYS LEFT");
         }
         return reply
             .table(
@@ -234,6 +292,8 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
                         ];
                         if op == "notes.lookup" {
                             row.push(text(note, "link_target").into());
+                        } else if op == "trash.list" {
+                            row.push(note["days_remaining"].to_string());
                         }
                         row
                     })
@@ -247,10 +307,39 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
             .hint(hint)
             .page_cursor();
     }
+    if op == "trash.empty.preview" {
+        return reply.fields([
+            ("Notes", data["count"].to_string()),
+            ("Version bytes", data["bytes"].to_string()),
+            ("Confirmation", text(&data,"confirmation").to_owned()),
+        ]).hint("To permanently empty Trash: calternal trash empty --space SPACE --confirm CONFIRMATION.");
+    }
+    if matches!(op, "trash.empty" | "trash.empty.status") {
+        return reply
+            .fields([
+                ("Job", text(&data, "job_id").to_owned()),
+                ("State", text(&data, "state").to_owned()),
+                ("Selected", data["count"].to_string()),
+                ("Purged", data["purged"].to_string()),
+                ("Skipped", data["skipped"].to_string()),
+            ])
+            .hint("Next: calternal trash status --space SPACE JOB.");
+    }
     if op == "trash.purge" {
         return reply
             .fields([("ID", text(&data, "id")), ("State", "Permanently deleted")])
             .hint("Next: calternal trash list --space SPACE.");
+    }
+    if matches!(op, "notes.rename.status" | "notes.rename.undo") {
+        return reply
+            .fields([
+                ("Job", text(&data, "job_id").to_owned()),
+                ("State", text(&data, "state").to_owned()),
+                ("Sources", data["total"].to_string()),
+                ("Remaining", data["remaining"].to_string()),
+                ("Skipped", data["skipped"].to_string()),
+            ])
+            .hint("Next: calternal notes rename-status --space SPACE JOB.");
     }
     let note = &data["note"];
     let (state, hint) = match op {
@@ -267,6 +356,9 @@ pub fn reply(out: &Output, op: &str, data: Value) -> Reply {
             ("State", state),
         ])
         .fields([("Updated", out.local_rfc3339(text(note, "updated_at")))]);
+    if let Some(job) = data["job_id"].as_str() {
+        reply = reply.fields([("Job", job)]);
+    }
     if let Some(markdown) = note["markdown"].as_str() {
         reply = reply.blank().text(markdown);
     }

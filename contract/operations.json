@@ -536,6 +536,13 @@
       },
       "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
       "properties": {
+        "job_id": {
+          "description": "Durable link rewrite job when this write changes the note's title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "note": {
           "allOf": [
             {
@@ -639,6 +646,13 @@
       },
       "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
       "properties": {
+        "job_id": {
+          "description": "Durable link rewrite job when this write changes the note's title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "note": {
           "allOf": [
             {
@@ -750,6 +764,13 @@
       },
       "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
       "properties": {
+        "job_id": {
+          "description": "Durable link rewrite job when this write changes the note's title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "note": {
           "allOf": [
             {
@@ -7100,6 +7121,7 @@
   },
   {
     "risk": "read",
+    "required_capability": "space.read",
     "id": "notes.list",
     "description": "List a page of up to 100 live notes, optionally under a tag",
     "mutates": false,
@@ -7202,6 +7224,7 @@
   },
   {
     "risk": "reversible",
+    "required_capability": "content.write",
     "id": "notes.delete",
     "description": "Move a note to its space's Trash",
     "mutates": true,
@@ -7285,6 +7308,7 @@
   },
   {
     "risk": "reversible",
+    "required_capability": "content.write",
     "id": "notes.restore",
     "description": "Restore a note from its space's Trash",
     "mutates": true,
@@ -7368,6 +7392,7 @@
   },
   {
     "risk": "read",
+    "required_capability": "space.read",
     "id": "trash.list",
     "description": "List a page of up to 100 notes in the space's Trash",
     "mutates": false,
@@ -7397,10 +7422,15 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "definitions": {
-        "NoteSummary": {
-          "additionalProperties": false,
-          "description": "Metadata returned by `notes.list`; excludes Markdown to bound listing payloads.",
+        "TrashedNote": {
+          "description": "One trashed note and its remaining whole-day retention, rounded up.",
           "properties": {
+            "days_remaining": {
+              "description": "Days until eligibility for automatic purge. Zero means eligible now.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
             "id": {
               "description": "Stable UUID note identity; access is checked against the accompanying space.",
               "type": "string"
@@ -7428,6 +7458,7 @@
             }
           },
           "required": [
+            "days_remaining",
             "id",
             "revision",
             "space_id",
@@ -7437,19 +7468,19 @@
           "type": "object"
         }
       },
-      "description": "Result for `notes.list`, containing at most 100 current note summaries.",
+      "description": "One page of notes eligible for restore or purge, newest deletion first.",
       "properties": {
         "next_cursor": {
-          "description": "Opaque continuation for the next page, omitted at the end.",
+          "description": "Opaque next-page cursor, omitted when there are no more notes.",
           "type": [
             "string",
             "null"
           ]
         },
         "notes": {
-          "description": "At most 100 current summaries, ordered by descending update timestamp then resource ID.",
+          "description": "At most 100 notes with their remaining retention.",
           "items": {
-            "$ref": "#/definitions/NoteSummary"
+            "$ref": "#/definitions/TrashedNote"
           },
           "type": "array"
         }
@@ -7457,12 +7488,13 @@
       "required": [
         "notes"
       ],
-      "title": "NotesListResult",
+      "title": "TrashListResult",
       "type": "object"
     }
   },
   {
     "risk": "irreversible",
+    "required_capability": "content.purge",
     "id": "trash.purge",
     "description": "Permanently delete a note from Trash",
     "mutates": true,
@@ -7537,7 +7569,212 @@
     }
   },
   {
+    "risk": "read",
+    "required_capability": "content.purge",
+    "id": "trash.empty.preview",
+    "description": "Count notes and retained version bytes before emptying Trash",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Selects the Trash of one space for an irreversible-action preview.",
+      "properties": {
+        "space_id": {
+          "description": "UUID of the owning space.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "TrashScope",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Confirmation for exactly the current set of trashed revisions.",
+      "properties": {
+        "bytes": {
+          "description": "Logical UTF-8 bytes in all retained versions of the selected notes.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "confirmation": {
+          "description": "Opaque set fingerprint required when starting the job.",
+          "type": "string"
+        },
+        "count": {
+          "description": "Number of selected notes.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bytes",
+        "confirmation",
+        "count"
+      ],
+      "title": "TrashEmptyPreview",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "irreversible",
+    "required_capability": "content.purge",
+    "id": "trash.empty",
+    "description": "Start a resumable job to permanently purge the confirmed Trash selection",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Confirm the irreversible deletion of a previewed Trash selection.",
+      "properties": {
+        "confirmation": {
+          "description": "Confirmation from a fresh preview for the same space.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the owning space.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "confirmation",
+        "space_id"
+      ],
+      "title": "TrashEmptyInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Durable progress of one irreversible Empty Trash job.",
+      "properties": {
+        "bytes": {
+          "description": "Logical version bytes selected at confirmation.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "count": {
+          "description": "Number of notes selected at confirmation.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "job_id": {
+          "description": "Stable job UUID.",
+          "type": "string"
+        },
+        "purged": {
+          "description": "Number of selected revisions permanently removed by this job.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "skipped": {
+          "description": "Number of selected revisions restored, replaced, blocked or already removed.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`pending` while work remains, `done` after all selected revisions are examined.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "count",
+        "job_id",
+        "purged",
+        "skipped",
+        "state"
+      ],
+      "title": "TrashJob",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "content.purge",
+    "id": "trash.empty.status",
+    "description": "Read progress of an Empty Trash job",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select one previously admitted job in its owning space.",
+      "properties": {
+        "job_id": {
+          "description": "Job UUID returned on admission.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the owning space.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "space_id"
+      ],
+      "title": "NoteJobInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Durable progress of one irreversible Empty Trash job.",
+      "properties": {
+        "bytes": {
+          "description": "Logical version bytes selected at confirmation.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "count": {
+          "description": "Number of notes selected at confirmation.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "job_id": {
+          "description": "Stable job UUID.",
+          "type": "string"
+        },
+        "purged": {
+          "description": "Number of selected revisions permanently removed by this job.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "skipped": {
+          "description": "Number of selected revisions restored, replaced, blocked or already removed.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`pending` while work remains, `done` after all selected revisions are examined.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bytes",
+        "count",
+        "job_id",
+        "purged",
+        "skipped",
+        "state"
+      ],
+      "title": "TrashJob",
+      "type": "object"
+    }
+  },
+  {
     "risk": "reversible",
+    "required_capability": "content.write",
     "id": "notes.rename",
     "description": "Rename a note at its current revision",
     "mutates": true,
@@ -7622,6 +7859,13 @@
       },
       "description": "Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.",
       "properties": {
+        "job_id": {
+          "description": "Durable link rewrite job when this write changes the note's title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "note": {
           "allOf": [
             {
@@ -7640,6 +7884,155 @@
   },
   {
     "risk": "read",
+    "required_capability": "space.read",
+    "id": "notes.rename.status",
+    "description": "Read progress of a Notes rename or its inverse",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select one previously admitted job in its owning space.",
+      "properties": {
+        "job_id": {
+          "description": "Job UUID returned on admission.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the owning space.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "space_id"
+      ],
+      "title": "NoteJobInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Progress of an authorized Notes rename or its inverse.",
+      "properties": {
+        "job_id": {
+          "description": "Job UUID returned by the rename.",
+          "type": "string"
+        },
+        "note_id": {
+          "description": "Stable identity of the renamed note.",
+          "type": "string"
+        },
+        "remaining": {
+          "description": "Number of source files still to inspect in the current direction.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "skipped": {
+          "description": "Number of conflicts skipped in the current direction.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`pending`, `done`, `undoing`, `undone`, or `blocked`.",
+          "type": "string"
+        },
+        "total": {
+          "description": "Original number of candidate linking notes.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "note_id",
+        "remaining",
+        "skipped",
+        "state",
+        "total"
+      ],
+      "title": "NoteRenameJob",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "required_capability": "content.write",
+    "id": "notes.rename.undo",
+    "description": "Restore the original name and linked revisions from a completed rename",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Select one previously admitted job in its owning space.",
+      "properties": {
+        "job_id": {
+          "description": "Job UUID returned on admission.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "UUID of the owning space.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "space_id"
+      ],
+      "title": "NoteJobInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Progress of an authorized Notes rename or its inverse.",
+      "properties": {
+        "job_id": {
+          "description": "Job UUID returned by the rename.",
+          "type": "string"
+        },
+        "note_id": {
+          "description": "Stable identity of the renamed note.",
+          "type": "string"
+        },
+        "remaining": {
+          "description": "Number of source files still to inspect in the current direction.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "skipped": {
+          "description": "Number of conflicts skipped in the current direction.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`pending`, `done`, `undoing`, `undone`, or `blocked`.",
+          "type": "string"
+        },
+        "total": {
+          "description": "Original number of candidate linking notes.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id",
+        "note_id",
+        "remaining",
+        "skipped",
+        "state",
+        "total"
+      ],
+      "title": "NoteRenameJob",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "required_capability": "space.read",
     "id": "notes.lookup",
     "description": "Find a page of up to 100 notes by title prefix",
     "mutates": false,
@@ -7745,6 +8138,7 @@
   },
   {
     "risk": "read",
+    "required_capability": "space.read",
     "id": "tags.list",
     "description": "List a page of up to 100 tags and their current note counts",
     "mutates": false,
@@ -7822,6 +8216,7 @@
   },
   {
     "risk": "read",
+    "required_capability": "space.read",
     "id": "tags.lookup",
     "description": "Find a page of up to 100 tags by name prefix",
     "mutates": false,

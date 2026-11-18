@@ -44,6 +44,15 @@ schema and every shipped step fixed. A version outside the declared range
 fails before schema changes. The deployment gate will admit a newer version
 for an older release only under the explicit, tested compatibility policy.
 
+The Notes job migrations add the Manager and Owner purge grant at auth
+version 12. The content migration for thread snooze remains version 4.
+Empty Trash and rename queues follow at content versions 5 and 6. The previous writer can lack the new purge enforcement and job
+semantics. Qualify those policy changes with the release upgrade gate
+before allowing an earlier image to run against upgraded roots.
+
+Message search generation 2 drops the redundant thread-location index and
+rebuilds under the projection worker. Its SQLite schema version stays 1.
+
 Owned tags put the name before the version, as in `calternal-thread/v1`.
 Binary formats retain the version markers listed above.
 An unknown version of a recognized format stays untouched. File readers

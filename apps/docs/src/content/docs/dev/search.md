@@ -81,9 +81,7 @@ Notes text and typo matching use SQLite FTS5 and title character pairs,
 ported from ADR 0031. The independent message index uses 16 KiB SQLite pages,
 a 32 MiB writer cache, and compressed 16,384-position blocks. The worker writes
 each sorted run in block and term order. SQLite builds the chronological and
-UUID secondary indexes after the bulk load. The UUID index starts with the
-thread slot, so it also locates all of a thread's messages on replacement
-or deletion. Each posting records its newest
+UUID secondary indexes after the bulk load. Each posting records its newest
 time and UUID. A shared lower bound per block lets continuations skip newer blocks.
 
 A save performs zero search SQL statements, userdata reads, parses, or

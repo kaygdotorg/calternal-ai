@@ -42,6 +42,7 @@ mod mutations;
 mod pool;
 mod publication;
 mod recovery;
+mod rename_job;
 mod search;
 pub use search::{
     IndexedHit, IndexedPage, MessageDecoder, MessageRecord, SearchConfig, SearchConfigSource,
@@ -50,6 +51,7 @@ pub use search::{
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 mod trash;
+mod trash_job;
 mod types;
 use calternal_roots::Roots;
 use calternal_types::{AccountId, Error, ErrorCode, SpaceId};

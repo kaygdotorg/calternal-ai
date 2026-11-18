@@ -349,6 +349,26 @@ async fn linked_rename_recovers_before_replaying_its_receipt() {
     f.start().await;
     let replay = data(f.op_id(1, "notes.rename", request, "linked-rename").await);
     assert_eq!(replay["note"]["id"], note["id"]);
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let status = data(
+                f.op(
+                    1,
+                    "notes.rename.status",
+                    json!({
+                        "space_id":space,"job_id":replay["job_id"]
+                    }),
+                )
+                .await,
+            );
+            if status["state"] == "done" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
     let folder = f
         .dir
         .path()
@@ -365,3 +385,6 @@ async fn linked_rename_recovers_before_replaying_its_receipt() {
     let disk = std::fs::read_to_string(folder.join("Source.md")).unwrap();
     assert!(disk.ends_with("[Renamed](<Renamed.md#^anchor>)"));
 }
+
+mod empty_trash;
+mod rename_job;
