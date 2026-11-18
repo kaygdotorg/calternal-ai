@@ -41,6 +41,7 @@ type Paths = BTreeSet<(Root, String)>;
 pub(super) struct Inventory {
     databases: Vec<Database>,
     paths: Paths,
+    recovery_segment: Option<uuid::Uuid>,
 }
 
 impl Inventory {
@@ -49,6 +50,28 @@ impl Inventory {
         let mut databases = databases(appdata)?;
         databases.retain(|database| database.version < database.schema.version());
         let mut paths = Paths::new();
+        let recovery_dir = deploy.roots.userdata_ssd.join(".calternal/recovery");
+        let recovery_segment = if calternal_recovery::Coordinator::stored_version(
+            &recovery_dir,
+            deploy.installation,
+        )
+        .map_err(io::Error::other)?
+            == 3
+        {
+            if !incompatible {
+                return Err(io::Error::other(
+                    "security recovery v3 to v4 requires an incompatible upgrade and full restore point",
+                ));
+            }
+            let next = uuid::Uuid::now_v7();
+            paths.insert((Root::Ssd, format!(".calternal/recovery/log-{next}.bin")));
+            for suffix in ["", "-wal", "-shm", "-journal"] {
+                paths.insert((Root::Appdata, format!("system/auth.db{suffix}")));
+            }
+            Some(next)
+        } else {
+            None
+        };
         if incompatible {
             for role in super::ROLES {
                 let Ok(root) = deploy.root(role) else {
@@ -78,7 +101,11 @@ impl Inventory {
                 paths.insert((Root::Appdata, format!("secrets/spaces/{}/head", owner.0)));
             }
         }
-        Ok(Self { databases, paths })
+        Ok(Self {
+            databases,
+            paths,
+            recovery_segment,
+        })
     }
 
     // The root locks are still held, and the intent was fsynced before this call.
@@ -91,6 +118,21 @@ impl Inventory {
     ) -> io::Result<usize> {
         let copies = self.paths.len();
         deploy.prepare(previous, candidate, self.paths)?;
+        if let Some(segment) = self.recovery_segment {
+            let conn = connection(
+                &deploy.roots.appdata.join("system/auth.db"),
+                OpenFlags::SQLITE_OPEN_READ_WRITE,
+            )?;
+            conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")
+                .map_err(sqlite)?;
+            calternal_recovery::Coordinator::migrate_from_v3(
+                &deploy.roots.userdata_ssd.join(".calternal/recovery"),
+                deploy.installation,
+                &conn,
+                segment,
+            )
+            .map_err(io::Error::other)?;
+        }
         for database in self.databases {
             let conn = database.open(&deploy.roots.appdata, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
             conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")

@@ -18,8 +18,8 @@ path = "src/lib.rs"
 rebuild-probe = []
 # Trust the test-only plugins under tests/plugins (never in a shipped build).
 test-plugins = ["calternal-store/test-timings"]
-# Enable release journal timing without trusting test plugins.
-perf-timings = ["calternal-store/perf-timings", "calternal-content/perf-timings"]
+# Enable release journal and startup timing without trusting test plugins.
+perf-timings = ["calternal-store/perf-timings", "calternal-content/perf-timings", "calternal-recovery/perf-timings"]
 # Local-only authoring transport. Never enabled in the shipped binary.
 dev-plugin-drafts = []
 

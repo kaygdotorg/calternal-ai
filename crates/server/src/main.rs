@@ -247,6 +247,8 @@ async fn serve(
             })
         })?;
     let has_test_root = test_plugin_root.is_some();
+    #[cfg(feature = "perf-timings")]
+    let mut startup_phases = startup_io::StartupPhases::new();
     let (store, data_dir, recovery, registry) = tokio::task::spawn_blocking(move || {
         startup_io::open_stores(
             roots,
@@ -259,6 +261,8 @@ async fn serve(
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("storage_total");
     let local_test_workers = cfg!(feature = "test-plugins")
         && has_test_root
         && std::env::var_os("CALTERNAL_WORKER_TEST_BACKEND").is_some();
@@ -328,6 +332,8 @@ async fn serve(
         ));
     }
     let directory_root = data_dir.clone();
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("runtime");
     let directory = tokio::task::spawn_blocking(move || {
         let data_dir = directory_root;
         let directory =
@@ -346,6 +352,19 @@ async fn serve(
     })
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))??;
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("authority");
+    directory.spaces.maintain_receipts().await.map_err(|e| {
+        boot(
+            1,
+            "failed",
+            format!("directory receipt cleanup: {e}"),
+            DATA_HINT,
+        )
+    })?;
+    let _receipt_sweep = tokio::spawn(people_maintenance::sweep_receipts(directory.spaces.clone()));
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("receipt_sweep");
     let (store, pending_erasure) = {
         let spaces = directory.spaces.clone();
         let root = data_dir.clone();
@@ -429,6 +448,8 @@ async fn serve(
         }
     }
     let jobs_root = data_dir.clone();
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("keys_machines_setup");
     let lifecycle = store.content().lifecycle();
     let jobs = tokio::task::spawn_blocking(move || {
         plugins::Jobs::open_with_lifecycle(&jobs_root, lifecycle)
@@ -439,6 +460,8 @@ async fn serve(
     .with_security(directory.spaces.agents())
     .with_receipt_retention(store.content().receipt_retention())
     .with_thread_events(store.shared_content());
+    #[cfg(feature = "perf-timings")]
+    startup_phases.mark("jobs");
     let token_files = directory.files.clone();
     let state = Arc::new(AppState {
         blocking: calternal_server::blocking::RequestWorkers::new()
@@ -510,6 +533,11 @@ async fn serve(
     calternal_server::turns::retry::recover(&state, &machines)
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
+    #[cfg(feature = "perf-timings")]
+    {
+        startup_phases.mark("admin_erasure_job_recovery");
+        let _ = tokio::task::spawn_blocking(move || startup_phases.emit()).await;
+    }
     let _notes_retention = state.store.start_notes_retention().map_err(|e| {
         boot(
             2,

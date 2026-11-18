@@ -1,4 +1,41 @@
 //! Durable startup files use blocking workers rather than the async root task.
+
+#[cfg(feature = "perf-timings")]
+pub(super) fn phase(clock: &mut std::time::Instant, name: &str) {
+    let now = std::time::Instant::now();
+    eprintln!(
+        "STARTUP {name}_us {}",
+        now.duration_since(*clock).as_micros()
+    );
+    *clock = now;
+}
+
+#[cfg(feature = "perf-timings")]
+pub(super) struct StartupPhases {
+    clock: std::time::Instant,
+    elapsed: Vec<(&'static str, u128)>,
+}
+
+#[cfg(feature = "perf-timings")]
+impl StartupPhases {
+    pub(super) fn new() -> Self {
+        Self {
+            clock: std::time::Instant::now(),
+            elapsed: Vec::new(),
+        }
+    }
+    pub(super) fn mark(&mut self, stage: &'static str) {
+        let now = std::time::Instant::now();
+        self.elapsed
+            .push((stage, now.duration_since(self.clock).as_micros()));
+        self.clock = now;
+    }
+    pub(super) fn emit(self) {
+        for (stage, micros) in self.elapsed {
+            eprintln!("STARTUP {stage}_us {micros}");
+        }
+    }
+}
 use std::path::Path;
 
 /// Publish an owner-only startup file durably on a blocking worker. Returns I/O
@@ -35,6 +72,8 @@ pub(super) fn open_stores(
 > {
     use super::boot;
     use calternal_server::{plugins::package_store, store::Store};
+    #[cfg(feature = "perf-timings")]
+    let mut clock = std::time::Instant::now();
     let store = Store::open(&roots, installation, create, receipt_retention).map_err(|e| {
         boot(
             1,
@@ -44,6 +83,8 @@ pub(super) fn open_stores(
              first setup), and make sure no other server is using them.",
         )
     })?;
+    #[cfg(feature = "perf-timings")]
+    phase(&mut clock, "roots");
     let data_dir = std::fs::canonicalize(&roots.appdata)
         .map_err(|e| boot(1, "io", format!("appdata: {e}"), DATA_HINT))?;
     // Every security change is written to this log in userdata-ssd before it is
@@ -56,6 +97,8 @@ pub(super) fn open_stores(
             "The recovery log in userdata-ssd is missing, damaged or belongs to another installation.",
         )
     })?;
+    #[cfg(feature = "perf-timings")]
+    phase(&mut clock, "security_log");
     let test_root = test_plugin_root.map(|r| std::fs::canonicalize(&r).unwrap_or(r));
     let registry = package_store::load(&data_dir, plugin_root.as_deref(), test_root.as_deref())
         .map_err(|why| {
@@ -66,5 +109,7 @@ pub(super) fn open_stores(
                 "Check the installation's plugin packages and appdata.",
             )
         })?;
+    #[cfg(feature = "perf-timings")]
+    phase(&mut clock, "plugins");
     Ok((store, data_dir, recovery, registry))
 }

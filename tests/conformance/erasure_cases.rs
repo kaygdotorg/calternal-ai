@@ -57,7 +57,18 @@ fn erased(fixture: &Fixture, kind: &str, id: &str) {
 
 #[tokio::test]
 async fn account_erasure_requires_authority_fresh_proof_and_transfer() {
+    const ACTOR_REPLY: &str = "erased-actor-receipt-bytes";
+    const SCOPE_REPLY: &str = "erased-scope-receipt-bytes";
     let mut f = Fixture::new().await;
+    let recovery = f.dir.path().join("userdata-ssd/.calternal/recovery");
+    let reply_is_retained = |reply: &str| {
+        std::fs::read_dir(&recovery).unwrap().any(|entry| {
+            std::fs::read(entry.unwrap().path())
+                .unwrap()
+                .windows(reply.len())
+                .any(|part| part == reply.as_bytes())
+        })
+    };
     let account = f.ids[1].clone();
     let private = f.spaces[0].clone();
     let shared = f.spaces[3].clone();
@@ -137,8 +148,23 @@ async fn account_erasure_requires_authority_fresh_proof_and_transfer() {
             [&account, &f.ids[0]],
         )
         .unwrap();
+        for (actor, scope, reply) in [
+            (&account, &shared, ACTOR_REPLY),
+            (&f.ids[0], &own, SCOPE_REPLY),
+        ] {
+            c.execute(
+                "INSERT INTO space_receipts VALUES(?1,?2,?3,'spaces.set_role','fp',json_object('marker',?3),unixepoch()*1000)",
+                rusqlite::params![actor, scope, reply],
+            )
+            .unwrap();
+        }
     }
     f.start().await;
+    assert!(
+        [ACTOR_REPLY, SCOPE_REPLY]
+            .into_iter()
+            .all(reply_is_retained)
+    );
     let stale = f.auth(ROUTE, Some(&f.cookies[1]), json!({})).await;
     assert_eq!(stale.status, 403);
     assert_eq!(
@@ -273,6 +299,11 @@ async fn account_erasure_requires_authority_fresh_proof_and_transfer() {
     erased(&f, "spaces", &own);
     erased(&f, "spaces", &private);
     erased(&f, "spaces", group_space);
+    assert!(
+        ![ACTOR_REPLY, SCOPE_REPLY]
+            .into_iter()
+            .any(reply_is_retained)
+    );
     let kept = f.op(2, "notes.get", json!({"id":shared_note["id"]})).await;
     kept.ok();
     assert_eq!(
@@ -435,12 +466,25 @@ async fn space_erasure_removes_all_owned_roots_and_stays_absent_after_restart() 
     let hdd = f.dir.path().join("userdata-hdd/spaces").join(&space);
     std::fs::create_dir_all(&hdd).unwrap();
     std::fs::write(hdd.join("owned.md"), "owner-only file").unwrap();
-    f.op(1, "spaces.delete", json!({"space_id":space}))
-        .await
-        .ok();
+    let input = json!({"space_id":space});
+    let deleted = f
+        .op_id(1, "spaces.delete", input.clone(), "erase-space")
+        .await;
+    deleted.ok();
     erased(&f, "spaces", &space);
     f.stop();
     f.start().await;
+    let replay = f
+        .op_id(1, "spaces.delete", input.clone(), "erase-space")
+        .await;
+    replay.ok();
+    assert_eq!(replay.body["data"], deleted.body["data"]);
+    assert_eq!(
+        f.op_id(2, "spaces.delete", input, "erase-space")
+            .await
+            .status,
+        404
+    );
     assert_eq!(
         f.op(1, "notes.get", json!({"id":note["id"]})).await.status,
         404

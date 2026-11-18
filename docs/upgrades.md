@@ -26,7 +26,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | SSD space `AI/AGENTS.md`, `AI/Skills/*/SKILL.md` | Authority | Space instructions and the person write raw Markdown. Skill descriptors use the external Agent Skills format and may be provisioned on disk. These formats pass through byte-for-byte. |
 | SSD `spaces/<id>/.calternal/settings.json` | Authority | The plugin settings adapter writes `calternal-plugin-settings/v1`. JSON preserves typed nested values, including unknown settings during an older writer’s update. |
 | SSD automation definitions, account shortcuts, themes and other settings files | Authority when introduced | No durable server writer in this lane. Use `calternal-shortcuts/v1` for account shortcuts and `calternal-theme/v1` for themes. Automation definitions, custom components and starred prompts need their own versioned formats when their writers land. |
-| SSD `.calternal/recovery/snapshot.json` and `log-*.bin` | Authority | Recovery coordinator writes v3 snapshots and checksummed frames, paired with the auth DB witness. |
+| SSD `.calternal/recovery/snapshot.json` and `log-*.bin` | Authority | The pinned baseline uses v3. The incompatible receipt migration writes v4 snapshots and checksummed frames, paired with the auth DB witness. The stopped-installation upgrade runner is the only path from v3 to v4. |
 | HDD originals and each root's `.calternal-install-id` | Authority | HDD originals are opaque. There is no general HDD placement writer today. Roots writes `calternal-install-root/v1` with installation UUID and role. |
 | Machine `credentials`, `pending-enrollment/credentials`, and `machine-handoff/{request.json,enrolled}` | Authority during use | Machine enrollment writes `calternal-machine-credentials/v1`. Both roles use `calternal-machine-enrollment/v1` for the handoff. Protected files stay on the machine. |
 | Machine `sandboxes/accounts/`, worker/container state | Mixed | Sandbox, harness and person write per-space homes, transcripts, account provider login and thread workspaces. Provider bytes are opaque. Worker containers, temporary login work and execution state are disposable. MicroVM mode keeps each account's tree in `microvm/accounts/<account>.ext4`; the ext4 label `calternal-v1` versions the disk layout and an unknown label is refused untouched. `microvm/run/` and `vmm.lock` are runtime state. |
@@ -123,6 +123,15 @@ their workspace, including the link, stays in place. The incompatible update
 does not proceed until the restore point can preserve links.
 
 ## Release gate
+
+For the v3-to-v4 recovery format, run
+`scripts/verify-additive-upgrade.sh --incompatible PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
+on dev-01 under the gate lock. It checks additive refusal, restores the
+original snapshot and removes the new segment on pre-commit rollback,
+then verifies surviving receipts and new writes on v4, with v3 refusing
+the committed data. Its proof is specific to incompatible handoff.
+Owner approval and a restore point that preserves workspace links are
+required before deployment.
 
 On dev-01, run `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
 before handing an additive release pair to deploy. The script extracts each

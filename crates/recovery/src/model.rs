@@ -95,7 +95,7 @@ pub struct Table {
 /// use only within the host security owner, never a space operation or export API.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Snapshot {
-    /// Format version; unsupported versions are rejected.
+    /// Logical table image version, independent of the on-disk log version.
     pub version: u32,
     /// UUID pinned externally by the host, distinct from account installations.
     pub installation: Uuid,

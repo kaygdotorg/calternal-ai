@@ -2,11 +2,16 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+mod log;
+mod migration;
 mod model;
+mod receipts;
 mod sink;
 mod state;
 mod storage;
 use calternal_auth::spaces::RecoverySink;
+use calternal_types::now_ms;
+use log::{Body, Entry, Image, Loaded, Pending, frame};
 pub use model::{Cell, Error, Result, Snapshot, Step, Table};
 use model::{decode, encode, err, invalid};
 use rusqlite::Connection;
@@ -21,6 +26,10 @@ use storage::Storage;
 use uuid::Uuid;
 
 const DEFAULT_THRESHOLD: u64 = 64 * 1024 * 1024;
+const CURRENT: u32 = 4;
+const LEGACY: u32 = 3;
+// The hourly maintenance worker can arrive up to one hour after this threshold.
+const RETIRED_RECEIPT_COMPACT_MS: i64 = 23 * 60 * 60 * 1000;
 const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 fn digest(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
@@ -47,92 +56,6 @@ pub struct Checkpoint {
     /// BLAKE3 hash of the exact final committed or aborted marker frame.
     pub digest: String,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Entry {
-    installation: Uuid,
-    sequence: u64,
-    previous: String,
-    body: Body,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-enum Body {
-    Proposed {
-        transaction: Uuid,
-        delta: BTreeMap<String, Option<Record>>,
-    },
-    Resolved {
-        committed: bool,
-    },
-}
-fn frame(entry: &Entry) -> Result<Vec<u8>> {
-    let bytes = encode(entry)?;
-    let mut out = (bytes.len() as u64).to_le_bytes().to_vec();
-    out.extend(bytes);
-    Ok(out)
-}
-#[derive(Clone, Serialize, Deserialize)]
-struct Image {
-    version: u32,
-    head: Checkpoint,
-    transaction: Uuid,
-    proposal_digest: String,
-    committed_sequence: u64,
-    segment: String,
-    records: BTreeMap<String, Record>,
-}
-/// A proposal and its one canonical frame hash, reused by chain validation,
-/// witness resolution and application. Entries remain immutable until applied.
-struct Pending {
-    entry: Entry,
-    digest: String,
-}
-struct Loaded {
-    image: Image,
-    pending: Option<Pending>,
-    tail: Vec<u8>,
-    length: u64,
-    stamps: (Vec<u64>, Vec<u64>),
-    needs_sync: bool,
-}
-impl Loaded {
-    fn resolution(&self, committed: bool) -> Result<(Vec<u8>, Checkpoint)> {
-        let pending = self.pending.as_ref().ok_or_else(invalid)?;
-        let marker = Entry {
-            installation: pending.entry.installation,
-            sequence: pending.entry.sequence.checked_add(1).ok_or_else(invalid)?,
-            previous: pending.digest.clone(),
-            body: Body::Resolved { committed },
-        };
-        let bytes = frame(&marker)?;
-        let head = Checkpoint {
-            installation: marker.installation,
-            sequence: marker.sequence,
-            digest: digest(&bytes),
-        };
-        Ok((bytes, head))
-    }
-    fn apply(&mut self, committed: bool, head: Checkpoint) -> Result<()> {
-        let Pending { entry, digest } = self.pending.take().ok_or_else(invalid)?;
-        self.image.proposal_digest = digest;
-        let Body::Proposed { transaction, delta } = entry.body else {
-            return Err(invalid());
-        };
-        if committed {
-            for (key, record) in delta {
-                if let Some(record) = record {
-                    self.image.records.insert(key, record);
-                } else {
-                    self.image.records.remove(&key);
-                }
-            }
-            self.image.transaction = transaction;
-            self.image.committed_sequence = entry.sequence;
-        }
-        self.image.head = head;
-        Ok(())
-    }
-}
-
 /// Installation-private append-only security delta log. The host holds root locks,
 /// protects trusted ancestry and configures every auth writer before admission.
 /// Two file fsyncs publish any nonempty delta; compaction is threshold-triggered.
@@ -142,6 +65,7 @@ pub struct Coordinator {
     gate: Mutex<Option<Loaded>>,
     serial: Mutex<()>,
     threshold: u64,
+    version: u32,
 }
 impl Coordinator {
     /// Opens a mode-0700 Linux root; provisions only an entirely empty directory.
@@ -169,6 +93,15 @@ impl Coordinator {
         threshold: u64,
         observe: Arc<dyn Fn(Step) -> Result<()> + Send + Sync>,
     ) -> Result<Self> {
+        Self::open_version(root, installation, threshold, observe, CURRENT)
+    }
+    fn open_version(
+        root: &Path,
+        installation: Uuid,
+        threshold: u64,
+        observe: Arc<dyn Fn(Step) -> Result<()> + Send + Sync>,
+        version: u32,
+    ) -> Result<Self> {
         if threshold == 0 {
             return Err(invalid());
         }
@@ -179,12 +112,13 @@ impl Coordinator {
             gate: Mutex::new(None),
             serial: Mutex::new(()),
             threshold,
+            version,
         };
         if empty {
             let segment = format!("log-{}.bin", Uuid::now_v7());
             this.store.create(&segment)?;
             this.store.snapshot(&encode(&Image {
-                version: 3,
+                version,
                 head: Checkpoint {
                     installation,
                     sequence: 0,
@@ -195,6 +129,8 @@ impl Coordinator {
                 committed_sequence: 0,
                 segment,
                 records: BTreeMap::new(),
+                receipts: receipts::Rows::default(),
+                retired_receipt_ms: None,
             })?)?;
         }
         let loaded = this.load()?;
@@ -217,12 +153,21 @@ impl Coordinator {
     }
     fn load(&self) -> Result<Loaded> {
         let image: Image = decode(&self.store.read("snapshot.json")?)?;
-        if image.version != 3
+        if image.version != self.version {
+            return Err(err(format!(
+                "unsupported security recovery format {}; expected {}",
+                image.version, self.version
+            )));
+        }
+        if (self.version == LEGACY
+            && (!image.receipts.is_empty() || image.retired_receipt_ms.is_some()))
             || image.head.installation != self.installation
             || !Self::segment_name(&image.segment)
             || image.committed_sequence > image.head.sequence
             || (image.head.sequence == 0
-                && (image.head.digest != ZERO || !image.records.is_empty()))
+                && (image.head.digest != ZERO
+                    || !image.records.is_empty()
+                    || !image.receipts.is_empty()))
         {
             return Err(invalid());
         }
@@ -237,6 +182,7 @@ impl Coordinator {
             length: 0,
             stamps: (vec![], vec![]),
             needs_sync: true,
+            compared: false,
         };
         let mut pos = 0;
         while pos < bytes.len() {
@@ -264,9 +210,21 @@ impl Coordinator {
                 return Err(invalid());
             }
             match &entry.body {
-                Body::Proposed { transaction, delta }
-                    if s.pending.is_none() && !transaction.is_nil() && !delta.is_empty() =>
+                Body::Proposed {
+                    transaction,
+                    delta,
+                    receipts,
+                } if s.pending.is_none()
+                    && !transaction.is_nil()
+                    && (!delta.is_empty() || receipts.is_some()) =>
                 {
+                    if receipts.as_ref().is_some_and(|r| {
+                        self.version != CURRENT
+                            || r.rows.is_empty()
+                            || !crate::receipts::ordered(&r.rows)
+                    }) {
+                        return Err(invalid());
+                    }
                     for (key, value) in delta {
                         if !key_ok(key) {
                             return Err(invalid());
@@ -303,6 +261,11 @@ impl Coordinator {
             || record.key != key
             || record.installation != self.installation
             || record.version != 3
+            || (self.version == CURRENT
+                && record
+                    .tables
+                    .get("space_receipts")
+                    .is_some_and(|table| key != state::GLOBAL || !table.rows.is_empty()))
         {
             return Err(invalid());
         }
@@ -402,17 +365,20 @@ impl Coordinator {
         Ok(())
     }
     fn compact(&self, s: &mut Loaded, erasure: bool) -> Result<()> {
-        if s.length >= self.threshold || (erasure && s.length != 0) {
-            let old = s.image.segment.clone();
+        let expired = s
+            .image
+            .retired_receipt_ms
+            .is_some_and(|at| now_ms().saturating_sub(at) >= RETIRED_RECEIPT_COMPACT_MS);
+        if s.length >= self.threshold || ((erasure || expired) && s.length != 0) {
             self.store.tick(Step::BeforeSegment)?;
             let next = format!("log-{}.bin", Uuid::now_v7());
             self.store.create(&next)?;
             self.store.tick(Step::AfterSegment)?;
             s.image.segment = next;
+            s.image.retired_receipt_ms = None;
             self.store.snapshot(&encode(&s.image)?)?;
             s.length = 0;
-            self.store.remove(&old)?;
-            self.store.sync()?;
+            self.remove_obsolete_segments(&s.image.segment)?;
         }
         s.stamps = self.stamps(&s.image.segment)?;
         Ok(())
@@ -431,12 +397,7 @@ impl Coordinator {
     fn read_locked(&self, expected: Option<&Checkpoint>) -> Result<Snapshot> {
         let s = self.load()?;
         Self::validate_loaded(&s, expected)?;
-        state::assemble(
-            self.installation,
-            s.image.transaction,
-            s.image.committed_sequence,
-            s.image.records.into_values().collect(),
-        )
+        s.image.snapshot(self.installation)
     }
     /// Validate the current map's proof before assembling it. Startup can reuse
     /// verified bytes under the private-file stamp cache; standalone reads own
@@ -453,12 +414,7 @@ impl Coordinator {
     }
     fn read_loaded(&self, s: &Loaded, expected: Option<&Checkpoint>) -> Result<Snapshot> {
         Self::validate_loaded(s, expected)?;
-        state::assemble(
-            self.installation,
-            s.image.transaction,
-            s.image.committed_sequence,
-            s.image.records.values().cloned().collect(),
-        )
+        s.image.clone().snapshot(self.installation)
     }
     /// Replays the full snapshot and log, refusing gaps, corruption and unresolved
     /// proposals. A valid old prefix needs a database witness or external pin to
@@ -517,15 +473,25 @@ impl Coordinator {
         let mut s = self.load_cached(&mut cache)?;
         self.replay_loaded(&committed, &mut s)?;
         let mut delta = BTreeMap::new();
+        let mut receipt_delta = BTreeMap::new();
         for key in state::dirty(c)? {
-            let value = state::capture_record(c, self.installation, &key)?;
+            if self.version == CURRENT
+                && let Some(key) = receipts::dirty_key(&key)?
+            {
+                let value = receipts::get(c, &key)?;
+                if s.image.receipts.0.get(&key) != value.as_ref() {
+                    receipt_delta.insert(key, value);
+                }
+                continue;
+            }
+            let value = state::capture_record(c, self.installation, &key, self.version)?;
             if s.image.records.get(&key) != value.as_ref() {
                 delta.insert(key, value);
             }
         }
         c.execute("DELETE FROM security_recovery_dirty", [])
             .map_err(err)?;
-        if delta.is_empty() {
+        if delta.is_empty() && receipt_delta.is_empty() {
             *cache = Some(s);
             return Ok(String::new());
         }
@@ -534,7 +500,14 @@ impl Coordinator {
             installation: self.installation,
             sequence: s.image.head.sequence.checked_add(1).ok_or_else(invalid)?,
             previous: s.image.head.digest.clone(),
-            body: Body::Proposed { transaction, delta },
+            body: Body::Proposed {
+                transaction,
+                delta,
+                receipts: (!receipt_delta.is_empty()).then(|| receipts::Changes {
+                    at_ms: now_ms(),
+                    rows: receipt_delta.into_iter().collect(),
+                }),
+            },
         };
         let bytes = frame(&entry)?;
         let proposal = digest(&bytes);

@@ -1,4 +1,4 @@
-Protected append-only security recovery (format 3)
+Protected append-only security recovery (format 4)
 ================================================
 
 This Linux coordinator publishes protected account/space authority before an auth
@@ -6,7 +6,9 @@ request is acknowledged. It returns validated rebuild input, not a rebuilt DB.
 The host supplies a pinned installation UUID, trusted ancestry, root locks and
 isolation from tenant/same-UID plugins; every writer must use the auth barrier.
 Only an empty mode-0700 directory is provisioned. Files are mode 0600, accessed
-through pinned no-follow descriptors. Earlier formats are deliberately unsupported.
+through pinned no-follow descriptors. The stopped-installation upgrade runner
+can rewrite the shipped format 3 under a full restore point. The service opens
+format 4.
 
 Format and records
 ------------------
@@ -19,15 +21,20 @@ JSON; the chain digest covers the entire frame, including length and checksum.
 Every entry carries installation UUID, strictly consecutive sequence and previous
 frame hash. The initial chain head is sequence zero and the all-zero digest.
 
-A proposal contains a UUIDv7 transaction and only affected owner keys: full new
-records or explicit deletions. A following small resolution marker says committed
+A proposal contains a UUIDv7 transaction, affected owner keys with full new
+records or explicit deletions, and independently keyed receipt changes. A
+receipt key is three fields, actor UUID, scope UUID and opaque request ID.
+Puts carry the exact operation, fingerprint, result text and SQLite timestamp.
+Deletes carry the same key without a value. A following small resolution marker says committed
 or aborted and binds the proposal hash. No second proposal can precede resolution.
 SQLite's singleton witness stores proposal sequence/hash **and** the anticipated
 resolution sequence/hash (the current resolved chain head).
 
-The existing transactional dirty-owner triggers and indexed capture remain.
+Transactional triggers mark affected receipt keys and both keys on updates.
+Marking follows SQLite savepoints and is discarded on rollback. Snapshots
+keep the current receipts in deterministic tuple order and reject duplicate keys.
 Account records contain credentials, enrollment-token hashes, installations and
-revocations, server roles, group membership and retry receipts.
+revocations, server roles and group membership.
 Space records contain only space metadata and memberships. Groups, invites and
 owner erasure markers have separate records; global policy holds the closed schema/role inventory and unbound
 enrollment tokens. Unknown auth tables refuse configuration. AccountId and SpaceId
@@ -45,7 +52,7 @@ Publication and proof
 1. The auth gate serializes prepare/SQLite commit/completion. Prepare compares the
    writer's witness with a separate read-only connection: an uncommitted witness
    can never resolve its own proposal. Prior committed work is resolved first.
-2. Capture only dirty owners; omit identical records. For a nonempty delta, append
+2. Capture only dirty owners and receipt keys. Omit identical values. For a nonempty delta, append
    and **fsync the proposal**, then store its identity and deterministic committed
    marker head in the same SQLite transaction as authority and dirty-key removal.
 3. Commit SQLite with its inherited WAL/FULL durability. The witness and authority
@@ -62,6 +69,14 @@ durability, standalone reading still refuses; the original DB witness completes
 the exact committed delta. A synced marker therefore never publishes an
 uncommitted grant, and no acknowledged change can disappear after a normal crash.
 Multiple affected records are one proposal and become current under one marker.
+
+Receipt expiry runs before admission and hourly on the authority worker.
+Replacing or deleting a receipt records the earliest outstanding retirement
+time in the witnessed chain. The 64 MiB threshold remains. Hourly maintenance
+also compacts at 23 hours of retirement age to allow one hour of scheduling time.
+With healthy storage and the service running, obsolete receipt bytes remain for
+at most configured retention plus 25 hours. Startup pays overdue maintenance.
+Erasure retires the old local generation before declaring cleanup complete.
 
 For a rolled-back proposal, writable autocommit replay first durably advances the
 DB witness to the deterministic **aborted** head, then appends/syncs that marker.
@@ -146,7 +161,10 @@ Opening the coordinator validates the snapshot and segment once and retains the
 result in its existing private-file stamp cache. Authority reconciliation reuses
 that result only when the snapshot/segment stamps still match, resolves pending
 work against the original SQLite witness, establishes required durability, and
-validates the complete current record map before admitting requests. No authority
+compares normalized owner records and exact receipt tuples with the original
+database before admitting requests. A mismatch with a valid witness and intact
+SQLite database produces a corrective witnessed delta. First attachment seeds
+all preexisting receipts through the same barrier. No authority
 check is deferred to first space use. Independent standalone recovery reads still
 reread and validate the complete chain. A replaced snapshot or segment between
 open and reconciliation invalidates startup reuse and must pass fresh validation.
@@ -154,6 +172,5 @@ open and reconciliation invalidates startup reuse and must pass fresh validation
 A pending proposal retains its canonical frame digest with the decoded entry.
 Chain linkage, deterministic resolution and application reuse that one digest;
 reading a segment no longer serializes and hashes the same proposal repeatedly.
-The digest is derived from the same canonical frame function as publication, so
-the persisted format and witness values are unchanged. The extra cache is one
-64-character digest for the single pending proposal, not a history cache.
+The digest is derived from the same canonical frame function as publication.
+The extra cache is one 64-character digest for the single pending proposal.

@@ -5,6 +5,134 @@ mod fixture;
 use fixture::*;
 
 #[tokio::test]
+async fn release_artifacts_migrate_security_receipts_from_v3_to_v4() {
+    let previous = binary("CALTERNAL_RELEASE_N_BIN");
+    let candidate = binary("CALTERNAL_RELEASE_NEXT_BIN");
+    let old_id = std::env::var("CALTERNAL_RELEASE_N_IMAGE").unwrap();
+    let new_id = std::env::var("CALTERNAL_RELEASE_NEXT_IMAGE").unwrap();
+    let mut f = Fixture::empty();
+    let shape = seed(&mut f, &previous).await;
+    let input = json!({"name":"Receipt proof"});
+    let request = "upgrade:receipt/東京";
+    f.start().await;
+    let original = f.op_id(0, "spaces.create", input.clone(), request).await;
+    original.ok();
+    let receipt = original.body["data"].clone();
+    let disposable = f
+        .op(0, "spaces.create", json!({"name":"Deleted before upgrade"}))
+        .await;
+    disposable.ok();
+    let delete_input = json!({"space_id":disposable.body["data"]["space"]["id"]});
+    let deleted = f
+        .op_id(0, "spaces.delete", delete_input.clone(), "delete-on-v3")
+        .await;
+    deleted.ok();
+    f.stop();
+    let root = f.dir.path().join("userdata-ssd/.calternal/recovery");
+    let snapshot = root.join("snapshot.json");
+    let version = || {
+        serde_json::from_slice::<Value>(&std::fs::read(&snapshot).unwrap()[32..]).unwrap()["version"]
+            .as_u64().unwrap()
+    };
+    let prepare = |f: &Fixture| {
+        upgrade(
+            f,
+            &candidate,
+            &[
+                "prepare",
+                "--previous",
+                &old_id,
+                "--candidate",
+                &new_id,
+                "--incompatible",
+            ],
+            None,
+        )
+    };
+
+    assert_eq!(version(), 3);
+    let baseline_snapshot = std::fs::read(&snapshot).unwrap();
+    let evidence = proof(&f);
+    let additive = upgrade(
+        &f,
+        &candidate,
+        &[
+            "prepare",
+            "--previous",
+            PREVIOUS,
+            "--candidate",
+            CANDIDATE,
+            "--proof",
+            evidence.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert!(!additive.status.success());
+    assert!(String::from_utf8_lossy(&additive.stdout).contains("requires an incompatible upgrade"));
+    assert_eq!(std::fs::read(&snapshot).unwrap(), baseline_snapshot);
+
+    answer(prepare(&f));
+    assert_eq!(version(), 4);
+    let new_snapshot: Value =
+        serde_json::from_slice(&std::fs::read(&snapshot).unwrap()[32..]).unwrap();
+    let temporary_segment = root.join(new_snapshot["segment"].as_str().unwrap());
+    assert!(temporary_segment.is_file());
+    assert_eq!(
+        answer(upgrade(&f, &previous, &["recover"], None))["restored_previous"],
+        old_id
+    );
+    assert_eq!(std::fs::read(&snapshot).unwrap(), baseline_snapshot);
+    assert!(!temporary_segment.exists());
+    prove_visible(&mut f, &previous, &shape).await;
+
+    answer(prepare(&f));
+    answer(upgrade(
+        &f,
+        &candidate,
+        &["commit", "--candidate", &new_id],
+        None,
+    ));
+    prove_visible(&mut f, &candidate, &shape).await;
+    f.start().await;
+    let replay = f.op_id(0, "spaces.create", input, request).await;
+    replay.ok();
+    assert_eq!(replay.body["data"], receipt);
+    let replay_delete = f
+        .op_id(0, "spaces.delete", delete_input, "delete-on-v3")
+        .await;
+    replay_delete.ok();
+    assert_eq!(replay_delete.body["data"], deleted.body["data"]);
+    let next = f
+        .op_id(
+            0,
+            "spaces.create",
+            json!({"name":"Candidate authority write"}),
+            "after-upgrade",
+        )
+        .await;
+    next.ok();
+    f.stop();
+    let committed = std::fs::read(&snapshot).unwrap();
+    assert!(!upgrade(&f, &previous, &["verify"], None).status.success());
+    f.release_binary = Some(previous);
+    f.start_checked(true, true).await;
+    f.stop();
+    assert_eq!(std::fs::read(&snapshot).unwrap(), committed);
+    f.release_binary = Some(candidate);
+    f.start().await;
+    let replay_next = f
+        .op_id(
+            0,
+            "spaces.create",
+            json!({"name":"Candidate authority write"}),
+            "after-upgrade",
+        )
+        .await;
+    replay_next.ok();
+    assert_eq!(replay_next.body["data"], next.body["data"]);
+}
+
+#[tokio::test]
 async fn release_upgrade_proves_compatible_handoff_and_refuses_an_incompatible_downgrade() {
     let previous = binary("CALTERNAL_RELEASE_N_BIN");
     let candidate = binary("CALTERNAL_RELEASE_NEXT_BIN");

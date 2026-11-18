@@ -408,6 +408,30 @@ impl Spaces {
     pub fn configure_recovery(&self, sink: std::sync::Arc<dyn RecoverySink>) -> Result<()> {
         self.db.configure_recovery(sink)
     }
+    /// Expires directory receipts on the authority worker and allows the
+    /// recovery sink to retire old reply bytes. Costs a sweep of eligible rows
+    /// and the usual protected commit when deletions are present.
+    pub async fn maintain_receipts(&self) -> Result<()> {
+        let retention = i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX);
+        self.db
+            .run(move |c| {
+                let tx = c
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+                    .map_err(sql)?;
+                tx.execute(
+                    "DELETE FROM space_receipts WHERE at_ms < ?1",
+                    [crate::db::now_ms().saturating_sub(retention)],
+                )
+                .map_err(sql)?;
+                recovery::commit(tx)?;
+                if let Some(sink) = crate::db::active_sink() {
+                    let _guard = sink.serial().lock().map_err(Error::internal)?;
+                    sink.compact_retired_receipts(c)?;
+                }
+                Ok(())
+            })
+            .await
+    }
     pub(crate) fn run<T: Send + 'static>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T> + Send + 'static,

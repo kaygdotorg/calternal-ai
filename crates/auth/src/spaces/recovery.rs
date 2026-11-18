@@ -23,6 +23,11 @@ pub trait RecoverySink: Send + Sync {
     fn compact_erasure(&self, _connection: &Connection) -> Result<()> {
         Ok(())
     }
+    /// Retire obsolete receipt bytes when their retention deadline comes due.
+    /// Called by maintenance with the publication guard and no transaction.
+    fn compact_retired_receipts(&self, _connection: &Connection) -> Result<()> {
+        Ok(())
+    }
     /// Held from prepare through complete, so no other commit stages an intent while
     /// this one decides which witnesses are committed. It belongs to the sink, so
     /// database handles sharing a sink share it too.

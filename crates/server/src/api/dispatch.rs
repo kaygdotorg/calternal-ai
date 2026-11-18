@@ -175,7 +175,25 @@ pub(super) async fn dispatch_scoped_inner<D: Directory>(
     match granted {
         Some(caps) => policy.check(Some(caps))?,
         None => {
-            super::authorization::authorize(&state, &p, &policy, &input).await?;
+            if let Err(error) = super::authorization::authorize(&state, &p, &policy, &input).await {
+                if op == "spaces.delete"
+                    && agent.is_none()
+                    && matches!(error.code, ErrorCode::NotFound | ErrorCode::Forbidden)
+                    && let Some(space) = policy.scope_space(&input)?
+                {
+                    let request = request_id.to_owned();
+                    let id = p.id;
+                    return crate::blocking::spawn(move || {
+                        let st = state;
+                        st.store.content().lifecycle().check(id.as_uuid())?;
+                        crate::erasure::replay_space_delete(&st, id, space, &request, &input)?
+                            .ok_or(error)
+                    })
+                    .await
+                    .map_err(|_| Error::internal("receipt replay task failed"))?;
+                }
+                return Err(error);
+            }
         }
     }
     #[cfg(all(feature = "test-plugins", debug_assertions))]

@@ -69,7 +69,7 @@ fn key_expr(kind: char, owner: &str, prefix: &str) -> String {
     )
 }
 /// Installs format-three chain witnesses and dirty-owner triggers; seeds initial log publication.
-pub(crate) fn initialize(c: &Connection) -> Result<()> {
+pub(crate) fn initialize(c: &Connection, version: u32) -> Result<()> {
     let tx = rusqlite::Transaction::new_unchecked(c, rusqlite::TransactionBehavior::Immediate)
         .map_err(err)?;
     let initialized: bool = tx
@@ -102,10 +102,10 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         for event in ["INSERT", "UPDATE", "DELETE"] {
             let mut exprs = Vec::new();
             if event != "INSERT" {
-                exprs.push(key_expr(*kind, owner, "OLD"));
+                exprs.push(capture_key(version, table, *kind, owner, "OLD"));
             }
             if event != "DELETE" {
-                exprs.push(key_expr(*kind, owner, "NEW"));
+                exprs.push(capture_key(version, table, *kind, owner, "NEW"));
             }
             let when = if event == "UPDATE" && ["passkeys", "installations"].contains(table) {
                 let (_, columns) = schema(&tx, table)?;
@@ -132,6 +132,14 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         mark_all(&tx)?;
     }
     tx.commit().map_err(err)
+}
+
+fn capture_key(version: u32, table: &str, kind: char, owner: &str, prefix: &str) -> String {
+    if version == crate::CURRENT && table == "space_receipts" {
+        crate::receipts::trigger_key(prefix)
+    } else {
+        key_expr(kind, owner, prefix)
+    }
 }
 /// Remove capture triggers so a locked schema upgrade rebuilds their column checks.
 pub(crate) fn reset_capture_triggers(conn: &Connection) -> Result<()> {
@@ -178,6 +186,7 @@ pub(crate) fn capture_record(
     c: &Connection,
     installation: Uuid,
     key: &str,
+    version: u32,
 ) -> Result<Option<Record>> {
     if !crate::key_ok(key) {
         return Err(invalid());
@@ -204,11 +213,16 @@ pub(crate) fn capture_record(
     }
     let mut tables = BTreeMap::new();
     for (name, owner_kind, owner) in SPECS {
+        if version == crate::CURRENT && *name == "space_receipts" && kind != '0' {
+            continue;
+        }
         if kind != '0' && kind != *owner_kind {
             continue;
         }
         let (schema, columns) = schema(c, name)?;
-        let filter = if *owner_kind == '0' {
+        let filter = if version == crate::CURRENT && *name == "space_receipts" {
+            "0".into()
+        } else if *owner_kind == '0' {
             if kind == '0' { "1".into() } else { "0".into() }
         } else if kind == '0' {
             // Account-owned rows with no account (unbound setup tokens, pool
@@ -284,6 +298,54 @@ pub(crate) fn dirty(c: &Connection) -> Result<Vec<String>> {
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)
+}
+
+// Rolling expiry touches are telemetry. When comparing against an already
+// protected installation row, retain its last published absolute expiry.
+pub(super) fn normalize_expiry(
+    observed: &mut BTreeMap<String, Record>,
+    protected: &BTreeMap<String, Record>,
+) -> Result<()> {
+    for (key, record) in observed {
+        let Some(now) = record.tables.get_mut("installations") else {
+            continue;
+        };
+        let Some(prior) = protected
+            .get(key)
+            .and_then(|r| r.tables.get("installations"))
+        else {
+            continue;
+        };
+        if now.columns != prior.columns {
+            continue;
+        }
+        let id = now
+            .columns
+            .iter()
+            .position(|column| column == "id")
+            .ok_or_else(invalid)?;
+        let expires = now
+            .columns
+            .iter()
+            .position(|column| column == "expires_at")
+            .ok_or_else(invalid)?;
+        let mut old = BTreeMap::new();
+        for row in &prior.rows {
+            let Some(Cell::Text(key)) = row.get(id) else {
+                return Err(invalid());
+            };
+            old.insert(key, row.get(expires).ok_or_else(invalid)?);
+        }
+        for row in &mut now.rows {
+            let Some(Cell::Text(key)) = row.get(id) else {
+                return Err(invalid());
+            };
+            if let Some(&value) = old.get(key) {
+                row[expires] = value.clone();
+            }
+        }
+    }
+    Ok(())
 }
 fn sort_tables(tables: &mut BTreeMap<String, Table>) {
     for t in tables.values_mut() {
@@ -370,9 +432,12 @@ pub(crate) fn validate(snapshot: &Snapshot, installation: Uuid) -> Result<()> {
     }
     Ok(())
 }
-/// Captures all records only for independent test comparisons, never on the mutation path.
-#[cfg(test)]
-pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Result<Snapshot> {
+/// Captures all records for startup comparison or upgrade, never on the mutation path.
+pub(crate) fn records(
+    c: &Connection,
+    installation: Uuid,
+    version: u32,
+) -> Result<BTreeMap<String, Record>> {
     let mut keys = vec![GLOBAL.into()];
     for &(kind, table) in OWNER_TABLES {
         keys.extend(
@@ -386,9 +451,16 @@ pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Resu
             .map_err(err)?,
         );
     }
-    let records = keys
-        .iter()
-        .map(|k| capture_record(c, installation, k)?.ok_or_else(invalid))
-        .collect::<Result<Vec<_>>>()?;
+    keys.into_iter()
+        .map(|key| {
+            let value = capture_record(c, installation, &key, version)?.ok_or_else(invalid)?;
+            Ok((key, value))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(crate) fn capture(c: &Connection, installation: Uuid, sequence: u64) -> Result<Snapshot> {
+    let records = records(c, installation, 3)?.into_values().collect();
     assemble(installation, Uuid::now_v7(), sequence, records)
 }

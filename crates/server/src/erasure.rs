@@ -115,6 +115,40 @@ fn remove_owner_tree(root: &Path, kind: &str, id: &str) -> Result<(), Error> {
     calternal_fsio::sync_dir(&parent).map_err(failure)
 }
 
+pub(crate) fn replay_space_delete<D: crate::auth::Directory>(
+    state: &crate::api::Shared<D>,
+    actor: calternal_types::AccountId,
+    space: calternal_types::SpaceId,
+    request_id: &str,
+    input: &calternal_core::JsonObject,
+) -> Result<Option<serde_json::Value>, Error> {
+    let spaces = state
+        .directory
+        .protected_spaces()
+        .ok_or_else(|| Error::unavailable("stored space directory unavailable"))?;
+    calternal_core::validate_operation_input("spaces.delete", input)?;
+    let receipt = spaces
+        .replay_space_delete(
+            actor,
+            space,
+            request_id.to_owned(),
+            crate::api::fingerprint("spaces.delete", input),
+        )
+        .map_err(crate::auth::auth_error)?;
+    let Some((value, pending)) = receipt else {
+        return Ok(None);
+    };
+    if pending {
+        finish(
+            &state.store,
+            Some(&state.jobs),
+            spaces,
+            vec![Owner::Space(space)],
+        )?;
+    }
+    Ok(Some(value))
+}
+
 pub(crate) fn space<D: crate::auth::Directory>(
     state: &crate::api::Shared<D>,
     actor: calternal_types::Actor,

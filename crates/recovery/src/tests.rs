@@ -84,6 +84,12 @@ impl Fixture {
                 c.execute("UPDATE owner_secret_keys SET erasing=1", [])
                     .unwrap();
             }
+            "receipt-delete" | "receipt-mixed" => {
+                c.execute("DELETE FROM space_receipts", []).unwrap();
+                if mutation == "receipt-mixed" {
+                    self.mutate(c, "revoke");
+                }
+            }
             "grant" => {
                 c.execute(
                     "INSERT INTO space_memberships VALUES(?1,?2,'reader')",
@@ -115,7 +121,49 @@ impl Fixture {
             _ => unreachable!(),
         }
     }
+    fn seed_receipt(&self) {
+        self.connection().execute(
+            "INSERT INTO space_receipts VALUES(?1,?2,'receipt:東京','spaces.set_role','test','{}',42)",
+            rusqlite::params![self.owner.to_string(), self.space.to_string()],
+        ).unwrap();
+    }
 }
+
+#[test]
+fn attachment_seeds_receipts_and_reopen_repairs_a_missed_key() {
+    let f = Fixture::new();
+    let db = f.connection();
+    let request = "request:opaque/東京";
+    db.execute(
+        "INSERT INTO space_receipts VALUES(?1,?2,?3,'spaces.set_role','seed','{}',42)",
+        rusqlite::params![f.owner.to_string(), f.space.to_string(), request],
+    )
+    .unwrap();
+    let coordinator = f.coordinator();
+    coordinator.reconcile(&db).unwrap();
+    let before = coordinator.validate_and_read().unwrap();
+    assert_eq!(before.tables["space_receipts"].rows.len(), 1);
+    drop(coordinator);
+
+    // A capture defect can leave the database changed with its last good witness.
+    db.execute_batch("DROP TRIGGER security_recovery_space_receipts_UPDATE")
+        .unwrap();
+    db.execute(
+        "UPDATE space_receipts SET fingerprint='missed' WHERE request_id=?1",
+        [request],
+    )
+    .unwrap();
+    let reopened = f.coordinator();
+    reopened.reconcile(&db).unwrap();
+    let repaired = reopened.validate_and_read().unwrap();
+    assert!(repaired.sequence > before.sequence);
+    assert_eq!(
+        repaired.tables,
+        capture(&db, f.install, repaired.sequence).unwrap().tables
+    );
+    reopened.validate_against_witness(&db).unwrap();
+}
+
 const STEPS: &[Step] = &[
     Step::BeforeIntent,
     Step::BeforeAppend,
@@ -127,6 +175,222 @@ const STEPS: &[Step] = &[
     Step::BeforeCompletion,
     Step::AfterCompletion,
 ];
+
+#[test]
+fn migration_preserves_the_v3_witness_and_seeds_row_receipts() {
+    let f = Fixture::new();
+    f.seed_receipt();
+    let old = Coordinator::open_version(
+        &f.root,
+        f.install,
+        DEFAULT_THRESHOLD,
+        Arc::new(|_| Ok(())),
+        LEGACY,
+    )
+    .unwrap();
+    let mut db = f.connection();
+    old.reconcile(&db).unwrap();
+    let tx = db.transaction().unwrap();
+    let id = old.prepare(&tx).unwrap();
+    tx.commit().unwrap();
+    old.complete(&db, &id).unwrap();
+    let before = old.validate_and_read().unwrap();
+    let pin = old.checkpoint().unwrap();
+    assert!(Coordinator::open(&f.root, f.install).is_err());
+    let segment = Uuid::now_v7();
+    Coordinator::migrate_from_v3(&f.root, f.install, &db, segment).unwrap();
+    assert_eq!(
+        Coordinator::stored_version(&f.root, f.install).unwrap(),
+        CURRENT
+    );
+    assert!(old.validate_and_read().is_err());
+    let current = f.coordinator();
+    assert_eq!(
+        current.validate_and_read_at(&pin).unwrap().tables,
+        before.tables
+    );
+    assert_eq!(
+        current.validate_and_read().unwrap().tables["space_receipts"]
+            .rows
+            .len(),
+        1
+    );
+    assert_eq!(
+        current
+            .store
+            .names()
+            .unwrap()
+            .into_iter()
+            .filter(|name| Coordinator::segment_name(name))
+            .collect::<Vec<_>>(),
+        [format!("log-{segment}.bin")]
+    );
+    current.reconcile(&db).unwrap();
+    current.validate_against_witness(&db).unwrap();
+}
+
+#[test]
+fn receipt_retirement_deadline_survives_reopen_and_compacts() {
+    let f = Fixture::new();
+    f.seed_receipt();
+    f.baseline();
+    let c = f.coordinator();
+    let mut db = f.connection();
+    let tx = db.transaction().unwrap();
+    f.mutate(&tx, "receipt-delete");
+    let id = c.prepare(&tx).unwrap();
+    tx.commit().unwrap();
+    c.complete(&db, &id).unwrap();
+    let reopened = f.coordinator();
+    let mut state = reopened.load().unwrap();
+    assert!(state.image.retired_receipt_ms.is_some());
+    let old = state.image.segment.clone();
+    state.image.retired_receipt_ms = Some(now_ms() - RETIRED_RECEIPT_COMPACT_MS);
+    reopened.compact(&mut state, false).unwrap();
+    assert!(!f.root.join(old).exists());
+    assert_eq!(reopened.load().unwrap().image.retired_receipt_ms, None);
+    assert!(
+        reopened.validate_and_read().unwrap().tables["space_receipts"]
+            .rows
+            .is_empty()
+    );
+}
+
+#[test]
+fn space_erasure_retires_cross_actor_receipt_bytes_and_retains_its_own_reply() {
+    let f = Fixture::new();
+    let db = f.connection();
+    let obsolete = "erased-cross-actor-result-東京";
+    db.execute(
+        "INSERT INTO space_receipts VALUES(?1,?2,'member-reply','spaces.set_role','fp',?3,?4)",
+        rusqlite::params![
+            f.member.to_string(),
+            f.space.to_string(),
+            obsolete,
+            now_ms()
+        ],
+    )
+    .unwrap();
+    let c = Arc::new(f.coordinator());
+    let spaces = Spaces::open(&f.db).unwrap();
+    spaces.configure_recovery(c.clone()).unwrap();
+    let reply = spaces
+        .delete_fenced(f.owner, f.space, ("delete", "spaces.delete", "fp"), |_| {})
+        .unwrap();
+    spaces
+        .finish_erasure(vec![calternal_types::Owner::Space(f.space)])
+        .unwrap();
+    let recovered = c.validate_and_read().unwrap();
+    assert_eq!(recovered.tables, capture(&db, f.install, 1).unwrap().tables);
+    assert_eq!(recovered.tables["space_receipts"].rows.len(), 1);
+    for entry in std::fs::read_dir(&f.root).unwrap() {
+        let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+        assert!(
+            !bytes
+                .windows(obsolete.len())
+                .any(|part| part == obsolete.as_bytes())
+        );
+    }
+    assert_eq!(
+        spaces
+            .replay_space_delete(f.owner, f.space, "delete".into(), "fp".into())
+            .unwrap(),
+        Some((reply, false))
+    );
+    assert!(
+        spaces
+            .replay_space_delete(f.owner, f.space, "delete".into(), "different".into())
+            .is_err()
+    );
+    assert!(
+        spaces
+            .replay_space_delete(f.member, f.space, "delete".into(), "fp".into())
+            .unwrap()
+            .is_none()
+    );
+
+    // Reconstitute the relevant logical rows into a fresh schema, with no
+    // surviving content store or journal for the erased scope.
+    let rebuilt = f._dir.path().join("rebuilt-auth.db");
+    let restored = calternal_auth::db::open_conn(&rebuilt).unwrap();
+    restored
+        .execute(
+            "INSERT INTO users(id,name,username,created_at) VALUES(?1,'owner','owner',1)",
+            [f.owner.to_string()],
+        )
+        .unwrap();
+    let [
+        Cell::Text(actor),
+        Cell::Text(scope),
+        Cell::Text(request),
+        Cell::Text(operation),
+        Cell::Text(fingerprint),
+        Cell::Text(result),
+        Cell::Integer(at),
+    ] = recovered.tables["space_receipts"].rows[0].as_slice()
+    else {
+        panic!("untyped receipt")
+    };
+    restored
+        .execute(
+            "INSERT INTO space_receipts VALUES(?1,?2,?3,?4,?5,?6,?7)",
+            rusqlite::params![actor, scope, request, operation, fingerprint, result, at],
+        )
+        .unwrap();
+    let [Cell::Text(kind), Cell::Text(id), Cell::Integer(pending)] =
+        recovered.tables["owner_erasures"].rows[0].as_slice()
+    else {
+        panic!("untyped tombstone")
+    };
+    restored
+        .execute(
+            "INSERT INTO owner_erasures VALUES(?1,?2,?3)",
+            rusqlite::params![kind, id, pending],
+        )
+        .unwrap();
+    let restored = Spaces::open(&rebuilt).unwrap();
+    assert_eq!(
+        restored
+            .replay_space_delete(f.owner, f.space, "delete".into(), "fp".into())
+            .unwrap(),
+        Some((serde_json::from_str(result).unwrap(), false))
+    );
+}
+
+#[test]
+fn expiry_then_reuse_recovers_only_the_new_reply() {
+    let f = Fixture::new();
+    let db = f.connection();
+    db.execute(
+        "INSERT INTO space_receipts VALUES(?1,?1,'reused','spaces.create','old',?2,0)",
+        rusqlite::params![f.owner.to_string(), r#"{"obsolete":true}"#],
+    )
+    .unwrap();
+    let c = Arc::new(f.coordinator());
+    let spaces = Spaces::open(&f.db).unwrap();
+    spaces.configure_recovery(c.clone()).unwrap();
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(spaces.maintain_receipts())
+        .unwrap();
+    let reply = spaces
+        .change_with_receipt(
+            f.owner,
+            None,
+            calternal_auth::spaces::SpaceChange::Create {
+                name: "Created after expiry".into(),
+            },
+            Some(("reused", "spaces.create", "new")),
+        )
+        .unwrap();
+    let snapshot = f.coordinator().validate_and_read().unwrap();
+    assert_eq!(snapshot.tables, capture(&db, f.install, 1).unwrap().tables);
+    let row = &snapshot.tables["space_receipts"].rows[0];
+    assert_eq!(row[4], Cell::Text("new".into()));
+    assert_eq!(row[5], Cell::Text(reply.to_string()));
+    assert_eq!(snapshot.tables["space_receipts"].rows.len(), 1);
+}
 fn injected(root: &Path, install: Uuid, target: Step) -> Coordinator {
     let fired = AtomicBool::new(false);
     Coordinator::with_observer(
@@ -153,9 +417,14 @@ fn every_crash_boundary_preserves_the_transaction_decision() {
         "passkey",
         "secret-key",
         "secret-erase",
+        "receipt-delete",
+        "receipt-mixed",
     ] {
         for &step in STEPS {
             let f = Fixture::new();
+            if mutation.starts_with("receipt-") {
+                f.seed_receipt();
+            }
             if mutation == "secret-erase" {
                 f.connection()
                     .execute(
@@ -204,6 +473,8 @@ fn crashes_at_each_replay_publication_boundary_are_idempotent() {
         "passkey",
         "secret-key",
         "secret-erase",
+        "receipt-delete",
+        "receipt-mixed",
     ] {
         for committed in [false, true] {
             for step in [
@@ -216,6 +487,9 @@ fn crashes_at_each_replay_publication_boundary_are_idempotent() {
                 Step::AfterCompletion,
             ] {
                 let f = Fixture::new();
+                if mutation.starts_with("receipt-") {
+                    f.seed_receipt();
+                }
                 if mutation == "secret-erase" {
                     f.connection()
                         .execute(
@@ -278,6 +552,7 @@ fn space_api_never_acknowledges_failed_intent_or_completion() {
     // Exercise the hook registry and the bounded worker path.
     for target in [Step::BeforeIntent, Step::BeforeCompletion] {
         let f = Fixture::new();
+        f.baseline();
         let spaces = Spaces::open(&f.db).unwrap();
         let coordinator = Arc::new(injected(&f.root, f.install, target));
         spaces.configure_recovery(coordinator).unwrap();
@@ -535,6 +810,7 @@ async fn failed_recovery_completion_still_fences_a_committed_session_revocation(
         auth.identify(&token).await,
         Some((created.id, installation))
     );
+    f.coordinator().reconcile(&c).unwrap();
     auth.configure_recovery(Arc::new(injected(
         &f.root,
         f.install,
@@ -1188,62 +1464,67 @@ fn every_change_kind_has_two_file_fsyncs_and_no_directory_fsyncs() {
 #[test]
 fn all_compaction_boundaries_preserve_the_acknowledged_state() {
     use std::sync::atomic::AtomicUsize;
-    for (step, positions) in [
-        (Step::BeforeSegment, 1),
-        (Step::AfterSegment, 1),
-        (Step::BeforeSnapshot, 1),
-        (Step::AfterSnapshot, 1),
-        (Step::BeforeCompact, 1),
-        (Step::AfterCompact, 1),
-        (Step::BeforeCompactSync, 2),
-        (Step::AfterCompactSync, 2),
-        (Step::FileSynced, 4),
-        (Step::DirectorySynced, 3),
-    ] {
-        for position in 0..positions {
-            let f = Fixture::new();
-            f.baseline();
-            let armed = Arc::new(AtomicBool::new(false));
-            let enabled = armed.clone();
-            let hits = AtomicUsize::new(0);
-            let c = Coordinator::with_compaction_threshold(
-                &f.root,
-                f.install,
-                1,
-                Arc::new(move |s| {
-                    if enabled.load(Ordering::SeqCst)
-                        && s == step
-                        && hits.fetch_add(1, Ordering::SeqCst) == position
-                    {
-                        return Err(err("compaction crash"));
+    for mutation in ["revoke", "receipt-delete", "receipt-mixed"] {
+        for (step, positions) in [
+            (Step::BeforeSegment, 1),
+            (Step::AfterSegment, 1),
+            (Step::BeforeSnapshot, 1),
+            (Step::AfterSnapshot, 1),
+            (Step::BeforeCompact, 1),
+            (Step::AfterCompact, 1),
+            (Step::BeforeCompactSync, 2),
+            (Step::AfterCompactSync, 2),
+            (Step::FileSynced, 4),
+            (Step::DirectorySynced, 3),
+        ] {
+            for position in 0..positions {
+                let f = Fixture::new();
+                if mutation.starts_with("receipt-") {
+                    f.seed_receipt();
+                }
+                f.baseline();
+                let armed = Arc::new(AtomicBool::new(false));
+                let enabled = armed.clone();
+                let hits = AtomicUsize::new(0);
+                let c = Coordinator::with_compaction_threshold(
+                    &f.root,
+                    f.install,
+                    1,
+                    Arc::new(move |s| {
+                        if enabled.load(Ordering::SeqCst)
+                            && s == step
+                            && hits.fetch_add(1, Ordering::SeqCst) == position
+                        {
+                            return Err(err("compaction crash"));
+                        }
+                        Ok(())
+                    }),
+                )
+                .unwrap();
+                let mut db = f.connection();
+                c.reconcile(&db).unwrap();
+                armed.store(true, Ordering::SeqCst);
+                let tx = db.transaction().unwrap();
+                f.mutate(&tx, mutation);
+                match c.prepare(&tx) {
+                    Err(_) => {
+                        drop(tx);
                     }
-                    Ok(())
-                }),
-            )
-            .unwrap();
-            let mut db = f.connection();
-            c.reconcile(&db).unwrap();
-            armed.store(true, Ordering::SeqCst);
-            let tx = db.transaction().unwrap();
-            f.mutate(&tx, "revoke");
-            match c.prepare(&tx) {
-                Err(_) => {
-                    drop(tx);
+                    Ok(id) => {
+                        tx.commit().unwrap();
+                        assert!(c.complete(&db, &id).is_err(), "{step:?} {position}");
+                    }
                 }
-                Ok(id) => {
-                    tx.commit().unwrap();
-                    assert!(c.complete(&db, &id).is_err(), "{step:?} {position}");
-                }
+                let replay = f.coordinator();
+                replay.reconcile(&db).unwrap();
+                replay.replay(&db).unwrap();
+                assert_eq!(
+                    replay.validate_and_read().unwrap().tables,
+                    capture(&db, f.install, 1).unwrap().tables,
+                    "{step:?} {position}"
+                );
+                assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 2);
             }
-            let replay = f.coordinator();
-            replay.reconcile(&db).unwrap();
-            replay.replay(&db).unwrap();
-            assert_eq!(
-                replay.validate_and_read().unwrap().tables,
-                capture(&db, f.install, 1).unwrap().tables,
-                "{step:?} {position}"
-            );
-            assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 2);
         }
     }
 }
@@ -1410,20 +1691,29 @@ fn corrupt_resolution_tail_is_preserved_and_refused() {
 }
 
 #[test]
-fn tail_repair_can_be_interrupted_without_recovering_an_aborted_grant() {
-    for step in [Step::BeforeTailRepair, Step::AfterTailRepair] {
-        let f = Fixture::new();
-        let old = f.baseline();
-        let c = injected(&f.root, f.install, Step::AfterPrefix);
-        let mut db = f.connection();
-        let tx = db.transaction().unwrap();
-        f.mutate(&tx, "grant");
-        assert!(c.prepare(&tx).is_err());
-        drop(tx);
-        assert!(injected(&f.root, f.install, step).replay(&db).is_err());
-        let c = f.coordinator();
-        c.replay(&db).unwrap();
-        assert_eq!(c.validate_and_read().unwrap().tables, old.tables);
+fn tail_repair_can_be_interrupted_without_recovering_an_aborted_proposal() {
+    for mutation in ["grant", "receipt-delete", "receipt-mixed"] {
+        for step in [Step::BeforeTailRepair, Step::AfterTailRepair] {
+            let f = Fixture::new();
+            if mutation.starts_with("receipt-") {
+                f.seed_receipt();
+            }
+            let old = f.baseline();
+            let c = injected(&f.root, f.install, Step::AfterPrefix);
+            let mut db = f.connection();
+            let tx = db.transaction().unwrap();
+            f.mutate(&tx, mutation);
+            assert!(c.prepare(&tx).is_err());
+            drop(tx);
+            assert!(injected(&f.root, f.install, step).replay(&db).is_err());
+            let c = f.coordinator();
+            c.replay(&db).unwrap();
+            assert_eq!(
+                c.validate_and_read().unwrap().tables,
+                old.tables,
+                "{mutation} {step:?}"
+            );
+        }
     }
 }
 
