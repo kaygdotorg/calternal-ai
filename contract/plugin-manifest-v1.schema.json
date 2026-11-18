@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ManifestV1",
-  "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+  "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
   "type": "object",
   "required": [
     "api_version",
@@ -75,6 +75,17 @@
     "name": {
       "description": "Human-readable plugin name.",
       "type": "string"
+    },
+    "network": {
+      "description": "Optional outbound network declarations. Omit for no network access.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ManifestNetwork"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "operations": {
       "description": "Public operation schemas and policy.",
@@ -175,6 +186,53 @@
   },
   "additionalProperties": false,
   "definitions": {
+    "ContentFetchField": {
+      "description": "Stored source fields supported by the content proxy.",
+      "oneOf": [
+        {
+          "description": "The item's UTF-8 text body.",
+          "type": "string",
+          "enum": [
+            "text"
+          ]
+        }
+      ]
+    },
+    "ContentFetchProfile": {
+      "description": "Host-owned remote media policy. Each additional profile requires review.",
+      "oneOf": [
+        {
+          "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+          "type": "string",
+          "enum": [
+            "images_fonts"
+          ]
+        }
+      ]
+    },
+    "ContentFetchSource": {
+      "description": "A stored field the broker may read to derive proxy references.",
+      "type": "object",
+      "required": [
+        "field",
+        "kind"
+      ],
+      "properties": {
+        "field": {
+          "description": "The source field interpreted as HTML.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchField"
+            }
+          ]
+        },
+        "kind": {
+          "description": "The declaring package's own text kind.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
     "HostCallKind": {
       "description": "The only broker methods a worker may request.",
       "oneOf": [
@@ -197,6 +255,13 @@
           "type": "string",
           "enum": [
             "read_setting_v1"
+          ]
+        },
+        {
+          "description": "Prepare remote asset references from a declared, stored content revision.",
+          "type": "string",
+          "enum": [
+            "content_prepare_v1"
           ]
         },
         {
@@ -375,6 +440,34 @@
       },
       "additionalProperties": false
     },
+    "ManifestContentFetch": {
+      "description": "Anonymous content proxy scope shown during trusted installation review.",
+      "type": "object",
+      "required": [
+        "profile",
+        "sources"
+      ],
+      "properties": {
+        "profile": {
+          "description": "Host-enforced media and transport policy.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchProfile"
+            }
+          ]
+        },
+        "sources": {
+          "description": "Up to 32 distinct text sources owned by the declaring package.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ContentFetchSource"
+          },
+          "maxItems": 32,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
     "ManifestHook": {
       "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
       "type": "object",
@@ -496,6 +589,24 @@
           "allOf": [
             {
               "$ref": "#/definitions/ManifestPlacement"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ManifestNetwork": {
+      "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+      "type": "object",
+      "properties": {
+        "content_fetch": {
+          "description": "Anonymous remote assets from stored content. Omit for no proxy access.",
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestContentFetch"
+            },
+            {
+              "type": "null"
             }
           ]
         }

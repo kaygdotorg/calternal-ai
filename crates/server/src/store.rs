@@ -32,6 +32,8 @@ pub struct Store {
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
+    /// Bounded viewer-scoped references for sealed plugin content.
+    pub(crate) plugin_frames: crate::plugins::network::frames::Frames,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
     // Dropped last: every database and file handle above closes first.
@@ -219,6 +221,7 @@ impl Store {
                 .map_err(|_| Error::unavailable("cursor entropy unavailable"))?;
         Ok(Self {
             cursor_key,
+            plugin_frames: Default::default(),
             content: std::sync::Arc::new(content),
             appdata: root.clone(),
             roots: roots.clone(),

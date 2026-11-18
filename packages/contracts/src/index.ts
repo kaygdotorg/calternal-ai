@@ -660,7 +660,7 @@ export type ManifestCapability = "space.read" | "content.write" | "plugins.use" 
  * The only broker methods a worker may request.
  */
 
-export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
+export type HostCallKind = "read_item" | "list_items_v1" | "read_setting_v1" | "content_prepare_v1" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
 /**
  * Version-one worker request for an indexed page of its own kind.
  */
@@ -1495,11 +1495,150 @@ generation: number,
  */
 contribution: PluginSlotContribution, };
 /**
- * Plugin menu read without running plugin code. Every top-level field is required;
- * only the documented optional fields inside declarations may be omitted.
+ * Worker request to sanitize an exact stored content revision. Authority
+ * comes from invocation admission and the plugin's content declaration.
+ */
+
+export type ContentPrepareInput = {
+/**
+ * Plugin-owned kind named in its proxy profile.
+ */
+kind: string,
+/**
+ * Item UUID.
+ */
+item_id: string,
+/**
+ * Current opaque revision received from the item store.
+ */
+revision: string,
+/**
+ * Field containing the HTML source.
+ */
+field: ContentFetchField, };
+/**
+ * Prepared content reference for the acting person, valid briefly.
+ */
+
+export type ContentPrepareResult = {
+/**
+ * Opaque frame ID. Frame delivery checks the current viewer and source.
+ */
+frame_id: string, };
+/**
+ * Read a prepared sealed frame as the person it was created for.
+ */
+
+export type ContentFrameAddress = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Short-lived frame ID from content preparation.
+ */
+frame_id: string, };
+/**
+ * Trusted client data for mounting a sealed frame and for external navigation.
+ */
+
+export type ContentFrameView = {
+/**
+ * Relative trusted frame URL. Mount with an empty iframe sandbox.
+ */
+frame_url: string,
+/**
+ * External targets in the order of the frame's navigation references.
+ * Open only through the host's explicit navigation action.
+ */
+links: Array<string>,
+/**
+ * Current remote-content preference for the viewer.
+ */
+preference: ContentFetchPreference, };
+/**
+ * Stored source fields supported by the content proxy.
+ */
+
+export type ContentFetchField = "text";
+/**
+ * A stored field the broker may read to derive proxy references.
+ */
+
+export type ContentFetchSource = {
+/**
+ * The declaring package's own text kind.
+ */
+kind: string,
+/**
+ * The source field interpreted as HTML.
+ */
+field: ContentFetchField, };
+/**
+ * Host-owned remote media policy. Each additional profile requires review.
+ */
+
+export type ContentFetchProfile = "images_fonts";
+/**
+ * One person's policy for remote images and fonts in a space.
+ */
+
+export type ContentFetchPreference = "ask" | "always" | "never";
+/**
+ * Read the viewer's remote content policy in one space.
+ */
+
+export type ContentFetchPreferenceAddress = {
+/**
+ * Space UUID. The authenticated caller supplies the account identity.
+ */
+space_id: string, };
+/**
+ * Set the caller's own remote content policy in one space.
+ */
+
+export type ContentFetchPreferenceEdit = {
+/**
+ * Space UUID. The authenticated caller supplies the account identity.
+ */
+space_id: string,
+/**
+ * New choice applied at the next fetch and asset delivery.
+ */
+preference: ContentFetchPreference, };
+/**
+ * Anonymous content proxy scope shown during trusted installation review.
+ */
+
+export type ManifestContentFetch = {
+/**
+ * Host-enforced media and transport policy.
+ */
+profile: ContentFetchProfile,
+/**
+ * Up to 32 distinct text sources owned by the declaring package.
+ */
+sources: Array<ContentFetchSource>, };
+/**
+ * Network authority requested by a package. Each declaration has its own
+ * approval meaning and is subject to the live space activation.
+ */
+
+export type ManifestNetwork = {
+/**
+ * Anonymous remote assets from stored content. Omit for no proxy access.
+ */
+content_fetch?: ManifestContentFetch, };
+/**
+ * Plugin menu read without running plugin code. Only documented optional
+ * fields may be omitted.
  */
 
 export type ManifestV1 = {
+/**
+ * Optional outbound network declarations. Omit for no network access.
+ */
+network?: ManifestNetwork,
 /**
  * Optional commands, extra phrases and Settings sections for the palette.
  */

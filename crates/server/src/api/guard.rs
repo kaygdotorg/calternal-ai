@@ -223,10 +223,15 @@ pub(super) async fn guard<D: Directory>(
         .extensions()
         .get::<super::wallpapers::ImageResponse>()
         .is_some();
+    let sealed = resp
+        .extensions()
+        .get::<crate::plugins::network::http::SealedFrame>()
+        .map(|frame| frame.0.clone());
+    let is_sealed = sealed.is_some();
     let h = resp.headers_mut();
     h.insert(
         header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(CSP),
+        sealed.unwrap_or_else(|| HeaderValue::from_static(CSP)),
     );
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
@@ -236,7 +241,10 @@ pub(super) async fn guard<D: Directory>(
         header::REFERRER_POLICY,
         HeaderValue::from_static("no-referrer"),
     );
-    h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    h.insert(
+        header::X_FRAME_OPTIONS,
+        HeaderValue::from_static(if is_sealed { "SAMEORIGIN" } else { "DENY" }),
+    );
     if api && !cacheable_image {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }

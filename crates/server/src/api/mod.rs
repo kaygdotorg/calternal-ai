@@ -137,6 +137,10 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         )
         .merge(crate::machines::http::routes::<D>())
         .route(wallpapers::ROUTE, get(wallpapers::image))
+        .route(
+            crate::plugins::network::http::FRAME_ROUTE,
+            get(crate::plugins::network::http::document::<D>),
+        )
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found))
