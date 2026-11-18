@@ -1,5 +1,6 @@
 //! Cross-release upgrade proof over data written through the live service.
 use super::*;
+use rusqlite::OptionalExtension;
 
 mod fixture;
 use fixture::*;
@@ -229,6 +230,7 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
             [revision.as_str().unwrap()],
             |row| row.get::<_, String>(0),
         )
+        .optional()
         .unwrap()
     };
 
@@ -263,7 +265,7 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     automation.ok();
     let automation = &automation.body["data"]["automation"];
     f.stop();
-    let before_rollback = lineage(head);
+    let before_rollback = lineage(head).expect("candidate room checkpoint");
     let store = f.appdata().join("system/automations.db");
     let db =
         rusqlite::Connection::open_with_flags(&store, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -299,6 +301,7 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
     })).await;
     written_by_n.ok();
     f.stop();
+    let previous_checkpoint = lineage(&edited_by_n.body["data"]["note"]["revision"]);
     f.release_binary = Some(candidate);
     f.start().await;
     let newer_reopened = f
@@ -349,11 +352,16 @@ async fn release_artifacts_preserve_live_data_in_both_directions() {
         "Previous release updated the same note.\nCandidate appended this.\n"
     );
     f.stop();
-    assert_ne!(
-        lineage(&resumed.body["data"]["note"]["revision"]),
-        before_rollback,
-        "a previous release write must seed a fresh room lineage"
-    );
+    let resumed_checkpoint =
+        lineage(&resumed.body["data"]["note"]["revision"]).expect("resumed room checkpoint");
+    if let Some(previous_checkpoint) = previous_checkpoint {
+        assert_eq!(resumed_checkpoint, previous_checkpoint);
+    } else {
+        assert_ne!(
+            resumed_checkpoint, before_rollback,
+            "a previous release without room checkpoints must seed a fresh lineage"
+        );
+    }
 }
 
 /// Measure from the last acknowledged write on N to the first on N+1. Run only
