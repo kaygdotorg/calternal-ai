@@ -457,3 +457,55 @@ async fn pending_discard_never_replays_over_a_replacement_turn() {
         ErrorCode::Conflict
     );
 }
+
+/// Independent review #44, fence item 1: the interval between the protected
+/// close and `retire_owner`. Cleanup drains owner permits before retiring
+/// leases, and `place_waiting` runs on every machine sync without a permit for
+/// the lease's space. A lease admitted before the close is still assigned to a
+/// machine that connects during that interval. Expected: no assignment for a
+/// closed space.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn waiting_lease_is_not_assigned_after_its_space_closes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, owner) = service(dir.path());
+    let lifecycle = calternal_types::OwnerLifecycle::default();
+    svc.bind_lifecycle(lifecycle.clone());
+    let (id, key) = enrol(&svc, owner);
+    let space = SpaceId::new();
+    let run = svc
+        .request_run(space, owner, Uuid::new_v4(), None)
+        .unwrap();
+    lifecycle.close(space.as_uuid());
+    let m = connect(&svc, id, key, Uuid::new_v4());
+    let msgs = sync(&svc, &m, vec![]).await;
+    assert!(
+        !msgs
+            .iter()
+            .any(|d| matches!(d, Down::Assign { lease_id, .. } if *lease_id == run.lease_id)),
+        "closed space's lease was assigned: {msgs:?}"
+    );
+}
+
+/// Independent review #44, fence item 1: `exec_input` checks only the lease
+/// and account, with no owner permit, so a command (whose env carries the
+/// scoped Calternal credential) is queued and delivered for a closed space
+/// before `retire_owner` ends the lease. Expected: refused once closed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_is_refused_after_its_space_closes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (svc, owner) = service(dir.path());
+    let lifecycle = calternal_types::OwnerLifecycle::default();
+    svc.bind_lifecycle(lifecycle.clone());
+    let (id, key) = enrol(&svc, owner);
+    let m = connect(&svc, id, key, Uuid::new_v4());
+    sync(&svc, &m, vec![]).await;
+    let space = SpaceId::new();
+    let run = svc
+        .request_run(space, owner, Uuid::new_v4(), None)
+        .unwrap();
+    let msgs = sync(&svc, &m, vec![]).await;
+    assert!(matches!(msgs.first(), Some(Down::Assign { .. })), "{msgs:?}");
+    lifecycle.close(space.as_uuid());
+    let queued = svc.exec(owner, run.lease_id, vec!["true".into()], vec![]);
+    assert!(queued.is_err(), "exec admitted for a closed space");
+}
