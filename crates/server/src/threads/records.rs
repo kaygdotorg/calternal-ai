@@ -7,6 +7,9 @@ use uuid::Uuid;
 
 const BETWEEN: &str = "\n\n";
 
+/// A file record carrying checkpoint progress without visible message text.
+pub(super) const CONTROL: &str = "<!-- calternal-checkpoint -->";
+
 /// One validated record. The heading is display text and carries no authority.
 #[derive(Debug, Serialize)]
 pub(super) struct Record<'a> {
@@ -32,6 +35,9 @@ pub(super) struct Provenance {
     pub(super) machine_id: Option<String>,
     pub(super) duration_ms: Option<u64>,
     pub(super) reasoning_ms: Option<u64>,
+    /// Logical message for this separately appended physical continuation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) continues: Option<Uuid>,
 }
 
 fn invalid() -> Error {
@@ -77,11 +83,16 @@ pub(super) fn read(mut input: &str) -> Result<Vec<Record<'_>>, Error> {
     let mut seen = HashSet::new();
     let mut records = Vec::new();
     while !input.is_empty() {
-        let (record, tail) = first(input)?;
-        if !seen.insert(record.id) {
-            return Err(invalid());
-        }
-        records.push(record);
+        let tail = if let Some(tail) = input.strip_prefix(CONTROL) {
+            tail
+        } else {
+            let (record, tail) = first(input)?;
+            if !seen.insert(record.id) {
+                return Err(invalid());
+            }
+            records.push(record);
+            tail
+        };
         if tail.is_empty() {
             break;
         }
@@ -91,6 +102,43 @@ pub(super) fn read(mut input: &str) -> Result<Vec<Record<'_>>, Error> {
             .ok_or_else(invalid)?;
     }
     Ok(records)
+}
+
+/// Fold physical continuation frames into the logical message used by full
+/// reads. Authored bytes are joined without inserting whitespace.
+pub(super) fn view(body: &str) -> Result<Vec<serde_json::Value>, Error> {
+    let mut output: Vec<(Record<'_>, Option<String>)> = Vec::new();
+    for part in read(body)? {
+        let group = part.provenance.as_ref().and_then(|p| p.continues);
+        if let Some(group) = group {
+            let Some((previous, combined)) = output.last_mut() else {
+                return Err(invalid());
+            };
+            if previous.id != group || previous.turn != part.turn || part.role != "agent" {
+                return Err(invalid());
+            }
+            combined
+                .get_or_insert_with(|| previous.text.to_owned())
+                .push_str(part.text);
+            previous.heading = part.heading;
+            previous.provenance = part.provenance;
+            if let Some(provenance) = &mut previous.provenance {
+                provenance.continues = None;
+            }
+        } else {
+            output.push((part, None));
+        }
+    }
+    output
+        .into_iter()
+        .map(|(record, combined)| {
+            let mut value = serde_json::to_value(record).map_err(|_| invalid())?;
+            if let Some(text) = combined {
+                value["text"] = serde_json::Value::String(text);
+            }
+            Ok(value)
+        })
+        .collect()
 }
 
 /// Load the active record from its indexed offset without rescanning earlier text.

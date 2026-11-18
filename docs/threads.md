@@ -60,34 +60,58 @@ After the operator's receipt-retention window, a request is new, as for every
 other write. The default window is seven days. An expired pending intent no
 longer blocks a new send; its saved message is preserved.
 
-One warm successful send loads the current body in the handler and again
-for admission. The write uses one indexed header and one current-file hash
-check. If an earlier write is still pending, it first finishes that placement
-and reloads the header. The handler, the content write and admission each
-read their receipt once. A previous pending intent adds one admission receipt
-read. Omitting a mode adds one indexed protected-authority read. Jobs admission
-reads its request key, active thread and space count. Account settings and the
-resulting job each have one read. Resolver, policy and activation reads use the
-existing paths.
+A warm successful send reads metadata and the current revision. Small
+transcripts add a bounded read of at most 8 KiB for the response. The turn
+admission reads only the current summary under the content slot. It uses
+the existing receipt and request identity to fence deletion and starts one
+durable job. Receipt replay retains the same response. An omitted access
+mode adds the existing protected-authority read.
 
-Content acknowledges after three FULL SQLite boundaries covering content,
-journal and outbox retirement. The lifecycle worker or next write finishes
-userdata placement with file and directory fsyncs and a NORMAL bookkeeping
-update. Send adds one FULL job admission transaction and one FULL admission
-journal transaction. The journal witness retains its durability work.
+Live output stays on the job stream. The server seals text at session and
+tool boundaries, at turn end, after three seconds of emitted output, or when
+16 KiB has accumulated. The uncommitted text is bounded to 32 KiB. Each append
+writes one complete newline-terminated Markdown record with a single file
+write. A fragment can continue an assistant message without modifying any
+earlier bytes. The Markdown envelope records the last non-append rewrite,
+while the saved headings record append times. Full thread reads join those
+fragments using the logical
+message ID. Metadata-only checkpoints use a hidden, complete control record.
 
-Live output stays on the existing job stream. Scrubbed text and tool statuses
-are appended at session, tool-start, tool-finish and turn-end checkpoints, at
-three seconds of emitted output, or when 16 KiB accumulates, whichever comes
-first. A pending chunk is bounded to 32 KiB;
-job checkpoints retain their existing bounded tail. Each nonempty output flush
-loads the thread body once, then uses the content write's header read, receipt
-lookup and userdata hash check. It adds the same three FULL content boundaries
-and deferred placement, plus one FULL job checkpoint. A pending prior revision
-may need placement first.
-Checkpoint request IDs prevent duplicate text on replay; concurrent revisions
-retry at most four times. A provider's session event can add one content write
-before any text arrives. Other empty checkpoints add no content write.
+The content transaction records the new revision as a patch with its start,
+length, preceding-range witness, record hash and resulting file hash. Existing
+SQLite snapshots remain readable. Older paths can still return a complete
+snapshot. A threaded send with more than 8 KiB already saved returns the new
+message and current metadata with `partial: true`. It does not replay the
+entire transcript in the send receipt.
+
+A warm append reads up to 8 KiB of staged prefix when it needs document
+framing, one bounded prepared-record row in SQLite, and one preceding
+range of at most 4 KiB from the file. It appends at most 64 KiB in one write
+and syncs the file once. The SQLite write stores the new patch bytes once
+with the existing FULL content commit, FULL journal publication and
+outbox retirement. The incremental hasher holds a fixed-size state and a
+4 KiB tail. Ordinary checkpoint appends do not allocate a transcript-sized
+buffer or rehash the file. Message indexing consumes only new fragments
+when the existing projection is caught up. An initial or stale projection
+rebuild reads the current full revision.
+
+On Linux, the writer checks the named inode's device, inode number, length and
+change/modification times. It compares the hash of the last committed range
+before writing and holds a file write lease while placing the append. If an
+outside descriptor prevents the lease, the append retries. If a new inode
+replaces the path, placement refuses it. A cold or changed proof starts full
+verification in the background. The space slot is released during that scan.
+Append waits for a proof for the same named file. A same-length edit that
+changes bytes before the tail is detected by the inode stamp and the full
+verification on mismatch.
+
+If a process or machine dies during the write, a direct Markdown reader can
+see a torn final suffix until the space is next opened. Before the server
+reads or appends, it verifies the committed prefix and uses the outbox to
+finish a matching short suffix. A completed suffix is recognized and kept
+exactly once. Earlier Markdown is never changed by append or recovery.
+An unrelated edit is preserved and blocks placement. The server never serves
+a torn suffix.
 
 Each thread retains one `provider-session` record in its Markdown envelope.
 It contains a native session ID bound to the account that started it, the
@@ -156,6 +180,16 @@ then retires the page in one jobs commit. The drain releases the jobs lock befor
 taking the content lock or awaiting the writer. Publication retries on subsequent
 job transactions and recovery. Pending entries are eligible for pruning after
 seven days. The journal's operator-configured receipt retention bounds deduplication.
+
+### Read the end of a saved thread
+
+Pass `tail: true` to `threads.get`, or use `calternal threads get <id> --tail`.
+A large response contains at most 64 recent framed records and 128 KiB of
+Markdown from the current indexed revision. If the latest legacy record is
+larger by itself, the API returns its last 128 KiB, aligned to UTF-8, with
+`partial_record: true`. A cold or lagging index returns a retryable response.
+The exact-message read continues to open just the indexed record at the
+requested ID.
 
 ### Read one checkpoint addition
 
@@ -264,7 +298,7 @@ output as a byte count. The saved message records the step and status in
 Markdown blockquotes. The adapter and host scrub the issued Calternal
 credential before the step reaches a client or the file.
 
-A saved thread holds at most 2 MiB of Markdown, including the host-owned
+A saved thread holds at most 16 MiB of Markdown, including the host-owned
 identity line. An overflowing checkpoint is rejected atomically. A saved turn
 reports `thread_full` on the job stream and in `turn_reason.code` on reload.
 Earlier checkpoints remain readable.
@@ -296,9 +330,9 @@ not yet deliver later commands. This is an implementation gap against the
 accepted steering behavior, not a new product decision. Interrupted work uses
 `calternal agent resume <job-id>`.
 
-The content index avoids body reads for lists. Tail/block indexing, full file-only
-reconstruction, long-output attachments, and splitting the 2 MiB limit from the
-transport document ceiling remain named work; no long-thread speed claim is made.
+The content index avoids body reads for lists. Full file-only reconstruction,
+long-output attachments, and independent limits for saved files and transport
+documents remain open work.
 
 A mode requested with a send applies directly in either direction and is saved;
 there is no additional passkey check for that choice. When omitted, the mode
@@ -337,6 +371,7 @@ calternal threads --token-file person.token list --space-id <uuid>
 calternal threads --token-file person.token models --space-id <uuid>
 calternal threads --token-file person.token list --space-id <uuid> --cursor <cursor>
 calternal threads --token-file person.token get <thread-uuid>
+calternal threads --token-file person.token get <thread-uuid> --tail
 calternal threads --token-file person.token get <thread-uuid> --since '<checkpoint journal data JSON>'
 calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace' --model claude-sonnet-5-5 --reasoning high
 calternal threads --token-file person.token stop <thread-uuid>

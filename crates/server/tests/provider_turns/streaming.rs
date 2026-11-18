@@ -108,10 +108,10 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     assert_eq!(reason["code"], "thread_full");
     assert!(reason["message"].as_str().unwrap().contains("not saved"));
     let markdown = saved["thread"]["markdown"].as_str().unwrap();
-    assert!(markdown.len() <= calternal_content::MAX_DOCUMENT_BYTES);
-    assert!(markdown.len() > calternal_content::MAX_DOCUMENT_BYTES - 32 * 1024);
+    assert!(markdown.len() <= calternal_content::MAX_THREAD_BYTES);
+    assert!(markdown.len() > calternal_content::MAX_THREAD_BYTES - 32 * 1024);
     assert!(markdown.contains("overflow-segment-0:"));
-    assert!(!markdown.contains("overflow-segment-32:"));
+    assert!(!markdown.contains("overflow-segment-256:"));
     assert!(markdown.ends_with('\n'));
     assert_eq!(saved["thread"]["messages"].as_array().unwrap().len(), 2);
 }

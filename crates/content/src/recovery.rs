@@ -17,7 +17,16 @@ impl Content {
     fn recover_space_at(&self, space: &mut Space, at_ms: i64) -> Result<()> {
         space.cleanup()?;
         space.prune_receipts_at(at_ms);
-        self.publish_pending(space)?;
+        let result = self.publish_pending(space);
+        #[cfg(target_os = "linux")]
+        if result
+            .as_ref()
+            .is_err_and(crate::thread_append::proof::pending)
+        {
+            space.append_recovering = true;
+            return Ok(());
+        }
+        result?;
         space.materialize_pending(self.fault)
     }
 }

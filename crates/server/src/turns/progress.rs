@@ -29,17 +29,36 @@ pub(super) async fn save<D: Directory>(
     checkpoint: &mut Value,
     thread_session: Option<ProviderSession>,
 ) -> Result<(), Error> {
-    let (st_output, output_job, output_checkpoint) =
-        (state.clone(), job.clone(), checkpoint.clone());
-    blocking(move || {
-        crate::threads::persistence::checkpoint(
-            &st_output,
-            &output_job,
-            &output_checkpoint,
-            thread_session,
-        )
-    })
-    .await?;
+    let verification_deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let (st_output, output_job, output_checkpoint, session) = (
+            state.clone(),
+            job.clone(),
+            checkpoint.clone(),
+            thread_session.clone(),
+        );
+        let result = blocking(move || {
+            crate::threads::persistence::checkpoint(
+                &st_output,
+                &output_job,
+                &output_checkpoint,
+                session,
+            )
+        })
+        .await;
+        if result.as_ref().is_err_and(|error| {
+            error
+                .details
+                .as_ref()
+                .is_some_and(|details| details["reason"] == "thread_verifying")
+        }) && Instant::now() < verification_deadline
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            continue;
+        }
+        result?;
+        break;
+    }
     checkpoint["thread_text"] = json!("");
     checkpoint
         .as_object_mut()

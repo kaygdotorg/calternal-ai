@@ -21,7 +21,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `accounts/<id>/secrets.db`, `spaces/<id>/secrets.db` | Authority | Secrets, SQLite 1. Sealed values, pending prompts, audit and key state. |
 | Appdata `system/invite.key`, account and space `secret.key` | Authority | Auth and secrets. Fixed 32-byte payloads with v1 key derivation and ciphertext binding. Preserve bytes, ownership and mode with their database. |
 | Appdata `installed-plugins.sqlite3` and `installed-plugin-workers/` | Mixed | Package store, SQLite 1. Installed and retained archives, digests, approvals and revision counters are authoritative. Manifest API version 1 describes the package contract. Extracted worker copies are a cache reused across restarts only when they match the archive bytes, so they carry no version. Development drafts are disposable. |
-| Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `spaces/<id>/search-messages-v1.all.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Item search is SQLite 2 at generation 3. Message search, with its postings and thread-location index, is SQLite 1 at generation 1. Wallpaper cache follows its rendition catalogue. |
+| Appdata `system/content-index.db`, `spaces/<id>/search-v2.db`, `spaces/<id>/search-messages-v1.all.db`, `wallpapers/` | Derived | Content routing, SQLite 1. Retain the exact route catalogue across upgrades. Item search is SQLite 2 at generation 3. Message search, with its postings and thread-location index, is SQLite 1 at generation 2. Wallpaper cache follows its rendition catalogue. |
 | SSD space `Notes/`, `AI/Chats/`, Trash, registered visible and hidden content | Authority | Content writes `calternal-id` and a `calternal-note/v1` envelope for Markdown without its own format tag. Thread writers use `calternal-thread/v1`. Space Collections use `calternal-collection/v1` JSON for their structured membership. Other provider or plugin formats and opaque bytes follow their own contracts. |
 | SSD space `AI/AGENTS.md`, `AI/Skills/*/SKILL.md` | Authority | Space instructions and the person write raw Markdown. Skill descriptors use the external Agent Skills format and may be provisioned on disk. These formats pass through byte-for-byte. |
 | SSD `spaces/<id>/.calternal/settings.json` | Authority | The plugin settings adapter writes `calternal-plugin-settings/v1`. JSON preserves typed nested values, including unknown settings during an older writer’s update. |
@@ -95,6 +95,14 @@ unsent edits can be lost during a system crash or power loss.
    below and check reads, acknowledged writes, and rollback against that data.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
+
+The thread append migration adds `thread_revision_patches` to the existing
+space content descriptor. It leaves every old SQLite snapshot and v1 Markdown
+file unchanged. A new checkpoint records only its bytes and the offset and
+hashes needed to place or read it. The current reader composes patches over
+their immutable base snapshot. The first new patch does require a writer
+that understands the new representation. The first patched commit retires a
+rollback marker that would let an older writer open those heads.
 
 ## Release handoff
 

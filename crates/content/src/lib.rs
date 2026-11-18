@@ -49,6 +49,7 @@ pub use search::{
 };
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+mod thread_append;
 mod trash;
 mod types;
 use calternal_roots::Roots;
@@ -94,6 +95,9 @@ pub(crate) fn file_hash(bytes: &[u8]) -> String {
 }
 /// Maximum submitted document size in bytes, before file placement adds identity.
 pub const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
+
+/// Maximum physical size of one saved Markdown conversation, including identity.
+pub const MAX_THREAD_BYTES: usize = 16 * 1024 * 1024;
 
 /// Maximum serialized metadata bytes per content revision.
 pub const MAX_METADATA_BYTES: usize = 256 * 1024;
@@ -252,9 +256,24 @@ impl Content {
             .conn
             .pragma_update(None, "synchronous", "FULL")
             .map_err(internal)?;
-        let result = f(held.as_mut().expect("opened above"));
+        let opened = held.as_mut().expect("opened above");
+        let result = (|| {
+            #[cfg(target_os = "linux")]
+            if opened.append_recovering {
+                self.publish_pending(opened)?;
+                opened.materialize_pending(self.fault)?;
+                opened.append_recovering = false;
+            }
+            f(opened)
+        })();
         *lock(&slot.last_used) = Instant::now();
-        let pending = held.as_ref().is_some_and(|s| s.pending_since.is_some());
+        let pending = held.as_ref().is_some_and(|s| {
+            #[cfg(target_os = "linux")]
+            if s.append_task.is_some() {
+                return true;
+            }
+            s.pending_since.is_some()
+        });
         drop(held);
         if pending {
             self.sweeper.unpark();
@@ -359,7 +378,14 @@ impl Content {
     /// Cost: cache mutex, one space mutex, indexed metadata/head join and byte allocation;
     /// a cold space additionally opens/validates SQLite. No fsync or other-space reads.
     pub fn get(&self, space: SpaceId, id: Uuid) -> Result<Item> {
-        self.with_space(space, |s| s.get(id))
+        self.with_space(space, |s| {
+            let item = s.get(id)?;
+            #[cfg(target_os = "linux")]
+            if item.kind == "threads" {
+                s.schedule_thread_proof(id, item.bytes.len());
+            }
+            Ok(item)
+        })
     }
     /// Lists at most 1,000 metadata rows of one kind; never loads content bytes.
     /// Cost: cache/space locks, O(log N + page) indexed read and page allocations;

@@ -313,3 +313,63 @@ impl Content {
         Ok((range.revision, bytes))
     }
 }
+
+impl Content {
+    /// Open the end of the exact current thread from its ready record locator.
+    /// Returns at most 64 records and 128 KiB of contiguous staged Markdown.
+    /// If the newest record alone exceeds that bound, returns only its final
+    /// 128 KiB and marks it as a clipped record. No userdata file is opened.
+    pub fn search_thread_tail(
+        &self,
+        space: SpaceId,
+        thread: Uuid,
+        revision: &str,
+    ) -> Result<(Vec<u8>, bool)> {
+        const LIMIT: usize = 128 * 1024;
+        let _step = self.lifecycle.step(space.as_uuid())?;
+        let missing = || Error::unavailable("thread message index is catching up");
+        let index = path(&self.roots.appdata, space);
+        if !index.is_file() {
+            return Err(missing());
+        }
+        let db = crate::pool::open_reader(&index).map_err(internal)?;
+        let mut lines = db
+            .prepare_cached(
+                "SELECT l.start,l.length FROM threads t JOIN locations l ON l.thread=t.slot
+             JOIN build_state s ON s.id=1 AND s.ready=1 AND s.generation=?3
+             WHERE t.id=?1 AND t.revision=?2 ORDER BY l.start DESC LIMIT 64",
+            )
+            .map_err(internal)?;
+        let mut rows = lines
+            .query(params![thread.to_string(), revision, super::GENERATION])
+            .map_err(internal)?;
+        let Some(first) = rows.next().map_err(internal)? else {
+            return Err(missing());
+        };
+        let latest: u32 = first.get(0).map_err(internal)?;
+        let len: u32 = first.get(1).map_err(internal)?;
+        let end = latest as usize + len as usize;
+        let clipped = len as usize > LIMIT;
+        let floor = end.saturating_sub(LIMIT);
+        let mut start = floor.max(latest as usize);
+        if !clipped {
+            while let Some(row) = rows.next().map_err(internal)? {
+                let earlier = row.get::<_, u32>(0).map_err(internal)? as usize;
+                if earlier < floor {
+                    break;
+                }
+                start = earlier;
+            }
+        }
+
+        let mut primary =
+            crate::pool::open_reader(&crate::db::space_path(&self.roots.appdata, space))
+                .map_err(internal)?;
+        let snapshot = primary.transaction().map_err(internal)?;
+        if crate::search::source::pending(&snapshot)? {
+            return Err(missing());
+        }
+        let current = source::revision(&snapshot, thread, revision)?.ok_or_else(missing)?;
+        Ok((source::slice(&snapshot, &current, start..end)?, clipped))
+    }
+}

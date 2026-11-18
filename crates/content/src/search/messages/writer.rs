@@ -21,7 +21,7 @@ const SCHEMA: &str = include_str!("schema.sql");
 const MIGRATIONS: calternal_store::migrations::Schema<'_> =
     calternal_store::migrations::Schema::new("message search projection", 1, &[SCHEMA], &[]);
 const SECONDARY: &str = "CREATE UNIQUE INDEX IF NOT EXISTS locations_id ON locations(thread,id);
-    CREATE INDEX IF NOT EXISTS locations_thread ON locations(thread,position);
+    CREATE INDEX IF NOT EXISTS locations_thread ON locations(thread,start);
     CREATE INDEX IF NOT EXISTS postings_newest ON postings(term,stamp DESC,newest DESC,block);";
 
 pub(in crate::search) enum Progress {
@@ -232,7 +232,18 @@ fn ingest(
         params![thread.slot, thread.id, thread.revision],
     )
     .map_err(internal)?;
-    for record in decode(&bytes)? {
+    ingest_records(&bytes, thread.slot, 0, false, decode, batch)
+}
+
+fn ingest_records(
+    bytes: &[u8],
+    slot: i64,
+    offset: usize,
+    fragment: bool,
+    decode: MessageDecoder,
+    batch: &mut Vec<Input>,
+) -> Result<()> {
+    for mut record in decode(bytes, fragment)? {
         let body = bytes
             .get(record.body.clone())
             .and_then(|b| std::str::from_utf8(b).ok())
@@ -240,9 +251,13 @@ fn ingest(
         let mut words: Vec<_> = super::message_terms(body).collect();
         words.sort_unstable();
         words.dedup();
+        record.record.start += offset;
+        record.record.end += offset;
+        record.body.start += offset;
+        record.body.end += offset;
         batch.push(Input {
             record,
-            thread: thread.slot,
+            thread: slot,
             words,
         });
     }
@@ -346,6 +361,21 @@ fn replace(
         .map_err(internal)?
     {
         if thread.is_some_and(|t| t.revision == revision) {
+            return Ok(());
+        }
+        if let Some(thread) = thread
+            && let Some(fragments) = source::fragments(primary, thread, &revision)?
+        {
+            let mut batch = Vec::new();
+            for (offset, bytes) in fragments {
+                ingest_records(&bytes, slot, offset, true, decode, &mut batch)?;
+            }
+            write_run(tx, state, &mut batch)?;
+            tx.execute(
+                "UPDATE threads SET revision=?1 WHERE slot=?2",
+                params![thread.revision, slot],
+            )
+            .map_err(internal)?;
             return Ok(());
         }
         remove(tx, slot)?;

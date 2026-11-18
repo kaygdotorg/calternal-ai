@@ -42,8 +42,16 @@ pub(crate) fn fixture(first: usize, count: usize) -> (Value, String) {
 }
 
 /// Validate the exact saved thread before exposing UUIDs and byte windows.
-pub(crate) fn decode(bytes: &[u8]) -> Result<Vec<MessageRecord>, Error> {
-    let body = super::document::body_bytes(bytes)?;
+pub(crate) fn decode(bytes: &[u8], fragment: bool) -> Result<Vec<MessageRecord>, Error> {
+    let body = if fragment {
+        std::str::from_utf8(bytes)
+            .ok()
+            .and_then(|text| text.strip_prefix('\n'))
+            .and_then(|text| text.strip_suffix('\n'))
+            .ok_or_else(|| Error::internal("invalid thread fragment framing"))?
+    } else {
+        super::document::body_bytes(bytes)?
+    };
     let base = bytes.as_ptr() as usize;
     Ok(super::records::read(body)?
         .into_iter()
@@ -81,5 +89,49 @@ pub(super) fn open(
     Ok(
         json!({"thread":{"id":id,"space_id":space,"address":format!("/threads/{id}"),
         "revision":revision,"messages":[records.remove(0)]}}),
+    )
+}
+
+/// Return a bounded window at the end of a saved thread. The locator's
+/// revision must match the current metadata, so writes cannot mix snapshots.
+#[cfg(target_os = "linux")]
+pub(super) fn tail(content: &Content, space: SpaceId, id: Uuid) -> Result<Value, Error> {
+    let (head, size) = content.thread_head(space, id)?;
+    if head.metadata["deleted"] == true {
+        return Err(Error::not_found("item not found"));
+    }
+    if size <= 8192 {
+        let bytes = content.thread_prefix(space, id, &head.revision)?;
+        let item = calternal_content::Item {
+            id,
+            space,
+            kind: head.kind,
+            metadata: head.metadata,
+            bytes,
+            revision: head.revision,
+            updated_at: head.updated_at,
+        };
+        return super::document::checked_view(&item);
+    }
+    let (bytes, clipped) = content.search_thread_tail(space, id, &head.revision)?;
+    let skip = if clipped {
+        bytes
+            .iter()
+            .take_while(|byte| **byte & 0b1100_0000 == 0b1000_0000)
+            .count()
+    } else {
+        0
+    };
+    let markdown = std::str::from_utf8(&bytes[skip..])
+        .map_err(|_| Error::internal("invalid thread tail encoding"))?;
+    let messages = if clipped {
+        Vec::new()
+    } else {
+        super::records::read(markdown)?
+    };
+    Ok(
+        json!({"thread":{"id":id,"space_id":space,"address":format!("/threads/{id}"),
+        "revision":head.revision,"metadata":super::document::public_metadata(head.metadata),
+        "tail":true,"partial_record":clipped,"markdown":markdown,"messages":messages}}),
     )
 }

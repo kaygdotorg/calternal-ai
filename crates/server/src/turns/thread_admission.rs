@@ -32,7 +32,7 @@ pub(crate) async fn admit<D: Directory>(
         .to_owned();
     let id=blocking(move || {
         let thread=Uuid::parse_str(&input.thread_id).map_err(|_|Error::internal("invalid saved thread"))?;
-        st.store.content().admit_item(SpaceId::parse(&space).map_err(|_|Error::internal("invalid saved space"))?,thread,calternal_content::Request{account:who.id,via: actor.via.as_ref(),id:&request_id,operation:"threads.send",fingerprint:&fp},|current,saved| {
+        st.store.content().admit_summary(SpaceId::parse(&space).map_err(|_|Error::internal("invalid saved space"))?,thread,calternal_content::Request{account:who.id,via: actor.via.as_ref(),id:&request_id,operation:"threads.send",fingerprint:&fp},|current,saved| {
             if current.kind!="threads" || current.metadata["deleted"]==true {return Err(Error::not_found("item not found"));}
             if let Some(saved)=saved {return Ok(saved);}
             if current.metadata["pending"]!=intent {return Err(Error::conflict("the pending send has been superseded"));}

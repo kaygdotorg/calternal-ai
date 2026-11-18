@@ -107,6 +107,69 @@ impl Folder {
         Ok(File::from(fd))
     }
 
+    /// Open an existing regular file for append under a Linux write lease.
+    /// An outside descriptor or unsupported filesystem refuses the lease.
+    /// Conflicting opens can wait until the returned descriptor is closed.
+    /// The directory entry itself remains renameable and must be rechecked.
+    #[cfg(target_os = "linux")]
+    pub fn lease_append(&self, rel: &str) -> io::Result<File> {
+        use std::os::fd::AsRawFd;
+        plain_parts(rel)?;
+        let fd = beneath(
+            &self.fd,
+            rel,
+            OFlags::RDWR | OFlags::APPEND | OFlags::NOFOLLOW | OFlags::NONBLOCK,
+        )?;
+        let st = rustix::fs::fstat(&fd)?;
+        if rustix::fs::FileType::from_raw_mode(st.st_mode) != rustix::fs::FileType::RegularFile {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        // Linux UAPI F_SETSIG selects SIGURG (default ignored) for lease
+        // breaks, avoiding SIGIO's process-wide default termination.
+        const F_SETSIG: libc::c_int = 10;
+        // SAFETY: fd is owned for both calls and these commands take one int.
+        let result = unsafe {
+            if libc::fcntl(fd.as_raw_fd(), F_SETSIG, libc::SIGURG) == -1 {
+                -1
+            } else {
+                libc::fcntl(fd.as_raw_fd(), libc::F_SETLEASE, libc::F_WRLCK)
+            }
+        };
+        if result == -1 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(File::from(fd))
+    }
+
+    /// Refuse a lost lease or one with a conflicting open already waiting.
+    /// Check immediately before the single data write.
+    #[cfg(target_os = "linux")]
+    pub fn check_append_lease(file: &File) -> io::Result<()> {
+        use std::os::fd::AsRawFd;
+        // SAFETY: the owned descriptor stays open and F_GETLEASE takes no third argument.
+        let mode = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETLEASE) };
+        if mode == libc::F_WRLCK {
+            Ok(())
+        } else if mode == -1 {
+            Err(io::Error::last_os_error())
+        } else {
+            Err(io::ErrorKind::WouldBlock.into())
+        }
+    }
+
+    /// Read a named file's inode metadata without opening it for data access.
+    /// Does not break Linux file leases or follow symlinks.
+    #[cfg(target_os = "linux")]
+    pub fn file_identity(&self, rel: &str) -> io::Result<std::fs::Metadata> {
+        plain_parts(rel)?;
+        let fd = beneath(&self.fd, rel, OFlags::PATH | OFlags::NOFOLLOW)?;
+        let metadata = File::from(fd).metadata()?;
+        if !metadata.is_file() {
+            return Err(io::ErrorKind::NotFound.into());
+        }
+        Ok(metadata)
+    }
+
     /// Open or create one child directory without following a symlink. A
     /// newly created entry is synced in its parent before returning.
     pub fn child(&self, name: &str, create: bool) -> io::Result<Self> {

@@ -62,6 +62,16 @@ pub(crate) fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
         Err(TryLockError::WouldBlock) => return true,
         Err(TryLockError::Poisoned(_)) => return false,
     };
+    #[cfg(target_os = "linux")]
+    if let Some(task) = held.as_mut().and_then(|space| space.append_task.take()) {
+        drop(held);
+        let checked = task.run();
+        // Do not hold the space slot across the full file verification.
+        if let Some(space) = lock(&slot.space).as_mut() {
+            space.remember_append_proof(task.id, task.seq, checked);
+        }
+        return true;
+    }
     held.as_mut().is_some_and(|space| {
         let retry = space.pending_since.is_some() && space.materialize_pending(fault).is_err();
         // The journal wait can consume a placement wake. A quick pass after

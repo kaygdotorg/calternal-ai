@@ -68,7 +68,7 @@ if(scenario.includes('transient-always')||(scenario.includes('transient-once')&&
  emit({type:'result',subtype:'error_during_execution',is_error:true,usage:{input_tokens:0,output_tokens:0}});process.exit(0);
 }
 if (prompt.includes('thread-size-limit')) {
-  for (let i = 0; i < 33; i++) {
+  for (let i = 0; i < 257; i++) {
     const text = `overflow-segment-${i}:
 ` + 'x'.repeat(64 * 1024);
     emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text}}});

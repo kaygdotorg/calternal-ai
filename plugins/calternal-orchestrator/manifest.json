@@ -242,6 +242,10 @@
             "format": "uuid",
             "description": "Read exactly this message from the current committed thread revision."
           },
+          "tail": {
+            "type": "boolean",
+            "description": "Read a bounded window of recent saved Markdown and message records."
+          },
           "since": {
             "type": "object",
             "properties": {
@@ -254,8 +258,8 @@
                 "type": "object",
                 "properties": {
                   "base_revision": { "type": "string", "minLength": 1, "maxLength": 80 },
-                  "offset": { "type": "integer", "minimum": 0, "maximum": 2097152 },
-                  "start": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+                  "offset": { "type": "integer", "minimum": 0, "maximum": 16777216 },
+                  "start": { "type": "integer", "minimum": 0, "maximum": 16777216 },
                   "length": { "type": "integer", "minimum": 0, "maximum": 33280 }
                 },
                 "required": ["base_revision", "offset", "start", "length"],

@@ -3,6 +3,42 @@
   "policy": "Never raise budgets silently. Null means no accepted limit and incomplete qualification, never a pass. Separate measured proposals are unaccepted. Inherited ceilings remain breaches even when comparisons are imperfect.",
   "entries": [
     {
+      "metric": "threads.16mib.append",
+      "percentile": "p95",
+      "budget": 40,
+      "unit": "ms",
+      "fixture": "One v1 Markdown thread within 64 KiB of 16 MiB",
+      "measurement": "Warm authenticated HTTP threads.send through durable placement and turn admission",
+      "reference": "Inherits the 40 ms save acknowledgement ceiling. Issue #53 locked perf proof."
+    },
+    {
+      "metric": "threads.16mib.tail",
+      "percentile": "p95",
+      "budget": 50,
+      "unit": "ms",
+      "fixture": "The same near-16 MiB thread with a ready message index",
+      "measurement": "Warm authenticated HTTP threads.get with tail=true through the bounded response",
+      "reference": "Inherits the 50 ms open API ceiling. Issue #53 locked perf proof."
+    },
+    {
+      "metric": "threads.16mib.exact",
+      "percentile": "p95",
+      "budget": 50,
+      "unit": "ms",
+      "fixture": "The same near-16 MiB thread with a ready message index",
+      "measurement": "Warm authenticated HTTP threads.get with message_id through the exact record response",
+      "reference": "Inherits the 50 ms open API ceiling. Issue #53 locked perf proof."
+    },
+    {
+      "metric": "threads.16mib.message_index_rebuild",
+      "percentile": "p95",
+      "budget": null,
+      "unit": "ms",
+      "fixture": "One near-16 MiB thread, absent message projection",
+      "measurement": "From first authenticated search to a complete answer after rebuilding that thread",
+      "reference": "Issue #53 single-thread rebuild observation."
+    },
+    {
       "metric": "search.messages.common.warm",
       "percentile": "p95",
       "budget": 25,

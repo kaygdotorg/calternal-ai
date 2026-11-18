@@ -27,12 +27,11 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     assert!(markdown.contains("hello saved thread"));
     assert_eq!(markdown.matches("Hello 🌏").count(), 1, "{markdown}");
     assert!(!markdown.contains("PRIVATE_LOGIN_SENTINEL"));
-    let markers: Vec<_> = markdown
-        .lines()
-        .filter(|line| line.starts_with("<!-- id:"))
-        .collect();
-    assert_eq!(markers.len(), 2);
-    for message in saved["thread"]["messages"].as_array().unwrap() {
+    let messages = saved["thread"]["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0]["role"], "person");
+    assert_eq!(messages[1]["role"], "agent");
+    for message in messages {
         time::OffsetDateTime::parse(
             message["at"].as_str().unwrap(),
             &time::format_description::well_known::Rfc3339,
@@ -42,18 +41,11 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     assert_eq!(saved["thread"]["metadata"]["message_count"], 2);
     assert_eq!(saved["thread"]["turn_state"], "idle");
     assert!(saved.get("job").is_none());
-    assert_eq!(
-        markdown.matches("role:agent").count(),
-        1,
-        "checkpoints split one response into multiple messages"
-    );
+    let agent_text = messages[1]["text"].as_str().unwrap();
     for n in 0..6 {
-        assert_eq!(
-            markdown
-                .matches(&format!("segment-{n}:{}\n", n.to_string().repeat(8192)))
-                .count(),
-            1
-        );
+        let segment = format!("segment-{n}:{}\n", n.to_string().repeat(8192));
+        assert_eq!(markdown.matches(&segment).count(), 1);
+        assert_eq!(agent_text.matches(&segment).count(), 1);
     }
 
     let text = std::fs::read_to_string(data.join(&format!(

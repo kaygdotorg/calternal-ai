@@ -505,6 +505,7 @@ name = "calternal-fsio"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "libc",
  "rustix",
  "tracing",
  "unicode-normalization",

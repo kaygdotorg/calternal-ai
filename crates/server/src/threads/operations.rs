@@ -17,6 +17,17 @@ pub(super) fn apply<D: Directory>(
     actor: &calternal_types::Actor,
 ) -> Result<Value, Error> {
     let content = st.store.content();
+    #[cfg(target_os = "linux")]
+    if operation == "threads.get" && data.get("tail").is_some_and(|tail| tail == true) {
+        if data.contains_key("message_id") || data.contains_key("since") {
+            return Err(Error::invalid_input(
+                "choose one of tail, message_id or since",
+            ));
+        }
+        let id = id.ok_or_else(|| Error::invalid_input("id is required"))?;
+        return super::search::tail(&content, space, id);
+    }
+
     if operation == "threads.get"
         && let Some(message) = data.get("message_id").and_then(Value::as_str)
     {
@@ -159,10 +170,32 @@ pub(super) fn apply<D: Directory>(
         )?;
         return Ok(reply);
     }
-    let mut item = content.get(
-        space,
-        id.ok_or_else(|| Error::invalid_input("id is required"))?,
-    )?;
+    let id = id.ok_or_else(|| Error::invalid_input("id is required"))?;
+    #[cfg(target_os = "linux")]
+    let (mut item, send_size) = if operation == "threads.send" {
+        let (head, size) = content.thread_head(space, id)?;
+        let bytes = if size <= 8192 {
+            content.thread_prefix(space, id, &head.revision)?
+        } else {
+            Vec::new()
+        };
+        (
+            calternal_content::Item {
+                id,
+                space,
+                kind: head.kind,
+                metadata: head.metadata,
+                bytes,
+                revision: head.revision,
+                updated_at: head.updated_at,
+            },
+            size,
+        )
+    } else {
+        (content.get(space, id)?, 0)
+    };
+    #[cfg(not(target_os = "linux"))]
+    let mut item = content.get(space, id)?;
     if item.kind != "threads" {
         return Err(Error::not_found("item not found"));
     }
@@ -306,24 +339,49 @@ pub(super) fn apply<D: Directory>(
             super::headings::label(&label)
         };
         let heading = format!("{label} · {}", super::headings::time(&now)?);
-        let mut body = document::body(&item)?.to_owned();
-        super::records::append(&mut body, Uuid::now_v7(), role, &heading, prompt, None);
-        let bytes = document::encode(&item.metadata, &body);
-        super::persistence::check_size(bytes.len())?;
-        content.write(
-            space,
-            Some(item.id),
-            "threads",
-            Some(&item.revision),
-            item.metadata.clone(),
-            bytes.as_bytes(),
-            request,
-            |item| {
-                reply = document::view(item);
+        #[cfg(target_os = "linux")]
+        {
+            let mut record = String::new();
+            super::records::append(&mut record, Uuid::now_v7(), role, &heading, prompt, None);
+            let frame = format!("\n{record}\n");
+            super::persistence::check_size(send_size + frame.len())?;
+            let metadata = item.metadata.clone();
+            let base = item.revision.clone();
+            content.append_thread_record(space, id, &base, metadata, frame.as_bytes(), request, |revision| {
+                item.revision = revision.to_owned();
+                reply = if item.bytes.is_empty() {
+                    json!({"thread":{"id":id,"space_id":space,"address":format!("/threads/{id}"),
+                        "revision":revision,"metadata":document::public_metadata(item.metadata.clone()),
+                        "partial":true,"messages":super::records::view(&record).expect("generated record")}})
+                } else {
+                    item.bytes.extend_from_slice(frame.as_bytes());
+                    document::view(&item)
+                };
                 reply["intent"] = item.metadata["pending"].clone();
                 reply.clone()
-            },
-        )?;
+            })?;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let mut body = document::body(&item)?.to_owned();
+            super::records::append(&mut body, Uuid::now_v7(), role, &heading, prompt, None);
+            let bytes = document::encode(&item.metadata, &body);
+            super::persistence::check_size(bytes.len())?;
+            content.write(
+                space,
+                Some(item.id),
+                "threads",
+                Some(&item.revision),
+                item.metadata.clone(),
+                bytes.as_bytes(),
+                request,
+                |item| {
+                    reply = document::view(item);
+                    reply["intent"] = item.metadata["pending"].clone();
+                    reply.clone()
+                },
+            )?;
+        }
         return Ok(reply);
     }
     if operation == "threads.stop" {

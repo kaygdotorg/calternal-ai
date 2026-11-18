@@ -303,6 +303,10 @@ impl Space {
         snapshot: Option<&Item>,
         fault: fn(FaultPoint),
     ) -> Result<()> {
+        #[cfg(target_os = "linux")]
+        if head.state == "pending" && self.place_thread_patch(id, &head, fault)? {
+            return Ok(());
+        }
         let crate::db::Header {
             state,
             file_hash: expected,

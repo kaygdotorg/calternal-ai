@@ -254,15 +254,16 @@ fn reserve(
 
 fn sample(body: &str) -> Result<String, Error> {
     let mut prompt = String::new();
-    for message in records::read(body)?.into_iter().take(MIN_MESSAGES as usize) {
-        let label = if message.role == "agent" {
+    for message in records::view(body)?.into_iter().take(MIN_MESSAGES as usize) {
+        let label = if message["role"] == "agent" {
             "Assistant"
         } else {
             "Person"
         };
+        let text = message["text"].as_str().unwrap_or("");
         prompt.push_str(label);
         prompt.push_str(": ");
-        prompt.push_str(&message.text[..message.text.floor_char_boundary(3000)]);
+        prompt.push_str(&text[..text.floor_char_boundary(3000)]);
         prompt.push('\n');
     }
     Ok(prompt)

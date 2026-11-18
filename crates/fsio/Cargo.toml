@@ -17,3 +17,5 @@ unicode-normalization.workspace = true
 [target.'cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))'.dependencies]
 rustix = { workspace = true, features = ["fs"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"

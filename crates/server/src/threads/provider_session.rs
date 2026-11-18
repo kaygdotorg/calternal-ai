@@ -10,7 +10,7 @@ pub(crate) const KEY: &str = "provider_session";
 /// Provider-local session reference. A thread-scoped binding checks the
 /// machine and account without storing a machine ID in shared Markdown.
 /// The session ID identifies stored context and conveys no access.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct ProviderSession {
     account: AccountId,
     provider: String,

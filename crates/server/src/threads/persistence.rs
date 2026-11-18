@@ -1,8 +1,9 @@
 //! Bounded, receipted provider text checkpoints through generic content storage.
+#[cfg(not(target_os = "linux"))]
 use super::delta::Append;
 use super::provider_session::{KEY, ProviderSession};
 use crate::{api::Shared, auth::Directory, plugins::jobs::Job};
-use calternal_content::{MAX_DOCUMENT_BYTES, Request};
+use calternal_content::{MAX_THREAD_BYTES, Request};
 use calternal_types::{Error, SpaceId};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -33,11 +34,11 @@ pub(crate) fn bind_provider(
 /// Reject an overflowing write before creating its revision or journal event.
 pub(super) fn check_size(bytes: usize) -> Result<(), Error> {
     const HOST_ID_BYTES: usize = "calternal-id: ".len() + 36 + 1;
-    if bytes.saturating_add(HOST_ID_BYTES) > MAX_DOCUMENT_BYTES {
+    if bytes.saturating_add(HOST_ID_BYTES) > MAX_THREAD_BYTES {
         return Err(Error {
             details: Some(json!({"reason":THREAD_FULL})),
             ..Error::conflict(
-                "Thread reached its 2 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
+                "Thread reached its 16 MiB limit. Earlier output is saved; the latest output was not saved. Start a new thread to continue.",
             )
         });
     }
@@ -105,86 +106,105 @@ pub(crate) fn checkpoint<D: Directory>(
         }
         return Ok(());
     }
-    for _ in 0..4 {
-        let item = content.get(space, id)?;
-        if item.kind != "threads" || item.metadata["deleted"] == true {
-            return Err(Error::not_found("item not found"));
-        }
-        if item.metadata["pending"] != job.input["thread_request"]
-            || item.metadata["output"]["job_id"] == job.id
-                && item.metadata["output"]["run"]
-                    .as_u64()
-                    .is_some_and(|run| run > u64::from(job.runs))
-        {
-            return Err(Error::conflict(
-                "this turn no longer owns the thread output",
-            ));
-        }
-        let mut metadata = item.metadata.clone();
-        let new_session = !session.is_null()
-            && metadata["pending"] == job.input["thread_request"]
-            && metadata[KEY] != session;
-        if new_session {
-            metadata[KEY] = session.clone();
-        } else if text.is_empty() && timing.is_null() {
-            return Ok(());
-        }
-        let mut body = super::document::body(&item)?.to_owned();
-        let range = if text.is_empty() && timing.is_null() {
-            Some(body.len()..body.len())
-        } else {
-            append_output(&mut metadata, &mut body, job, seq, text, checkpoint)?
-        };
-        let bytes = super::document::encode(&metadata, &body);
-        check_size(bytes.len())?;
-        let mut receipt = json!({"checkpoint":seq});
-        metadata
-            .as_object_mut()
-            .expect("thread metadata object")
-            .remove(super::delta::METADATA_KEY);
-        if let Some(range) = range {
-            let append = json!(Append {
-                base_revision: item.revision.clone(),
-                offset: super::document::public_prefix_bytes(&metadata) + range.start,
-                start: bytes.len() - body.len() - 1 + range.start,
-                length: range.len(),
-            });
-            metadata[super::delta::METADATA_KEY] = append.clone();
-            receipt["append"] = append;
-        }
-        match content.write(
-            space,
-            Some(id),
-            "threads",
-            Some(&item.revision),
-            metadata,
-            bytes.as_bytes(),
-            Request {
-                account: actor.account,
-                via: actor.via.as_ref(),
-                id: &rid,
-                operation: "threads.checkpoint",
-                fingerprint: &fp,
-            },
-            |_| receipt,
-        ) {
-            Ok(_) => return Ok(()),
-            Err(e)
-                if e.details
-                    .as_ref()
-                    .is_some_and(|d| d["reason"] == "stale_revision") =>
-            {
-                continue;
+    #[cfg(target_os = "linux")]
+    return crate::threads::append_checkpoint::save(
+        content,
+        space,
+        id,
+        job,
+        checkpoint,
+        session,
+        Request {
+            account: actor.account,
+            via: actor.via.as_ref(),
+            id: &rid,
+            operation: "threads.checkpoint",
+            fingerprint: &fp,
+        },
+    );
+    #[cfg(not(target_os = "linux"))]
+    {
+        for _ in 0..4 {
+            let item = content.get(space, id)?;
+            if item.kind != "threads" || item.metadata["deleted"] == true {
+                return Err(Error::not_found("item not found"));
             }
-            Err(e) => return Err(e),
+            if item.metadata["pending"] != job.input["thread_request"]
+                || item.metadata["output"]["job_id"] == job.id
+                    && item.metadata["output"]["run"]
+                        .as_u64()
+                        .is_some_and(|run| run > u64::from(job.runs))
+            {
+                return Err(Error::conflict(
+                    "this turn no longer owns the thread output",
+                ));
+            }
+            let mut metadata = item.metadata.clone();
+            let new_session = !session.is_null()
+                && metadata["pending"] == job.input["thread_request"]
+                && metadata[KEY] != session;
+            if new_session {
+                metadata[KEY] = session.clone();
+            } else if text.is_empty() && timing.is_null() {
+                return Ok(());
+            }
+            let mut body = super::document::body(&item)?.to_owned();
+            let range = if text.is_empty() && timing.is_null() {
+                Some(body.len()..body.len())
+            } else {
+                append_output(&mut metadata, &mut body, job, seq, text, checkpoint)?
+            };
+            let bytes = super::document::encode(&metadata, &body);
+            check_size(bytes.len())?;
+            let mut receipt = json!({"checkpoint":seq});
+            metadata
+                .as_object_mut()
+                .expect("thread metadata object")
+                .remove(super::delta::METADATA_KEY);
+            if let Some(range) = range {
+                let append = json!(Append {
+                    base_revision: item.revision.clone(),
+                    offset: super::document::public_prefix_bytes(&metadata) + range.start,
+                    start: bytes.len() - body.len() - 1 + range.start,
+                    length: range.len(),
+                });
+                metadata[super::delta::METADATA_KEY] = append.clone();
+                receipt["append"] = append;
+            }
+            match content.write(
+                space,
+                Some(id),
+                "threads",
+                Some(&item.revision),
+                metadata,
+                bytes.as_bytes(),
+                Request {
+                    account: actor.account,
+                    via: actor.via.as_ref(),
+                    id: &rid,
+                    operation: "threads.checkpoint",
+                    fingerprint: &fp,
+                },
+                |_| receipt,
+            ) {
+                Ok(_) => return Ok(()),
+                Err(e)
+                    if e.details
+                        .as_ref()
+                        .is_some_and(|d| d["reason"] == "stale_revision") =>
+                {
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
         }
+        Err(Error::conflict(
+            "thread changed while saving agent output; retry from its checkpoint",
+        ))
     }
-    Err(Error::conflict(
-        "thread changed while saving agent output; retry from its checkpoint",
-    ))
 }
 
-fn append_output(
+pub(super) fn append_output(
     metadata: &mut Value,
     body: &mut String,
     job: &Job,
@@ -243,6 +263,9 @@ fn append_output(
         machine_id: checkpoint["message_machine"].as_str().map(str::to_owned),
         duration_ms: timing["duration_ms"].as_u64(),
         reasoning_ms: timing["reasoning_ms"].as_u64(),
+        continues: checkpoint["segment_of"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok()),
     };
     let output = &metadata["output"];
     let (start, range) = if output["job_id"] == job.id && output["run"] == job.runs {
@@ -279,11 +302,15 @@ fn append_output(
             body,
             id,
             "agent",
-            &rendered(&now)?,
+            &rendered(checkpoint["record_at"].as_str().unwrap_or(&now))?,
             text,
             Some((turn, &provenance)),
         );
-        super::document::record_message(metadata, &now);
+        if provenance.continues.is_some() {
+            super::document::record_activity(metadata, &now);
+        } else {
+            super::document::record_message(metadata, &now);
+        }
         (start, Some(offset..body.len()))
     };
     metadata["output"] = json!({"job_id":job.id,"run":job.runs,"checkpoint":seq,"start":start});

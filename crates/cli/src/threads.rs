@@ -73,6 +73,9 @@ pub enum Command {
         /// Open exactly this message from the current thread revision.
         #[arg(long)]
         message_id: Option<String>,
+        /// Read at most 128 KiB at the end of the saved thread.
+        #[arg(long, conflicts_with_all = ["since", "message_id"])]
+        tail: bool,
     },
     /// Save your message and admit a provider turn; reuse request-id after failure.
     Send {
@@ -175,6 +178,7 @@ impl Command {
                 id,
                 since,
                 message_id,
+                tail,
             } => {
                 let mut input = json!({"id":id});
                 if let Some(since) = since {
@@ -182,6 +186,9 @@ impl Command {
                 }
                 if let Some(message_id) = message_id {
                     input["message_id"] = json!(message_id);
+                }
+                if tail {
+                    input["tail"] = json!(true);
                 }
                 ("threads.get", input)
             }

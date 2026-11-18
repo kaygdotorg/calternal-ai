@@ -25,6 +25,22 @@ pub(super) fn body(item: &Item) -> Result<&str, Error> {
 pub(super) fn body_bytes(bytes: &[u8]) -> Result<&str, Error> {
     let text =
         std::str::from_utf8(bytes).map_err(|_| Error::internal("invalid thread encoding"))?;
+    body_tail(text)?
+        .strip_suffix('\n')
+        .ok_or_else(|| Error::internal("invalid thread framing"))
+}
+
+/// Parse just the bounded generated prefix, tolerating a partial UTF-8 code
+/// point at the end of the supplied window after the prefix.
+#[cfg(target_os = "linux")]
+pub(super) fn prefix_bytes(bytes: &[u8]) -> Result<usize, Error> {
+    let text = std::str::from_utf8(bytes)
+        .or_else(|error| std::str::from_utf8(&bytes[..error.valid_up_to()]))
+        .map_err(|_| Error::internal("invalid thread encoding"))?;
+    Ok(text.len() - body_tail(text)?.len())
+}
+
+fn body_tail(text: &str) -> Result<&str, Error> {
     let (front, body) = text
         .strip_prefix("---\n")
         .and_then(|s| s.split_once("\n---\n"))
@@ -55,9 +71,7 @@ pub(super) fn body_bytes(bytes: &[u8]) -> Result<&str, Error> {
     } else {
         tail
     };
-    super::provider_notice::skip(tail)?
-        .strip_suffix('\n')
-        .ok_or_else(|| Error::internal("invalid thread framing"))
+    super::provider_notice::skip(tail)
 }
 
 fn headline(metadata: &Value) -> String {
@@ -138,7 +152,7 @@ pub(super) fn public_metadata(mut metadata: Value) -> Value {
 /// The view holds no provider session state or machine membership references.
 pub(super) fn checked_view(item: &Item) -> Result<Value, Error> {
     let body = body(item)?;
-    let messages = super::records::read(body)?;
+    let messages = super::records::view(body)?;
     let mut metadata = public_metadata(item.metadata.clone());
     metadata["message_count"] = json!(messages.len());
     Ok(

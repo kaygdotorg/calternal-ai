@@ -123,7 +123,7 @@ impl Space {
             ));
         }
         if let Some((metadata, bytes)) = retarget(&root.item, old, &root.path)? {
-            Content::validate_write_size(&metadata, &bytes)?;
+            Content::validate_write_size(&root.item.kind, &metadata, &bytes)?;
             root.item.metadata = metadata;
             root.item.bytes = bytes;
         }
@@ -141,7 +141,7 @@ impl Space {
             let Some((metadata, bytes)) = retarget(&source, old, &root.path)? else {
                 continue;
             };
-            Content::validate_write_size(&metadata, &bytes)?;
+            Content::validate_write_size(&source.kind, &metadata, &bytes)?;
             bytes_total += bytes.len() + metadata.to_string().len();
             if bytes_total > MAX_RELATED_BYTES {
                 return Err(Error::unavailable(

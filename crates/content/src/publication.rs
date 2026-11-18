@@ -57,7 +57,17 @@ impl Content {
                 return Ok(());
             };
             if place_related {
-                space.place_related(&account, &request, self.fault)?;
+                let result = space.place_related(&account, &request, self.fault);
+                #[cfg(target_os = "linux")]
+                if result
+                    .as_ref()
+                    .is_err_and(|error| error.code == calternal_types::ErrorCode::Conflict)
+                    && let Some(id) = id.as_deref()
+                    && space.abort_thread_patch(&account, &request, id, &revision)?
+                {
+                    continue;
+                }
+                result?;
             }
             let item = if let Some(id) = id {
                 if state.as_deref() == Some("purging")

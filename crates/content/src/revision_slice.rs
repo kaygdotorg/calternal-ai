@@ -19,40 +19,40 @@ impl Content {
         revision: &str,
         range: Range<usize>,
     ) -> Result<Option<(Value, Vec<u8>)>> {
-        if range.start > range.end || range.end > crate::MAX_DOCUMENT_BYTES {
+        if range.start > range.end || range.end > crate::MAX_THREAD_BYTES {
             return Err(Error::invalid_input("invalid revision byte range"));
         }
         self.with_space(space, |s| {
             let row = s
                 .conn
                 .prepare_cached(
-                    "SELECT v.metadata, v.rowid
+                    "SELECT v.metadata,v.rowid,v.seq,coalesce(p.base_seq,v.seq),coalesce(p.offset,0)+length(v.bytes)
                      FROM versions v
                      JOIN items i ON i.id = v.item
                      JOIN versions b ON b.item = v.item AND b.seq = v.seq - 1
+                     LEFT JOIN thread_revision_patches p ON p.item=v.item AND p.seq=v.seq
                      WHERE v.revision = ?1 AND v.item = ?2 AND i.kind = ?3
                        AND i.mat_state NOT IN ('purged','purging')
                        AND substr(i.path, 1, 7) <> '.trash/'
-                       AND b.revision = ?4 AND length(v.bytes) >= ?5",
+                       AND b.revision = ?4 AND coalesce(p.offset,0)+length(v.bytes) >= ?5",
                 )
                 .map_err(internal)?
                 .query_row(
                     params![revision, item.to_string(), kind, base, range.end as i64],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                    |row| Ok((
+                        row.get::<_, String>(0)?,
+                        crate::thread_append::revision::Revision {
+                            item: item.to_string(), rowid: row.get(1)?, seq: row.get(2)?,
+                            base_seq: row.get(3)?, size: row.get::<_, u32>(4)? as usize,
+                        },
+                    )),
                 )
                 .optional()
                 .map_err(internal)?;
-            let Some((meta, rowid)) = row else {
+            let Some((meta, revision)) = row else {
                 return Ok(None);
             };
-            let mut bytes = vec![0; range.len()];
-            if !bytes.is_empty() {
-                s.conn
-                    .blob_open("main", "versions", "bytes", rowid, true)
-                    .map_err(internal)?
-                    .read_at_exact(&mut bytes, range.start)
-                    .map_err(internal)?;
-            }
+            let bytes = revision.read(&s.conn, range)?;
             Ok(Some((
                 serde_json::from_str(&meta).map_err(internal)?,
                 bytes,

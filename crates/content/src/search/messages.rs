@@ -17,7 +17,7 @@ pub(super) use writer::{Progress, advance};
 const WIDTH: usize = 16_384;
 /// Generation of the message postings and thread-location rows. Bump it when what
 /// they mean changes; a mismatch rebuilds the space's index from saved threads.
-const GENERATION: &str = "1";
+const GENERATION: &str = "2";
 
 /// One record in a validated immutable thread revision. Ranges address that exact
 /// revision's staged Markdown, excluding any materialization-only identity line.
@@ -35,8 +35,9 @@ pub struct MessageRecord {
 }
 
 /// Parser supplied by the host owning the thread format. It must validate
-/// framing before returning any ranges and must not read files.
-pub type MessageDecoder = fn(&[u8]) -> Result<Vec<MessageRecord>>;
+/// framing before returning any ranges and must not read files. The flag
+/// indicates a complete append fragment with no document envelope.
+pub type MessageDecoder = fn(&[u8], bool) -> Result<Vec<MessageRecord>>;
 
 struct MessageRange {
     revision: String,

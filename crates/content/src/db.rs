@@ -38,6 +38,12 @@ pub(crate) struct Space {
     /// Immutable kind definitions, shared by validation, naming and placement;
     /// bounded like the existing name cache and dropped with this space.
     pub(crate) registrations: RefCell<HashMap<String, (crate::Placement, crate::FileFormat)>>,
+    #[cfg(target_os = "linux")]
+    pub(crate) append_proofs: HashMap<Uuid, (i64, Result<crate::thread_append::proof::Ready>)>,
+    #[cfg(target_os = "linux")]
+    pub(crate) append_task: Option<crate::thread_append::proof::Task>,
+    #[cfg(target_os = "linux")]
+    pub(crate) append_recovering: bool,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
 /// The existing per-space SQLite path under the guarded appdata root.
@@ -80,7 +86,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             crate::linked_write::SCHEMA,
             crate::trash::SCHEMA,
         ],
-        &[THREAD_SNOOZE],
+        &[THREAD_SNOOZE, crate::thread_append::revision::SCHEMA],
     );
 
 pub(crate) fn database(
@@ -129,6 +135,12 @@ impl Space {
             journal,
             conn,
             files: userdata_ssd.join("spaces").join(id.to_string()),
+            #[cfg(target_os = "linux")]
+            append_proofs: HashMap::new(),
+            #[cfg(target_os = "linux")]
+            append_task: None,
+            #[cfg(target_os = "linux")]
+            append_recovering: false,
             names: HashMap::new(),
             registrations: RefCell::new(HashMap::new()),
             pending_since: None,
@@ -159,21 +171,86 @@ impl Space {
             .ok_or_else(missing)
     }
 
-    pub(crate) fn get(&self, id: Uuid) -> Result<Item> {
-        self.get_selected(id, false)
-    }
-    pub(crate) fn get_selected(&self, id: Uuid, live_only: bool) -> Result<Item> {
-        let row=self.conn.query_row("SELECT i.kind,v.metadata,v.bytes,v.revision,v.updated_at FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq WHERE i.id=?1 AND i.mat_state NOT IN ('purged','purging') AND (NOT ?2 OR substr(i.path,1,7) <> '.trash/')",params![id.to_string(),live_only],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Vec<u8>>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).optional().map_err(internal)?.ok_or_else(missing)?;
-        Ok(Item {
+    pub(crate) fn summary(&self, id: Uuid) -> Result<crate::Summary> {
+        let row = self
+            .conn
+            .prepare_cached(
+                "SELECT kind,path,metadata,revision,updated_at FROM items WHERE id=?1
+             AND mat_state NOT IN ('purged','purging')",
+            )
+            .map_err(internal)?
+            .query_row([id.to_string()], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                ))
+            })
+            .optional()
+            .map_err(internal)?
+            .ok_or_else(missing)?;
+        Ok(crate::Summary {
             id,
             space: self.id,
             kind: row.0,
-            metadata: serde_json::from_str(&row.1).map_err(internal)?,
-            bytes: row.2,
+            path: row.1,
+            metadata: serde_json::from_str(&row.2).map_err(internal)?,
             revision: row.3,
             updated_at: row.4,
         })
     }
+
+    pub(crate) fn get(&self, id: Uuid) -> Result<Item> {
+        self.get_selected(id, false)
+    }
+    pub(crate) fn get_selected(&self, id: Uuid, live_only: bool) -> Result<Item> {
+        let (kind, metadata, bytes, revision, updated_at, seq) = self
+            .conn
+            .prepare_cached(
+                "SELECT i.kind,v.metadata,CASE WHEN p.seq IS NULL THEN v.bytes ELSE NULL END,
+                    v.revision,v.updated_at,v.seq
+             FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq
+             LEFT JOIN thread_revision_patches p ON p.item=v.item AND p.seq=v.seq
+             WHERE i.id=?1 AND i.mat_state NOT IN ('purged','purging')
+               AND (NOT ?2 OR substr(i.path,1,7) <> '.trash/')",
+            )
+            .map_err(internal)?
+            .query_row(params![id.to_string(), live_only], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<Vec<u8>>>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, i64>(5)?,
+                ))
+            })
+            .optional()
+            .map_err(internal)?
+            .ok_or_else(missing)?;
+        Ok(Item {
+            id,
+            space: self.id,
+            kind,
+            metadata: serde_json::from_str(&metadata).map_err(internal)?,
+            bytes: self.snapshot_bytes(id, seq, bytes)?,
+            revision,
+            updated_at,
+        })
+    }
+
+    fn snapshot_bytes(&self, id: Uuid, seq: i64, snapshot: Option<Vec<u8>>) -> Result<Vec<u8>> {
+        if let Some(bytes) = snapshot {
+            return Ok(bytes);
+        }
+        let revision =
+            crate::thread_append::revision::Revision::get(&self.conn, id.to_string(), seq)?
+                .ok_or_else(|| internal("saved revision missing"))?;
+        revision.read(&self.conn, 0..revision.size)
+    }
+
     pub(crate) fn history(
         &self,
         id: Uuid,
@@ -202,26 +279,35 @@ impl Space {
             i64::MAX
         };
         let limit = limit.clamp(1, 1000);
-        let mut stmt=self.conn.prepare_cached("SELECT metadata,bytes,revision,updated_at FROM versions WHERE item=?1 AND seq<?2 ORDER BY seq DESC LIMIT ?3").map_err(internal)?;
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT v.metadata,CASE WHEN p.seq IS NULL THEN v.bytes ELSE NULL END,
+                    v.revision,v.updated_at,v.seq
+             FROM versions v LEFT JOIN thread_revision_patches p USING(item,seq)
+             WHERE v.item=?1 AND v.seq<?2 ORDER BY v.seq DESC LIMIT ?3",
+            )
+            .map_err(internal)?;
         let rows = stmt
             .query_map(params![id.to_string(), before, limit + 1], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
-                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, Option<Vec<u8>>>(1)?,
                     r.get::<_, String>(2)?,
                     r.get::<_, String>(3)?,
+                    r.get::<_, i64>(4)?,
                 ))
             })
             .map_err(internal)?;
         let versions: Vec<Item> = rows
             .map(|row| {
-                let (meta, bytes, revision, updated_at) = row.map_err(internal)?;
+                let (meta, bytes, revision, updated_at, seq) = row.map_err(internal)?;
                 Ok(Item {
                     id,
                     space: self.id,
                     kind: item.kind.clone(),
                     metadata: serde_json::from_str::<Value>(&meta).map_err(internal)?,
-                    bytes,
+                    bytes: self.snapshot_bytes(id, seq, bytes)?,
                     revision,
                     updated_at,
                 })
@@ -292,7 +378,17 @@ mod tests {
         conn.execute_batch("DROP TRIGGER thread_snooze_update;")
             .unwrap();
 
-        migrate_release(&conn, SPACE_SCHEMA, true).unwrap();
+        let snooze_release = Schema::new(
+            "space content.db",
+            3,
+            &[
+                SPACE_BASE,
+                crate::linked_write::SCHEMA,
+                crate::trash::SCHEMA,
+            ],
+            &[THREAD_SNOOZE],
+        );
+        migrate_release(&conn, snooze_release, true).unwrap();
         let original: Vec<u8> = conn
             .query_row("SELECT bytes FROM versions WHERE revision='v1'", [], |r| {
                 r.get(0)

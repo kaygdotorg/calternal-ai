@@ -8,6 +8,7 @@ mod http;
 mod idle;
 mod jobs;
 mod live;
+mod long_thread;
 mod materialization;
 mod message_search;
 mod notes_scenario;
@@ -86,6 +87,9 @@ struct Args {
     /// Gate exact term, rare term and phrase search against framed thread fixtures.
     #[arg(long)]
     message_search_only: bool,
+    /// Measure append and bounded or exact reads of one near-16 MiB thread.
+    #[arg(long)]
+    long_thread_only: bool,
     /// Measure staged file-origin and actual first-use index rebuilding.
     #[arg(long)]
     rebuild_only: bool,
@@ -139,6 +143,7 @@ fn run(a: &Args) -> Result<i32> {
         a.concurrency_only,
         a.search_only,
         a.message_search_only,
+        a.long_thread_only,
         a.search_queue,
         a.rebuild_only,
     ]
@@ -177,6 +182,9 @@ fn run(a: &Args) -> Result<i32> {
     }
     if a.search_only {
         return search::run(a);
+    }
+    if a.long_thread_only {
+        return long_thread::run(a);
     }
     if a.message_search_only {
         return message_search::run(a);

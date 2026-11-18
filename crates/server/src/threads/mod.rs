@@ -1,5 +1,7 @@
 //! Threads product engine: manifest policy, content files and the existing turn engine.
 //! All durable work runs on blocking workers; no independent store or global lock.
+#[cfg(target_os = "linux")]
+mod append_checkpoint;
 mod delta;
 mod document;
 mod headings;
@@ -75,23 +77,39 @@ pub(crate) async fn dispatch<D: Directory>(
     if op == "threads.models" {
         return blocking(move || models::list(&state, space, &who)).await;
     }
-    let (st, operation, request_id, data) =
-        (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
-    let caller = who.clone();
-    let message_actor = actor.clone();
-    let value = blocking(move || {
-        operations::apply(
-            &st,
-            &caller,
-            space,
-            &operation,
-            &request_id,
-            &data,
-            id,
-            &message_actor,
-        )
-    })
-    .await?;
+    let mut read = None;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while read.is_none() {
+        let (st, operation, request_id, data) =
+            (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
+        let caller = who.clone();
+        let message_actor = actor.clone();
+        let result = blocking(move || {
+            operations::apply(
+                &st,
+                &caller,
+                space,
+                &operation,
+                &request_id,
+                &data,
+                id,
+                &message_actor,
+            )
+        })
+        .await;
+        if result.as_ref().is_err_and(|error| {
+            error
+                .details
+                .as_ref()
+                .is_some_and(|details| details["reason"] == "thread_verifying")
+        }) && std::time::Instant::now() < deadline
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        } else {
+            read = Some(result?);
+        }
+    }
+    let value = read.expect("thread operation returned");
     if op == "threads.send" {
         crate::fault::hit(crate::fault::FaultPoint::AfterThreadMessage);
         let thread = value["thread"]["id"]

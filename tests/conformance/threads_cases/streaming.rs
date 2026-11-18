@@ -409,7 +409,10 @@ async fn person_wait_phase_is_shared_and_request_details_stay_private() {
 
 #[tokio::test]
 async fn thread_full_reaches_live_and_saved_reads_without_losing_prior_output() {
-    let f = Fixture::new().await;
+    let mut f = Fixture::new().await;
+    // This fixture streams a full 16 MiB with durable checkpoints. Let the
+    // test's own terminal deadline govern the feed on slower disks.
+    f.client = reqwest::Client::builder().no_proxy().build().unwrap();
     let _machine = direct_fixture(&f).await;
     let thread = f
         .op(
@@ -464,6 +467,6 @@ async fn thread_full_reaches_live_and_saved_reads_without_losing_prior_output() 
     );
     let text = saved["messages"][1]["text"].as_str().unwrap();
     assert!(text.contains("overflow-segment-0:"));
-    assert!(!text.contains("overflow-segment-32:"));
-    assert!(saved["markdown"].as_str().unwrap().len() <= 2 * 1024 * 1024);
+    assert!(!text.contains("overflow-segment-256:"));
+    assert!(saved["markdown"].as_str().unwrap().len() <= 16 * 1024 * 1024);
 }

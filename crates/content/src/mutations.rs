@@ -1,5 +1,6 @@
 //! Content/control mutation admission, shared receipts and guarded Trash placement.
 use super::*;
+use crate::db::Space;
 use crate::linked_write::{self, Retarget, Staged};
 use rusqlite::TransactionBehavior;
 use std::time::{Duration, Instant};
@@ -129,10 +130,33 @@ impl Content {
         request: Request<'_>,
         run: impl FnOnce(&Item, Option<Value>) -> Result<Value>,
     ) -> Result<Value> {
+        self.admit_content_head(space, id, request, Space::get, run)
+    }
+
+    /// Admit a receipted control using just current item metadata. The same
+    /// space slot fences deletion, without reading the file or a revision BLOB.
+    pub fn admit_summary(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        request: Request<'_>,
+        run: impl FnOnce(&crate::Summary, Option<Value>) -> Result<Value>,
+    ) -> Result<Value> {
+        self.admit_content_head(space, id, request, Space::summary, run)
+    }
+
+    fn admit_content_head<T>(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        request: Request<'_>,
+        load: impl FnOnce(&Space, Uuid) -> Result<T>,
+        run: impl FnOnce(&T, Option<Value>) -> Result<Value>,
+    ) -> Result<Value> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
         self.with_space(space, |s| {
             self.publish_pending(s)?;
-            let current = s.get(id)?;
+            let current = load(s, id)?;
             let saved = self
                 .journals
                 .receipt(&s.journal, request.account, request.id)?;
@@ -328,10 +352,13 @@ impl Content {
         )
     }
 
-    pub(crate) fn validate_write_size(metadata: &Value, bytes: &[u8]) -> Result<()> {
-        if bytes.len() > crate::MAX_DOCUMENT_BYTES
-            || metadata.to_string().len() > crate::MAX_METADATA_BYTES
-        {
+    pub(crate) fn validate_write_size(kind: &str, metadata: &Value, bytes: &[u8]) -> Result<()> {
+        let max = if kind == "threads" {
+            crate::MAX_THREAD_BYTES
+        } else {
+            crate::MAX_DOCUMENT_BYTES
+        };
+        if bytes.len() > max || metadata.to_string().len() > crate::MAX_METADATA_BYTES {
             return Err(Error::invalid_input("content input is too large"));
         }
         Ok(())
@@ -353,7 +380,7 @@ impl Content {
         guard: impl FnOnce() -> Result<()>,
     ) -> Result<Item> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
-        Self::validate_write_size(&metadata, bytes)?;
+        Self::validate_write_size(kind, &metadata, bytes)?;
         if request.id.len() > 256 {
             return Err(Error::invalid_input("content input is too large"));
         }

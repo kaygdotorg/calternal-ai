@@ -55,6 +55,23 @@ pub fn migrate_release(conn: &Connection, schema: Schema<'_>, additive: bool) ->
     apply(conn, schema, additive)
 }
 
+/// Retire a rollback marker that would admit a writer older than the newly
+/// written representation. Call in the same transaction as the new data.
+pub fn require_writer_version(tx: &Transaction<'_>, minimum: i64) -> Result<()> {
+    let exists = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name=?1 AND type='table')",
+        [COMPATIBLE],
+        |row| row.get::<_, bool>(0),
+    )?;
+    if exists {
+        tx.execute(
+            &format!("DELETE FROM {COMPATIBLE} WHERE older < ?1"),
+            [minimum],
+        )?;
+    }
+    Ok(())
+}
+
 /// Read the installed version and reject an unsupported source. One pragma on
 /// the normal path. Used before a deployment chooses files to snapshot.
 pub fn inspect(conn: &Connection, schema: Schema<'_>) -> Result<i64> {
