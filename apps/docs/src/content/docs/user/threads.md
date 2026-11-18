@@ -63,6 +63,16 @@ taking the content lock or awaiting the writer. Publication retries on subsequen
 job transactions and recovery. Pending entries are eligible for pruning after
 seven days. The journal's operator-configured receipt retention bounds deduplication.
 
+### Read the end of a saved thread
+
+Pass `tail: true` to `threads.get`, or use `calternal threads get <id> --tail`.
+A large response contains at most 64 recent framed records and 128 KiB of
+Markdown from the current indexed revision. If the latest legacy record is
+larger by itself, the API returns its last 128 KiB, aligned to UTF-8, with
+`partial_record: true`. A cold or lagging index returns a retryable response.
+The exact-message read continues to open just the indexed record at the
+requested ID.
+
 ### Read one checkpoint addition
 
 Content journal entries identify the acting account in `author` and carry
@@ -170,7 +180,7 @@ output as a byte count. The saved message records the step and status in
 Markdown blockquotes. The adapter and host scrub the issued Calternal
 credential before the step reaches a client or the file.
 
-A saved thread holds at most 2 MiB of Markdown, including the host-owned
+A saved thread holds at most 16 MiB of Markdown, including the host-owned
 identity line. An overflowing checkpoint is rejected atomically. A saved turn
 reports `thread_full` on the job stream and in `turn_reason.code` on reload.
 Earlier checkpoints remain readable.
@@ -189,6 +199,7 @@ calternal threads --token-file person.token list --space-id <uuid>
 calternal threads --token-file person.token models --space-id <uuid>
 calternal threads --token-file person.token list --space-id <uuid> --cursor <cursor>
 calternal threads --token-file person.token get <thread-uuid>
+calternal threads --token-file person.token get <thread-uuid> --tail
 calternal threads --token-file person.token get <thread-uuid> --since '<checkpoint journal data JSON>'
 calternal threads --token-file person.token --request-id <stable-id> send <thread-uuid> --message 'Inspect this workspace' --model claude-sonnet-5-5 --reasoning high
 calternal threads --token-file person.token stop <thread-uuid>
