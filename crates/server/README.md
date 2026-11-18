@@ -324,3 +324,6 @@ from their declaration after parsing. Authentication runs before that scope.
 These scheduling reservations do not bypass a space's locks or the auth
 worker's mandatory publication barrier. A read blocked on those resources can
 still delay other reads within the bounded reader lane.
+
+The optional Unsplash integration serves the eight built-in wallpapers through
+the same origin. See the [wallpaper contract and environment setting](../../docs/wallpapers.md).

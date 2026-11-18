@@ -346,6 +346,7 @@ pub(super) async fn dispatch_checked<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     match op {
+        calternal_core::WALLPAPERS_LIST => super::wallpapers::list(input),
         "notes.list" | "notes.lookup" | "tags.list" | "tags.lookup" | "trash.list"
         | "notes.history" => super::note_pages::discover(&state, op, input).await,
         "notes.get" => {
