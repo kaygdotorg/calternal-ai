@@ -79,7 +79,17 @@ impl Auth {
     /// Issues a one-time first-account token only while no account exists.
     /// This is a privileged local administration operation; protect the result.
     pub async fn first_owner_token(&self) -> Result<Option<String>> {
-        crate::setup::first_owner_token(&self.inner).await
+        Ok(self.first_owner_code(None).await?.map(|grant| grant.code))
+    }
+
+    /// Reuse an unexpired, unused startup candidate or rotate the first-owner code.
+    /// Returns its stored expiry, or None after the first account exists. A
+    /// rotation costs one protected commit. This is a privileged local operation.
+    pub async fn first_owner_code(
+        &self,
+        candidate: Option<String>,
+    ) -> Result<Option<crate::FirstOwnerCode>> {
+        crate::setup::first_owner_code(&self.inner, candidate).await
     }
 
     /// Creates identity records, an owned personal space, and a first-passkey
