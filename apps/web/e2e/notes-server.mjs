@@ -102,19 +102,19 @@ try {
   await page.keyboard.press("Escape");
   await page.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
   // Rename from the list.
-  const row = page.locator('nav[aria-label="Notes"] li', { hasText: "Planning" });
+  const row = page.locator('nav[aria-label="Notes"] [role=listitem]', { hasText: "Planning" });
   await row.getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Rename" }).click();
   await page.fill('input[aria-label="Note title"]', "Quarter plan"); await page.keyboard.press("Enter");
   await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
   ok(true, "rename from the list");
   // Trash with Undo.
-  await page.locator('nav[aria-label="Notes"] li', { hasText: "Quarter plan" }).getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Move to Trash" }).click();
+  await page.locator('nav[aria-label="Notes"] [role=listitem]', { hasText: "Quarter plan" }).getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Move to Trash" }).click();
   await page.getByText(/Moved .* to the Trash/).first().waitFor({ timeout: 6000 });
   ok((await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).count()) === 0, "delete moves the note out of the list");
   await page.getByRole("button", { name: "Undo" }).click(); await page.locator('nav[aria-label="Notes"] a.row', { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
   ok(true, "Undo brings it back");
   // Trash view and Restore.
-  await page.locator('nav[aria-label="Notes"] li', { hasText: "Quarter plan" }).getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Move to Trash" }).click();
+  await page.locator('nav[aria-label="Notes"] [role=listitem]', { hasText: "Quarter plan" }).getByRole("button", { name: /Actions for/ }).click(); await page.getByRole("menuitem", { name: "Move to Trash" }).click();
   await page.getByRole("link", { name: "Trash" }).click(); await page.getByRole("heading", { name: "Trash" }).waitFor();
   await page.locator("article .t", { hasText: "Quarter plan" }).waitFor({ timeout: 6000 });
   await page.getByRole("button", { name: "Restore" }).click(); await page.waitForTimeout(800);

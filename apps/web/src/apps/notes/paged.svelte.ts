@@ -11,7 +11,7 @@ export type ReadPage<T> = (cursor?: string) => Promise<Page<T>>;
 /** A paged list of rows of type `T`; reactive (`items`, `more`, `error`). One read per call; see the file header for what is kept across reads. */
 export class Paged<T> {
   /** The rows read so far, in the server's order. */
-  items = $state<T[]>([]);
+  items = $state.raw<T[]>([]);
   /** There is another page to read. */
   more = $state(false);
   /** The words for a failed read (empty when none); `next` does nothing until `retry`. */
@@ -65,6 +65,12 @@ export class Paged<T> {
 
   /** Clears a failure and reads the next page again. */
   async retry(): Promise<void> { this.error = ""; await this.next(); }
+
+  /** Whether a row with this id is loaded. */
+  has(id: string): boolean { return this.items.some((r) => this.key(r) === id); }
+
+  /** Replaces a loaded row with a newer copy of it (a note renamed on another device), keeping its place. */
+  replace(id: string, row: T): void { this.items = this.items.map((r) => (this.key(r) === id ? row : r)); }
 
   /** Removes a row this client removed itself, so it does not wait for the next full read. */
   drop(id: string): void { this.items = this.items.filter((r) => this.key(r) !== id); }

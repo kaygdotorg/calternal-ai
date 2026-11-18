@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Fenwick } from "./fenwick";
+import { Fenwick } from "../src/lib/fenwick";
 
 describe("Fenwick", () => {
   const h = [10, 20, 30, 40, 50];
