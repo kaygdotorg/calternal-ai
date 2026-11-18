@@ -123,6 +123,7 @@ pub(crate) async fn start_add(inner: &Arc<Inner>, user: AccountId) -> Result<(St
 pub(crate) async fn finish_add(
     inner: &Arc<Inner>,
     user: AccountId,
+    installation: crate::InstallationId,
     ceremony: &str,
     credential: Value,
     name: &str,
@@ -155,12 +156,14 @@ pub(crate) async fn finish_add(
         created_at: now,
         last_used_at: None,
     };
+    let config = inner.config.clone();
     inner
         .db
         .run(move |c| {
             let tx = c
                 .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
                 .map_err(sql)?;
+            crate::session::check_fresh(&tx, &config, user, installation, true)?;
             let added = tx
                 .execute(
                     "INSERT OR IGNORE INTO passkeys (cred_id, user_id, passkey, created_at, name)
@@ -174,6 +177,7 @@ pub(crate) async fn finish_add(
                     "passkey already registered",
                 ));
             }
+            crate::account_recovery::audit(&tx, user, "passkey", "added", "account", now)?;
             crate::spaces::commit(tx)
         })
         .await?;
@@ -239,7 +243,9 @@ pub(crate) async fn remove(inner: &Inner, user: AccountId, id: &str) -> Result<(
             if mine == 0 {
                 return Err(Error::new(ErrorCode::NotFound, "no such passkey"));
             }
-            if have <= 1 {
+            let linked: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM oidc_links l JOIN oidc_providers p ON p.id=l.provider_id
+                WHERE l.user_id=?1 AND p.enabled=1)",[&u], |r|r.get(0)).map_err(sql)?;
+            if have <= 1 && !linked {
                 return Err(Error::new(ErrorCode::LastPasskey, "only passkey"));
             }
             tx.execute(

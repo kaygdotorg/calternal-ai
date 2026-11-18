@@ -36,8 +36,8 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `startup.json`, `setup.token`, operator and release config | Mixed | Server startup publishes `calternal-startup/v1` and a replaceable setup code. Auth retains its hash and expiry. Operator owns the pinned installation ID and deployment secrets. Deploy owns image IDs, units and release pointers. |
 
 The live-editing migration adds `room_kinds` and `room_checkpoints` to
-space content SQLite as version 5, following the version 4 thread snooze
-step. Checkpoints belong to an immutable revision and commit with its outbox
+space content SQLite as version 6, following Sharing’s version 5 collection
+membership projection. Checkpoints belong to an immutable revision and commit with its outbox
 intent. A checkpoint is limited to 8 MiB. Each item retains up to 64 recent
 checkpoints and 16 MiB total. Purge removes them with the referenced revisions.
 The preceding writer ignores these tables. A head written without a
@@ -166,3 +166,23 @@ full deployment budget.
 During a reconnect, the client retains queued sends and delivers them after
 the server is reachable again. Requests that already received a durable
 receipt replay using the same request ID.
+
+## Account onboarding and recovery
+
+Auth schema 12 adds account-owned email state, challenges, recovery
+proofs and grants, and audit history through the shared runner. Account
+erasure cascades to these rows. The protected recovery inventory captures
+the new tables under their account UUIDs. Invite-bound email challenges
+without an account expire after ten minutes and are owned by the
+installation until consumed or pruned. Preserve `system/invite.key`,
+which also provides separate derived keys for account proofs and sealed
+provider credentials. Auth schema 13 adds provider definitions with
+sealed credentials, issuer-bound identity links and session origins.
+Definitions belong to the installation. Links and session origins belong
+to the account.
+
+This upgrade is incompatible with the schema-11 protected recovery
+writer because its table inventory is closed. Take the full restore
+point with explicit owner approval and use the locked deployment
+coordinator. A v11 process must refuse the newer authority rather than
+discard unknown records.

@@ -67,7 +67,7 @@ try {
     await p.waitForTimeout(2200);
     const right = await p.evaluate(() => { const pill = document.querySelector("[data-win] .tr"); const r = pill.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, over: [...document.querySelectorAll(".edge.r, .edge.l")].filter((e) => { const q = e.getBoundingClientRect(); return !(q.right < r.left || q.left > r.right || q.bottom < r.top || q.top > r.bottom); }).length }; });
     ok(right.over === 0, "nothing from the shell sits over a window's top-right pill on a phone", JSON.stringify(right));
-    await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click();
+    await p.locator("[data-win]").first().getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click();
     ok((await p.locator("[role^=menuitem]", { hasText: /side panel/ }).count()) === 1, "the window's menu has the side panel item");
     await p.locator("[role^=menuitem]", { hasText: /side panel/ }).click(); await p.waitForTimeout(700);
     ok((await p.locator("aside.right [role=tab], aside.right .tabs button, aside.right").count()) > 0 && (await p.locator(".narrow").getAttribute("data-right")) === "true", "choosing it opens the side panel");

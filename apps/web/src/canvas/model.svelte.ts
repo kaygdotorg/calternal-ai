@@ -1,6 +1,5 @@
 /**
- * The canvas's state (docs/ui-shell-status.md, "The canvas experiment"): the columns and their windows, which window has focus, which is maximised, and the strip's scroll position. Experiment only, behind `?canvas=1` in the
- * fixtures build; the arrangement is kept in the browser (`cal.canvas`, JSON because it is throwaway experiment state, not the person's userdata). Pure placement arithmetic is in layout.ts.
+ * The canvas's state (docs/ui-shell-status.md, "The canvas experiment"): the columns and their windows, which window has focus, which is maximised, and the strip's scroll position. The shell's window area (Appearance, Windows turns it on or off; `?canvas=0` and `?canvas=1` override it for a visit); the arrangement is kept in the browser (`cal.canvas`, JSON because it is throwaway experiment state, not the person's userdata). Pure placement arithmetic is in layout.ts.
  *
  * Addresses: a window's address is `/<kind>/<item>` and there is one window per address, so a deep link always has exactly one window to open: `show` focuses it, or adds one beside the focused column. The address bar follows
  * the focused window (Canvas.svelte navigates on focus), so the sidebars, which are chosen by the address's kind, follow the focused window's app with no code of their own.
@@ -10,19 +9,28 @@ import { dragBoundary, nextPreset, type Col, type Win } from "./layout";
 import { canvasPrefs } from "./prefs.svelte";
 
 const KEY = "cal.canvas";
-/** Whether the experiment is on: `?canvas=1` once (remembered for the visit), `?canvas=0` to leave. Fixtures build only. */
-export function canvasOn(live: boolean): boolean {
-  if (live) return false;
+/**
+ * Whether windows are shown on the canvas now: the person's setting (Appearance, Windows; the build decides the default, see canvas/prefs.svelte.ts), unless the address says otherwise for this visit: `?canvas=0` (one card) or `?canvas=1` (the canvas), kept for the tab so
+ * tests and links behave the same after the first navigation drops the query. Reactive: switching the setting changes the shell's window area at once.
+ */
+export function canvasActive(): boolean {
+  return override() ?? canvasPrefs.enabled;
+}
+let seen: boolean | null | undefined;
+function override(): boolean | null {
+  if (seen !== undefined) return seen;
   try {
     const q = new URLSearchParams(location.search).get("canvas");
-    if (q === "1") sessionStorage.setItem(KEY + ".on", "1");
-    if (q === "0") sessionStorage.removeItem(KEY + ".on");
-    return sessionStorage.getItem(KEY + ".on") === "1";
-  } catch { return false; }
+    if (q === "1") { sessionStorage.setItem(KEY + ".on", "1"); sessionStorage.setItem(KEY + ".seed", "1"); }
+    if (q === "0") { sessionStorage.setItem(KEY + ".on", "0"); sessionStorage.removeItem(KEY + ".seed"); }
+    const v = sessionStorage.getItem(KEY + ".on");
+    seen = v === "1" ? true : v === "0" ? false : null;
+  } catch { seen = null; }
+  return seen;
 }
 
-/** Read once when the page loads, while the address still carries `?canvas=1` (the first navigation drops the query). */
-export const canvasEnabled = canvasOn(serverMode());
+/** Whether to fill a first visit with a second thread and a note to arrange: only for the explicit `?canvas=1` demonstration. A canvas that is simply on (a setting, a build default, a test) opens what the address names and nothing else. */
+export const canvasSeedWanted = (() => { override(); try { return sessionStorage.getItem(KEY + ".seed") === "1"; } catch { return false; } })();
 
 let n = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(n++).toString(36)}`;

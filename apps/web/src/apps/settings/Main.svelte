@@ -2,7 +2,9 @@
   // A Settings page: the title, one line of purpose, then groups of rows in a centred column (at most 560 px, like Notes). `/settings/<section>/<setting-id>`
   // opens the page with that row highlighted for a moment and scrolled into view. Admin pages end with a Danger area.
   import { tick } from "svelte";
-  import { chromeTrack } from "@calternal/ui";
+  import { SplitView, chromeTrack } from "@calternal/ui";
+  import AppearancePreview from "../../appearance/AppearancePreview.svelte";
+  import { appearance as A } from "../../appearance/prefs.svelte";
   import { route, segments } from "../../lib/route.svelte";
   import { serverMode } from "../../server/client";
   import SettingGroup from "./SettingGroup.svelte";
@@ -13,6 +15,8 @@
   const target = $derived(segments()[0] === "settings" ? segments()[2] : undefined);
   // Every page is one flat scrolling page at every width: sections in order under their headings (the sticky header pill says which one you are in). How wide it is follows the layout preference the chat uses (Appearance, Layout): Wide uses the card's width, Centred a readable column.
   let scrollEl = $state<HTMLElement>(), width = $state(0);
+  // Appearance shows a live preview of the app beside its settings where the card is at least 64 rem wide and the layout is Wide (Centred is a column of its own); narrower, the flat page alone (`?preview=0` turns it off).
+  const preview = $derived(page?.id === "appearance" && A.prefs.chatWidth === "wide" && width >= 1024 && new URLSearchParams(location.search).get("preview") !== "0");
   // Fixtures only: `?scroll=N` opens the page already scrolled N px, so a phone Simulator (which cannot be dragged by script) can show the sticky header pill.
   $effect(() => { const n = Number(new URLSearchParams(location.search).get("scroll")); if (scrollEl && width && n > 0 && !serverMode()) scrollEl.scrollTop = n; });
   let lit = $state<string | undefined>();
@@ -28,16 +32,25 @@
   });
 </script>
 
+{#snippet groups()}
+{#each page!.groups as g}
+      <SettingGroup title={g.title} danger={g.danger}>
+        {#each g.settings as s (s.id)}<SettingRow {s} highlighted={lit === s.id} />{/each}
+      </SettingGroup>
+    {/each}
+{/snippet}
+
 <div class="scroller edge-fade" bind:this={scrollEl} use:chromeTrack style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
 <div class="page">
   {#if page}
     <h1 data-chrome-title>{page.name}</h1>
     <p class="blurb">{page.blurb}</p>
-    {#each page.groups as g}
-      <SettingGroup title={g.title} danger={g.danger}>
-        {#each g.settings as s (s.id)}<SettingRow {s} highlighted={lit === s.id} />{/each}
-      </SettingGroup>
-    {/each}
+    {#if preview}
+      <SplitView sticky class="withpv" listLabel="Appearance settings" detailLabel="Live preview" listWidth="minmax(0, 1fr)" detailWidth="26rem">
+        {#snippet list()}{@render groups()}{/snippet}
+        {#snippet detail()}<AppearancePreview />{/snippet}
+      </SplitView>
+    {:else}{@render groups()}{/if}
   {:else}
     <h1>Settings</h1>
     <p class="blurb">Choose a section on the left.</p>
@@ -52,6 +65,7 @@
   .page { box-sizing: border-box; min-width: 0; overflow-x: clip; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
   /* Wide (the default on desktop; the layout preference, Appearance, Layout) takes the card's width, with descriptions kept to a readable line; Centred keeps the column above. */
   :global(html[data-chat-wide]) .page { max-width: none; }
+  .page :global(.withpv) { --split-top: calc(var(--safe-top) + var(--bar-h) + var(--s-3)); gap: var(--s-8); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); }
   .blurb { margin-top: var(--s-3); color: var(--ink-2); }
   .soft { margin-top: var(--s-4); color: var(--ink-3); font-size: var(--text-label); }

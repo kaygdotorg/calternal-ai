@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // Accessibility in server mode: a real `calternal serve` on an empty installation, a virtual authenticator, axe on every screen (setup, signed-in shell, each Settings page, the failure screens), light and dark,
 // desktop and phone, plus a keyboard-only walk of the setup and sign-in screens. Env: CAL_BIN, CAL_DIST, CAL_A11Y_PORT.
 import AxeBuilder from "@axe-core/playwright";
@@ -40,11 +41,11 @@ try {
     await p.keyboard.press("Tab"); const first = await p.evaluate(() => document.activeElement?.getAttribute("name"));
     await p.keyboard.type(token); await p.keyboard.press("Tab"); const second = await p.evaluate(() => document.activeElement?.getAttribute("name"));
     await p.keyboard.type("Test Owner"); await p.keyboard.press("Tab");
-    const third = await p.evaluate(() => document.activeElement?.textContent?.trim());
-    ok(first === "token" && second === "name" && third === "Create passkey", "setup: Tab goes code, name, button, in that order", `${first}, ${second}, ${third}`);
+    const third = await p.evaluate(() => document.activeElement?.getAttribute("name"));
+    ok(first === "token" && second === "name" && third === "username", "setup: Tab goes code, name, username, in that order", `${first}, ${second}, ${third}`);
     const ring = await p.evaluate(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" || c.boxShadow !== "none"; });
-    ok(ring, "setup: the focused button shows a focus indicator");
-    await p.keyboard.press("Enter");
+    ok(ring, "setup: the focused field shows a focus indicator");
+    await p.reload(); await p.waitForSelector("html[data-ready]"); await signUp(p, token, "Test Owner");
     await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 });
     await p.waitForTimeout(800);
     global.state = await ctx.storageState();
