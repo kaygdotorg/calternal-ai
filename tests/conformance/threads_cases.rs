@@ -1,7 +1,11 @@
 //! Every thread operation is exercised with real passkey sessions and foreign spaces.
 use super::*;
+#[path = "threads_cases/snooze.rs"]
+mod snooze;
 #[path = "threads_cases/streaming.rs"]
 mod streaming;
+#[path = "threads_cases/title.rs"]
+mod title;
 
 #[tokio::test]
 async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive() {
@@ -26,6 +30,7 @@ async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive(
         "threads.stop",
         "threads.archive",
         "threads.rename",
+        "threads.snooze",
         "threads.unarchive",
         "threads.delete",
     ] {
@@ -41,6 +46,10 @@ async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive(
                 "threads.rename" => (
                     json!({"id":id,"title":"foreign"}),
                     json!({"id":missing,"title":"missing"}),
+                ),
+                "threads.snooze" => (
+                    json!({"id":id,"until_ms":null}),
+                    json!({"id":missing,"until_ms":null}),
                 ),
                 "threads.send" => (
                     json!({"id":id,"message":"must not cross spaces"}),
@@ -259,6 +268,7 @@ async fn threads_follow_the_independent_reader_editor_manager_and_owner_matrix()
             "threads.create",
             "threads.archive",
             "threads.rename",
+            "threads.snooze",
             "threads.unarchive",
             "threads.delete",
         ] {
@@ -272,6 +282,8 @@ async fn threads_follow_the_independent_reader_editor_manager_and_owner_matrix()
             target.ok();
             let input = if operation == "threads.create" {
                 json!({"space_id":space,"title":"Member created"})
+            } else if operation == "threads.snooze" {
+                json!({"id":target.body["data"]["thread"]["id"],"until_ms":null})
             } else if operation == "threads.rename" {
                 json!({"id":target.body["data"]["thread"]["id"],"title":"Member renamed"})
             } else {

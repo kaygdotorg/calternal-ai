@@ -28,7 +28,28 @@ impl MachineService {
         env: Vec<(String, String)>,
         stdin: String,
     ) -> Result<Uuid, Error> {
-        self.queued_exec(account, lease, argv, env, stdin, false, false)
+        self.queued_exec(account, lease, argv, env, stdin, false, false, false)
+    }
+
+    /// Run the selected provider's title entry point without environment
+    /// credentials on its private lease. Uses the ordinary bounded exec queue.
+    pub(crate) fn title_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        executable: String,
+        stdin: String,
+    ) -> Result<Uuid, Error> {
+        self.queued_exec(
+            account,
+            lease,
+            vec![executable, "--title".into()],
+            vec![],
+            stdin,
+            true,
+            false,
+            false,
+        )
     }
 
     /// Start a host-controlled provider process in its assigned harness sandbox.
@@ -42,9 +63,10 @@ impl MachineService {
         stdin: String,
         interactive: bool,
     ) -> Result<Uuid, Error> {
-        self.queued_exec(account, lease, argv, env, stdin, true, interactive)
+        self.queued_exec(account, lease, argv, env, stdin, false, true, interactive)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn queued_exec(
         &self,
         account: AccountId,
@@ -52,6 +74,7 @@ impl MachineService {
         argv: Vec<String>,
         env: Vec<(String, String)>,
         stdin: String,
+        background_title: bool,
         harness: bool,
         interactive: bool,
     ) -> Result<Uuid, Error> {
@@ -68,7 +91,10 @@ impl MachineService {
         let _steps = match st.leases.get(&lease) {
             Some(l)
                 if l.row.account == account
-                    && (l.row.worker || l.provider_login || l.row.harness.is_some() != harness) =>
+                    && (l.row.worker
+                        || l.provider_login
+                        || l.row.background_title != background_title
+                        || l.row.harness.is_some() != harness) =>
             {
                 return Err(Error::forbidden(
                     "internal machine execs are host-controlled",

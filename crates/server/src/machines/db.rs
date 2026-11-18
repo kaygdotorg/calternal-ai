@@ -70,6 +70,12 @@ CREATE INDEX IF NOT EXISTS leases_thread_history ON leases(account,thread,create
 CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE state != 'ended';
 ";
 
+const TITLE_LEASES: &str = "
+CREATE TABLE title_leases(
+ lease TEXT PRIMARY KEY REFERENCES leases(id) ON DELETE CASCADE
+) STRICT, WITHOUT ROWID;
+";
+
 pub(crate) use calternal_types::now_ms;
 
 /// Open the private placement database and apply any supported migrations.
@@ -191,6 +197,8 @@ pub struct LeaseRow {
     pub thread: Uuid,
     /// Ephemeral plugin worker; ended on server restart rather than adopted as an agent.
     pub worker: bool,
+    /// Host-owned scratch lease fenced on restart.
+    pub background_title: bool,
     /// Requested base image.
     pub image: Option<String>,
     /// Provider profile and confinement selected at admission. It is immutable
@@ -239,7 +247,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
             l.reason,
             l.created_ms,
             now,
-            l.worker,
+            // Older releases already fence worker rows on restart.
+            l.worker || l.background_title,
             l.pinned_machine.map(|machine| machine.to_string()),
             harness,
         ],
@@ -247,12 +256,20 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Insert a private title lease and its classification in one FULL commit.
+pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
+    let tx = c.transaction()?;
+    put_lease(&tx, row)?;
+    tx.execute("INSERT INTO title_leases VALUES(?1)", [row.id.to_string()])?;
+    tx.commit()
+}
+
 /// Commit placement and both erasure locations before sending an assignment.
 /// The location rows outlive timed lease pruning. One FULL transaction.
 pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
     put_lease(&tx, row)?;
-    if let Some(machine) = row.machine.filter(|_| !row.worker) {
+    if let Some(machine) = row.machine.filter(|_| !row.worker && !row.background_title) {
         let machine = machine.to_string();
         let account = row.account.to_string();
         tx.execute(
@@ -284,13 +301,14 @@ fn typed<T: std::str::FromStr<Err = calternal_types::Error>>(
 
 fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
     let uuid = |s: Option<String>| s.and_then(|s| Uuid::parse_str(&s).ok());
+    let background_title: bool = r.get(13)?;
     Ok(LeaseRow {
         id: uuid(r.get(0)?).unwrap_or_default(),
         space: typed(1, r.get(1)?)?,
         account: typed(2, r.get(2)?)?,
         thread: uuid(r.get(3)?).unwrap_or_default(),
         image: r.get(4)?,
-        worker: r.get(11)?,
+        worker: r.get::<_, bool>(11)? && !background_title,
         machine: uuid(r.get(5)?),
         last_machine: uuid(r.get(6)?),
         fence: r.get::<_, i64>(7)? as u64,
@@ -298,13 +316,14 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         reason: r.get(9)?,
         created_ms: r.get(10)?,
         pinned_machine: uuid(r.get(12)?),
+        background_title,
         harness: r
-            .get::<_, Option<String>>(13)?
+            .get::<_, Option<String>>(14)?
             .map(|value| serde_json::from_str(&value))
             .transpose()
             .map_err(|error| {
                 rusqlite::Error::FromSqlConversionFailure(
-                    13,
+                    14,
                     rusqlite::types::Type::Text,
                     Box::new(error),
                 )
@@ -312,7 +331,7 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
     })
 }
 
-const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, harness";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id), harness";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -397,10 +416,85 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             6,
             &[SCHEMA],
             &[
+                TITLE_LEASES,
                 ADD_HARNESS,
                 "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
             ],
         );
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[ADD_HARNESS])
+    calternal_store::migrations::Schema::new(
+        "machines.db",
+        6,
+        &[SCHEMA],
+        &[TITLE_LEASES, ADD_HARNESS],
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calternal_store::migrations::{Schema, migrate_release};
+
+    #[test]
+    fn title_leases_migrate_with_durable_classification_for_both_writers() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let previous = Schema::new("machines.db", 6, &[SCHEMA], &[]);
+        migrate_release(&conn, previous, false).unwrap();
+        let existing = LeaseRow {
+            id: Uuid::new_v4(),
+            space: SpaceId::new(),
+            account: AccountId::new(),
+            thread: Uuid::new_v4(),
+            worker: false,
+            background_title: false,
+            image: None,
+            harness: None,
+            machine: None,
+            last_machine: None,
+            pinned_machine: None,
+            fence: 0,
+            state: "waiting".into(),
+            reason: None,
+            created_ms: 1,
+        };
+        conn.execute(
+            "INSERT INTO leases
+             (id, space, account, thread, worker, fence, state, created_ms, updated_ms)
+             VALUES (?1, ?2, ?3, ?4, 0, 0, 'waiting', 1, 1)",
+            params![
+                existing.id.to_string(),
+                existing.space.to_string(),
+                existing.account.to_string(),
+                existing.thread.to_string()
+            ],
+        )
+        .unwrap();
+
+        let schema = upgrade_schema();
+        migrate_release(&conn, schema, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, previous).unwrap(),
+            schema.version()
+        );
+        assert!(!lease(&conn, existing.id).unwrap().unwrap().background_title);
+
+        let title = LeaseRow {
+            id: Uuid::new_v4(),
+            thread: Uuid::new_v4(),
+            background_title: true,
+            ..existing
+        };
+        put_title(&mut conn, &title).unwrap();
+        let reread = lease(&conn, title.id).unwrap().unwrap();
+        assert!(reread.background_title);
+        assert!(!reread.worker);
+        let legacy_worker: bool = conn
+            .query_row(
+                "SELECT worker FROM leases WHERE id=?1",
+                [title.id.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(legacy_worker);
+    }
 }

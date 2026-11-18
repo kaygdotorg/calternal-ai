@@ -99,6 +99,10 @@ pub struct ProviderReadiness {
     pub check: Option<ProviderCheck>,
     /// The machine has capacity and the enabled provider reports a login.
     pub ready: bool,
+    /// Safe reason an automatic title was skipped on this machine, when observed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub title_blocked: Option<String>,
 }
 
 /// The effective execution environment available on a machine.

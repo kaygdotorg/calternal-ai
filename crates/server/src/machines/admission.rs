@@ -35,6 +35,7 @@ impl MachineService {
             pinned_machine,
             false,
             false,
+            false,
             None,
         )
     }
@@ -57,6 +58,29 @@ impl MachineService {
             Some(machine),
             true,
             false,
+            false,
+            None,
+        )
+    }
+
+    /// Request a disposable run on the last personal sandbox machine. The
+    /// lease is admitted only with current spare capacity.
+    pub(crate) fn request_title(
+        &self,
+        space: SpaceId,
+        account: AccountId,
+        machine: Uuid,
+    ) -> Result<RunView, Error> {
+        self.request_work(
+            space,
+            account,
+            Uuid::new_v4(),
+            None,
+            None,
+            Some(machine),
+            false,
+            false,
+            true,
             None,
         )
     }
@@ -78,6 +102,7 @@ impl MachineService {
             Some(machine),
             false,
             true,
+            false,
             None,
         )
     }
@@ -104,6 +129,7 @@ impl MachineService {
             target,
             pool_diagnostic,
             sign_in,
+            false,
             Some(harness),
         )
     }
@@ -121,6 +147,7 @@ impl MachineService {
         pinned_machine: Option<Uuid>,
         pool_diagnostic: bool,
         provider_login: bool,
+        background_title: bool,
         harness: Option<calternal_machine::protocol::HarnessSandbox>,
     ) -> Result<RunView, Error> {
         let _account = self
@@ -135,9 +162,28 @@ impl MachineService {
             .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;
+        if background_title
+            && !pinned_machine
+                .and_then(|id| st.machines.get(&id))
+                .is_some_and(|m| {
+                    m.row.owner == (calternal_machine::protocol::Owner::Account { id: account })
+                        && m.live.as_ref().is_some_and(|live| !live.direct)
+                        && st.free(m) > 0
+                        && !st.leases.values().any(|l| {
+                            l.row.background_title && l.assigned_machine() == Some(m.row.id)
+                        })
+                })
+        {
+            return Err(Error::unavailable(
+                "no spare personal sandbox for title generation",
+            ));
+        }
         if let Some(id) = st.threads.get(&thread).copied() {
             let l = &st.leases[&id];
-            if l.row.worker != worker.is_some() || l.provider_login != provider_login {
+            if l.row.worker != worker.is_some()
+                || l.provider_login != provider_login
+                || l.row.background_title != background_title
+            {
                 return Err(Error::not_found("run not found"));
             }
             if l.row.account != account
@@ -163,6 +209,7 @@ impl MachineService {
             image,
             harness,
             worker: is_worker,
+            background_title,
             machine: None,
             last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
             pinned_machine,
@@ -171,7 +218,11 @@ impl MachineService {
             reason: None,
             created_ms: db::now_ms(),
         };
-        db::put_lease(&st.db, &row).map_err(sql)?;
+        if background_title {
+            db::put_title(&mut st.db, &row).map_err(sql)?;
+        } else {
+            db::put_lease(&st.db, &row).map_err(sql)?;
+        }
         st.next_order += 1;
         let id = row.id;
         st.threads.insert(thread, id);

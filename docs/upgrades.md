@@ -13,7 +13,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
 | Appdata `system/auth.db` | Authority | Auth, SQLite 11. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 7. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `system/machines.db` | Authority | Machine placement, SQLite 8. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
 | Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 3. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. |
