@@ -7,6 +7,7 @@
 
 pub mod account_http;
 pub mod api;
+mod asset_cache;
 pub mod auth;
 pub mod authz;
 pub mod blocking;

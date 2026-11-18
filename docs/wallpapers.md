@@ -56,7 +56,10 @@ later selections served from the browser cache.
 
 The ported netguard denies reserved and non-public DNS answers and connects
 using only checked addresses. The outbound client uses HTTPS on the two
-declared hosts, with proxies and redirects disabled. The wallpaper service
+declared hosts, with proxies and redirects disabled. The shared HTTPS
+transport also lets the plugin network broker authorize and validate each
+redirect before dialing it. The bounded body reader handles both declared
+and streamed lengths. The wallpaper service
 accepts at most 48 upstream attempts in any rolling hour of a server
 process, including failed requests to either host. A restart resets that
 in-memory budget. It handles up to 16 image requests at a time.
@@ -66,7 +69,9 @@ allowed rendition and one small tracking marker per photo. Published images
 total at most 34.75 MiB across 30 slots. Up to eight in-progress writes add at
 most 16 MiB of staging data. Startup evicts obsolete and oversize files,
 symlinks and abandoned staging files. Current defaults stay cached. Successful
-requests for a published rendition read the cache without going upstream.
+requests for a published rendition read the cache without going upstream. Cache entries use
+owner-only permissions when written and are published with the private
+atomic replacement helper.
 Remove this directory while the server is stopped if the cache needs resetting.
 
 ## Production question
