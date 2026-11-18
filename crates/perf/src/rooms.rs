@@ -61,21 +61,14 @@ pub(super) fn sample(
     let observer_text = observer.get_or_insert_text("md");
     for n in 1..=count {
         let insert = format!("[room-{n}]");
-        let (start, update) = {
-            let mut txn = author.transact_mut();
-            let at = author_text.len(&txn);
-            let start = Instant::now();
-            author_text.insert(&mut txn, at, &insert);
-            (start, txn.encode_update_v1())
-        };
-        send(
+        let start = edit_send(
             &mut writer,
             &address,
-            Message::Sync(SyncMessage::Update(update)),
+            &author,
+            &author_text,
+            &insert,
+            n as u64,
         )?;
-        let mut check = Vec::new();
-        check.write_var(n as u64);
-        send(&mut writer, &address, Message::Custom(100, check))?;
         let (peer_ms, save_ms, entry, delivered_ns) = std::thread::scope(|scope| -> Result<_> {
             let saved = scope.spawn(|| {
                 save_receipt(&mut writer, &address, n as u64, start).map_err(|e| e.to_string())
@@ -122,7 +115,90 @@ pub(super) fn sample(
     }
     let mut samples = BTreeMap::from([(PEER.into(), peer_times), (SAVE.into(), save_times)]);
     timings::collect(log, &deliveries, &mut samples, require_commit_timings)?;
+    drop((writer, peer, journal));
+    samples.insert(
+        "sync.storm.save_ack".into(),
+        storm(http, &room, &address, item)?,
+    );
     Ok(samples)
+}
+
+fn storm(http: &Http, room: &str, address: &str, item: uuid::Uuid) -> Result<Vec<f64>> {
+    const EDITORS: usize = 4;
+    const EDITS: usize = 25;
+    let mut replicas = Vec::with_capacity(EDITORS);
+    for _ in 0..EDITORS {
+        let mut socket = connect(http, room)?;
+        let doc = initial(&mut socket, address)?;
+        replicas.push((socket, doc));
+    }
+    let start = std::sync::Barrier::new(EDITORS);
+    let timings = std::thread::scope(|scope| -> Result<Vec<f64>> {
+        let mut writers = Vec::with_capacity(EDITORS);
+        for (author, (mut socket, doc)) in replicas.into_iter().enumerate() {
+            let start = &start;
+            writers.push(
+                scope.spawn(move || -> std::result::Result<Vec<f64>, String> {
+                    let text = doc.get_or_insert_text("md");
+                    start.wait();
+                    let mut samples = Vec::with_capacity(EDITS);
+                    for edit in 1..=EDITS {
+                        let insert = format!("[storm-{author}-{edit}]");
+                        let check = edit as u64;
+                        let start = edit_send(&mut socket, address, &doc, &text, &insert, check)
+                            .map_err(|error| error.to_string())?;
+                        samples.push(
+                            save_receipt(&mut socket, address, check, start)
+                                .map_err(|error| error.to_string())?,
+                        );
+                    }
+                    Ok(samples)
+                }),
+            );
+        }
+        let mut timings = Vec::with_capacity(EDITORS * EDITS);
+        for writer in writers {
+            timings.extend(writer.join().map_err(|_| "storm editor panicked")??);
+        }
+        Ok(timings)
+    })?;
+    let (saved, _) = http.op_id("notes.get", json!({"id":item}), "room-storm-readback")?;
+    let body = saved["note"]["markdown"]
+        .as_str()
+        .ok_or("storm text is unreadable")?;
+    for author in 0..EDITORS {
+        for edit in 1..=EDITS {
+            let marker = format!("[storm-{author}-{edit}]");
+            if body.match_indices(&marker).take(2).count() != 1 {
+                return Err(
+                    format!("the storm lost or duplicated editor {author} edit {edit}").into(),
+                );
+            }
+        }
+    }
+    Ok(timings)
+}
+
+fn edit_send(
+    socket: &mut Socket,
+    address: &str,
+    doc: &Doc,
+    text: &yrs::TextRef,
+    insert: &str,
+    check: u64,
+) -> Result<Instant> {
+    let (start, update) = {
+        let mut txn = doc.transact_mut();
+        let at = text.len(&txn);
+        let start = Instant::now();
+        text.insert(&mut txn, at, insert);
+        (start, txn.encode_update_v1())
+    };
+    send(socket, address, Message::Sync(SyncMessage::Update(update)))?;
+    let mut receipt = Vec::new();
+    receipt.write_var(check);
+    send(socket, address, Message::Custom(100, receipt))?;
+    Ok(start)
 }
 
 fn connect(http: &Http, room: &str) -> Result<Socket> {

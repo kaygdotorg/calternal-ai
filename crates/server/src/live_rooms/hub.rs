@@ -1,10 +1,11 @@
 //! Per-item room admission, subscriber lifetimes and journal fan-out.
+mod presence;
 use calternal_content::{Content, RoomSnapshot};
 use calternal_types::{AccountId, Error, SpaceId};
 use std::{
     cell::Cell,
     collections::{BTreeSet, HashMap},
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Mutex, MutexGuard, Weak},
     time::Duration,
 };
 use tokio::{
@@ -21,12 +22,14 @@ use yrs::{
     updates::{decoder::Decode, encoder::Encode},
 };
 
+const SHARDS: usize = 64;
 const ROOMS_PER_SPACE: usize = 32;
 const PARTICIPANTS: usize = 32;
 const MEMORY: usize = 512 * 1024 * 1024;
 const CACHE_RESERVATION: u32 = 24 * 1024 * 1024;
 const FRAMES: usize = 64;
 const IDLE: Duration = Duration::from_secs(60);
+const SCAN_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) struct Key {
@@ -61,14 +64,14 @@ pub(crate) struct Hub(Arc<Inner>);
 type SpaceRooms = HashMap<(String, Uuid), Arc<Room>>;
 
 struct Inner {
-    rooms: Mutex<HashMap<SpaceId, SpaceRooms>>,
+    rooms: [Mutex<HashMap<SpaceId, SpaceRooms>>; SHARDS],
     memory: Arc<Semaphore>,
 }
 
 impl Default for Hub {
     fn default() -> Self {
         Self(Arc::new(Inner {
-            rooms: Mutex::new(HashMap::new()),
+            rooms: std::array::from_fn(|_| Mutex::new(HashMap::new())),
             memory: Arc::new(Semaphore::new(MEMORY)),
         }))
     }
@@ -94,6 +97,7 @@ pub(super) struct Room {
     memory: Arc<Semaphore>,
     _cache_permit: OwnedSemaphorePermit,
     durability: watch::Sender<Durability>,
+    next_file_scan: Mutex<Instant>,
 }
 
 #[derive(Default)]
@@ -150,6 +154,7 @@ pub(super) struct Frame {
 
 pub(super) struct Lease {
     room: Arc<Room>,
+    hub: Weak<Inner>,
     pub(super) id: Uuid,
 }
 
@@ -169,6 +174,11 @@ impl Drop for Lease {
             let _ = self.room.send(Message::Awareness(update).encode_v1());
         }
         self.room.activity.notify_one();
+        if self.room.cache.get().is_none()
+            && let Some(hub) = self.hub.upgrade()
+        {
+            hub.evict_empty(&self.room);
+        }
     }
 }
 
@@ -187,7 +197,7 @@ impl Hub {
 
     fn room(&self, key: &Key, account: AccountId) -> Result<(Lease, watch::Receiver<bool>), Error> {
         let busy = || Error::unavailable("live room capacity is busy; retry shortly");
-        let mut rooms = self.0.rooms.lock().unwrap();
+        let mut rooms = self.0.spaces(key.space);
         let key_in_space = (key.kind.clone(), key.item);
         let existing = rooms
             .get(&key.space)
@@ -217,6 +227,7 @@ impl Hub {
                 memory: self.0.memory.clone(),
                 _cache_permit: permit,
                 durability: watch::channel(Durability::default()).0,
+                next_file_scan: Mutex::new(Instant::now() + SCAN_INTERVAL),
             });
             rooms
                 .entry(key.space)
@@ -240,7 +251,14 @@ impl Hub {
         );
         drop(members);
         room.activity.notify_one();
-        Ok((Lease { room, id }, kicked))
+        Ok((
+            Lease {
+                room,
+                hub: Arc::downgrade(&self.0),
+                id,
+            },
+            kicked,
+        ))
     }
 
     pub(super) async fn join(
@@ -307,9 +325,7 @@ impl Hub {
     ) {
         let room = self
             .0
-            .rooms
-            .lock()
-            .unwrap()
+            .spaces(space)
             .get(&space)
             .and_then(|s| s.get(&(kind.to_owned(), item)))
             .cloned();
@@ -324,8 +340,13 @@ impl Hub {
 }
 
 impl Inner {
+    fn spaces(&self, space: SpaceId) -> MutexGuard<'_, HashMap<SpaceId, SpaceRooms>> {
+        let shard = usize::from(space.as_uuid().as_bytes()[15]) % SHARDS;
+        self.rooms[shard].lock().unwrap()
+    }
+
     fn evict_empty(&self, room: &Room) -> bool {
-        let mut rooms = self.rooms.lock().unwrap();
+        let mut rooms = self.spaces(room.key.space);
         if !room.members.lock().unwrap().is_empty() {
             return false;
         }
@@ -346,6 +367,20 @@ impl Inner {
 }
 
 impl Lease {
+    pub(super) fn file_scan_due(&self) -> bool {
+        *self.room.next_file_scan.lock().unwrap() <= Instant::now()
+    }
+
+    pub(super) fn claim_file_scan(&self) -> bool {
+        let mut next = self.room.next_file_scan.lock().unwrap();
+        let now = Instant::now();
+        if *next > now {
+            return false;
+        }
+        *next = now + SCAN_INTERVAL;
+        true
+    }
+
     pub(super) fn preview(&self) -> Preview {
         Preview {
             room: self.room.clone(),
@@ -373,75 +408,6 @@ impl Lease {
             }
             watch.changed().await.map_err(|_| closed())?;
         }
-    }
-
-    pub(super) fn presence_snapshot(&self) -> Vec<u8> {
-        let clients = self
-            .room
-            .members
-            .lock()
-            .unwrap()
-            .values()
-            .filter_map(|member| member.presence.clone())
-            .collect();
-        Message::Awareness(AwarenessUpdate { clients }).encode_v1()
-    }
-
-    pub(super) fn awareness(&self, update: AwarenessUpdate) -> Result<(), Error> {
-        let invalid = || Error::invalid_input("invalid room awareness");
-        if update.clients.len() != 1 {
-            return Err(invalid());
-        }
-        let (client, entry) = update.clients.into_iter().next().ok_or_else(invalid)?;
-        if client.get() > 9_007_199_254_740_991
-            || entry.clock == u32::MAX
-            || entry.json.len() > 2048
-        {
-            return Err(invalid());
-        }
-        let value: serde_json::Value = serde_json::from_str(&entry.json).map_err(|_| invalid())?;
-        if !value.is_null() && !value.is_object() {
-            return Err(invalid());
-        }
-        let mut members = self.room.members.lock().unwrap();
-        if members.iter().any(|(id, member)| {
-            *id != self.id
-                && member
-                    .presence
-                    .as_ref()
-                    .is_some_and(|(existing, _)| *existing == client)
-        }) {
-            return Err(invalid());
-        }
-        let participant = members.get_mut(&self.id).ok_or_else(closed)?;
-        if let Some((existing, previous)) = &participant.presence {
-            if *existing != client {
-                return Err(invalid());
-            }
-            if previous.clock >= entry.clock {
-                return Ok(());
-            }
-        }
-        let json = if value.is_null() {
-            "null".into()
-        } else {
-            // The presence identity comes from the authenticated host session.
-            serde_json::json!({"account_id":participant.account,"cursor":value.get("cursor")})
-                .to_string()
-                .into()
-        };
-        let entry = AwarenessUpdateEntry {
-            clock: entry.clock,
-            json,
-        };
-        participant.presence = Some((client, entry.clone()));
-        drop(members);
-        self.room.send(
-            Message::Awareness(AwarenessUpdate {
-                clients: HashMap::from([(client, entry)]),
-            })
-            .encode_v1(),
-        )
     }
 
     pub(super) fn state(&self, since: Option<&StateVector>) -> Result<Vec<u8>, Error> {
@@ -532,7 +498,7 @@ impl Room {
 
 impl Inner {
     fn remove_closed(&self, room: &Room) {
-        let mut rooms = self.rooms.lock().unwrap();
+        let mut rooms = self.spaces(room.key.space);
         if let Some(space) = rooms.get_mut(&room.key.space) {
             let key = (room.key.kind.clone(), room.key.item);
             if space

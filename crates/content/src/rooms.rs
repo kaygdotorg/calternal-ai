@@ -1,6 +1,7 @@
 //! Durable state for the host live-editing service. A checkpoint is committed
 //! with its content revision and outbox intent under the owning space lock.
 mod diff;
+mod external;
 pub(crate) mod style;
 mod wire;
 pub use wire::RoomSnapshot;
@@ -27,6 +28,10 @@ pub enum LiveEdit<'a> {
 pub(crate) enum Body<'a> {
     Replace(&'a [u8]),
     Live(LiveEdit<'a>),
+    Outside {
+        bytes: &'a [u8],
+        observed: &'a str,
+    },
     Wire {
         lineage: &'a str,
         update: &'a [u8],
@@ -37,7 +42,9 @@ pub(crate) enum Body<'a> {
 impl Body<'_> {
     pub(crate) fn validate(self, metadata: &Value) -> Result<()> {
         match self {
-            Self::Replace(bytes) => Content::validate_write_size(metadata, bytes),
+            Self::Replace(bytes) | Self::Outside { bytes, .. } => {
+                Content::validate_write_size(metadata, bytes)
+            }
             Self::Live(LiveEdit::Append(text)) => {
                 Content::validate_write_size(metadata, text.as_bytes())
             }
@@ -136,7 +143,7 @@ impl Document {
                 }
                 return wire::apply_client_update(&self.doc, update);
             }
-            Body::Replace(bytes) => {
+            Body::Replace(bytes) | Body::Outside { bytes, .. } => {
                 let (_, text) = style::Style::split(markdown(bytes)?);
                 diff::edits(&self.text(), &text)
             }
@@ -331,7 +338,11 @@ impl Space {
             apply(&live.doc, &fork.change(body)?)?;
             None
         };
-        let (style, _) = style::Style::split(markdown(&current.bytes)?);
+        let file_bytes = match body {
+            Body::Outside { bytes, .. } => bytes,
+            _ => &current.bytes,
+        };
+        let (style, _) = style::Style::split(markdown(file_bytes)?);
         Ok((style.encode(&live.text()), live.checkpoint()?, preview))
     }
 

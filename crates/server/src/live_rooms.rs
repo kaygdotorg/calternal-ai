@@ -341,6 +341,7 @@ impl<D: Directory> Connection<D> {
             return Err(Error::unauthorized("room session ended"));
         }
         let mut removed = Vec::new();
+        let mut scan = None;
         for (address, member) in &self.members {
             if *member.kicked.borrow()
                 || self
@@ -349,10 +350,29 @@ impl<D: Directory> Connection<D> {
                     .is_err()
             {
                 removed.push(address.clone());
+            } else if scan.is_none()
+                && member.lease.file_scan_due()
+                && self
+                    .authorize(&member.key, &member.plugin, member.generation, true)
+                    .await
+                    .is_ok()
+                && !*member.kicked.borrow()
+                && member.lease.claim_file_scan()
+            {
+                scan = Some(member.key.clone());
             }
         }
         for address in removed {
             self.left(&address).await?;
+        }
+        if let Some(key) = scan {
+            let (content, account) = (self.content.clone(), self.account);
+            if let Err(error) =
+                disk(move || content.reconcile_room_file(key.space, &key.kind, key.item, account))
+                    .await
+            {
+                tracing::debug!(code = ?error.code, "room outside-file scan deferred");
+            }
         }
         Ok(())
     }

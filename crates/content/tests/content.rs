@@ -751,3 +751,69 @@ fn live_patch_preserves_concurrent_typing_and_append_uses_the_head() {
     assert_eq!(appended.bytes, b"a!z");
     assert_eq!(appended.metadata, base.metadata);
 }
+
+#[test]
+fn outside_edit_uses_the_proven_file_base_and_merges_a_stale_replacement() {
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), |_| {});
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    let kind = "documents";
+    content
+        .register_kind(
+            space,
+            kind,
+            Placement::Visible {
+                folder: "Documents".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content.enable_live_editing(space, kind).unwrap();
+    let first = content
+        .write(
+            space,
+            None,
+            kind,
+            None,
+            json!({"title":"Document"}),
+            b"Start\nEnd\n",
+            request(actor, "outside-seed"),
+            |_| json!({}),
+        )
+        .unwrap();
+    content.materialize(space, first.id).unwrap();
+    let file = content.file_path(space, kind, first.id).unwrap();
+    let original = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(&file, original.replace("End\n", "End outside\n")).unwrap();
+
+    assert!(
+        content
+            .reconcile_room_file(space, kind, first.id, actor)
+            .unwrap()
+    );
+    assert!(
+        !content
+            .reconcile_room_file(space, kind, first.id, AccountId::new())
+            .unwrap()
+    );
+    let merged = content
+        .write(
+            space,
+            Some(first.id),
+            kind,
+            Some(&first.revision),
+            first.metadata,
+            b"Start agent\nEnd\n",
+            request(actor, "outside-stale"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(merged.bytes, b"Start agent\nEnd outside\n");
+    content.materialize(space, first.id).unwrap();
+    assert!(
+        std::fs::read_to_string(file)
+            .unwrap()
+            .ends_with("Start agent\nEnd outside\n")
+    );
+}

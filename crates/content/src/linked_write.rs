@@ -36,7 +36,7 @@ impl Staged {
              VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10)
              ON CONFLICT(id) DO UPDATE SET metadata=excluded.metadata,revision=excluded.revision,
                seq=excluded.seq,updated_at=excluded.updated_at,path=excluded.path,
-               folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending'",
+               folded_path=excluded.folded_path,old_path=excluded.old_path,mat_state='pending',file_hash=excluded.file_hash",
             params![
                 item.id.to_string(),item.kind,metadata,item.revision,self.seq,item.updated_at,
                 self.path,calternal_fsio::names::fold(&self.path),

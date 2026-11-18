@@ -25,6 +25,15 @@ a new lineage on demand. An explicit purge clears room checkpoints through
 the revision foreign key. See [Upgrades](upgrades.md) for the schema and
 the recovery contract.
 
+While a writer is connected, the host can check the underlying file
+at most once every five seconds. A write that races an outside change
+also runs the check before retrying. The host hashes the exact file,
+finds its last materialized revision, checks its stable identity and
+merges the changed body against that base. It preserves the file's
+BOM and dominant line ending. A moved, invalid or unprovable file is
+preserved for recovery. Live replacement uses recoverable fsio
+exchange so a racing write is preserved.
+
 ## Provisional transport limits
 
 The proposed transport multiplexes rooms over a WebSocket upgrade at
@@ -84,7 +93,9 @@ same revision as its control. Use the 1,000, 10,000 and 100,000 note
 fixtures, alternating warm and cold arms. The driver times the first edit
 through peer apply and through the matching durable save receipt. It
 correlates the same keystroke's request ID with the journal commit
-and the separately subscribed SSE client. A missing sample or a head
+and the separately subscribed SSE client. Each arm also runs four
+writers with 25 edits each and verifies every marker appears once in
+durable content. A missing sample or a head
 arm over any hard ceiling fails qualification.
 
 The protocol driver starts a save check immediately after its edit.

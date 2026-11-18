@@ -6,7 +6,7 @@ use rusqlite::TransactionBehavior;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Destination {
+pub(crate) enum Destination {
     Current,
     Trash,
     Restore,
@@ -413,7 +413,7 @@ impl Content {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn write_placed(
+    pub(crate) fn write_placed(
         &self,
         space: SpaceId,
         id: Option<Uuid>,
@@ -475,14 +475,25 @@ impl Content {
                 // A room frame keeps the same path and metadata. Consecutive
                 // admitted frames can share the lifecycle worker's file flush
                 // while each acknowledged revision remains durable in SQLite.
-                let share_placement = matches!(body, Body::Wire { .. }) && head.old_path.is_none();
+                let share_placement = matches!(body, Body::Wire { .. } | Body::Outside { .. })
+                    && head.old_path.is_none();
                 if head.state == "pending" && !share_placement {
                     s.place_header(id,head,None,self.fault)?;
                     // Placement changes the expected hash/state. Reload only on
                     // this pending slow path, never for an ordinary warm save.
                     head = s.header(id)?;
                 }
-                let sha = s.check_header(id,&head)?;
+                let sha = if let Body::Outside { observed, .. } = body {
+                    // Several sessions can observe the same outside edit before
+                    // one archives it. The file base moves once across accounts.
+                    if head.file_hash.as_deref() == Some(observed) {
+                        return s.get(id);
+                    }
+                    s.verify_external(&head, observed)?;
+                    Some(observed.to_owned())
+                } else {
+                    s.check_header(id,&head)?
+                };
                 if live {
                     let current = s.get(id)?;
                     if !matches!(body, Body::Replace(_)) {

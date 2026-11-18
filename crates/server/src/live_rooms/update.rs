@@ -118,15 +118,28 @@ impl<D: Directory> Connection<D> {
                     operation: &operation,
                     fingerprint: &fingerprint,
                 };
-                let result = content.apply_room_update(
-                    key.space,
-                    &key.kind,
-                    key.item,
-                    &lineage,
-                    &bytes,
-                    request,
-                    |update| preview.publish(update),
-                );
+                let apply = || {
+                    content.apply_room_update(
+                        key.space,
+                        &key.kind,
+                        key.item,
+                        &lineage,
+                        &bytes,
+                        request,
+                        |update| preview.publish(update),
+                    )
+                };
+                let mut result = apply();
+                if result.as_ref().err().is_some_and(|error| {
+                    error
+                        .details
+                        .as_ref()
+                        .and_then(|detail| detail["reason"].as_str())
+                        == Some("external_change")
+                }) && content.reconcile_room_file(key.space, &key.kind, key.item, account)?
+                {
+                    result = apply();
+                }
                 preview.finish(result.is_ok());
                 match result {
                     Ok(_) => Ok(()),

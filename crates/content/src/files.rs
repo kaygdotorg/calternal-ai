@@ -30,7 +30,7 @@ fn hash(path: &Path) -> Result<Option<String>> {
         Ok(_) => Ok(Some(file_hash(&fs::read(path).map_err(internal)?))),
     }
 }
-fn bounded_file(root: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
+pub(crate) fn bounded_file(root: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
     let root = calternal_fsio::beneath::Folder::open_existing(root).map_err(internal)?;
     let file = match root.open_file(rel) {
         Ok(file) => file,
@@ -143,6 +143,15 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         Ok(item.bytes.clone())
     }
 }
+pub(crate) fn encoded_live(item: &Item) -> Result<Vec<u8>> {
+    let (style, body) =
+        crate::rooms::style::Style::split(std::str::from_utf8(&item.bytes).map_err(internal)?);
+    let mut input = item.clone();
+    input.bytes = body.as_bytes().to_vec();
+    let wrapped = encoded(&input, &FileFormat::Markdown)?;
+    Ok(style.encode(std::str::from_utf8(&wrapped).map_err(internal)?))
+}
+
 impl Space {
     pub(crate) fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
         if let Some(definition) = self.registrations.borrow().get(kind) {
@@ -356,13 +365,7 @@ impl Space {
         let (_, format) = self.registration(&item.kind)?;
         let live = self.live_editing(&item.kind)?;
         let bytes = if live {
-            let (style, body) = crate::rooms::style::Style::split(
-                std::str::from_utf8(&item.bytes).map_err(internal)?,
-            );
-            let mut input = item.clone();
-            input.bytes = body.as_bytes().to_vec();
-            let wrapped = encoded(&input, &format)?;
-            style.encode(std::str::from_utf8(&wrapped).map_err(internal)?)
+            encoded_live(item)?
         } else {
             encoded(item, &format)?
         };
