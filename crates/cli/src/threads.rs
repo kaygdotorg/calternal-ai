@@ -26,9 +26,9 @@ pub enum Command {
         /// Owning space UUID.
         #[arg(long)]
         space_id: String,
-        /// Human-readable title, at most 256 UTF-8 bytes.
+        /// Human-readable title, at most 256 UTF-8 bytes. Omit for automatic titles.
         #[arg(long)]
-        title: String,
+        title: Option<String>,
         /// Enabled provider plugin.
         #[arg(long, default_value = "calternal-claude-code")]
         provider: String,
@@ -133,8 +133,10 @@ impl Command {
                 mode,
                 parent_thread,
             } => {
-                let mut v =
-                    json!({"space_id":space_id,"title":title,"provider":provider,"mode":mode});
+                let mut v = json!({"space_id":space_id,"provider":provider,"mode":mode});
+                if let Some(title) = title {
+                    v["title"] = json!(title);
+                }
                 if let Some(parent) = parent_thread {
                     v["parent_thread"] = json!(parent);
                 }

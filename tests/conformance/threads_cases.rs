@@ -2,6 +2,8 @@
 use super::*;
 #[path = "threads_cases/streaming.rs"]
 mod streaming;
+#[path = "threads_cases/title.rs"]
+mod title;
 
 #[tokio::test]
 async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive() {

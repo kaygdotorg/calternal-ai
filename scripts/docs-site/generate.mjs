@@ -138,6 +138,8 @@ page('user/threads', 'Threads', ['docs/threads.md', 'docs/orchestrator-proposal.
   '## Client reads and live updates\n' + section(savedThreads, 'Client reads and live updates')
     .replace('[machine and provider readiness](agent-turns.md#machine-and-provider-readiness)', 'the machine and provider readiness reference') +
   '\n## CLI\n' + section(savedThreads, 'CLI') +
+  '\n## Automatic thread title\n' + section(savedThreads, 'Automatic thread title')
+    .replace('[Claude Code model configuration] [Claude Code managed settings]', '') +
   '\n## Accepted design\n' + section(await read('docs/orchestrator-proposal.md'), 'Decided in the grill (2026-11-17)'));
 for (const [id, title, source, note] of [
   ['machines', 'Machines', 'crates/machine/README.md', 'Implementation reference. The later orchestrator decision requires Resume after interruption; automatic re-placement described in this README is not the accepted product behavior.'],

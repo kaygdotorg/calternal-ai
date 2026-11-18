@@ -93,8 +93,7 @@
           }
         },
         "required": [
-          "space_id",
-          "title"
+          "space_id"
         ],
         "additionalProperties": false
       },

@@ -119,7 +119,8 @@ pub(super) fn apply<D: Directory>(
             .and_then(Value::as_str)
             .unwrap_or("calternal-claude-code");
         let mut metadata = json!({
-            "title": data["title"],
+            "title": data.get("title").cloned().unwrap_or(json!("New thread")),
+            "title_source": if data.contains_key("title") { "manual" } else { "pending" },
             "provider": provider,
             "model": document::default_model(st, provider),
             "mode": data.get("mode").cloned().unwrap_or(json!(AgentMode::default())),
@@ -335,7 +336,21 @@ pub(super) fn apply<D: Directory>(
         });
     }
     match operation {
-        "threads.rename" => item.metadata["title"] = data["title"].clone(),
+        "threads.rename" => {
+            let (_, account_zone) = super::headings::profile(st, who.id)?;
+            let (zone, offset) = display_zone(account_zone, data);
+            let now = super::headings::now(zone.as_deref(), offset)?;
+            super::title::rename(
+                &content,
+                item,
+                data["title"].clone(),
+                false,
+                &now,
+                request,
+                document::receipt_view(&mut reply),
+            )?;
+            return Ok(reply);
+        }
         "threads.archive" => item.metadata["archived"] = json!(true),
         "threads.unarchive" => item.metadata["archived"] = json!(false),
         "threads.delete" => item.metadata["deleted"] = json!(true),

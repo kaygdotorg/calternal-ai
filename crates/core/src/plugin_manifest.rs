@@ -519,6 +519,9 @@ pub struct ManifestProvider {
     /// Whether the executable implements the private `--sign-in` mode.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub sign_in: bool,
+    /// Whether the adapter implements the private, stateless `--title` command.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub title_generation: bool,
     /// Default installed-CLI model identifier, at most 128 UTF-8 bytes.
     pub default_model: String,
     /// Models offered by this adapter, validated and cached with the manifest.
