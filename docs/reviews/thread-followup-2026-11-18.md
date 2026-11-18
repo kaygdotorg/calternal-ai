@@ -134,6 +134,26 @@ workspace and conformance targets.
 | 14. Behavior docs | Account operation, CLI, contract, thread guide, generated docs and title options follow the new behavior. |
 | 15. Formatting | Formatter checks cover the workspace and standalone conformance crate. New framing and zone code live in separate modules. |
 
+## Live registry follow-up
+
+Merged `origin/dev` at `49c65ad`. The provider launch snapshot supplies the
+attempt's plugin ID, harness name and selected model ID and label. Later
+saves use those facts, even if the package is replaced or removed. A save
+takes one live snapshot to check the orchestrator's activation and reuses it
+across the save's revision retries. This adds no state reads or flushes. A new
+attempt resolves its provider again. Existing authority checks govern whether
+an attempt can continue.
+
+The regression writes an assistant record and then re-renders its heading
+with final timing after simulating a manifest replacement. Both saves retain
+the launched harness and model. On dev-01, the fixture-enabled server build
+and 110 serial conformance cases passed, including the conformance Podman
+leak check. The workspace rerun passed 597 tests with one opt-in ignored
+and passed its Podman leak check. The regression, integration, plugin,
+contract, formatter and docs gates (332 pages) passed. All three lane
+build-target directories were removed. The same commands and flags above
+apply to this rerun.
+
 ## Simplification opportunities
 
 Use the dedicated fresh-proof error in the Threads retry handler. Keep the
