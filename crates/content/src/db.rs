@@ -275,7 +275,11 @@ mod tests {
         "space content.db",
         3,
         SPACE_INITIAL,
-        &[THREAD_SNOOZE, COLLECTION_MEMBERS, crate::rooms::SCHEMA],
+        &[
+            (4, THREAD_SNOOZE),
+            (5, COLLECTION_MEMBERS),
+            (6, crate::rooms::SCHEMA),
+        ],
     );
     const EMPTY_TRASH_RELEASE: Schema<'_> = Schema::new(
         "space content.db",
