@@ -99,3 +99,23 @@ test("owned slot declarations and qualified targets are closed and bounded", () 
     assert.throws(() => validateManifestV1(invalid));
   }
 });
+
+test('content proxy requires an explicit profile and a stored source declaration', () => {
+  const source = structuredClone(manifest);
+  source.kinds = [{ id: 'mail', schema: true, claimed_text: true, storage: { hidden: true } }];
+  source.network = { content_fetch: { profile: 'images_fonts', sources: [{ kind: 'mail', field: 'text' }] } };
+  source.host_calls.push('content_prepare_v1');
+  assert.doesNotThrow(() => validateManifestV1(source));
+  for (const modify of [
+    value => delete value.network,
+    value => value.network.content_fetch.profile = 'arbitrary',
+    value => value.network.content_fetch.sources[0].kind = 'undeclared',
+    value => value.network.content_fetch.sources.push(value.network.content_fetch.sources[0]),
+    value => value.network.content_fetch.sources[0].field = 'url',
+    value => value.network.content_fetch.hosts = ['example.com'],
+  ]) {
+    const invalid = structuredClone(source);
+    modify(invalid);
+    assert.throws(() => validateManifestV1(invalid));
+  }
+});

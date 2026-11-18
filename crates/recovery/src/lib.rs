@@ -421,6 +421,7 @@ impl Coordinator {
     /// Also repairs witnessed torn marker tails and uncommitted torn proposals.
     /// A recreated database or a chain/witness mismatch refuses recovery.
     pub fn replay(&self, c: &Connection) -> Result<()> {
+        let _revision = calternal_types::begin_item_access_change();
         let mut cache = self.gate.lock().map_err(err)?;
         let mut s = self.load_cached(&mut cache)?;
         self.replay_loaded(c, &mut s)?;

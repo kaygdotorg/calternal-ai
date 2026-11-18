@@ -134,9 +134,10 @@ Working record of what kayg has decided; the design itself is still being settle
   ((internal evidence)). CPU is shared by weights at both levels.
 - Drafts live until sent or erased, capped by count and size per account. A message queued
   while offline stays until sent or cancelled; after 7 days it asks before sending.
-- Plugin network access: none by default. A plugin declares destinations in its manifest;
-  a Manager approves them at enable time; the plugin fetches through the server, which
-  logs the request, attaches secrets by handle and may cache results. No raw sockets.
+- Plugin workers have no sockets. A manifest requests distinct named, content
+  fetch, open internet and private grants. The trusted host enforces the current
+  per-space approval and remote-content preferences. See the
+  network contract.
 - Protocols that need long-lived connections (mail: IMAP, JMAP, SMTP) are Rust engines in
   the server behind a contract, with every outbound connection through one guard
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
