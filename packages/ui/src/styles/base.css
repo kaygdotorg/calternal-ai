@@ -61,3 +61,10 @@ input, textarea, [contenteditable], .selectable, .selectable * { -webkit-user-se
 
 /* The person's own off switch for motion (Settings, Appearance), on top of the system's reduce-motion setting. */
 :root[data-motion="off"] *, :root[data-motion="off"] *::before, :root[data-motion="off"] *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation-duration: 0s !important; animation-delay: 0s !important; }
+
+/* One spacing rule for a section heading in a sidebar, a list page or a menu (tokens `section-above`, `section-below`, `section-h`): the heading is a `--section-h` line, `--section-above` of room above it (none when it is first) and
+   `--section-below` between it and the first item, and the last item has the next heading's room below it. An interactive heading (a collapsible section's toggle, taller for its hit area) keeps the same distances between
+   its text and the neighbouring items by taking the extra height out of its margins (`--section-pad`). */
+:root { --section-pad: calc((var(--row-h) - var(--section-h)) / 2); }
+.section-heading { box-sizing: border-box; min-height: var(--section-h); margin: var(--section-above) 0 var(--section-below); padding: 0 var(--s-5); display: flex; align-items: center; font-size: var(--text-label); font-weight: var(--strong-weight); line-height: 1.25; color: var(--ink-3); }
+.section-heading:first-child { margin-top: 0; }

@@ -33,7 +33,7 @@
 </script>
 
 <nav aria-label="Notes">
-  {#if notes.space}<p class="sp">{notes.space.name}</p>{/if}
+  {#if notes.space}<p class="section-heading">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
       <button type="button" class="tg" aria-pressed={!notes.tag} onclick={() => notes.filter(null)}>All</button>
@@ -64,7 +64,7 @@
   <a class="new trash" href={href("/notes?view=trash")} aria-current={route.query.get("view") === "trash" ? "page" : undefined}>Trash</a>
   {#if notes.waiting.length}
     <div class="wait" role="group" aria-label="Waiting to send">
-      <p class="sp">Waiting to send</p>
+      <p class="section-heading">Waiting to send</p>
       {#each notes.waiting as w (w.id)}
         <div class="w">
           <span class="wt">{w.operation === "notes.update" ? String(w.input.title ?? "Note edit") : w.operation}{w.state === "confirmation_required" ? " · needs you" : ""}</span>
@@ -81,7 +81,6 @@
   nav { display: grid; gap: var(--s-2); }
   ul { display: grid; gap: var(--s-1); }
   .li { padding-bottom: var(--s-1); }
-  .sp { padding: 0 var(--s-5); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .retry { text-decoration: underline; color: var(--ink-2); }
   .ren { width: 100%; min-height: var(--row-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-select); background: rgb(var(--ink-rgb) / 0.07); color: var(--ink); font-size: var(--text-ui); }
   .tags { display: flex; flex-wrap: wrap; gap: var(--s-1); padding: 0 var(--s-5) var(--s-2); }
