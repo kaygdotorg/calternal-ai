@@ -354,7 +354,10 @@ impl<D: Directory> Stream<D> {
             }
             self.next = Some(next);
             let current = json!({"job":job.view_for(self.identity.id)});
-            if job.operation == "agent.turn" && current != self.last_state {
+            let show_state = job.operation == "agent.turn"
+                || job.wait.is_some()
+                || self.last_state["job"]["wait"].is_object();
+            if show_state && current != self.last_state {
                 self.last_state = current.clone();
                 out.push_str(&event("state", None, &current));
             }

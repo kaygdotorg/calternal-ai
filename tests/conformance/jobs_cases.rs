@@ -316,6 +316,16 @@ async fn plugin_question_wait_survives_restart_and_replays_only_the_first_answer
     assert_eq!(parked["checkpoint"], json!({"saved":"before-signal"}));
     let request = question_id(&f, 1).await;
 
+    let mut events = Sse::open(&f, &f.cookies[1], &id, None).await.unwrap();
+    loop {
+        let (event, _, data) = events.next().await.expect("waiting state event");
+        if event == "state" {
+            assert_eq!(data["job"]["wait"]["reason"], "Waiting for a release");
+            break;
+        }
+    }
+    drop(events);
+
     f.stop();
     f.start().await;
     assert_eq!(question_id(&f, 1).await, request);
