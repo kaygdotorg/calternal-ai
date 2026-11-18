@@ -7,6 +7,26 @@ fn fixture() -> (Connection, SpaceId, Uuid) {
 }
 
 #[test]
+fn scheduler_schema_bootstraps_to_version_one_and_preserves_watched_spaces() {
+    let conn = Connection::open_in_memory().unwrap();
+    let version = || conn.pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0));
+    assert_eq!(version().unwrap(), 0);
+    migrate(&conn, SCHEMA).unwrap();
+    assert_eq!(version().unwrap(), 1);
+    let space = SpaceId::new().to_string();
+    conn.execute("INSERT INTO watched_spaces(space) VALUES(?1)", [&space])
+        .unwrap();
+    migrate(&conn, SCHEMA).unwrap();
+    assert_eq!(version().unwrap(), 1);
+    let saved = conn
+        .query_row("SELECT space FROM watched_spaces", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .unwrap();
+    assert_eq!(saved, space);
+}
+
+#[test]
 fn occurrence_key_survives_a_lost_handoff_response() {
     let (mut conn, space, automation) = fixture();
     let tx = conn.transaction().unwrap();
