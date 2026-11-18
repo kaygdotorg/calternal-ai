@@ -336,6 +336,11 @@ checks. Contract export, CLI verification, the documentation gate, both
 formatting checks, and the drift check for 296 documentation pages passed.
 The dev-01 lane targets were removed after qualification.
 
+The subsequent merge of `12331ce` brought in the web lane changes and the
+morning decisions. It changed no backend or conformance inputs. The
+conflicting open questions follow the recorded decisions on dev. The
+documentation drift check passed again on dev-01.
+
 ## Simplification opportunities
 
 Account erasure visits the job stores indexed in the in-memory route map.

@@ -21,6 +21,7 @@ const frames = await page.evaluate(() => window.__frames.splice(0));
 const self = new Map(); const byId = new Map(profile.nodes.map((n) => [n.id, n]));
 const dt = profile.timeDeltas; profile.samples.forEach((id, i) => { const n = byId.get(id); const k = `${n.callFrame.functionName || "(anon)"} ${n.callFrame.url.split("/").slice(-2).join("/")}:${n.callFrame.lineNumber + 1}`; self.set(k, (self.get(k) ?? 0) + (dt[i] ?? 0)); });
 const total = [...self.values()].reduce((a, c) => a + c, 0);
+console.log("late frames (index of 600, ms):", frames.map((f, i) => [i, +f.toFixed(0)]).filter((x) => x[1] > 20).map((x) => x.join(":")).join(" "));
 console.log(`frames ${frames.length}, over 20 ms: ${frames.filter((f) => f > 20).length}, worst ${Math.max(...frames).toFixed(0)} ms | profile total ${(total / 1000).toFixed(0)} ms in 10 s at 4x`);
 for (const [k, v] of [...self].sort((a, c) => c[1] - a[1]).slice(0, 22)) console.log(`${(v / 1000).toFixed(0).padStart(6)} ms  ${k}`);
 await b.close();
