@@ -157,7 +157,13 @@ export class FixtureSharing implements SharingClient {
   async revoke(item: ItemRef, grant_id: string): Promise<void> { this.grants.set(this.key(item), this.of(item).filter((g) => g.grant_id !== grant_id)); }
   async shared_with_me(_kind: ItemRef["kind"]) { return { items: this.incoming }; }
   async set_link_policy(): Promise<void> {}
-  async rescue(title: string, _blocks: string[]) { return { note: { id: "rescue-1", title: `Your edits to ${title}` } }; }
+  /** `?test=1`: `localStorage["cal.fixture.rescue-down"]` makes the rescue fail as an unreachable server would, and `cal.fixture.rescued` lists the notes made (once per request id) for the e2e. */
+  async rescue(title: string, blocks: string[], request_id: string) {
+    if (localStorage.getItem("cal.fixture.rescue-down")) throw new ServerError("unavailable", "can't reach the server");
+    const made: { request_id: string; title: string; blocks?: string[] }[] = JSON.parse(localStorage.getItem("cal.fixture.rescued") ?? "[]");
+    if (!made.some((m) => m.request_id === request_id)) localStorage.setItem("cal.fixture.rescued", JSON.stringify([...made, { request_id, title: `Your edits to ${title}`, blocks }]));
+    return { note: { id: `rescue-${request_id}`, title: `Your edits to ${title}` } };
+  }
   async mark_seen(item: ItemRef) { this.incoming = this.incoming.map((i) => (i.item.id === item.id ? { ...i, unread: false } : i)); return { seen: true as const }; }
   async guest(path: string): Promise<Guest> {
     const g = await this.guestAnon(path);
