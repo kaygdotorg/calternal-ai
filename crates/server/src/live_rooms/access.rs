@@ -2,7 +2,7 @@
 //! later frames only while the authorizer still publishes the same clean revision.
 use super::*;
 use crate::api::authorization;
-use calternal_types::Capability;
+use calternal_types::{Capability, ErrorCode};
 use std::{
     future::Future,
     pin::Pin,
@@ -146,7 +146,14 @@ impl<D: Directory> Connection<D> {
                     }
                     host.store
                         .content()
-                        .enable_live_editing(opening.space, &opening.kind)?;
+                        .enable_live_editing(opening.space, &opening.kind)
+                        .map_err(|error| {
+                            if error.code == ErrorCode::InvalidInput {
+                                hidden()
+                            } else {
+                                error
+                            }
+                        })?;
                     Ok(row.generation)
                 })
                 .await?;
