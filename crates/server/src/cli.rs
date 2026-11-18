@@ -130,7 +130,7 @@ pub(super) enum Cmd {
         )]
         bookmarks: Option<PathBuf>,
     },
-    /// Serve the development preview on 127.0.0.1.
+    /// Serve Calternal. Listens on loopback by default.
     #[command(
         about = "Start the development-preview server",
         after_help = "Examples:\n  calternal serve --appdata ./data/appdata --userdata-ssd ./data/ssd --userdata-hdd ./data/hdd --development\n  calternal serve --appdata /srv/calternal/appdata --userdata-ssd /srv/calternal/ssd --userdata-hdd /mnt/hdd/calternal --port 3210\n\nSee also: calternal machines --help, calternal machine --help."
@@ -162,7 +162,10 @@ pub(super) enum Cmd {
             default_value_t = calternal_auth::invites::DEFAULT_INVITE_RETENTION_DAYS,
             value_parser = clap::value_parser!(u32).range(1..))]
         invite_retention_days: u32,
-        /// Loopback port; 0 picks a free port (see startup.json).
+        /// Bind address. Use a proxy and network access controls for non-loopback listeners.
+        #[arg(long, default_value = "127.0.0.1")]
+        bind_ip: std::net::IpAddr,
+        /// Listen port; 0 picks a free port (see startup.json).
         #[arg(long, default_value_t = calternal_core::DEFAULT_PORT)]
         port: u16,
         /// Built web assets served same-origin (any static directory).
@@ -172,10 +175,10 @@ pub(super) enum Cmd {
         #[arg(long)]
         development: bool,
         /// Exact public WebAuthn origin; defaults to `http://localhost:<bound-port>`.
-        #[arg(long)]
+        #[arg(long, env = "CALTERNAL_ORIGIN")]
         origin: Option<String>,
         /// Comma-separated trusted proxy CIDRs; forwarded headers are ignored by default.
-        #[arg(long, default_value = "")]
+        #[arg(long, env = "CALTERNAL_TRUSTED_PROXIES", default_value = "")]
         trusted_proxies: String,
         /// Root of trusted plugins. Defaults to ./plugins with the shipped Threads manifest available.
         #[arg(long)]
@@ -194,6 +197,9 @@ pub(super) enum Cmd {
         /// Longest hold of a machine's long-poll, in milliseconds.
         #[arg(long, default_value_t = 20_000)]
         machine_poll_hold_ms: u64,
+        /// CPU ceiling for each agent sandbox, in millicores. Worker limits are separate.
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+        machine_sandbox_cpu_millis: Option<u32>,
     },
     /// Machine role: enroll this computer and run threads for a server.
     #[command(
