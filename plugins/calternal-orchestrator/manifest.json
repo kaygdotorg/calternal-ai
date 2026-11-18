@@ -41,6 +41,7 @@
         ]
       },
       "claimed_text": true,
+      "searchable": true,
       "schema": {
         "type": "object"
       }
@@ -236,6 +237,11 @@
           "space_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Read exactly this message from the current committed thread revision."
           },
           "since": {
             "type": "object",

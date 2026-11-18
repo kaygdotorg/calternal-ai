@@ -58,13 +58,20 @@ pub(super) fn scan(
     let mut page = Vec::new();
     while let Some(row) = rows.next().map_err(internal)? {
         let mut document = head(row, Vec::new()).map_err(internal)?;
+        if document.kind == "threads" {
+            page.push(document);
+            continue;
+        }
         let path: String = row.get(4).map_err(internal)?;
         let hash: Option<String> = row.get(5).map_err(internal)?;
         document.bytes = match folder
             .zip(hash.as_deref())
-            .and_then(|(folder, hash)| read_file(folder, &path, hash))
+            .and_then(|(folder, hash)| read_verified(folder, &path, hash))
         {
-            Some(bytes) => bytes,
+            Some(mut bytes) => {
+                bytes.truncate(BODY_BYTES);
+                bytes
+            }
             None => conn
                 .prepare_cached(
                     "SELECT coalesce(substr(bytes,1,65536),x'') FROM versions WHERE item=?1 AND seq=?2",
@@ -83,7 +90,7 @@ pub(super) fn scan(
 
 pub(super) fn get(conn: &Connection, kinds: &str, id: &str) -> Result<Option<Head>> {
     conn.prepare_cached(&format!(
-        "SELECT {FIELDS},coalesce(substr(v.bytes,1,65536),x'')
+        "SELECT {FIELDS},CASE WHEN i.kind='threads' THEN x'' ELSE coalesce(substr(v.bytes,1,65536),x'') END
          FROM items i JOIN versions v ON v.item=i.id AND v.seq=i.seq WHERE {VISIBLE} AND i.id=?2"
     ))
     .map_err(internal)?
@@ -93,8 +100,8 @@ pub(super) fn get(conn: &Connection, kinds: &str, id: &str) -> Result<Option<Hea
 }
 
 /// A regular file beneath the space with the full durable hash. Read a bounded
-/// amount and hash before truncating to the searchable prefix.
-fn read_file(folder: &Folder, path: &str, expected: &str) -> Option<Vec<u8>> {
+/// amount and hash before using the bytes in a derived projection.
+pub(super) fn read_verified(folder: &Folder, path: &str, expected: &str) -> Option<Vec<u8>> {
     let mut bytes = Vec::new();
     let maximum = crate::MAX_DOCUMENT_BYTES + 128;
     folder
@@ -106,7 +113,6 @@ fn read_file(folder: &Folder, path: &str, expected: &str) -> Option<Vec<u8>> {
     if bytes.len() > maximum || crate::file_hash(&bytes) != expected {
         return None;
     }
-    bytes.truncate(BODY_BYTES);
     Some(bytes)
 }
 

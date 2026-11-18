@@ -75,10 +75,11 @@ pub(super) fn time(stamp: &str) -> Result<String, Error> {
 }
 
 /// Parse the exact timestamp field of a generated heading.
-pub(super) fn parse_time(stamp: &str) -> Result<String, Error> {
+pub(super) fn parse_time(stamp: &str) -> Result<(String, OffsetDateTime), Error> {
     let at = OffsetDateTime::parse(stamp, HEADING_TIME)
         .map_err(|_| Error::internal("invalid thread heading timestamp"))?;
     at.format(&Rfc3339)
+        .map(|formatted| (formatted, at))
         .map_err(|_| Error::internal("invalid thread time"))
 }
 

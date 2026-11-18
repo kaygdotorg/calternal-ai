@@ -42,8 +42,8 @@ mod publication;
 mod recovery;
 mod search;
 pub use search::{
-    IndexedHit, IndexedPage, SearchConfig, SearchConfigSource, SearchKey, SearchKind, SearchMatch,
-    SearchProbe, fold_title, typo_expression,
+    IndexedHit, IndexedPage, MessageDecoder, MessageRecord, SearchConfig, SearchConfigSource,
+    SearchKey, SearchKind, SearchMatch, SearchProbe, fold_title, message_terms, typo_expression,
 };
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};

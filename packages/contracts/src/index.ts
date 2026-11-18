@@ -836,7 +836,15 @@ title: string,
 /**
  * Short title or body excerpt with structured highlights.
  */
-excerpt: Array<SearchSegment>, };
+excerpt: Array<SearchSegment>,
+/**
+ * Stable record UUID on a message hit.
+ */
+message_id?: string,
+/**
+ * Saved RFC 3339 message time, with its original offset.
+ */
+message_at?: string, };
 /**
  * Visible results in deterministic order.
  */

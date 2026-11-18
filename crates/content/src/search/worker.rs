@@ -2,7 +2,8 @@
 #[cfg(test)]
 mod tests;
 use super::{
-    Result, SCHEMA, SearchConfig, SearchConfigSource, internal, register_functions, source, wal,
+    MessageDecoder, Result, SCHEMA, SearchConfig, SearchConfigSource, internal, messages,
+    register_functions, source, wal,
 };
 use crate::{Content, journal::lock};
 use calternal_store::{ProjectionJournal, SyncToken};
@@ -20,22 +21,28 @@ use std::{
 const POLL: Duration = Duration::from_millis(50);
 const PAGE: usize = 128;
 const REQUESTS: usize = 128;
-const GENERATION: &str = concat!("2/", env!("CARGO_PKG_VERSION"));
+const GENERATION: &str = concat!("3/", env!("CARGO_PKG_VERSION"));
 
 pub(super) fn start(
     content: &Arc<Content>,
     source: SearchConfigSource,
+    decode: MessageDecoder,
 ) -> Result<(SyncSender<SpaceId>, std::thread::JoinHandle<()>)> {
     let (send, receive) = mpsc::sync_channel(REQUESTS);
     let weak = Arc::downgrade(content);
     let handle = std::thread::Builder::new()
         .name("search-index".into())
-        .spawn(move || work(weak, receive, source))
+        .spawn(move || work(weak, receive, source, decode))
         .map_err(internal)?;
     Ok((send, handle))
 }
 
-fn work(content: Weak<Content>, receive: Receiver<SpaceId>, source: SearchConfigSource) {
+fn work(
+    content: Weak<Content>,
+    receive: Receiver<SpaceId>,
+    source: SearchConfigSource,
+    decode: MessageDecoder,
+) {
     let mut queue = VecDeque::new();
     let mut marked = HashSet::new();
     let mut ready = HashMap::new();
@@ -92,7 +99,7 @@ fn work(content: Weak<Content>, receive: Receiver<SpaceId>, source: SearchConfig
                 break;
             };
             marked.remove(&space);
-            match project(&content, &config, space, ready.get(&space)) {
+            match project(&content, &config, space, ready.get(&space), decode) {
                 Ok(Progress::Ready(head)) => {
                     ready.insert(space, head);
                 }
@@ -128,6 +135,7 @@ fn project(
     config: &SearchConfig,
     space: SpaceId,
     known: Option<&SyncToken>,
+    decode: MessageDecoder,
 ) -> Result<Progress> {
     let _step = content.lifecycle.step(space.as_uuid())?;
     if let Some(known) = known {
@@ -161,6 +169,19 @@ fn project(
     if known == Some(&head) {
         return Ok(Progress::Idle);
     }
+    let finish = |progress| {
+        if !config.has_messages() {
+            return Ok(progress);
+        }
+        match messages::advance(content, space, &journal, &head, &source_path, decode)? {
+            messages::Progress::Ready => Ok(progress),
+            messages::Progress::More => Ok(Progress::More),
+            messages::Progress::Idle => Ok(match progress {
+                Progress::Ready(_) => Progress::Idle,
+                p => p,
+            }),
+        }
+    };
     let path = db_path(&content.roots.appdata, space);
     if path.exists() {
         let on_disk = crate::pool::open_reader(&path).map_err(internal)?;
@@ -169,7 +190,7 @@ fn project(
             .map_err(internal)?
             .is_some_and(|s| s.ready && s.matches(config, space, &head) && s.watermark == head.seq)
         {
-            return Ok(Progress::Ready(head));
+            return finish(Progress::Ready(head.clone()));
         }
     }
     let mut index = match content.search_writers.take(space) {
@@ -192,7 +213,7 @@ fn project(
         }
     });
     content.search_writers.keep(space, index);
-    result
+    result.and_then(finish)
 }
 
 fn open_writer(path: &std::path::Path) -> Result<Connection> {
@@ -209,7 +230,7 @@ fn open_writer(path: &std::path::Path) -> Result<Connection> {
     Ok(index)
 }
 
-fn checkpoint_if_needed(index: &Connection, path: &std::path::Path) -> Result<bool> {
+pub(super) fn checkpoint_if_needed(index: &Connection, path: &std::path::Path) -> Result<bool> {
     let bytes = match std::fs::metadata(path.with_extension("db-wal")) {
         Ok(info) => info.len(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
@@ -339,7 +360,15 @@ fn replace(index: &Connection, id: &str, document: Option<&source::Head>) -> Res
                 "INSERT INTO search_text(rowid,title,body) VALUES(?1,?2,search_body(?3))",
             )
             .map_err(internal)?
-            .execute(params![doc.slot, doc.title, doc.bytes])
+            .execute(params![
+                doc.slot,
+                doc.title,
+                if doc.kind == "threads" {
+                    &[][..]
+                } else {
+                    doc.bytes.as_slice()
+                }
+            ])
             .map_err(internal)?;
         index.prepare_cached("INSERT INTO search_title_grams(rowid,grams) VALUES(?1,search_grams(search_fold(?2)))")
             .map_err(internal)?.execute(params![doc.slot, doc.title]).map_err(internal)?;
