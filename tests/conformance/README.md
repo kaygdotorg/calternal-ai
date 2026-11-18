@@ -63,3 +63,7 @@ then invokes the unchanged, digest-pinned shipped bundle.
 unknown/foreign spaces match, foreign bookmarks reset without content, missing
 credentials refuse, reconnect after server/client restart replays backlog, and
 logging out closes an idle subscription.
+
+`wallpaper_cases.rs` checks the built-in catalog and the six anonymous sign-in
+renditions with real passkey sessions, an unconfigured server, and synthetic
+images in a disposable cache. It uses no Unsplash network access.

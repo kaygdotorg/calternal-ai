@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 14:40 IST.
+[glossary](glossary.md). Updated 2026-11-18 16:20 IST.
 
 ## Waiting now
 
@@ -29,8 +29,7 @@ move to the decision record they belong to and leave this list. Terms: see
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
-- **Plans and compute**: what a group (a plan or role) is allowed on the pool, and how that is configured.
-- **Plugin-delivered interface**, partly decided 2026-11-18: generated views plus sandboxed components; everything is a plugin, the shell included; official and community plugins get the same treatment. Open: how the shell and the orchestrator ship UI under those rules (lane #50 is writing the proposal with a prototype).
+- **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing. Open: how data moves across a schema change (kayg asked for the options to be explained again).
 - **MicroVMs**: one per person with a container per thread is decided and not built; all our VMs are Proxmox VMs, so nested virtualisation is available. Starts when a backend lane frees up.
 - **The canvas experiment**: windows inside the middle card, niri-style (kayg, 2026-11-18); being tried in the fixtures behind `?canvas=1`.
@@ -43,6 +42,8 @@ move to the decision record they belong to and leave this list. Terms: see
 ## Recently decided (2026-11-17), now in the decision records
 
 - The composer and palette: see `composer.md`.
+- Plugin interface (2026-11-18): stateful generated views: a plugin's interface code runs sandboxed and sends the host a tree of host components; sealed frames only for what the catalogue cannot express; official and community plugins are treated the same; the core (sign-in, approvals, secrets, recovery) cannot be replaced or styled. The canvas experiment is judged first, because the layout may become permanent. The largest gaps against bb, bb-lite and pi-durable get fixed in this order: live install and reload, plugin-owned slots, scoped reactive values, readiness and logs, durable waits; then another audit. Notes and Threads become ordinary plugins on public service calls. The acceptance test: a small model, given only the plugin guide, writes plugins and loads them live with no restart.
+- Plans (2026-11-18): three sandbox sizes; an hour is sandbox running time; an idle sandbox stops after ten minutes and resumes on the next message; when hours run out new work queues and running turns finish; an invite carries the group; usage shows as a small meter in Settings and a line when close. Work on your own machine is unlimited and makes the product free, with a 1 GiB storage cap; more storage is bought separately.
 - App switcher (2026-11-18): the capsule under the middle card, three apps as text only, horizontally scrollable, no list; the same bar is the phone's bottom bar for apps, with spaces behind the account picture.
 - Onboarding (2026-11-18): one path; an "I write code" switch adds repositories, the CLI and direct mode.
 - Skills and automations screens (2026-11-18): a list per space; creating either is hand-held; a skill follows the official Agent Skills standard; an automation's schedule is typed in natural language; each run is a thread.

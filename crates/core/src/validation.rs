@@ -132,7 +132,8 @@ pub fn is_known_operation(operation: &str) -> bool {
         || request_operation(operation).is_some()
         || matches!(
             operation,
-            "spaces.list"
+            WALLPAPERS_LIST
+                | "spaces.list"
                 | "spaces.create"
                 | "spaces.leave"
                 | "spaces.delete"
@@ -228,6 +229,10 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         )?;
     }
     match operation {
+        WALLPAPERS_LIST => {
+            let _: WallpapersListInput = decode(input)?;
+            Ok(())
+        }
         "spaces.list" => {
             let _: SpacesListInput = decode(input)?;
             Ok(())
@@ -424,6 +429,11 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         }
     }
     let mut catalog = vec![
+        entry::<WallpapersListInput, WallpapersListResult>(
+            WALLPAPERS_LIST,
+            "List built-in wallpapers with Unsplash attribution",
+            false,
+        ),
         entry::<SpacesListInput, SpacesListResult>(
             "spaces.list",
             "List current account memberships",

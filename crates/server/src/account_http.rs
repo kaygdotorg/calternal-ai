@@ -244,7 +244,13 @@ pub async fn cookie_middleware(
     } else {
         next.run(req).await
     };
-    if api || ambiguous {
+    if ambiguous
+        || (api
+            && response
+                .extensions()
+                .get::<crate::api::wallpapers::ImageResponse>()
+                .is_none())
+    {
         response
             .headers_mut()
             .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
