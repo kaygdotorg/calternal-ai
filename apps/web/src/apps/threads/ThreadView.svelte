@@ -121,7 +121,7 @@
   let streamId = "";
   $effect(() => {
     const sid = conv?.stream?.id ?? "";
-    if (sid && sid !== streamId) list?.scrollToBottom();
+    if (sid && sid !== streamId && list?.nearEnd()) list?.scrollToBottom(); // a turn that starts follows the end only for someone reading the end: never yank a person who scrolled up to read
     streamId = sid;
   });
   // In a canvas window (canvas/WindowFrame.svelte) the window supplies the top right pill (full screen, share, the menu) and the sidebar's way back is the shell's: this view keeps only its title pill.
@@ -218,6 +218,8 @@
   .list { position: absolute; inset: 0; }
   .signin { margin: var(--s-4) var(--pad-region); max-width: var(--msg-w, 100%); }
   .skeleton { height: 96px; margin: var(--s-4) var(--pad-region); border-radius: var(--r-card); background: rgb(var(--ink-rgb) / 0.05); }
-  .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) max(var(--pad-region), var(--safe-bottom), var(--bottom-inset, 0px)) var(--msg-pad-l, var(--pad-region)); }
+  .bottom { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; pointer-events: none; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) max(var(--s-4), calc(var(--safe-bottom) - var(--kb, 0px))) var(--msg-pad-l, var(--pad-region)); }
+  /* The composer floats at the bottom of the card above the safe area (the home indicator; none while the keyboard is up: `--kb`), over the scrolling messages, with nothing behind it but its own material. On a phone its box is the full content width. */
+  :global(.shell.narrow) .inner { max-width: 100%; }
   .inner { pointer-events: auto; display: flex; flex-direction: column; gap: var(--s-4); width: 100%; max-width: var(--msg-inner, calc(var(--msg-w) - 2 * var(--pad-region))); min-width: 0; }
 </style>
