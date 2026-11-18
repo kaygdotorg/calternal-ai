@@ -59,9 +59,9 @@ impl ProviderSession {
     }
 }
 
-// The shared Markdown preserves same-machine resumption without a raw UUID
-// or a fingerprint that links the same machine across threads.
-fn binding(account: AccountId, thread: Uuid, machine: Uuid) -> String {
+/// Derive a thread- and account-bound machine reference without publishing the
+/// real machine ID. One hash of fixed-size identifiers.
+pub(crate) fn binding(account: AccountId, thread: Uuid, machine: Uuid) -> String {
     crate::store::sha256_hex(format!("provider-session/{account}/{thread}/{machine}").as_bytes())
 }
 

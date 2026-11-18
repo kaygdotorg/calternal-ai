@@ -114,7 +114,7 @@ export class Adapter {
             typeof c.instructions !== 'string' || (c.resume !== null && (typeof c.resume !== 'string' || !sessionId.test(c.resume)))) throw new Error('start');
         if (!c.options || typeof c.options !== 'object' || Array.isArray(c.options) || Object.keys(c.options).some(k => !['max_turns','effort'].includes(k))) throw new Error('options');
         if (c.options.max_turns !== undefined && (!Number.isInteger(c.options.max_turns) || Number(c.options.max_turns)<1 || Number(c.options.max_turns)>1000)) throw new Error('max turns');
-        if (c.options.effort !== undefined && !['low','medium','high'].includes(String(c.options.effort))) throw new Error('effort');
+        if (c.options.effort !== undefined && (typeof c.options.effort !== 'string' || !['low','medium','high','xhigh','max'].includes(c.options.effort))) throw new Error('effort');
         this.config = c; this.session = c.resume ?? undefined; break;
       case 'send':
         if (!this.config || this.active || typeof c.prompt !== 'string' || !Array.isArray(c.context) || c.context.length > 32 ||
@@ -151,11 +151,34 @@ export class Adapter {
     this.active = this.run(prompt).finally(() => { this.active = undefined; this.child = undefined; });
   }
 
+  private async emitText(type: 'text_delta' | 'reasoning_delta', text: string): Promise<void> {
+    let part = '';
+    let used = 0;
+    for (const ch of text) {
+      const n = bytes(ch);
+      if (used + n > 1024) {
+        await this.emit({ type, text: part });
+        part = '';
+        used = 0;
+      }
+      part += ch;
+      used += n;
+    }
+    if (part) await this.emit({ type, text: part });
+  }
+
   private async run(prompt: string): Promise<void> {
     let outcome = 'outcome_unknown';
     let result = false;
     let billing: ProviderBilling = 'unknown';
     let resetAt: number | undefined;
+    let thinking: { index: number; startedAt: number } | undefined;
+    const finishThinking = async () => {
+      if (!thinking) return;
+      const duration_ms = Math.floor(performance.now() - thinking.startedAt);
+      thinking = undefined;
+      await this.emit({ type: 'reasoning_finished', duration_ms });
+    };
     try {
       // Read only the official status response, not a login file or token.
       const status = spawn(this.binary, ['auth','status'], { env: this.environment(), stdio: ['ignore','pipe','ignore'] });
@@ -198,16 +221,25 @@ export class Adapter {
           const id: string = m.session_id; this.session = id;
           await this.emit({ type: 'session', session_id: id });
         }
-        if (m.type === 'stream_event' && m.event?.type === 'content_block_delta' && m.event.delta?.type === 'text_delta') {
-          const text = m.event.delta.text;
-          if (typeof text !== 'string') throw new Error('text');
-          let part = ''; let used=0;
-          for (const ch of text) {
-            const n=bytes(ch);
-            if (used+n>1024) { await this.emit({ type: 'text_delta', text: part }); part = ''; used=0; }
-            part += ch; used+=n;
+        if (m.type === 'stream_event') {
+          const event = m.event;
+          if (event?.type === 'content_block_start' && ['thinking', 'redacted_thinking'].includes(event.content_block?.type)) {
+            if (thinking) throw new Error('overlapping reasoning blocks');
+            thinking = { index: event.index, startedAt: performance.now() };
+            await this.emit({ type: 'reasoning_started' });
+            if (event.content_block.type === 'thinking' && typeof event.content_block.thinking === 'string') {
+              await this.emitText('reasoning_delta', event.content_block.thinking);
+            }
+          } else if (event?.type === 'content_block_delta' && event.delta?.type === 'thinking_delta' &&
+              thinking && event.index === thinking.index && typeof event.delta.thinking === 'string') {
+            await this.emitText('reasoning_delta', event.delta.thinking);
+          } else if ((event?.type === 'content_block_stop' && thinking && event.index === thinking.index) ||
+              event?.type === 'message_stop') {
+            await finishThinking();
+          } else if (event?.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+            if (typeof event.delta.text !== 'string') throw new Error('text');
+            await this.emitText('text_delta', event.delta.text);
           }
-          if (part) await this.emit({ type: 'text_delta', text: part });
         }
         if (m.type === 'assistant' && Array.isArray(m.message?.content)) {
           for (const block of m.message.content) if (block.type === 'tool_use') {
@@ -249,6 +281,7 @@ export class Adapter {
         if (m.type === 'system' && m.subtype === 'model_refusal_no_fallback') await this.emit({type:'error',code:'refusal',class:'refusal',billing,message:'The provider declined this request.'});
         if (m.type === 'result') {
           if (result) throw new Error('duplicate result');
+          await finishThinking();
           result = true; outcome = m.is_error === false && m.subtype === 'success' ? 'done' : 'failed';
           const safeCount = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : 0;
           await this.emit({ type: 'usage', input_tokens: safeCount(m.usage?.input_tokens), output_tokens: safeCount(m.usage?.output_tokens) });
@@ -266,6 +299,7 @@ export class Adapter {
       this.child?.kill('SIGKILL');
       if (!this.cancelled) await this.emit({ type: 'error', code: 'provider_stream', class:'unknown', billing, message: 'Claude Code could not start or returned an invalid stream. Check the installation and sign-in inside your sandbox.' });
     }
+    await finishThinking();
     await this.emit({ type: 'done', outcome: this.cancelled ? 'cancelled' : outcome });
   }
 

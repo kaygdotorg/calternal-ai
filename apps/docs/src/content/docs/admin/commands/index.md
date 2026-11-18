@@ -71,6 +71,7 @@ title: "Command reference"
 - [calternal-tags-lookup](./calternal-tags-lookup/)
 - [calternal-trash-list](./calternal-trash-list/)
 - [calternal-trash-purge](./calternal-trash-purge/)
+- [calternal-threads-models](./calternal-threads-models/)
 - [calternal-agent-readiness](./calternal-agent-readiness/)
 - [calternal-serve](./calternal-serve/)
 - [calternal-machines-code](./calternal-machines-code/)

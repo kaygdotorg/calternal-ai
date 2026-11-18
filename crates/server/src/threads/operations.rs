@@ -242,15 +242,12 @@ pub(super) fn apply<D: Directory>(
             .get("provider")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let model = data.get("model").and_then(Value::as_str).unwrap_or("");
-        if model.len() > 128 {
-            return Err(Error::invalid_input("model exceeds 128 UTF-8 bytes"));
-        }
-        item.metadata["model"] = if model.is_empty() {
-            document::default_model(st, provider)
-        } else {
-            json!(model)
-        };
+        item.metadata["model"] = json!(super::models::select(
+            st,
+            provider,
+            data.get("model").and_then(Value::as_str),
+            data.get("reasoning").and_then(Value::as_str),
+        )?);
         let now = calternal_content::now_rfc3339();
         document::record_message(&mut item.metadata, &now);
         item.metadata["pending"] = json!({"account":who.id,"request_id":request_id,"fingerprint":fp,"created_ms":calternal_types::now_ms()});

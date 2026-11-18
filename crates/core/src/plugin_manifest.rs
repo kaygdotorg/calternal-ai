@@ -346,4 +346,18 @@ pub struct ManifestProvider {
     pub executable: String,
     /// Default installed-CLI model identifier, at most 128 UTF-8 bytes.
     pub default_model: String,
+    /// Models offered by this adapter, validated and cached with the manifest.
+    pub models: Vec<ProviderModel>,
+}
+
+/// One selectable provider model and the explicit reasoning levels it accepts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderModel {
+    /// Stable model identifier passed to the adapter.
+    pub id: String,
+    /// Short display name for the model picker.
+    pub name: String,
+    /// Ordered reasoning levels. Empty means the model accepts no explicit level.
+    pub reasoning_levels: Vec<String>,
 }

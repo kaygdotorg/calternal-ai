@@ -163,6 +163,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     let threads = [
         ("threads.create", Capability::ContentWrite),
         ("threads.list", Capability::SpaceRead),
+        ("threads.models", Capability::PluginsUse),
         ("threads.get", Capability::SpaceRead),
         ("threads.send", Capability::PluginsUse),
         ("threads.stop", Capability::PluginsUse),

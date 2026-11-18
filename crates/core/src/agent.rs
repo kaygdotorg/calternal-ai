@@ -42,7 +42,7 @@ pub struct AgentInput {
     pub prompt: String,
     /// Labelled context contributions, bounded by the provider command budget.
     pub context: Vec<crate::ProviderContext>,
-    /// Official CLI model; empty uses `sonnet`.
+    /// Official CLI model; empty uses the selected provider manifest default.
     pub model: String,
     /// Options declared by the selected provider, bounded by the command budget.
     pub options: crate::JsonObject,
