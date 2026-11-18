@@ -7,7 +7,7 @@ umask 077
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 # The server defaults to sandboxing and can later honor an explicit owner choice.
-server= code= image= binary= backend=auto max=10
+server= code= image= binary= backend=auto max=4294967295
 while [ "$#" -gt 0 ]; do
   [ "$#" -ge 2 ] || die "This option needs a value: $1"
   case $1 in

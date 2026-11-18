@@ -20,12 +20,12 @@ pub(super) fn authorize(owner: Owner) -> Result<(), Error> {
     }
 }
 
-/// Resolve the account limit from the same size table the machine uses.
-pub(super) fn active_limit(backend: &str, memory_mib: Option<u32>) -> Result<Option<usize>, Error> {
+/// Validate the account guest profile reported by the machine session.
+pub(super) fn guest_size(backend: &str, memory_mib: Option<u32>) -> Result<Option<GuestSize>, Error> {
     if is_requested(backend) {
         return memory_mib
             .and_then(GuestSize::from_mib)
-            .map(|size| size.active_threads)
+            .map(Some)
             .ok_or_else(|| {
                 Error::invalid_input("microVM sessions require a supported guest size")
             });

@@ -177,7 +177,7 @@ impl MachineService {
         let mut pool = Vec::new();
         for machine in st.eligible(account, pin) {
             let online = connected(machine, &self.settings);
-            let available = online && st.free_for(machine, account) != 0;
+            let available = online && st.free_for(machine, account, &self.settings) != 0;
             let checks = machine.checks.get(&account);
             let providers = providers
                 .iter()
@@ -288,7 +288,7 @@ impl MachineService {
                 Some(_) => m.row.owner == (Owner::Account { id: account }),
                 None => m.row.owner == Owner::Pool,
             })
-            .filter(|m| connected(m, &self.settings) && st.free_for(m, account) > 0)
+            .filter(|m| connected(m, &self.settings) && st.free_for(m, account, &self.settings) > 0)
             .map(|m| m.row.id)
             .min())
     }
@@ -349,7 +349,7 @@ impl MachineService {
             .is_some_and(|live| {
                 live.harness_protocol
                     && !live.direct
-                    && (live.thread_limit.is_some() && !live.kvm_fallback) == guest
+                    && (live.guest_size.is_some() && !live.kvm_fallback) == guest
             });
         if !matches {
             return Err(Error::unavailable(
@@ -446,7 +446,11 @@ impl MachineService {
         account: AccountId,
         pin: Option<Uuid>,
         position: Option<usize>,
+        memory_wait: bool,
     ) -> Result<Value, Error> {
+        if memory_wait {
+            return Ok(json!({"code":"waiting_for_memory","message":super::MEMORY_WAIT,"queue_position":position}));
+        }
         let st = self.lock()?;
         let mut enrolled = false;
         let mut online = false;

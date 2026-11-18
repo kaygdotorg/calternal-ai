@@ -8,6 +8,7 @@
 //! bounded by about 256 KiB in the channel plus 256 KiB here.
 
 mod erasure;
+mod memory;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -142,11 +143,15 @@ impl Runner {
             .map_err(|e| crate::Error::Protocol(e.0))
     }
 
-    /// Current capacity. Reads `/proc/meminfo` on Linux (a few µs).
+    /// Sample capacity for a heartbeat. Cost: one host read on Linux, or one
+    /// platform memory query on macOS, plus reading the local slot count.
+    /// Call from a blocking worker.
     pub fn capacity(&self) -> Capacity {
+        let (memory_bytes, available_memory_bytes) = memory::sample();
         Capacity {
             cpus: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
-            memory_bytes: memory_bytes(),
+            memory_bytes,
+            available_memory_bytes,
             max_sandboxes: self.max_sandboxes,
             running_sandboxes: self.slots.lock().expect("slots").len() as u32,
         }
@@ -219,8 +224,11 @@ impl Runner {
             let account_full = self
                 .guest_memory_mib()
                 .and_then(crate::protocol::GuestSize::from_mib)
-                .and_then(|size| size.active_threads)
-                .is_some_and(|limit| account_held >= limit);
+                .is_some_and(|size| {
+                    spec.limits.memory_bytes.is_some_and(|bytes| {
+                        bytes.saturating_mul(account_held as u64 + 1) > size.turn_budget_bytes()
+                    })
+                });
             let denied = if closing_workspace {
                 Some("previous sandbox is still closing")
             } else if account_full {
@@ -636,15 +644,4 @@ impl Runner {
             }
         }
     }
-}
-
-fn memory_bytes() -> u64 {
-    std::fs::read_to_string("/proc/meminfo")
-        .ok()
-        .and_then(|s| {
-            s.lines()
-                .find_map(|l| l.strip_prefix("MemTotal:"))
-                .and_then(|v| v.trim().trim_end_matches("kB").trim().parse::<u64>().ok())
-        })
-        .map_or(0, |kib| kib * 1024)
 }

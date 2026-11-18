@@ -110,32 +110,41 @@ pub struct SessionChallenge {
 /// because the machine user cannot create KVM guests.
 pub const PODMAN_KVM_FALLBACK: &str = "podman-no-kvm";
 
-/// Approved account guest sizing and its measured admission ceiling.
+/// Smallest host reservation for a new sandbox. Cost: a constant.
+pub const MIN_SANDBOX_MEMORY_BYTES: u64 = 2 << 30;
+
+/// Supported account guest sizing and its usable memory for turns.
 #[derive(Clone, Copy, Debug)]
 pub struct GuestSize {
     /// Configured RAM, in MiB.
     pub memory_mib: u32,
-    /// Concurrent thread ceiling where a measurement has established one.
-    pub active_threads: Option<usize>,
 }
 
 impl GuestSize {
     /// Resolve a configured RAM value against the supported size profiles.
     pub fn from_mib(memory_mib: u32) -> Option<Self> {
-        const PROFILES: [GuestSize; 2] = [
-            GuestSize {
-                memory_mib: 512,
-                active_threads: Some(2),
-            },
-            GuestSize {
-                memory_mib: 1024,
-                // Three threads were at the latency cutoff on the busy dev host.
-                active_threads: Some(2),
-            },
-        ];
-        PROFILES
-            .into_iter()
-            .find(|size| size.memory_mib == memory_mib)
+        match memory_mib {
+            512 | 1024 | 2048 | 4096 | 8192 => Some(Self { memory_mib }),
+            _ => None,
+        }
+    }
+
+    /// Host admission reservation, in bytes. Cost: one multiplication.
+    pub fn host_memory_bytes(self) -> u64 {
+        (u64::from(self.memory_mib) << 20).max(MIN_SANDBOX_MEMORY_BYTES)
+    }
+
+    /// Usable RAM for managed turns after reserving 256 MiB for the guest.
+    /// Cost: one subtraction and shift.
+    pub fn turn_budget_bytes(self) -> u64 {
+        u64::from(self.memory_mib.saturating_sub(256)) << 20
+    }
+
+    /// Ceiling per managed turn, clamped for previously configured small guests.
+    /// Cost: integer arithmetic only.
+    pub fn turn_memory_bytes(self, limit: u64) -> u64 {
+        let budget = self.turn_budget_bytes();
+        limit.min(if self.memory_mib < 2048 { budget / 2 } else { budget })
     }
 }
 
@@ -176,13 +185,17 @@ pub struct SessionGranted {
 }
 
 /// Machine capacity. Placement accounts for both held machine slots and the
-/// server's active leases. CPU and memory figures are informational.
+/// server's active leases. Available memory is sampled by the machine.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capacity {
     /// Logical CPUs.
     pub cpus: u32,
     /// Physical memory in bytes; 0 when unknown.
     pub memory_bytes: u64,
+    /// Available physical memory in bytes at this heartbeat. Absent when the
+    /// machine cannot provide a measurement. Admission waits for a sample.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_memory_bytes: Option<u64>,
     /// Most provider and worker slots the machine can hold at once.
     pub max_sandboxes: u32,
     /// Slots currently held, including idle leases and pending removals.

@@ -1,4 +1,6 @@
 //! Thread-file admission reuses manual turn validation and durable jobs.
+//! Machine memory admission follows durable job creation. A queued job retains
+//! its committed message, and its reason comes from the fenced placement loop.
 use super::*;
 use crate::threads::provider_session::{KEY, ProviderSession};
 /// Finish a committed message intent under its content space lock, fencing Trash.

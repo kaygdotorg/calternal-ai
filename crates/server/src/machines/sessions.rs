@@ -181,7 +181,7 @@ impl MachineService {
         } else if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
             return Err(Error::invalid_input("unsupported machine backend"));
         }
-        let thread_limit = super::microvm::active_limit(&f.backend, f.guest_memory_mib)?;
+        let guest_size = super::microvm::guest_size(&f.backend, f.guest_memory_mib)?;
         let backend = if kvm_fallback {
             "podman"
         } else if f.backend == "auto" {
@@ -209,7 +209,8 @@ impl MachineService {
             direct: backend == "direct",
             harness_protocol: f.protocol >= HARNESS_PROTOCOL_VERSION,
             kvm_fallback,
-            thread_limit,
+            guest_size,
+            memory_reservations: 0,
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,
@@ -316,12 +317,23 @@ impl MachineService {
             .transpose()?;
         live_mut(st.machines.get_mut(&machine_id), session)?;
         st.finish_discards(machine_id, &req.discards)?;
+        let assigned = st.machines[&machine_id].assigned;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);
         let readiness_changed = live.capacity.max_sandboxes != req.capacity.max_sandboxes
             || live.capacity.running_sandboxes != req.capacity.running_sandboxes
+            || live.capacity.available_memory_bytes != req.capacity.available_memory_bytes
             || live.draining != req.draining;
         live.capacity = req.capacity;
+        // Closing or not-yet-reported leases still count against this sample.
+        // The next report can prove the machine has reclaimed their memory.
+        let observed = assigned.max(req.capacity.running_sandboxes as usize);
+        live.memory_reservations = if req.ack >= live.next_seq.saturating_sub(1) {
+            observed
+        } else {
+            // A report can predate a sent Assign or Stop on the same session.
+            observed.max(live.memory_reservations)
+        };
         live.draining = req.draining;
         live.polls += 1;
         let notify = live.notify.clone();

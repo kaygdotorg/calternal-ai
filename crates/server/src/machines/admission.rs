@@ -168,6 +168,7 @@ impl MachineService {
                 .is_some_and(|m| {
                     m.row.owner == (calternal_machine::protocol::Owner::Account { id: account })
                         && m.live.as_ref().is_some_and(|live| !live.direct)
+                        && super::readiness::connected(m, &self.settings)
                         && st.free(m) > 0
                         && !st.leases.values().any(|l| {
                             l.row.background_title && l.assigned_machine() == Some(m.row.id)

@@ -2918,7 +2918,7 @@ async fn machines_and_runs_are_owner_private() {
     session.ok();
     let token = session.body["token"].as_str().unwrap().to_owned();
     // Sync and output refuse a missing or unknown bearer.
-    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
+    let sync = json!({"ack":0,"capacity":{"cpus":1,"memory_bytes":0,"available_memory_bytes":68719476736_u64,"max_sandboxes":2,"running_sandboxes":0},"draining":false,"leases":[]});
     for bearer in [None, Some("cm1_unknown")] {
         assert_eq!(
             f.machine("/api/v1/machine/sync", bearer, sync.clone())

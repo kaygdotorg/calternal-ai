@@ -223,7 +223,7 @@ async fn execute<D: Directory>(
         .get("machine_id")
         .and_then(Value::as_str)
         .and_then(|s| Uuid::parse_str(s).ok());
-    let (machine_id, personal_machine, _permit) = match super::progress::place(
+    let (machine_id, personal_machine) = match super::progress::place(
         state,
         machines,
         job,
@@ -233,7 +233,7 @@ async fn execute<D: Directory>(
     )
     .await?
     {
-        super::progress::Placement::Ready(machine, personal, permit) => (machine, personal, permit),
+        super::progress::Placement::Ready(machine, personal) => (machine, personal),
         super::progress::Placement::Ended(end) => return Ok(end),
     };
     crate::fault::automation_turn(
