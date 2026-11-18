@@ -132,7 +132,10 @@ holds its space's jobs lock across the authority commit to fence stop/resume;
 auth callbacks never acquire job or content locks. Worker callbacks recheck that hash, expiry and active turn,
 and least-access content calls remain inside the granted kind scope.
 
-`access.request` creates a bounded pending approval. Denied sensitive operations
+`access.request` creates a bounded pending approval. An agent can call it with
+`{"app":"notes"}` and an optional `write` flag. Its thread credential supplies
+the job ID. An explicit ID must match that credential. A person supplies
+`job_id`. Denied sensitive operations
 create an approval and return its ID. The recipient lists it through
 `calternal requests list` and approves with `calternal requests approve ID`
 and the chosen lifetime, using an installation session with a fresh passkey

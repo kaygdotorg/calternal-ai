@@ -53,6 +53,9 @@ pub enum Command {
         /// Maximum rows, from 1 to 1000.
         #[arg(long, default_value_t = 100)]
         limit: u32,
+        /// Continuation from the previous page, or - to read it from stdin.
+        #[arg(long, value_parser = crate::parse_cursor, allow_hyphen_values = true)]
+        cursor: Option<String>,
     },
     /// Read the Markdown conversation or a saved checkpoint addition.
     Get {
@@ -130,10 +133,14 @@ impl Command {
                 archived,
                 parent_thread,
                 limit,
+                cursor,
             } => {
                 let mut v = json!({"space_id":space_id,"archived":archived,"limit":limit});
                 if let Some(parent) = parent_thread {
                     v["parent_thread"] = json!(parent);
+                }
+                if let Some(cursor) = cursor {
+                    v["cursor"] = json!(cursor);
                 }
                 ("threads.list", v)
             }
@@ -201,6 +208,7 @@ pub fn reply(out: &Output, data: Value) -> Reply {
                 ]
             })
             .collect();
+        let has_next = data["next_cursor"].is_string();
         return Reply::new(data)
             .table(
                 &[
@@ -219,7 +227,12 @@ pub fn reply(out: &Output, data: Value) -> Reply {
                 rows,
                 "No threads in this space.",
             )
-            .hint("Next: calternal threads create --help");
+            .page_cursor()
+            .hint(if has_next {
+                "Next: repeat calternal threads list with the same filters and --cursor."
+            } else {
+                "Next: calternal threads create --help"
+            });
     }
     if let Some(delta) = data.get("delta") {
         return Reply::new(data.clone())

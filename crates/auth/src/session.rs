@@ -378,11 +378,6 @@ pub(crate) async fn require_fresh(
     if inner.sessions.is_revoked(installation) {
         return Err(Error::new(ErrorCode::Forbidden, "session revoked"));
     }
-    let stale = if registration_ok {
-        ErrorCode::PasskeyReverificationRequired
-    } else {
-        ErrorCode::Forbidden
-    };
     let id = installation.to_string();
     let (kind, asserted, registration): (String, Option<i64>, bool) = inner
         .db
@@ -397,7 +392,7 @@ pub(crate) async fn require_fresh(
         .await?;
     if !matches!(kind.as_str(), "browser" | "native") {
         return Err(Error::new(
-            ErrorCode::Forbidden,
+            ErrorCode::PasskeyReverificationRequired,
             "this needs a signed-in browser or app",
         ));
     }
@@ -409,7 +404,10 @@ pub(crate) async fn require_fresh(
         {
             Ok(())
         }
-        _ => Err(Error::new(stale, "sign in again with your passkey first")),
+        _ => Err(Error::new(
+            ErrorCode::PasskeyReverificationRequired,
+            "sign in again with your passkey first",
+        )),
     }
 }
 

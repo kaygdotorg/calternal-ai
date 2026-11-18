@@ -60,6 +60,9 @@ pub(super) enum Cmd {
         args: calternal_cli::agent::Args,
     },
     /// Invoke a discovered operation with structured JSON input.
+    #[command(
+        after_help = "With a thread credential, invoke access.request with an app and optional write flag. The credential supplies the job ID. People must supply job_id."
+    )]
     Invoke {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,

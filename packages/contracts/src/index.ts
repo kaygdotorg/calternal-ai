@@ -873,7 +873,7 @@ pool: boolean,
  */
 thread_id: string,
 /**
- * Job UUID for events/stop/resume/mode/access operations.
+ * Job UUID for job operations. A thread credential can omit it for access.request.
  */
 job_id: string,
 /**
@@ -1217,7 +1217,7 @@ input: { [key in string]?: unknown }, };
  * Stable error categories used by every operation failure; each maps to one HTTP status.
  */
 
-export type ErrorCode = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid_input" | "too_large" | "unavailable" | "internal";
+export type ErrorCode = "unauthorized" | "forbidden" | "passkey_reverification_required" | "not_found" | "conflict" | "invalid_input" | "too_large" | "unavailable" | "internal";
 /**
  * Safe error payload for all operations; messages must not contain credentials or private diagnostics.
  */

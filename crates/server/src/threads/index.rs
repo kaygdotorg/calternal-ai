@@ -4,7 +4,7 @@ use crate::{
     auth::Directory,
     plugins::{job_sql, jobs::JobDatabase},
 };
-use calternal_types::{Error, SpaceId};
+use calternal_types::{AccountId, Error, Page, SpaceId};
 use rusqlite::Connection;
 use serde_json::Value;
 use std::path::Path;
@@ -14,6 +14,8 @@ use uuid::Uuid;
 pub(super) struct Row {
     /// Stable content item UUID.
     pub(super) id: Uuid,
+    /// Indexed UTC timestamp used for keyset order.
+    updated_at: String,
     /// File-derived thread metadata, excluding the body.
     pub(super) metadata: Value,
     /// Current content revision for refreshing the document.
@@ -48,14 +50,18 @@ fn index_error(error: rusqlite::Error) -> Error {
 
 // The unary plus removes the content column's TEXT affinity without changing its
 // value. This lets SQLite seek the affinity-free JSON expression in jobs_thread.
-const SUMMARIES: &str = "SELECT i.id, i.metadata, i.revision, (
+const SUMMARIES: &str = "SELECT i.id, i.metadata, i.revision, i.updated_at, (
          SELECT json_array(j.state,j.account,__REASON__) FROM main.jobs j
          WHERE j.operation='agent.turn' AND json_extract(j.input,'$.request.thread_id') = +i.id
          AND json_extract(j.input,'$.check') IS NOT 1
          ORDER BY j.rowid DESC LIMIT 1
      )
      FROM thread_content.items i WHERE i.kind='threads'
-     ORDER BY i.updated_at DESC, i.id LIMIT 1000";
+     AND i.updated_at<=?1 AND (i.updated_at<?1 OR i.id>?2)
+     AND (?3 IS NOT NULL OR json_extract(i.metadata,'$.deleted') IS NOT 1)
+     AND (?3 IS NOT NULL OR ?4 OR json_extract(i.metadata,'$.archived') IS NOT 1)
+     AND (?3 IS NULL OR json_extract(i.metadata,'$.parent_thread')=?3)
+     ORDER BY i.updated_at DESC, i.id LIMIT ?5";
 
 fn summaries() -> &'static str {
     static SQL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -86,47 +92,68 @@ fn attach(conn: &Connection) -> Result<(), Error> {
 }
 
 /// List the authorized space's threads with a single indexed query and no body
-/// reads. A cold connection attaches the same-space metadata index read-only.
+/// reads. Filters run before the limit, the last delivered key continues the
+/// page, and a cold connection attaches the same-space index read-only.
 pub(super) fn page<D: Directory>(
     state: &Shared<D>,
     space: SpaceId,
-    account: calternal_types::AccountId,
-) -> Result<Vec<Row>, Error> {
+    account: AccountId,
+    parent: Option<&str>,
+    archived: bool,
+    cursor: Option<&str>,
+    limit: usize,
+) -> Result<Page<Row>, Error> {
+    let position: Option<(String, String)> = cursor
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(|_| Error::invalid_input("invalid page cursor"))?;
+    // RFC 3339 timestamps sort before the first-page bound.
+    let (updated_at, id) = position.unwrap_or_else(|| ("~".into(), String::new()));
     let conn = connection(state, space)?;
     let conn = conn.lock().unwrap_or_else(|p| p.into_inner());
     attach(&conn)?;
     let mut stmt = conn.prepare_cached(summaries()).map_err(index_error)?;
     let rows = stmt
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get(2)?,
-                r.get::<_, Option<String>>(3)?,
-            ))
-        })
+        .query_map(
+            rusqlite::params![updated_at, id, parent, archived, (limit + 1) as i64],
+            |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                ))
+            },
+        )
         .map_err(index_error)?;
     let account = account.to_string();
-    rows.map(|r| {
-        let (id, metadata, revision, status) = r.map_err(index_error)?;
-        let status: Value = status
-            .as_deref()
-            .map(serde_json::from_str)
-            .transpose()
-            .map_err(|_| Error::internal("invalid indexed turn state"))?
-            .unwrap_or_default();
-        let state = status[0].as_str().map(job_sql::parse_state);
-        let reason = crate::turns::reason::describe(state, &status[2], status[1] == account);
-        Ok(Row {
-            id: Uuid::parse_str(&id).map_err(|_| Error::internal("invalid indexed thread ID"))?,
-            metadata: serde_json::from_str(&metadata)
-                .map_err(|_| Error::internal("invalid indexed thread metadata"))?,
-            revision,
-            turn_state: state.map_or("idle", |s| super::turn_status::label(s)),
-            turn_reason: reason,
+    let rows = rows
+        .map(|r| {
+            let (id, metadata, revision, updated_at, status) = r.map_err(index_error)?;
+            let status: Value = status
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()
+                .map_err(|_| Error::internal("invalid indexed turn state"))?
+                .unwrap_or_default();
+            let state = status[0].as_str().map(job_sql::parse_state);
+            let reason = crate::turns::reason::describe(state, &status[2], status[1] == account);
+            Ok(Row {
+                id: Uuid::parse_str(&id)
+                    .map_err(|_| Error::internal("invalid indexed thread ID"))?,
+                metadata: serde_json::from_str(&metadata)
+                    .map_err(|_| Error::internal("invalid indexed thread metadata"))?,
+                revision,
+                updated_at,
+                turn_state: state.map_or("idle", |s| super::turn_status::label(s)),
+                turn_reason: reason,
+            })
         })
-    })
-    .collect()
+        .collect::<Result<_, Error>>()?;
+    Ok(Page::from_lookahead(rows, limit, |row| {
+        serde_json::json!([row.updated_at, row.id]).to_string()
+    }))
 }
 
 /// Read existence, the caller's current pin, and activation controls together.
@@ -205,14 +232,18 @@ mod tests {
             .prepare(&format!("EXPLAIN QUERY PLAN {}", summaries()))
             .unwrap();
         let nodes: Vec<String> = stmt
-            .query_map([], |row| row.get(3))
+            .query_map(
+                rusqlite::params!["~", "", Option::<&str>::None, false, 101],
+                |row| row.get(3),
+            )
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
         assert!(
             nodes
                 .iter()
-                .any(|row| row.contains("SEARCH i USING INDEX item_list")),
+                .any(|row| row.contains("SEARCH i USING INDEX item_list")
+                    && row.contains("updated_at<?")),
             "{nodes:?}"
         );
         assert!(
