@@ -1,13 +1,13 @@
 // Seeds a disposable server for the scale measurements (e2e/scale-measure.mjs) through the product's own surfaces: the owner signs up with a virtual passkey; 10,000 notes carrying 2,000 distinct tags go in through
 // `notes.create`; 49 more spaces through `spaces.create`; 199 more accounts join the first space by redeeming invitations in their own browser contexts (so 200 members); 100 live invitations stay open; 30 machines are
-// enrolled from codes. Writes the owner's session to <dir>/state.json (cookie only). Env: CAL_BIN, CAL_DIST, CAL_SCALE_PORT, CAL_SCALE_DIR, SEED_NOTES/SEED_MEMBERS/SEED_MACHINES to shrink a run.
+// enrolled from codes. Writes the owner's session to <dir>/state.json (cookie only). Env: CAL_BIN, CAL_DIST, CAL_SCALE_PORT, CAL_SCALE_DIR, SEED_NOTES/SEED_MEMBERS/SEED_MACHINES/SEED_TRASH (notes deleted into the Trash, default 1500) to shrink a run.
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright";
 
 const PORT = Number(process.env.CAL_SCALE_PORT ?? 3400), DIR = process.env.CAL_SCALE_DIR ?? "/tmp/cal-scale";
-const NOTES = Number(process.env.SEED_NOTES ?? 10000), MEMBERS = Number(process.env.SEED_MEMBERS ?? 200), MACHINES = Number(process.env.SEED_MACHINES ?? 30), SPACES = Number(process.env.SEED_SPACES ?? 50), TAGS = 2000, INVITES = 100;
+const NOTES = Number(process.env.SEED_NOTES ?? 10000), MEMBERS = Number(process.env.SEED_MEMBERS ?? 200), MACHINES = Number(process.env.SEED_MACHINES ?? 30), SPACES = Number(process.env.SEED_SPACES ?? 50), TAGS = 2000, INVITES = 100, TRASH = Number(process.env.SEED_TRASH ?? 1500);
 const BIN = process.env.CAL_BIN ?? `${process.env.HOME}/Developer/lanes/ui-shell/target/debug/calternal`;
 mkdirSync(DIR, { recursive: true });
 const srv = spawn(BIN, ["serve", "--create", "--installation-id", crypto.randomUUID(), "--appdata", join(DIR, "appdata"), "--userdata-ssd", join(DIR, "ssd"), "--userdata-hdd", join(DIR, "hdd"), "--port", String(PORT), "--web-dir", process.env.CAL_DIST ?? "dist", "--plugin-root", process.env.CAL_PLUGINS ?? "../../plugins"], { stdio: "ignore", detached: true });
@@ -26,12 +26,16 @@ const op = (operation, input) => p.evaluate(async ([operation, input]) => (await
 const space = (await op("spaces.list", {})).data.spaces[0].id;
 log("owner ready; space " + space.slice(0, 8));
 // Notes: batches of 8 in parallel inside the page.
-await p.evaluate(async ([space, n, tags]) => {
+await p.evaluate(async ([space, n, tags, trash]) => {
   const post = (operation, input) => fetch("/api/v1/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ request_id: crypto.randomUUID(), operation, input }) }).then((r) => r.json());
   let next = 0, failed = 0;
   const worker = async () => { for (;;) { const i = next++; if (i >= n) return; const tag = `#t${i % tags}`; const r = await post("notes.create", { space_id: space, title: `Note ${String(i).padStart(5, "0")}`, markdown: `# Note ${String(i).padStart(5, "0")}\n\nSeeded note ${i} ${tag}\n` }); if (!r.ok) failed++; } };
   await Promise.all(Array.from({ length: 8 }, worker)); if (failed) throw new Error(`${failed} notes failed`);
-}, [space, NOTES, TAGS]);
+  // The Trash: notes made and deleted at once, so it has more than one page.
+  let gone = 0;
+  const sweeper = async () => { for (;;) { const i = gone++; if (i >= trash) return; const r = await post("notes.create", { space_id: space, title: `Gone ${String(i).padStart(5, "0")}`, markdown: `# Gone ${i}\n` }); if (r.ok) await post("notes.delete", { id: r.data.note.id }); else failed++; } };
+  await Promise.all(Array.from({ length: 8 }, sweeper)); if (failed) throw new Error(`${failed} notes failed`);
+}, [space, NOTES, TAGS, TRASH]);
 log(`${NOTES} notes with ${Math.min(TAGS, NOTES)} tags`);
 for (let i = 1; i < SPACES; i++) await op("spaces.create", { name: `Space ${i}` });
 log(`${SPACES} spaces`);

@@ -6,9 +6,9 @@ import { createServer } from "node:net";
 import { cpus } from "node:os";
 import { readFileSync } from "node:fs";
 
-/** The suites: file, extra arguments, and a timeout in seconds. */
+/** The suites: file, extra arguments, and a timeout in seconds (default 150; `a11y` walks every screen in four device-and-scheme combinations and takes about two minutes alone). */
 const SUITES = [
-  ["first-visit"], ["shell-audit"], ["flat-sidebars"], ["resize"], ["sidebar-scroll"], ["a11y"], ["text-parity"], ["palette"],
+  ["first-visit"], ["shell-audit"], ["flat-sidebars"], ["resize"], ["sidebar-scroll"], ["a11y", [], 300], ["text-parity"], ["palette"],
   ["palette-focus", ["12"]], ["interact"], ["phone-nav"], ["settings-pages"], ["focus-ring"], ["swipe-rows"], ["morph"], ["states"], ["new-thread"],
 ].map(([name, args = [], timeout = 150]) => ({ name, args, timeout }));
 

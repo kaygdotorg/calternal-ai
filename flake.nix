@@ -38,6 +38,15 @@
             pkgs.python3 # contract/verify-cli.py
           ] ++ lib.optionals stdenv.isLinux [ pkgs.clang pkgs.mold ]
             ++ lib.optionals stdenv.isDarwin [ pkgs.libiconv ];
+
+          # Chromium for the browser suites (`npm run e2e:gate -w apps/web`), from this pinned nixpkgs so every Linux dev VM has the same build and its libraries.
+          # Playwright looks for the browser revision of its own version, so `playwright` in apps/web/package.json is pinned to the version of
+          # `pkgs.playwright-driver` in this nixpkgs (1.63.0): raise both together.
+          shellHook = lib.optionalString stdenv.isLinux ''
+            export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+            export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
+            export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+          '';
         };
       });
 }
