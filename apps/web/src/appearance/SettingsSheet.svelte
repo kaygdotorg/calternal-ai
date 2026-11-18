@@ -188,7 +188,7 @@
       <section aria-labelledby="s-glass">
         <h2 id="s-glass">Materials</h2>
         {#each ([["blur", "Blur", "Frosts the picture behind the sidebars and the card."], ["dim", "Dim", "Darkens the picture under the card so text stays calm."], ["tint", "Tint", "Washes the surfaces with the colour scheme."]] as const) as [k, name, hint]}
-          <label class="check"><input type="checkbox" checked={p.materials[k]} onchange={(e) => A.change((x) => (x.materials[k] = e.currentTarget.checked))} /><span class="cl">{name}<small>{hint}</small></span></label>
+          <Switch label={name} {hint} checked={p.materials[k]} onchange={(v) => A.change((x) => (x.materials[k] = v))} />
         {/each}
         <p class="note">How strong each one is comes from the picture itself: where it is too bright or too dark for text, the wash grows until the text passes contrast, whatever is ticked.</p>
       </section>
@@ -298,10 +298,6 @@
   .store li { display: flex; align-items: center; gap: var(--s-4); min-height: var(--pill-h); }
   .sn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tot { border-top: 1px solid var(--line); font-weight: var(--strong-weight); }
-  .check { display: flex; align-items: flex-start; gap: var(--s-4); min-height: var(--pill-h); }
-  .check input { margin-top: var(--s-2); width: 1.1em; height: 1.1em; accent-color: var(--accent); flex: none; }
-  .cl { display: grid; font-weight: var(--strong-weight); }
-  .cl small { font-weight: inherit; font-size: var(--text-label); color: var(--ink-3); }
   .color { display: flex; align-items: center; justify-content: space-between; font-weight: var(--strong-weight); }
   .note { font-size: var(--text-label); color: var(--ink-3); }
   .note a { color: var(--accent); }

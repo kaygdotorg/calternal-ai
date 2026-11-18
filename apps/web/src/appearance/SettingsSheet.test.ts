@@ -44,14 +44,14 @@ describe("appearance settings", () => {
     expect(appearance.prefs.wallpaperId).toBe("us-1");
   });
 
-  it("materials are three checkboxes and the card tint stays a computed floor", async () => {
+  it("materials are three switches and the card tint stays a computed floor", async () => {
     render(SettingsSheet, { open: true, onclose() {} });
     expect(screen.queryByLabelText("Card blur")).toBeNull();
-    await userEvent.click(screen.getByRole("checkbox", { name: /Blur/ }));
+    await userEvent.click(screen.getByRole("switch", { name: /Blur/ }));
     expect(appearance.prefs.materials.blur).toBe(false);
-    await userEvent.click(screen.getByRole("checkbox", { name: /Tint/ }));
+    await userEvent.click(screen.getByRole("switch", { name: /Tint/ }));
     expect(appearance.prefs.materials).toEqual({ blur: false, dim: true, tint: false });
-    await userEvent.click(screen.getByRole("checkbox", { name: /Dim/ }));
+    await userEvent.click(screen.getByRole("switch", { name: /Dim/ }));
     // With every box off the surfaces are opaque paper (appearance/veil.ts).
     expect(document.documentElement.style.getPropertyValue("--c-dim-a")).toBe("1.000");
   });

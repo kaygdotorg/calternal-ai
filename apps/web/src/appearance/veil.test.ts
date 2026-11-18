@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { contrastOn, lum, over, ratio, solve, TARGET, type Ink, type RGB } from "./veil";
+import { contrastOn, lum, over, ratio, scaled, solve, TARGET, type Ink, type RGB } from "./veil";
 
 const LIGHT: Ink = { ink: [0x26, 0x26, 0x26], ink2: [0x4a, 0x4a, 0x4a], ink3: [0x5f, 0x5f, 0x5f], paper: [0xf7, 0xf7, 0xf7] };
 const DARK: Ink = { ink: [0xeb, 0xeb, 0xeb], ink2: [0xc4, 0xc4, 0xc4], ink3: [0xa6, 0xa6, 0xa6], paper: [0x1f, 0x1f, 0x1f] };
@@ -27,7 +27,7 @@ describe("the solver reaches its targets on the worst 1 % of the pixels", () => 
   test("an easy wallpaper keeps the default layers and leaves the secondary inks alone", () => {
     const v = solve("light", "side", ALL, bright, LIGHT);
     expect(v.tint.a).toBeCloseTo(0.35, 2);
-    expect(v.dim.a).toBeCloseTo(0.25, 2);
+    expect(v.dim.a).toBeCloseTo(0, 2); // a sidebar's Dim starts at nothing and is raised only as far as the floor needs
     expect(v.ink3).toEqual(LIGHT.ink3);
   });
 });
@@ -49,11 +49,13 @@ describe("the boxes", () => {
 });
 
 describe("the card", () => {
-  test("its veil is the floor plus a small margin, not a fixed 0.94", () => {
-    const easy = solve("light", "card", ALL, bright, LIGHT);
+  test("it starts at the calternal-ui plugin's chat defaults, far denser than a sidebar, and the floor only raises it", () => {
+    const mid = field(() => [120, 110, 100] as RGB);
+    const card = solve("dark", "card", ALL, mid, DARK), side = solve("dark", "side", ALL, mid, DARK);
+    expect(card.tint.a).toBeGreaterThanOrEqual(0.85);
+    expect(card.dim.a).toBeGreaterThanOrEqual(0.45);
+    expect(card.total).toBeGreaterThan(side.total + 0.25);
     const hard = solve("light", "card", ALL, dark, LIGHT);
-    expect(easy.total).toBeLessThan(0.94);
-    expect(hard.total).toBeGreaterThan(easy.total);
     expect(contrastOn(dark, LIGHT.ink, hard).p01).toBeGreaterThanOrEqual(TARGET.ink - 0.05);
   });
   test("the card never flips its ink", () => {
@@ -67,6 +69,19 @@ describe("a sidebar may flip its text when that needs clearly less veil", () => 
     const v = solve("light", "side", ALL, night, LIGHT, DARK);
     expect(v.scheme).toBe("dark");
     expect(contrastOn(night, DARK.ink, v).p01).toBeGreaterThanOrEqual(TARGET.ink - 0.05);
+  });
+  test("in the dark scheme nothing flips, however bright the picture (never a light veil in dark mode)", () => {
+    const day = field(() => [240, 238, 230] as RGB);
+    const v = solve("dark", "side", ALL, day, DARK, LIGHT);
+    expect(v.scheme).toBe("dark");
+    expect(v.tint.rgb[0]).toBeLessThan(128);
+  });
+  test("Clear to tinted never goes under a covering veil and keeps the scheme's own paper", () => {
+    const v = solve("dark", "side", ALL, field(() => [200, 190, 180] as RGB), DARK);
+    const clear = scaled(v, 0.3);
+    expect(clear.total).toBeGreaterThanOrEqual(0.3 - 1e-9);
+    expect(clear.dim.rgb).toEqual(v.dim.rgb);
+    expect(clear.dim.rgb[0]).toBeLessThan(128);
   });
   test("ratio sanity", () => {
     expect(ratio(lum([255, 255, 255]), lum([0, 0, 0]))).toBeCloseTo(21, 3);

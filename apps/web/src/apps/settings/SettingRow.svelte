@@ -1,7 +1,7 @@
 <script lang="ts">
   // One setting as a row: the label on the left with its help text under it, one control on the right edge. The control is chosen by the setting's data
   // (registry.ts), by the rules of docs/ui-craft-and-settings-study.md 11.2. Changes apply when made: there is no Save.
-  import { Button, Capsule, Icon, InlineEditor, Menu, Pill, Switch } from "@calternal/ui";
+  import { Button, Capsule, Icon, InlineEditor, Menu, Pill, StepSlider, Switch } from "@calternal/ui";
   import PresetGallery from "../../appearance/PresetGallery.svelte";
   import Slider from "../../appearance/Slider.svelte";
   import type { Setting } from "./registry";
@@ -28,11 +28,12 @@
     <Slider label={s.label} unit={c.unit ?? ""} min={c.min} max={c.max} value={Number(value)} onchange={(v) => s.set?.(v)} />
     {#if s.help}<span class="h">{s.help}</span>{/if}
   </div>
+{:else if c.type === "steps"}
+  <div class="row col" class:hl={highlighted} data-setting={s.id}>
+    <StepSlider label={s.label} steps={c.steps} value={Number(value)} onchange={(i) => s.set?.(i)} hint={s.help} />
+  </div>
 {:else if c.type === "checkbox"}
-  <label class="row chk" class:hl={highlighted} data-setting={s.id}>
-    <span class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</span>
-    <input type="checkbox" checked={!!value} onchange={(e) => s.set?.(e.currentTarget.checked)} />
-  </label>
+  <div class="row" class:hl={highlighted} data-setting={s.id}><Switch label={s.label} hint={s.help} checked={!!value} onchange={(v) => s.set?.(v)} /></div>
 {:else}
   <div class="row" class:hl={highlighted} data-setting={s.id}>
     <span class="l"><span class="t">{s.label}</span>{#if s.help}<span class="h">{s.help}</span>{/if}</span>
@@ -65,8 +66,6 @@
   .row.col { display: grid; gap: var(--s-3); justify-content: stretch; padding-block: var(--s-5); }
   .row.col:has(> :global(ul)) { padding: 0; }
   .row.hl { background: var(--accent-soft); }
-  .chk { cursor: pointer; }
-  .chk input { width: 1.15em; height: 1.15em; accent-color: var(--accent); flex: none; }
   .l { display: grid; min-width: 0; gap: var(--s-1); }
   .t { font-size: var(--text-ui); font-weight: var(--strong-weight); }
   .h { font-size: var(--text-label); color: var(--ink-3); max-width: 38rem; }

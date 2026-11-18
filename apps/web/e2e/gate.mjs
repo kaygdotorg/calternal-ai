@@ -8,12 +8,12 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-/** The suites: file, extra arguments, a timeout in seconds (default 240: it only bounds a hang, and dev VMs are shared) and the name shown. The accessibility walk is four suites (device and scheme) so that no one suite runs long. */
+/** The suites: file, extra arguments, a timeout in seconds (default 240: it only bounds a hang, and dev VMs are shared), the name shown and extra environment . The accessibility walk is four suites (device and scheme) so that no one suite runs long. */
 const SUITES = [
   ["a11y", ["desktop", "light"], 300, "a11y desktop light"], ["a11y", ["desktop", "dark"], 300, "a11y desktop dark"], ["a11y", ["phone", "light"], 300, "a11y phone light"], ["a11y", ["phone", "dark"], 300, "a11y phone dark"],
   ["first-visit"], ["shell-audit"], ["flat-sidebars"], ["resize"], ["sidebar-scroll"], ["text-parity"], ["palette"],
-  ["palette-focus", ["12"]], ["interact"], ["phone-nav"], ["settings-pages"], ["focus-ring"], ["swipe-rows"], ["morph"], ["states"], ["new-thread"], ["keyboard-threads"], ["swipe"], ["composer"], ["composer-fold"],
-].map(([name, args = [], timeout = 240, label = name]) => ({ name, args, timeout, label }));
+  ["palette-focus", ["12"]], ["interact"], ["phone-nav"], ["settings-pages"], ["focus-ring"], ["swipe-rows"], ["morph"], ["states"], ["new-thread"], ["keyboard-threads"], ["swipe"], ["sidebar-pull"], ["switch"], ["composer"], ["composer-fold"],
+].map(([name, args = [], timeout = 240, label = name, env = {}]) => ({ name, args, timeout, label, env }));
 
 const free = () => new Promise((res, rej) => { const s = createServer(); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => res(port)); }); s.on("error", rej); });
 
@@ -38,7 +38,7 @@ for (let i = 0; i < 120; i++) { try { if ((await fetch(url)).ok) break; } catch 
 function run(s) {
   return new Promise((resolve) => {
     const t0 = Date.now();
-    const p = spawn("node", [`e2e/${s.name}.mjs`, ...s.args], { env: { ...process.env, CAL_URL: url, CAL_GATE: "1" }, detached: true });
+    const p = spawn("node", [`e2e/${s.name}.mjs`, ...s.args], { env: { ...process.env, CAL_URL: url, CAL_GATE: "1", ...s.env }, detached: true });
     let out = "";
     p.stdout.on("data", (d) => { out += d; }); p.stderr.on("data", (d) => { out += d; });
     let timedOut = false;

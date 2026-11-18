@@ -11,6 +11,7 @@ export { default as Button } from "./components/Button.svelte";
 export { default as IconButton } from "./components/IconButton.svelte";
 export { default as Row } from "./components/Row.svelte";
 export { default as VirtualList } from "./components/VirtualList.svelte";
+export { default as StepSlider } from "./components/StepSlider.svelte";
 export { tip, type Tip } from "./lib/tooltip";
 export { cssPx } from "./lib/css";
 export { default as InlineEditor } from "./components/InlineEditor.svelte";

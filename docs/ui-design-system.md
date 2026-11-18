@@ -236,3 +236,42 @@ other scheme's ink when that needs clearly (0.12) less veil (`data-ink`, the gen
 Checked on rendered pixels: `e2e/veil-pixels.mjs` (all eight photographs, both schemes).
 
 The photographs suit the dark scheme, so the light scheme uses a lighter rendition of each, made at build time (`scripts/wallpapers.mjs`).
+
+## Card against sidebars: the plugin's values and ours (2026-11-18)
+
+The owner's report: the middle card and the sidebars look too alike, which hurts contrast, and Clear to tinted turned the sidebar light in dark mode. The reference is the `calternal-ui` bb plugin (`~/Developer/bb-plugins/calternal-ui`, `shared/defaults.ts`, `frame/css.ts`, `frame/preblur.ts`).
+
+**The plugin's defaults** (settings Chat and Sidebar surfaces):
+
+| Surface | Blur | Tint (of the theme's colour) | Dim | Notes |
+| --- | --- | --- | --- | --- |
+| Sidebar | 12 px, saturate 120 % | 35 % | off (20 % if switched on) | light scheme adds a 50 % white wash |
+| Middle card | 75 px, saturate 140 % | 85 % | 30 %, black in dark, white in light (boosted to about 65 % in light so a dark photo never greys the card) | |
+
+So the card is a nearly solid sheet (about 0.9 of the picture covered, and 75 px blur on what remains) and the sidebars are the picture seen through light glass (0.35). The plugin renders the blur once into a small canvas (`frame/preblur.ts`, a 1/8-size copy for 75 px) and drops the live `backdrop-filter`; ours has done the same since the first veil work (`appearance/wallpaper.ts`: two pre-blurred copies, 12 and 75 px, no live blur on the card or the sidebars), so the cost was never the blur: the card was solved to the readability floor plus a margin, which left it as thin as 0.36 and as bright as the wallpaper.
+
+**What changed.** The card now starts at the plugin's tint 0.85 and dim 0.3 (0.45 in the dark scheme, black; white in light) and the readability floor can only raise it; a sidebar starts at tint 0.35 with no dim and the floor raises its dim only as far as it needs (`appearance/veil.ts`). Nothing flips to a light veil in the dark scheme (a sidebar can still flip to dark text over a very dark picture in the light scheme). Clear to tinted keeps at least 0.3 of the scheme's own paper over every surface.
+
+**Contrast between the card and each sidebar** (WCAG ratio of the mean colour of each surface with text and icons hidden; default wallpaper; 1500 x 970; `e2e/material-contrast.mjs`, dev-02; the plugin's recipe is painted onto our shell with `PLUGIN=1` so both are measured the same way):
+
+| | dark: card vs left / right | light: card vs left / right |
+| --- | --- | --- |
+| before (solved floor, flip allowed) | 1.16 / 1.19 (the build on the shared port; see below) | 1.20 / 1.09 |
+| plugin recipe | 1.18 / 1.04 | 1.21 / 1.19 |
+| now | 1.15 / 1.06 | 1.57 / 1.43 |
+
+Measured colours now: dark card (31, 29, 28) against left sidebar (45, 40, 36); light card (233, 231, 230) against (192, 186, 179). The dark sidebar stays dim because the 7:1 floor on the default photograph's highlights asks for a dim of 0.5; the plugin has no such floor, which is why its dark sidebars are brighter (55, 45, 36) while ours keep their text readable. The two are within 0.03 of each other in dark and ours is 0.3 stronger in light.
+
+(The "before" row was measured against a preview already running on the shared test port; treat it as indicative. The two after rows were measured against our own build on a free port, `e2e/with-preview.mjs`.)
+
+**Why Clear made the sidebar light in dark mode.** Two causes: the solver could flip a sidebar to the other scheme's ink and paper whenever that needed clearly less veil (a bright photograph in the dark scheme did), and the slider scaled whatever veil came out, so a flipped light veil at low strength read as a light tint; the scaled veil also had no floor. Fixed by never flipping in the dark scheme and by `scaled()` (`veil.ts`): strength is multiplied but the colours stay the scheme's paper and the total never falls under 0.3.
+
+**Clear to tinted is a stepped control** (`StepSlider` in `packages/ui`): five named steps (Clear, Light, Balanced, Dense, Tinted) that multiply the veil by 0.3, 0.65, 1, 1.4 and 1.8; it snaps, a press or drag moves to the nearest step, Left/Down and Right/Up move one step, Home and End the ends, the ends are labelled and `aria-valuetext` names the step. Balanced (the middle) is the solved veil. A stored value from the old continuous slider rounds to the nearest step. Measured per step in the dark scheme (left sidebar mean colour): Clear (56, 46, 37), Light (51, 43, 37), Balanced (45, 40, 36), Dense (40, 38, 36), Tinted (37, 36, 36): darker with every step and never light.
+
+## Switch (2026-11-18)
+
+`Switch` in `packages/ui` is the squish switch of sveltebits.xyz/r/squish-switch ported without its `motion` dependency, and it is the only on/off control: Settings' switches and the Materials boxes (Blur, Dim, Tint, formerly checkboxes), the Plugins pages, the appearance sheet, the generated-UI toggle (`GenNode`) all use it; real choice lists (a checklist of options) stay checkboxes.
+
+Ported behaviour and feel (the source's numbers): the knob rides a spring (stiffness 170, damping 21.5, mass 0.9) toward its end; it stretches along its direction of travel with a softened copy of its speed (a second spring, stiffness 320, damping 40, mass 0.6; scale x = 1 + min(0.4, speed / 600) x 0.36, scale y its reciprocal, so it squashes across); under a mouse it swells to 1.035 on `--spring`; a drag follows the pointer, flips as it crosses the middle and releases on the spring with the speed it had; a tap has a 4 px slop (8 px on touch); Escape during a drag restores the state at press; the track's colour fades on `--dur-base`. Our changes: sizes come from the spacing tokens (so the interface scale applies); the speed is taken as if the travel were the original's 38 px because our knob travels 12 px, so the squish is as visible on a small switch (up to 1.08 x 0.93 measured); the label is a required prop that names the switch (`aria-labelledby`), `hint` is a second line; the row's label is a `<label>` for it, so a tap anywhere on the row toggles it; Space and Enter work because the knob is a `<button role="switch">`; the focus ring is the shell's; reduced motion: no spring, no stretch, no swell, the knob jumps.
+
+Implementation: at rest the knob's position is plain CSS (`aria-checked` picks the end), so a first paint needs no script; while it moves one rAF loop drives a `transform` (`Spring` in `packages/ui/src/lib/spring-step.ts`, about 30 lines, semi-implicit Euler in 1/240 s sub-steps) and stops at rest. No dependency was added: the first-load chunks went from 65,425 to 65,378 bytes of gzipped JavaScript and from 11,372 to 11,319 of CSS (the switch is in the lazy Settings chunk; the whole build is 446 bytes larger gzipped), measured with `gzip -9` on dev-02. Checked by `packages/ui/test/switch.test.ts` and `e2e/switch.mjs` (stretch, rest, Space, drag, Escape, reduced motion), which is in the gate.
