@@ -83,8 +83,16 @@ pub(super) fn apply<D: Directory>(
             data.get("cursor").and_then(Value::as_str),
             data.get("limit").and_then(Value::as_u64).unwrap_or(100) as usize,
         )?;
-        let threads: Vec<_> = page.rows.into_iter()
-            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":document::public_metadata(r.metadata),"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
+        let now = calternal_types::now_ms();
+        let threads: Vec<_> = page
+            .rows
+            .into_iter()
+            .map(|r| {
+                let until = snooze::effective(&r.metadata, &r.turn_reason, now);
+                json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,
+                "metadata":document::public_metadata(r.metadata),"turn_state":r.turn_state,
+                "turn_reason":r.turn_reason,"snoozed_until_ms":until})
+            })
             .collect();
         return Ok(json!({"threads":threads,"next_cursor":page.next}));
     }
@@ -178,6 +186,11 @@ pub(super) fn apply<D: Directory>(
                 result["job"] = json!(job.view_for(who.id));
             }
         }
+        result["thread"]["snoozed_until_ms"] = json!(snooze::effective(
+            &item.metadata,
+            &result["thread"]["turn_reason"],
+            calternal_types::now_ms(),
+        ));
         return Ok(result);
     }
     if item.metadata["deleted"] == true {
@@ -186,6 +199,17 @@ pub(super) fn apply<D: Directory>(
             return finish_lifecycle(st, space, item.id, request, document::view(&item));
         }
         return Err(Error::not_found("item not found"));
+    }
+    if operation == "threads.snooze" {
+        let until = match &data["until_ms"] {
+            Value::Null => None,
+            value => Some(
+                value
+                    .as_i64()
+                    .ok_or_else(|| Error::invalid_input("until_ms must be an integer or null"))?,
+            ),
+        };
+        return snooze::set(&content, item, until, request);
     }
     if operation == "threads.send" {
         if item.metadata["archived"] == true {

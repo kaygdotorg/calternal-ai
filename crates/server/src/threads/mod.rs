@@ -11,6 +11,7 @@ pub(crate) mod provider_notice;
 pub(crate) mod provider_session;
 mod records;
 pub(crate) mod search;
+mod snooze;
 pub(crate) mod title;
 pub(crate) mod turn_events;
 mod turn_status;

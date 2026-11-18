@@ -112,6 +112,18 @@ pub enum Command {
         #[arg(long)]
         title: String,
     },
+    /// Hide a thread from the Inbox until a Unix millisecond deadline, or clear the snooze.
+    #[command(group(clap::ArgGroup::new("deadline").required(true).args(["until_ms", "clear"])))]
+    Snooze {
+        /// Thread UUID.
+        id: String,
+        /// Future Unix timestamp in milliseconds.
+        #[arg(long)]
+        until_ms: Option<i64>,
+        /// Clear the manual snooze now.
+        #[arg(long)]
+        clear: bool,
+    },
     /// Return a conversation to the ordinary list.
     Unarchive {
         /// Thread UUID.
@@ -176,6 +188,9 @@ impl Command {
             Self::Stop { id } => ("threads.stop", json!({"id":id})),
             Self::Archive { id } => ("threads.archive", json!({"id":id})),
             Self::Rename { id, title } => ("threads.rename", json!({"id":id,"title":title})),
+            Self::Snooze { id, until_ms, .. } => {
+                ("threads.snooze", json!({"id":id,"until_ms":until_ms}))
+            }
             Self::Unarchive { id } => ("threads.unarchive", json!({"id":id})),
             Self::Delete { id } => ("threads.delete", json!({"id":id})),
             Self::Send {
@@ -215,6 +230,19 @@ fn lifecycle(metadata: &Value) -> &'static str {
 /// Render server thread data with shared width adaptation, stable JSON and hints.
 /// Cost: O(returned rows or document bytes); no I/O. Unknown shapes fail visibly.
 pub fn reply(out: &Output, data: Value) -> Reply {
+    if data.get("snoozed_until_ms").is_some() && data["id"].is_string() {
+        return match data["snoozed_until_ms"].as_i64() {
+            Some(until) => Reply::new(data.clone())
+                .fields([
+                    ("Thread", data["id"].as_str().unwrap_or("").to_owned()),
+                    ("Snoozed until", out.local_ms(until)),
+                ])
+                .hint("Next: calternal threads snooze --help"),
+            None => Reply::new(data.clone())
+                .fields([("Thread", data["id"].as_str().unwrap_or(""))])
+                .line("Manual snooze cleared."),
+        };
+    }
     if let Some(providers) = data["providers"].as_array() {
         let mut result = Reply::new(data.clone());
         if providers.is_empty() {

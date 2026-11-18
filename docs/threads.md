@@ -139,6 +139,7 @@ whose `kind` is one of these values.
 | --- | --- |
 | Created | `threads.create` |
 | Renamed | `threads.rename` |
+| Manual snooze changed | `threads.snooze` with `data.snoozed_until_ms` |
 | Archived or unarchived | `threads.archive`, `threads.unarchive` |
 | Person message or agent text checkpoint saved | `threads.send`, `threads.checkpoint` |
 | A provider sign-in was attempted or completed | `threads.provider_sign_in` with `data.notice` |
@@ -487,12 +488,34 @@ goes into the file.
 | A message has only attachments | An empty text range is valid and keeps its message ID. Attachment links use the normal Markdown body once attachment addresses exist. |
 | A thread is forked or a message is edited later | A fork has a new `calternal-id` and can retain source references. The byte-count framing supports a separately authorized format-preserving edit. Edit history behavior remains an open decision. |
 
+### Snoozing the Inbox
+
+Call `threads.snooze` with `space_id`, `id`, and a future Unix timestamp
+`until_ms`. Use `null` to clear a manual snooze. The operation requires
+`content.write` and returns the thread UUID and committed manual deadline as
+`snoozed_until_ms`. A retry with the same request ID returns that decision.
+
+The manual deadline is shared by all members. Content schema 4 enables it in
+the durable revision metadata. The Markdown transcript uses its existing format.
+The top-level `snoozed_until_ms` on list and detail responses is the latest
+future deadline from the manual setting and any `subscription_reset` retry.
+The retry entry in the feed carries its existing `turn_reason.next_attempt_ms`.
+Clients re-evaluate the Inbox when the deadline passes. The server computes
+expiry on reads, so no timer write, extra journal entry or cleanup is needed
+after restart. Clearing a manual snooze leaves the subscription retry intact.
+
+```sh
+calternal threads snooze <thread-id> --until-ms <unix-ms>
+calternal threads snooze <thread-id> --clear
+```
+
 ### Automatic thread title
 
 Omit `title` when creating a thread to start it as “New thread” and allow
 automatic naming. A supplied title and any manual rename establish a manual
-title, including when the title is “New thread”. After a completed turn leaves
-at least five messages, the server can submit the first five texts to Claude
+title, including when the title is “New thread”. Existing threads keep their
+titles. After a completed turn leaves at least five messages, the server can
+submit the first five texts to Claude
 Haiku 5.5 (`claude-haiku-5-5`) at low effort. Each text contributes at most
 3,000 UTF-8 bytes. The sandbox runs on the last turn's personal machine, uses
 the existing Claude subscription, and receives no Calternal agent credential.
@@ -503,8 +526,9 @@ and one active title sandbox per machine. A full queue drops the submission.
 A foreground turn takes priority over a title lease. Each thread can start
 one attempt and one retry. Each provider attempt costs one short turn. No
 foreground request awaits title output. Saving a title uses `threads.rename`
-and keeps the UUID and its stable address. The thread metadata records the automatic source. The content revision guard preserves a
-manual rename made as the title arrives.
+and keeps the UUID and its stable address. The thread metadata records the
+automatic source. The content revision guard preserves a manual rename made
+as the title arrives.
 
 Claude Code uses safe mode, no built-in tools, no slash commands and no session
 persistence. The adapter checks for local managed policy before starting

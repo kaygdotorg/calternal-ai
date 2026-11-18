@@ -6,7 +6,8 @@ const TURN: &str = "eyJ2ZXJzaW9uIjoxLCJzZXEiOjEsImV2ZW50Ijp7InR5cGUiOiJ0ZXh0X2Rl
 const TITLE: &str = "eyJ0aXRsZSI6IlRocmVlLVBvdCBCYWxjb255IEdhcmRlbiJ9Cg==";
 const MANAGED: &str = "eyJyZWFzb24iOiJtYW5hZ2VkX3BvbGljeSJ9Cg==";
 
-async fn next_exec(f: &Fixture, machine: &mut Machine) -> Value {
+/// Wait for the next exec addressed to the fixture machine.
+pub(super) async fn next_exec(f: &Fixture, machine: &mut Machine) -> Value {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         assert!(Instant::now() < deadline, "adapter exec was not delivered");
@@ -18,7 +19,8 @@ async fn next_exec(f: &Fixture, machine: &mut Machine) -> Value {
     }
 }
 
-async fn reply(f: &Fixture, machine: &Machine, exec: &Value, frame: &str) {
+/// Return one base64 fixture stream followed by a successful process exit.
+pub(super) async fn reply(f: &Fixture, machine: &Machine, exec: &Value, frame: &str) {
     machine
         .output(
             f,
