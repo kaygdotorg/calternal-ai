@@ -39,8 +39,10 @@ for (const scheme of ["light", "dark"]) {
   await page.keyboard.press("Control+Backslash"); await page.waitForTimeout(400);
   ok(await page.getByRole("button", { name: "Hide the sidebar" }).isVisible(), "its shortcut (Mod+\\) shows it again");
   await page.getByRole("button", { name: "Hide the side panel" }).click(); await page.waitForTimeout(400);
-  ok(await page.getByRole("button", { name: "Show the side panel" }).isVisible(), "with the side panel closed there is a button to show it");
-  await page.getByRole("button", { name: "Show the side panel" }).click(); await page.waitForTimeout(300);
+  ok((await page.getByRole("button", { name: "Show the side panel" }).count()) === 0, "with the side panel closed there is no button of its own at the card's corner");
+  await page.getByRole("button", { name: "Thread actions" }).click();
+  ok(await page.getByRole("menuitem", { name: "Show side panel" }).isVisible(), "the way back is Show side panel in the three-dot menu");
+  await page.getByRole("menuitem", { name: "Show side panel" }).click(); await page.waitForTimeout(300);
   await page.getByRole("button", { name: /Account and settings/ }).click(); await page.waitForTimeout(500);
   ok(page.url().includes("/settings/") && (await page.locator('[role="dialog"]').count()) === 0, "the account picture opens the Settings app, not a sheet", page.url());
   await page.goto(BASE + "/settings/appearance?sheet=1&firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);

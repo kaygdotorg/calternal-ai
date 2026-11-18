@@ -301,7 +301,7 @@
       ...(c && c.wins.length > 1 ? [{ id: "equal", label: "Equal heights" }] : []),
       ...(["card", "clear", "solid"] as Look[]).map((l) => ({ id: `look:${l}`, label: `Look: ${l === "card" ? "Card" : l === "clear" ? "Transparent" : "Solid"}`, checked: w.look === l })),
       { id: "lock", label: w.locked ? "Unlock input" : "Lock input", icon: "lock" },
-      ...((appFor(w.kind)?.panels.length ?? 0) > 0 ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as IconName }] : []),
+      ...((appFor(w.kind)?.panels.length ?? 0) > 0 ? [{ id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" as IconName }] : []),
     ];
     const thread: MenuItem[] = w.kind === "threads" && store.get(w.item) ? threadItems(store.get(w.item)!).map((i) => ({ ...i, id: `t:${i.id}` })) : [];
     return [...open, ...widthsList, ...rest, ...thread, { id: "close", label: "Close window", icon: "close", danger: true }];
@@ -355,7 +355,7 @@
     else if (item === "equal") canvas.equalHeights(canvas.cols[canvas.colIndexOf(w.id)]!.id);
     else if (item.startsWith("look:")) canvas.setLook(w.id, item.slice(5) as Look);
     else if (item === "lock") canvas.toggleLock(w.id);
-    else if (item === "panel") shell.openPanel();
+    else if (item === "panel") shell.toggleRight();
     else if (item === "close") closeWin(w.id, source);
     else if (item.startsWith("t:")) { const t = store.get(w.item); if (t) runThreadItem(item.slice(2), t, () => toast("Rename it from the sidebar: double-click its row")); }
   }

@@ -14,7 +14,7 @@ try {
     ok(/Claude needs you to sign in again/.test(await item.innerText()) && /example\.com\/sign-in/.test(await item.innerText()) && /WXYZ-1234/.test(await item.innerText()), "the conversation has the same item with the link and the code");
     ok((await item.locator("a[href='https://example.com/sign-in']").getAttribute("target")) === "_blank", "the link opens in a new tab");
     await page.locator("aside.side [role=tab]", { hasText: "Inbox" }).click();
-    ok(/Sign in/.test(await page.locator("aside.side [role=tabpanel]").innerText()), "the Inbox lists the thread as Sign in");
+    ok((await page.locator("aside.side [role=tabpanel] .rm[data-reason=\"Sign in\"]").count()) === 1, "the Inbox lists the thread with its Sign in mark");
     const field = item.getByRole("textbox", { name: "Code from the provider" });
     ok((await item.getByRole("button", { name: "Continue" }).isDisabled()), "Continue waits for a code");
     await field.fill("abc-123"); await item.getByRole("button", { name: "Continue" }).click();

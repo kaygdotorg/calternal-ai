@@ -8,6 +8,7 @@ export { default as Capsule } from "./components/Capsule.svelte";
 export type { CapsuleItem } from "./components/Capsule.svelte";
 export { default as Toolbar } from "./components/Toolbar.svelte";
 export { default as Card } from "./components/Card.svelte";
+export { default as Grip } from "./components/Grip.svelte";
 export { default as Sheet } from "./components/Sheet.svelte";
 export { default as Button } from "./components/Button.svelte";
 export { default as IconButton } from "./components/IconButton.svelte";
