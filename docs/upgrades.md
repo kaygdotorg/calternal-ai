@@ -56,6 +56,40 @@ in the bounded worker. Neither rebuild discards revisions, receipts, plugin
 controls, pending writes or routing. A future route catalogue rebuild needs a
 ready-generation proof before a UUID miss can be treated as absence.
 
+The search WAL ceiling is 64 MiB per projection database. The VFS enforces
+it and the writer requests a checkpoint at 48 MiB. Both are runtime
+limits. Draft saves use `synchronous=NORMAL` and suppress checkpoint on
+connection close. Those connection settings leave the account input format
+at SQLite 2. Acknowledged unsent edits survive a process crash. The latest
+unsent edits can be lost during a system crash or power loss.
+
+### How to add a migration
+
+1. Identify the writer and classify the change. For an authoritative SQLite
+   store, find its `calternal_store::migrations::Schema` declaration. The
+   writer and the deployment inventory must use that same descriptor. Keep
+   the baseline number, initial batches, and previously shipped steps fixed.
+2. Append one SQL batch for the next version. The runner derives the version
+   from the number of steps and writes `PRAGMA user_version` in the same
+   immediate transaction as the batch. Leave transaction control and version
+   writes to the runner. Include any required deterministic backfill and
+   preserve ownership, references, and receipt replay. A new store starts
+   with an explicit baseline and an inventory row.
+3. Keep the preceding release's reads and writes valid for unattended
+   updates. Review its inserts and updates as well as its queries. Classify a
+   change that breaks that contract as incompatible and obtain the owner's
+   approval for a full restore point. Run the release coordinator for the
+   deployment so it can snapshot the changed authority and its witnesses.
+4. For a rebuildable projection, bump its generation when its stored layout
+   or interpretation changes. Rebuild from the authoritative records through
+   the normal admission path. For an owned file change, update its version
+   tag and inventory entry, and specify what a reader does with an unsupported
+   version.
+5. Test a fresh store, a store populated through the preceding release, and
+   the failed-transaction path. Extend the retained fixture when it lacks the
+   affected data. For unattended deployment, run the exact image-pair gate
+   below and check reads, acknowledged writes, and rollback against that data.
+
 ## Release handoff
 
 Unattended updates allow additive changes with proof that release N can run
@@ -72,8 +106,11 @@ its data through the deployment rollback path. Afterwards, a compatible N
 can resume on live data, including any new acknowledgements. An incompatible
 downgrade refuses newer data. Retain one restore point during handoff and one
 prior release. The deployment script and the server unit share the local
-recovery command. A full restore point copies regular files and refuses a
-nonregular entry, such as a workspace symlink, before any migration.
+recovery command. A full restore point skips runtime sockets and locks.
+A workspace symlink blocks it before migration and the deployment restores
+the previous services. A person may see a reconnect while the services
+restart. Their workspace and symlink stay in place. Ordinary additive
+updates snapshot only changed stores and their witnesses.
 
 ## Release gate
 

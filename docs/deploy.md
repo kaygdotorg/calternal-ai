@@ -236,10 +236,6 @@ agent. It reruns without replacing an existing identity for that server.
 
 ## Decisions before real data
 
-- **Schema transitions.** Choose a maintenance-window export and import
-  with a rehearsed restore, or keep this release family on one schema until
-  a supported transition is agreed. Export and import require tooling and
-  downtime. Keeping the schema stable limits which releases can ship.
 - **Existing app data.** Choose whether it stays in its separately retained
   installation or needs an explicit import project. An import requires a
   mapping and validation of accounts, files and permissions.
