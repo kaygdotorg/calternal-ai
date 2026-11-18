@@ -35,14 +35,7 @@ impl ReadPool {
         let taken = self.idle.lock().unwrap_or_else(|e| e.into_inner()).pop();
         let conn = match taken {
             Some(conn) => conn,
-            None => {
-                let conn = Connection::open_with_flags(
-                    &self.path,
-                    OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-                )?;
-                conn.busy_timeout(std::time::Duration::from_secs(5))?;
-                conn
-            }
+            None => open_reader(&self.path)?,
         };
         let result = read(&conn);
         let mut idle = self.idle.lock().unwrap_or_else(|e| e.into_inner());
@@ -51,4 +44,14 @@ impl ReadPool {
         }
         result
     }
+}
+
+/// Open a read-only WAL handle with the shared bounded busy policy.
+pub(crate) fn open_reader(path: &std::path::Path) -> rusqlite::Result<Connection> {
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    Ok(conn)
 }

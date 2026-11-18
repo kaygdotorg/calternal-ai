@@ -38,6 +38,14 @@ pub(crate) struct Space {
     pub(crate) registrations: RefCell<HashMap<String, (crate::Placement, crate::FileFormat)>>,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
+/// The existing per-space SQLite path under the guarded appdata root.
+pub(crate) fn space_path(appdata: &Path, id: SpaceId) -> PathBuf {
+    appdata
+        .join("spaces")
+        .join(id.to_string())
+        .join("content.db")
+}
+
 pub(crate) fn database(path: &Path) -> Result<Connection> {
     calternal_fsio::private::directory(path.parent().ok_or_else(|| internal("parent"))?)
         .map_err(internal)?;
@@ -60,11 +68,7 @@ impl Space {
         id: SpaceId,
         journal: calternal_store::SpaceStore,
     ) -> Result<Self> {
-        let path = appdata
-            .join("spaces")
-            .join(id.to_string())
-            .join("content.db");
-        let conn = database(&path)?;
+        let conn = database(&space_path(appdata, id))?;
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .map_err(internal)?;

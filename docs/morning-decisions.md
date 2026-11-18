@@ -137,6 +137,12 @@ options, implementation costs and the placement revocation problem.
   expiry bounds storage and needs an explicit expired-output state. Define
   the inline threshold and the point at which the artifact becomes durable.
 
+## Search and palette (issue #47)
+
+See [ranking, recents and typed filter options](search.md#pending-product-decisions)
+for the trade-offs. These choices do not change the current title-before-body
+contract or the structured kind and space filters.
+
 ## Machine onboarding and provider sign-in (issue #48)
 
 - **Pool access.** Provision an initial group and limits at deployment, or

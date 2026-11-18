@@ -109,6 +109,28 @@
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
   }
 
+  /**
+   * Puts row `i` in view at once (no animation), without rendering what is between: the offset comes from the height tree (measured heights where there are any, the estimate elsewhere), so a jump over thousands of rows draws only the rows around the target. Once those are
+   * mounted and measured, one correction moves the row to exactly where it was asked to be (`align`: the middle of the list, or just under the top inset). Cost: one prefix sum and one scroll write, then one layout read for the correction.
+   */
+  export function scrollToIndex(i: number, align: "centre" | "start" = "centre") {
+    const v = view();
+    if (!v || i < 0 || i >= count) return;
+    stuck = false;
+    const want = (rowH: number) => (align === "centre" ? Math.max(topInset, (v.clientHeight - rowH) / 2) : topInset);
+    v.scrollTop = Math.max(0, origin() + tree.prefix(i) - want(heights[i] ?? estimate));
+    update();
+    let tries = 0;
+    const settle = () => {
+      const el = rows.get(i);
+      if (!el) { if (++tries < 6) requestAnimationFrame(settle); return; }
+      const top = el.getBoundingClientRect().top - v.getBoundingClientRect().top;
+      const delta = top - want(el.getBoundingClientRect().height);
+      if (Math.abs(delta) > 1) v.scrollTop += delta;
+    };
+    requestAnimationFrame(() => requestAnimationFrame(settle));
+  }
+
   /** Scrolls to the end and keeps following it while the list grows. */
   export function scrollToBottom() {
     stuck = true;

@@ -102,6 +102,7 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   const operations = new Map<string, Record<string, unknown>>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
     schema(r.schema); if (typeof r.claimed_text !== "boolean") fail();
+    if (r.searchable !== undefined && (typeof r.searchable !== "boolean" || (r.searchable && !r.claimed_text))) fail();
     // Claimed text is Markdown; other kinds name a safe lowercase extension.
     if (r.extension === undefined ? !r.claimed_text : typeof r.extension !== "string" || !/^[a-z0-9]{1,16}$/.test(r.extension) || (r.claimed_text && r.extension !== "md")) fail();
     if (!r.storage || typeof r.storage !== "object" || Array.isArray(r.storage)) fail();
@@ -119,7 +120,7 @@ export function validateManifestV1(value: unknown): ManifestV1 {
         }
       }
     } else { record(placement, ["hidden"]); if (placement.hidden !== true) fail(); }
-  }, ["extension"]);
+  }, ["extension", "searchable"]);
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency", "risk"], r => {
     if (!["read", "reversible", "irreversible", "external", "widens_access"].includes(String(r.risk)) || (r.risk === "read") === r.mutates) fail();
     operations.set(identifier(r.id), r); schema(r.input_schema); schema(r.output_schema);

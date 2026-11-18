@@ -302,7 +302,13 @@ pub(super) fn prepare(
                 return Ok(None);
             }
             let old = decode(previous_bytes, previous_checksum)?;
-            if old.manifest.kinds != package.manifest.kinds
+            // Search coverage is a disposable projection. Only changes to the
+            // kinds' stored declarations require a migration.
+            let mut prior_kinds = old.manifest.kinds.clone();
+            for (prior, next) in prior_kinds.iter_mut().zip(&package.manifest.kinds) {
+                prior.searchable = next.searchable;
+            }
+            if prior_kinds != package.manifest.kinds
                 || old.manifest.collections != package.manifest.collections
             {
                 return Err(

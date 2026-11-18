@@ -445,6 +445,10 @@ async fn serve(
         jobs,
         allowed_hosts: hosts,
     });
+    drop(
+        calternal_server::api::configure_search(&state)
+            .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?,
+    );
     let erasing = state.clone();
     tokio::task::spawn_blocking(move || {
         calternal_server::erasure::replay(

@@ -6,6 +6,60 @@
     "request_id?": "string"
   },
   "commands": {
+    "calternal search query": {
+      "hits": [
+        {
+          "address": "string",
+          "kind": "string",
+          "space_id": "string",
+          "title": "string",
+          "excerpt": [
+            {
+              "text": "string",
+              "matched": "bool"
+            }
+          ]
+        }
+      ],
+      "partial": "bool",
+      "next_cursor?": "string"
+    },
+    "calternal search items": {
+      "hits": [
+        {
+          "address": "string",
+          "kind": "string",
+          "space_id": "string",
+          "title": "string",
+          "excerpt": [
+            {
+              "text": "string",
+              "matched": "bool"
+            }
+          ]
+        }
+      ],
+      "partial": "bool",
+      "next_cursor?": "string"
+    },
+    "calternal search threads": {
+      "hits": [
+        {
+          "address": "string",
+          "kind": "string",
+          "space_id": "string",
+          "title": "string",
+          "excerpt": [
+            {
+              "text": "string",
+              "matched": "bool"
+            }
+          ]
+        }
+      ],
+      "partial": "bool",
+      "next_cursor?": "string"
+    },
     "calternal search people": {
       "people": [
         {

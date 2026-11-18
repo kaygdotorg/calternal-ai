@@ -1,0 +1,16 @@
+{
+  "data": {
+    "hits": [
+      {
+        "address": "/threads/019aabb0-1100-7111-8111-111111111111",
+        "excerpt": [],
+        "kind": "threads",
+        "space_id": "019aabb0-2200-7222-8222-222222222222",
+        "title": "Review plan"
+      }
+    ],
+    "partial": false
+  },
+  "ok": true,
+  "request_id": "req-search"
+}
