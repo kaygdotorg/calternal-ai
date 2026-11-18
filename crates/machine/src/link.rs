@@ -3,6 +3,8 @@
 //! One `reqwest` client keeps its connections alive, so the held `sync` request
 //! and output uploads reuse at most a few sockets to the server.
 
+use std::net::{IpAddr, SocketAddr};
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,6 +13,48 @@ use serde::de::DeserializeOwned;
 use tokio::sync::watch;
 
 use crate::{Error, Result};
+
+/// A private IP to dial for one configured server hostname and port.
+#[derive(Clone, Debug)]
+pub struct ConnectAddress {
+    host: String,
+    port: u16,
+    address: IpAddr,
+}
+
+impl FromStr for ConnectAddress {
+    type Err = Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        let invalid = || Error::Protocol("Use --connect-address HOST:PORT=IP.".into());
+        let (authority, address) = value.split_once('=').ok_or_else(invalid)?;
+        let (host, port) = authority.rsplit_once(':').ok_or_else(invalid)?;
+        if host.is_empty()
+            || host.parse::<IpAddr>().is_ok()
+            || !host
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+        {
+            return Err(invalid());
+        }
+        let port = port
+            .parse::<u16>()
+            .ok()
+            .filter(|&port| port != 0)
+            .ok_or_else(invalid)?;
+        let address = address
+            .strip_prefix('[')
+            .and_then(|address| address.strip_suffix(']'))
+            .unwrap_or(address)
+            .parse()
+            .map_err(|_| invalid())?;
+        Ok(Self {
+            host: host.to_ascii_lowercase(),
+            port,
+            address,
+        })
+    }
+}
 
 /// Connection to one server plus the machine's current session token.
 pub struct Link {
@@ -22,7 +66,41 @@ pub struct Link {
 impl Link {
     /// A link to `base` (scheme, host and port; no trailing slash needed).
     pub fn new(base: &str) -> Result<Self> {
-        let http = reqwest::Client::builder()
+        Self::with_connect_address(base, None)
+    }
+
+    /// Connect to the given IP for the configured origin. The host and port
+    /// must match the URL. HTTPS still uses the URL hostname for SNI and
+    /// certificate verification. With an override, use a direct connection.
+    pub fn with_connect_address(base: &str, address: Option<&ConnectAddress>) -> Result<Self> {
+        Self::build(base, address, reqwest::Client::builder())
+    }
+
+    fn build(
+        base: &str,
+        address: Option<&ConnectAddress>,
+        mut builder: reqwest::ClientBuilder,
+    ) -> Result<Self> {
+        if let Some(address) = address {
+            let url = reqwest::Url::parse(base)
+                .map_err(|_| Error::Protocol("Set the server to an HTTP or HTTPS URL.".into()))?;
+            if url.host_str() != Some(&address.host)
+                || url.port_or_known_default() != Some(address.port)
+                || !matches!(url.scheme(), "http" | "https")
+            {
+                return Err(Error::Protocol(
+                    "--connect-address must match the server URL's host and port.".into(),
+                ));
+            }
+            builder = builder
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .resolve(
+                    &address.host,
+                    SocketAddr::new(address.address, address.port),
+                );
+        }
+        let http = builder
             .connect_timeout(Duration::from_secs(10))
             .pool_idle_timeout(Duration::from_secs(90))
             .user_agent(concat!("calternal-machine/", env!("CARGO_PKG_VERSION")))
@@ -37,6 +115,23 @@ impl Link {
     /// Server base URL.
     pub fn base(&self) -> &str {
         &self.base
+    }
+
+    pub(crate) async fn needs_first_owner(&self) -> Result<bool> {
+        #[derive(serde::Deserialize)]
+        struct AuthStatus {
+            setup: bool,
+        }
+        let status = self
+            .http
+            .get(format!("{}/api/v1/auth/status", self.base))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<AuthStatus>()
+            .await?;
+        Ok(status.setup)
     }
 
     /// POST `body` as JSON to `path` and decode the JSON answer.
@@ -94,5 +189,154 @@ impl Link {
     pub async fn wait_for_session(&self) {
         let mut rx = self.token.subscribe();
         let _ = rx.wait_for(Option::is_some).await;
+    }
+}
+
+#[cfg(test)]
+mod tls_tests {
+    use super::*;
+    use std::process::{Child, Command, Stdio};
+
+    struct TestServer(Child);
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    #[tokio::test]
+    async fn override_keeps_the_tls_name_and_rejects_untrusted_certificates() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path();
+        let openssl = |arguments: &[&str]| {
+            let output = Command::new("openssl")
+                .current_dir(path)
+                .args(arguments)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        openssl(&[
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-noenc",
+            "-days",
+            "1",
+            "-subj",
+            "/CN=Calternal temporary test CA",
+            "-keyout",
+            "ca.key",
+            "-out",
+            "ca.pem",
+        ]);
+        openssl(&[
+            "req",
+            "-new",
+            "-newkey",
+            "rsa:2048",
+            "-noenc",
+            "-subj",
+            "/CN=calternal-private-route.invalid",
+            "-keyout",
+            "server.key",
+            "-out",
+            "server.csr",
+        ]);
+        std::fs::write(
+            path.join("extensions"),
+            b"subjectAltName=DNS:calternal-private-route.invalid\nextendedKeyUsage=serverAuth\n",
+        )
+        .unwrap();
+        openssl(&[
+            "x509",
+            "-req",
+            "-in",
+            "server.csr",
+            "-CA",
+            "ca.pem",
+            "-CAkey",
+            "ca.key",
+            "-CAcreateserial",
+            "-days",
+            "1",
+            "-extfile",
+            "extensions",
+            "-out",
+            "server.pem",
+        ]);
+        let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reservation.local_addr().unwrap();
+        drop(reservation);
+        let _server = TestServer(
+            Command::new("openssl")
+                .current_dir(path)
+                .args([
+                    "s_server",
+                    "-quiet",
+                    "-www",
+                    "-accept",
+                    &address.to_string(),
+                    "-cert",
+                    "server.pem",
+                    "-key",
+                    "server.key",
+                ])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while tokio::net::TcpStream::connect(address).await.is_err() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let root =
+            reqwest::Certificate::from_pem(&std::fs::read(path.join("ca.pem")).unwrap()).unwrap();
+        let route = |host| {
+            let base = format!("https://{host}:{}", address.port());
+            let override_address = format!("{host}:{}=127.0.0.1", address.port())
+                .parse()
+                .unwrap();
+            (base, override_address)
+        };
+        let (base, resolved) = route("calternal-private-route.invalid");
+        let trusted = Link::build(
+            &base,
+            Some(&resolved),
+            reqwest::Client::builder().add_root_certificate(root.clone()),
+        )
+        .unwrap();
+        assert!(
+            trusted
+                .http
+                .get(&base)
+                .send()
+                .await
+                .unwrap()
+                .status()
+                .is_success()
+        );
+        let untrusted = Link::with_connect_address(&base, Some(&resolved)).unwrap();
+        assert!(untrusted.http.get(&base).send().await.is_err());
+
+        let (wrong_base, wrong_address) = route("calternal-wrong-name.invalid");
+        let wrong = Link::build(
+            &wrong_base,
+            Some(&wrong_address),
+            reqwest::Client::builder().add_root_certificate(root),
+        )
+        .unwrap();
+        assert!(wrong.http.get(wrong_base).send().await.is_err());
     }
 }

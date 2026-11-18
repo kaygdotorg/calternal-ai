@@ -24,6 +24,7 @@ pub mod link;
 mod ownership;
 pub use ownership::{OwnerLock, lock_for_upgrade};
 pub mod protocol;
+mod ready;
 pub mod runner;
 pub mod sandbox;
 
