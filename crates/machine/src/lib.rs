@@ -15,6 +15,7 @@
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 
+mod bootstrap;
 pub mod cli;
 pub mod connection;
 pub mod enroll;

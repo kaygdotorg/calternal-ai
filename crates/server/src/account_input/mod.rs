@@ -83,6 +83,7 @@ impl Limits {
 pub struct Inputs {
     root: PathBuf,
     wakes: wake::Wakes,
+    pub(crate) sign_ins: Arc<crate::provider_sign_in::Inbox>,
     content: Option<Arc<calternal_content::Content>>,
     limits: Limits,
     clock: Arc<dyn Fn() -> i64 + Send + Sync>,
@@ -139,6 +140,7 @@ impl Inputs {
         Self {
             root: root.into(),
             wakes: wake::Wakes::default(),
+            sign_ins: Arc::default(),
             content: None,
             limits,
             clock,
