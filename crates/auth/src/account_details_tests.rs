@@ -8,6 +8,12 @@ const VERSION_12: Schema<'_> = Schema::new(
     &[include_str!("schema.sql")],
     &[include_str!("account_details.sql")],
 );
+const VERSION_13: Schema<'_> = Schema::new(
+    "auth.db",
+    11,
+    &[include_str!("schema.sql")],
+    &[include_str!("account_details.sql"), include_str!("oidc.sql")],
+);
 
 #[test]
 fn usernames_are_canonical_and_forged_identifiers_are_rejected() {
@@ -110,8 +116,8 @@ fn version_12_account_security_survives_adding_the_oidc_inventory() {
     )
     .unwrap();
     tx.commit().unwrap();
-    migrations::migrate(&db, crate::db::MIGRATIONS).unwrap();
-    assert_eq!(migrations::inspect(&db, crate::db::MIGRATIONS).unwrap(), 13);
+    migrations::migrate(&db, VERSION_13).unwrap();
+    assert_eq!(migrations::inspect(&db, VERSION_13).unwrap(), 13);
     assert!(migrations::inspect(&db, VERSION_12).is_err());
     let security = db.query_row(
         "SELECT email,verified_at,(SELECT count(*) FROM account_recovery_codes WHERE user_id=?1)
