@@ -32,6 +32,11 @@ session and macOS Keychain behavior remain unverified by this Linux gate.
 [Claude Code authentication](https://code.claude.com/docs/en/authentication) ·
 [Claude Code remote login troubleshooting](https://code.claude.com/docs/en/troubleshoot-install)
 
+The existing CLI exposes provider operation schemas through `cl describe` and
+accepts the operations through `cl invoke`. `cl requests list --json` shows the
+account's pending challenge. Use the app for pasted codes to keep them out of
+shell history and command arguments.
+
 ## Review gate
 
 | Item | Review |
@@ -43,7 +48,7 @@ session and macOS Keychain behavior remain unverified by this Linux gate.
 | 5 | Start resolves the account and machine and authorizes the space before scheduling. It performs one ordinary scratch lease admission. Pending relay rechecks session and membership around its bounded poll. A notice costs one revision-fenced content write at attempt and one at completion. |
 | 6 | The operation and provider schemas use the existing cached catalog. |
 | 7 | A challenge lives at most ten minutes. The provider process has a separate nine-minute timeout. Signed-out observations can be offered on explicit gestures for 24 hours. Volatile entries are bounded per account and shard. |
-| 8 | Existing Linux credentials are adopted once into the new location. The adapter uses the same shared credential path for subsequent runs. This adoption preserves signed-in accounts during the owner-approved home split. |
+| 8 | Existing Linux credentials are adopted once into the new location. This compatibility exception preserves the account's sign-in during the home split. The adapter reads the shared path on subsequent runs. |
 | 9 | Request and scope lookups use UUIDs. |
 | 10 | The provider manifest declares adapter support. The adapter selects the official command. The server independently validates the browser URL and current account authority at its trust boundary. |
 | 11 | Sign-in operations, prompt listing, placement, teardown, readiness offers and saved-thread resumption all have runtime callers. |
@@ -51,6 +56,51 @@ session and macOS Keychain behavior remain unverified by this Linux gate.
 | 13 | Public entry points and wire fields carry reference comments. |
 | 14 | Protocol documentation and generated contracts describe the same wire. |
 | 15 | New host behavior is split between the provider inbox, flow and thread notice modules. |
+
+## Verification on dev-01
+
+Commands ran under `nix develop -c` in `~/Developer/lanes/machine-ux`
+on `claude@calternal-dev-01-compute02`. Test fixtures used the lane's own
+local image and disposable appdata.
+
+```sh
+npm run build:plugins
+plugins/calternal-claude-code/test/build-image.sh localhost/calternal-machine-ux-provider:fixture
+cargo build --locked -j4 -p calternal-server --features test-plugins
+cp target/debug/calternal target/debug/calternal-provider-last
+export CALTERNAL_TEST_PROVIDER_IMAGE=localhost/calternal-machine-ux-provider:fixture
+scripts/check-podman-tests.sh cargo test --locked --workspace -j4
+export CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal-provider-last"
+scripts/check-podman-tests.sh cargo test --locked --manifest-path tests/conformance/Cargo.toml -j4 --test isolation -- --test-threads=1
+npm run test:plugins
+npm run test:integration
+cargo run --locked -j4 -p calternal-core --bin export-contract -- --check
+sed 's/-j6/-j4/g' scripts/check-docs.sh > scripts/.provider-check-docs.sh
+sh scripts/.provider-check-docs.sh
+cargo fmt --all --check
+```
+
+- Workspace passed 590 tests, with one ignored. Serial conformance passed
+  all 97 cases, including the four new sign-in cases. Both Podman leak
+  checks passed.
+- The focused provider container and turn suites passed seven tests with
+  the Podman leak check.
+- Plugin suites passed 25 tests and skipped the opt-in live Claude test.
+  The integration test passed. The checked-in contract matched the Rust
+  operation catalog.
+- The documentation gate checked 307 generated pages and passed its Rust
+  and TypeScript checks. Workspace formatting passed.
+- An initial full run was interrupted by disk pressure. Its first conformance
+  binary predated the final typing fix. The workspace rerun and rebuilt
+  conformance fixture used the final backend.
+
+## Deployment dependency
+
+Rebuild the standard Claude sandbox image alongside the server and machine
+binary. The private adapter mode ships in that image. [Deploy guide](../deploy.md)
+
+Group compute entitlements, installer binary distribution, native macOS
+sandboxing and SSH enrollment are pending decisions. [Options and costs](../morning-decisions.md#machine-onboarding-and-provider-sign-in-issue-48)
 
 ## Simplification opportunities
 
