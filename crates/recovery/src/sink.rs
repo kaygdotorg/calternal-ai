@@ -42,7 +42,7 @@ impl RecoverySink for Coordinator {
                 let reconciled = start.elapsed();
                 self.compare_and_repair(c)?;
                 #[cfg(feature = "perf-timings")]
-                {
+                if startup_timings_enabled() {
                     let compared = start.elapsed() - reconciled;
                     eprintln!("STARTUP authority_recovery_cache_us {}", loaded.as_micros());
                     eprintln!(

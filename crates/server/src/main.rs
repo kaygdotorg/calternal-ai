@@ -540,7 +540,7 @@ async fn serve(
         .await
         .map_err(|e| boot(1, "failed", e.message, DATA_HINT))?;
     #[cfg(feature = "perf-timings")]
-    {
+    if calternal_recovery::startup_timings_enabled() {
         startup_phases.mark("admin_erasure_job_recovery");
         let _ = tokio::task::spawn_blocking(move || startup_phases.emit()).await;
     }

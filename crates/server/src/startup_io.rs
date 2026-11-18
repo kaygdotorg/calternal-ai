@@ -3,10 +3,12 @@
 #[cfg(feature = "perf-timings")]
 pub(super) fn phase(clock: &mut std::time::Instant, name: &str) {
     let now = std::time::Instant::now();
-    eprintln!(
-        "STARTUP {name}_us {}",
-        now.duration_since(*clock).as_micros()
-    );
+    if calternal_recovery::startup_timings_enabled() {
+        eprintln!(
+            "STARTUP {name}_us {}",
+            now.duration_since(*clock).as_micros()
+        );
+    }
     *clock = now;
 }
 

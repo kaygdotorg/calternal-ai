@@ -31,6 +31,14 @@ const LEGACY: u32 = 3;
 // The hourly maintenance worker can arrive up to one hour after this threshold.
 const RETIRED_RECEIPT_COMPACT_MS: i64 = 23 * 60 * 60 * 1000;
 const ZERO: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Read the opt-in for startup phase diagnostics in an instrumented binary.
+/// Costs one environment lookup and enables stderr timings for value `1`.
+#[cfg(feature = "perf-timings")]
+pub fn startup_timings_enabled() -> bool {
+    std::env::var_os("CALTERNAL_STARTUP_TIMINGS").is_some_and(|value| value == "1")
+}
+
 fn digest(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
