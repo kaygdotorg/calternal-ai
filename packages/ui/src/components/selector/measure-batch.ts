@@ -1,0 +1,21 @@
+// All selectors mounted together read their options before any capsule writes a width.
+// Otherwise each new capsule invalidates layout before the next selector's offsetLeft.
+export function measurementBatch(schedule: (flush: () => void) => void) {
+  type Job = { read: () => void; write: () => void; active: boolean };
+  let pending: Job[] = [];
+  return (read: () => void, write: () => void) => {
+    const job = { read, write, active: true };
+    if (!pending.length) schedule(() => {
+      const jobs = pending;
+      pending = [];
+      for (const job of jobs) if (job.active) job.read();
+      for (const job of jobs) if (job.active) job.write();
+    });
+    pending.push(job);
+    return () => { job.active = false; };
+  };
+}
+
+// Mount measurements still finish before first paint; resize measurements share one rAF.
+export const measureOnMount = measurementBatch(queueMicrotask);
+export const measureOnFrame = measurementBatch((flush) => { requestAnimationFrame(flush); });
