@@ -146,7 +146,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
 - [space.machine.get](./space-machine-get/): Read the execution setting for a space
 - [space.machine.set](./space-machine-set/): Set the shared execution machine for a space
-- [machines.install](./machines-install/): Create a single-use personal machine enrollment script
+- [machines.install](./machines-install/): Create a single-use personal machine enrollment command
 - [machines.onboarding](./machines-onboarding/): Check whether the installation has an enrolled, available machine
 - [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in
 - [agent.readiness](./agent-readiness/): Read your machine and provider readiness in a space
