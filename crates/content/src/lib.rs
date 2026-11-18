@@ -218,7 +218,11 @@ impl Content {
             }
         };
         drop(evicted);
+        #[cfg(feature = "perf-timings")]
+        let slot_wait = calternal_store::timings::SaveStage::SlotWait.start();
         let mut held = lock(&slot.space);
+        #[cfg(feature = "perf-timings")]
+        slot_wait.finish();
         if held.is_none() {
             let journal = self.journals.open_store(id, self.lifecycle.clone())?;
             let mut opened =
@@ -416,8 +420,8 @@ impl Content {
             )
         })
     }
-    /// How long a request receipt is kept; a retry after that runs as a new
-    /// request. Cost: a copy.
+    /// Age at which a request receipt becomes eligible for pruning. A durable
+    /// pending outbox intent pins its receipt. Cost: a copy.
     pub fn receipt_retention(&self) -> Duration {
         self.journals.retention()
     }

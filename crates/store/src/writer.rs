@@ -13,7 +13,6 @@ use rusqlite::{Connection, params};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Instant;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// How many commits may wait in line before callers are asked to slow down.
@@ -21,6 +20,12 @@ const QUEUE: usize = 64;
 
 pub(crate) enum Cmd {
     Commit(Commit, oneshot::Sender<Result<Vec<JournalEntry>>>),
+    /// Content holds its space slot through this pruning command.
+    Prune {
+        now_ms: i64,
+        pinned: Vec<String>,
+        reply: oneshot::Sender<Result<()>>,
+    },
     /// The journal went back in time: start a new epoch (the epoch the
     /// caller saw, so two proofs rotate once).
     Rotate(String, oneshot::Sender<Result<()>>),
@@ -28,19 +33,14 @@ pub(crate) enum Cmd {
 
 /// Starts the writer thread and returns its drained connection for shutdown.
 /// It finishes queued commits before handing the connection to the flush
-/// worker. The readiness receiver resolves after startup receipt pruning, before
-/// readers may observe the store; later pruning runs after commits.
+/// worker. Receipt pruning runs only when the content owner supplies its pins.
 pub(crate) fn spawn(
     conn: Connection,
     shared: Arc<Shared>,
     live: broadcast::Sender<Arc<JournalEntry>>,
     path: &Path,
     options: Options,
-) -> Result<(
-    mpsc::Sender<Cmd>,
-    std::thread::JoinHandle<Connection>,
-    oneshot::Receiver<()>,
-)> {
+) -> Result<(mpsc::Sender<Cmd>, std::thread::JoinHandle<Connection>)> {
     let (tx, mut rx) = mpsc::channel::<Cmd>(QUEUE);
     let name = format!(
         "store-{}",
@@ -49,17 +49,17 @@ pub(crate) fn spawn(
             .map(|n| n.to_string_lossy().chars().take(8).collect::<String>())
             .unwrap_or_default()
     );
-    let (ready, started) = oneshot::channel();
     let thread = std::thread::Builder::new()
         .name(name)
         .spawn(move || {
             let mut conn = conn;
-            prune(&conn, options);
-            let _ = ready.send(());
-            let mut last_prune = Instant::now();
             while let Some(cmd) = rx.blocking_recv() {
                 let head = &shared.head;
                 match cmd {
+                    Cmd::Prune { now_ms, pinned, reply } => {
+                        let result = shared.step().and_then(|_step| prune(&conn, options, now_ms, pinned));
+                        let _ = reply.send(result);
+                    }
                     Cmd::Rotate(observed, reply) => {
                         let result = shared.step().and_then(|_step| restore::rotate(&mut conn, &shared, &observed, None));
                         let _ = reply.send(result);
@@ -99,34 +99,37 @@ pub(crate) fn spawn(
                             if let Some(at_ns) = committed.at_ns {
                                 for entry in &committed.entries {
                                     if let Some(request) = &entry.request_id {
-                                        crate::timings::emit_commit(request, at_ns);
+                                        crate::timings::emit_commit(
+                                            request,
+                                            at_ns,
+                                            #[cfg(feature = "perf-timings")]
+                                            committed.commit_ns,
+                                        );
                                     }
                                 }
                             }
                         }
                         let _ = reply.send(r.map(|committed| committed.entries));
-                        if last_prune.elapsed() >= options.prune_every {
-                            prune(&conn, options);
-                            last_prune = Instant::now();
-                        }
                     }
                 }
             }
             conn
         })
         .map_err(Error::internal)?;
-    Ok((tx, thread, started))
+    Ok((tx, thread))
 }
 
-/// Deletes idempotency records older than the retention window. A failure
-/// only means they stay a little longer, so it is logged and ignored.
-fn prune(conn: &Connection, options: Options) {
-    let cutoff = now_ms().saturating_sub(options.idempotency_retention.as_millis() as i64);
-    match conn.execute("DELETE FROM idempotency WHERE at_ms < ?1", [cutoff]) {
-        Ok(0) => {}
-        Ok(n) => tracing::debug!(removed = n, "pruned old idempotency records"),
-        Err(e) => tracing::warn!(%e, "could not prune idempotency records"),
-    }
+/// Delete expired receipts except those still needed to replay a content intent.
+fn prune(conn: &Connection, options: Options, at_ms: i64, pinned: Vec<String>) -> Result<()> {
+    let retention = i64::try_from(options.idempotency_retention.as_millis()).unwrap_or(i64::MAX);
+    let cutoff = at_ms.saturating_sub(retention);
+    let pins = serde_json::to_string(&pinned).map_err(Error::internal)?;
+    conn.execute(
+        "DELETE FROM idempotency WHERE at_ms < ?1 AND key NOT IN (SELECT value FROM json_each(?2))",
+        params![cutoff, pins],
+    )
+    .map_err(Error::internal)?;
+    Ok(())
 }
 
 struct Committed {
@@ -136,6 +139,8 @@ struct Committed {
         all(feature = "test-timings", debug_assertions)
     ))]
     at_ns: Option<u64>,
+    #[cfg(feature = "perf-timings")]
+    commit_ns: u64,
 }
 
 /// Commits one batch, then retains only its newest bounded set of signed tokens.
@@ -210,6 +215,8 @@ fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Committed
             ));
         }
     }
+    #[cfg(feature = "perf-timings")]
+    let commit_start = c.durable.then(calternal_types::perf_monotonic_ns);
     tx.commit().map_err(Error::internal)?;
     #[cfg(any(
         feature = "perf-timings",
@@ -231,5 +238,9 @@ fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Committed
             all(feature = "test-timings", debug_assertions)
         ))]
         at_ns,
+        #[cfg(feature = "perf-timings")]
+        commit_ns: at_ns
+            .zip(commit_start)
+            .map_or(0, |(end, start)| end - start),
     })
 }

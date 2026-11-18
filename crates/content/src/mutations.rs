@@ -369,6 +369,8 @@ impl Content {
             // Request IDs are unique per (account, space): the host replays a matching
             // receipt before calling, so any receipt here is a reuse.
             if self.journals.receipt(&s.journal,request.account,request.id)?.is_some(){return Err(Error::request_reused());}
+            #[cfg(feature = "perf-timings")]
+            let file_guard = calternal_store::timings::SaveStage::FileGuard.start();
             let (id,seq,old_path,expected)=if let Some(id)=id {
                 let mut head = s.header(id)?;
                 if head.kind != kind || head.state == "purged" || head.state == "purging" {
@@ -394,8 +396,12 @@ impl Content {
                 let (seq,path) = (head.seq,head.path);
                 (id,seq+1,Some(path),sha)
             }else{(Uuid::now_v7(),1,None,None)};
+            #[cfg(feature = "perf-timings")]
+            file_guard.finish();
             guard()?;
             let title=metadata.get("title").and_then(Value::as_str).unwrap_or(kind);
+            #[cfg(feature = "perf-timings")]
+            let filename = calternal_store::timings::SaveStage::Filename.start();
             let path = match destination {
                 Destination::Trash => s.trash_path(kind, id)?,
                 Destination::Restore => {
@@ -404,6 +410,8 @@ impl Content {
                 }
                 Destination::Current => s.choose_path(kind, title, old_path.as_deref(), None)?,
             };
+            #[cfg(feature = "perf-timings")]
+            filename.finish();
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:Staged::version(seq),updated_at:now_rfc3339()};
             let mut root = Staged {item,seq,path,expected};
             let related = if let (Some(edit), Some(old)) = (retarget, old_path.as_deref()) {
@@ -425,7 +433,11 @@ impl Content {
             }
             root.outbox(&tx,request,&response)?;
             linked_write::stage_related_outbox(&tx,&root,&related,request)?;
+            #[cfg(feature = "perf-timings")]
+            let commit = calternal_store::timings::SaveStage::ContentCommit.start();
             tx.commit().map_err(internal)?;
+            #[cfg(feature = "perf-timings")]
+            commit.finish();
             (self.fault)(FaultPoint::AfterCommit);
             self.publish_pending(s)?;
             if destination != Destination::Current || retarget.is_some() {

@@ -1,73 +1,92 @@
 # Row-level security receipt deltas
 
-Design for review · November 18, 2026 · [Forgejo #52](https://git.kayg.org/kayg/calternal-ai/issues/52)
+Revised for owner review · November 18, 2026 · [Forgejo #52](https://git.kayg.org/kayg/calternal-ai/issues/52)
 
-A changed account currently puts its entire `space_receipts` set in the next
-security-log proposal. On the fresh 1,000-space fixture, repeated receipt rows
-occupy 60.48 MB of the 61.72 MB active segment across 254 frames. The log
-must retain exact replies for valid retries.
+An account change currently serializes its entire `space_receipts` set into
+the security log. Those repeats account for 60.48 MB of the 61.72 MB active
+segment in the 1,000-space profile. Test a smaller compaction threshold on
+the current format before choosing a format change.
 
-## Capture and apply
+## Capture and replay
 
-Give `space_receipts` one keyed map in the verified image. Keep its schema
-in the global record. New proposals carry only the receipt keys affected by
-the authority transaction, alongside the existing owner changes. Use the
-SQLite primary key `(actor, scope, request_id)` exactly. Each change carries
-the committed operation, fingerprint, reply text and timestamp, or indicates
-deletion. Capture keys in the existing write transaction using an internal
-dirty-key table and triggers for inserts, updates and deletes. A key-changing
-update records both keys. Savepoint and transaction rollbacks discard their
-dirty changes. Capture final values for the affected keys, omit exact no-ops
-and serialize once in deterministic key order. Ordinary owner records no
-longer scan or serialize their receipt rows.
+Keep the table schema in the global record and one keyed map of live receipts
+in the verified image. Use the exact tuple `(actor UUID, scope UUID, request
+ID text)` in the encoding. Each component occupies its own field. The
+request ID remains opaque, including punctuation and non-ASCII text. Reject
+duplicate tuples and use a deterministic order.
 
-Apply owner and receipt changes together only when the matching proposal
-resolves as committed. Refuse duplicate keys, invalid fields or bindings and
-changes inconsistent with the resulting authority image. Rebuild the existing
-SQLite table from the verified map, including original reply bytes. A valid
-duplicate returns the original reply. A different operation or fingerprint
-conflicts. Replay does not extend retention. Expiry transaction deletes become key
-deletions. Recovery follows the recorded transaction order and never expires
-a receipt using the recovery host's wall clock. Normal authority expiry
-resumes after recovery.
+A proposal contains the affected receipt tuples and the existing owner
+changes. For an insert or replacement, retain the exact operation,
+fingerprint, reply text and timestamp. For a deletion, record the tuple
+with a delete marker. Track affected keys in the same SQLite transaction
+with triggers for inserts, updates and deletes. A key change records both
+keys, savepoint rollback discards its keys, and final comparison omits exact
+no-ops. On first attachment, seed every preexisting receipt in the initial
+witnessed publication, including receipts whose owner has no other change.
 
-## Recovery and retention
+Apply receipt and owner changes together when the matching proposal resolves
+as committed. Preserve the SQLite actor foreign key and validate field types.
+A receipt's scope may name a deleted space. Space deletion clears prior
+receipts and records its own reply under that space in the same transaction.
+After a rebuild, a duplicate delete returns that exact reply. Different
+operation or fingerprint conflicts. A replay preserves the original age.
 
-Keep the existing proposal sync, SQLite transaction and witness, and
-resolution sync order. The SQLite witness binds the new proposal digest
-and resolution as part of the same authority transaction. A surviving
-original database resolves an interrupted proposal using its witness. An
-authority rebuild from the log requires the exact independent installation
-and chain checkpoint. An older valid prefix, unresolved proposal or witness
-mismatch refuses admission. Aborted proposals contribute no receipt changes.
-Handle torn writes under the existing proof: trim only a proven uncommitted
-partial proposal and repair a partial resolution only from its matching
-witness. Refuse a corrupt complete frame. Use a distinct format version.
-Existing roots need a separately reviewed offline conversion that verifies
-the old checkpoint and binds the new image to it before admission.
+## Detection, recovery and erasure
 
-Account and space erasure capture the actual deletions by actor or scope,
-including receipts held by other actors for the erased space. Keep the
-existing forced erasure compaction. Write and sync the new snapshot and
-segment before retiring the previous generation under the existing protocol.
-Verify erased rows are absent from both live state and the retained local
-chain. Ordinary compaction still folds live rows into one snapshot at the
-64 MiB threshold. Small deltas mean more frames can accumulate before the
-same byte threshold. Measure that long-running case before changing it.
+Before admission on startup, compare the resolved logical image with a full
+capture of the surviving original authority database after verifying its
+witness. Compare normalized authority rows and all receipt tuples and values.
+If both integrity checks pass, publish a corrective witnessed delta for
+missing, stale or extra receipt rows before serving requests. Fail startup on
+an untrusted witness or repair error. This restores the self-healing formerly
+provided by recapturing a dirty owner's whole record. Include the full
+comparison in the startup measurement.
 
-## Expected effect and acceptance
+Keep the proposal fsync, SQLite transaction and witness, and resolution
+fsync order. The original database resolves an interrupted proposal. Trim a
+partial proposal only when its witness proves it uncommitted. Repair a torn
+resolution only from the matching witness. Abort applies no row changes.
+Reject corrupt complete frames and unresolved proposals without their
+original database. The host has no wired independent chain pin for a rebuild
+from a resolved log alone, so this design makes no external freshness claim.
 
-With one new receipt per proposal and roughly 0.5 KB per row, the measured
-fixture's active segment models at about **1.3 MB**, including the existing
-1.24 MB of other segment bytes. The snapshot remains on the order of
-1.8 MB. Removing roughly 230–250 ms of frame work from the paired-prototype
-control models readiness around **205–225 ms warm** and **1.04–1.19 s
-disk-cold**, with the cold range allowing for saved segment reads. These
-are estimates for that fixture. Cold startup has other measured costs.
+Capture erasure deletes by actor and scope, including cross-actor receipts
+for erased spaces. Keep forced erasure compaction and retire the old local
+chain only after the replacement snapshot and segment are durable. Verify
+erased bytes are absent from every retained local recovery file.
 
-Before adoption, compare rebuilt authority and duplicate replies byte for
-byte with the current format. Fault-test every proposal, SQLite witness,
-resolution and compaction boundary. Cover expiry followed by reuse,
-cross-actor erasure, stale external pins, and logs close to the byte
-threshold. Re-measure frame count, allocation, segment bytes, save overhead
-and readiness. Review this design before implementation.
+## Expiry, compaction and review gate
+
+Keep the byte threshold for the new-format comparison. While the server is
+available, sweep eligible expired receipt rows hourly and record those deletes
+through the same authority transaction. Compact within 24 hours of the first
+expired reply deletion still represented in a retained image or segment.
+This proposes a local physical retention bound of configured receipt age
+plus **25 hours** with healthy storage while running. After downtime, run
+overdue expiry and compaction before admission. Erasure still compacts
+immediately. Fault or storage failures surface as incomplete cleanup.
+
+The 1,000-space model assumes approximately one 0.5 KB receipt per proposal
+plus 1.24 MB of other bytes, yielding about **1.3 MB** active and a roughly
+1.8 MB snapshot. Removing repeated frame work put the initial warm readiness
+estimate at **205–225 ms**. That estimate precedes the new image comparison.
+Measure warm readiness again with the comparison, expiry and age maintenance.
+Choose the new format version with the upgrade lane through the owner.
+
+Required tests compare image and full database capture after every authority
+operation type, including first attach with existing receipts, expiry then
+reuse then rebuild, and a retry of space deletion after rebuild. Exercise
+every existing recovery `Step` with delete-only and mixed proposals. Check
+account erasure across other actors' receipts and scan retained files for the
+erased bytes. Measure time per frame, startup and save overhead at steady
+state. Format implementation waits for owner confirmation of this revision.
+
+## Smaller-threshold experiment
+
+On perf-02, 8 MiB reduced median warm readiness from 327.93 to 120.29 ms
+over seven paired starts at 1,000 spaces. The active segment fell from
+61.09 to 6.68 MB. Seeding crossed the compaction threshold 30 times with
+8 MiB and three times with 64 MiB. This is a simpler candidate for warm
+startup. Measure its authority-write tail on disk before adopting it.
+It leaves the repeated receipt capture and idle expiry questions open.
+[Compaction experiment](reviews/security-compaction-2026-11-18.md)

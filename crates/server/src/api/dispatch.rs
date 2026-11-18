@@ -527,27 +527,43 @@ pub(super) async fn mutate_note<D: Directory>(
             .or_else(|| update.as_ref().map(|i| i.space_id.as_str()))
             .expect("note scope"),
     )?;
+    #[cfg(feature = "perf-timings")]
+    let timing = (op == "notes.update")
+        .then(|| {
+            super::guard::OPERATION_ENTRY_NS
+                .try_with(|entry| *entry)
+                .ok()
+        })
+        .flatten()
+        .map(|entry| (entry, calternal_types::perf_monotonic_ns()));
     blocking(&state, move |s| {
-        if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
-            return Ok(v);
-        }
-        let note = if let Some(i) = create {
-            s.create(actor, &rid, &op, &fp, space, &i.title, &i.markdown)?
-        } else {
-            let i = update.expect("update input");
-            s.update(
-                actor,
-                &rid,
-                &op,
-                &fp,
-                space,
-                &i.id,
-                &i.base_revision,
-                i.title.as_deref(),
-                &i.markdown,
-            )?
+        let save = || {
+            if let Some(v) = replay_receipt(s, principal, space, &rid, &op, &fp)? {
+                return Ok(v);
+            }
+            let note = if let Some(i) = create {
+                s.create(actor, &rid, &op, &fp, space, &i.title, &i.markdown)?
+            } else {
+                let i = update.expect("update input");
+                s.update(
+                    actor,
+                    &rid,
+                    &op,
+                    &fp,
+                    space,
+                    &i.id,
+                    &i.base_revision,
+                    i.title.as_deref(),
+                    &i.markdown,
+                )?
+            };
+            to_value(NoteResult { note })
         };
-        to_value(NoteResult { note })
+        #[cfg(feature = "perf-timings")]
+        if let Some((entry, queued)) = timing {
+            return calternal_store::timings::observe_note_save(&rid, entry, queued, save);
+        }
+        save()
     })
     .await
 }

@@ -72,37 +72,28 @@ that retires outbox rows concurrently. At 100,000 Notes it leaves a 40.21 ms
 warm p95 and an 81.16 ms warm p99. Release traces and hashes are retained
 under `~/calternal-ai-perf/profile-52-tail/` on perf-02.
 
-## Candidate for a measured prototype
+## Independent review disposition
 
-Keep the content and journal receipts FULL. Let ordinary Notes
-acknowledgment follow the durable journal commit and defer the FULL
-outbox retirement to the existing per-space placement worker. Use a
-bounded published prefix of outbox intents. The worker can retire that
-prefix in one transaction before placing its files. Outbox recovery and
-non-Notes operations keep the existing ordering. The worker's slot lock can
-still shift retirement latency onto the next request if a batch precedes
-it. Measure bursts, a stalled disk, and large-cache checkpoints before
-approving an implementation. The observed arithmetic gain is an upper
-bound.
+Keep retirement before acknowledgment. The measured 100,000-Note warm p95
+was 58.29 ms. Subtracting every retirement span still gives 40.21 ms p95
+and 81.16 ms p99. That arithmetic keeps the observed scheduling fixed.
+The proposal shifts work and requires new durable-state reasoning without
+clearing the 40 ms budget in the measured counterfactual. The standalone
+receipt fence addresses replay safety for the current ordering.
 
-Use a paired search-ready/rebuild run to test whether index checkpoint I/O
+| Review finding | Requirement if this is revisited |
+| --- | --- |
+| Ordinary admissions and duplicate lookup call `publish_pending` | Back-to-back saves still pay for prior retirement unless admission can recognize already-published rows and skip their flush. Recognition must survive restart and preserve current duplicate replies and publication order. |
+| A batch can include an intent whose journal commit failed | Retire only explicit account/request rows proven to have a matching durable journal receipt. A rowid cutoff or the presence of a later event is insufficient. Failure keeps the unproven intent and its head for recovery. |
+| Search and file placement use outbox emptiness as a publication fence | Deferral delays both while those checks remain. A replacement must use a common proof of publication for each relevant row without exposing an unjournaled head or adding latency that offsets the save gain. Measure search and file lag separately under bursts. |
+| The idea changes ordinary Notes saves only | A host-level Notes policy must select any generic publication mode. The content crate must retain generic storage semantics. |
+| Retirement was 17.79 ms in the historical 966 ms save | Earlier work dominated that observation. Moving retirement cannot explain it, and expensive disk syncs can reach a subsequent request. |
+
+A paired search-ready/rebuild run could test whether index checkpoint I/O
 raises the remaining content or journal sync tail. A slower rebuild rate
-could trade update latency for longer time to searchable results. Measure
-that trade before changing the index worker.
-
-The prune fence must work across process restart. A space's journal prunes
-receipts before it admits its first reader today. Before either startup
-or periodic pruning can delete a receipt, it must protect every request
-still represented by an outbox intent. Read that set through the existing
-content store boundary and have that space's journal writer exclude the
-keys during its prune transaction. The content view must observe only
-retirements past the FULL boundary. Keep the fence active through startup
-reconciliation. If the content view is unreadable, skip that space's prune
-and surface the storage error. Keep the oldest pending age and bound queued
-rows so a failed retirement cannot grow indefinitely. Test erasure and epoch
-recovery with the same fence. A new receipt published after the prune
-snapshot belongs to the same serialized journal writer and cannot be
-deleted by that prune.
+would trade update latency for longer time to searchable results. The
+retirement proposal remains at review. The crash matrix below lists
+acceptance conditions if it is ever reconsidered.
 
 | Stop or race boundary | Required outcome |
 | --- | --- |
@@ -117,6 +108,5 @@ deleted by that prune.
 
 ## Simplification opportunities
 
-Batch the durable retirement of the published prefix at the placement worker
-if measurements show it helps acknowledgment tails. Keep each receipt's
-retention rule on the journal writer.
+Keep the existing synchronous retirement path. Reuse the standalone
+pruning fence for startup recovery and maintenance.
