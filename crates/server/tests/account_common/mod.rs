@@ -24,6 +24,7 @@ pub struct App {
     pub dir: tempfile::TempDir,
     pub auth: Auth,
     pub router: Router,
+    pub state: Arc<AppState>,
 }
 pub fn app() -> App {
     app_with(|_| {})
@@ -33,6 +34,14 @@ pub fn app_with(tweak: impl FnOnce(&mut AuthConfig)) -> App {
 }
 
 pub fn app_in(dir: tempfile::TempDir, tweak: impl FnOnce(&mut AuthConfig)) -> App {
+    build_app(dir, tweak, false)
+}
+
+pub fn app_with_jobs() -> App {
+    build_app(tempfile::tempdir().unwrap(), |_| {}, true)
+}
+
+fn build_app(dir: tempfile::TempDir, tweak: impl FnOnce(&mut AuthConfig), with_jobs: bool) -> App {
     let mut config = AuthConfig::new(ORIGIN).unwrap();
     tweak(&mut config);
     let roots = calternal_roots::Roots {
@@ -49,20 +58,30 @@ pub fn app_in(dir: tempfile::TempDir, tweak: impl FnOnce(&mut AuthConfig)) -> Ap
     .unwrap();
     let tokens = StoredDirectory::open(&roots.appdata, config, false, None).unwrap();
     let auth = tokens.http_auth().unwrap().auth.clone();
-    let router = api::router(
-        Arc::new(AppState {
-            blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
-            inputs: store.account_inputs(),
-            store,
-            directory: tokens,
-            registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
-            workers: calternal_server::plugins::WorkerPool::new(None),
-            jobs: calternal_server::plugins::Jobs::disabled(),
-            allowed_hosts: api::allowed_hosts(8080),
-        }),
-        None,
-    );
-    App { dir, auth, router }
+    let jobs = if with_jobs {
+        calternal_server::plugins::Jobs::open(&roots.appdata)
+            .unwrap()
+            .with_security(tokens.spaces.agents())
+    } else {
+        calternal_server::plugins::Jobs::disabled()
+    };
+    let state = Arc::new(AppState {
+        blocking: calternal_server::blocking::RequestWorkers::new().unwrap(),
+        inputs: store.account_inputs(),
+        store,
+        directory: tokens,
+        registry: Registry::load(std::path::Path::new("/nonexistent-test-plugins")),
+        workers: calternal_server::plugins::WorkerPool::new(None),
+        jobs,
+        allowed_hosts: api::allowed_hosts(8080),
+    });
+    let router = api::router(state.clone(), None);
+    App {
+        dir,
+        auth,
+        router,
+        state,
+    }
 }
 /// One answer: status, the Set-Cookie value (if any) and the JSON body.
 pub struct Res {
