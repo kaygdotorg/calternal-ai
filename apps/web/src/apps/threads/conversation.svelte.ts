@@ -22,6 +22,8 @@ export class Conversation {
 
   private cache = new Map<number, Message>();
   private loading = new Set<number>();
+  /** The rows last asked for, so rows that arrive later (the count grew) are read without waiting for a scroll. */
+  private want: [number, number] = [0, 0];
   private off: () => void;
 
   constructor(
@@ -46,11 +48,11 @@ export class Conversation {
       onStep: (s) => {
         if (this.stream) this.stream.steps = [...this.stream.steps, s];
       },
-      onSummary: (s) => { this.summary = s; if (s.messageCount > this.count) { this.count = s.messageCount; this.rev++; } },
+      onSummary: (s) => { this.summary = s; if (s.messageCount > this.count) { this.count = s.messageCount; this.rev++; this.ensure(...this.want); } },
       onStreamEnd: () => (this.stream = null),
     });
     // The list does not know a thread's message count: ask once (the fixtures answer at once, the server reads the file).
-    void client.getThread(id).then((s) => { if (!s) return; this.summary = s; this.count = Math.max(this.count, s.messageCount); this.rev++; });
+    void client.getThread(id).then((s) => { if (!s) return; this.summary = s; this.count = Math.max(this.count, s.messageCount); this.rev++; this.ensure(...this.want); });
   }
 
   /** A message if it has been read, else undefined (and the caller shows a placeholder until `rev` changes). Reads `rev` so the row redraws. */
@@ -61,6 +63,7 @@ export class Conversation {
 
   /** Makes sure the pages covering `[from, to)` are read or being read. */
   ensure(from: number, to: number): void {
+    this.want = [from, to];
     for (let p = Math.floor(from / PAGE); p <= Math.floor((Math.min(to, this.count) - 1) / PAGE); p++) {
       if (this.loading.has(p)) continue;
       this.loading.add(p);

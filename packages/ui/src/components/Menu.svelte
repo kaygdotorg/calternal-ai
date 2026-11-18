@@ -15,7 +15,7 @@
 
 <script lang="ts">
   // A menu on a Popover (placement, portal and material are the Popover's); on a touch screen it is an inset sheet from the bottom instead, with rows of the native menu height (42). Items are radio-style when any is `checked`. Arrows move focus, Enter picks,
-  // Escape and an outside press close it. `search` adds an inline field at the top that filters by label and sub text (Down moves into the list).
+  // Escape and an outside press close it. `compact` puts a row's second line beside its label instead of under it. `search` adds an inline field at the top that filters by label and sub text (Down moves into the list).
   // Anchored to `trigger` (a button) or to `anchor` (a point, for a context menu). `label` names the menu.
   import Icon from "./Icon.svelte";
   import Popover from "./Popover.svelte";
@@ -33,9 +33,10 @@
     trigger,
     anchor,
     search = false,
+    compact = false,
     morph = false,
     placement = "top",
-  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; morph?: boolean; placement?: "top" | "bottom" } = $props();
+  }: { open: boolean; items: MenuItem[]; label: string; onpick: (id: string) => void; onclose: () => void; trigger?: HTMLElement | null; anchor?: Anchor | null; search?: boolean; compact?: boolean; morph?: boolean; placement?: "top" | "bottom" } = $props();
   let q = $state("");
   let list = $state<HTMLElement>();
   const radio = $derived(items.some((i) => i.checked !== undefined));
@@ -70,9 +71,9 @@
       <input type="search" use:textField={{ kind: "search", cancels: true }} placeholder="Search" aria-label="Search {label}" bind:value={q} autocomplete="off" onkeydown={fromSearch} />
     </div>
   {/if}
-  <div bind:this={list} class="menu" role="presentation" use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
+  <div bind:this={list} class="menu" role={search ? "menu" : "presentation"} aria-label={search ? label : undefined} use:roving={{ selector: "[role^=menuitem]", axis: "y" }}>
     {#each shown as it (it.id)}
-      <button type="button" class="it" class:danger={it.danger} disabled={it.disabled} role={radio ? "menuitemradio" : "menuitem"} aria-checked={radio ? !!it.checked : undefined} tabindex="-1" onclick={() => { onpick(it.id); close(); }}>
+      <button type="button" class="it" class:compact class:danger={it.danger} disabled={it.disabled} role={radio ? "menuitemradio" : "menuitem"} aria-checked={radio ? !!it.checked : undefined} tabindex="-1" onclick={() => { onpick(it.id); close(); }}>
         {#if it.icon}<Icon name={it.icon} />{/if}
         <span class="tx"><span>{it.label}</span>{#if it.sub}<small>{it.sub}</small>{/if}</span>
         {#if it.checked}<Icon inline name="check" />{/if}
@@ -84,9 +85,9 @@
 {/snippet}
 
 {#if currentForm() === "touch"}
-  <Sheet {open} {label} onclose={onclose}><div class="sh" role="menu" aria-label={label}>{@render content()}</div></Sheet>
+  <Sheet {open} {label} onclose={onclose}><div class="sh" role={search ? "group" : "menu"} aria-label={label}>{@render content()}</div></Sheet>
 {:else}
-  <Popover {open} anchor={anchor ?? trigger} {label} role="menu" prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>
+  <Popover {open} anchor={anchor ?? trigger} {label} role={search ? "dialog" : "menu"} prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>
 {/if}
 
 <style>
@@ -99,6 +100,9 @@
   .it:disabled { opacity: 0.4; }
   .it.danger { color: var(--danger); }
   .tx { flex: 1; min-width: 0; display: grid; }
+  /* `compact`: one line a row at the menu row height (the mockup's 32 px on a desktop), the second line to the right, quiet: for a long list of choices (the models). */
+  .it.compact { padding-block: 0; }
+  .it.compact .tx { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-5); }
   small { font-size: var(--text-label); color: var(--ink-3); }
   @media (hover: hover) and (pointer: fine) { .it:not(:disabled):hover { background: var(--hover); } }
   .it[aria-checked="true"] { color: var(--accent); }

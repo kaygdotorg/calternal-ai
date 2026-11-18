@@ -32,26 +32,35 @@ on a server that serves only part of it.
 
 ## Empty, missing and failed states
 
-For a fresh real account, each in plain words with the next step and no placeholder art (`ThreadNotices.svelte`, `Notice.svelte`, the sidebar's empty block, the thread's blank view). Fixture scenarios show them: `?scenario=empty|no-machine|offline|signin|failed|retrying|interrupted` (`e2e/states.mjs`).
+For a fresh real account, each in plain words with the next step and no placeholder art (`ThreadNotices.svelte`, `Notice.svelte`, the sidebar's empty block, the thread's blank view). Fixture scenarios show them: `?scenario=empty|no-machine|queued|offline|signin|failed|usage-limit|permanent|retrying|retrying-api|retrying-plan|interrupted|interrupted-unsure` (`e2e/states.mjs`).
+
+**From the server (turn readiness).** Two sources, both real:
+
+| Source | Fields | Becomes |
+| --- | --- | --- |
+| `turn_reason` on `threads.list`, `threads.get` and the `data.turn_reason` of `threads.turn_state_changed` journal entries (`reasonNotice`) | `no_machine`; `waiting_for_capacity` (`queue_position`); `machine_offline` (`since_ms`); `provider_signed_out` (`provider`, `sign_in_command`); `retrying` (`attempt`, `next_attempt_ms`, `rule`: `provider_backoff`, `api_availability`, `subscription_reset`); `failed` (`class`: `transient`, `usage_limit`, `permanent`; `reset_at_ms`); `interrupted` (`resumable`, `why`, `since_ms`); `waiting_on_person` (the request bar draws it) | the notice for a turn that is waiting, retrying, failed or dropped |
+| `agent.readiness` `{space_id}` (`readinessNotice`), re-read on the account feed's `readiness_changed` (`GET /api/v1/account/live?readiness=true`) | machines (`connected`, `available`, `last_seen_ms`, per-provider `check`: `installed`, `signed_in`, `sign_in_command`) and the pool | before a message is sent: no machine, every machine offline (the one seen last is named), the provider not signed in on the machine that is up (its own command; **Check again** calls `agent.check`). A provider with no observation yet is not called signed out |
+
+The composer's machine list is the readiness snapshot's machines (and "Pool"). A thread with a turn reason shows that; otherwise the readiness notice shows while the thread is idle.
 
 | Situation | Says | Next step |
 | --- | --- | --- |
-| No thread yet (sidebar) | A thread is a conversation with an agent that works on your files and notes, with only the access you allow | **Start a thread** |
+| No thread yet (sidebar and first view) | What a thread is (the first view); one line in the sidebar | **Start a thread** |
 | Empty thread | Nothing sent yet; the agent shows its steps and asks before anything not allowed | **Write a message** (focuses the box) |
 | No machine enrolled | Agents work on a computer you add, or one from the pool | **Open Machines** (Settings > Machines) |
-| Machine offline | Names the machine; the message is safe and waits; nothing moves to another machine by itself | **Open Machines** |
-| Provider not signed in on the machine | Names provider and machine; sign in once on that machine; Calternal never sees the login | **Copy the command** (`claude auth login`) |
-| Turn failed | What failed; Calternal already retried five times (30 s up to 8 min) | **Try again** |
-| Turn waiting to retry | Counts down; attempt n of 5; keeps checking afterwards or waits for the plan's limit to reset | **Try now** |
-| Turn interrupted | The machine stopped answering; stopped at its last saved step; nothing moved | **Resume** |
-| Request bar | Question: the agent waits and continues once answered. Approval: nothing runs until you decide; "for this thread" lasts until the thread is deleted. Secret: where the value goes | the buttons already on the bar |
+| All machines busy | Your place in the queue; it starts by itself | none |
+| Machine offline | Names the machine and when it was last heard from; the message is safe; nothing moves by itself | **Open Machines** |
+| Provider not signed in | Names provider and machine; sign in once on the machine with the provider's own command; Calternal never sees the login | **Copy the command**, **Check again** |
+| Retrying | By rule: provider backoff (attempt n of 5, 30 s up to 8 min, with a countdown), API availability (checks every 3 hours), the plan's limit (continues at the reset time) | **Try now** |
+| Failed | By class: transient (already retried five times), usage limit (until about the reset time), permanent (stopped; retrying would not help) | **Try again** |
+| Interrupted | The machine stopped answering; stopped at its last saved step; nothing moved. If it cannot be resumed safely, says so and offers nothing | **Resume** (when it can) |
+| Request bar | Question: the agent waits and continues once answered. Approval: nothing runs until you decide; "for this thread" only when allowed. Secret: where the value goes | the buttons already on the bar |
 
-What the server can tell today: a failed or interrupted turn comes from the turn state (`failed`, `interrupted`) with generic words; "no machine", "machine offline" and "provider not signed in" need a machine-readiness read the server does not offer yet (the real adapter shows none of them rather than guess), and the retry countdown needs the retry fields of the job checkpoint. Resume is `agent.resume` on the thread's last job.
+Resume and Try again are `agent.resume` on the thread's last job.
 
 ## Backend follow-ups (for the requests and threads lanes)
 
 - **Which lifetimes a request allows.** The list does not say; the UI reads it from `action.risk` (`irreversible` and `widens_access` are single-use) in `lifetimesOf`. The server should send it, for example `detail.lifetimes: ["once"]` or `["once", "this_thread"]`, so the rule lives in one place. `lifetimesOf` already prefers such a list when it is there.
-- **Readiness** (machine enrolled, online, provider signed in) and **retry fields** (attempt, next attempt) for the states in "Empty, missing and failed states".
 - **A fixture provider that emits tool events.** The seeded installation's provider emits only `session` and `text_delta`, so a page reloaded mid-turn shows the Working row with no steps (a real provider's steps are replayed from the oldest retained event when a page connects without a bookmark; checked: the second connection returns the whole stream). A fixture with a few `tool_started` and `tool_finished` events would let `live-threads.mjs` check the steps.
 - **Resuming a job stream after a bookmark** re-sent the `session` chunk in a probe (`?after=<id>` with the last id seen): worth a look, harmless to the UI.
 

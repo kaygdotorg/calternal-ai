@@ -7,7 +7,7 @@ cd "$ROOT"
 ./scripts/with-toolchain.sh cargo run --locked -p calternal-core --bin export-contract -- --check
 npm run build
 npm run test:plugins
-./scripts/with-toolchain.sh cargo test --locked --workspace
+./scripts/check-podman-tests.sh ./scripts/with-toolchain.sh cargo test --locked --workspace -j6
 ./scripts/with-toolchain.sh cargo build --locked -p calternal-server -p calternal-cli
 npm run test:integration
 python3 contract/verify-cli.py

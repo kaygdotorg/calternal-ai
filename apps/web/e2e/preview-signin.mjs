@@ -12,7 +12,7 @@ await page.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
 const st = await page.request.get(`${BASE}/api/v1/auth/status`);
 const body = await st.json();
 console.log("status", JSON.stringify(body), "cache-control:", st.headers()["cache-control"], "csp:", st.headers()["content-security-policy"] ?? "none");
-const resp = await page.goto(`${BASE}/ai/?server=1`);
+const resp = await page.goto(process.env.CAL_FLAG ? `${BASE}/ai/${process.env.CAL_FLAG}` : `${BASE}/ai/`);
 console.log("page csp:", resp.headers()["content-security-policy"] ?? "none");
 await page.waitForSelector("html[data-ready]");
 check(await page.getByRole("heading", { name: body.setup ? "Set up Calternal" : "Sign in" }).isVisible(), `shows ${body.setup ? "first-owner setup" : "sign in"} behind the proxy`);

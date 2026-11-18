@@ -13,6 +13,8 @@
   // The generated-UI renderer is its own chunk, fetched when the first question form is about to be drawn.
   let GenUi = $state<Component<{ source: string; values: Record<string, Value> }>>();
   $effect(() => { if (requests.some((r) => r.kind === "question") && !GenUi) void import("../../genui/GenUi.svelte").then((m) => (GenUi = m.default as never)); });
+  // Touch has no hover and little room: an approval folds its details there.
+  const touch = typeof matchMedia === "function" && matchMedia("(hover: none)").matches;
   let index = $state(0);
   let folded = $state(false);
   let formState = $state<Record<string, Value>>({});
@@ -60,10 +62,14 @@
           <div class="foot"><Button variant="primary" text="Send answers" onclick={() => answer({ kind: "question", values: { ...formState } })} /></div>
         {:else if cur.kind === "approval"}
           <div class="trusted"><Icon name="lock" inline /> Drawn by Calternal. An agent can’t answer this for you.</div>
-          <h2>{cur.title}</h2>
-          <p>{cur.action}. Nothing runs until you decide; “for this thread” keeps allowing the same action here until the thread is deleted.</p>
-          <pre aria-label="The command"><code>{cur.command}</code></pre>
-          {#if !cur.lifetimes.includes("thread")}<p class="once">This can only be allowed once: it cannot be undone or it widens what the agent can reach, so you are asked each time.</p>{/if}
+          <h2 class="what">{cur.action}</h2>
+          <!-- The action and its target lead in one line; the exact command and what the choices mean are one tap away (open at once on a desktop, folded on a phone). -->
+          <details class="more" open={!touch}>
+            <summary>Details</summary>
+            <pre aria-label="The command"><code>{cur.command}</code></pre>
+            <p>Nothing runs until you decide.{cur.lifetimes.includes("thread") ? " “For this thread” keeps allowing the same action here until the thread is deleted." : ""}</p>
+            {#if !cur.lifetimes.includes("thread")}<p class="once">This can only be allowed once: it cannot be undone or it widens what the agent can reach, so you are asked each time.</p>{/if}
+          </details>
           <div class="foot">
             <Button variant="quiet" text="Deny" onclick={() => answer({ kind: "approval", decision: "deny" })} />
             {#if cur.lifetimes.includes("thread")}<Button text="Allow for this thread" onclick={() => answer({ kind: "approval", decision: "thread" })} />{/if}
@@ -107,6 +113,9 @@
   form input { flex: 1 1 12rem; min-height: var(--pill-h); padding: 0 var(--s-5); border: 0; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.08); color: var(--ink); font-size: var(--text-ui); }
   .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); }
   .meta code { font-size: var(--text-label); color: var(--ink-3); }
+  .what { font-size: var(--text-heading); font-weight: var(--strong-weight); line-height: 1.3; overflow-wrap: anywhere; }
+  .more summary { cursor: pointer; color: var(--ink-3); font-size: var(--text-label); min-height: var(--pill-h); display: flex; align-items: center; }
+  .more[open] summary { margin-bottom: var(--s-2); }
   .once { font-size: var(--text-label); color: var(--ink-3); }
   .clock { font-size: var(--text-label); color: var(--ink-3); }
   .exp { color: var(--danger); }

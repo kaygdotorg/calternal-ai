@@ -168,27 +168,50 @@ start_browser() {
     "$address" "$peer_port" "$browser/appdata/setup.token"
 }
 
-# The browser owner proof supplies its verified account UUID. Switching images
-# restarts just this machine role and retains its enrollment.
+# Browser enrollment uses the owner's one-time code. Switching images retains
+# the enrollment and returns the home derived from the enrolled machine identity.
 start_browser_machine() {
-  local account=$1 mode=$2 current machine_id
+  local mode=$1 current identity owner account home code
   local root=$root/browser
   local binary=$root/bin/calternal base_url=http://127.0.0.1:$browser_port
-  local installation=$browser_installation
-  [[ $account =~ ^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$ ]] ||
-    die 'Expected a browser account UUID.'
   [[ $mode == fixture || $mode == claude ]] || die 'Choose fixture or claude.'
   active browser-server || die 'Start the browser installation first.'
+  if [[ ! -e $root/machine/credentials ]]; then
+    printf 'Enrollment code from Settings > Machines: ' >&2
+    IFS= read -rs code || die 'Enter an enrollment code and press Enter.'
+    printf '\n' >&2
+    [[ -n $code ]] || die 'Enter the one-time enrollment code.'
+    printf '%s\n' "$code" |
+      NO_PROXY=127.0.0.1 no_proxy=127.0.0.1 "$binary" machine enroll \
+        --server "$base_url" --dir "$root/machine" \
+        --name calternal-e2e-dev-01 --code - >/dev/null
+    unset code
+  fi
+  identity=$("$binary" --json machine status --dir "$root/machine")
+  owner=$(jq -er '.data.owner' <<<"$identity")
+  account=${owner#account:}
+  [[ $owner == account:* && $account =~ ^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$ &&
+     $(jq -er '.data.server' <<<"$identity") == "$base_url" ]] ||
+    die 'Expected an account-owned machine enrolled with this browser server.'
+  home=$root/machine/sandboxes/accounts/$account/home
+  install -d -m 0700 "$home"
+  if [[ $mode == fixture ]]; then
+    if [[ -f ${home%/home}/fixture-verified ]]; then
+      mode=claude
+    else
+      (shopt -s dotglob nullglob; entries=("$home"/*); ((${#entries[@]} == 0))) ||
+        die 'Run the optional fixture proof before placing provider sign-in files.'
+    fi
+  fi
   podman image exists "localhost/calternal-e2e-$mode:dev" ||
     die "Build the $mode image with image.sh $mode first."
-  machine_id=$(enroll_machine)
   current=$(systemctl --user show -p ExecStart --value calternal-e2e-browser-machine.service)
   if active browser-machine && [[ $current != *"localhost/calternal-e2e-$mode:dev"* ]]; then
     stop_unit browser-machine
   fi
   start_unit browser-machine "$binary" machine run --dir "$root/machine" --backend podman \
     --podman "$(command -v podman)" --image "localhost/calternal-e2e-$mode:dev" --max-sandboxes 2
-  printf '%s\n' "$machine_id"
+  printf '%s\n' "$home"
 }
 
 stop() {
@@ -230,7 +253,7 @@ case ${1:-} in
     ;;
   stop) stop ;;
   start-browser) start_browser ;;
-  browser-machine) start_browser_machine "${2:-}" "${3:-}" ;;
+  browser-machine) start_browser_machine "${2:-}" ;;
   stop-browser)
     stop_unit browser-relay
     stop_unit browser-machine

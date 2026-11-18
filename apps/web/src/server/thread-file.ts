@@ -28,9 +28,9 @@ export interface WireMetadata {
   pending?: { request_id?: string; created_ms?: number };
 }
 /** A saved thread as `threads.get` and the writes return it. */
-export interface WireThread { id: string; space_id: string; address: string; revision: string; turn_state?: string; metadata: WireMetadata; markdown?: string; job?: WireJob }
+export interface WireThread { id: string; space_id: string; address: string; revision: string; turn_state?: string; turn_reason?: WireReason | null; metadata: WireMetadata; markdown?: string; job?: WireJob }
 /** One row of `threads.list`. */
-export interface WireRow { id: string; address: string; revision: string; turn_state?: string; metadata: WireMetadata }
+export interface WireRow { id: string; address: string; revision: string; turn_state?: string; turn_reason?: WireReason | null; metadata: WireMetadata }
 /** A job as the server describes it (`JobView`). */
 export interface WireJob { id: string; state: string; checkpoint?: unknown; result?: unknown }
 
@@ -54,10 +54,29 @@ export function stateOfTurn(label: string | undefined): ThreadState {
   }
 }
 
-/** What a turn label asks of the person: a failed turn can be tried again, an interrupted one resumed. (The reason and the machine are not in the list yet: plain words stand in.) */
-function noticeOf(turn: string | undefined): { notice?: ThreadNotice } {
-  if (turn === "failed") return { notice: { kind: "failed", reason: "The provider did not finish the turn" } };
-  if (turn === "interrupted") return { notice: { kind: "interrupted", machine: "the machine" } };
+/** The server's `turn_reason` (docs/threads.md, turn readiness): a `code` and its fields, timestamps in Unix milliseconds. */
+export interface WireReason { code: string; queue_position?: number; since_ms?: number; provider?: string; sign_in_command?: string; request_id?: string; attempt?: number; next_attempt_ms?: number; rule?: string; class?: string; reset_at_ms?: number; resumable?: boolean; why?: string }
+
+/** A reason as the notice the person sees; null when it asks nothing of them (idle, queued, completed, cancelled, a turn waiting on a request: the request bar draws that one). */
+export function reasonNotice(r: WireReason | null | undefined): ThreadNotice | null {
+  switch (r?.code) {
+    case "no_machine": return { kind: "no-machine" };
+    case "waiting_for_capacity": return { kind: "waiting-capacity", queuePosition: r.queue_position };
+    case "machine_offline": return { kind: "machine-offline", queuePosition: r.queue_position, sinceMs: r.since_ms };
+    case "provider_signed_out": return { kind: "provider-signin", provider: r.provider ?? "The provider", command: r.sign_in_command };
+    case "retrying": return { kind: "retrying", rule: r.rule === "api_availability" || r.rule === "subscription_reset" ? r.rule : "provider_backoff", attempt: r.attempt, of: 5, nextAt: r.next_attempt_ms };
+    case "failed": return { kind: "failed", failure: r.class === "usage_limit" || r.class === "permanent" ? r.class : "transient", resetAtMs: r.reset_at_ms };
+    case "interrupted": return { kind: "interrupted", resumable: r.resumable !== false, why: r.why, sinceMs: r.since_ms };
+    default: return null;
+  }
+}
+
+/** What a turn asks of the person: from the reason when the server sends one, else from the plain label (a failed turn can be tried again, an interrupted one resumed). */
+function noticeOf(turn: string | undefined, reason?: WireReason | null): { notice?: ThreadNotice } {
+  const n = reasonNotice(reason);
+  if (n) return { notice: n };
+  if (turn === "failed") return { notice: { kind: "failed", failure: "transient" } };
+  if (turn === "interrupted") return { notice: { kind: "interrupted", resumable: true } };
   return {};
 }
 
@@ -65,7 +84,7 @@ function noticeOf(turn: string | undefined): { notice?: ThreadNotice } {
 const ms = (t: string | undefined, fallback: number): number => { const v = t ? Date.parse(t) : NaN; return Number.isFinite(v) ? v : fallback; };
 
 /** A thread's summary from its metadata and turn state. What the server does not know (where it runs) and what this page chose for the next send (`known`: provider, model, mode, machine) is laid over it. */
-export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: string | undefined, known: Partial<ThreadSummary> = {}): ThreadSummary {
+export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: string | undefined, known: Partial<ThreadSummary> = {}, reason?: WireReason | null): ThreadSummary {
   return {
     id,
     spaceId,
@@ -80,7 +99,7 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: s
     // The server picks the machine itself (no operation names it): say so rather than show a blank.
     runsOn: known.runsOn ?? { machine: "Automatic", mode: "sandboxed" },
     messageCount: md.message_count ?? 0,
-    ...noticeOf(turn),
+    ...noticeOf(turn, reason),
   };
 }
 
@@ -105,4 +124,30 @@ export function parseMessages(markdown: string, createdAt = 0, updatedAt = creat
 export function updatedAtOf(markdown: string, fallback: number): number {
   const m = /^updated-at: (\S+)$/m.exec(markdown.slice(0, 2048));
   return ms(m?.[1]?.replace(/^"|"$/g, ""), fallback);
+}
+
+// ---- readiness (agent.readiness, docs/agent-turns.md): is there a machine, is it connected, is the provider signed in ----
+
+/** One provider's readiness on a machine (`ProviderReadiness`). */
+export interface WireProviderReadiness { enabled: boolean; check: { installed: boolean; signed_in: boolean; sign_in_command: string } | null; ready: boolean }
+/** One machine's readiness (`MachineReadiness`; a personal one also has `machine_id`, `name`, `last_seen_ms`). */
+export interface WireMachine { machine_id?: string; name?: string; last_seen_ms?: number | null; enrolled: boolean; connected: boolean; available: boolean; execution: "sandboxed" | "direct"; providers: Record<string, WireProviderReadiness> }
+/** `agent.readiness` result. */
+export interface WireReadiness { machines: WireMachine[]; pool: WireMachine[]; check_ttl_ms: number }
+
+/**
+ * What the readiness snapshot says to someone about to send with `provider` (a plugin ID): nothing when some machine (theirs or the pool's) is ready; else the most useful single thing: no machine at
+ * all, every machine offline (the one seen last is named), or the provider not signed in on the machine that is up (with its own sign-in command). A provider with no observation yet (`check` null)
+ * is not called signed out: nothing is known, so nothing is claimed.
+ */
+export function readinessNotice(r: WireReadiness | null | undefined, provider: string, providerName: string): ThreadNotice | null {
+  if (!r) return null;
+  const all = [...r.machines, ...r.pool];
+  if (!all.length) return { kind: "no-machine" };
+  if (all.some((m) => m.connected && m.available && m.providers[provider]?.ready)) return null;
+  const up = all.filter((m) => m.connected);
+  if (!up.length) { const last = [...r.machines].sort((a, b) => (b.last_seen_ms ?? 0) - (a.last_seen_ms ?? 0))[0]; return { kind: "machine-offline", machine: last?.name, sinceMs: last?.last_seen_ms ?? undefined }; }
+  const out = up.find((m) => m.providers[provider]?.enabled && m.providers[provider]?.check && (!m.providers[provider]!.check!.signed_in || !m.providers[provider]!.check!.installed));
+  if (out) return { kind: "provider-signin", machine: out.name, provider: providerName, command: out.providers[provider]!.check!.sign_in_command || undefined };
+  return null;
 }
