@@ -21,6 +21,8 @@ export interface ThreadEvents {
   onThought?(thought: { text: string; done?: boolean; ms?: number }): void;
   /** The thread's summary changed (state, title, provider). */
   onSummary(summary: ThreadSummary): void;
+  /** The messages from some index on are a different version now (an edit, or another version chosen): forget what was read and start from `count` messages. */
+  onReset?(count: number): void;
   /** The working turn ended without a message of its own appearing (stopped, failed): the working state goes away. */
   onStreamEnd?(): void;
 }
@@ -85,6 +87,10 @@ export interface ThreadsClient extends ChoicesClient, RequestsClient, PanelsClie
   messageIndex?(threadId: string, messageId: string): Promise<number | undefined>;
   /** The picker and search lookups when the server has them (search.query, people.lookup, skills.list, threads.lookup, items.lookup): the composer's `@` and `/` and message search use these instead of the fixtures. */
   lookups?: Lookups;
+  /** Edits a sent message of the person's: the edit becomes another version of the thread from that message on (the old tail is kept) and the agent answers it. Absent when the server has no edit yet. */
+  editMessage?(threadId: string, messageId: string, text: string, requestId: string): Promise<void>;
+  /** Shows another version of an edited message and what follows it (1-based `version`); per thread, so every viewer sees the same. */
+  setVersion?(threadId: string, messageId: string, version: number): Promise<void>;
   /** Follows a thread while it is open. Returns the unsubscribe. */
   watch(threadId: string, events: ThreadEvents): () => void;
   /** Sends a message (steers a running turn). `requestId` makes a retry safe. */

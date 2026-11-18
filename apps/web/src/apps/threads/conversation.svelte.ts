@@ -83,6 +83,7 @@ export class Conversation {
       onStep: (s) => {
         if (this.stream) this.stream.steps = [...this.stream.steps, s];
       },
+      onReset: (n) => { this.cache.clear(); this.loading.clear(); this.count = n; this.stream = null; this.ended = null; this.rev++; this.ensure(...this.want); },
       onSummary: (s) => { this.summary = s; if (s.messageCount > this.count) { this.count = s.messageCount; this.rev++; this.ensure(...this.want); } },
       onStreamEnd: () => { if (this.stream) this.ended = { turn: this.stream, at: Date.now() }; this.stream = null; },
     });

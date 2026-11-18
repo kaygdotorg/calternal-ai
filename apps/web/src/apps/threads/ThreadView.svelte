@@ -174,7 +174,7 @@
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
-              {#if m}<MessageRow message={m} hit={hit === m.id} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
+              {#if m}<MessageRow message={m} threadId={id} hit={hit === m.id} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
             {:else if conv?.stream && i === conv.count}
               <StreamRow turn={conv.stream} provider={summary?.provider ?? "claude"} providers={store.providers} />
             {:else if conv}

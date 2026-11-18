@@ -164,6 +164,8 @@ export interface Message {
   blocks: Block[];
   /** For an assistant message: which provider, model and reasoning level wrote it and how long it took; absent for an older message that does not record it. */
   by?: MessageBy;
+  /** On a message that has been edited: which version of it is shown (`n`, from 1) of how many (`of`); the thread shows one version of the tail at a time, the same for everyone. Absent when there is only one. */
+  version?: { n: number; of: number };
 }
 
 /** A question from an agent: a form described in the generated-UI language, drawn by the shell. It never expires. */
