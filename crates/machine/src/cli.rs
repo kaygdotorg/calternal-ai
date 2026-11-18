@@ -68,6 +68,20 @@ pub enum Command {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
     },
+    /// Verify sandbox and provider readiness for an enrolled machine.
+    Verify {
+        /// Enrolled machine UUID.
+        machine_id: String,
+        /// Space UUID where the diagnostic can run.
+        #[arg(long)]
+        space_id: String,
+        /// Provider plugin to check. Defaults to Claude Code.
+        #[arg(long, default_value = "")]
+        provider: String,
+        /// Person credential used to check machine ownership.
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+    },
     /// Enroll this computer with a server using a one-time code.
     #[command(
         about = "Enroll this computer with a server",
@@ -142,6 +156,20 @@ pub fn main(cmd: Command, out: &Output) -> i32 {
         );
     }
 
+    if let Command::Verify {
+        machine_id,
+        space_id,
+        provider,
+        connection,
+    } = cmd
+    {
+        return calternal_cli::agent::invoke(
+            connection,
+            Some(calternal_cli::agent::MACHINES_VERIFY.into()),
+            json!({"machine_id":machine_id,"space_id":space_id,"provider_id":provider}).to_string(),
+            out,
+        );
+    }
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -228,7 +256,7 @@ fn identity(c: &Credentials, dir: &std::path::Path) -> Reply {
 
 async fn run(cmd: Command) -> Result<Reply, CliError> {
     match cmd {
-        Command::Set { .. } => unreachable!("handled before runtime"),
+        Command::Set { .. } | Command::Verify { .. } => unreachable!("handled before runtime"),
         Command::Enroll {
             server,
             code,

@@ -253,6 +253,7 @@ fn built_in_roles_cover_exact_documented_capabilities() {
                         | Capability::AccountProfile
                         | Capability::InviteRedeem
                         | Capability::RolesList
+                        | Capability::ServerSettings
                 ),
             "unheld capability: {}",
             capability.name()

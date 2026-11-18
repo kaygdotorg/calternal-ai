@@ -26,7 +26,19 @@ impl MachineService {
         image: Option<String>,
         pinned_machine: Option<Uuid>,
     ) -> Result<RunView, Error> {
-        self.request_work(space, account, thread, image, None, pinned_machine)
+        self.request_work(space, account, thread, image, None, pinned_machine, false)
+    }
+
+    /// Lease for a diagnostic on one explicitly authorized pool machine. This
+    /// exception is local to the pinned scratch run and grants no pool access.
+    pub(crate) fn request_pool_diagnostic(
+        &self,
+        space: SpaceId,
+        account: AccountId,
+        scratch: Uuid,
+        machine: Uuid,
+    ) -> Result<RunView, Error> {
+        self.request_work(space, account, scratch, None, None, Some(machine), true)
     }
 
     /// Admit agent or worker work atomically with placement. Rejects context
@@ -40,6 +52,7 @@ impl MachineService {
         image: Option<String>,
         worker: Option<calternal_machine::protocol::PluginWorker>,
         pinned_machine: Option<Uuid>,
+        pool_diagnostic: bool,
     ) -> Result<RunView, Error> {
         let mut st = self.lock()?;
         let st = &mut *st;
@@ -87,6 +100,7 @@ impl MachineService {
                 row,
                 state: LeaseState::Waiting,
                 order,
+                pool_diagnostic,
             },
         );
         if let Some(worker) = worker {

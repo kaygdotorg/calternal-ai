@@ -17,12 +17,19 @@ scripts/install-machine.sh --server https://cal.example.org --code CODE
 calternal machine enroll --server https://cal.example.org --code CODE
 calternal machine run                    # --backend auto|podman|direct; default auto follows owner setting, --max-sandboxes 10
 calternal machine status
+# From a signed-in client:
+calternal machine verify MACHINE_UUID --space-id SPACE_UUID --token-file PERSON_TOKEN
 ```
 
 Machine directory: `$CALTERNAL_MACHINE_DIR`, else `$XDG_DATA_HOME/calternal/machine`,
 else `~/.local/share/calternal/machine`. It holds `credentials` (`key: value` lines,
 mode 0600: server, machine id, owner, Ed25519 private key) and `sandboxes/accounts/<account>/threads/<thread>/work` and a persistent `sandboxes/accounts/<account>/home`.
 Exit code 3 means the machine was revoked.
+
+Verification runs one provider readiness check through the enrolled channel. A
+machine owner or pool administrator gets the sandbox status, provider install
+and sign-in status, and official sign-in command as available. Add `--json` for
+the structured outcome.
 
 ## Design
 

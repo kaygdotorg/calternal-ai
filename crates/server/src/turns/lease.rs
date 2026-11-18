@@ -27,6 +27,16 @@ pub(super) async fn prepare<D: Directory>(
     let run = job.runs;
     let check = job.input["check"] == true;
     let pin = super::readiness::pin(&initial, &job.input);
+    let pool_diagnostic = job.input["pool_diagnostic"] == true;
+    if pool_diagnostic {
+        super::verify::target(
+            state,
+            machines,
+            account,
+            job.input["check_target"].as_str().unwrap_or(""),
+        )
+        .await?;
+    }
     if let Some(fields) = initial.as_object_mut() {
         fields.remove("error");
         fields.remove("interruption");
@@ -35,7 +45,13 @@ pub(super) async fn prepare<D: Directory>(
     let checkpoint = blocking(move || {
         let mut lease = None;
         let result = s.jobs.checkpoint_prepared(&sp, &id, run, &l, || {
-            let admitted = m.request_run_on(space, account, thread, None, pin)?;
+            let admitted = if pool_diagnostic {
+                let machine =
+                    pin.ok_or_else(|| Error::internal("pool diagnostic has no target"))?;
+                m.request_pool_diagnostic(space, account, thread, machine)?
+            } else {
+                m.request_run_on(space, account, thread, None, pin)?
+            };
             lease = Some(admitted.lease_id);
             initial["lease_id"] = json!(admitted.lease_id);
             Ok(initial)

@@ -2,6 +2,7 @@
 //! The Threads engine persists conversations through content and calls this admission path.
 pub mod access;
 mod admission;
+mod input;
 mod instructions;
 mod launch;
 mod lease;
@@ -13,6 +14,7 @@ pub mod retry;
 mod run;
 mod thread_admission;
 mod tool_steps;
+mod verify;
 pub(crate) use run::schedule_for_account as schedule_thread;
 pub(crate) use thread_admission::{admit as admit_thread, finish_stop as finish_thread_stop};
 
@@ -72,6 +74,13 @@ pub async fn dispatch<D: Directory>(
                 "Supply the turn's job_id for a person access request.",
             ));
         }
+    }
+    let verify = op == calternal_core::MACHINES_VERIFY;
+    if verify {
+        if agent.is_some() {
+            return Err(Error::forbidden("a person must verify a machine"));
+        }
+        calternal_core::validate_operation_input(op, &input)?;
     }
     if let Some(a) = &agent {
         a.check(op, &input)?;
@@ -164,12 +173,12 @@ pub async fn dispatch<D: Directory>(
         blocking(move || machines.set_direct(account, machine, i.direct)).await?;
         return Ok(json!({"machine_id":i.machine_id,"direct":i.direct}));
     }
-    validate(&mut i, op)?;
+    input::validate(&mut i, if verify { "agent.check" } else { op })?;
     let canonical: JsonObject =
         serde_json::from_value(json!(&i)).map_err(|_| Error::internal("turn input encoding"))?;
-    if matches!(op, "agent.run" | "agent.check") {
+    if verify || matches!(op, "agent.run" | "agent.check") {
         authorize(&state, &who, &i.space_id, Capability::PluginsUse).await?;
-        validate_source_app(&state, &i.space_id, &i.source_app).await?;
+        input::validate_source_app(&state, &i.space_id, &i.source_app).await?;
         let (st, account, request, scope) = (
             state.clone(),
             who.id.to_string(),
@@ -177,27 +186,33 @@ pub async fn dispatch<D: Directory>(
             i.space_id.clone(),
         );
         let generation = enabled_generation(&state, &i.space_id, "calternal-orchestrator").await?;
-        let defaults = retry::manifest_defaults(&state)?;
         let (st_settings, account_settings) = (state.clone(), who.id.to_string());
-        let settings = match i.retry_settings {
-            Some(v) => v,
-            None => {
-                blocking(move || {
-                    st_settings
-                        .jobs
-                        .agent_settings(&account_settings, None, defaults)
-                })
-                .await?
+        let settings = if verify {
+            calternal_core::AgentRetrySettings {
+                provider_errors: false,
+                subscription_limits: false,
             }
-        };
-        let check = op == "agent.check";
-        let target = if check {
-            readiness::check_target(&machines, who.id, &i).await?
+        } else if let Some(settings) = i.retry_settings {
+            settings
         } else {
-            None
+            let defaults = retry::manifest_defaults(&state)?;
+            blocking(move || {
+                st_settings
+                    .jobs
+                    .agent_settings(&account_settings, None, defaults)
+            })
+            .await?
         };
-        let data =
-            json!({"request":i,"check":check,"check_target":target,"retry_settings":settings});
+        let check = verify || op == "agent.check";
+        let (target, pool_diagnostic) = if verify {
+            let (id, pool) = verify::target(&state, &machines, who.id, &i.machine_id).await?;
+            (Some(id), pool)
+        } else if check {
+            (readiness::check_target(&machines, who.id, &i).await?, false)
+        } else {
+            (None, false)
+        };
+        let data = json!({"request":i,"check":check,"check_target":target,"verify":verify,"pool_diagnostic":pool_diagnostic,"retry_settings":settings});
         let compare = data["request"].clone();
         let space = SpaceId::parse(&scope).map_err(|_| Error::not_found("space not found"))?;
         let admission = admission::ManualAdmission::new(
@@ -235,6 +250,9 @@ pub async fn dispatch<D: Directory>(
             ));
         }
         run::schedule(&state, &machines, job.space.clone(), id.clone());
+        if verify {
+            return verify::outcome(&state, &machines, &who, job).await;
+        }
         return Ok(json!({"job":job.view_for(who.id)}));
     }
     let job = load(&state, &i.job_id).await?;
@@ -249,7 +267,10 @@ pub async fn dispatch<D: Directory>(
         },
     )
     .await?;
-    if job.operation != "agent.turn" || (job.input["check"] == true && job.account != who.id) {
+    if job.operation != "agent.turn"
+        || job.input["verify"] == true
+        || (job.input["check"] == true && job.account != who.id)
+    {
         return Err(Error::not_found("turn not found"));
     }
     let is_owner = job.account == who.id;
@@ -435,9 +456,6 @@ pub(super) async fn authorize<D: Directory>(
     space: &str,
     required: Capability,
 ) -> Result<(), Error> {
-    if SpaceId::parse(space).is_err() {
-        return Err(Error::not_found("turn not found"));
-    }
     let (st, id, space) = (
         state.clone(),
         who.id,
@@ -514,38 +532,6 @@ async fn stop_machine(machines: &Arc<MachineService>, job: &Job) -> Result<(), E
     Ok(())
 }
 
-fn validate(i: &mut AgentInput, op: &str) -> Result<(), Error> {
-    if i.prompt.len() > 16 * 1024
-        || i.model.len() > 128
-        || i.source_app.len() > 80
-        || i.source_app.contains('.')
-        || i.app.len() > 80
-    {
-        return Err(Error::invalid_input("agent input exceeds its bounds"));
-    }
-    if matches!(op, "agent.run" | "agent.check") {
-        let invalid = || Error::invalid_input("check/run needs space_id and thread_id UUIDs");
-        let space = SpaceId::parse(&i.space_id).map_err(|_| invalid())?;
-        if op == "agent.run" || !i.thread_id.is_empty() {
-            i.thread_id = Uuid::parse_str(&i.thread_id)
-                .map_err(|_| invalid())?
-                .to_string();
-        }
-        if !i.job_id.is_empty() {
-            return Err(invalid());
-        }
-        i.space_id = space.to_string();
-        if op == "agent.run" && i.prompt.trim().is_empty() {
-            return Err(Error::invalid_input("run needs a prompt"));
-        }
-    } else {
-        i.job_id = Uuid::parse_str(&i.job_id)
-            .map_err(|_| Error::invalid_input("job_id must be a UUID"))?
-            .to_string();
-    }
-    Ok(())
-}
-
 pub(super) async fn enabled_generation<D: Directory>(
     state: &Shared<D>,
     space: &str,
@@ -567,54 +553,6 @@ pub(super) async fn enabled_generation<D: Directory>(
             return Err(Error::forbidden("required plugin is disabled"));
         }
         Ok(row.generation)
-    })
-    .await
-}
-
-/// Origin labels select context scope, never introduce an unknown or disabled app.
-/// Plugin identity/kind/operation prefixes come from the registry; native groups
-/// derive from the built-in catalog. One activation read per matching plugin.
-async fn validate_source_app<D: Directory>(
-    state: &Shared<D>,
-    space: &str,
-    source: &str,
-) -> Result<(), Error> {
-    if source.is_empty() {
-        return Ok(());
-    }
-    let (st, space, source) = (
-        state.clone(),
-        SpaceId::parse(space).map_err(|_| Error::not_found("space not found"))?,
-        source.to_owned(),
-    );
-    blocking(move || {
-        let mut found = false;
-        for plugin in st.registry.plugins() {
-            if plugin.manifest.id == source
-                || plugin.manifest.kinds.iter().any(|k| k.id == source)
-                || plugin
-                    .manifest
-                    .operations
-                    .iter()
-                    .any(|o| crate::turns::access::app(&o.id) == source)
-            {
-                found = true;
-                if !crate::plugins::activation(&st.store, space, plugin)?.enabled {
-                    return Err(Error::forbidden("source app is disabled"));
-                }
-            }
-        }
-        if found
-            || calternal_core::cached_operation_catalog()
-                .iter()
-                .any(|o| crate::turns::access::app(&o.id) == source)
-        {
-            Ok(())
-        } else {
-            Err(Error::invalid_input(
-                "source_app must name an enabled plugin or built-in app",
-            ))
-        }
     })
     .await
 }

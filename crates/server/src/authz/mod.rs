@@ -332,7 +332,10 @@ pub fn agent_policies() -> &'static [Policy] {
                 },
                 scope: if matches!(
                     *id,
-                    "agent.run" | "agent.check" | calternal_core::AGENT_READINESS
+                    "agent.run"
+                        | "agent.check"
+                        | calternal_core::AGENT_READINESS
+                        | calternal_core::MACHINES_VERIFY
                 ) {
                     Scope::Space
                 } else {

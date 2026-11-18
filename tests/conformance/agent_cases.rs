@@ -4,6 +4,7 @@ use super::*;
 /// Independently enumerated operations covered here; discovery additions require a case.
 pub const OPERATIONS: &[&str] = &[
     "agent.readiness",
+    "machines.verify",
     "agent.check",
     "agent.run",
     "agent.settings",
@@ -50,6 +51,10 @@ async fn agent_operations_hide_foreign_jobs_spaces_and_machine_settings() {
                 "agent.check" | "agent.run" => (
                     json!({"space_id":f.spaces[0],"thread_id":thread,"prompt":"test"}),
                     json!({"space_id":missing,"thread_id":thread,"prompt":"test"}),
+                ),
+                "machines.verify" => (
+                    json!({"space_id":f.spaces[1],"machine_id":machine.body["machine_id"]}),
+                    json!({"space_id":f.spaces[1],"machine_id":missing}),
                 ),
                 "machines.set" => (
                     json!({"machine_id":machine.body["machine_id"],"direct":true}),
@@ -355,6 +360,41 @@ async fn pool_readiness_requires_entitlement_and_omits_host_identity() {
         .await;
     assert_eq!(hidden.status, 404);
     assert_eq!(hidden.signature(), absent.signature());
+    let verify = |space: &str, machine: &Value| json!({"space_id":space,"machine_id":machine});
+    let withheld = f
+        .op(
+            1,
+            "machines.verify",
+            verify(&f.spaces[3], &pool.body["machine_id"]),
+        )
+        .await;
+    let missing = f
+        .op(
+            1,
+            "machines.verify",
+            verify(&f.spaces[3], &json!(uuid::Uuid::new_v4())),
+        )
+        .await;
+    assert_eq!(withheld.status, 404);
+    assert_eq!(
+        withheld.signature(),
+        missing.signature(),
+        "a pool grant cannot verify a particular pool machine"
+    );
+    let spaces = f.op(0, "spaces.list", json!({})).await;
+    let admin_space = spaces.body["data"]["spaces"][0]["id"].as_str().unwrap();
+    let diagnostic = f
+        .op(
+            0,
+            "machines.verify",
+            verify(admin_space, &pool.body["machine_id"]),
+        )
+        .await;
+    diagnostic.ok();
+    assert_eq!(
+        diagnostic.body["data"],
+        json!({"sandbox_started":false,"provider":null})
+    );
     admin(&["pool-grant", &f.ids[1], "--remove"]);
     let revoked = f.op(1, "agent.readiness", target).await;
     revoked.ok();

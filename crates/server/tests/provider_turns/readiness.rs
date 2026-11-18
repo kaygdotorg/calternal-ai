@@ -170,6 +170,38 @@ const emit=m=>"#);
     let home = mdir.join(&format!("sandboxes/accounts/{account}/home"));
     let mut account_feed = Feed::open(&server, "/api/v1/account/live?readiness=true").await;
     account_feed.next(|f| f["type"] == "ready").await;
+    let verify = || {
+        let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_calternal"));
+        command
+            .args(["machine", "verify", machine_id.as_str().unwrap()])
+            .args(["--space-id", &space, "--base-url", &server.url()])
+            .args(["--request-id", "verify-provider-cli", "--token-file"])
+            .arg(data.join("appdata/dev-tokens/owner.token"));
+        command
+    };
+    let json = verify().arg("--json").output().await.unwrap();
+    assert!(
+        json.status.success(),
+        "{}",
+        String::from_utf8_lossy(&json.stdout)
+    );
+    let outcome: Value = serde_json::from_slice(&json.stdout).unwrap();
+    assert_eq!(
+        outcome["data"],
+        json!({"sandbox_started":true,"provider":{
+        "installed":true,"signed_in":false,"sign_in_command":"claude auth login"}})
+    );
+    let human = verify().output().await.unwrap();
+    assert!(human.status.success());
+    let text = String::from_utf8(human.stdout).unwrap();
+    for field in [
+        "Sandbox started",
+        "Provider installed",
+        "Provider signed in",
+        "claude auth login",
+    ] {
+        assert!(text.contains(field), "{text}");
+    }
     let check = || json!({"space_id":space,"machine_id":machine_id});
     let cached = || json!({"space_id":space});
     for signed_in in [false, true, false] {

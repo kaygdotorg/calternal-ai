@@ -7,6 +7,31 @@ use ts_rs::TS;
 /// Read-only operation for machine and provider status.
 pub const AGENT_READINESS: &str = "agent.readiness";
 
+/// Run an owner-authorized diagnostic on one enrolled machine.
+pub const MACHINES_VERIFY: &str = "machines.verify";
+
+/// Select the space for the diagnostic job and the exact enrolled machine.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct MachineVerifyInput {
+    /// A space where the caller can use plugins.
+    pub space_id: String,
+    /// Enrolled machine UUID. Pool machines require server settings authority.
+    pub machine_id: String,
+    /// Optional provider plugin. An empty or absent value checks Claude Code.
+    #[serde(default)]
+    pub provider_id: String,
+}
+
+/// The bounded result of one diagnostic. No job IDs or machine logs are returned.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+pub struct MachineVerifyResult {
+    /// Whether the machine confirmed that its execution environment started.
+    pub sandbox_started: bool,
+    /// The provider's check, absent if it did not report an outcome.
+    pub provider: Option<ProviderCheck>,
+}
+
 /// Select the space and optionally a saved thread's placement constraint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]

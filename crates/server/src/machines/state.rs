@@ -61,6 +61,7 @@ pub(super) struct Lease {
     pub row: db::LeaseRow,
     pub state: LeaseState,
     pub order: u64,
+    pub pool_diagnostic: bool,
 }
 
 impl Lease {
@@ -410,7 +411,10 @@ impl State {
                 // operator-enrolled pool machines and the existing pool grant.
                 .filter(|m| !l.row.worker || m.row.owner == Owner::Pool)
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
-                .filter(|m| self.may_use(m, l.row.account))
+                .filter(|m| {
+                    self.may_use(m, l.row.account)
+                        || (l.pool_diagnostic && m.row.owner == Owner::Pool)
+                })
                 .map(|m| (m, self.free(m)))
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {

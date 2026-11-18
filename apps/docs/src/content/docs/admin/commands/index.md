@@ -79,6 +79,7 @@ title: "Command reference"
 - [calternal-plugin-digest](./calternal-plugin-digest/)
 - [calternal-machine-enroll](./calternal-machine-enroll/)
 - [calternal-machine-status](./calternal-machine-status/)
+- [calternal-machine-verify](./calternal-machine-verify/)
 - [calternal-machine-run](./calternal-machine-run/)
 - [cl-notes-create](./cl-notes-create/)
 - [cl-notes-update](./cl-notes-update/)

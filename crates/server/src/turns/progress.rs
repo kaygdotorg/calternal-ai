@@ -106,7 +106,12 @@ pub(super) async fn place<D: Directory>(
 ) -> Result<Placement, Error> {
     let account = job.account;
     let who = Identity { id: account };
-    let placement_deadline = Instant::now() + Duration::from_secs(600);
+    let placement_deadline = Instant::now()
+        + if job.input["verify"] == true {
+            super::verify::PHASE_TIMEOUT
+        } else {
+            Duration::from_secs(600)
+        };
     let mut placement = Value::Null;
     let acquire = state.jobs.permits().acquire_owned();
     tokio::pin!(acquire);
@@ -126,6 +131,11 @@ pub(super) async fn place<D: Directory>(
         }
         if view.state == LeaseState::Ended {
             return Ok(Placement::Ended(RunEnd::OutcomeUnknown));
+        }
+        if Instant::now() >= placement_deadline {
+            checkpoint["interruption"] = json!({"why":"placement_timeout"});
+            save_placement(state, job, live, checkpoint).await?;
+            return Ok(Placement::Ended(RunEnd::Interrupted));
         }
         if let Some(machine) = view.machine_id {
             tokio::select! {
@@ -147,11 +157,6 @@ pub(super) async fn place<D: Directory>(
                 job.runs,
                 &json!({"type":"placement","queue_position":position}),
             );
-        }
-        if Instant::now() >= placement_deadline {
-            checkpoint["interruption"] = json!({"why":"placement_timeout"});
-            save_placement(state, job, live, checkpoint).await?;
-            return Ok(Placement::Ended(RunEnd::Interrupted));
         }
         tokio::time::sleep(Duration::from_secs(1)).await;
     }

@@ -15,7 +15,7 @@ pub(crate) async fn admit<D: Directory>(
     generation: u32,
     intent: Value,
 ) -> Result<Job, Error> {
-    validate(&mut input, "agent.run")?;
+    super::input::validate(&mut input, "agent.run")?;
     let defaults = retry::manifest_defaults(state)?;
     let (st, account) = (state.clone(), who.id.to_string());
     let settings = blocking(move || st.jobs.agent_settings(&account, None, defaults)).await?;
