@@ -22,6 +22,35 @@ impl Server {
         test_plugins: Option<&Path>,
         startup_timeout_seconds: u64,
     ) -> Result<(Self, Http, f64)> {
+        Self::start_mode(
+            bin,
+            work,
+            plugins,
+            test_plugins,
+            startup_timeout_seconds,
+            false,
+        )
+    }
+
+    /// Start only the explicit development-bearer fixture; production modes keep
+    /// their ordinary startup. Roots are disposable and never exported.
+    pub(crate) fn start_development(
+        bin: &Path,
+        work: &Path,
+        plugins: &Path,
+        startup_timeout_seconds: u64,
+    ) -> Result<(Self, Http, f64)> {
+        Self::start_mode(bin, work, plugins, None, startup_timeout_seconds, true)
+    }
+
+    fn start_mode(
+        bin: &Path,
+        work: &Path,
+        plugins: &Path,
+        test_plugins: Option<&Path>,
+        startup_timeout_seconds: u64,
+        development: bool,
+    ) -> Result<(Self, Http, f64)> {
         std::fs::create_dir_all(work)?;
         let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
@@ -31,6 +60,9 @@ impl Server {
         let t = Instant::now();
         let mut command = Command::new(bin);
         command.arg("serve");
+        if development {
+            command.arg("--development");
+        }
         if let Some(root) = test_plugins {
             command.arg("--test-plugin-root").arg(root);
         }
