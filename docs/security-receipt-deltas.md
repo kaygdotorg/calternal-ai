@@ -25,8 +25,8 @@ Apply owner and receipt changes together only when the matching proposal
 resolves as committed. Refuse duplicate keys, invalid fields or bindings and
 changes inconsistent with the resulting authority image. Rebuild the existing
 SQLite table from the verified map, including original reply bytes. A valid
-duplicate returns the original reply, a changed fingerprint conflicts, and a
-replay does not extend retention. Expiry transaction deletes become key
+duplicate returns the original reply. A different operation or fingerprint
+conflicts. Replay does not extend retention. Expiry transaction deletes become key
 deletions. Recovery follows the recorded transaction order and never expires
 a receipt using the recovery host's wall clock. Normal authority expiry
 resumes after recovery.
