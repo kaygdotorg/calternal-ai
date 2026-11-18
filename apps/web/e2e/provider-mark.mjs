@@ -51,7 +51,7 @@ try {
   // keyboard
   // reach a mark by Tab, as a keyboard user does (a scripted focus() is only "keyboard focus" by the browser's heuristic)
   await p.evaluate(() => document.activeElement?.blur());
-  for (let i = 0; i < 60 && !(await p.evaluate(() => document.activeElement?.classList.contains("mark"))); i++) await p.keyboard.press("Tab");
+  for (let i = 0; i < 160 && !(await p.evaluate(() => document.activeElement?.classList.contains("mark"))); i++) await p.keyboard.press("Tab");
   await p.waitForTimeout(300);
   ok((await p.locator("[role=tooltip] .card").count()) === 1, "focusing the mark from the keyboard opens the card at once");
   await p.keyboard.press("Escape"); await p.waitForTimeout(300);

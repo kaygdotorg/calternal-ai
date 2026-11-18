@@ -41,12 +41,12 @@ export const snoozeEntry = (t: ThreadSummary): MenuItem[] => (!snoozeAvailable()
 /** What the menu offers for `t`: rename, move to another section, copy link, stop (while it runs) and archive. */
 export function threadItems(t: ThreadSummary): MenuItem[] {
   return [
-    { id: "rename", label: "Rename" },
-    ...containersOf().filter((c) => c !== layout.containerOf(t.id)).map((c) => ({ id: `move:${c ?? ""}`, label: `Move to ${containerName(c)}` })),
+    { id: "rename", label: "Rename", icon: "edit" as const },
+    ...containersOf().filter((c) => c !== layout.containerOf(t.id)).map((c) => ({ id: `move:${c ?? ""}`, label: `Move to ${containerName(c)}`, icon: "folder" as const })),
     ...snoozeEntry(t),
-    { id: "copy", label: "Copy link" },
-    ...(t.state === "running" ? [{ id: "stop", label: "Stop" }] : []),
-    { id: "archive", label: "Archive", danger: true },
+    { id: "copy", label: "Copy link", icon: "link" as const },
+    ...(t.state === "running" ? [{ id: "stop", label: "Stop", icon: "stop-round" as const }] : []),
+    { id: "archive", label: "Archive", icon: "archive" as const, danger: true },
   ];
 }
 

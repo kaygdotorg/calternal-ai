@@ -2,6 +2,8 @@
 # Builds the web app for the preview host and copies it to ~cua/preview/ai (served at https://preview.calternal.cloud/ai/, NetBird only).
 # Run on calternal-dev-02-std, inside `nix develop`, from apps/web. Touches nothing else under ~cua/preview. rsync is not installed there, so tar.
 set -eu
+# CAL_FIXTURES_ONLY=1 skips the preview host (for looking at a branch on the Simulator without replacing what the preview serves).
+if [ -z "${CAL_FIXTURES_ONLY:-}" ]; then
 # Built into dist-preview: `dist` (base /) stays what the e2e scripts serve.
 # The preview talks to its real server by default (no `?server=1` needed); `?server=0` shows the fixtures.
 VITE_SERVER_DEFAULT=1 CAL_BASE=/ai/ CAL_OUT=dist-preview npm run build
@@ -14,6 +16,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ai/)
 deep=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ai/threads/t-run)
 font=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ai/fonts/google-sans-flex-latin-opsz-normal.woff2)
 echo "preview: / $code, deep link $deep, font $font"
+fi
 # The same tip on fixtures data (no server, nothing to sign in to), served over NetBird only on 10.69.69.222:4310 for the iPhone Simulator. Built at base / into a stable directory, then served by serve-fixtures.mjs.
 CAL_BASE=/ CAL_OUT=dist-fixtures npm run build >/dev/null
 [ -n "${CAL_BUILD_LABEL:-}" ] && printf "%s\n" "$CAL_BUILD_LABEL" > dist-fixtures/BUILD.txt
