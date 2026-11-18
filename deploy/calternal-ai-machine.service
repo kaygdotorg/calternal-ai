@@ -1,0 +1,17 @@
+[Unit]
+Description=Calternal-AI machine (@NAME@)
+After=@NAME@.service
+ConditionPathExists=@ROOT@/machine/credentials
+
+[Service]
+UnsetEnvironment=CONTAINER_HOST CONTAINER_CONNECTION DOCKER_HOST
+Type=exec
+UMask=0077
+ExecStart=@ROOT@/releases/current/calternal machine run --dir @ROOT@/machine --backend podman --podman @PODMAN@ --image @SANDBOX_IMAGE@ --max-sandboxes 2
+Restart=on-failure
+RestartPreventExitStatus=3
+RestartSec=5s
+TimeoutStopSec=105s
+
+[Install]
+WantedBy=default.target

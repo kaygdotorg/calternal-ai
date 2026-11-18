@@ -109,6 +109,7 @@ fn main() {
             installation_id,
             receipt_retention_days,
             invite_retention_days,
+            bind_ip,
             port,
             web_dir,
             plugin_root,
@@ -118,13 +119,15 @@ fn main() {
             trusted_proxies,
             machine_lease_ttl_ms,
             machine_poll_hold_ms,
+            machine_sandbox_cpu_millis,
             test_plugin_root,
         } => {
-            let machines = calternal_server::machines::Settings {
+            let mut machines = calternal_server::machines::Settings {
                 lease_ttl: std::time::Duration::from_millis(machine_lease_ttl_ms),
                 poll_hold: std::time::Duration::from_millis(machine_poll_hold_ms),
                 ..Default::default()
             };
+            machines.limits.cpu_millis = machine_sandbox_cpu_millis;
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(2)
                 .max_blocking_threads(2)
@@ -150,7 +153,7 @@ fn main() {
                         u64::from(receipt_retention_days.max(1)) * 86_400,
                     ),
                     std::time::Duration::from_secs(u64::from(invite_retention_days) * 86_400),
-                    port,
+                    (bind_ip, port).into(),
                     web_dir,
                     plugin_root,
                     node,
@@ -182,7 +185,7 @@ async fn serve(
     create: bool,
     receipt_retention: std::time::Duration,
     invite_retention: std::time::Duration,
-    port: u16,
+    bind: std::net::SocketAddr,
     web_dir: Option<PathBuf>,
     plugin_root: Option<PathBuf>,
     node: Option<PathBuf>,
@@ -263,13 +266,13 @@ async fn serve(
     .await
     .map_err(|e| boot(1, "failed", e.to_string(), DATA_HINT))?;
 
-    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", port)).await {
+    let listener = match tokio::net::TcpListener::bind(bind).await {
         Ok(l) => l,
         Err(e) => {
             return Err(boot(
                 1,
                 "unavailable",
-                format!("cannot listen on 127.0.0.1:{port}: {e}"),
+                format!("cannot listen on {bind}: {e}"),
                 "Pick another --port (0 picks a free one), or stop the program using it.",
             ));
         }

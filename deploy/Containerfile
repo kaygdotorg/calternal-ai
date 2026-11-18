@@ -1,0 +1,12 @@
+# deploy/build-image.sh creates the payload with the pinned Nix deployment shell.
+# The payload includes two static executables, the web app and registry-checked plugins.
+FROM scratch AS payload
+COPY rootfs/ /
+
+FROM scratch
+COPY --from=payload / /
+USER 10001:10001
+WORKDIR /app
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 CMD ["/usr/local/bin/calternal-health"]
+ENTRYPOINT ["/usr/local/bin/calternal","serve","--bind-ip","0.0.0.0","--port","8080","--machine-sandbox-cpu-millis","1000","--appdata","/data/appdata","--userdata-ssd","/data/userdata-ssd","--userdata-hdd","/data/userdata-hdd","--web-dir","/app/web","--plugin-root","/app/plugins"]
