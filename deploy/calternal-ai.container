@@ -1,0 +1,38 @@
+[Unit]
+Description=Calternal-AI server (@NAME@)
+
+[Container]
+ContainerName=@NAME@
+Image=localhost/@NAME@:current
+Pull=never
+# Pasta preserves the transport peer for the app's trusted-proxy CIDR check.
+Network=pasta
+PublishPort=@PUBLISH_IP@:@PUBLISH_PORT@:8080
+UserNS=keep-id:uid=10001,gid=10001
+User=10001
+Group=10001
+ReadOnly=true
+LogDriver=journald
+DropCapability=all
+NoNewPrivileges=true
+Volume=@ROOT@/appdata:/data/appdata:Z
+Volume=@ROOT@/userdata-ssd:/data/userdata-ssd:Z
+Volume=@HDD_ROOT@:/data/userdata-hdd:Z
+EnvironmentFile=@HOME@/@SECRETS_FILE@
+EnvironmentFile=@ROOT@/server.env
+# Inherit the image command in exec form. The runtime has no shell.
+HealthInterval=10s
+HealthTimeout=3s
+HealthStartPeriod=5s
+HealthRetries=3
+HealthOnFailure=stop
+StopTimeout=90
+
+[Service]
+UnsetEnvironment=CONTAINER_HOST CONTAINER_CONNECTION DOCKER_HOST
+Restart=always
+RestartSec=3s
+TimeoutStopSec=105s
+
+[Install]
+WantedBy=default.target
