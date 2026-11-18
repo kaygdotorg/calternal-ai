@@ -45,6 +45,8 @@ export interface Veil {
 const LIN = new Float64Array(256).map((_, i) => { const v = i / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
 const lin = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 255 ? LIN[v]! : (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 const delin = (l: number): number => Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055));
+/** WCAG relative luminance of a colour given as three whole channel values (0 to 255): no allocation, for the loops that measure many pixels. */
+export const lumInt = (r: number, g: number, b: number): number => 0.2126 * LIN[r]! + 0.7152 * LIN[g]! + 0.0722 * LIN[b]!;
 /** WCAG relative luminance of an encoded colour. */
 export const lum = ([r, g, b]: RGB): number => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
 /** WCAG contrast ratio of two luminances. */

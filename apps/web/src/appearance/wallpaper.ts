@@ -15,7 +15,7 @@ import tokens from "../../../../packages/ui/tokens/tokens.json" with { type: "js
 import { surfaces } from "./surfaces.svelte";
 import { blurRgba, saturateRgba } from "./blur";
 import { setThemeColor } from "../shell/chrome";
-import { over, p01, lum, ratio, TARGET, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
+import { over, p01, lum, lumInt, ratio, TARGET, scaled, solve, type Flags, type Ink, type RGB, type Role, type Scheme, type Veil } from "./veil";
 
 type Layer = "side" | "card";
 const SATURATE: Record<Layer, number> = { side: 120, card: 140 };
@@ -290,21 +290,23 @@ export function updateVeil(want: Flags): void {
     if (f.x1 - f.x0 < 0.002 || f.y1 - f.y0 < 0.002) return null;
     const onCard = (f.x0 + f.x1) / 2 > cardFrac.x0 && (f.x0 + f.x1) / 2 < cardFrac.x1 && (f.y0 + f.y1) / 2 > cardFrac.y0 && (f.y0 + f.y1) / 2 < cardFrac.y1;
     const veil = onCard ? vc : vl;
-    // A 24 by 24 look at the pixels behind the surface (every other row and column of the 48 by 48 sample), as three byte arrays, already under the veil: the bisection below only blends them with the paper.
-    const all = sample(onCard ? copies.card : copies.side, f), n = Math.floor(all.length / 4), R = new Float64Array(n), G = new Float64Array(n), Bl = new Float64Array(n);
-    for (let y = 0, i = 0; y < 24; y++) for (let x = 0; x < 24; x++, i++) {
-      const p = all[y * 2 * SAMPLE + x * 2]!, c = over(over(p, veil.tint.rgb, veil.tint.a), veil.dim.rgb, veil.dim.a);
-      R[i] = c[0]; G[i] = c[1]; Bl[i] = c[2];
+    // A 16 by 16 look at the pixels behind the surface (every third row and column of the 48 by 48 sample: the copies are blurred by 12 to 75 px, so they are smooth), already under the veil: the bisection below only blends them with the
+    // paper, in plain numbers, so a step of Clear to tinted can recompute every floating surface on the page within a frame.
+    const all = sample(onCard ? copies.card : copies.side, f), M = 256, R = new Uint8Array(M), G = new Uint8Array(M), Bl = new Uint8Array(M);
+    for (let y = 0, i = 0; y < 16; y++) for (let x = 0; x < 16; x++, i++) {
+      const p = all[Math.min(47, y * 3) * SAMPLE + Math.min(47, x * 3)]!, c = over(over(p, veil.tint.rgb, veil.tint.a), veil.dim.rgb, veil.dim.a);
+      R[i] = Math.round(c[0]); G[i] = Math.round(c[1]); Bl[i] = Math.round(c[2]);
     }
-    const lumInk = lum(T.ink), M = R.length, ratios = new Array<number>(M);
+    const lumInk = lum(T.ink), ratios = new Array<number>(M), P = T.paper, need = TARGET.ink + 0.35;
     const ok = (a: number) => {
-      for (let i = 0; i < M; i++) ratios[i] = ratio(lum([Math.round((1 - a) * R[i]! + a * T.paper[0]), Math.round((1 - a) * G[i]! + a * T.paper[1]), Math.round((1 - a) * Bl[i]! + a * T.paper[2])]), lumInk);
-      return p01(ratios) >= TARGET.ink + 0.35;
+      const b = 1 - a, pr = a * P[0], pg = a * P[1], pb = a * P[2];
+      for (let i = 0; i < M; i++) { const l = lumInt(Math.round(b * R[i]! + pr), Math.round(b * G[i]! + pg), Math.round(b * Bl[i]! + pb)); ratios[i] = (Math.max(l, lumInk) + 0.05) / (Math.min(l, lumInk) + 0.05); }
+      return p01(ratios) >= need;
     };
     if (ok(0)) return 0;
     let lo = 0, hi = 0.9;
     if (!ok(hi)) return hi;
-    for (let i = 0; i < 9; i++) { const m = (lo + hi) / 2; if (ok(m)) hi = m; else lo = m; }
+    for (let i = 0; i < 8; i++) { const m = (lo + hi) / 2; if (ok(m)) hi = m; else lo = m; }
     return hi;
   });
   scheduleMaterial();
