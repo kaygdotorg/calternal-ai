@@ -49,7 +49,9 @@ pub use search::{
     SearchKey, SearchKind, SearchMatch, SearchProbe, fold_title, message_terms, typo_expression,
 };
 mod revision_slice;
+mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
 mod trash;
 mod types;
 use calternal_roots::Roots;
@@ -74,6 +76,8 @@ use uuid::Uuid;
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
 pub struct Content {
+    // Drop the placement worker before the stores and their root guards.
+    sweeper: lifecycle::Sweeper,
     roots: Roots,
     search_readers: search::Readers,
     search_writers: search::Writers,
@@ -84,7 +88,6 @@ pub struct Content {
     // Declared before `journals`: open stores drain before the driver stops.
     spaces: Cache,
     root_guard: lifecycle::RootGuard,
-    sweeper: std::thread::Thread,
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),

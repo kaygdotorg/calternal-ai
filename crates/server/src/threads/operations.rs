@@ -98,7 +98,7 @@ pub(super) fn apply<D: Directory>(
     }
     let mut reply = Value::Null;
     if operation == "threads.create" {
-        for (kind, placement, format) in st
+        for (kind, placement, format, live_editing) in st
             .registry
             .snapshot()
             .get("calternal-orchestrator")
@@ -106,6 +106,9 @@ pub(super) fn apply<D: Directory>(
             .kind_registrations()
         {
             content.register_kind(space, &kind, placement, format)?;
+            if live_editing {
+                content.enable_live_editing(space, &kind)?;
+            }
         }
         if let Some(parent) = data.get("parent_thread").and_then(Value::as_str) {
             let parent = content.get(

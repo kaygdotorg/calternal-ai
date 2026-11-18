@@ -6,6 +6,7 @@ use calternal_fsio::{names, rename_safely, write_atomic_mode};
 use rusqlite::{OptionalExtension, params};
 use std::{
     fs::{self, File},
+    io::Read,
     path::Path,
 };
 use uuid::Uuid;
@@ -29,6 +30,24 @@ fn hash(path: &Path) -> Result<Option<String>> {
         Ok(_) => Ok(Some(file_hash(&fs::read(path).map_err(internal)?))),
     }
 }
+pub(crate) fn bounded_file(root: &Path, rel: &str) -> Result<Option<Vec<u8>>> {
+    let root = calternal_fsio::beneath::Folder::open_existing(root).map_err(internal)?;
+    let file = match root.open_file(rel) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(blocked()),
+    };
+    let limit = crate::MAX_DOCUMENT_BYTES as u64 + 8192;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(internal)?;
+    if bytes.len() as u64 > limit {
+        return Err(blocked());
+    }
+    Ok(Some(bytes))
+}
+
 pub(crate) fn validate_kind(kind: &str) -> Result<()> {
     if !kind.is_empty()
         && (kind.len() <= 64 || (kind.starts_with("skill-") && kind.len() <= 70))
@@ -132,8 +151,17 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
         Ok(item.bytes.clone())
     }
 }
+pub(crate) fn encoded_live(item: &Item) -> Result<Vec<u8>> {
+    let (style, body) =
+        crate::rooms::style::Style::split(std::str::from_utf8(&item.bytes).map_err(internal)?);
+    let mut input = item.clone();
+    input.bytes = body.as_bytes().to_vec();
+    let wrapped = encoded(&input, &FileFormat::Markdown)?;
+    Ok(style.encode(std::str::from_utf8(&wrapped).map_err(internal)?))
+}
+
 impl Space {
-    fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
+    pub(crate) fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
         if let Some(definition) = self.registrations.borrow().get(kind) {
             return Ok(definition.clone());
         }
@@ -277,7 +305,14 @@ impl Space {
         head: &crate::db::Header,
     ) -> Result<Option<String>> {
         ensure_item_path(&head.path)?;
-        let found = match hash(&self.files.join(&head.path)) {
+        let path = self.files.join(&head.path);
+        let found = if self.live_editing(&head.kind)? {
+            calternal_fsio::recover_exact(&path).map_err(internal)?;
+            bounded_file(&self.files, &head.path).map(|bytes| bytes.as_deref().map(file_hash))
+        } else {
+            hash(&path)
+        };
+        let found = match found {
             Ok(found) => found,
             Err(e) if e.code == calternal_types::ErrorCode::Conflict => {
                 self.block(id)?;
@@ -350,10 +385,19 @@ impl Space {
             &loaded
         };
         let (placement, format) = self.registration(&item.kind)?;
-        let bytes = encoded(item, &format)?;
+        let live = self.live_editing(&item.kind)?;
+        let bytes = if live {
+            encoded_live(item)?
+        } else {
+            encoded(item, &format)?
+        };
         let new_hash = file_hash(&bytes);
         ensure_item_path(&path)?;
-        let path = self.files.join(path);
+        let relative = path;
+        let path = self.files.join(&relative);
+        if live {
+            calternal_fsio::recover_exact(&path).map_err(internal)?;
+        }
         let dir = path.parent().ok_or_else(|| internal("parent"))?;
         let bundle_move = skill_bundle(&placement)
             && old
@@ -424,7 +468,16 @@ impl Space {
                     moved = true;
                 }
             }
-            let found = hash(&path)?;
+            let live_base = if live {
+                bounded_file(&self.files, &relative)?
+            } else {
+                None
+            };
+            let found = if live {
+                live_base.as_deref().map(file_hash)
+            } else {
+                hash(&path)?
+            };
             if found.as_deref() == Some(&new_hash) {
                 // A checked move began with a fully placed revision and fsio
                 // has synced both directories. Replays reestablish that boundary.
@@ -463,6 +516,16 @@ impl Space {
                             internal(e)
                         }
                     })?;
+                } else if live {
+                    let base = live_base.as_deref().ok_or_else(blocked)?;
+                    let prepared = calternal_fsio::Prepared::new_mode(&path, &bytes, 0o600)
+                        .map_err(internal)?;
+                    if prepared
+                        .place_exact_recoverable(Some(base))
+                        .map_err(internal)?
+                    {
+                        return Err(blocked());
+                    }
                 } else {
                     // Same checked-copy contract as the preview: external writers
                     // racing the final hash/replace interval remain out of scope.
@@ -531,7 +594,17 @@ impl Space {
                         && nonce.bytes().all(|c| c.is_ascii_hexdigit())
                         && entry.file_type().is_ok_and(|t| t.is_file())
                     {
-                        fs::remove_file(entry.path()).map_err(internal)?;
+                        // The prepared image may hold a displaced outside edit.
+                        // Recover the durable exchange before deleting stray temps.
+                        if self.live_editing(&kind)? {
+                            calternal_fsio::recover_exact(&entry.path().with_file_name(final_name))
+                                .map_err(internal)?;
+                        }
+                        match fs::remove_file(entry.path()) {
+                            Ok(()) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(error) => return Err(internal(error)),
+                        }
                     }
                 }
             }

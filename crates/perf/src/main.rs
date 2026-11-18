@@ -13,6 +13,7 @@ mod message_search;
 mod notes_scenario;
 mod rebuild;
 mod report;
+mod rooms;
 mod search;
 mod search_stage;
 mod server;
@@ -67,6 +68,12 @@ struct Args {
     /// Require release timestamps. Gate delivery and file placement independently.
     #[arg(long, conflicts_with = "paired_search")]
     commit_timing_only: bool,
+    /// Measure room keystrokes and durable receipts, and correlate subscribed SSE commits.
+    #[arg(long)]
+    rooms_only: bool,
+    /// Also measure peer refresh during unrelated item grant changes.
+    #[arg(long, requires = "rooms_only")]
+    room_access_storm: bool,
     /// Measure protected directory reads/writes with closed-loop client waves.
     #[arg(long)]
     concurrency_only: bool,
@@ -136,6 +143,7 @@ fn run(a: &Args) -> Result<i32> {
         a.fsync_probe,
         a.startup_only,
         a.commit_timing_only,
+        a.rooms_only,
         a.concurrency_only,
         a.search_only,
         a.message_search_only,
@@ -195,7 +203,7 @@ fn run(a: &Args) -> Result<i32> {
         serde_json::to_vec_pretty(&run_info)?,
     )?;
     let budgets: stats::Budgets = serde_json::from_slice(&std::fs::read(&a.budgets)?)?;
-    let placement_budget = if a.startup_only {
+    let placement_budget = if a.startup_only || a.rooms_only {
         Duration::ZERO
     } else {
         let ms = budgets
@@ -210,14 +218,31 @@ fn run(a: &Args) -> Result<i32> {
             .ok_or("file placement requires a maximum budget up to 1000 ms")?;
         Duration::try_from_secs_f64(ms / 1000.)?
     };
-    if a.commit_timing_only
-        && !budgets.entries.iter().any(|entry| {
-            entry.metric == timings::COMMIT_TO_CLIENT
+    if a.rooms_only && (a.samples == 0 || a.pairs + a.cold_pairs == 0) {
+        return Err("room timing requires at least one keystroke per measured arm".into());
+    }
+    let mut required = if a.rooms_only {
+        vec![timings::COMMIT_TO_CLIENT, rooms::PEER, rooms::SAVE]
+    } else if a.commit_timing_only {
+        vec![timings::COMMIT_TO_CLIENT]
+    } else {
+        Vec::new()
+    };
+    if a.room_access_storm {
+        required.push(rooms::ACCESS_STORM);
+    }
+    let required_samples = |metric: &str| match metric {
+        rooms::ACCESS_STORM => rooms::ACCESS_STORM_SAMPLES,
+        _ => a.samples,
+    };
+    for &metric in &required {
+        if !budgets.entries.iter().any(|entry| {
+            entry.metric == metric
                 && matches!(entry.percentile, stats::Percentile::P95)
                 && entry.budget.is_some()
-        })
-    {
-        return Err("commit timing requires a p95 budget in the catalog".into());
+        }) {
+            return Err(format!("{metric} requires a p95 budget in the catalog").into());
+        }
     }
     let sizes: Vec<usize> = a
         .sizes
@@ -314,12 +339,13 @@ fn run(a: &Args) -> Result<i32> {
                     },
                     &root,
                     &fixture,
-                    a.commit_timing_only && arm == "head",
+                    (a.commit_timing_only || a.rooms_only) && arm == "head",
                     placement_budget,
                 ) {
                     Ok(observation) => observation,
                     Err(error) => {
-                        commit_incomplete |= a.commit_timing_only && arm == "head";
+                        commit_incomplete |=
+                            (a.commit_timing_only || a.rooms_only) && arm == "head";
                         let failure = json!({"size":size,"spaces":spaces,"pair":pair,"arm":arm,"error":error.to_string(),"startup_timeout_seconds":a.startup_timeout_seconds,"log":root.join("server.log")});
                         std::fs::write(
                             root.join("failure.json"),
@@ -338,7 +364,7 @@ fn run(a: &Args) -> Result<i32> {
                 };
                 stopped_for_placement |= observation.placement_breach;
                 placement_breach |= arm == "head" && observation.placement_breach;
-                let placement = if a.startup_only {
+                let placement = if a.startup_only || a.rooms_only {
                     "unmeasured"
                 } else if observation.placement_breach {
                     "breach"
@@ -360,6 +386,13 @@ fn run(a: &Args) -> Result<i32> {
                         summary
                     })
                     .collect();
+                if arm == "head" {
+                    for &metric in &required {
+                        commit_incomplete |= !summary
+                            .iter()
+                            .any(|s| s.metric == metric && s.samples == required_samples(metric));
+                    }
+                }
                 for s in &summary {
                     pooled
                         .entry(format!(
@@ -376,8 +409,9 @@ fn run(a: &Args) -> Result<i32> {
                         commit_incomplete |= s.samples < a.samples;
                     }
                     if arm == "head" && s.breached {
-                        commit_breach |=
-                            s.metric == timings::COMMIT_TO_CLIENT && s.samples == a.samples;
+                        commit_breach |= (s.metric == timings::COMMIT_TO_CLIENT
+                            || required.contains(&s.metric.as_str()))
+                            && s.samples == required_samples(&s.metric);
                         *breaches.entry(s.metric.clone()).or_default() += 1;
                     }
                 }
@@ -411,7 +445,11 @@ fn run(a: &Args) -> Result<i32> {
             (k, pct)
         })
         .collect();
-    let qualification = if a.commit_timing_only {
+    let qualification = if a.room_access_storm {
+        "room peer apply, durable save receipt, journal commit delivery and authority refresh"
+    } else if a.rooms_only {
+        "room peer apply, durable save receipt and journal commit delivery"
+    } else if a.commit_timing_only {
         "release durable commit to client receipt and separate file placement"
     } else {
         "incomplete: see separate release commit timing, job and idle suites"
@@ -425,7 +463,7 @@ fn run(a: &Args) -> Result<i32> {
     Ok(
         if commit_breach || placement_breach || (!a.commit_timing_only && reproduced) {
             1
-        } else if !a.commit_timing_only
+        } else if !(a.commit_timing_only || a.rooms_only)
             || !failures.is_empty()
             || stopped_for_placement
             || commit_incomplete

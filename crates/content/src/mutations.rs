@@ -1,11 +1,12 @@
 //! Content/control mutation admission, shared receipts and guarded Trash placement.
 use super::*;
 use crate::linked_write::{self, Retarget, Staged};
+use crate::rooms::Body;
 use rusqlite::TransactionBehavior;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Destination {
+pub(crate) enum Destination {
     Current,
     Trash,
     Restore,
@@ -226,7 +227,7 @@ impl Content {
             kind,
             base,
             metadata,
-            bytes,
+            Body::Replace(bytes),
             request,
             result,
             Destination::Current,
@@ -258,7 +259,7 @@ impl Content {
             kind,
             None,
             metadata,
-            bytes,
+            Body::Replace(bytes),
             request,
             result,
             Destination::Current,
@@ -291,7 +292,7 @@ impl Content {
             kind,
             None,
             metadata,
-            bytes,
+            Body::Replace(bytes),
             request,
             result,
             Destination::Current,
@@ -325,7 +326,7 @@ impl Content {
             "notes",
             Some(base),
             metadata,
-            bytes,
+            Body::Replace(bytes),
             request,
             result,
             Destination::Current,
@@ -334,6 +335,86 @@ impl Content {
             None,
             || Ok(()),
             |space| authorize(space.sharing_collections(id)?),
+        )
+    }
+
+    /// Append to the current text or patch a retained base for an opted-in kind.
+    /// Metadata is inherited from the current head. Refuses unregistered kinds,
+    /// unsafe offsets and missing patch bases before committing. Cost: the same
+    /// indexed read, merge, commit and placement path as a live replacement.
+    #[allow(clippy::too_many_arguments)]
+    pub fn edit_live(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        kind: &str,
+        base: Option<&str>,
+        edit: LiveEdit<'_>,
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+    ) -> Result<Item> {
+        match (edit, base) {
+            (LiveEdit::Append(_), None) | (LiveEdit::Patch(_), Some(_)) => {}
+            _ => {
+                return Err(Error::invalid_input(
+                    "append takes no base; patch requires a base",
+                ));
+            }
+        }
+        self.write_placed(
+            space,
+            Some(id),
+            kind,
+            base,
+            Value::Null,
+            Body::Live(edit),
+            request,
+            result,
+            Destination::Current,
+            None,
+            None,
+            None,
+            || Ok(()),
+            |_| Ok(()),
+        )
+    }
+
+    /// Apply a binary Yjs update against a live item's current lineage and
+    /// commit its text, checkpoint, revision and receipt through content.
+    /// A wrong lineage, held causal dependency or invalid document is refused.
+    /// The preview callback may queue bytes for peers just before commit. It
+    /// must be bounded and cannot re-enter content. Preview delivery is volatile.
+    /// Cost: one current checkpoint, CRDT apply and the shared commit path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_room_update(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        lineage: &str,
+        update: &[u8],
+        request: Request<'_>,
+        preview: impl Fn(&[u8]) -> Result<()>,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            Some(item),
+            kind,
+            None,
+            Value::Null,
+            Body::Wire {
+                lineage,
+                update,
+                preview: &preview,
+            },
+            request,
+            |item| serde_json::json!({"id":item.id,"revision":item.revision}),
+            Destination::Current,
+            None,
+            None,
+            None,
+            || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -363,7 +444,7 @@ impl Content {
             &item.kind,
             Some(&item.revision),
             metadata,
-            bytes,
+            Body::Replace(bytes),
             request,
             result,
             Destination::Trash,
@@ -390,7 +471,7 @@ impl Content {
             &item.kind,
             Some(&item.revision),
             item.metadata.clone(),
-            &item.bytes,
+            Body::Replace(&item.bytes),
             request,
             result,
             Destination::Restore,
@@ -427,7 +508,7 @@ impl Content {
             kind,
             Some(base),
             metadata,
-            bytes,
+            Body::Replace(bytes),
             request,
             result,
             Destination::Current,
@@ -449,14 +530,14 @@ impl Content {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn write_placed(
+    pub(crate) fn write_placed(
         &self,
         space: SpaceId,
         id: Option<Uuid>,
         kind: &str,
         base: Option<&str>,
         metadata: Value,
-        bytes: &[u8],
+        body: Body<'_>,
         request: Request<'_>,
         result: impl FnOnce(&Item) -> Value,
         destination: Destination,
@@ -467,12 +548,21 @@ impl Content {
         authorize: impl FnOnce(&crate::db::Space) -> Result<()>,
     ) -> Result<Item> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
-        Self::validate_write_size(&metadata, bytes)?;
+        body.validate(&metadata)?;
         if request.id.len() > 256 {
             return Err(Error::invalid_input("content input is too large"));
         }
         files::validate_kind(kind)?;
         self.with_space(space,|s| {
+            let live = s.live_editing(kind)?;
+            let mut metadata = metadata;
+            let mut bytes = match body {
+                Body::Replace(bytes) => std::borrow::Cow::Borrowed(bytes),
+                _ if live => std::borrow::Cow::Borrowed(&[][..]),
+                _ => return Err(Error::invalid_input("kind does not enable live editing")),
+            };
+            let mut room = None;
+            let mut preview_update = None;
             // Refuse further growth when a failed/slow disk misses ADR 0062's
             // maximum; the lifecycle worker continues retrying durable intents.
             if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
@@ -489,7 +579,7 @@ impl Content {
                     return Err(Error::conflict("the space has reached its limit for this item kind"));
                 }
             }
-            s.validate_bytes(kind,bytes)?;
+            s.validate_bytes(kind,&bytes)?;
             self.publish_pending(s)?;
             // Request IDs are unique per (account, space): the host replays a matching
             // receipt before calling, so any receipt here is a reuse.
@@ -501,7 +591,9 @@ impl Content {
                 if head.kind != kind || head.state == "purged" || head.state == "purging" {
                     return Err(missing());
                 }
-                if base != Some(head.revision.as_str()) {
+                let merge_stale = live && destination == Destination::Current
+                    && (base.is_some() || matches!(body, Body::Live(LiveEdit::Append(_)) | Body::Wire { .. }));
+                if !merge_stale && base != Some(head.revision.as_str()) {
                     return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":head.revision}))});
                 }
                 if head.path.starts_with(".trash/") != (destination == Destination::Restore) {
@@ -511,13 +603,44 @@ impl Content {
                         "restore this item from Trash first"
                     }));
                 }
-                if head.state == "pending" {
+                // A room frame keeps the same path and metadata. Consecutive
+                // admitted frames can share the lifecycle worker's file flush
+                // while each acknowledged revision remains durable in SQLite.
+                let share_placement = matches!(body, Body::Wire { .. } | Body::Outside { .. })
+                    && head.old_path.is_none();
+                if head.state == "pending" && !share_placement {
                     s.place_header(id,head,None,self.fault)?;
                     // Placement changes the expected hash/state. Reload only on
                     // this pending slow path, never for an ordinary warm save.
                     head = s.header(id)?;
                 }
-                let sha = s.check_header(id,&head)?;
+                let sha = if let Body::Outside { observed, .. } = body {
+                    // Several sessions can observe the same outside edit before
+                    // one archives it. The file base moves once across accounts.
+                    if head.file_hash.as_deref() == Some(observed) {
+                        return s.get(id);
+                    }
+                    s.verify_external(&head, observed)?;
+                    Some(observed.to_owned())
+                } else {
+                    s.check_header(id,&head)?
+                };
+                if live {
+                    let current = s.get(id)?;
+                    if !matches!(body, Body::Replace(_)) {
+                        metadata = current.metadata.clone();
+                    }
+                    let (merged, checkpoint, delta) = s.merge_room_write(
+                        &current, head.seq, base.unwrap_or(&head.revision), &mut metadata, body,
+                    )?;
+                    if delta.as_deref() == Some(&[0, 0]) {
+                        return Ok(current);
+                    }
+                    preview_update = delta;
+                    Self::validate_write_size(&metadata, &merged)?;
+                    bytes = std::borrow::Cow::Owned(merged);
+                    room = Some(checkpoint);
+                }
                 let (seq,path) = (head.seq,head.path);
                 (id,seq+1,Some(path),sha)
             }else{
@@ -553,8 +676,11 @@ impl Content {
                 || destination != Destination::Current
                 || old_path.as_ref().is_some_and(|old| *old != path))
                 .then(calternal_types::begin_item_access_change);
-            let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:Staged::version(seq),updated_at:now_rfc3339()};
-            let mut root = Staged {item,seq,path,expected};
+            let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.into_owned(),revision:Staged::version(seq),updated_at:now_rfc3339()};
+            if live && room.is_none() {
+                room = Some(s.seed_checkpoint(&item)?);
+            }
+            let mut root = Staged {item,seq,path,expected,room};
             let related = if let (Some(edit), Some(old)) = (retarget, old_path.as_deref()) {
                 s.stage_related(&mut root,old,edit,self.fault)?
             } else {
@@ -574,6 +700,10 @@ impl Content {
             }
             root.outbox(&tx,request,&response)?;
             linked_write::stage_related_outbox(&tx,&root,&related,request)?;
+            if let (Body::Wire { preview, .. }, Some(update)) = (body, preview_update) {
+                preview(&update)?;
+                (self.fault)(FaultPoint::BeforeRoomCommit);
+            }
             #[cfg(feature = "perf-timings")]
             let commit = calternal_store::timings::SaveStage::ContentCommit.start();
             tx.commit().map_err(internal)?;

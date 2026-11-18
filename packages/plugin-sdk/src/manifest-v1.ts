@@ -108,6 +108,9 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {
     schema(r.schema); if (typeof r.claimed_text !== "boolean") fail();
     if (r.searchable !== undefined && (typeof r.searchable !== "boolean" || (r.searchable && !r.claimed_text))) fail();
+    const live = typeof r.schema === "object" && r.schema !== null
+      ? (r.schema as Record<string, unknown>)["x-calternal-live-editing"] : undefined;
+    if (live !== undefined && (typeof live !== "boolean" || (live && !r.claimed_text))) fail();
     // Claimed text is Markdown; other kinds name a safe lowercase extension.
     if (r.extension === undefined ? !r.claimed_text : typeof r.extension !== "string" || !/^[a-z0-9]{1,16}$/.test(r.extension) || (r.claimed_text && r.extension !== "md")) fail();
     if (!r.storage || typeof r.storage !== "object" || Array.isArray(r.storage)) fail();
