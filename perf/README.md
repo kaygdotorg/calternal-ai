@@ -165,3 +165,8 @@ are cleaned on normal error returns, and retained raw evidence has a 30-day
 policy. Reuse the same driver and fixture policy for before/after binaries.
 There is no accepted concurrency ceiling in the budget catalog; this mode exits
 2 for observations with incomplete qualification, or 1 for failed arms.
+
+Concurrency summaries use the range of per-arm p50s divided by the median p50
+for `noise_pct`, matching the main suite. The `327b9f9` driver used per-arm p95s
+for that diagnostic field; its pinned intermediate summaries retain that field
+unchanged, and their p50/p95 latency observations remain valid.

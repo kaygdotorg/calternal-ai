@@ -411,7 +411,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
                                         row.metric
                                     ))
                                     .or_default()
-                                    .push(row.p95);
+                                    .push(row.p50);
                             }
                             runs.push(json!({"clients":clients,"spaces":clients,"seed_spaces":fixture.seed_spaces,"mode":mode.name(),"pair":pair,"arm":arm,"summary":summary}));
                         }
@@ -454,7 +454,7 @@ pub(crate) fn run(a: &Args) -> Result<i32> {
         "cache":"one untimed operation per caller; fresh copied fixture per arm; 128 write spaces exceed the unchanged 64-space content cache",
         "mixed_scheduling":"synchronized rounds; boundary waits excluded from RPC samples",
         "space_count_definition":"spaces is the targeted working set; seed_spaces are additional development account/shared spaces",
-        "samples_per_client":a.samples,"warm_pairs":a.pairs,"cold_pairs":0,"seed":a.seed,"noise_pct":noise,"runs":runs,"failures":failures,
+        "samples_per_client":a.samples,"warm_pairs":a.pairs,"cold_pairs":0,"seed":a.seed,"noise_statistic":"range of per-arm p50s / median p50","noise_pct":noise,"runs":runs,"failures":failures,
         "qualification":"observations only: no accepted concurrency latency ceiling; not browser-session or provider-startup qualification"});
     let path = a.work.join("summary.json");
     std::fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
