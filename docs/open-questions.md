@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 11:40 IST.
+[glossary](glossary.md). Updated 2026-11-19 12:30 IST.
 
 ## Waiting now
 
@@ -50,6 +50,8 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Plans (2026-11-19): 150, 750 and 1,500 sandbox hours a month on the 2, 4 and 8 GiB sizes; when hours run out new work queues, running turns finish and a pay-as-you-go top-up is offered. Plans, billing and the hour meter are closed source in a separate private repository; the open core keeps only limits an admin sets by hand.
+- Settings layout (2026-11-19): pages are flat on every width, in the person's Wide or Centred layout (Wide by default on desktop); a split is used only for content beside a live preview, as on Appearance.
 - More decisions (2026-11-19): the server pins a tested version of each harness and offers updates in Admin after a smoke test; running turns finish on the old version; Calternal manages the harnesses in Direct mode too. Sandbox sizes are 2, 4 and 8 GiB of memory (kayg will enlarge the VM). Storage is sold in two kinds, text and binary (photos, video, documents). Production moves to a microVM per person. A thread file's limit rises from 2 MiB to 16 MiB, with speed and indexing proven at that size. Notifications are web push, native apps later. Claude Code and Codex are both plugins; Codex support is next.
 - Notes (#36, 2026-11-19): a trashed item is purged after 30 days; Empty Trash is one confirmed, irreversible background job; Editors delete and restore, only Managers and the Owner purge for good. Renames and name reuse follow the existing app (ADR 0015, 0023).
 - Machines and installer (2026-11-19): something running on a machine (a dev server preview) is reached through the server over the connection the machine already holds; the machine program updates itself to match the server between turns, and updating the harnesses (Claude Code, Codex and others) is also done from the interface; calternal.com/install shows what it will do and verifies a signed binary; a per-user service with no root, root only for Podman or the microVM runtime; on a Mac the same one-line installer sets up a background service now and the full app that bundles the CLI comes later; a hosted instance lists its pool machines in an operator file at deploy and can add more in Admin.
