@@ -5,7 +5,7 @@ use super::*;
 
 const ROUTE: &str = "account/delete";
 
-async fn reverify(fixture: &mut Fixture, who: usize) {
+pub(super) async fn reverify(fixture: &mut Fixture, who: usize) {
     let start = fixture
         .auth("reverify/start", Some(&fixture.cookies[who]), json!({}))
         .await;
@@ -448,7 +448,7 @@ async fn space_erasure_removes_all_owned_roots_and_stays_absent_after_restart() 
     erased(&f, "spaces", &space);
 }
 
-fn machine_admin(f: &Fixture, args: &[&str]) -> Value {
+pub(super) fn machine_admin(f: &Fixture, args: &[&str]) -> Value {
     let result = Command::new(std::env::var_os("CALTERNAL_SERVER_BIN").unwrap())
         .args(["--json", "machines"])
         .args(args)

@@ -1,4 +1,4 @@
-//! `system/machines.db`: machine placement state (leases and draining).
+//! `system/machines.db`: machine placement, reservations and erasure delivery.
 //!
 //! Machine authority (enrolment codes, machines, revocation, pool grants) lives
 //! in `auth.db` behind the recovery barrier ([`calternal_auth::machines`]); this
@@ -19,7 +19,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
 /// Current schema version (`PRAGMA user_version`).
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS draining (
@@ -41,6 +41,11 @@ CREATE TABLE IF NOT EXISTS leases (
     created_ms INTEGER NOT NULL,
     updated_ms INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS erased_worker_stops (
+    lease TEXT PRIMARY KEY,
+    machine TEXT NOT NULL,
+    slots INTEGER NOT NULL CHECK (slots = 1)
+) STRICT, WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS workspace_discards(
  lease TEXT NOT NULL,machine TEXT NOT NULL,request_id TEXT NOT NULL UNIQUE,account TEXT NOT NULL,thread TEXT NOT NULL,
  state TEXT NOT NULL,updated_ms INTEGER NOT NULL,PRIMARY KEY(lease,machine)
@@ -302,6 +307,48 @@ pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
         "SELECT {LEASE_COLUMNS} FROM leases WHERE state != 'ended' ORDER BY created_ms"
     ))?;
     st.query_map([], lease_from)?.collect()
+}
+
+/// Preserve one machine slot in the transaction that deletes the worker lease.
+/// Writes one row with the machine and lease IDs as its only identifiers.
+pub(super) fn put_erased_worker_stop(
+    tx: &rusqlite::Transaction<'_>,
+    lease: Uuid,
+    machine: Uuid,
+) -> rusqlite::Result<()> {
+    tx.execute(
+        "INSERT INTO erased_worker_stops (lease, machine, slots) VALUES (?1, ?2, 1)",
+        params![lease.to_string(), machine.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Read pending stops at startup. The schema guarantees one slot per row.
+pub(super) fn erased_worker_stops(c: &Connection) -> rusqlite::Result<Vec<(Uuid, Uuid)>> {
+    let mut query = c.prepare("SELECT lease, machine FROM erased_worker_stops")?;
+    query
+        .query_map([], |row| {
+            let id = |column| {
+                row.get::<_, String>(column)?.parse().map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        column,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })
+            };
+            Ok((id(0)?, id(1)?))
+        })?
+        .collect()
+}
+
+/// Retire one machine-only reservation by lease ID. One indexed delete.
+pub(super) fn remove_erased_worker_stop(c: &Connection, lease: Uuid) -> rusqlite::Result<()> {
+    c.execute(
+        "DELETE FROM erased_worker_stops WHERE lease=?1",
+        [lease.to_string()],
+    )?;
+    Ok(())
 }
 
 /// One lease by id, ended or not.
