@@ -13,18 +13,29 @@ import type { Message, Permission, ProviderId, ThreadNotice, ThreadState, Thread
 
 /** The thread metadata the server keeps (the fields this client reads). */
 export interface WireMetadata {
+  /** The thread's title as the person sees it. */
   title: string;
+  /** The provider plugin id the thread talks to (`calternal-claude-code`). */
   provider: string;
+  /** The permission mode the thread runs in (the wire name, see `wireMode`). */
   mode: string;
   /** Null until a turn has named one. */
   model?: string | null;
+  /** How many messages the file holds; used for the list row before the messages are read. */
   message_count?: number;
+  /** When the thread last changed (ISO), for ordering. */
   last_activity_at?: string;
+  /** When the thread was made (ISO). */
   created_at?: string;
+  /** True when the person archived it (hidden from the list, kept). */
   archived?: boolean;
+  /** True when it was deleted (not shown anywhere). */
   deleted?: boolean;
+  /** The thread this one was spawned from, for the child rows. */
   parent_thread?: string;
+  /** What spawned it (a person or an agent), for the row's icon. */
   spawned_by?: string;
+  /** A message waiting for the machine: its request id and when it was made (Unix ms). */
   pending?: { request_id?: string; created_ms?: number };
 }
 /** A saved thread as `threads.get` and the writes return it. */
@@ -66,6 +77,7 @@ export function reasonNotice(r: WireReason | null | undefined): ThreadNotice | n
     case "provider_signed_out": return { kind: "provider-signin", provider: r.provider ?? "The provider", command: r.sign_in_command };
     case "retrying": return { kind: "retrying", rule: r.rule === "api_availability" || r.rule === "subscription_reset" ? r.rule : "provider_backoff", attempt: r.attempt, of: 5, nextAt: r.next_attempt_ms };
     case "failed": return { kind: "failed", failure: r.class === "usage_limit" || r.class === "permanent" ? r.class : "transient", resetAtMs: r.reset_at_ms };
+    case "thread_full": return { kind: "thread-full" };
     case "interrupted": return { kind: "interrupted", resumable: r.resumable !== false, why: r.why, sinceMs: r.since_ms };
     default: return null;
   }

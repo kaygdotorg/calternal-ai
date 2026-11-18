@@ -2,6 +2,7 @@
   // The palette: one field for search, go to, commands and "ask an agent". Opens with Cmd/Ctrl-K or the search button: a glass panel under the top edge on a
   // desktop, a bottom sheet on a phone. Plain language is read on the device (palette/engine.ts, no model): recognised words are highlighted behind the
   // text, one line says what Enter will do, Up and Down choose another row, Esc closes. Outward actions (Ask) are their own row and never the default.
+  import { untrack } from "svelte";
   import { Icon, InlineEditor, Sheet, toast } from "@calternal/ui";
   import { marksOf, plan, setItems, type Row } from "../palette/engine";
   import { fixtureItems } from "../palette/fixtures";
@@ -28,7 +29,7 @@
     if (!serverMode()) { setItems([...threads, ...fixtureItems()], spaces.current.name); return; } // the palette's data is fixtures, as is everything else, unless the real server is the source
     // The real server: this space's threads and notes (the newest page, and whatever the person types is looked up by title below), and every space the person is in, so none is unreachable from here.
     void import("../apps/notes/store.svelte").then(({ notes }) => { listed = notes.list.map((n) => ({ id: n.id, kind: "note" as const, title: n.title, space: spaces.current.name, go: `/notes/${n.id}` })); rebuild(threads); });
-    rebuild(threads);
+    untrack(() => rebuild(threads)); // (read here, the lists would make this effect run again, and it clears the typed text)
   });
   let listed = $state<{ id: string; kind: "note"; title: string; space: string; go: string }[]>([]);
   let found = $state<typeof listed>([]);

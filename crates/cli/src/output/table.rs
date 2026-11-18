@@ -121,6 +121,7 @@ fn column(header: &str) -> Column {
         "WORKER" => (10, 75, Clip::End),
         "OWNER" => (13, 70, Clip::Middle),
         "UPDATED" => (20, 70, Clip::End),
+        "LIFETIMES" => (17, 80, Clip::End),
         "PLATFORM" => (12, 55, Clip::End),
         "ACCESS" | "STATE" => (8, 50, Clip::End),
         "REVISION" | "ROLE" => (8, 45, Clip::End),

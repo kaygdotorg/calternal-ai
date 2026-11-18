@@ -27,11 +27,15 @@ import { parseAhead } from "./parse";
 import { theme } from "./theme";
 import { triggers, type Trigger } from "./triggers";
 
+/** What a host gives `createBlockEditor`: the element, the starting text, and callbacks for changes, pickers and block actions. Every callback runs on the main thread inside the editor's update, so keep `onchange` cheap. */
 export interface BlockEditorOptions {
+  /** The element the editor is built in. */
   parent: HTMLElement;
+  /** The starting Markdown. */
   text: string;
   /** Called after every change: the new text, and where it came from. Typing calls it per keystroke; keep it cheap (debounce saving in the host). */
   onchange?: (text: string, origin: Origin) => void;
+  /** How to name a kind of block the host knows more about than the parse does (a task is an item that starts with a box). */
   kinds?: Kinds;
   /** The host shows a picker for this trigger (null closes it). */
   onTrigger?: (t: Trigger | null) => void;
@@ -39,33 +43,47 @@ export interface BlockEditorOptions {
   pickerKey?: (e: KeyboardEvent) => boolean;
   /** The block handle was pressed without dragging. */
   onMenu?: (b: Block, rect: DOMRect) => void;
+  /** The accessible name of the text area. */
   label?: string;
+  /** True shows the text without letting it change. */
   readOnly?: boolean;
   /** Extra extensions from the host. */
   extensions?: Extension;
 }
 
+/** The handle a host holds: read and replace the text, apply changes with an origin, ask about headings and blocks, run block actions as single undoable changes, scroll, focus, undo and redo, and destroy (the host must not call it after that). */
 export interface BlockEditor {
+  /** The underlying CodeMirror view, for the host's own extensions; do not mutate the document through it (use `apply`). */
   readonly view: EditorView;
+  /** The whole current text; reading it builds the string, so avoid doing so per keystroke. */
   readonly value: string;
   /** Replaces the whole text from outside (another note opened); forgets the history. */
   setValue(text: string): void;
   /** Applies a change from code with an origin. A remote or replayed change waits while composing. */
   apply(c: ChangeSpec, o?: Origin): void;
+  /** The headings of the document, in order. */
   headings(): Heading[];
+  /** The blocks of the document, in order (derived from the parse). */
   blocks(): Block[];
+  /** The block that contains a position, or null. */
   blockAt(pos: number): Block | null;
   /** Block actions as single, undoable changes. */
   act(action: "delete" | "duplicate" | "up" | "down", b: Block): void;
+  /** Scrolls a position into view without moving the caret. */
   scrollTo(pos: number): void;
   /** Gives the block whose last line holds `pos` a block ID if it has none (what the first link to a block does, ADR 0056 B1) as one undoable change, and returns the ID. */
   ensureBlockId(pos: number): string;
+  /** Puts the caret in the editor. */
   focus(): void;
+  /** Undoes the last step; returns false when there is nothing to undo. */
   undo(): boolean;
+  /** Redoes the last undone step; returns false when there is nothing to redo. */
   redo(): boolean;
+  /** Removes the editor and its listeners; the host must stop calling it afterwards. */
   destroy(): void;
 }
 
+/** Builds the block editor in `o.parent`. Synchronous and cheap for a note of any length (the view renders only the viewport); the lazy features a note needs are loaded beforehand by `prepare` so the first draw is already right. */
 export function createBlockEditor(o: BlockEditorOptions): BlockEditor {
   const ime = new ImeGate();
   const own = (tr: Transaction): Origin => tr.annotation(origin) ?? "user";

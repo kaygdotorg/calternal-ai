@@ -37,6 +37,11 @@ Request receipts (what a retry with the same request ID replays) are kept 7 days
 default; `--receipt-retention-days` / `CALTERNAL_RECEIPT_RETENTION_DAYS` changes it.
 A retry after that is treated as a new request.
 
+Notes, Tags, Trash and directory continuations bind to the account, operation and
+filters. Cursors carry a signed position and expire on restart. Approval entries
+in the private request inbox and feed carry the lifetimes the host accepts for
+that action.
+
 The listener binds `127.0.0.1`. `appdata/startup.json` (0600) reports `base_url`,
 `passkey_origin`, `setup_token_file`, `development_tokens`, `pid`, and token file
 paths. The default passkey origin is `http://localhost:<bound-port>`: WebAuthn
@@ -246,7 +251,9 @@ heartbeat, including during continuous writes; actual content operations always
 recheck current authority. An idle-feed test advances the seven-day confirmation
 state without issuing another operation.
 
-Saved conversations are described in [threads](../../docs/threads.md). The orchestrator manifest owns their operations; the host reuses generic content storage and the existing turn engine. Active-turn steering and large-thread indexing remain named gaps there.
+The orchestrator manifest owns saved-thread operations. The host reuses generic
+content storage and the turn engine for checkpoint ranges, live tool steps and
+saved Markdown. See [saved threads](../../docs/threads.md).
 
 Canonical request fingerprinting for Notes, plugin activation and plugin calls
 uses the existing blocking pool. The parsed input moves into that task and returns

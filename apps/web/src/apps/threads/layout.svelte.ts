@@ -7,8 +7,11 @@
 
 /** One section of the list. */
 export interface Section {
+  /** Unique id of the section (a UUID made here); the key the list and drag-and-drop use. */
   id: string;
+  /** The person's name for it; may be empty while it is being renamed. */
   name: string;
+  /** Whether its threads are hidden; the section header stays. */
   collapsed: boolean;
   /** Top-level thread ids, in the order shown. */
   threadIds: string[];

@@ -15,6 +15,7 @@ import { spaces } from "../../shell/spaces.svelte";
 import { devToken, serverMode } from "../../server/client";
 import { caps } from "../../shell/capabilities.svelte";
 
+/** How a setting is edited: a switch, a choice, a field, a button, a drill-in row, or a whole panel of its own that loads on demand. Adding a kind means one branch in SettingRow and nothing else. */
 export type Control =
   | { type: "switch" }
   | { type: "checkbox" }
@@ -33,15 +34,24 @@ export type Control =
 
 /** One setting. `id` is `<plugin>.<setting>` and never changes. */
 export interface Setting {
+  /** Stable `<plugin>.<setting>` id; the setting's address, its palette entry and what agents name it. Never changes. */
   id: string;
+  /** The row's label, a noun phrase. */
   label: string;
+  /** One line under the label saying what the choice does. */
   help?: string;
+  /** How the row is edited. */
   control: Control;
+  /** Reads the current value (reactive); absent for rows that only act. */
   get?: () => unknown;
+  /** Writes a new value; applied at once (there is no Save). */
   set?: (v: unknown) => void;
 }
+/** A card of rows with an optional header; `danger` puts it last, under the Danger area header. */
 export interface Group { title?: string; settings: Setting[]; danger?: boolean }
+/** One Settings page: its address id (`/settings/<id>`), sidebar name and icon, a one-line purpose, and its groups. */
 export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[] }
+/** A sidebar section: `user` (this person), `space` (the current space) or `server` (Admin). Which sections and pages exist depends on the source and the capabilities, so read them through `visibleSections`. */
 export interface Section { id: "user" | "space" | "server"; name: string; pages: Page[] }
 
 const fx = <T,>(id: string, def: T): Pick<Setting, "get" | "set"> => ({ get: () => values.get<T>(id, def), set: (v) => values.set(id, v) });
@@ -250,6 +260,7 @@ function serverSections(): Section[] {
 
 /** The sections this person sees: Admin (the server) only with the server-admin capability (the real one in server mode). */
 export const visibleSections = (): Section[] => (serverMode() ? serverSections() : SECTIONS.filter((s) => s.id !== "server" || caps.serverAdmin));
+/** The page with this id among the pages this person can see, or undefined (the address is then shown as the Settings start, not as an error). Evaluates `visibleSections`, so it follows the source, the capabilities and the current space. */
 export const pageById = (id: string | undefined): Page | undefined => visibleSections().flatMap((s) => s.pages).find((p) => p.id === id);
 /** Every setting with the page it lives on. */
 export const allSettings = (): { page: Page; setting: Setting }[] => visibleSections().flatMap((s) => s.pages.flatMap((p) => p.groups.flatMap((g) => g.settings.map((setting) => ({ page: p, setting })))));

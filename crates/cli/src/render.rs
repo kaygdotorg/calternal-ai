@@ -85,6 +85,7 @@ pub fn operation(out: &Output, operation: &str, request_id: &str, data: Value) -
                     "This space has no notes yet; run `cl notes create` to add one.",
                 )
                 .hint(hint)
+                .page_cursor()
         }
         "notes.get" | "notes.create" | "notes.update" => {
             let note = &data["note"];
@@ -216,6 +217,9 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
         ErrorCode::Unauthorized => {
             "Check the credential in CALTERNAL_TOKEN or the file named by --token-file, and that it is for this server."
         }
+        ErrorCode::PasskeyReverificationRequired => {
+            "Verify with your passkey in the app, then retry there."
+        }
         ErrorCode::Forbidden => "Ask a space owner to grant your account the access this needs.",
         ErrorCode::NotFound => "Check the id and the --space; `cl notes list` shows what exists.",
         ErrorCode::Conflict => {
@@ -231,6 +235,9 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
     let human_hint = match error.code {
         ErrorCode::Unauthorized => {
             "Check `CALTERNAL_TOKEN` or `--token-file`, and make sure the credential belongs to this server."
+        }
+        ErrorCode::PasskeyReverificationRequired => {
+            "Verify with your passkey in the app, then retry there."
         }
         ErrorCode::Forbidden => "Ask a space owner to grant your account the needed access.",
         ErrorCode::NotFound => {
@@ -248,6 +255,7 @@ pub fn api_error(error: ApiError, request_id: Option<String>) -> CliError {
     };
     let human = match error.code {
         ErrorCode::Unauthorized => format!("Sign-in was not accepted: {}", error.message),
+        ErrorCode::PasskeyReverificationRequired => error.message.clone(),
         ErrorCode::Forbidden => format!("Your account does not have access: {}", error.message),
         ErrorCode::NotFound => format!("We couldn't find that item: {}", error.message),
         ErrorCode::Conflict => format!("The saved version has changed: {}", error.message),

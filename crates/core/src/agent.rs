@@ -36,7 +36,7 @@ pub struct AgentInput {
     pub pool: bool,
     /// Thread UUID for check/run; no thread file is created in step one.
     pub thread_id: String,
-    /// Job UUID for events/stop/resume/mode/access operations.
+    /// Job UUID for job operations. A thread credential can omit it for access.request.
     pub job_id: String,
     /// Person's prompt; at most 16 KiB, required for run.
     pub prompt: String,
@@ -146,9 +146,14 @@ pub enum OperationRisk {
 }
 
 impl OperationRisk {
-    /// Whether a person can retain approval for this class across a thread.
-    pub fn allows_thread_approval(self) -> bool {
-        matches!(self, Self::Read | Self::Reversible | Self::External)
+    /// Approval choices in display order. Irreversible and access-widening
+    /// actions admit a single execution; other actions may be scoped to a thread.
+    pub fn approval_lifetimes(self) -> &'static [crate::ApprovalLifetime] {
+        use crate::ApprovalLifetime::{Once, ThisThread};
+        match self {
+            Self::Read | Self::Reversible | Self::External => &[Once, ThisThread],
+            Self::Irreversible | Self::WidensAccess => &[Once],
+        }
     }
 }
 

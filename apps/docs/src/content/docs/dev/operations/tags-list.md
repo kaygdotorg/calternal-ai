@@ -6,7 +6,7 @@ title: "tags.list"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-List tags and their current note counts
+List a page of up to 100 tags and their current note counts
 
 Capability: not declared in this catalogue; the host policy remains authoritative.
 
@@ -16,7 +16,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "risk": "read",
   "id": "tags.list",
-  "description": "List tags and their current note counts",
+  "description": "List a page of up to 100 tags and their current note counts",
   "mutates": false
 }
 ```
@@ -27,17 +27,23 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
-  "description": "Input for members, leave and directory-record deletion.",
+  "description": "A continuation scoped to one space.",
   "properties": {
+    "cursor": {
+      "description": "The previous page's cursor for this space and operation.",
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
+    },
     "space_id": {
-      "description": "Space UUID; names are never accepted in its place.",
+      "description": "Space UUID.",
       "type": "string"
     }
   },
   "required": [
     "space_id"
   ],
-  "title": "SpaceInput",
+  "title": "SpaceDirectoryPageInput",
   "type": "object"
 }
 ```
@@ -73,6 +79,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   },
   "description": "Bounded tag lookup result.",
   "properties": {
+    "next_cursor": {
+      "description": "Opaque continuation for the same space and prefix, omitted at the end.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "tags": {
       "description": "Up to 100 tag names and counts, in literal name order.",
       "items": {

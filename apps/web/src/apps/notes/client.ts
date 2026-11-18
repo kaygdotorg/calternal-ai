@@ -1,10 +1,11 @@
 /**
- * What the Notes app needs from a backend: spaces, notes (list, read, create, update with a base revision), and a way to hear that something changed. Two
- * implementations: fixtures (the default, in memory) and the real server (`server/client.ts`, development token mode). The app only sees this interface.
+ * What the Notes app needs from a backend: spaces, notes (list, read, create, update with a base revision, rename, trash, restore), tags and title lookups, and a way to hear that something changed. Two
+ * implementations: fixtures (the default, in memory) and the real server (`server/client.ts`). The app only sees this interface.
  */
 import { ServerClient, ServerError } from "../../server/client";
 import { FIXTURE_SPACES } from "../../shell/spaces.svelte";
 
+/** A space as Notes needs it: its UUID and the name the person sees. */
 export interface Space { id: string; name: string }
 /** A note in a list. `revision` is what a rename is checked against; in the Trash `updatedAt` is when it was deleted. */
 export interface NoteSummary { id: string; spaceId: string; title: string; updatedAt: string; revision?: string }
@@ -12,13 +13,21 @@ export interface NoteSummary { id: string; spaceId: string; title: string; updat
 export interface TagInfo { name: string; count: number }
 /** A note a `[[` picker can link to: `target` is the relative link to insert (`Plan.md`); fixtures have none and link by title. */
 export interface NoteTarget { id: string; title: string; target?: string }
+/** A whole note: its Markdown and the revision the next save is checked against (opaque; a stale one is a conflict). */
 export interface Note extends NoteSummary { markdown: string; revision: string }
 
+/**
+ * What the Notes app needs from a backend, whether fixtures or the real server: list, read, create, save, rename, trash, restore, tags and lookups, and a way to hear that something changed. Failures are `ServerError`
+ * (`conflict` for a stale revision, `unavailable` when the server cannot be reached, `not_found` for a note that is gone); nothing here retries. The server returns at most one page (100) of a list.
+ */
 export interface NotesClient {
+  /** The spaces the person is in; the real server takes them from the shell's list instead. */
   spaces(): Promise<Space[]>;
   /** The space's live notes, newest first, optionally only those under a tag. */
   list(spaceId: string, tag?: string): Promise<NoteSummary[]>;
+  /** Reads one note. Throws `not_found` when it is gone or the person cannot see it. */
   get(spaceId: string, id: string): Promise<Note>;
+  /** Creates a note with this title and Markdown and returns it with its first revision. */
   create(spaceId: string, title: string, markdown: string): Promise<Note>;
   /** Replaces the note against the revision the caller read; a stale revision is a conflict (`ServerError` "conflict"). */
   update(spaceId: string, id: string, baseRevision: string, title: string, markdown: string): Promise<Note>;

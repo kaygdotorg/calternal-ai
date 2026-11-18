@@ -29,10 +29,23 @@ fragments, and link destinations do not count as body tags. Each note counts
 once for a name and each of its parents. Filtering by `work` includes a note
 tagged `work/plans`.
 
-Picker lookups read one space's derived SQLite index. They open no note
-files. The backend projects tags and relative link targets from each saved
-Markdown revision. The current-head index can be rebuilt from these
-projections.
+Each list and lookup returns one page. Send the returned `next_cursor` as
+`cursor` with the same account, space, operation and filters to continue.
+When the last page omits `next_cursor`, the list is complete. Restart at the
+first page if the server has restarted or the cursor is rejected.
+
+Pages seek from the last delivered sort key in the current index. The note
+UUID breaks ties in update time or folded title. Each page reflects committed
+changes at the time it is read. A note whose title or timestamp changes can
+move across the page boundary. Refresh from the first page to see newly
+inserted or moved rows before that boundary.
+
+A warmed space serves each page with one indexed SQLite statement and no
+note-file reads or flushes. Tagged notes retain update order and probe the
+term index by exact label and note ID for each candidate from the live-note
+index. Tag counts cover the live-note index entries for each returned name.
+The backend projects tags and relative link targets from saved Markdown
+revisions.
 
 ## Title and links
 
@@ -58,7 +71,7 @@ in place.
 | --- | --- | --- |
 | `notes.delete` | Note UUID | Moves the file to its space's `.trash/<uuid>.md` and preserves history |
 | `notes.restore` | Note UUID | Restores the same UUID and body at the former filename when available, using normal collision allocation otherwise |
-| `trash.list` | Space UUID | Returns the 100 newest trashed Notes, with the deletion timestamp in `updated_at` |
+| `trash.list` | Space UUID | Up to 100 trashed notes, newest first, with the deletion timestamp in `updated_at` |
 | `trash.purge` | Note UUID | Permanently removes a trashed note's file and content history |
 
 The address resolver returns `active`, `in_trash`, or `deleted` for an
@@ -79,6 +92,9 @@ delivery of prior body receipts. Already committed receipts age out on their
 ordinary schedule. Backups have their own retention.
 
 ## CLI examples
+
+The CLI returns one page of up to 100 rows. Repeat the same command with
+`--cursor` and the continuation shown in the terminal or in `--json` output.
 
 ```sh
 calternal notes list --space SPACE_UUID --tag work

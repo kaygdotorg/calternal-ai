@@ -9,6 +9,7 @@ import { ViewPlugin, type EditorView, type ViewUpdate } from "@codemirror/view";
 const BUDGET_MS = 12;
 const MARGIN = 4000;
 
+/** A view plugin that keeps the Markdown parse ahead of the viewport in idle time, so scrolling a long note finds the tree already built. Stops when the parse is complete or the view is destroyed. */
 export const parseAhead = ViewPlugin.fromClass(class {
   idle = 0;
   constructor(readonly view: EditorView) { this.ahead(); this.later(); }

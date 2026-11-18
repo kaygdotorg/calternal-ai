@@ -8,7 +8,7 @@ title: "cl requests list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |
+| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space, detail and allowed approval lifetimes. | `requests[]` |
 
 ## JSON data shape
 
@@ -48,6 +48,10 @@ Recorded test fixture:
           },
           "app": "notes",
           "kind": "approval",
+          "lifetimes": [
+            "once",
+            "this_thread"
+          ],
           "write": true
         },
         "id": "019a8c00-0000-7000-8000-000000000001",

@@ -29,6 +29,7 @@ const marks = { Emphasis: Decoration.mark({ class: "cm-em" }), StrongEmphasis: D
 const line = (cls: string) => Decoration.line({ class: cls });
 const TASK = /^(\s*)([-*+]|\d+[.)])( +)(\[([ xX])\]( |$))?/;
 
+/** What the formatting-hiding pass produced for the viewport: the decorations to draw and the subset that the caret treats as atomic (skipped over). */
 export interface Drawn { decorations: DecorationSet; atomic: DecorationSet }
 
 /** Builds the decorations for the given ranges of the document. */

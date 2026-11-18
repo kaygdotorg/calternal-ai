@@ -16,7 +16,9 @@ request itself and the submitted answer are private to the recipient.
 | `space.instructions` | `space_id` and optional replacement `markdown`. Requires `space.settings` for both reading and writing. |
 
 Questions use the existing GenUI catalog and are checked for embedded actions.
-Approvals use a fixed trusted form. Secret prompts list metadata and an expiry
+Approvals use a fixed trusted form. Each approval detail carries
+`lifetimes` in both the list and account feed. The server uses the
+same choices when validating a submitted decision. Secret prompts list metadata and an expiry
 time. Values still enter through the trusted secret-provide endpoint. Thread
 credentials can raise a question or request authority for their own turn.
 They cannot list, answer, approve or deny a person's requests.
@@ -77,3 +79,12 @@ content placement and writes. The replacement accepts up to 16 KiB of Markdown
 and declares irreversible risk for replacement. It uses the per-space content
 lock, durable outbox, descriptor-relative replacement and journal receipt. The journal event and receipt omit the text.
 The previous filename is ignored.
+
+Requests that supply a secret value or approve access require a fresh passkey
+proof. A stale proof returns HTTP 403 with `passkey_reverification_required`.
+Verify with a passkey and retry the action.
+
+For `secrets.request`, choose a name from 1 to 96 ASCII bytes. Start with a
+lowercase letter or digit, then use lowercase letters, digits, dots, underscores,
+hyphens or colons. Use a name such as `service-token` and retry if the server
+refuses the name.

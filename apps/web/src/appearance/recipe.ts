@@ -11,22 +11,31 @@ import { oklchToRgb, type Rgb } from "./accent";
 
 /** One colour point: position (0..1) and colour as OKLCH. */
 export interface Point {
+  /** Horizontal position of the point, 0 (left) to 1 (right). */
   x: number;
+  /** Vertical position of the point, 0 (top) to 1 (bottom). */
   y: number;
+  /** OKLCH lightness of the point's colour, 0 to 1. */
   L: number;
+  /** OKLCH chroma of the point's colour (small: wallpapers stay quiet). */
   C: number;
+  /** OKLCH hue of the point's colour in degrees. */
   h: number;
 }
 
 /** A generated look. `mesh` recipes carry fixed colours per scheme instead of points (the token mesh). */
 export interface Recipe {
+  /** Stable id; the wallpaper id the recipe draws. */
   id: string;
+  /** The name shown in the gallery. */
   name: string;
+  /** The colour points the picture is blended from. */
   points: Point[];
   /** Spread of each point as a fraction of the picture width. */
   sigma: number;
   /** Strength of the sine warp. */
   warp: number;
+  /** Offsets the phase of the sine warp, so recipes with the same points still bend differently; fixed per recipe, so the picture is always the same. */
   seed: number;
 }
 
@@ -77,6 +86,7 @@ export function sample(r: Recipe, scheme: "light" | "dark", u: number, v: number
 
 /** The quiet default, "haze": the shell's own token mesh (warm grey to cool grey) blended in OKLab, scheme by scheme. */
 const meshes: Partial<Record<"light" | "dark", ReturnType<typeof labOf>[]>> = {};
+/** The colour of the shell's default "haze" wallpaper at a point (`u`, `v` in 0..1) for a scheme: the token mesh blended in OKLab. Pure; one blend per call over a mesh converted once per scheme, so a full render is about 20,000 cheap calls. */
 export function haze(scheme: "light" | "dark", u: number, v: number): Rgb {
   // The mesh in OKLab, converted once per scheme (it used to be converted again for every pixel: about 20,000 times for one look).
   const mesh = (meshes[scheme] ??= tokens.backdrop[scheme].map((c) => labOf(hexRgb(c))));

@@ -5,19 +5,25 @@
 
 /** A command a plugin offers. `words` are extra phrases that also find it. */
 export interface CommandDef {
+  /** Stable id; unique across plugins. */
   id: string;
+  /** The name shown in the list and matched by the search. */
   label: string;
   /** Where it is from: an app or a settings section, shown as the row's small label. */
   group: string;
+  /** Extra words that find the command ("keys", "hotkeys"); they add matches, never rows. */
   words?: string[];
   /** The address it goes to, or an operation name the host runs. */
   go?: string;
+  /** A named host operation to run instead of navigating (`help.shortcuts`, `thread.new`, `space.switch:<id>`). */
   op?: string;
 }
 
 /** One plugin's contribution. */
 export interface PaletteManifest {
+  /** The plugin the commands belong to (shown in credits and used to replace its earlier registration). */
   plugin: string;
+  /** The commands the plugin offers, as data; nothing runs until one is chosen. */
   commands: CommandDef[];
 }
 

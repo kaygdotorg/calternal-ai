@@ -105,7 +105,8 @@ Threads reuse the same Markdown kind storage and guarded move outbox. `admit_ite
 ## Indexed discovery and lifecycle
 
 The current head keeps rebuildable label and link projections. Per-space SQL
-indexes provide prefix and name lookups without reading body bytes. A move
+indexes provide keyset pages in update, folded title or tag name order without
+reading body bytes. Each warmed-space page uses one indexed query. A move
 between live placement and Trash changes index membership in the same
 transaction as the revision and outbox intent. A path-and-link edit stages
 changed same-kind sources atomically and finishes their recoverable placement

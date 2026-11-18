@@ -4,6 +4,8 @@ mod machines_common;
 mod readiness;
 #[path = "provider_turns/saved_threads.rs"]
 mod saved_threads;
+#[path = "provider_turns/streaming.rs"]
+mod streaming;
 use machines_common::*;
 use serde_json::{Value, json};
 use std::{
@@ -60,7 +62,15 @@ async fn until(
     id: &str,
     predicate: impl Fn(&Value) -> bool,
 ) -> (Value, Vec<Value>) {
-    let end = std::time::Instant::now() + Duration::from_secs(20);
+    until_for(server, id, Duration::from_secs(20), predicate).await
+}
+async fn until_for(
+    server: &Server,
+    id: &str,
+    timeout: Duration,
+    predicate: impl Fn(&Value) -> bool,
+) -> (Value, Vec<Value>) {
+    let end = std::time::Instant::now() + timeout;
     let (mut next, mut epoch, mut events) = (0u64, String::new(), vec![]);
     loop {
         let value = op(
@@ -136,6 +146,7 @@ const scenarioFile="#);
             .contains("PRIVATE_LOGIN_SENTINEL")
     );
     saved_threads::exercise(&server, &data, &space).await;
+    streaming::exercise(&server, &data, &space).await;
     // Exercise the public CLI through the full transport in both output modes.
     for json_output in [false, true] {
         let mut command = tokio::process::Command::new(BIN);

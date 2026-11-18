@@ -64,7 +64,13 @@ pub const DIRECTORY_PAGE_SIZE: usize = 50;
 #[serde(deny_unknown_fields)]
 pub struct DirectoryPageInput {
     /// The previous page's cursor. Omit it to start at the first row.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::optional_present"
+    )]
+    #[ts(optional)]
+    #[schemars(with = "String", length(min = 1, max = 524288))]
     pub cursor: Option<String>,
 }
 
@@ -75,7 +81,13 @@ pub struct SpaceDirectoryPageInput {
     /// Space UUID.
     pub space_id: String,
     /// The previous page's cursor for this space and operation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::optional_present"
+    )]
+    #[ts(optional)]
+    #[schemars(with = "String", length(min = 1, max = 524288))]
     pub cursor: Option<String>,
 }
 
@@ -87,7 +99,13 @@ pub struct GroupDirectoryPageInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_id: Option<String>,
     /// Use the group list cursor or, with `group_id`, its member cursor.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::optional_present"
+    )]
+    #[ts(optional)]
+    #[schemars(with = "String", length(min = 1, max = 524288))]
     pub cursor: Option<String>,
 }
 
@@ -408,7 +426,7 @@ fn validate_target(input: &JsonObject) -> Result<(), Error> {
         crate::validate_id(space)?;
     }
     if let Some(cursor) = input.get("cursor").and_then(|v| v.as_str()) {
-        crate::validate_id(cursor)?;
+        crate::validate_page_cursor(cursor)?;
     }
     for field in ["account_id", "group_id", "invite_id"] {
         if let Some(value) = input.get(field).and_then(|v| v.as_str()) {

@@ -317,6 +317,10 @@ app: string,
  */
 write: boolean,
 /**
+ * Choices enforced by the server for this action, in display order.
+ */
+lifetimes: Array<ApprovalLifetime>,
+/**
  * Exact operation details when raised by an automatic approval check.
  */
 action: JsonObject, } | { "kind": "secret",
@@ -869,7 +873,7 @@ pool: boolean,
  */
 thread_id: string,
 /**
- * Job UUID for events/stop/resume/mode/access operations.
+ * Job UUID for job operations. A thread credential can omit it for access.request.
  */
 job_id: string,
 /**
@@ -1036,11 +1040,35 @@ name: string,
 /**
  * Short description, at most 512 bytes.
  */
-summary: string, } | { "type": "tool_finished",
+summary: string, } | { "type": "tool_output",
 /**
  * Provider-issued step identity.
  */
 id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short target or description, at most 512 bytes.
+ */
+summary: string,
+/**
+ * UTF-8 bytes of tool text identified by the adapter.
+ */
+bytes: number, } | { "type": "tool_finished",
+/**
+ * Provider-issued step identity.
+ */
+id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short target or description, at most 512 bytes.
+ */
+summary: string,
 /**
  * Whether the tool reported failure.
  */
@@ -1189,7 +1217,7 @@ input: { [key in string]?: unknown }, };
  * Stable error categories used by every operation failure; each maps to one HTTP status.
  */
 
-export type ErrorCode = "unauthorized" | "forbidden" | "not_found" | "conflict" | "invalid_input" | "too_large" | "unavailable" | "internal";
+export type ErrorCode = "unauthorized" | "forbidden" | "passkey_reverification_required" | "not_found" | "conflict" | "invalid_input" | "too_large" | "unavailable" | "internal";
 /**
  * Safe error payload for all operations; messages must not contain credentials or private diagnostics.
  */
@@ -1331,6 +1359,10 @@ export type NotesListInput = {
  */
 tag?: string,
 /**
+ * Opaque cursor from the preceding page with the same space and filters.
+ */
+cursor?: string,
+/**
  * Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.
  */
 space_id: string, };
@@ -1346,7 +1378,11 @@ space_id: string,
 /**
  * Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.
  */
-prefix: string, };
+prefix: string,
+/**
+ * Opaque cursor from the preceding page with the same space and filters.
+ */
+cursor?: string, };
 /**
  * Metadata for one picker match, including its relative Markdown destination.
  */
@@ -1384,7 +1420,11 @@ export type NotesLookupResult = {
 /**
  * At most 100 live matches with their exact on-disk destinations.
  */
-notes: Array<NoteMatch>, };
+notes: Array<NoteMatch>,
+/**
+ * Opaque continuation for the same prefix, omitted at the end.
+ */
+next_cursor?: string, };
 /**
  * A named tag and its current note count in one space.
  */
@@ -1459,7 +1499,11 @@ export type TagsResult = {
 /**
  * Up to 100 tag names and counts, in literal name order.
  */
-tags: Array<TagCount>, };
+tags: Array<TagCount>,
+/**
+ * Opaque continuation for the same space and prefix, omitted at the end.
+ */
+next_cursor?: string, };
 /**
  * Input for `notes.get` and `notes-insights.summarize`; a resource ID alone grants no access.
  */
@@ -1582,7 +1626,11 @@ export type NotesListResult = {
 /**
  * At most 100 current summaries, ordered by descending update timestamp then resource ID.
  */
-notes: Array<NoteSummary>, };
+notes: Array<NoteSummary>,
+/**
+ * Opaque continuation for the next page, omitted at the end.
+ */
+next_cursor?: string, };
 /**
  * Result for `notes.get`, `notes.create` and `notes.update`, containing one current snapshot.
  */
@@ -1920,7 +1968,7 @@ export type DirectoryPageInput = {
 /**
  * The previous page's cursor. Omit it to start at the first row.
  */
-cursor: string | null, };
+cursor?: string, };
 /**
  * A continuation scoped to one space.
  */
@@ -1933,7 +1981,7 @@ space_id: string,
 /**
  * The previous page's cursor for this space and operation.
  */
-cursor: string | null, };
+cursor?: string, };
 /**
  * List groups or continue an individual group's member page.
  */
@@ -1946,7 +1994,7 @@ group_id: string | null,
 /**
  * Use the group list cursor or, with `group_id`, its member cursor.
  */
-cursor: string | null, };
+cursor?: string, };
 /**
  * A space role and its currently declared capabilities.
  */

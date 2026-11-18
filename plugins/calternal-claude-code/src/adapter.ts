@@ -16,6 +16,46 @@ const clip = (s: unknown, max: number): string => {
   return result;
 };
 
+type Tool = { name: string; summary: string };
+type ToolInput = Record<string, unknown>;
+
+function toolLabel(value: unknown, max: number): string {
+  if (typeof value !== 'string') return '';
+  const secret = process.env.CALTERNAL_AGENT_TOKEN;
+  const scrubbed = secret ? value.replaceAll(secret, '[redacted]') : value;
+  return clip(scrubbed.replace(/[\u0000-\u001f\u007f]/g, ' ').trim(), max);
+}
+
+function toolDescription(name: string, input: ToolInput): string {
+  switch (name) {
+    case 'Bash': {
+      const executable = toolLabel(input.command, 360).match(/^(?:[\w./-]+)(?=\s|$)/)?.[0];
+      return executable ? `Run ${executable}` : 'Run a workspace command';
+    }
+    case 'Read':
+    case 'Edit':
+    case 'Write': {
+      const file = toolLabel(input.file_path, 360);
+      return file ? `${name} ${file}` : `${name} a workspace file`;
+    }
+    case 'Grep': return 'Search workspace text';
+    case 'Glob': return 'Find workspace files';
+    case 'WebSearch': return 'Search the web';
+    case 'WebFetch': return 'Read a web page';
+    case 'AskUserQuestion': return 'Ask a question';
+    default: return 'Run a provider tool';
+  }
+}
+
+function toolOutputBytes(content: unknown): number {
+  if (typeof content === 'string') return bytes(content);
+  if (Array.isArray(content)) {
+    return content.reduce((total, block) =>
+      total + (block?.type === 'text' && typeof block.text === 'string' ? bytes(block.text) : 0), 0);
+  }
+  return 0;
+}
+
 /** Split a byte stream into bounded UTF-8 JSON lines, rejecting partial trailing input. */
 export async function* lines(input: AsyncIterable<Uint8Array>, max: number): AsyncGenerator<string> {
   let held = Buffer.alloc(0);
@@ -150,6 +190,7 @@ export class Adapter {
       });
       child.stdin.on('error', () => {});
       child.stdin.end(prompt);
+      const steps = new Map<string, Tool>();
       for await (const line of lines(child.stdout, CLI_LINE_BYTES)) {
         const m = JSON.parse(line);
         if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string') {
@@ -171,13 +212,26 @@ export class Adapter {
         if (m.type === 'assistant' && Array.isArray(m.message?.content)) {
           for (const block of m.message.content) if (block.type === 'tool_use') {
             if (block.name === 'AskUserQuestion') await this.emit({ type: 'question', text: 'Claude Code needs your answer. Use Calternal to reply.' });
-            await this.emit({ type: 'tool_started', id: clip(block.id,128), name: clip(block.name,128), summary: ({Read:'Read a workspace file',Bash:'Run a workspace command',Edit:'Edit a workspace file',Write:'Write a workspace file',Grep:'Search workspace text',Glob:'Find workspace files',WebSearch:'Search the web',WebFetch:'Read a web page'} as Record<string,string>)[String(block.name)] ?? 'Run a provider tool' });
+            const id = toolLabel(block.id, 128);
+            const name = toolLabel(block.name, 128) || 'Tool';
+            if (!id || steps.has(id) || steps.size >= 128) throw new Error('tool identity');
+            const tool = { name, summary: toolDescription(name, block.input ?? {}) };
+            steps.set(id, tool);
+            await this.emit({ type: 'tool_started', id, ...tool });
           }
         }
         if (m.type === 'user' && Array.isArray(m.message?.content)) {
           for (const block of m.message.content) if (block.type === 'tool_result') {
-            // Tool output can contain credentials. Keep completion status, not the raw output.
-            await this.emit({ type: 'tool_finished', id: clip(block.tool_use_id,128), failed: block.is_error === true, detail: '' });
+            const id = toolLabel(block.tool_use_id, 128);
+            const tool = steps.get(id);
+            // A resumed CLI can return the result of a tool from an earlier process.
+            if (!tool) continue;
+            steps.delete(id);
+            const count = toolOutputBytes(block.content);
+            if (count) await this.emit({ type: 'tool_output', id, ...tool, bytes: count });
+            const failed = block.is_error === true;
+            await this.emit({ type: 'tool_finished', id, ...tool, failed,
+              detail: failed ? `${tool.summary} failed` : `${tool.summary} completed` });
           }
         }
         if (m.type === 'rate_limit_event' && m.rate_limit_info?.status === 'rejected') {

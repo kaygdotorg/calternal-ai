@@ -14,6 +14,15 @@ pub struct NotePrefixInput {
     /// Literal prefix, up to 256 Unicode scalars. Empty starts at the first name.
     #[schemars(length(max = 256))]
     pub prefix: String,
+    /// Opaque cursor from the preceding page with the same space and filters.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_present"
+    )]
+    #[ts(optional)]
+    #[schemars(with = "String", length(min = 1, max = 524288))]
+    pub cursor: Option<String>,
 }
 
 /// Metadata for one picker match, including its relative Markdown destination.
@@ -32,6 +41,10 @@ pub struct NoteMatch {
 pub struct NotesLookupResult {
     /// At most 100 live matches with their exact on-disk destinations.
     pub notes: Vec<NoteMatch>,
+    /// Opaque continuation for the same prefix, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_cursor: Option<String>,
 }
 
 /// A named tag and its current note count in one space.
@@ -50,6 +63,10 @@ pub struct TagCount {
 pub struct TagsResult {
     /// Up to 100 tag names and counts, in literal name order.
     pub tags: Vec<TagCount>,
+    /// Opaque continuation for the same space and prefix, omitted at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub next_cursor: Option<String>,
 }
 
 /// Rename one note at the revision shown in the list.
@@ -159,6 +176,7 @@ fn list(input: &JsonObject) -> Result<(), Error> {
     {
         return Err(Error::invalid_input("invalid tag name"));
     }
+    i.cursor.as_deref().map(validate_page_cursor).transpose()?;
     validate_id(&i.space_id)
 }
 
@@ -167,11 +185,13 @@ fn prefix(input: &JsonObject) -> Result<(), Error> {
     if i.prefix.chars().count() > 256 || i.prefix.chars().any(char::is_control) {
         return Err(Error::invalid_input("invalid prefix"));
     }
+    i.cursor.as_deref().map(validate_page_cursor).transpose()?;
     scope(&i.space_id)
 }
 
 fn space_input(input: &JsonObject) -> Result<(), Error> {
-    let i: SpaceInput = crate::validation::decode(input)?;
+    let i: SpaceDirectoryPageInput = crate::validation::decode(input)?;
+    i.cursor.as_deref().map(validate_page_cursor).transpose()?;
     scope(&i.space_id)
 }
 
@@ -209,7 +229,7 @@ macro_rules! operation {
 pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     operation!(
         "notes.list",
-        "List up to 100 live notes, optionally under a tag",
+        "List a page of up to 100 live notes, optionally under a tag",
         SpaceRead,
         Read,
         false,
@@ -239,11 +259,11 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     ),
     operation!(
         "trash.list",
-        "List notes in the space's Trash",
+        "List a page of up to 100 notes in the space's Trash",
         SpaceRead,
         Read,
         false,
-        SpaceInput,
+        SpaceDirectoryPageInput,
         NotesListResult,
         space_input
     ),
@@ -269,7 +289,7 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     ),
     operation!(
         "notes.lookup",
-        "Find notes by title prefix",
+        "Find a page of up to 100 notes by title prefix",
         SpaceRead,
         Read,
         false,
@@ -279,17 +299,17 @@ pub static NOTE_OPERATIONS: &[NoteOperation] = &[
     ),
     operation!(
         "tags.list",
-        "List tags and their current note counts",
+        "List a page of up to 100 tags and their current note counts",
         SpaceRead,
         Read,
         false,
-        SpaceInput,
+        SpaceDirectoryPageInput,
         TagsResult,
         space_input
     ),
     operation!(
         "tags.lookup",
-        "Find tags by name prefix",
+        "Find a page of up to 100 tags by name prefix",
         SpaceRead,
         Read,
         false,

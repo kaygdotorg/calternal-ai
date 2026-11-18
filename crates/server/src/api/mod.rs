@@ -16,10 +16,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use calternal_core::{
     ErrorCode, GENUI_VERSION, JsonObject, MAX_BODY_BYTES, NoteResult, NotesCreateInput,
-    NotesGetInput, NotesHistoryInput, NotesHistoryResult, NotesUpdateInput, OperationResponse,
-    PROTOCOL_VERSION, PluginInput, PluginPreviewResult, PluginResult, PluginState,
-    PluginsListInput, PluginsListResult, True, canonical_request_input, operation_catalog,
-    parse_request,
+    NotesGetInput, NotesUpdateInput, OperationResponse, PROTOCOL_VERSION, PluginInput,
+    PluginPreviewResult, PluginResult, PluginState, PluginsListInput, PluginsListResult, True,
+    canonical_request_input, operation_catalog, parse_request,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -36,8 +35,10 @@ use crate::store::{PluginRow, Store, sha256_hex};
 use calternal_types::{AccountId, Error, SpaceId};
 
 pub(crate) mod authorization;
+mod cursors;
 mod dispatch;
 mod guard;
+mod note_pages;
 mod notes;
 pub(crate) mod people;
 mod plugins;

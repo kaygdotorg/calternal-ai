@@ -34,23 +34,18 @@ impl Output {
                 "text_delta" => {
                     let _ = write!(out, "{}", e["text"].as_str().unwrap_or(""));
                 }
-                "tool_started" => {
-                    let _ = writeln!(
-                        out,
-                        "\nStep: {}",
-                        e["summary"].as_str().unwrap_or("Tool started")
-                    );
-                }
-                "tool_finished" => {
-                    let _ = writeln!(
-                        out,
-                        "Step finished: {}",
-                        if e["failed"] == true {
-                            "failed"
-                        } else {
-                            "done"
+                "tool_started" | "tool_output" | "tool_finished" => {
+                    let name = e["name"].as_str().unwrap_or("Tool");
+                    let summary = e["summary"].as_str().unwrap_or("");
+                    let status = match e["type"].as_str() {
+                        Some("tool_output") => {
+                            format!("{} bytes of output", e["bytes"].as_u64().unwrap_or(0))
                         }
-                    );
+                        Some("tool_finished") if e["failed"] == true => "failed".into(),
+                        Some("tool_finished") => "finished".into(),
+                        _ => "started".into(),
+                    };
+                    let _ = writeln!(out, "\nStep: {name} · {summary} ({status})");
                 }
                 "job" => {
                     let _ = writeln!(out, "Turn: {}", e["job"]["id"].as_str().unwrap_or(""));

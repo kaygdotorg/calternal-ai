@@ -5,30 +5,37 @@
  *   - `requests.answer` `{ id, answer }` (a question's form values), `requests.approve` `{ id, lifetime: "once" | "this_thread" }`, `requests.deny` `{ id }`.
  *   - A secret's value is not an operation: it goes to `POST /api/v1/auth/secrets/provide` `{ space_id?, request_id, value }` (a signed-in session with a fresh passkey check), and is not kept here.
  * Approving needs a fresh passkey proof on an installation session, so a development bearer is refused: the refusal reaches the person as the server's own words.
- * Which lifetimes an approval allows is the server's rule (irreversible and access-widening actions are single-use): `lifetimesOf` reads it from the action's risk (or a `lifetimes` list when the server sends one),
+ * Which lifetimes an approval allows is the server's rule (`detail.lifetimes`, in display order; irreversible and access-widening actions are single-use): `lifetimesOf` reads that list and nothing else,
  * and the bar offers nothing else. Not polled: the thread feed calls `refresh` when a turn starts or stops waiting.
  */
 import { spaces } from "../shell/spaces.svelte";
 import type { RequestsClient } from "../apps/threads/client";
 import type { Answer, Request } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
+import { reverify as reverifyPasskey } from "./auth";
 
 /** One request as the server lists it. */
 export interface WireRequest {
+  /** The request's UUID; answering it names it. */
   id: string;
+  /** The space it belongs to, when it has one. */
   space_id?: string | null;
+  /** The thread that asked, when it came from a thread. */
   thread_id?: string | null;
+  /** What is asked: a question, an approval or a secret, with the data its form needs (read by `requestOf`). */
   detail:
     | { kind: "question"; label: string; form: { genui_version: number; source: string } }
-    | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string; risk?: string }; lifetimes?: string[] }
+    | { kind: "approval"; app: string; write: boolean; action?: { operation?: string; input?: unknown; request_id?: string }; lifetimes: string[] }
     | { kind: "secret"; name: string; label: string; reason: string; expires_at_ms: number };
 }
 
-/** The lifetimes an approval may be given for. A server-sent list wins; otherwise the action's risk decides (the requests lane's rule). */
+/**
+ * The lifetimes an approval may be given for: the server's own list (`once`, `this_thread`), mapped to the bar's words. The server enforces the same list when it checks a decision, so nothing is
+ * inferred here; a list that is missing or empty (an older server) offers `once` only, the choice that is always safe.
+ */
 export function lifetimesOf(d: Extract<WireRequest["detail"], { kind: "approval" }>): ("once" | "thread")[] {
-  if (d.lifetimes?.length) return d.lifetimes.map((l) => (l === "this_thread" || l === "thread" ? "thread" : "once")).filter((l, i, a) => a.indexOf(l) === i) as ("once" | "thread")[];
-  const risk = d.action?.risk;
-  return risk === "irreversible" || risk === "widens_access" ? ["once"] : ["once", "thread"];
+  const l = (d.lifetimes ?? []).map((x) => (x === "this_thread" ? "thread" : "once") as "once" | "thread").filter((x, i, a) => a.indexOf(x) === i);
+  return l.length ? l : ["once"];
 }
 
 /** A listed request as the Threads app's type. An unknown kind is dropped (the bar cannot draw it). */
@@ -61,6 +68,7 @@ export function answerInput(id: string, a: Answer): { operation: string; input: 
   }
 }
 
+/** The real server's requests (questions, approvals, secrets) behind the requests interface: lists them for a space and answers; failures are `ServerError`, and an answer to a request that is gone is `not_found`. One read per call. */
 export class ServerRequests implements RequestsClient {
   private watchers = new Set<(r: Request[]) => void>();
   /** Prompts the person chose to skip on this page: hidden until the page is reloaded (the server has nothing to decline; the prompt expires by itself). */
@@ -68,7 +76,20 @@ export class ServerRequests implements RequestsClient {
   private known = new Map<string, Request>();
   /** Set when the server answered `not_found` to `requests.list`: it does not offer requests, so there is nothing to ask again until the page is reloaded. */
   private absent = false;
-  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) { void this.space; }
+  /** `reverify` asks for the passkey again (a real ceremony in a browser); tests pass a stand-in. */
+  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id, private reverify: () => Promise<void> = reverifyPasskey) { void this.space; }
+  /**
+   * Runs a call that needs a fresh passkey proof (an approval, a secret's value). The server answers a stale session with a plain `forbidden`, not a
+   * dedicated code, so a forbidden answer is retried once after asking for the passkey; if the second try is refused too, that refusal is thrown.
+   * Cost: none unless the proof is stale; then one passkey ceremony (two requests and the person's touch).
+   */
+  private async fresh<T>(call: () => Promise<T>): Promise<T> {
+    try { return await call(); } catch (e) {
+      if (!(e instanceof ServerError) || e.code !== "forbidden") throw e;
+      await this.reverify();
+      return call();
+    }
+  }
 
   async requests(): Promise<Request[]> {
     if (this.absent) return [];
@@ -95,12 +116,12 @@ export class ServerRequests implements RequestsClient {
   async answer(id: string, a: Answer): Promise<void> {
     if (a.kind === "secret") await this.provide(id, a.value);
     else if (a.kind === "secret-skip") this.skipped.add(id);
-    else { const call = answerInput(id, a)!; await this.server.operate(call.operation, call.input); }
+    else { const call = answerInput(id, a)!; const run = () => this.server.operate(call.operation, call.input); await (call.operation === "requests.approve" ? this.fresh(run) : run()); }
     await this.refresh();
   }
   /** Sends a secret's value to the trusted endpoint. The value is not kept; a refusal (no fresh passkey check, expired) is thrown as the server said it. */
   private async provide(id: string, value: string): Promise<void> {
     const r = this.known.get(id);
-    await this.server.post("/api/v1/auth/secrets/provide", { request_id: id, ...(r?.kind === "secret" && r.spaceId ? { space_id: r.spaceId } : {}), value });
+    await this.fresh(() => this.server.post("/api/v1/auth/secrets/provide", { request_id: id, ...(r?.kind === "secret" && r.spaceId ? { space_id: r.spaceId } : {}), value }));
   }
 }

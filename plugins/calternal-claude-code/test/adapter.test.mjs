@@ -13,10 +13,24 @@ async function run(prompt){const f=fixture();await f.command({type:'start',optio
 test('official CLI stream maps text, tools, session and usage without raw diagnostics',async()=>{
  const events=await run('hello');
  assert.deepEqual(events.map(e=>e.seq),events.map((_,i)=>i+1));
- assert.deepEqual(events.map(e=>e.event.type),['check','session','text_delta','tool_started','tool_finished','usage','done']);
+ assert.deepEqual(events.map(e=>e.event.type),['check','session','text_delta','tool_started','tool_output','tool_finished','usage','done']);
  assert.equal(events.at(-1).event.outcome,'done');
  assert.equal(events[2].event.text,'Hello 🌏\n');
  assert.ok(!JSON.stringify(events).includes('PRIVATE_LOGIN_SENTINEL'));
+});
+test('scripted steps keep their name, target and bounded output metadata',async()=>{
+ const events=(await run('scripted-tool-steps long-output')).map(e=>e.event);
+ const steps=events.filter(e=>e.type.startsWith('tool_'));
+ assert.deepEqual(steps.map(e=>[e.type,e.name,e.id]),[
+  ['tool_started','Bash','step-1'],['tool_output','Bash','step-1'],['tool_finished','Bash','step-1'],
+  ['tool_started','Read','step-2'],['tool_output','Read','step-2'],['tool_finished','Read','step-2'],
+ ]);
+ assert.equal(steps[0].summary,'Run ls');
+ assert.equal(steps[1].summary,'Run ls');
+ assert.ok(steps[1].bytes>=96*1024);
+ assert.equal(steps[2].detail,'Run ls completed');
+ assert.equal(steps[5].failed,true);
+ assert.ok(!JSON.stringify(steps).includes('PRIVATE_LOGIN_SENTINEL'));
 });
 test('questions and failures are normalized',async()=>{
  assert.ok((await run('question')).some(e=>e.event.type==='question'));

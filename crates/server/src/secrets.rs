@@ -125,7 +125,9 @@ pub async fn dispatch<D: Directory>(
             "secrets.request" => {
                 let i: SecretsRequestInput = decode(input)?;
                 let owner = owner(&state, &p, space_arg(&i.space_id)?, op, policy.required)?;
-                let name = SecretName::new(&i.name).map_err(host_error)?;
+                let name = SecretName::new(&i.name).map_err(|_| Error::invalid_input(
+                    "Use 1 to 96 lowercase ASCII letters, digits, or . _ - : for the secret name. Start with a letter or digit, then retry with the corrected name.",
+                ))?;
                 let id = secrets
                     .request(&owner, &name, &i.label, &i.reason, &actor)
                     .map_err(host_error)?;
@@ -229,13 +231,12 @@ async fn provide<D: Directory>(State(state): State<Shared<D>>, req: Request) -> 
     else {
         return reply(Error::unauthorized("missing or invalid session"));
     };
-    if service
+    if let Err(error) = service
         .auth
         .require_fresh(account, installation, false)
         .await
-        .is_err()
     {
-        return reply(Error::forbidden("verify with your passkey again first"));
+        return reply(crate::account_http::fresh_error(error));
     }
     let json = req
         .headers()

@@ -116,6 +116,8 @@
   const mentions = $derived(marks.filter((m) => m.kind === "mention" || m.kind === "person").map((m) => ({ ...m, label: text.slice(m.start + 1, m.end).replace(/^\[|\]$/g, "") })));
   const dropMention = (m: { start: number; end: number }) => { text = (text.slice(0, m.start) + text.slice(m.end)).replace(/ {2,}/g, " ").replace(/^ /, ""); queueMicrotask(() => field?.focus()); };
   const running = $derived(thread.state === "running");
+  // A turn parked on a request of yours is still the person's to stop (stopping cancels the request; the server refuses a new message to it). An interrupted turn has its own notice.
+  const parked = $derived(thread.state === "waiting" && !thread.notice);
   const provider = $derived(providers.find((p) => p.id === thread.provider));
   const modelName = $derived(provider?.models.find((m) => m.id === thread.model)?.name ?? thread.model);
   const items = $derived<MenuItem[]>(providers.flatMap((p) => p.models.map((m) => ({ id: `${p.id}:${m.id}`, label: m.name, sub: p.name, icon: p.id === "codex" ? "codex" : "spark", checked: p.id === thread.provider && m.id === thread.model }))));
@@ -144,7 +146,7 @@
   </div>
   <div class="field" bind:this={fieldBox}>
     <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
-    {#if running && !text.trim()}
+    {#if (running || parked) && !text.trim()}
       <IconButton icon="stop" label="Stop the turn" tone="tint" onclick={onstop} />
     {:else}
       <IconButton icon="send" label={running ? "Steer the turn" : "Send message"} tone="accent" disabled={!text.trim()} onclick={send} />

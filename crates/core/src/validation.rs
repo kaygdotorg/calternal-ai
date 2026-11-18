@@ -46,6 +46,18 @@ pub fn validate_title(value: &str) -> Result<(), Error> {
         "title must have 1..256 characters and no controls",
     )
 }
+/// Maximum byte length of a wire cursor, including its signature and encoding.
+pub const MAX_PAGE_CURSOR_BYTES: usize = 512 * 1024;
+
+/// Bound a wire cursor before decoding. The limit accommodates a base64-encoded
+/// tag key from the 256 KiB content metadata budget. Cost is constant time.
+pub fn validate_page_cursor(cursor: &str) -> Result<(), Error> {
+    require(
+        !cursor.is_empty() && cursor.len() <= MAX_PAGE_CURSOR_BYTES,
+        "invalid page cursor",
+    )
+}
+
 /// Check the UTF-8 byte length in constant time; does not parse Markdown.
 ///
 /// # Errors

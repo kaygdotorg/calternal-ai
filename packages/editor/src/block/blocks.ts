@@ -7,6 +7,7 @@ import { syntaxTree } from "@codemirror/language";
 import { IterMode } from "@lezer/common";
 import type { ChangeSpec, EditorState } from "@codemirror/state";
 
+/** A block of the Markdown document: `[from, to)` in UTF-16 code units, what kind (`heading1` to `heading6`, `code`, `rule`, `quote`, `table`, `html`, `item`, `paragraph`, or the parser's node name for anything else) and how deeply nested. Blocks are derived from the parse, never stored. */
 export interface Block { from: number; to: number; kind: string; depth: number }
 /** The host's own classification: return a kind name to override the default, or null to keep it. */
 export type Kinds = (block: Block, state: EditorState) => string | null;

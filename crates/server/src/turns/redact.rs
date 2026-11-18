@@ -43,14 +43,22 @@ impl Redactor {
             }
             Check(status) => self.string(&mut status.sign_in_command),
             Session { session_id } => self.string(session_id),
-            ToolStarted { id, name, summary } => {
-                self.string(id);
-                self.string(name);
-                self.string(summary);
+            ToolStarted { id, name, summary }
+            | ToolOutput {
+                id, name, summary, ..
+            } => {
+                self.tool(id, name, summary);
             }
-            ToolFinished { id, detail, .. } => {
-                self.string(id);
+            ToolFinished {
+                id,
+                name,
+                summary,
+                detail,
+                ..
+            } => {
+                self.tool(id, name, summary);
                 self.string(detail);
+                *detail = detail.replace(char::is_control, " ");
             }
             Question { text } => self.string(text),
             ApprovalRequest { summary } => self.string(summary),
@@ -62,6 +70,20 @@ impl Redactor {
             Usage { .. } => {}
         }
         None
+    }
+    fn tool(&self, id: &mut String, name: &mut String, summary: &mut String) {
+        self.string(id);
+        self.string(name);
+        self.string(summary);
+        for text in [&mut *name, &mut *summary] {
+            *text = text.replace(char::is_control, " ").trim().to_owned();
+        }
+        if name.is_empty() {
+            name.push_str("Tool");
+        }
+        if summary.is_empty() {
+            summary.push_str("Run a provider tool");
+        }
     }
     /// At terminal output a remaining proper prefix cannot become a complete
     /// credential. Flush it as a final ordered text delta before Done.

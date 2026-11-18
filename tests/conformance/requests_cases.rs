@@ -348,15 +348,25 @@ async fn request_operations_keep_questions_approvals_and_secrets_account_private
     .unwrap();
     drop(c);
     f.start().await;
-    assert_eq!(
-        f.op(
+    let stale = f
+        .op(
             1,
             "requests.approve",
-            json!({"id":approval,"lifetime":"once"})
+            json!({"id":approval,"lifetime":"once"}),
         )
-        .await
-        .status,
-        403
+        .await;
+    assert_eq!(stale.status, 403, "{}", stale.body);
+    assert_eq!(
+        stale.body["error"]["code"],
+        "passkey_reverification_required"
+    );
+    let mode = f
+        .op(1, "agent.mode", json!({"job_id":job,"mode":"full_access"}))
+        .await;
+    assert_eq!(mode.status, 403, "{}", mode.body);
+    assert_eq!(
+        mode.body["error"]["code"],
+        "passkey_reverification_required"
     );
     let login = f.login(1).await;
     login.ok();
@@ -418,6 +428,18 @@ async fn request_operations_keep_questions_approvals_and_secrets_account_private
     .await;
     assert_eq!(status, 200, "{app}");
     let app_approval = app["data"]["approval_id"].clone();
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    let pending = inbox.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["id"] == app_approval)
+        .unwrap();
+    assert_eq!(
+        pending["detail"]["lifetimes"],
+        json!(["once", "this_thread"])
+    );
     f.op(
         1,
         "requests.approve",

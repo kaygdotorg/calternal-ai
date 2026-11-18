@@ -7,8 +7,10 @@ import { invert, mapPos, type Change } from "./transaction";
 import type { Origin } from "./origins";
 
 interface Step { changes: Change[]; at: number; kind: "typing" | "command" }
+/** The history's limits: how long a pause ends a typing step (`idleMs`), how many steps are kept, and the clock (tests). */
 export interface HistoryOptions { idleMs?: number; limit?: number; now?: () => number }
 
+/** Undo and redo as steps: typing merges into one step until a pause, a command is its own step, and the oldest step is dropped at the limit. Pure state over `Change`s (no DOM), so it is shared by the block editor and every field. */
 export class History {
   private undoStack: Step[] = [];
   private redoStack: Step[] = [];

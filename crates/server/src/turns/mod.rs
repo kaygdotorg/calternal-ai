@@ -12,6 +12,7 @@ mod redact;
 pub mod retry;
 mod run;
 mod thread_admission;
+mod tool_steps;
 pub(crate) use run::schedule_for_account as schedule_thread;
 pub(crate) use thread_admission::{admit as admit_thread, finish_stop as finish_thread_stop};
 
@@ -51,8 +52,27 @@ pub async fn dispatch<D: Directory>(
     agent: Option<Authority>,
     rid: &str,
     op: &str,
-    input: JsonObject,
+    mut input: JsonObject,
 ) -> Result<Value, Error> {
+    if op == "access.request" {
+        if let Some(a) = &agent {
+            match input.get("job_id") {
+                None => {
+                    input.insert("job_id".into(), json!(a.job));
+                }
+                Some(id) if id.as_str() == Some(a.job.as_str()) => {}
+                Some(_) => return Err(Error::not_found("turn not found")),
+            }
+        } else if !input
+            .get("job_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+        {
+            return Err(Error::invalid_input(
+                "Supply the turn's job_id for a person access request.",
+            ));
+        }
+    }
     if let Some(a) = &agent {
         a.check(op, &input)?;
     }
@@ -439,9 +459,7 @@ pub(crate) async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) ->
         installation,
     } = session
     else {
-        return Err(Error::forbidden(
-            "sign in again with a passkey to approve access",
-        ));
+        return Err(Error::passkey_reverification_required());
     };
     let service = state
         .directory
@@ -451,7 +469,7 @@ pub(crate) async fn fresh<D: Directory>(state: &Shared<D>, session: &Session) ->
         .auth
         .require_fresh(*account, *installation, false)
         .await
-        .map_err(|_| Error::forbidden("sign in again with a passkey to approve access"))
+        .map_err(crate::account_http::fresh_error)
 }
 
 pub(crate) fn release(machines: &MachineService, job: &Job) -> Result<(), Error> {

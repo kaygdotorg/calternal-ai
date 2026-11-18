@@ -13,7 +13,7 @@ Response shapes and the Markdown are in `server/thread-file.ts`; `server/threads
 | Send | `threads.send` with the caller's request id; the composer's permission mode, provider and model travel with it (the server applies them directly) |
 | Working state and steps | the job's SSE stream: provider events are nested, `chunk.data.event` (`text_delta`, `tool_started`, `tool_finished`); at its end the file is re-read for the saved answer |
 | Stop, rename, archive, unarchive, delete | `threads.stop`, `.rename`, `.archive`, `.unarchive`, `.delete` |
-| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`) on the requests lane's operations (`docs/requests.md`): `requests.list` (account-wide, `{}`), `requests.answer` `{id, answer}`, `requests.approve` `{id, lifetime: once or this_thread}`, `requests.deny`; a secret's value goes to `POST /api/v1/auth/secrets/provide`. The bar offers "Allow for this thread" only when the approval may last (irreversible and access-widening actions are single-use: `lifetimesOf`). Approving needs a fresh passkey proof on an installation session: a development bearer is refused and the server's words are shown. Refreshed when the feed says a turn started or stopped waiting |
+| Request bar (questions, approvals, secrets) | `ServerRequests` (`server/requests.ts`) on the requests lane's operations (`docs/requests.md`): `requests.list` (account-wide, `{}`), `requests.answer` `{id, answer}`, `requests.approve` `{id, lifetime: once or this_thread}`, `requests.deny`; a secret's value goes to `POST /api/v1/auth/secrets/provide`. The bar offers "Allow for this thread" only when the server's `detail.lifetimes` lists it (`lifetimesOf` reads that list and infers nothing; none listed means once only). Approving needs a fresh passkey proof on an installation session: a development bearer is refused and the server's words are shown. Refreshed when the feed says a turn started or stopped waiting |
 
 Tested against a recorded-response double (`threads-client.test.ts`) and, end to end, against a seeded installation (`e2e/live-threads.mjs`).
 
@@ -60,8 +60,13 @@ Resume and Try again are `agent.resume` on the thread's last job.
 
 ## Backend follow-ups (for the requests and threads lanes)
 
-- **Which lifetimes a request allows.** The list does not say; the UI reads it from `action.risk` (`irreversible` and `widens_access` are single-use) in `lifetimesOf`. The server should send it, for example `detail.lifetimes: ["once"]` or `["once", "this_thread"]`, so the rule lives in one place. `lifetimesOf` already prefers such a list when it is there.
+- **Which lifetimes a request allows.** Resolved: the server sends `detail.lifetimes` (dev, 2026-11-18) and `lifetimesOf` uses only it.
 - **A fixture provider that emits tool events.** The seeded installation's provider emits only `session` and `text_delta`, so a page reloaded mid-turn shows the Working row with no steps (a real provider's steps are replayed from the oldest retained event when a page connects without a bookmark; checked: the second connection returns the whole stream). A fixture with a few `tool_started` and `tool_finished` events would let `live-threads.mjs` check the steps.
 - **Resuming a job stream after a bookmark** re-sent the `session` chunk in a probe (`?after=<id>` with the last id seen): worth a look, harmless to the UI.
 
 The page's session code is the shell's: the adapter uses the shared `ServerClient` (bearer in development token mode, the browser's cookie otherwise, nothing of its own), and `/api/v1/auth/me` is called by the shell's `server/boot.ts`, not by the Threads adapter.
+
+## Prepared for the delta read and `thread_full` (2026-11-18)
+
+- `thread_full` (a checkpoint past 2 MiB fails the turn): `reasonNotice` maps it to the `thread-full` notice, "This thread is full", with a New thread action (`ThreadNotices`, fixture scenario `?scenario=full`). Sends are left to the server to refuse.
+- Delta read: `ServerThreads.pull` re-reads the whole thread on each checkpoint (`load` is the one place that calls `threads.get`). When `threads.get` takes `since` and returns only the bytes one checkpoint added, `load` keeps the saved text and revision per thread and appends the returned bytes before parsing; a `reset` or a revision that does not follow from the kept one falls back to the full read. Waiting for the server's merge to fix the field names.

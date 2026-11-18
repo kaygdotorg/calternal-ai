@@ -33,6 +33,44 @@ async fn new_thread(f: &Fixture, space: &str) -> Value {
     created.body["data"]["thread"]["id"].clone()
 }
 
+#[tokio::test]
+async fn thread_token_supplies_access_request_job_and_refuses_another_job() {
+    let f = Fixture::new().await;
+    let mut machine = Machine::enroll(&f).await;
+    let space = &f.spaces[3];
+    let thread = new_thread(&f, space).await;
+    let job = start_turn(&f, space, &thread, "Request from the thread credential").await;
+    let token = machine.next_token(&f).await;
+    let wrong = json!({"job_id":uuid::Uuid::now_v7(),"app":"notes","space_id":space});
+    let (status, error) = agent(&f, &token, "wrong-job", "access.request", wrong).await;
+    assert_eq!(status, 404, "{error}");
+    let (status, answer) = agent(
+        &f,
+        &token,
+        "implicit-job",
+        "access.request",
+        json!({"app":"notes"}),
+    )
+    .await;
+    assert_eq!(status, 200, "{answer}");
+    let id = &answer["data"]["approval_id"];
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    assert!(
+        inbox.body["data"]["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["id"] == *id && r["thread_id"] == thread)
+    );
+    let turn = f.op(1, "agent.events", json!({"job_id":job})).await;
+    turn.ok();
+    assert_eq!(
+        turn.body["data"]["job"]["checkpoint"]["person_request"],
+        *id
+    );
+}
+
 /// A cancelled approval cannot change any successor's credential.
 #[tokio::test]
 async fn approving_a_stopped_turns_request_does_not_strand_the_current_turn() {
@@ -240,6 +278,19 @@ async fn unreceipted_actions_replay_success_and_spend_approval_even_on_failure()
     .await;
     assert_eq!(status, 403, "{denial}");
     let id = &denial["error"]["details"]["approval_id"];
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    let pending = inbox.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| &request["id"] == id)
+        .unwrap();
+    assert_eq!(pending["detail"]["lifetimes"], json!(["once"]));
+    let other = f.op(2, "requests.list", json!({})).await;
+    other.ok();
+    assert_eq!(other.body["data"]["requests"], json!([]));
+
     f.op(1, "requests.approve", json!({"id":id,"lifetime":"once"}))
         .await
         .ok();

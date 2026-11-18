@@ -30,6 +30,7 @@ use crate::types::{internal, missing};
 mod collections;
 mod db;
 mod discovery;
+pub use discovery::ItemOrder;
 mod files;
 mod instructions;
 mod journal;
@@ -39,6 +40,7 @@ mod mutations;
 mod pool;
 mod publication;
 mod recovery;
+mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
 mod trash;
 mod types;
@@ -79,6 +81,9 @@ pub struct Content {
 pub(crate) fn file_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
+/// Maximum submitted document size in bytes, before file placement adds identity.
+pub const MAX_DOCUMENT_BYTES: usize = 2 * 1024 * 1024;
+
 /// Maximum serialized metadata bytes per content revision.
 pub const MAX_METADATA_BYTES: usize = 256 * 1024;
 /// How long request receipts are kept by default: seven days, the store's default.
@@ -293,7 +298,17 @@ impl Content {
     /// Cost: cache/space locks, O(log N + page) indexed read and page allocations;
     /// a cold space pays SQLite open cost. No fsync or per-row filesystem stats.
     pub fn list(&self, space: SpaceId, kind: &str, limit: u32) -> Result<Vec<Summary>> {
-        self.with_space(space, |s| s.list(kind, limit, false))
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        self.item_page(
+            space,
+            kind,
+            ItemOrder::Updated { label: None },
+            None,
+            limit as usize,
+        )
+        .map(|p| p.rows)
     }
     /// Reads a bounded immutable history page; cursors bind to this exact item.
     /// Cost: cache/space locks, two or three indexed reads and at most 1,001

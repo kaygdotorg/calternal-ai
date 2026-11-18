@@ -14,7 +14,7 @@ fn request_output_matches_goldens() {
     let samples = [
         (
             "list",
-            json!({"requests":[{"id":id,"space_id":space,"thread_id":null,"detail":{"kind":"approval","app":"notes","write":true,"action":{"operation":"notes.create"}}}]}),
+            json!({"requests":[{"id":id,"space_id":space,"thread_id":null,"detail":{"kind":"approval","app":"notes","write":true,"lifetimes":["once","this_thread"],"action":{"operation":"notes.create"}}}]}),
         ),
         ("answer", json!({"id":id,"status":"answered"})),
         ("approve", json!({"id":id,"status":"approved"})),

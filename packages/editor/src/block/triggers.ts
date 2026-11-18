@@ -9,6 +9,7 @@ import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { matchTrigger } from "../text/triggers";
 import { origin } from "./origin";
 
+/** A picker trigger at the caret: which (`@` mention, `[[` link, `#` tag, `/` skill or insert), what has been typed after it, and the range to replace when a row is chosen. */
 export interface Trigger { kind: "mention" | "link" | "tag" | "skill"; query: string; from: number; to: number; rect: { left: number; right: number; top: number; bottom: number } | null }
 
 /** The trigger at the caret, or null. Pure (the rectangle is added by the plugin). */
