@@ -39,13 +39,16 @@ mod microvm_cases;
 mod notes_cases;
 mod owned_slot_cases;
 mod perf_cases;
+mod plugin_diagnostics_cases;
 mod plugin_parity_cases;
 mod plugin_settings_cases;
 mod plugin_slot_cases;
 
+mod font_cases;
 mod onboarding_cases;
 mod search_cases;
 mod setup_code_cases;
+mod sharing_cases;
 mod simplify_review_cases;
 mod upgrade_handoff_cases;
 #[cfg(feature = "release-upgrade")]
@@ -210,6 +213,9 @@ impl Fixture {
             .unwrap_or_else(|| repo.join("plugins"));
         let mut command = Command::new(binary);
         command.env_clear();
+        if self.dir.path().join("fonts-off").is_file() {
+            command.env("CALTERNAL_FONT_DOWNLOADS", "off");
+        }
         if self.dir.path().join("wallpaper-cache-case").is_file() {
             command.env("CALTERNAL_UNSPLASH_KEY", "fixture-only");
         }
@@ -671,6 +677,21 @@ async fn all_operations_hide_foreign_ids() {
             json!({"space_id":missing,"title":"x","markdown":"x"}),
         ),
         (
+            "plugins.network.content.get",
+            json!({"space_id":f.spaces[0],"frame_id":missing}),
+            json!({"space_id":missing,"frame_id":missing}),
+        ),
+        (
+            "plugins.network.content.preference.get",
+            json!({"space_id":f.spaces[0]}),
+            json!({"space_id":missing}),
+        ),
+        (
+            "plugins.network.content.preference.set",
+            json!({"space_id":f.spaces[0],"preference":"ask"}),
+            json!({"space_id":missing,"preference":"ask"}),
+        ),
+        (
             "plugins.list",
             json!({"space_id":f.spaces[0]}),
             json!({"space_id":missing}),
@@ -727,7 +748,10 @@ async fn all_operations_hide_foreign_ids() {
     covered.extend(requests_cases::OPERATIONS.iter().copied());
     covered.extend(provider_sign_in_cases::OPERATIONS.iter().copied());
     covered.extend(plugin_settings_cases::OPERATIONS.iter().copied());
+    covered.extend(plugin_diagnostics_cases::OPERATIONS.iter().copied());
     covered.extend(search_cases::OPERATIONS.iter().copied());
+    covered.extend(sharing_cases::OPERATIONS.iter().copied());
+    covered.extend(font_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.
     covered.extend([
         "drafts.save",

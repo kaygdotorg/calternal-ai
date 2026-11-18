@@ -39,6 +39,8 @@ impl HostBroker for Broker<'_> {
 
 /// State owned by one worker's session thread.
 pub(super) struct Thread {
+    pub(super) plugin: Arc<Plugin>,
+    pub(super) stderr: super::transport::StderrTail,
     pub(super) _process: Process,
     pub(super) session: WorkerSession,
     pub(super) space: SpaceId,
@@ -113,15 +115,24 @@ impl Thread {
                 break Stop::Idle;
             }
         };
-        self.alive.store(false, Ordering::Release);
         tracing::debug!(space=%self.space,"worker session stopped");
         let message = match stop {
             Stop::Idle => "extension worker stopped",
             Stop::Fault(why) => {
                 tracing::warn!(reason = why, "worker stopped");
+                let reason = match why {
+                    "extension worker stopped" => "worker_stopped",
+                    "extension timed out" => "worker_timeout",
+                    _ => "worker_protocol",
+                };
+                let bytes = self.stderr.lock().unwrap_or_else(|e| e.into_inner());
+                self.plugin
+                    .installed_diagnostics
+                    .fault(self.space, reason, &bytes);
                 why
             }
         };
+        self.alive.store(false, Ordering::Release);
         for id in self.active.keys().cloned().collect::<Vec<_>>() {
             self.finish(&id, Outcome::Failed(Error::unavailable(message)));
         }

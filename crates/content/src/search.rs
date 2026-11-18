@@ -170,6 +170,8 @@ pub struct SearchProbe<'a> {
     pub matching: SearchMatch<'a>,
     /// JSON array of wanted kinds, empty for all manifest-enabled kinds.
     pub kinds: &'a str,
+    /// Optional JSON array of the item UUIDs authorized in this space.
+    pub item_ids: Option<&'a str>,
     /// Authenticated key from the preceding page.
     pub after: Option<&'a SearchKey>,
     /// Upper bound including lookahead.
@@ -183,7 +185,7 @@ const CTE: &str = "WITH allowed(kind) AS (
 )";
 const PREFIX: &str = "SELECT 0,d.title_key,d.id,d.kind,d.title,'' FROM search_docs d
     WHERE d.kind IN allowed AND (d.title_key,d.id)>(?3,?4) AND d.title_key>=?5
-    AND d.title_key<?6 ORDER BY d.title_key,d.id LIMIT ?7";
+    AND d.title_key<?6 AND (?8 IS NULL OR d.id IN (SELECT value FROM json_each(?8))) ORDER BY d.title_key,d.id LIMIT ?7";
 const MATCH: &str = "WITH
     title_rows AS MATERIALIZED (SELECT rowid FROM search_text WHERE search_text MATCH ?4),
     selected AS MATERIALIZED (
@@ -192,6 +194,7 @@ const MATCH: &str = "WITH
         FROM search_text JOIN search_docs d ON d.rowid=search_text.rowid
         LEFT JOIN title_rows t ON t.rowid=d.rowid
         WHERE search_text MATCH ?3 AND d.kind IN allowed
+          AND (?8 IS NULL OR d.id IN (SELECT value FROM json_each(?8)))
           AND (CASE WHEN t.rowid IS NULL THEN 1 ELSE 0 END,d.id)>(?5,?6)
         ORDER BY tier,d.id LIMIT ?7
     )
@@ -206,6 +209,7 @@ const FUZZY: &str = "
     FROM search_title_grams JOIN search_docs d ON d.rowid=search_title_grams.rowid
     WHERE search_title_grams MATCH ?3 AND d.kind IN allowed AND d.id>?4
       AND search_one_edit(d.title_key,?5)
+      AND (?7 IS NULL OR d.id IN (SELECT value FROM json_each(?7)))
     ORDER BY d.id LIMIT ?6";
 
 fn statements() -> &'static [String; 4] {
@@ -254,19 +258,37 @@ fn search(conn: &Connection, filters: &str, probe: &SearchProbe<'_>) -> Result<I
             let end = prefix_end(prefix);
             rows(
                 &sql[usize::from(end.is_none())],
-                params![filters, probe.kinds, first, id, prefix, end, limit],
+                params![
+                    filters,
+                    probe.kinds,
+                    first,
+                    id,
+                    prefix,
+                    end,
+                    limit,
+                    probe.item_ids
+                ],
             )
         }
         SearchMatch::Text { all, title, .. } => {
             let tier = after.map_or(0, |key| key.0);
             rows(
                 &sql[2],
-                params![filters, probe.kinds, all, title, tier, id, limit],
+                params![
+                    filters,
+                    probe.kinds,
+                    all,
+                    title,
+                    tier,
+                    id,
+                    limit,
+                    probe.item_ids
+                ],
             )
         }
         SearchMatch::Fuzzy { grams, term } => rows(
             &sql[3],
-            params![filters, probe.kinds, grams, id, term, limit],
+            params![filters, probe.kinds, grams, id, term, limit, probe.item_ids],
         ),
     }
 }
@@ -341,6 +363,7 @@ impl Content {
             } = probe.matching
             {
                 if let Some(head) = &head
+                    && probe.item_ids.is_none()
                     && allowed.contains("\"threads\"")
                 {
                     message_page = messages::search(

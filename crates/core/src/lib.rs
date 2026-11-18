@@ -14,8 +14,12 @@ pub use note_operations::*;
 pub use notes::*;
 mod plugin_wire;
 pub use plugin_wire::*;
+mod sharing;
+pub use sharing::*;
 mod spaces;
 pub use spaces::*;
+mod appearance;
+pub use appearance::*;
 mod onboarding;
 pub use onboarding::*;
 mod wallpapers;
@@ -27,8 +31,10 @@ pub use calternal_types::ErrorCode;
 pub use models::*;
 pub use validation::*;
 
+mod plugin_diagnostics;
 mod plugin_manifest;
 mod plugin_settings;
+pub use plugin_diagnostics::*;
 pub use plugin_manifest::*;
 pub use plugin_settings::*;
 

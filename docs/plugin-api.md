@@ -129,9 +129,10 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   (`docs/measurements/sandbox-hybrid.md`). CPU is shared by weights at both levels.
 - Drafts live until sent or erased, capped by count and size per account. A message queued
   while offline stays until sent or cancelled; after 7 days it asks before sending.
-- Plugin network access: none by default. A plugin declares destinations in its manifest;
-  a Manager approves them at enable time; the plugin fetches through the server, which
-  logs the request, attaches secrets by handle and may cache results. No raw sockets.
+- Plugin workers have no sockets. A manifest requests distinct named, content
+  fetch, open internet and private grants. The trusted host enforces the current
+  per-space approval and remote-content preferences. See the
+  [network contract](plugin-interface-proposal.md#brokered-network-capabilities).
 - Protocols that need long-lived connections (mail: IMAP, JMAP, SMTP) are Rust engines in
   the server behind a contract, with every outbound connection through one guard
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
@@ -140,6 +141,54 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   and the space's instructions at `AI/AGENTS.md`. A person's own skills, automations,
   instructions and starred prompts are the same files in their personal space.
 
+
+## Durable job waits
+
+The [author reference](../plugins/calternal-plugin-guide/reference.md)
+shows how a replayable job run returns a checkpoint and waits for an
+Inbox answer, an approval, a webhook delivery or its deadline. The
+worker invocation ends while the job waits. Interactive operations
+return a job ID from the existing `start_job` broker call to use waits.
+
+Park, cancellation and delivery use the same jobs.db connection and
+state fence. The first signal commits with the transition to admitted
+and, for Inbox decisions and webhooks, with the replay receipt.
+Duplicate deliveries cannot win the same wait again. The normal job
+scheduler rechecks the original sign-in, capability, package revision
+and activation. Once admitted, ordinary job restart and effect-receipt
+rules apply. After a later checkpoint the signal is no longer included.
+Signal payloads are limited to 16 KiB and are retained with the owning
+job. Job retention and account erasure also remove their waits.
+
+### Signed webhook delivery
+
+Declare a webhook `id` and schema `operation` in `webhooks`, and include
+the same `id` in `secrets`. Configure at least 32 random key bytes for the
+package's space secret of that name through the trusted secret flow. The
+host uses the declared operation's cached input schema for the delivery.
+It hands the payload to the resumed run.
+
+Park with `{kind: "webhook", route, correlation}` using a fresh UUID for
+each wait. The sender posts JSON to
+`/api/v1/plugin-webhooks/<space>/<package>/<route>/<job>/<correlation>`.
+Set `X-Calternal-Timestamp` to Unix seconds and `X-Calternal-Signature`
+to the hexadecimal HMAC-SHA256 of the timestamp, LF, `POST`, LF,
+exact path, LF and raw body bytes. Requests accept a five-minute clock
+skew and up to 16 KiB of body bytes. Verification has a short body
+timeout and a 60 attempts/minute budget per cached space. A 202
+acknowledges the first accepted delivery or an identical replay.
+Keep signing keys out of worker state and logs.
+
+## Personal plugin settings
+
+A package may declare `scope: "personal"` on a typed setting. A signed-in
+space member can read and edit only their own override through
+`plugins.personal_settings.get` and `plugins.personal_settings.set`.
+Address the space UUID, package and key. For edits submit the last stored
+`base`, the next `value` and a request ID. Null restores the manifest
+default. A stale base conflicts and an identical retry replays its receipt.
+The worker’s existing setting broker resolves the authenticated person's
+value. An edit wakes that person's account feed without publishing the value.
 
 ## Space plugin settings
 
@@ -166,6 +215,20 @@ intent. Syntax damage returns defaults with a file-and-line repair hint.
 Once the file is valid, recovery reapplies the pending key and keeps other
 edits. A competing edit to the same key becomes a conflict. Unrelated
 operations stay available during repair.
+
+## Installed plugin diagnostics
+
+A space Owner or Manager can call `plugins.diagnostics` with the space UUID
+and an installed package ID. The response reports the selected revision,
+its last observed readiness, recent reason codes, and up to 4 KiB of the
+last failed worker’s stderr from that space. Readiness is observed when the
+worker starts and stops. The endpoint does not start a worker.
+
+Diagnostics retain up to eight failures and one stderr tail per space and
+up to 64 spaces per package revision. Records expire after an hour and
+are cleared when the server restarts. The host never records operation
+inputs or outputs in the error history. Worker stderr is private to the
+space's managers. Authors should keep secrets and personal data out of it.
 
 ## Author diagnostics
 
@@ -268,8 +331,12 @@ the selected space. The caller needs both declared capabilities. Admission,
 approval, item and space checks still run when a rendered action invokes the
 operation. Where a slot fills, the first eligible contributions in package ID
 and local contribution ID order win. A disable or removal is reflected by the
-next listing. The planned scoped reactive values feed will deliver that change
-to the slot owner. The existing `plugins` array remains a manifest and
+next listing. The owner can open
+`GET /api/v1/plugin-slots/live?space_id=…&plugin_id=…&slot_id=…` with the
+person's normal sign-in. Each SSE data frame is an `OwnedSlotUpdate`
+containing the full current grant-filtered projection. An inactive update
+clears the mount. Reconnect for the latest snapshot. This stream shares
+the space journal's listener budget. The existing `plugins` array remains a manifest and
 activation inventory.
 
 Fixed host targets retain their string names. Sealed renderer paths at
@@ -310,7 +377,7 @@ Before any revision loads, the state is `failed`. The server keeps one failed
 candidate per package in the development space, for at most 16 packages, and
 clears it on the next successful publication. Nothing in diagnostics is
 written to disk, so it follows no database or file format and needs no
-migration. A restart drops it. A production server has no diagnostics view.
+migration. A restart drops it. Installed packages use the separate manager operation described above.
 
 ## Page a plugin's own kinds
 
@@ -352,3 +419,26 @@ sections enter the command list as navigation commands in the Settings group.
 from the current catalog snapshot. Live install, update, disable and removal
 take effect on the next request.
 See [Search and palette lookups](search.md).
+
+
+## Sealed plugin content
+
+For the image and font proxy, declare `network.content_fetch` and
+`content_prepare_v1`. The declaration names the `images_fonts` profile and at
+most 32 of the package's text kinds through `sources`, for example
+`{"kind":"mail-message","field":"text"}`. Prepare an exact, live stored item
+revision through `prepareContent(context, {kind, item_id, revision, field})`.
+The host takes the person and space from the invocation. It returns only an
+opaque frame ID. Caller-supplied URLs have no direct fetch operation.
+
+Read frame metadata with `plugins.network.content.get`, passing the space
+and frame IDs. The host rechecks the viewer, source revision and plugin
+activation. Mount the returned frame URL with a sandbox that enables no
+features. External navigation goes through the host's explicit action using
+the returned links. Frame references expire after five minutes or on eviction.
+
+Use `plugins.network.content.preference.get` and
+`plugins.network.content.preference.set` with the space UUID to read or edit
+the signed-in person's choice. Defaults are Always, with Ask for explicit
+loads and Never for placeholders. Fetch timing for the completed proxy is
+defined in the [content profile](plugin-interface-proposal.md#b-content-fetch).

@@ -89,7 +89,10 @@ fn validate(provider: &OidcProvider) -> Result<()> {
     let valid_preset = match provider.preset.as_str() {
         "apple" => provider.issuer == "https://appleid.apple.com",
         "google" => provider.issuer == "https://accounts.google.com",
-        "generic" => true,
+        "generic" => !matches!(
+            issuer.host_str(),
+            Some("appleid.apple.com" | "accounts.google.com")
+        ),
         _ => false,
     };
     let valid_scope = provider.scopes.len() <= 10
@@ -237,7 +240,7 @@ impl Auth {
         }).await
     }
 
-    /// Creates or updates one provider after fresh server-admin proof.
+    /// Saves a provider after fresh server-admin proof. A new provider is disabled.
     /// The credential is sealed by the deployment secrets service in the same commit.
     pub async fn configure_oidc(
         &self,
@@ -247,32 +250,89 @@ impl Auth {
     ) -> Result<()> {
         validate(&provider)?;
         let inner = Arc::clone(&self.inner);
-        self.inner.db.run(move |c| {
-            let tx = c.transaction_with_behavior(TransactionBehavior::Immediate).map_err(sql)?;
-            require_admin(&tx,&inner,caller)?;
-            let existing = tx.query_row("SELECT issuer,client_id,secret FROM oidc_providers WHERE id=?1",[&provider.id],
-                |r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,Vec<u8>>(2)?))).optional().map_err(sql)?;
-            if let Some((issuer,client,_)) = &existing
-                && (issuer!=&provider.issuer || client!=&provider.client_id) {
-                return Err(conflict("remove the existing configuration before changing issuer or client ID"));
-            }
-            if existing.is_none() {
-                let (number,duplicate):(i64,bool)=tx.query_row("SELECT count(*),COALESCE(max(issuer=?1),0) FROM oidc_providers",
-                    [&provider.issuer],|r|Ok((r.get(0)?,r.get(1)?))).map_err(sql)?;
-                if number>=16 || duplicate { return Err(conflict("provider limit or issuer already configured")); }
-            }
-            let ciphertext = match secret {
-                Some(secret) => inner.invite_key.oidc_cipher().seal(&binding(&provider)?,&secret).map_err(Error::internal)?,
-                None => existing.map(|(_,_,secret)|secret).ok_or_else(invalid)?,
-            };
-            let encoded = serde_json::to_string(&provider).map_err(Error::internal)?;
-            let revision = uuid::Uuid::now_v7().to_string();
-            tx.execute("INSERT INTO oidc_providers VALUES(?1,?2,?3,?4,?5,?6,1)
-                ON CONFLICT(id) DO UPDATE SET config=excluded.config, secret=excluded.secret, revision=excluded.revision",
-                params![provider.id,provider.issuer,provider.client_id,encoded,ciphertext,revision]).map_err(sql)?;
-            account_recovery::audit(&tx,caller.0,"oidc","provider_configured","server-admin",now_ms())?;
-            spaces::commit(tx)
-        }).await
+        self.inner
+            .db
+            .run(move |c| {
+                let tx = c
+                    .transaction_with_behavior(TransactionBehavior::Immediate)
+                    .map_err(sql)?;
+                require_admin(&tx, &inner, caller)?;
+                let existing = tx
+                    .query_row(
+                        "SELECT issuer,client_id,secret FROM oidc_providers WHERE id=?1",
+                        [&provider.id],
+                        |r| {
+                            Ok((
+                                r.get::<_, String>(0)?,
+                                r.get::<_, String>(1)?,
+                                r.get::<_, Vec<u8>>(2)?,
+                            ))
+                        },
+                    )
+                    .optional()
+                    .map_err(sql)?;
+                if let Some((issuer, client, _)) = &existing
+                    && (issuer != &provider.issuer || client != &provider.client_id)
+                {
+                    return Err(conflict(
+                        "remove the existing configuration before changing issuer or client ID",
+                    ));
+                }
+                if existing.is_none() {
+                    let (number, duplicate): (i64, bool) = tx
+                        .query_row(
+                            "SELECT count(*),COALESCE(max(issuer=?1),0) FROM oidc_providers",
+                            [&provider.issuer],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
+                        .map_err(sql)?;
+                    if number >= 16 || duplicate {
+                        return Err(conflict("provider limit or issuer already configured"));
+                    }
+                }
+                let updating = existing.is_some();
+                let ciphertext = match secret {
+                    Some(secret) => inner
+                        .invite_key
+                        .oidc_cipher()
+                        .seal(&binding(&provider)?, &secret)
+                        .map_err(Error::internal)?,
+                    None => existing.map(|(_, _, secret)| secret).ok_or_else(invalid)?,
+                };
+                let encoded = serde_json::to_string(&provider).map_err(Error::internal)?;
+                let revision = uuid::Uuid::now_v7().to_string();
+                // Plain UPDATE respects the recovery trigger's dirty-key deduplication.
+                if updating {
+                    tx.execute(
+                        "UPDATE oidc_providers SET config=?2,secret=?3,revision=?4 WHERE id=?1",
+                        params![provider.id, encoded, ciphertext, revision],
+                    )
+                    .map_err(sql)?;
+                } else {
+                    tx.execute(
+                        "INSERT INTO oidc_providers VALUES(?1,?2,?3,?4,?5,?6,0)",
+                        params![
+                            provider.id,
+                            provider.issuer,
+                            provider.client_id,
+                            encoded,
+                            ciphertext,
+                            revision
+                        ],
+                    )
+                    .map_err(sql)?;
+                }
+                account_recovery::audit(
+                    &tx,
+                    caller.0,
+                    "oidc",
+                    "provider_configured",
+                    "server-admin",
+                    now_ms(),
+                )?;
+                spaces::commit(tx)
+            })
+            .await
     }
 
     /// Enables, disables or removes a provider and revokes its affected sessions.
@@ -296,6 +356,20 @@ impl Auth {
                     .transaction_with_behavior(TransactionBehavior::Immediate)
                     .map_err(sql)?;
                 require_admin(&tx, &inner, caller)?;
+                if action == "enable" {
+                    let preset: String = tx
+                        .query_row(
+                            "SELECT json_extract(config, '$.preset') FROM oidc_providers WHERE id=?1",
+                            [&id],
+                            |row| row.get(0),
+                        )
+                        .optional()
+                        .map_err(sql)?
+                        .ok_or_else(missing)?;
+                    if preset != "generic" {
+                        return Err(conflict("this provider preset is pending verification"));
+                    }
+                }
                 if action != "enable" && !operator_recovery && !usable_alternative(&tx, &id, None)?
                 {
                     return Err(conflict(

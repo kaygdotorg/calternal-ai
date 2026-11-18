@@ -41,6 +41,11 @@ pub trait Directory: Send + Sync + 'static {
     fn changes(&self) -> Vec<tokio::sync::watch::Receiver<u64>> {
         Vec::new()
     }
+    /// Room eviction on committed loss of item read access. The default is a
+    /// no-op until the live rooms service supplies its implementation.
+    fn room_eviction(&self) -> &dyn crate::room_eviction::RoomEviction {
+        &crate::room_eviction::NoRooms
+    }
     /// Optional protected account HTTP service; absent for synthetic test directories.
     fn http_auth(&self) -> Option<&crate::account_http::HttpAuth> {
         None
@@ -112,7 +117,8 @@ impl StoredDirectory {
     ///
     /// `recovery` is the protected security log: it is attached before any fixture
     /// is seeded or request served, so every security change is published to it
-    /// before acknowledgement. Without it nothing is logged.
+    /// before acknowledgement. Without it nothing is logged. When OIDC is enabled,
+    /// startup also loads the operator's optional trusted certificate bundle.
     pub fn open(
         data: &Path,
         config: calternal_auth::AuthConfig,
@@ -122,7 +128,9 @@ impl StoredDirectory {
         let auth =
             calternal_auth::Auth::open(data, config.clone()).map_err(std::io::Error::other)?;
         let mut table = Self::with_spaces(data, auth.spaces(), development, recovery)?;
-        table.http = Some(crate::account_http::HttpAuth::new(auth, config));
+        let mut http = crate::account_http::HttpAuth::new(auth, config);
+        http.configure_oidc_trust()?;
+        table.http = Some(http);
         Ok(table)
     }
     /// Configures the private SMTP worker from runtime operator settings.

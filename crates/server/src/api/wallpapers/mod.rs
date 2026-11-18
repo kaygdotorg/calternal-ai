@@ -8,8 +8,8 @@ mod upstream;
 use axum::{
     Extension,
     extract::Path,
-    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
-    response::{IntoResponse, Response},
+    http::{HeaderMap, Method},
+    response::Response,
 };
 use calternal_core::{JsonObject, WallpapersListInput};
 use calternal_types::Error;
@@ -154,46 +154,20 @@ pub(super) async fn image(
     result.unwrap_or_else(super::error_response)
 }
 
-/// Marks image responses and their 304 replies for the API cache policy.
-#[derive(Clone)]
-pub(crate) struct ImageResponse;
-
 fn respond(image: cache::Image, public: bool, request: &HeaderMap) -> Response {
-    let unchanged = request
-        .get_all(header::IF_NONE_MATCH)
-        .iter()
-        .filter_map(|h| h.to_str().ok())
-        .flat_map(|h| h.split(','))
-        .map(str::trim)
-        .any(|tag| tag == "*" || tag.strip_prefix("W/").unwrap_or(tag) == image.etag);
-    let mut response = if unchanged {
-        StatusCode::NOT_MODIFIED.into_response()
-    } else {
-        ([(header::CONTENT_TYPE, "image/jpeg")], image.bytes).into_response()
-    };
-    response.extensions_mut().insert(ImageResponse);
-    let headers = response.headers_mut();
-    headers.insert(
-        header::ETAG,
-        HeaderValue::from_str(&image.etag).expect("hex ETag"),
-    );
     let scope = if public {
         "public, max-age=2592000"
     } else {
         "private, max-age=2592000"
     };
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(scope));
-    headers.insert(
-        "cross-origin-resource-policy",
-        HeaderValue::from_static("same-origin"),
-    );
-    if !public {
-        headers.insert(
-            header::VARY,
-            HeaderValue::from_static("Cookie, Authorization"),
-        );
-    }
-    response
+    super::assets::respond(
+        image.bytes,
+        "image/jpeg",
+        &image.etag,
+        scope,
+        !public,
+        request,
+    )
 }
 
 #[cfg(test)]
