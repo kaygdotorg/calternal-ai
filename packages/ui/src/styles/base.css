@@ -31,7 +31,8 @@ code, kbd, pre { font-family: var(--font-mono); }
 
 /* Controls animate when used by pointer or touch, never from the keyboard: with the keyboard in use every transition and animation ends at once, so
    Tab, Enter and typing apply the end state without the press or hover motion. */
-:root[data-input="key"] *, :root[data-input="key"] *::before, :root[data-input="key"] *::after { transition-duration: 0s !important; transition-delay: 0s !important; animation-duration: 0s !important; animation-delay: 0s !important; }
+/* A spinner, a pulse, a shimmer and the caret are not control motion: they keep running in keyboard use (zeroing their duration stopped them, and a stopped spinner steps when it resumes). */
+:root[data-input="key"] :not(.spin, .pulse, .shimmer, .caret), :root[data-input="key"] :not(.spin, .pulse, .shimmer, .caret)::before, :root[data-input="key"] :not(.spin, .pulse, .shimmer, .caret)::after { transition-duration: 0s !important; transition-delay: 0s !important; animation-duration: 0s !important; animation-delay: 0s !important; }
 
 /* Chrome is not text: only message text, code and fields can be selected, so no stray handle or highlight appears on a title, a row or a button. */
 body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }

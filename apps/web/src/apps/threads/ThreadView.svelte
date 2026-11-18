@@ -3,7 +3,8 @@
   // Messages are read a page at a time around what is on screen; the streaming message is one extra row at the end whose text is the
   // only thing that changes while it streams.
   import { untrack } from "svelte";
-  import { Button, cssPx, InlineEditor, Panel, Pill, toast } from "@calternal/ui";
+  import { Button, cssPx, InlineEditor, Menu, Panel, Pill, toast } from "@calternal/ui";
+  import { runThreadItem, threadItems } from "./thread-menu";
   import { appearance } from "../../appearance/prefs.svelte";
   import { hazards } from "../../lib/hazard";
   import { VirtualList } from "@calternal/ui";
@@ -96,6 +97,9 @@
     if (sid && sid !== streamId) list?.scrollToBottom();
     streamId = sid;
   });
+  // The thread's own menu, at the card's top right: the very menu the sidebar row opens (thread-menu.ts, one definition).
+  let menuOpen = $state(false);
+  let moreEl = $state<HTMLButtonElement>();
   let renaming = $state(false);
   let draftTitle = $state("");
   function startRename() { if (!summary) return; draftTitle = summary.title; renaming = true; }
@@ -122,6 +126,10 @@
       {#if summary && summary.state !== "idle" && summary.state !== "done"}<StateMark state={summary.state} form="word" />{/if}
     </Panel>
     <span class="grow"></span>
+    {#if summary}
+      <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
+      <Menu open={menuOpen} items={threadItems(summary)} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (summary) runThreadItem(item, summary, startRename); }} />
+    {/if}
   </header>
 
   <div class="list" bind:this={listEl}>
@@ -137,9 +145,9 @@
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
-              {#if m}<MessageRow message={m} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
+              {#if m}<MessageRow message={m} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
             {:else if conv?.stream}
-              <StreamRow text={conv.stream.text} steps={conv.stream.steps} />
+              <StreamRow turn={conv.stream} provider={summary?.provider ?? "claude"} providers={store.providers} />
             {/if}
           {/snippet}
         </VirtualList>
@@ -152,7 +160,7 @@
       <div class="inner">
         <ThreadNotices thread={summary} onnew={() => void startThread().then((t) => navigate(`/threads/${t.id}`), (e: Error) => toast(`Could not start a thread: ${e.message}`))} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
-        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID()).catch((e: Error) => { toast(`Not sent: ${e.message}`); throw e; })} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
+        <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => { const undo = conv?.begin(); return client.send(id, t, crypto.randomUUID()).catch((e: Error) => { undo?.(); toast(`Not sent: ${e.message}`); throw e; }); }} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>
   {/if}

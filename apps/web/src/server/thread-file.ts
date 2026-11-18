@@ -9,7 +9,7 @@
  *   - `markdown`: a small frontmatter, then messages: `<!-- message:<uuid> role:person|agent time:<rfc3339> [turn:<job>] [actor:<..>] -->` text `<!-- /message -->`.
  * Message text is untrusted display text: nothing here reads access, roles or instructions from it.
  */
-import type { Block, Message, Permission, ProviderId, Step, StepKind, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
+import type { Block, Message, MessageBy, Permission, ProviderId, Step, StepKind, ThreadNotice, ThreadState, ThreadSummary } from "../apps/threads/model";
 
 /** The thread metadata the server keeps (the fields this client reads). */
 export interface WireMetadata {
@@ -115,6 +115,18 @@ export function summaryOf(id: string, spaceId: string, md: WireMetadata, turn: s
   };
 }
 
+/**
+ * Which provider, model and reasoning level wrote an assistant message and how long it took, from the `provider:`, `model:`, `reasoning:` and `duration:` (milliseconds) fields of its marker. Absent fields stay absent: an
+ * older file records none of them. The marker's field names are the backend lane's to confirm (docs/threads-ui.md); an unknown provider plugin id is dropped rather than guessed.
+ */
+export function byOf(attrs: string): MessageBy | undefined {
+  const get = (k: string) => new RegExp(`(?:^|\\s)${k}:(\\S+)`).exec(attrs)?.[1];
+  const provider = PROVIDER_IDS[get("provider") ?? ""];
+  const model = get("model"), reasoning = get("reasoning"), dur = Number(get("duration"));
+  const by: MessageBy = { ...(provider ? { provider } : {}), ...(model ? { model } : {}), ...(reasoning ? { reasoning } : {}), ...(Number.isFinite(dur) && dur > 0 ? { ms: dur } : {}) };
+  return Object.keys(by).length ? by : undefined;
+}
+
 const OPEN = /<!-- message:([0-9a-fA-F-]{36}) role:(person|agent)([^>]*?) -->\n/g;
 const CLOSE = "\n<!-- /message -->";
 
@@ -152,14 +164,14 @@ export function blocksOf(id: string, text: string): Block[] {
 /** The messages of a thread's Markdown, oldest first, each with the time its marker records (an older file with none: the thread's creation time, the last one its update time). A message with no closing marker (still being written) runs to the next marker or the end. */
 export function parseMessages(markdown: string, createdAt = 0, updatedAt = createdAt): Message[] {
   const body = markdown.startsWith("---\n") ? (markdown.split("\n---\n").slice(1).join("\n---\n")) : markdown;
-  const at: { id: string; role: Message["role"]; from: number; start: number; time: number }[] = [];
-  for (const m of body.matchAll(OPEN)) at.push({ id: m[1]!, role: m[2] === "person" ? "user" : "agent", from: m.index!, start: m.index! + m[0].length, time: ms(/\btime:(\S+)/.exec(m[3] ?? "")?.[1], NaN) });
+  const at: { id: string; role: Message["role"]; from: number; start: number; time: number; by?: MessageBy }[] = [];
+  for (const m of body.matchAll(OPEN)) at.push({ id: m[1]!, role: m[2] === "person" ? "user" : "agent", from: m.index!, start: m.index! + m[0].length, time: ms(/\btime:(\S+)/.exec(m[3] ?? "")?.[1], NaN), by: m[2] === "agent" ? byOf(m[3] ?? "") : undefined });
   return at.map((m, i) => {
     const next = at[i + 1]?.from ?? body.length;
     let text = body.slice(m.start, next);
     const close = text.lastIndexOf(CLOSE);
     if (close >= 0) text = text.slice(0, close);
-    return { id: m.id, role: m.role, at: Number.isFinite(m.time) ? m.time : i === at.length - 1 ? updatedAt : createdAt, blocks: blocksOf(m.id, text.replace(/\n$/, "")) };
+    return { id: m.id, role: m.role, at: Number.isFinite(m.time) ? m.time : i === at.length - 1 ? updatedAt : createdAt, blocks: blocksOf(m.id, text.replace(/\n$/, "")).map((b) => (b.type === "steps" && !b.ms && m.by?.ms ? { ...b, ms: m.by.ms } : b)), ...(m.by ? { by: m.by } : {}) };
   });
 }
 

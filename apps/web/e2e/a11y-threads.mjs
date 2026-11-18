@@ -2,8 +2,17 @@
 // row's hover actions, a swiped row, the rename field and the context menu; light and dark, desktop and phone. Exits 1 on any violation.
 import AxeBuilder from "@axe-core/playwright";
 import { launch, open, serve } from "./lib.mjs";
-// Waits for what the page is doing, not for a guessed time: finite animations have ended and a frame has passed (at most 5 s). A loaded machine makes it slower, never wrong.
-const settle = (p) => p.evaluate(() => new Promise((res) => { const t0 = performance.now(); const tick = () => { const run = document.getAnimations().some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); if ((!run && performance.now() - t0 > 80) || performance.now() - t0 > 5000) res(); else requestAnimationFrame(tick); }; tick(); }));
+// Waits for what the page is doing, not for a guessed time: nothing has been pointed at, typed or focused for longer than a tooltip's own delay (400 ms: one that is about to open has opened), every finite
+// animation and transition has ended, and the shared tooltip is at rest (fully shown or gone) for a few frames in a row. A loaded machine makes it slower, never wrong; at most 8 s.
+const TRACK = () => { const t = () => (window.__lastInput = performance.now()); for (const e of ["pointermove", "pointerdown", "keydown", "focusin", "scroll", "wheel"]) addEventListener(e, t, { capture: true, passive: true }); window.__lastInput = performance.now(); };
+const settle = (p) => p.evaluate(() => new Promise((res) => { const t0 = performance.now(); let still = 0; const tick = () => {
+  const now = performance.now();
+  const run = document.getAnimations().some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity);
+  const tip = document.querySelector(".warm-tip"); const op = tip ? +getComputedStyle(tip).opacity : 0;
+  const quiet = now - (window.__lastInput ?? 0) > 480 && !run && (op === 0 || op === 1);
+  still = quiet ? still + 1 : 0;
+  if (still >= 4 || now - t0 > 8000) res(); else requestAnimationFrame(tick);
+}; tick(); }));
 const chip = (i) => (p) => p.locator(".composer .chips .pill").nth(i).click();
 const states = [
   ["list and a thread", "/threads/t-run", null],
@@ -38,6 +47,7 @@ async function one(j, i) {
 }
 async function attempt(j, i) {
   const { page, ctx } = await open(browser, j.device, j.scheme, j.path);
+  await page.evaluate(TRACK);
   try {
     try { if (j.act) { await j.act(page); await settle(page); } } catch (e) { lines[i] = `skip ${j.device} ${j.scheme} ${j.name}: ${String(e.message).split("\n")[0]}`; return; }
     const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "best-practice"]).analyze();

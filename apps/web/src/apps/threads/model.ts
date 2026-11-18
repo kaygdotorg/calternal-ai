@@ -75,6 +75,8 @@ export interface ProviderOption {
   name: string;
   /** The models the composer offers for this provider, in picker order. */
   models: { id: string; name: string }[];
+  /** False when the server has no list of this provider's models yet: `models` is then only the default, and the picker says so instead of answering a search with nothing. */
+  listed?: boolean;
 }
 
 /** What a tool step did, for its icon. */
@@ -98,12 +100,25 @@ export interface Step {
   ms: number;
 }
 
-/** A piece of a message. `card` carries a generated-UI description (packages/genui) drawn by the client; `thread` links a child. */
+/** A piece of a message. `thought` is the provider's reasoning, shown folded as "Thought for 4 s". `card` carries a generated-UI description (packages/genui) drawn by the client; `thread` links a child. */
 export type Block =
   | { type: "text"; text: string }
   | { type: "steps"; steps: Step[]; ms: number }
+  | { type: "thought"; text: string; ms: number }
   | { type: "card"; source: string }
   | { type: "thread"; threadId: string };
+
+/** Who wrote an assistant message and how long the turn took, as its marker in the thread file records it: so a person scrolling back can tell which provider, model and reasoning level a turn used. */
+export interface MessageBy {
+  /** The provider's id. */
+  provider?: ProviderId;
+  /** The model id the turn ran with. */
+  model?: string;
+  /** The reasoning level the turn ran with ("low", "high", …), when the provider has such a setting. */
+  reasoning?: string;
+  /** How long the turn took, in milliseconds. */
+  ms?: number;
+}
 
 /** One message: a block in the thread's file with a stable ID. */
 export interface Message {
@@ -113,8 +128,10 @@ export interface Message {
   role: "user" | "agent";
   /** Milliseconds since the epoch the message was written. */
   at: number;
-  /** The message's pieces in order: text, folded steps, a generated card, a child thread link. */
+  /** The message's pieces in order: reasoning, folded steps, text, a generated card, a child thread link. */
   blocks: Block[];
+  /** For an assistant message: which provider, model and reasoning level wrote it and how long it took; absent for an older message that does not record it. */
+  by?: MessageBy;
 }
 
 /** A question from an agent: a form described in the generated-UI language, drawn by the shell. It never expires. */
