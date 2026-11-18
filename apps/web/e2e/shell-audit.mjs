@@ -171,7 +171,7 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   ok((await page.locator(".grip").count()) === 0, "Phone: no resize handles");
   const f = await page.evaluate(() => { const r = document.querySelector("aside.side footer").getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
   ok(f, "Phone: the footer is in view");
-  await page.getByRole("radio", { name: "Infra" }).tap().catch(() => page.getByRole("radio", { name: "Infra" }).click()); await page.waitForTimeout(500);
+  await page.getByRole("button", { name: /Account, spaces and settings/ }).click(); await page.locator("[role^=menuitem]", { hasText: "Infra" }).click(); await page.waitForTimeout(500);
   ok((await page.locator("aside.side nav[aria-label=Threads] a.row").count()) > 0 && (await page.locator("aside.side nav[aria-label=Threads] a.row").allInnerTexts()).every((t) => /Mesh|rollout/i.test(t)), "Phone: choosing a space changes the list");
   await page.goto(BASE + "/settings/appearance?firstrun=0"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
   ok((await page.getByRole("button", { name: "Show the sidebar" }).count()) === 1, "Phone: the Settings page has a button for its sidebar");
