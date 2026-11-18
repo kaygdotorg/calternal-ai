@@ -85,26 +85,26 @@ pub(crate) fn spawn(
                         {
                             tracing::warn!(%e, "journal retains stronger sync after a durable commit");
                         }
-                        #[cfg(all(feature = "test-timings", debug_assertions))]
-                        if durable && let Ok(entries) = &r {
-                            for entry in entries {
-                                if let Some(request) = &entry.request_id {
-                                    crate::timings::emit("journal_committed", request, None);
-                                }
-                            }
-                        }
-                        if let Ok(entries) = &r
-                            && let Some(last) = entries.last()
+                        if let Ok(committed) = &r
+                            && let Some(last) = committed.entries.last()
                         {
                             head.store(last.seq, Ordering::Relaxed);
                             // Sent from here, in commit order, so listeners
                             // never see entries out of order. Having no
                             // listeners is fine.
-                            for e in entries {
+                            for e in &committed.entries {
                                 let _ = live.send(Arc::new(e.clone()));
                             }
+                            #[cfg(any(feature = "perf-timings", all(feature = "test-timings", debug_assertions)))]
+                            if let Some(at_ns) = committed.at_ns {
+                                for entry in &committed.entries {
+                                    if let Some(request) = &entry.request_id {
+                                        crate::timings::emit_commit(request, at_ns);
+                                    }
+                                }
+                            }
                         }
-                        let _ = reply.send(r);
+                        let _ = reply.send(r.map(|committed| committed.entries));
                         if last_prune.elapsed() >= options.prune_every {
                             prune(&conn, options);
                             last_prune = Instant::now();
@@ -129,8 +129,17 @@ fn prune(conn: &Connection, options: Options) {
     }
 }
 
+struct Committed {
+    entries: Vec<JournalEntry>,
+    #[cfg(any(
+        feature = "perf-timings",
+        all(feature = "test-timings", debug_assertions)
+    ))]
+    at_ns: Option<u64>,
+}
+
 /// Commits one batch, then retains only its newest bounded set of signed tokens.
-fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Vec<JournalEntry>> {
+fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Committed> {
     let at_ms = now_ms();
     let epoch = shared.epoch();
     let tx = conn.transaction().map_err(Error::internal)?;
@@ -202,6 +211,11 @@ fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Vec<Journ
         }
     }
     tx.commit().map_err(Error::internal)?;
+    #[cfg(any(
+        feature = "perf-timings",
+        all(feature = "test-timings", debug_assertions)
+    ))]
+    let at_ns = c.durable.then(calternal_types::perf_monotonic_ns);
     if shared.guard.is_some() {
         for entry in entries.iter().rev().take(MAX_ISSUED_TOKENS) {
             shared.remember_issued(&epoch, entry.seq, &entry.token);
@@ -210,5 +224,12 @@ fn commit(conn: &mut Connection, shared: &Shared, c: Commit) -> Result<Vec<Journ
     if let (Some(e), Some(_)) = (entries.last(), last_check) {
         shared.remember_proof(&epoch, &e.token, e.seq);
     }
-    Ok(entries)
+    Ok(Committed {
+        entries,
+        #[cfg(any(
+            feature = "perf-timings",
+            all(feature = "test-timings", debug_assertions)
+        ))]
+        at_ns,
+    })
 }

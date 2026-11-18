@@ -7,8 +7,10 @@ license.workspace = true
 publish = false
 
 [features]
-# Diagnostic observations exist only in debug test-plugin builds, never release.
-test-timings = []
+# Keep debug-only test-plugin stage markers.
+test-timings = ["calternal-types/perf-clock"]
+# Also compile the same journal marker in optimized builds.
+perf-timings = ["test-timings"]
 
 [dependencies]
 calternal-types.workspace = true

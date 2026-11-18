@@ -73,8 +73,8 @@
       "budget": 10,
       "unit": "ms",
       "fixture": "1k,10k,100k notes",
-      "measurement": "debug test-plugin post-durable-commit timestamp before broadcast, correlated by request ID with SSE receipt; 1 ms clock precision",
-      "reference": "sync.round_trip p95 10; different start marker"
+      "measurement": "release perf-timings timestamp immediately after the durable journal transaction commits, correlated by request ID with client SSE receipt on the same monotonic clock; sub-millisecond resolution",
+      "reference": "owner decision 2026-11-18; single release arm over the ceiling fails"
     },
     {
       "metric": "plugin.three_host_calls",
@@ -176,11 +176,11 @@
     {
       "metric": "live.update_to_client",
       "percentile": "p95",
-      "budget": 10,
+      "budget": 50,
       "unit": "ms",
       "fixture": "all",
-      "reference": "sync.round_trip p95 10",
-      "measurement": "from before HTTP update until matching journal SSE entry; upper bound on commit-to-client"
+      "reference": "owner decision 2026-11-18; notes.update 40 ms plus live.commit_to_client 10 ms",
+      "measurement": "client starts the HTTP update through receipt of the matching journal SSE event by the subscribed client"
     },
     {
       "metric": "account.draft_write_to_feed",
