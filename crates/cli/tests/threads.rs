@@ -40,3 +40,21 @@ fn thread_results_have_readable_width_adaptation_and_stable_json() {
         );
     }
 }
+
+#[test]
+fn checkpoint_additions_render_with_coordinates_and_markdown() {
+    let data = json!({"delta":{
+        "id":"019a8c00-0000-7000-8000-000000000001",
+        "base_revision":"v3.fixture","revision":"v4.fixture",
+        "offset":72,"markdown":"Hello 🌏",
+    }});
+    let out = Output::fixed_terminal(false, 80, UtcOffset::UTC, true);
+    let human = out.render(&reply(&out, data.clone()));
+    for expected in ["v3.fixture", "v4.fixture", "72", "Hello 🌏"] {
+        assert!(human.contains(expected), "{human}");
+    }
+    let out = Output::fixed(true, None, UtcOffset::UTC);
+    let wire: serde_json::Value =
+        serde_json::from_str(&out.render(&reply(&out, data.clone()))).unwrap();
+    assert_eq!(wire, json!({"ok":true,"data":data}));
+}

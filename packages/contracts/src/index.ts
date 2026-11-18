@@ -1040,11 +1040,35 @@ name: string,
 /**
  * Short description, at most 512 bytes.
  */
-summary: string, } | { "type": "tool_finished",
+summary: string, } | { "type": "tool_output",
 /**
  * Provider-issued step identity.
  */
 id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short target or description, at most 512 bytes.
+ */
+summary: string,
+/**
+ * UTF-8 bytes of tool text identified by the adapter.
+ */
+bytes: number, } | { "type": "tool_finished",
+/**
+ * Provider-issued step identity.
+ */
+id: string,
+/**
+ * Tool name, at most 128 bytes.
+ */
+name: string,
+/**
+ * Short target or description, at most 512 bytes.
+ */
+summary: string,
 /**
  * Whether the tool reported failure.
  */

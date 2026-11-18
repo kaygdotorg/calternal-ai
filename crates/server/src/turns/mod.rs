@@ -12,6 +12,7 @@ mod redact;
 pub mod retry;
 mod run;
 mod thread_admission;
+mod tool_steps;
 pub(crate) use run::schedule_for_account as schedule_thread;
 pub(crate) use thread_admission::{admit as admit_thread, finish_stop as finish_thread_stop};
 

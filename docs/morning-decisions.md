@@ -124,3 +124,15 @@ options, implementation costs and the placement revocation problem.
   check would report them promptly and consume provider processes while idle.
   Refresh on demand and checks during turns keep idle cost at zero, with changes
   becoming visible at the next observation.
+
+## Long tool output (issue #41)
+
+- **Storage and links.** A space-owned file item could reuse file addresses,
+  current space access and downloads, with an additional item per large output.
+  A thread-owned artifact could simplify cleanup when the thread is purged, with
+  a new address, authorization check and download path. Define the Markdown
+  reference and publication order for the selected model.
+- **Retention and limits.** Keeping artifacts with the conversation preserves
+  its links and can grow storage independently of Markdown. A separate quota or
+  expiry bounds storage and needs an explicit expired-output state. Define
+  the inline threshold and the point at which the artifact becomes durable.

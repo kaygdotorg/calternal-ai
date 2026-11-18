@@ -89,7 +89,7 @@ pub enum ProviderEventKind {
         /// At most 4 KiB of UTF-8 text.
         text: String,
     },
-    /// A tool step began; arguments are deliberately not forwarded.
+    /// A tool step began with a short target or description.
     ToolStarted {
         /// Provider-issued step identity.
         id: String,
@@ -98,10 +98,26 @@ pub enum ProviderEventKind {
         /// Short description, at most 512 bytes.
         summary: String,
     },
+    /// A tool returned output. Only a bounded description and byte count are shared.
+    ToolOutput {
+        /// Provider-issued step identity.
+        id: String,
+        /// Tool name, at most 128 bytes.
+        name: String,
+        /// Short target or description, at most 512 bytes.
+        summary: String,
+        /// UTF-8 bytes of tool text identified by the adapter.
+        #[ts(type = "number")]
+        bytes: u64,
+    },
     /// A tool step ended, creating a natural checkpoint boundary.
     ToolFinished {
         /// Provider-issued step identity.
         id: String,
+        /// Tool name, at most 128 bytes.
+        name: String,
+        /// Short target or description, at most 512 bytes.
+        summary: String,
         /// Whether the tool reported failure.
         failed: bool,
         /// Bounded detail, at most 4 KiB; never raw stderr or credentials.
@@ -171,18 +187,34 @@ impl ProviderEvent {
     pub fn validate(&self) -> Result<(), calternal_types::Error> {
         let short = |s: &str, n: usize| s.len() <= n;
         let safe = |n: u64| n <= 9_007_199_254_740_991;
+        let tool = |id: &str, name: &str, summary: &str| {
+            !id.trim().is_empty()
+                && short(id, 128)
+                && !name.trim().is_empty()
+                && short(name, 128)
+                && !summary.trim().is_empty()
+                && short(summary, 512)
+        };
         let valid = match &self.event {
             ProviderEventKind::Check(status) => short(&status.sign_in_command, 128),
             ProviderEventKind::Session { session_id } => {
                 !session_id.is_empty() && short(session_id, 128)
             }
             ProviderEventKind::TextDelta { text } => short(text, 4096),
-            ProviderEventKind::ToolStarted { id, name, summary } => {
-                short(id, 128) && short(name, 128) && short(summary, 512)
-            }
-            ProviderEventKind::ToolFinished { id, detail, .. } => {
-                short(id, 128) && short(detail, 4096)
-            }
+            ProviderEventKind::ToolStarted { id, name, summary } => tool(id, name, summary),
+            ProviderEventKind::ToolOutput {
+                id,
+                name,
+                summary,
+                bytes,
+            } => tool(id, name, summary) && safe(*bytes),
+            ProviderEventKind::ToolFinished {
+                id,
+                name,
+                summary,
+                detail,
+                ..
+            } => tool(id, name, summary) && short(detail, 4096),
             ProviderEventKind::Question { text } => short(text, 4096),
             ProviderEventKind::ApprovalRequest { summary } => short(summary, 4096),
             ProviderEventKind::Usage {

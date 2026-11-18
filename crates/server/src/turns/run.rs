@@ -310,6 +310,7 @@ async fn execute<D: Directory>(
     let mut sign_in_command = None;
     let mut failure = None;
     let mut retry_forbidden = false;
+    let saved_thread = job.input.get("thread_request").is_some();
     let mut pending_tools = std::collections::HashSet::new();
     let mut text_flush = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(600);
@@ -398,8 +399,6 @@ async fn execute<D: Directory>(
                             event: ProviderEventKind::TextDelta { text },
                         });
                         for mut e in flush.into_iter().chain(std::iter::once(e)) {
-                            published_seq += 1;
-                            e.seq = published_seq;
                             let mut thread_session = None;
                             match &e.event {
                                 ProviderEventKind::Session { session_id } => {
@@ -427,19 +426,10 @@ async fn execute<D: Directory>(
                                     }
                                     checkpoint["text_tail"] = json!(&merged[start..]);
                                 }
-                                ProviderEventKind::ToolStarted { id, name, summary } => {
-                                    if pending_tools.len() >= 128 || pending_tools.contains(id) {
-                                        return Err(Error::invalid_input(
-                                            "provider pending tool limit or duplicate tool id",
-                                        ));
-                                    }
-                                    checkpoint["last_tool"] = json!({"id":id,"name":name,"summary":summary,"state":"started"});
-                                    pending_tools.insert(id.clone());
-                                }
-                                ProviderEventKind::ToolFinished { id, failed, .. } => {
-                                    checkpoint["last_tool"]["state"] = json!("finished");
-                                    checkpoint["last_tool"]["failed"] = json!(failed);
-                                    pending_tools.remove(id);
+                                ProviderEventKind::ToolStarted { .. }
+                                | ProviderEventKind::ToolOutput { .. }
+                                | ProviderEventKind::ToolFinished { .. } => {
+                                    super::tool_steps::observe(&mut checkpoint, &mut pending_tools, &e.event, saved_thread)?;
                                 }
                                 ProviderEventKind::Error {
                                     class,
@@ -468,20 +458,15 @@ async fn execute<D: Directory>(
                                     // Only the owning person can observe a manual Check job.
                                     // Normal turns record readiness privately without a public chunk.
                                     if !check {
-                                        published_seq -= 1;
                                         continue;
                                     }
                                 }
                                 _ => {}
                             }
-                            let value = serde_json::to_value(&e)
-                                .map_err(|_| Error::internal("provider encoding"))?;
-                            if !live.publish(job.runs, &value) {
-                                return Err(Error::conflict("turn stopped accepting output"));
-                            }
                             if matches!(
                                 e.event,
                                 ProviderEventKind::Session { .. }
+                                    | ProviderEventKind::ToolStarted { .. }
                                     | ProviderEventKind::ToolFinished { .. }
                                     | ProviderEventKind::Done { .. }
                             ) || checkpoint["thread_text"]
@@ -489,10 +474,17 @@ async fn execute<D: Directory>(
                                 .is_some_and(|s| s.len() >= 16 * 1024)
                                 || text_flush.elapsed() >= Duration::from_secs(3)
                             {
-                                checkpoint["provider_seq"] = json!(provider_seq);
+                                checkpoint["provider_seq"] = json!(published_seq + 1);
                                 redactor.checkpoint(&mut checkpoint);
                                 save(state, job, live, &mut checkpoint, thread_session).await?;
                                 text_flush = Instant::now();
+                            }
+                            published_seq += 1;
+                            e.seq = published_seq;
+                            let value = serde_json::to_value(&e)
+                                .map_err(|_| Error::internal("provider encoding"))?;
+                            if !live.publish(job.runs, &value) {
+                                return Err(Error::conflict("turn stopped accepting output"));
                             }
                         }
                     }
@@ -547,7 +539,7 @@ async fn execute<D: Directory>(
                             return Ok(RunEnd::RetryWaiting);
                         }
                     }
-                    checkpoint["provider_seq"] = json!(provider_seq);
+                    checkpoint["provider_seq"] = json!(published_seq);
                     redactor.checkpoint(&mut checkpoint);
                     save(state, job, live, &mut checkpoint, None).await?;
                     return Ok(if exit.code == Some(0) && check && checked {
@@ -563,15 +555,33 @@ async fn execute<D: Directory>(
             }
         }
     }}.await;
-    // Preserve scrubbed output at every exit, including cancellation, malformed
-    // provider output and machine interruption; live chunks are never replayed.
-    if checkpoint["thread_text"]
+    // Preserve scrubbed output on an early exit. A rejected checkpoint must
+    // not be retried by the exit path when the document is already full.
+    let result = if checkpoint["thread_text"]
         .as_str()
         .is_some_and(|text| !text.is_empty())
+        && !result.as_ref().is_err_and(super::progress::thread_full)
     {
-        checkpoint["provider_seq"] = json!(provider_seq);
+        checkpoint["provider_seq"] = json!(published_seq);
         redactor.checkpoint(&mut checkpoint);
-        save(state, job, live, &mut checkpoint, None).await?;
+        save(state, job, live, &mut checkpoint, None)
+            .await
+            .and(result)
+    } else {
+        result
+    };
+    if let Err(error) = &result
+        && super::progress::thread_full(error)
+    {
+        return super::progress::finish_full(
+            state,
+            job,
+            live,
+            &mut checkpoint,
+            published_seq,
+            error,
+        )
+        .await;
     }
     result
 }
