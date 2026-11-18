@@ -31,7 +31,7 @@ The things you reported, checked in a headed GPU Chrome at 1500x970, dark, defau
 
 ## Not yet
 
-- Threads steps (the Threads lane adds them). The Notes list shows the newest 100 notes (find, tags and `[[` reach the rest) until the server pages it.
+- Threads steps (the Threads lane adds them). The Notes list, tags and Trash load a page (100) at a time as they are scrolled.
 - `@` people in a note; provider accounts, Agents defaults, plugin install, space instructions in Settings.
 - Two people typing in one note at once: saves replace the whole note, with the conflict choice above.
 - Passkeys on a phone need the preview's HTTPS address; a `localhost` server only works in the same browser.
