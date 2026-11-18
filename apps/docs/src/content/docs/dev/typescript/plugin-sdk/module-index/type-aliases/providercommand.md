@@ -14,7 +14,7 @@ title: "plugin-sdk: index/type-aliases/ProviderCommand"
 
 # Type Alias: ProviderCommand
 
-> **ProviderCommand** = \{ `type`: `"check"`; \} \| \{ `cwd`: `string`; `instructions`: `string`; `model`: `string`; `options`: `{ [key in string]?: unknown }`; `resume`: `string` \| `null`; `type`: `"start"`; \} \| \{ `context`: [`ProviderContext`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercontext/)[]; `prompt`: `string`; `type`: `"send"`; \} \| \{ `prompt`: `string`; `type`: `"steer"`; \} \| \{ `type`: `"stop"`; \}
+> **ProviderCommand** = \{ `type`: `"check"`; \} \| \{ `cwd`: `string`; `instructions`: `string`; `model`: `string`; `options`: `{ [key in string]?: unknown }`; `resume`: `string` \| `null`; `type`: `"start"`; \} \| \{ `context`: [`ProviderContext`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providercontext/)[]; `prompt`: `string`; `type`: `"send"`; \} \| \{ `prompt`: `string`; `type`: `"steer"`; \} \| \{ `approved`: `boolean`; `request_id`: `string`; `type`: `"approve"`; \} \| \{ `type`: `"stop"`; \}
 
 Commands accepted by an adapter; one active turn per adapter.
 
@@ -101,6 +101,28 @@ New message, bounded by the command budget.
 #### type
 
 > **type**: `"steer"`
+
+***
+
+### Type Literal
+
+\{ `approved`: `boolean`; `request_id`: `string`; `type`: `"approve"`; \}
+
+#### approved
+
+> **approved**: `boolean`
+
+Authorize this request within the existing sandbox boundary.
+
+#### request\_id
+
+> **request\_id**: `string`
+
+Opaque ID emitted by this run's adapter.
+
+#### type
+
+> **type**: `"approve"`
 
 ***
 
