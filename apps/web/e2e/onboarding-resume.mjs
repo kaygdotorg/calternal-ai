@@ -46,7 +46,7 @@ try {
   { const { ctx, page } = await fresh({ fn: () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("cal.onboarding", JSON.stringify({ who: "owner", coder: false, step: "you", done: [], skipped: [] })); } } });
     await mock(page, { setup: false, signedIn: true });
     await page.goto(BASE + "/?server=1");
-    ok(await onboardingUp(page) && /Look/i.test(await page.locator("ol.steps li[aria-current=step]").innerText()), "(a) a reload right after the passkey goes on to the next step (the account exists)");
+    ok(await onboardingUp(page) && /Recovery/i.test(await page.locator("ol.steps li[aria-current=step]").innerText()), "(a) a reload right after the passkey goes on to the next step, the recovery codes (the account exists)");
     await ctx.close(); }
   // (b) stale state, no owner yet: seeded on a plain file of the origin (no app running), then the app opens
   { const { ctx, page } = await fresh(null);

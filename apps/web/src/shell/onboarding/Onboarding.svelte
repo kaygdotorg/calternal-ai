@@ -9,6 +9,8 @@
   import StepCli from "./StepCli.svelte";
   import StepDirect from "./StepDirect.svelte";
   import StepLook from "./StepLook.svelte";
+  import StepPasskey2 from "./StepPasskey2.svelte";
+  import StepRecovery from "./StepRecovery.svelte";
   import StepMachine from "./StepMachine.svelte";
   import StepProvider from "./StepProvider.svelte";
   import StepRepos from "./StepRepos.svelte";
@@ -27,7 +29,7 @@
   // svelte-ignore state_referenced_locally
   const api: OnboardingApi = demo ? fixtureApi(attached) : serverApi;
   const steps = $derived(path(coder));
-  const TITLE: Record<StepId, string> = { you: "Who you are", look: "Choose a look", machine: "Your machine", provider: "Sign in to a provider", repos: "Your repositories", cli: "The command line", direct: "Direct mode", done: "You are set up" };
+  const TITLE: Record<StepId, string> = { you: "Who you are", recovery: "Your recovery codes", passkey2: "A second passkey", look: "Choose a look", machine: "Your machine", provider: "Sign in to a provider", repos: "Your repositories", cli: "The command line", direct: "Direct mode", done: "You are set up" };
   let heading = $state<HTMLElement>();
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
   // The account this record belongs to, once there is one (after who-you-are): a reload resumes only a record of the signed-in account (server/boot.ts).
@@ -45,7 +47,7 @@
     confirming = s;
     setTimeout(() => { confirming = null; const n = after(coder, s); if (n) step = n; }, reduced() ? 0 : 520);
   }
-  function skip(s: StepId) { if (!skipped.includes(s)) skipped = [...skipped, s]; const n = after(coder, s); if (n) step = n; }
+  function skip(s: StepId) { if (s === "passkey2" && !demo) void import("../../server/auth").then((a) => a.dismissPasskeyPrompt()).catch(() => {}); if (!skipped.includes(s)) skipped = [...skipped, s]; const n = after(coder, s); if (n) step = n; }
   function back() { const p = before(coder, step); if (p) step = p; }
   function start() {
     clear(store);
@@ -71,6 +73,8 @@
       <section class="in">
         <h1 bind:this={heading} tabindex="-1">{TITLE[step]}</h1>
         {#if step === "you"}<StepYou {who} {token} {demo} bind:coder ondone={() => finish("you")} />
+        {:else if step === "recovery"}<StepRecovery {demo} ondone={() => finish("recovery")} />
+        {:else if step === "passkey2"}<StepPasskey2 {demo} ondone={() => finish("passkey2")} />
         {:else if step === "look"}<StepLook ondone={() => finish("look")} />
         {:else if step === "machine"}<StepMachine {api} ondone={() => finish("machine")} />
         {:else if step === "provider"}<StepProvider {api} ondone={() => finish("provider")} />
@@ -83,7 +87,7 @@
         {/if}
         {#if step !== "done"}
           <footer>
-            {#if before(coder, step) && step !== "you"}<Button variant="quiet" text="Back" onclick={back} />{/if}
+            {#if before(coder, step) && step !== "you" && step !== "recovery" && step !== "passkey2"}<Button variant="quiet" text="Back" onclick={back} />{/if}
             {#if skippable[step]}<span class="skip"><Button variant="quiet" text="Skip" onclick={() => skip(step)} /><small>{SKIP_NOTE[step]}</small></span>{/if}
           </footer>
         {/if}
@@ -109,7 +113,7 @@
   .many li { width: 3rem; }
   .many .lab { display: none; }
   .many li.now .lab { display: block; position: absolute; top: calc(var(--s-9) + var(--s-2)); white-space: nowrap; }
-  @media (max-width: 520px) { .steps { gap: var(--s-4); } .steps li { width: 3.2rem; } .lab { display: none; } .steps li.now .lab { display: block; position: absolute; top: calc(var(--s-9) + var(--s-2)); white-space: nowrap; } .steps { padding-bottom: var(--s-6); } }
+  @media (max-width: 520px) { .steps { flex-wrap: wrap; justify-content: center; gap: var(--s-3) var(--s-4); } .steps li { width: 3.2rem; } .many li { width: 2.4rem; } .lab { display: none; } .steps li.now .lab { display: block; position: absolute; top: calc(var(--s-9) + var(--s-2)); white-space: nowrap; } .steps { padding-bottom: var(--s-6); } }
   .wrap :global(.card) { width: min(30rem, 100%); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); animation: enter var(--dur-slow) var(--ease-out); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); outline: none; }
