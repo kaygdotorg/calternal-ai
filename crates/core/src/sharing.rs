@@ -249,7 +249,7 @@ macro_rules! operation {
 pub const SHARING_OPERATIONS: &[SharingOperation] = &[
     operation!(
         "collections.get",
-        "Open a saved notes collection",
+        "Read a saved notes collection and its current revision",
         CollectionGetInput,
         false,
         Read
@@ -312,7 +312,7 @@ pub const SHARING_OPERATIONS: &[SharingOperation] = &[
     ),
     operation!(
         "sharing.revoke",
-        "Remove one item grant",
+        "Revoke one item grant, including while the item is in Trash",
         ShareGrantTarget,
         true,
         Reversible

@@ -9034,7 +9034,7 @@
   {
     "risk": "read",
     "id": "collections.get",
-    "description": "Open a saved notes collection",
+    "description": "Read a saved notes collection and its current revision",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -9532,7 +9532,7 @@
   {
     "risk": "reversible",
     "id": "sharing.revoke",
-    "description": "Remove one item grant",
+    "description": "Revoke one item grant, including while the item is in Trash",
     "mutates": true,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",

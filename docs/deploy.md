@@ -77,6 +77,16 @@ from the host and name `MACHINE_CONNECT` if TCP cannot connect. Inspect
 `journalctl --user -u calternal-ai-machine.service` on the target for the
 machine's connection failure.
 
+## Route public shares
+
+Keep `/s/` on the same Traefik HTTPS route as the app. Preserve the Host
+header and path, including member addresses and the query string. Disable
+edge caching and exclude the bearer path from access logs and request traces.
+The backend serves the guest document directly and responds to requests with
+`Accept: application/json` on the same address. Verify a disposable link with
+both representations and HEAD. Revoke it and repeat the requests. Each should
+then return 404.
+
 ## Choose the machine sandbox backend
 
 Use `podman` on Linux machines without usable KVM and for the current provider

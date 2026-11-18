@@ -85,6 +85,124 @@ async fn bearer_open_discloses_item_address_only_to_an_independently_authorized_
 }
 
 #[tokio::test]
+async fn collection_guest_member_addresses_never_retarget_and_revoke_with_the_root() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let make_note = |title| {
+        let f = &f;
+        async move {
+            data(
+                f.op(
+                    1,
+                    "notes.create",
+                    json!({
+                        "space_id":space, "title":title, "markdown":"Shared collection member"
+                    }),
+                )
+                .await,
+            )["note"]["id"]
+                .clone()
+        }
+    };
+    let first = make_note("Original member").await;
+    let second = make_note("Replacement member").await;
+    let collection = data(
+        f.op(
+            1,
+            "collections.create",
+            json!({
+                "space_id":space,"title":"A guest collection","members":[first,second]
+            }),
+        )
+        .await,
+    );
+    let item = json!({"kind":"collections","id":collection["id"]});
+    let link = data(
+        f.op(
+            1,
+            "sharing.link_create",
+            json!({"item":item,"label":"Guest"}),
+        )
+        .await,
+    );
+    let copy = data(
+        f.op(
+            1,
+            "sharing.link_copy",
+            json!({
+                "item":item, "grant_id":link["grant_id"]
+            }),
+        )
+        .await,
+    );
+    let root = url::Url::parse(copy["url"].as_str().unwrap())
+        .unwrap()
+        .path()
+        .to_owned();
+    let get = |path: &str, signed_in: bool| {
+        let mut req = f
+            .client
+            .get(format!("{}{path}", f.base))
+            .header("host", "localhost:18080")
+            .header("accept", "application/json");
+        if signed_in {
+            req = req.header("cookie", &f.cookies[1]);
+        }
+        async move {
+            let reply = req.send().await.unwrap();
+            if reply.status().is_success() {
+                Ok(reply.json::<Value>().await.unwrap())
+            } else {
+                Err(reply.status().as_u16())
+            }
+        }
+    };
+    let guest = get(&root, false).await.unwrap();
+    assert_eq!(guest["title"], "A guest collection");
+    assert!(guest.get("item").is_none());
+    assert_eq!(get(&root, true).await.unwrap()["item"], item);
+    let original = guest["members"][0]["href"].as_str().unwrap();
+    assert_eq!(
+        get(original, false).await.unwrap(),
+        json!({
+            "title":"Original member", "markdown":"Shared collection member","back":root
+        })
+    );
+    assert_eq!(
+        get(original, true).await.unwrap()["item"],
+        json!({"kind":"notes","id":first})
+    );
+    assert!(!original.contains(first.as_str().unwrap()));
+
+    f.op(
+        1,
+        "collections.set_members",
+        json!({
+            "id":collection["id"],"base_revision":collection["revision"],"members":[second]
+        }),
+    )
+    .await
+    .ok();
+    assert_eq!(get(original, false).await, Err(404));
+    let current = get(&root, false).await.unwrap();
+    let replacement = current["members"][0]["href"].as_str().unwrap();
+    assert_eq!(
+        get(replacement, false).await.unwrap()["title"],
+        "Replacement member"
+    );
+
+    f.op(
+        1,
+        "sharing.revoke",
+        json!({"item":item, "grant_id":link["grant_id"]}),
+    )
+    .await
+    .ok();
+    assert_eq!(get(&root, false).await, Err(404));
+    assert_eq!(get(replacement, false).await, Err(404));
+}
+
+#[tokio::test]
 async fn shared_notes_are_searchable_only_while_a_named_grant_applies() {
     let f = Fixture::new().await;
     let space = &f.spaces[0];

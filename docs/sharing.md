@@ -34,22 +34,47 @@ A grant row has `grant_id` and `permission`. Named grants also have `audience` a
 | `sharing.mark_seen` | `item` | `seen` for the signed-in recipient. |
 | `sharing.rescue` | `title, changed_blocks` | `note` in the signed-in account's personal space. The client sends only its own changed Markdown blocks. The server uses the local title and supplied blocks to create the copy. |
 
-Putting a note in Trash suspends existing links and grants. Restoring it makes surviving grants active again. Permanent purge removes authority. Losing group membership or revoking an individual grant removes only the access gained through that grant. Item-only editors can edit the note's Markdown. Renaming uses the space's linked rewrite operation and requires space Edit. Shared Notes search reuses the source space's index with allowed item IDs and checks current access before sending matches.
+Putting a note in Trash suspends existing links and grants. Owners and authorized Managers can revoke a suspended link. Restoring the note makes surviving grants active again. Permanent purge removes authority. Losing group membership or revoking an individual grant removes only the access gained through that grant. Item-only editors can edit the note's Markdown. Renaming uses the space's linked rewrite operation and requires space Edit. Shared Notes search reuses the source space's index with allowed item IDs and checks current access before sending matches.
 
 ## Guest reads
 
-`GET /s/<secret>` renders a read-only fallback. Request `Accept: application/json` to get `{title, markdown}` for a note, or `{title, members:[{title, href}], next?}` for a collection. Opening a member's link returns `{title, markdown, back}`. Guest member links use a position scoped to the collection link.
+`GET /s/<secret>` renders a read-only fallback. Request `Accept: application/json` to get `{title, markdown}` for a note, or `{title, members:[{title, href}], next?}` for a collection. Opening a member's link returns `{title, markdown, back}`. Follow guest member, back and next addresses as returned. A member address is bound to one link and one note. If the collection changes and a different note occupies that slot, the old member address returns 404. Reopen the collection for its current member addresses.
 
-The server adds `item: {kind, id}` only when a valid originating session can independently open the selected note or collection. The client can use that reference for **Open in Calternal**. A link's authority alone never supplies a canonical item address. Invalid, expired and revoked links and hidden items return the same 404. Guest replies are private and non-cacheable. Reverse proxies must omit the bearer path from access logs. The server stores link lookup digests and encrypted secrets using separate keys derived from the existing installation invite key.
+The server adds `item: {kind, id}` only when a valid originating session can independently open the selected note or collection. The client can use that reference for **Open in Calternal**. A link's authority alone never supplies a canonical item address. Invalid, expired and revoked links and hidden items return the same 404. Guest replies use `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, and `X-Robots-Tag: noindex, nofollow`. The HTML document has no scripts or external resources. Reverse proxies must omit the bearer path from access logs. Revocation prevents subsequent reads of the root and its member addresses. Someone who already received the content can still keep a copy. The server stores link lookup digests and encrypted secrets using separate keys derived from the existing installation invite key.
 
 ## Storage and upgrade
 
 The production baseline already provides the sharing grant, policy and recipient tables in `auth.db` 14 and the derived reverse membership index in space `content.db` 5. This feature uses both schemas as shipped. Grant, policy and recipient marker changes use the existing auth recovery barrier. The index rebuilds from versioned collection metadata. See [Data-preserving upgrades](upgrades.md).
 
-A typical stored Notes read uses one route lookup, one indexed reverse-membership lookup and one protected authority statement at admission, then a payload read. Delivery uses one fresh reverse-membership lookup and one authority statement. Guest open uses one indexed bearer lookup, one item route lookup, the appropriate content read, and one fresh bearer check. A signed-in guest also pays session and item authority checks for the optional item reference. These reads perform no flushes. Management mutations use an immediate auth transaction with the existing protected receipt and recovery publication. The live rooms integration calls the post-commit eviction trait after last-read loss on explicit grant revoke. The default implementation is a no-op until the live rooms lane wires in its service.
+A typical stored Notes read uses one route lookup, one indexed reverse-membership lookup and one protected authority statement at admission, then a payload read. Delivery uses one fresh reverse-membership lookup and one authority statement. Guest open uses two indexed auth reads for the bearer, one item route lookup, and one note head read or one collection head read. A collection list reads at most 50 member metadata rows. A member open reads one additional note head. The optional item reference adds two credential checks and one current item authorization for a signed-in reader. These reads perform no flushes. Management mutations use an immediate auth transaction with the existing protected receipt and recovery publication. The live rooms integration calls the post-commit eviction trait after last-read loss on explicit grant revoke. Room delivery also uses the shared access revision below.
 
 ## Live room authorization
 
 The room service calls `resolve::authorize_item_access` for the current View or Edit decision. A full Notes check binds the supplied space, kind and item with one live-head lookup, reads the reverse membership index once and makes one protected auth statement. The content lock keeps the lifecycle and inherited collection set stable during that check.
 
 `resolve::item_access_revision` returns one process-wide atomic handle. Sampling it costs zero storage reads. Sample with Acquire before and after a full check and cache only an unchanged even epoch. Authority work keeps the value odd through commit or rollback and through recovery publication. Overlapping changes keep it dirty until the last writer retires. There is one retained handle across all rooms. Direct grants, groups and space roles publish through the auth worker. Collections, Trash, restore, purge, path moves, erasure and recovery also invalidate the handle. Plain Notes body writes keep the current epoch. Rooms still check their own session and plugin activation.
+
+## Custom share domains
+
+Keep the canonical link on the installation origin. An optional verified host
+can serve the same `/s/<secret>` and its member addresses. Losing the custom
+hostname leaves the canonical link usable. Revocation and expiry use the same
+grant on both hosts.
+
+Start with one exact HTTPS hostname per space, approved by its Owner and
+provisioned by the operator. Verify control using a DNS TXT challenge before
+enabling the binding. Recheck ownership and withdraw the route on loss of
+verification or removal. Refuse reserved hostnames, wildcards, and bindings
+already claimed by another space. Scope every lookup to the verified host's
+current space and resolve the item by its stable UUID. Moving it across spaces
+requires the destination's binding on the custom host.
+
+Serve only the existing read-only guest route on custom hosts. Keep passkeys,
+cookies, session-dependent item references, app assets and APIs on the
+installation origin. Require explicit proxy trust, strip untrusted forwarding
+headers and exclude bearer paths from edge logs. The future Publish plugin can
+request an existing verified binding through the host. The core remains
+responsible for domain ownership and grant checks.
+
+Custom domains are a design for later. They require a durable host registry and
+recovery classification with a versioned migration before any route ships.

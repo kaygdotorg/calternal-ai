@@ -1,9 +1,20 @@
 //! Saved Notes collections with explicit same-space membership.
 
 use super::*;
-use calternal_content::Request;
+use calternal_content::{CollectionOwner, Request, StoredCollection};
 use calternal_core::{CollectionCreateInput, CollectionGetInput, CollectionMembersInput};
 use calternal_types::Capability;
+
+pub(super) fn live(store: &Store, space: SpaceId, id: Uuid) -> Result<StoredCollection, Error> {
+    let saved = store.content().live_collection(space, id)?;
+    if saved.collection.owner != CollectionOwner::Space(space)
+        || saved.collection.item_kind != "notes"
+        || saved.collection.standard_key.is_some()
+    {
+        return Err(missing());
+    }
+    Ok(saved)
+}
 
 pub(super) async fn dispatch<D: Directory>(
     state: Shared<D>,
@@ -21,23 +32,17 @@ pub(super) async fn dispatch<D: Directory>(
         let space = item_route(&state, &reference).await?;
         require_read(&state, identity, space, input.id).await?;
         let result = blocking(&state, move |store| {
+            let saved = live(store, space, input.id)?;
             let content = store.content();
-            let collection = content.live_metadata(space, "collections", input.id)?;
-            if !eligible("collections", &collection) {
-                return Err(missing());
-            }
-            let revision = content.collection(space, input.id)?.revision;
-            let members = collection["members"].as_array().ok_or_else(missing)?;
-            let notes = members.iter().filter_map(|id| Uuid::parse_str(id.as_str()?).ok());
             let mut members = Vec::new();
-            for id in notes {
+            for id in saved.collection.members {
                 match content.live_metadata(space, "notes", id) {
                     Ok(metadata) => members.push(json!({"id":id,"title":metadata["title"]})),
                     Err(error) if error.code == ErrorCode::NotFound => (),
                     Err(error) => return Err(error),
                 }
             }
-            Ok(json!({"id":input.id,"title":collection["title"],"revision":revision,"members":members}))
+            Ok(json!({"id":input.id,"title":saved.collection.title,"revision":saved.revision,"members":members}))
         }).await?;
         require_read(&state, identity, space, input.id).await?;
         return Ok(result);
@@ -102,10 +107,7 @@ pub(super) async fn dispatch<D: Directory>(
             fingerprint: &fingerprint,
         };
         if let Some((id, base)) = update {
-            let metadata = content.live_metadata(space, "collections", id)?;
-            if !eligible("collections", &metadata) {
-                return Err(missing());
-            }
+            live(s, space, id)?;
             let saved = content.set_collection_members(space, id, &base, valid, request)?;
             Ok(json!({"id":id,"revision":saved.revision}))
         } else {
