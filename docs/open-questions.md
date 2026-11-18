@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 22:50 IST.
+[glossary](glossary.md). Updated 2026-11-18 23:30 IST.
 
 ## Waiting now
 
@@ -37,6 +37,7 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Interface details (kayg, 2026-11-18 night): every segmented choice uses the existing app's Selector, ported (an outer pill with the selected item as a pill inside it), including Inbox and All Threads; no search button beside those tabs; the full-screen control is hidden when a window is already full; window width and look leave the three-dot menu and their defaults live in Settings, Appearance; Settings shows nested sections as a split inside the card when there is width (the same primitive a mail plugin would use); no setting appears twice.
 - Production is not deployed again until data survives upgrades (kayg, 2026-11-18): migrations for everything that cannot be rebuilt, a version on every format, and a tested rollback come first; kayg signs up after that. The scaling measurement for message search (10 million, 100 million, 1 billion if the disk allows; many threads and few long ones) is accepted as enough.
 - Materials (#24, 2026-11-18): the readability floor is 7:1 with text flipping light or dark; light mode uses the lighter copy of the photo; the temporary Compare section is removed.
 - Draft saves are relaxed (2026-11-18): they no longer wait for the disk to confirm, so a power cut may lose the latest unsent draft edits; notes and sent messages keep the full guarantee.
