@@ -68,6 +68,18 @@ pub enum Command {
         #[command(flatten)]
         connection: calternal_cli::agent::Connection,
     },
+    /// Print a private, single-use installer for a machine you own.
+    Install {
+        /// Server and signed-in person credential.
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+    },
+    /// Check whether the first owner's installation has an available machine.
+    Onboarding {
+        /// Server and person credential with server settings authority.
+        #[command(flatten)]
+        connection: calternal_cli::agent::Connection,
+    },
     /// Verify sandbox and provider readiness for an enrolled machine.
     Verify {
         /// Enrolled machine UUID.
@@ -111,6 +123,12 @@ pub enum Command {
         after_help = "Examples:\n  calternal machine run\n  calternal machine run --backend podman --max-sandboxes 4\n\nSee also: calternal machine status, calternal machine enroll."
     )]
     Run {
+        /// Share this private directory with the co-located server for first-owner enrollment.
+        #[arg(long, requires = "bootstrap_server")]
+        bootstrap_handoff: Option<PathBuf>,
+        /// Public server URL to record in the co-located machine's credentials.
+        #[arg(long, requires = "bootstrap_handoff")]
+        bootstrap_server: Option<String>,
         /// Directory containing credentials and thread sandboxes.
         #[arg(long)]
         dir: Option<PathBuf>,
@@ -156,6 +174,22 @@ pub fn main(cmd: Command, out: &Output) -> i32 {
         );
     }
 
+    if let Command::Install { connection } = cmd {
+        return calternal_cli::agent::invoke(
+            connection,
+            Some(calternal_cli::agent::MACHINES_INSTALL.into()),
+            "{}".into(),
+            out,
+        );
+    }
+    if let Command::Onboarding { connection } = cmd {
+        return calternal_cli::agent::invoke(
+            connection,
+            Some(calternal_cli::agent::MACHINES_ONBOARDING.into()),
+            "{}".into(),
+            out,
+        );
+    }
     if let Command::Verify {
         machine_id,
         space_id,
@@ -275,7 +309,10 @@ fn identity(
 
 async fn run(cmd: Command) -> Result<Reply, CliError> {
     match cmd {
-        Command::Set { .. } | Command::Verify { .. } => unreachable!("handled before runtime"),
+        Command::Set { .. }
+        | Command::Verify { .. }
+        | Command::Onboarding { .. }
+        | Command::Install { .. } => unreachable!("handled before runtime"),
         Command::Enroll {
             server,
             code,
@@ -370,6 +407,8 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             Ok(identity(&creds, &dir, Some(status)))
         }
         Command::Run {
+            bootstrap_handoff,
+            bootstrap_server,
             dir,
             backend,
             image,
@@ -394,6 +433,16 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                     Arc::new(PodmanBackend::new(podman, root, image))
                 }
             };
+            if let (Some(handoff), Some(server)) = (bootstrap_handoff, bootstrap_server) {
+                tokio::select! {
+                    result = crate::bootstrap::wait(&dir, &handoff, &server) => {
+                        result.map_err(|e| fail("machine run", e))?;
+                    }
+                    _ = shutdown_signal() => {
+                        return Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."));
+                    }
+                }
+            }
             let config = Config {
                 dir,
                 backend,

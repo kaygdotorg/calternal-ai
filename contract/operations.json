@@ -8362,6 +8362,82 @@
   },
   {
     "risk": "reversible",
+    "id": "machines.install",
+    "description": "Create a single-use personal machine enrollment script",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "No caller-controlled scope or target for machine onboarding and enrollment.",
+      "title": "MachineOnboardingInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "The enrollment script and the deadline for redeeming its one-time code.",
+      "properties": {
+        "expires_ms": {
+          "description": "Unix milliseconds when the code expires if unused.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "script": {
+          "description": "Readable shell script containing the private enrollment code.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expires_ms",
+        "script"
+      ],
+      "title": "MachineInstallResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "machines.onboarding",
+    "description": "Check whether the installation has an enrolled, available machine",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "No caller-controlled scope or target for machine onboarding and enrollment.",
+      "title": "MachineOnboardingInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Enrollment and current placement availability for first-owner setup.",
+      "properties": {
+        "attached": {
+          "description": "An active enrollment exists on this installation.",
+          "type": "boolean"
+        },
+        "machine_id": {
+          "description": "The selected machine UUID for the owner's explicit verification.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ready": {
+          "description": "The selected machine is connected and can accept a sandbox placement.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "attached",
+        "ready"
+      ],
+      "title": "MachineOnboardingResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
     "id": "machines.verify",
     "description": "Verify a selected machine and provider sign-in",
     "mutates": true,

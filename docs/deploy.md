@@ -165,30 +165,25 @@ available here. Restoring the old container restores its DAV listener.
 
 5. Open `https://calternal.cloud/` and register the first owner with the
    target's mode-0600 `/srv/calternal-ai/appdata/setup.token`. Read it only from
-   a private session on the target. Get the new account UUID from the
-   signed-in `/api/v1/auth/me` response (`user.id`). Run the operator CLI flow
-   as `calternal`. Every instance needs an enrolled sandboxing machine.
-   Sign in to the provider inside the enrolled account's sandbox home,
-   then run a smoke turn before signing off the cutover.
+   a private session on the target. The installed user service automatically
+   enrolls this host in the instance pool. The first administrator gets an
+   initial pool grant through the existing authorization mechanism.
 
-   ```bash
-   set -o pipefail
-   read -r -p 'New owner account UUID: ' account
-   podman exec calternal-ai /usr/local/bin/calternal --json machines code \
-     --account "$account" --appdata /data/appdata --userdata-ssd /data/userdata-ssd \
-     --userdata-hdd /data/userdata-hdd |
-     jq -er .data.code |
-     /srv/calternal-ai/releases/current/calternal machine enroll \
-       --server https://calternal.cloud --dir /srv/calternal-ai/machine --name calternal-cloud --code -
-   systemctl --user start calternal-ai-machine.service
-   /srv/calternal-ai/releases/current/calternal machine status --dir /srv/calternal-ai/machine
-   account=$(/srv/calternal-ai/releases/current/calternal --json machine status \
-     --dir /srv/calternal-ai/machine | jq -er '.data.owner | sub("^account:"; "")')
-   provider_home=/srv/calternal-ai/machine/sandboxes/accounts/$account/home
-   install -d -m 0700 "$provider_home"
-   podman run --rm -it --env HOME=/home/agent --volume "$provider_home:/home/agent" \
-     localhost/calternal-ai-claude:current claude auth login
-   ```
+   The deploy script creates `/srv/calternal-ai/machine-handoff` with mode 0700,
+   owned by `calternal`, and mounts only that handoff directory in the server.
+   The machine service generates and saves its signing key in its own private
+   state and atomically publishes a mode-0600 `request.json` containing its
+   UUID, public key and machine label. After the first administrator has a
+   passkey, the server commits the pool identity and the initial grant together,
+   then publishes a mode-0600 `enrolled` file with that UUID. The machine
+   validates the UUID, saves its credentials, and removes both handoff files.
+   Replaying the same UUID and key across a service restart returns the same
+   enrollment. No signing key or enrollment code crosses the shared mount.
+   Existing machine credentials take precedence.
+
+   The onboarding screen can use `machines.onboarding` to see the enrollment
+   and placement availability. Use `machines.verify` to confirm that the
+   sandbox starts and check the provider login.
 
 6. To undo the cutover, on the target as `calternal`, stop the new roles
    and restore the old Quadlet on the same port. Confirm the old app through
@@ -207,6 +202,17 @@ available here. Restoring the old container restores its DAV listener.
    curl -fsS https://calternal.cloud/healthz
    ss -ltn 'sport = :993'
    ```
+
+## Additional machines
+
+Set `CALTERNAL_MACHINE_INSTALL_IMAGE` in the server's environment to the
+standard sandbox image accessible from enrolled hosts. A host's
+`localhost/…` image tag only works where that image is installed locally.
+The signed-in person can request `machines.install` to get a shell script
+with a 15-minute, single-use code for their own machine. It needs a Calternal
+binary for that platform and a running Podman engine. The script enrolls
+over the public server URL and installs a systemd user service or a launchd
+agent. It reruns without replacing an existing identity for that server.
 
 ## Decisions before real data
 

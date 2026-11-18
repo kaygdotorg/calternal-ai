@@ -438,3 +438,20 @@ pub struct OutputAck {
     /// Set when the server's buffer is full: wait this long before resending.
     pub retry_after_ms: Option<u64>,
 }
+
+/// File written by the co-located machine before the first owner registers.
+/// The server receives only public material; the signing key stays on the host.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalEnrollment {
+    /// Machine-generated UUID, persisted with its signing key before publication.
+    pub machine_id: Uuid,
+    /// Base64 Ed25519 public key.
+    pub public_key: String,
+    /// Display label.
+    pub name: String,
+    /// Operating system.
+    pub os: String,
+    /// CPU architecture.
+    pub arch: String,
+}

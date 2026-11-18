@@ -46,12 +46,15 @@
 
 pub mod admin;
 mod admission;
+/// Local deployment enrollment and the first-owner onboarding operation.
+pub mod colocated;
 pub mod db;
 mod discards;
 mod erasure;
 mod erasure_queue;
 mod execs;
 pub mod http;
+pub(crate) mod install;
 mod owners;
 pub mod provider;
 pub(crate) mod readiness;

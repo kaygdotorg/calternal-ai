@@ -202,6 +202,10 @@ impl Fixture {
         } else {
             command.current_dir(self.dir.path());
         }
+        let handoff = self.dir.path().join("machine-handoff");
+        if handoff.is_dir() {
+            command.env("CALTERNAL_COLOCATED_HANDOFF", handoff);
+        }
         let crash =
             std::fs::read_to_string(self.dir.path().join("content-fault")).unwrap_or_else(|_| {
                 if self.dir.path().join("thread-send-fault").is_file() {
@@ -225,6 +229,10 @@ impl Fixture {
                 .arg(repo.join("tests/plugins"))
                 .env("PATH", std::env::var("PATH").unwrap_or_default())
                 .env("LANG", "C.UTF-8")
+                .env(
+                    "CALTERNAL_MACHINE_INSTALL_IMAGE",
+                    "docker.io/library/alpine:3",
+                )
                 .env("RUST_LOG", "warn")
                 .env("CALTERNAL_FAULT", crash)
                 .stdin(Stdio::null())
@@ -657,6 +665,7 @@ async fn all_operations_hide_foreign_ids() {
     let mut covered: Vec<_> = cases.iter().map(|(op, _, _)| *op).collect();
     covered.extend(["spaces.list", "spaces.create"]);
     covered.extend(agent_cases::OPERATIONS.iter().copied());
+    covered.extend(deploy_cases::OPERATIONS.iter().copied());
     covered.extend(people_cases::ADDITIONAL_OPERATIONS.iter().copied());
 
     covered.extend(requests_cases::OPERATIONS.iter().copied());

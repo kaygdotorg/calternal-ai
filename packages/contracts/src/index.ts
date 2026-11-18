@@ -144,6 +144,41 @@ bookmark: string, } } | { "Ready": {
  */
 bookmark: string, } } | "ReadinessChanged" | "Reset";
 /**
+ * The enrollment script and the deadline for redeeming its one-time code.
+ */
+
+export type MachineInstallResult = {
+/**
+ * Readable shell script containing the private enrollment code.
+ */
+script: string,
+/**
+ * Unix milliseconds when the code expires if unused.
+ */
+expires_ms: number, };
+/**
+ * No caller-controlled scope or target for machine onboarding and enrollment.
+ */
+
+export type MachineOnboardingInput = Record<string, never>;
+/**
+ * Enrollment and current placement availability for first-owner setup.
+ */
+
+export type MachineOnboardingResult = {
+/**
+ * An active enrollment exists on this installation.
+ */
+attached: boolean,
+/**
+ * The selected machine is connected and can accept a sandbox placement.
+ */
+ready: boolean,
+/**
+ * The selected machine UUID for the owner's explicit verification.
+ */
+machine_id: string | null, };
+/**
  * Select the space for the diagnostic job and the exact enrolled machine.
  */
 
