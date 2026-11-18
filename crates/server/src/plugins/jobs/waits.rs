@@ -117,6 +117,7 @@ impl Jobs {
         let detail = bounded_json(&json!({"reason": park.reason, "request": detail}), SIGNAL_LIMIT)?;
         let source = bounded_json(&json!(park.source), SIGNAL_LIMIT)?;
         let id = Uuid::now_v7().to_string();
+        let checkpoint_seq = live.next_seq() as i64;
         let _actor = self.lifecycle.step(job.account.as_uuid())?;
         let committed = self.tx(&job.space, |tx| {
             let now = now_ms();
@@ -146,7 +147,7 @@ impl Jobs {
             let number: Option<u32> = tx.query_row(
                 "UPDATE jobs SET state='signal_waiting',checkpoint=?3,checkpoint_seq=?4,checkpoints=checkpoints+1
                  WHERE id=?1 AND runs=?2 AND state='running' RETURNING checkpoints",
-                params![job.id, job.runs, checkpoint, live.next_seq()],
+                params![job.id, job.runs, checkpoint, checkpoint_seq],
                 |r| r.get(0),
             ).optional().map_err(db_err)?;
             let Some(number) = number else { return Ok(false) };
@@ -217,23 +218,23 @@ impl Jobs {
         let db = self.conn(space)?;
         let conn = db.lock().map_err(db_err)?;
         let mut query = conn.prepare_cached(
-            "SELECT w.id,json_extract(w.detail,'$.request') FROM plugin_waits w JOIN jobs j ON j.id=w.job
+            "SELECT w.id,w.job,json_extract(w.detail,'$.request') FROM plugin_waits w JOIN jobs j ON j.id=w.job
              WHERE w.outcome IS NULL AND j.state='signal_waiting' AND j.account=?1 AND w.deadline_ms>?2
                AND json_type(w.detail,'$.request')='object'",
         ).map_err(db_err)?;
         query.query_map(params![account.to_string(), now_ms()], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
         }).map_err(db_err)?.map(|row| {
-            let (id, detail) = row.map_err(db_err)?;
+            let (id, job, detail) = row.map_err(db_err)?;
             Ok(PersonRequest {
-                id, space_id: Some(space.to_owned()), thread_id: None,
+                id, space_id: Some(space.to_owned()), thread_id: None, job_id: Some(job),
                 detail: serde_json::from_str(&detail).map_err(|_| Error::internal("stored wait request"))?,
             })
         }).collect()
     }
 
     fn has_job_store(&self, space: &str) -> bool {
-        self.routes.read().unwrap_or_else(|e| e.into_inner()).values().any(|s| s == space)
+        self.root.as_ref().is_some_and(|root| root.join(space).join("jobs.db").is_file())
     }
 
     /// Find a wait in an authorized space without opening new stores. Reads one
@@ -385,87 +386,4 @@ impl Jobs {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn admit(jobs: &Jobs, space: &str, key: &str) -> String {
-        jobs.admit(Admission {
-            space: space.into(), plugin: "package".into(), account: AccountId::new(),
-            session: Session::Static, operation: "package.run".into(), input: Value::Null,
-            parent: None, generation: 1, request_key: key.into(),
-        }).unwrap()
-    }
-
-    fn park(jobs: &Jobs, space: &str, id: &str) -> Result<Timer, Error> {
-        let claim = jobs.claim(space, id)?.unwrap();
-        jobs.park_signal(&claim.job, &claim.live, Park {
-            checkpoint: json!({"phase": 1}), reason: "Test wait".into(),
-            deadline_ms: now_ms() + 60_000, source: WaitSource::Approval,
-        }, None).map(Option::unwrap)
-    }
-
-    #[test]
-    fn jobs_v2_migrates_with_existing_rows_and_a_failed_batch_rolls_back() {
-        let temp = tempfile::tempdir().unwrap();
-        let space = calternal_types::SpaceId::new().to_string();
-        let folder = temp.path().join("spaces").join(&space);
-        std::fs::create_dir_all(&folder).unwrap();
-        let conn = Connection::open(folder.join("jobs.db")).unwrap();
-        // The baseline jobs schema stays the same, including its positional insert.
-        let batches = [crate::plugins::job_sql::SCHEMA, crate::threads::turn_events::schema()];
-        let baseline = calternal_store::migrations::Schema::new("jobs.db", 2, &batches, &[]);
-        calternal_store::migrations::migrate(&conn, baseline).unwrap();
-        let row = Uuid::now_v7().to_string();
-        conn.execute(
-            "INSERT INTO jobs VALUES(?1,'package',?2,'{\"kind\":\"static\"}','package.run','null',NULL,'admitted','null',0,0,'null',0,1,'old',NULL)",
-            params![row, AccountId::new().to_string()],
-        ).unwrap();
-        let bad_batch = format!("{SCHEMA} INSERT INTO absent_table VALUES (1);");
-        let changes = [bad_batch.as_str()];
-        let invalid = calternal_store::migrations::Schema::new("jobs.db", 2, &batches, &changes);
-        assert!(calternal_store::migrations::migrate(&conn, invalid).is_err());
-        assert_eq!(calternal_store::migrations::inspect(&conn, baseline).unwrap(), 2);
-        drop(conn);
-        let jobs = Jobs::open(temp.path()).unwrap();
-        let timer = park(&jobs, &space, &row).unwrap();
-        assert!(jobs.wait_is_pending(&timer).unwrap());
-    }
-
-    #[test]
-    fn first_signal_survives_claim_and_restart_with_one_receipt() {
-        let temp = tempfile::tempdir().unwrap();
-        let space = calternal_types::SpaceId::new().to_string();
-        let jobs = Jobs::open(temp.path()).unwrap();
-        let id = admit(&jobs, &space, "park");
-        let timer = park(&jobs, &space, &id).unwrap();
-        let signal = || Decision { outcome: json!({"kind":"approval","approved":true}), receipt: Some(("decision", "approved")) };
-        assert!(matches!(jobs.resolve_wait(&space, &timer.id, &id, Some(signal())).unwrap(), Resolution::Woken));
-        assert!(matches!(jobs.resolve_wait(&space, &timer.id, &id, Some(signal())).unwrap(), Resolution::Replay));
-        let claim = jobs.claim(&space, &id).unwrap().unwrap();
-        assert!(jobs.claim(&space, &id).unwrap().is_none());
-        assert_eq!(jobs.continuation(&claim.job).unwrap(), Some(signal().outcome));
-        drop(jobs);
-        let jobs = Jobs::open(temp.path()).unwrap();
-        assert_eq!(jobs.recover(|_, _, _| true).unwrap(), vec![(space.clone(), id.clone())]);
-        let claim = jobs.claim(&space, &id).unwrap().unwrap();
-        assert_eq!(jobs.continuation(&claim.job).unwrap(), Some(signal().outcome));
-    }
-
-    #[test]
-    fn package_capacity_excludes_cancelled_waiters() {
-        let temp = tempfile::tempdir().unwrap();
-        let space = calternal_types::SpaceId::new().to_string();
-        let jobs = Jobs::open(temp.path()).unwrap();
-        let timers: Vec<_> = (0..PACKAGE_LIMIT).map(|n| {
-            let id = admit(&jobs, &space, &n.to_string());
-            park(&jobs, &space, &id).unwrap()
-        }).collect();
-        let blocked = admit(&jobs, &space, "blocked");
-        assert_eq!(park(&jobs, &space, &blocked).err().unwrap().code, calternal_types::ErrorCode::Unavailable);
-        let first = &timers[0];
-        jobs.cancel(&space, &first.job).unwrap();
-        assert!(!jobs.wait_is_pending(first).unwrap());
-        let replacement = admit(&jobs, &space, "replacement");
-        assert!(park(&jobs, &space, &replacement).is_ok());
-    }
-}
+mod tests;

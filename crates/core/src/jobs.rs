@@ -82,7 +82,7 @@ pub struct JobView {
     pub checkpoint: serde_json::Value,
     /// Stream sequence number of the first chunk after that checkpoint.
     pub checkpoint_seq: u64,
-    /// Final result of a `done` job, or null.
+    /// Final result, a caller-safe wait rejection, or null.
     pub result: serde_json::Value,
 }
 

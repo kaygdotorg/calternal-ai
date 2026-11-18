@@ -658,8 +658,8 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 | bb-lite fork existing server, app or runner entry and profiles | Decided, unbuilt | Fork one part of a default feature and keep updating the other parts. |
 | bb status, logs, lifecycle timings, safe mode and bb-lite audit chain | Decided, unbuilt | See why a plugin needs setup, view handler latency and disable scoped plugins together. |
 | bb-lite live data, changed notifications and audience-scoped events | Decided, unbuilt | Publish a typed value to one account and refresh its subscribers without polling. Job streams are built. |
-| pi-durable typed signals and deadlines, replayable parked tools | Decided, unbuilt | Wait for a webhook or deadline with no live worker, then resume from a checkpoint. |
-| pi-durable parked approval gates and argument-bound decisions | Decided, partially built | Park any declared tool on approval, then re-run its gates. Calternal's protected approvals currently cover the host turn path. |
+| pi-durable typed signals and deadlines, replayable parked tools | Durable job waits | Park a replayable job on a signed webhook, Inbox decision or deadline, then continue from its checkpoint. |
+| pi-durable parked approval gates and argument-bound decisions | Job approvals and protected native turn approvals | Park a job for a one-time Inbox decision. Native turns use their existing argument-bound approval gates. |
 | pi-durable `afterRun`, `afterFailedRun`, `onYield`, after-tools decisions; bb lifecycle retry | Decided, unbuilt | Schedule follow-up testing and withhold an answer until the child work completes. Calternal's core retries do not expose this as a plugin point. |
 | bb workflow scripts and pi-durable Code Mode | Decided, unbuilt | Replay a deterministic tool pipeline without repeating successful calls. The reference Wasm runtime is outside the current platform rule. |
 | bb lifecycle events for thread, turn, tools, environment, host and startup | Decided, unbuilt | Subscribe a plugin to changes and run scoped follow-up work without polling. |

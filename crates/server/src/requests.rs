@@ -261,7 +261,7 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
             .is_some_and(|space| authorize(state, person.id, space, Capability::SpaceRead).is_ok())
     });
     let secrets = state.store.secrets();
-    let mut collect = |owner: Owner, space_id: Option<String>| -> Result<(), Error> {
+    let collect = |requests: &mut Vec<PersonRequest>, owner: Owner, space_id: Option<String>| -> Result<(), Error> {
         for r in secrets
             .pending(&owner)
             .map_err(|_| Error::unavailable("secret requests unavailable"))?
@@ -276,6 +276,7 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
                 id: r.id.to_string(),
                 space_id: space_id.clone(),
                 thread_id: thread.map(|id| id.to_string()),
+                job_id: None,
                 detail: RequestDetail::Secret {
                     name: r.name,
                     label: r.label,
@@ -286,13 +287,13 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
         }
         Ok(())
     };
-    collect(Owner::Account(person.id), None)?;
+    collect(&mut requests, Owner::Account(person.id), None)?;
     for space in state.directory.describe(person).spaces {
         if authorize(state, person.id, &space.id, Capability::SpaceRead).is_ok() {
             requests.extend(state.jobs.wait_requests(&space.id, person.id)?);
         }
         if let Ok(id) = authorize(state, person.id, &space.id, Capability::SecretsManage) {
-            collect(Owner::Space(id), Some(space.id))?;
+            collect(&mut requests, Owner::Space(id), Some(space.id))?;
         }
     }
     requests.extend(crate::provider_sign_in::list(state, person.id)?);

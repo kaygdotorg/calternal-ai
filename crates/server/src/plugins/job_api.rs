@@ -157,7 +157,15 @@ pub async fn dispatch<D: Directory>(
             ));
         }
         let (st, sp, jid) = (state.clone(), space.clone(), i.job_id.clone());
-        for woken in blocking(move || st.jobs.cancel(&sp, &jid)).await? {
+        let account = job.account;
+        let was_waiting = job.wait.is_some();
+        for woken in blocking(move || {
+            let wake = st.jobs.cancel(&sp, &jid)?;
+            if was_waiting && let Err(error) = st.inputs.invalidate(account) {
+                tracing::warn!(%account, reason = %error.message, "plugin Inbox invalidation failed");
+            }
+            Ok(wake)
+        }).await? {
             runner::schedule(&state, space.clone(), woken);
         }
     }

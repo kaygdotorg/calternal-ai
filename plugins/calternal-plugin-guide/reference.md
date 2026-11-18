@@ -236,3 +236,11 @@ The host commits one winning signal and resumes from the saved checkpoint.
 A process crash can re-invoke a replayable handler with the same signal
 and checkpoint. Design that handler for replay and use the broker's
 receipt-backed calls for durable effects.
+
+To inspect a parked job or cancel it from the CLI, use the job ID from
+the start result. Inbox decisions use the request ID from
+`calternal invoke requests.list --json --input '{}'`. The listing
+identifies plugin prompts with `job_id`. Submit the answer with
+`requests.answer` and `{"id":"…","answer":{…}}`, or use
+`requests.deny` with `{"id":"…"}`. `requests.approve` takes
+`{"id":"…","lifetime":"once"}` and requires a fresh passkey session.

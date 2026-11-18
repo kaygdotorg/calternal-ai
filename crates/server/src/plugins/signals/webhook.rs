@@ -44,42 +44,42 @@ async fn receive<D: Directory>(state: Shared<D>, keys: Coordinates, req: Request
         .and_then(|v| hex::decode(v).ok())
         .and_then(|v| v.try_into().ok())
         .ok_or_else(hidden)?;
-    let body = tokio::time::timeout(std::time::Duration::from_secs(5), to_bytes(req.into_body(), 16 * 1024))
-        .await.map_err(|_| Error::invalid_input("webhook body timed out"))?
-        .map_err(|_| Error::invalid_input("webhook body exceeds 16 KiB"))?;
+    let route_lookup = route.clone();
     let st = state.clone();
-    let result = crate::blocking::spawn(move || {
-        let Some((wait, job)) = st.jobs.webhook_wait(&space, &job, &route, parsed_correlation)? else {
+    let (wait, job, plugin) = crate::blocking::spawn(move || {
+        let Some((wait, job)) = st.jobs.webhook_wait(&space, &job, &route_lookup, parsed_correlation)? else {
             return Err(hidden());
         };
         if job.plugin != package {
             return Err(hidden());
         }
         let plugin = enabled_plugin(&st, &job, space_id)?;
+        Ok((wait, job, plugin))
+    }).await.map_err(|_| Error::internal("webhook routing task failed"))??;
+    let body = tokio::time::timeout(std::time::Duration::from_secs(5), to_bytes(req.into_body(), 16 * 1024))
+        .await.map_err(|_| Error::invalid_input("webhook body timed out"))?
+        .map_err(|_| Error::invalid_input("webhook body exceeds 16 KiB"))?;
+    if !job.session.is_live_in(&state).await {
+        return Err(hidden());
+    }
+    let runtime = tokio::runtime::Handle::current();
+    crate::blocking::spawn(move || {
         let webhook = plugin.manifest.webhooks.iter().find(|entry| entry.id == route)
             .filter(|_| plugin.manifest.secrets.contains(&route)).ok_or_else(hidden)?;
-        validate(&st, &job, space_id, &route, &uri, timestamp, &signature, &body)?;
+        let _plugin = enabled_plugin(&state, &job, space_id)?;
+        validate(&state, &job, space_id, &route, &uri, timestamp, &signature, &body)?;
         let payload = serde_json::from_slice(&body)
             .map_err(|_| Error::invalid_input("webhook body must be JSON"))?;
         plugin.schemas.validate_input(&webhook.operation, &payload)
             .map_err(|_| Error::invalid_input("webhook payload does not match the declared schema"))?;
-        Ok((wait, job, payload, crate::store::sha256_hex(&body)))
-    }).await.map_err(|_| Error::internal("webhook verification task failed"))??;
-    let (wait, job, payload, fingerprint) = result;
-    if !job.session.is_live_in(&state).await {
-        return Err(hidden());
-    }
-    let st = state.clone();
-    let runtime = tokio::runtime::Handle::current();
-    crate::blocking::spawn(move || {
-        let _plugin = enabled_plugin(&st, &job, space_id)?;
-        let resolution = st.jobs.resolve_wait(&job.space, &wait, &job.id, Some(Decision {
+        let fingerprint = crate::store::sha256_hex(&body);
+        let resolution = state.jobs.resolve_wait(&job.space, &wait, &job.id, Some(Decision {
             outcome: json!({"kind": "webhook", "value": payload}),
             receipt: Some((&correlation, &fingerprint)),
         }))?;
         if matches!(resolution, Resolution::Woken) {
             let _runtime = runtime.enter();
-            super::super::runner::schedule(&st, job.space, job.id);
+            super::super::runner::schedule(&state, job.space, job.id);
         }
         Ok(())
     }).await.map_err(|_| Error::internal("webhook decision task failed"))?

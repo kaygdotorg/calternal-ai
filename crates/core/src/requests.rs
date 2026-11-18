@@ -14,6 +14,10 @@ pub struct PersonRequest {
     pub space_id: Option<String>,
     /// Thread UUID when the request was raised during a turn.
     pub thread_id: Option<String>,
+    /// Job UUID for a plugin wait addressed to this person.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub job_id: Option<String>,
     /// Question, approval or trusted secret prompt.
     pub detail: RequestDetail,
 }
