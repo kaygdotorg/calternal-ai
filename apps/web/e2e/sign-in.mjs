@@ -37,7 +37,7 @@ try {
 
   await page.goto(`${url}/?server=1`);
   await page.waitForSelector("html[data-ready]");
-  check(await page.getByRole("heading", { name: "Set up Calternal" }).isVisible(), "empty installation shows first-owner setup");
+  check(await page.getByRole("heading", { name: "Who you are" }).isVisible(), "empty installation shows first-owner setup");
   // A wrong setup code is refused in plain words and the form stays.
   await fillWho(page, "not-the-code", "Test Owner");
   await page.getByRole("button", { name: "Create passkey" }).click();
