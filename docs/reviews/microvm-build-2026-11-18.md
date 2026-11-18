@@ -238,6 +238,46 @@ Three was at the cutoff on the busy development host.
 The dev-01 harness and sanitized raw metrics are in
 `~/Developer/lanes/microvm/cap1024/`.
 
+### 1,024 MiB CPU matrix on locked perf-02
+
+The matrix reused the 24-module Claude Code workload, pinned guest image,
+4 GiB account disk and TAP policy. A fresh guest ran each trial. The
+harness checked the vCPU count inside the guest before launching two,
+three or four concurrent threads, then measured from CLI launch to exit.
+It started the fixture threads through the guest agent so it could test
+counts above the production admission cap. Three trials ran per cell,
+with the CPU and thread order varied between repetitions.
+
+The edit check compares the source bytes before and after the turn. It
+also checks that the test file stayed unchanged and reruns the tests
+independently. All 81 turns met those checks, including 43 that used the
+Edit tool. All 27 guests recorded zero OOM kills and zero swap activity.
+
+| vCPUs | Threads | Turns passed | Median turn | p90 turn | Peak VM PSS |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 2 | 6/6 | 12.50 s | 13.37 s | 685.02 MiB |
+| 1 | 3 | 9/9 | 14.93 s | 17.11 s | 844.72 MiB |
+| 1 | 4 | 12/12 | 20.31 s | 21.74 s | 980.75 MiB |
+| 2 | 2 | 6/6 | 11.10 s | 12.76 s | 673.02 MiB |
+| 2 | 3 | 9/9 | 12.83 s | 15.80 s | 853.65 MiB |
+| 2 | 4 | 12/12 | 35.72 s | 41.07 s | 977.04 MiB |
+| 4 | 2 | 6/6 | 11.02 s | 13.18 s | 687.09 MiB |
+| 4 | 3 | 9/9 | 12.13 s | 13.52 s | 853.06 MiB |
+| 4 | 4 | 12/12 | 15.20 s | 21.52 s | 978.48 MiB |
+
+At three threads, more vCPUs reduced observed latency. At four threads,
+four vCPUs had the lowest median and every CPU setting peaked above
+977 MiB of VMM PSS. The four-thread medians on two vCPUs were 25.11,
+35.72 and 40.91 seconds across the three trials. The overall pattern
+supports considering CPU and RAM together for plan sizing. This matrix
+leaves the cause of the two-vCPU four-thread slowdown open.
+
+On perf-02, `/usr/local/bin/perf-lock.sh bash cap1024/launch.sh` ran from
+`~/calternal-ai-microvm-51/cpu1024` with the dev-staged harness, guest
+artifact and rootless TAP setup. Raw metrics are in `matrix.log` beside
+the corrected fixtures. The run left no scoped Firecracker processes or
+account disks.
+
 ### Conformance with the Notes directory-mode fix
 
 The lane merged search commit `1ddd88a` before the dev-01 rerun. The
@@ -250,6 +290,48 @@ With the absolute guest config, all three filtered live microVM cases
 passed in 10.89 seconds and both leak checks passed again. Workspace,
 integration, plugin, GenUI, contract, docs, publication and formatting
 checks also passed.
+
+### Worker teardown after the dev merge
+
+The merge of dev at `a7cd5dc` keeps both the machine slot and the
+initiating account's pool slot reserved while a worker is stopping. The
+server releases both after an authenticated report proves teardown or
+the machine is durably revoked. The regression test checks the counts
+through a restart with the lease intact, rejects an insufficient ack
+and a report for another machine, and checks revocation after the
+lease has been removed from memory.
+
+Owner erasure followed by a server restart before teardown is an open
+case inherited from dev. Erasure deletes the lease row, leaving the
+stop record in memory until proof. A restart then has no row to
+restore. A minimal durable stop record could preserve the IDs needed
+for accounting while dropping the erased lease details. It would add
+a placement record retained until teardown or revocation. Retaining
+the existing stopping lease would avoid a separate record and would
+retain more owner data through that interval.
+
+On dev-01 the three targeted server worker tests passed. The machine
+library passed 21 tests with one ignored, and the workspace passed 611
+with two ignored. The focused Notes directory-mode regression passed.
+The serial suite passed all 127 conformance cases in 225.81 seconds,
+including all four live microVM cases. Both leak checks passed.
+Integration, plugin, GenUI, contract, docs, publication and both formatting
+checks also passed. The regenerated machines reference page matches its
+source.
+
+```sh
+nix develop -c ./scripts/check-podman-tests.sh cargo test --locked -j6 \
+  -p calternal-server --lib machines::workers -- --test-threads=1
+nix develop -c ./scripts/check-podman-tests.sh cargo test --locked -j6 \
+  -p calternal-machine --lib
+nix develop -c env CALTERNAL_MICROVM_TEST_CONFIG="$PWD/../stage3-test.json" \
+  CARGO_TARGET_DIR="$PWD/target" CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" \
+  ./scripts/check-podman-tests.sh cargo test --locked --manifest-path tests/conformance/Cargo.toml -j6 \
+  --test isolation -- --test-threads=1 --show-output
+```
+
+The focused Notes run used the same absolute server and target paths
+with `filesystem_modes_and_complete_sql_inventory` as the test filter.
 
 ## Backend gate commands
 
@@ -296,7 +378,7 @@ nix develop -c ./scripts/check-podman-tests.sh cargo test --locked -j6 \
 | 7. Bounds | The writable disk is capped per account, the config bounds guest count and the warm pool has at most two entries. Image operations retain one active and one rollback root. Account erasure removes its durable disk. |
 | 8. Compatibility | The pool uses the current machine protocol. There are no database migrations or alternate image readers. |
 | 9. Space identity | Space homes, account disks and thread workspaces use the existing UUID identities. |
-| 10. Single declaration | The size profile declares the 512 MiB limit. The machine and server both read it. One policy supplies DNS, allowed destinations and TAP slots. |
+| 10. Single declaration | Each size profile declares its active-thread limit. The machine and server both read it. One policy supplies DNS, allowed destinations and TAP slots. |
 | 11. Callers | Machine CLI selects the backend. The server uses its existing admission, readiness and erasure paths. |
 | 12. Reuse | Uses the existing queue and lease fence, durable fsio rename and directory sync, provider-home logic, and Podman exec. |
 | 13. Public docs | The docs gate checks Cargo and TypeScript references. Public configuration fields document units, bounds and startup handling. |
