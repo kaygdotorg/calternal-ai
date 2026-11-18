@@ -31,7 +31,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Machine `credentials`, `pending-enrollment/credentials`, and `machine-handoff/{request.json,enrolled}` | Authority during use | Machine enrollment writes `calternal-machine-credentials/v1`. Both roles use `calternal-machine-enrollment/v1` for the handoff. Protected files stay on the machine. |
 | Machine `sandboxes/accounts/`, worker/container state | Mixed | Sandbox, harness and person write per-space homes, transcripts, account provider login and thread workspaces. Provider bytes are opaque. Worker containers, temporary login work and execution state are disposable. MicroVM mode keeps each account's tree in `microvm/accounts/<account>.ext4`; the ext4 label `calternal-v1` versions the disk layout and an unknown label is refused untouched. `microvm/run/` and `vmm.lock` are runtime state. |
 | Machine operator files for microVMs | Operator | The guest image is pinned by its manifest digest in the machine config. The machine config rejects unknown fields. The egress policy's `.installed` receipt is bound to the boot and fails closed, so it is reinstalled rather than migrated. |
-| Appdata `system/upgrade-intent.json` and role-local `.calternal-upgrade/` | Temporary authority | Deploy writes the private `calternal-upgrade-intent/v1` decision and one restore point. The manifest binds installation, both image digests and the raw file proofs. The gate supplies `calternal-upgrade-proof/v1` evidence for the two images. |
+| Appdata `system/upgrade-intent.json` and role-local `.calternal-upgrade/` | Temporary authority | Deploy writes a private v1 intent for additive updates or a `calternal-upgrade-intent/v2` intent for a full restore point. Both bind the installation, both image digests and payload checksums. Before v2 publication, deploy pins the candidate recovery executable under `releases/pending-recovery`. The committed intent returns to v1 after retiring the full manifest. The gate supplies `calternal-upgrade-proof/v1` evidence for the two images. |
 | Appdata `startup.json`, `setup.token`, operator and release config | Mixed | Server startup publishes `calternal-startup/v1` and a replaceable setup code. Auth retains its hash and expiry. Operator owns the pinned installation ID and deployment secrets. Deploy owns image IDs, units and release pointers. |
 
 ## Forward changes
@@ -112,15 +112,34 @@ its data through the deployment rollback path. Afterwards, a compatible N
 can resume on live data, including any new acknowledgements. An incompatible
 downgrade refuses newer data. Retain one restore point during handoff and one
 prior release. The deployment script and the server unit share the local
-recovery command. Ordinary additive updates snapshot only changed stores
-and their witnesses. A full restore point copies every regular file in the
-appdata, SSD, HDD and machine roots and skips runtime sockets and locks. It
-refuses a symlink or other special file anywhere in those roots, including a
-thread workspace's `node_modules/.bin` link. The refusal comes after services
-stop and before any migration, names the entry, and the deployment restarts
-the previous release on unchanged data. A person sees a short reconnect, and
-their workspace, including the link, stays in place. The incompatible update
-does not proceed until the restore point can preserve links.
+recovery command. Ordinary additive updates snapshot only changed stores and their witnesses.
+Before stopping the roles, the deployment driver checks the exact image proof
+and plans the snapshot footprint. It repeats both checks under the storage
+locks. A live preflight refusal leaves the current services running. A locked
+refusal after the stop restarts the previous release.
+
+A full restore point records directories and regular files across appdata,
+SSD, HDD and the co-located machine root. Linux descriptor-relative lookups
+refuse nested mounts. Symlinks retain their target bytes, including absolute,
+escaping, dangling and cyclic targets. Capture and restore operate on the
+link entry without traversing it. Hard links to regular files retain their
+inode relationships within a role. Links with other names outside that role
+and multiply linked symlinks are refused. Unix sockets and runtime locks are
+excluded. Devices, FIFOs and unknown entry types are refused by path.
+
+| Last durable state | Recovery |
+| --- | --- |
+| Preflight or locked checks | No snapshot or migration is published. Resume the prior release if the roles were stopped. |
+| Copying | Remove partial payloads, then resume the prior release. |
+| Preparing, including the private candidate probe | Validate the manifest and every payload, replay against the locked roots, remove additions made during preparation, then resume the prior release. |
+| Restore interrupted | Replay from the immutable manifest and payloads. A planted directory symlink fences restore. |
+| Committed or retirement interrupted | Retire payloads and finish the candidate's activation. Rollback requires a previous release that understands the live data. |
+
+The private full-upgrade probe uses the candidate image with isolated
+networking and a loopback health endpoint. It holds the normal storage locks
+and finishes before the durable decision turns on public writes. A retry,
+rollback or startup hook uses the pinned recovery binary while the previous
+release is still current.
 
 ## Release gate
 

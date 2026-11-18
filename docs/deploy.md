@@ -248,6 +248,104 @@ startup. A deployment retry, rollback, or the server unit's recovery hook can
 restore the staged bytes before either release starts. After the cutover marker,
 rollback keeps live data and the older build must pass its version check.
 
+### First ordinary update from the production baseline
+
+Run the build and gate on x86_64 dev-01 from the clean, approved candidate
+checkout. The commands below use the existing `calternal` SSH deployment
+account. Confirm the current backup includes appdata, SSD, HDD and machine
+state. Keep the proof and both image IDs with the deployment record.
+
+1. Read the exact image ID from the running production container. Check the
+   deployed revision and confirm the running container and `:current` resolve
+   to the same image. Copy that exact image to dev-01 for the proof.
+
+   ```sh
+   set -euo pipefail
+   umask 077
+   export CALTERNAL_DEPLOY_HOST=calternal@calternal-cloud
+
+   previous=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman container inspect --format '{{.Image}}' calternal-ai)
+   current=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman image inspect --format '{{.Id}}' localhost/calternal-ai:current)
+   [[ $previous =~ ^(sha256:)?[a-f0-9]{64}$ ]]
+   deployed_revision=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     "podman image inspect --format '{{ index .Labels \"org.opencontainers.image.revision\" }}' $previous")
+   test "${previous#sha256:}" = "${current#sha256:}"
+   test "$deployed_revision" = c8808625737a1ab782db0a13c77a75add8145db4
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman save --format oci-archive "$previous" | podman load --quiet
+   imported=$(podman image inspect --format '{{.Id}}' "$previous")
+   test "${imported#sha256:}" = "${current#sha256:}"
+   ```
+
+2. Build the approved candidate once and run the signed-in compatibility
+   gate against that exact pair. Keep the deployed provider sandbox tag for
+   an ordinary server update. A provider image change has its own staging
+   and verification steps.
+
+   ```sh
+   test -z "$(git status --porcelain)"
+   export RELEASE_REVISION=$(git rev-parse HEAD)
+   export SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+   revision=$(git rev-parse --short=12 HEAD)
+   candidate=localhost/calternal-ai:$revision
+   proof_dir=$(mktemp -d)
+   proof=$proof_dir/upgrade-proof.json
+
+   nix develop .#deploy -c deploy/build-image.sh "$candidate"
+   nix develop -c scripts/verify-additive-upgrade.sh "$previous" "$candidate" "$proof"
+   candidate_id=$(podman image inspect --format '{{.Id}}' "$candidate")
+   test -s "$proof"
+   ```
+
+3. Preview the target and deploy the image already tested by the gate. The
+   driver checks the proof and restore-point footprint before stopping the
+   services and repeats the checks under the root locks. If either check
+   refuses, read the error and resolve it before retrying.
+
+   ```sh
+   deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
+     --compatibility-proof "$proof" --dry-run
+   deploy/deploy.sh --target deploy/cloud.conf --image "$revision" \
+     --compatibility-proof "$proof"
+   ```
+
+4. Confirm the candidate is serving through Traefik and both units are up.
+   Expect `setup: false` for an enrolled installation. In a signed-in tab,
+   open an existing note or thread and save a small edit in an operator-owned
+   test note. Reload the page to verify the edit persisted. Confirm the pool
+   machine is online and can complete a disposable turn.
+
+   ```sh
+   deployed=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman container inspect --format '{{.Image}}' calternal-ai)
+   test "${deployed#sha256:}" = "${candidate_id#sha256:}"
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     systemctl --user is-active calternal-ai.service calternal-ai-machine.service
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" podman healthcheck run calternal-ai
+   curl -fsS https://calternal.cloud/api/v1/auth/status
+   curl -fsS -o /dev/null https://calternal.cloud/
+   ```
+
+5. If the driver reports that it restored the previous service, confirm the
+   running ID is `$previous` and repeat the signed-in checks. To roll back a
+   successfully activated additive candidate, use the recorded previous
+   release. Rollback verifies the older binary against the live storage and
+   keeps writes acknowledged by the candidate. If the driver reports
+   recovery failed, keep the instance stopped and inspect the unit journal
+   and upgrade status before attempting another change.
+
+   ```sh
+   deploy/rollback.sh --target deploy/cloud.conf
+   restored=$(ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     podman container inspect --format '{{.Image}}' calternal-ai)
+   test "${restored#sha256:}" = "${previous#sha256:}"
+   ssh -o BatchMode=yes "$CALTERNAL_DEPLOY_HOST" \
+     systemctl --user is-active calternal-ai.service calternal-ai-machine.service
+   curl -fsS https://calternal.cloud/api/v1/auth/status
+   ```
+
 ## Backups and service controls
 
 Keep the installation UUID in `/srv/calternal-ai/server.env` with the backups.

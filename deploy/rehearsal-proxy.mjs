@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { createServer as createTlsServer } from "node:https";
 
-const [publicName, backendAddress, backendPort, tlsPort, machinePort, certDir] = process.argv.slice(2);
-if (!certDir) throw new Error("Usage: rehearsal-proxy.mjs AUTHORITY BACKEND_IP BACKEND_PORT TLS_PORT MACHINE_PORT CERT_DIR");
+const [publicName, backendAddress, backendPort, tlsPort, machinePort, certDir, machineAddress = backendAddress] = process.argv.slice(2);
+if (!certDir) throw new Error("Usage: rehearsal-proxy.mjs AUTHORITY BACKEND_IP BACKEND_PORT TLS_PORT MACHINE_PORT CERT_DIR [MACHINE_IP]");
 
 function forward(req, res) {
   const tls = Boolean(req.socket.encrypted);
@@ -24,9 +24,13 @@ function forward(req, res) {
     path: req.url, method: req.method, headers,
   }, reply => {
     res.writeHead(reply.statusCode, reply.headers);
+    reply.on("aborted", () => res.destroy());
     reply.pipe(res);
   });
-  upstream.on("error", () => res.writeHead(502).end());
+  upstream.on("error", () => {
+    if (res.headersSent) res.destroy();
+    else res.writeHead(502).end();
+  });
   res.on("close", () => upstream.destroy());
   req.pipe(upstream);
 }
@@ -35,4 +39,4 @@ createTlsServer({
   key: readFileSync(`${certDir}/proxy.key`),
   cert: readFileSync(`${certDir}/proxy.crt`),
 }, forward).listen(Number(tlsPort), "127.0.0.1");
-createServer(forward).listen(Number(machinePort), backendAddress);
+createServer(forward).listen(Number(machinePort), machineAddress);

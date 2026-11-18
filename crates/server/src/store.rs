@@ -192,11 +192,41 @@ impl Store {
         create: bool,
         receipt_retention: Duration,
     ) -> Result<Self, Error> {
+        Self::open_guarded(roots, installation, create, receipt_retention, None)
+    }
+
+    /// Open the prepared installation for a private readiness probe. The
+    /// candidate must match its full restore point. Takes the same locks as
+    /// ordinary startup and may perform startup writes covered by that point.
+    /// The caller must expose only the health route on a private listener.
+    #[doc(hidden)]
+    pub fn open_upgrade_probe(
+        roots: &calternal_roots::Roots,
+        installation: Uuid,
+        receipt_retention: Duration,
+        candidate: &str,
+    ) -> Result<Self, Error> {
+        Self::open_guarded(
+            roots,
+            installation,
+            false,
+            receipt_retention,
+            Some(candidate),
+        )
+    }
+
+    fn open_guarded(
+        roots: &calternal_roots::Roots,
+        installation: Uuid,
+        create: bool,
+        receipt_retention: Duration,
+        probe: Option<&str>,
+    ) -> Result<Self, Error> {
         let locks = std::sync::Arc::new(
             calternal_roots::prepare(roots, installation, create)
                 .map_err(|e| Error::unavailable(format!("storage roots refused: {e}")))?,
         );
-        crate::upgrades::check_start(&roots.appdata, installation)
+        crate::upgrades::check_start(&roots.appdata, installation, probe)
             .map_err(|error| Error::unavailable(error.to_string()))?;
         let root = roots.appdata.clone();
         calternal_fsio::private::directory(&root).map_err(|e| io_err("create data dir", e))?;
