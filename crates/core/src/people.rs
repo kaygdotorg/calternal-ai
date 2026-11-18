@@ -142,6 +142,23 @@ pub struct ProfileResult {
     pub name: String,
 }
 
+/// The caller's IANA time zone preference. Null follows the device.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct TimeZoneInput {
+    /// IANA time zone name, or null to clear the stored preference.
+    pub time_zone: Option<String>,
+}
+
+/// The caller's saved time-zone preference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+pub struct TimeZoneResult {
+    /// The unchanged account UUID.
+    pub account_id: String,
+    /// Canonically cased IANA name, or null when following the device.
+    pub time_zone: Option<String>,
+}
+
 /// Target of a server people operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
@@ -405,6 +422,7 @@ operations! {
     RemoveSpaceMember: "spaces.remove_member", "Remove a direct account or group grant.", MembersManage, Irreversible, Space, SpaceGrantInput => SpaceChangedResult;
     ListRoles: "roles.list", "List the space roles and their capabilities.", RolesList, Read, Account, DirectoryInput => RolesResult;
     SetProfile: "account.set_profile", "Change your own display name.", AccountProfile, Reversible, Account, ProfileInput => ProfileResult;
+    SetTimeZone: "account.set_time_zone", "Choose your time zone or follow the device.", AccountProfile, Reversible, Account, TimeZoneInput => TimeZoneResult;
     ListPeople: "people.list", "List server accounts.", PeopleManage, Read, Server, DirectoryPageInput => PeopleResult;
     DisablePerson: "people.disable", "Disable an account and revoke its sessions.", PeopleManage, Irreversible, Server, PersonInput => DisabledPerson;
     ListGroups: "groups.list", "List server groups.", GroupsManage, Read, Server, GroupDirectoryPageInput => GroupsResult;

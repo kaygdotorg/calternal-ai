@@ -139,6 +139,7 @@ whose `kind` is one of these values.
 | Renamed | `threads.rename` |
 | Archived or unarchived | `threads.archive`, `threads.unarchive` |
 | Person message or agent text checkpoint saved | `threads.send`, `threads.checkpoint` |
+| A provider sign-in was attempted or completed | `threads.provider_sign_in` with `data.notice` |
 | Turn state changed | `threads.turn_state_changed` |
 | Deleted | `threads.delete` |
 
@@ -197,6 +198,14 @@ journal commit, with no additional reads or flushes per event.
 
 ### Models, phases and turn history
 
+At launch, each attempt captures the provider ID, harness and model labels
+from the live registry snapshot that selects its adapter. A later registry
+update or removal cannot relabel saved output, including the final checkpoint.
+Each changed save takes one live snapshot for the orchestrator's activation
+check. A retry or resume selects its provider again for the new attempt.
+Existing authority checks still govern whether an attempt can continue.
+
+
 Call `threads.models` with `{"space_id":"SPACE_UUID"}` and the space's
 `plugins.use` capability. Each response has a `providers` array.
 
@@ -252,11 +261,10 @@ output as a byte count. The saved message records the step and status in
 Markdown blockquotes. The adapter and host scrub the issued Calternal
 credential before the step reaches a client or the file.
 
-The existing content limit accepts at most 2 MiB of submitted Markdown,
-before placement adds the host-owned identity line. Previously an oversized
-checkpoint was rejected atomically and the turn ended with a generic
-outcome-unknown state. A saved turn now fails with `thread_full` on the job
-stream and `turn_reason.why` on reload. Earlier checkpoints remain readable.
+A saved thread holds at most 2 MiB of Markdown, including the host-owned
+identity line. An overflowing checkpoint is rejected atomically. A saved turn
+reports `thread_full` on the job stream and in `turn_reason.code` on reload.
+Earlier checkpoints remain readable.
 The failure message explains that the latest checkpoint was not saved and that
 the person can start a new thread. The turn does not automatically retry.
 
@@ -308,7 +316,8 @@ following reason payloads use Unix milliseconds for timestamps.
 | `provider_signed_out` | `provider`, the re-authentication `message` and the reported `sign_in_command` |
 | `waiting_on_person` | Private `request_id` visible to the turn account |
 | `retrying` | `attempt`, `next_attempt_ms`, and `rule` (`provider_backoff`, `api_availability`, or `subscription_reset`) |
-| `failed` | `class` (`transient`, `usage_limit`, or `permanent`) and `reset_at_ms` when the provider reports it. A storage-limit failure includes `why: "thread_full"` and its `message`. |
+| `failed` | `class` (`transient`, `usage_limit`, or `permanent`) and `reset_at_ms` when the provider reports it. |
+| `thread_full` | Permanent storage-limit failure with a `message` explaining how to continue. |
 | `interrupted` | `resumable`, `why`, and the last machine contact `since_ms` when known. Uncertain outcomes are nonresumable. |
 
 The account that submitted a turn receives its private machine and sign-in
@@ -414,10 +423,13 @@ thought    = "Thought for " decimal " s"
 ```
 
 Each author uses their account's time zone, falling back to the submitting
-client's zone. Agent attempts keep the initiating person's zone. The client supplies the resolved offset via `client_offset_minutes`. The CLI
-supplies its local offset and the server defaults omitted offsets to +00:00.
-Account time zone settings are pending. The server saves the supplied offset
-in each heading. A thread
+client's zone. Agent attempts keep the initiating person's zone. A signed-in person sets their preferred IANA zone with
+`account.set_time_zone`. For create, send and rename, clients supply
+`client_time_zone` and may supply `client_offset_minutes`. The server first
+tries the saved zone, then the device's named zone, then its numeric offset
+and UTC. Turn attempts snapshot the chosen zone at send and resolve the
+civil offset at each write, including across DST. Earlier headings keep their
+stored offsets. The setting never appears in shared thread metadata. A thread
 can show several offsets at once. Previously written offsets are historical.
 Attempt durations use elapsed work excluding queue, person waits and backoff.
 Message order follows committed records.
@@ -447,7 +459,10 @@ associates retries and resumes. Child threads have their own files and the
 parent may link to authorized child output.
 
 Tool statuses and explicit provider reasoning summaries are Markdown
-blockquotes. A sign-in result is a single readable line, for example
+blockquotes. A sign-in result is a single readable line in the document prefix
+before the message records. A thread retains the latest 16 sign-in flows.
+The same line changes from attempted to done on success, and a
+`threads.provider_sign_in` journal event signals a full refresh. For example,
 `> Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.` An
 unsuccessful attempt uses `attempted` instead of `done`. The re-authentication
 prompt reads `<Provider> needs you to sign in again`, for example
@@ -501,12 +516,12 @@ last edited: 2026-11-18T19:30:18+05:30
 
 # Release checklist
 
+> Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.
+
 ## Maya Chen · 2026-11-18 19:30:00 +05:30
-<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:101 -->
+<!-- id:019a8c00-0000-7000-8000-000000000100 role:person bytes:36 -->
 
 Which release checks are still open?
-
-> Sign-in was done for Anthropic at 2026-11-18 19:30:04 +05:30.
 
 ## Claude Code via Anthropic (subscription) · Claude Sonnet 5.5 · High · 2026-11-18 19:30:06 +05:30 · 12 s · Thought for 4.0 s
 <!-- id:019a8c00-0000-7000-8000-000000000101 role:agent bytes:161 turn:019a8c00-0000-7000-8000-000000000110 meta:{"provider_id":"calternal-claude-code","model_id":"claude-sonnet-5-5","reasoning_level":"high","machine_id":null,"duration_ms":12000,"reasoning_ms":4000} -->

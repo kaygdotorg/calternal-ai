@@ -52,7 +52,7 @@ pub(super) async fn validate_source_app<D: Directory>(
     );
     blocking(move || {
         let mut found = false;
-        for plugin in st.registry.plugins() {
+        for plugin in st.registry.snapshot().plugins().iter() {
             if plugin.manifest.id == source
                 || plugin.manifest.kinds.iter().any(|k| k.id == source)
                 || plugin

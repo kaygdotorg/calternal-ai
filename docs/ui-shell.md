@@ -176,7 +176,7 @@ A horizontal swipe anywhere over the middle card brings a closed sidebar into vi
 
 **What a swipe does.** Finger right: closes the right sidebar if it is open, else opens the left one. Finger left: closes the left sidebar if it is open, else opens the right one (when the app has one). Otherwise nothing (swiping toward a sidebar that is already open does nothing).
 
-**What moves.** Phone: the card slides aside over the sidebar underneath (the list), or the side panel slides over the card; both follow the finger. Wide screens: the sidebar's content slides in over the card's edge (`translate` only) and the card moves by the same amount (`transform` only); the columns do not change during the pull, so nothing is laid out per frame. At release the sidebar's state changes (the layout switches once) and the pieces ease from where the finger left them to rest.
+**What moves.** Phone: the card slides aside over the sidebar underneath, to the right for the list and to the left for the side panel (the mirror, one motion; it first read "the side panel slides over the card" and was changed on 2026-11-18 after the owner saw the overlay on a real iPhone); both follow the finger. There is no scrim: the strip of card that stays visible closes what is open. Wide screens: the sidebar's content slides in over the card's edge (`translate` only) and the card moves by the same amount (`transform` only); the columns do not change during the pull, so nothing is laid out per frame. At release the sidebar's state changes (the layout switches once) and the pieces ease from where the finger left them to rest.
 
 **Release.** Speed over the last 80 ms decides when it is a flick (0.4 px/ms or more): that way. Otherwise more than half showing opens it. Motion: the sheet tokens, `--dur-sheet` on `--ease-sheet` (Web Animations API on a wide screen, CSS transitions on the phone), no spring. On a phone the result goes through `shell.over`, so it is a history entry (Back, Forward and the platform's back gesture do what the swipe did); on a wide screen through `shell.setOpen`, which remembers it.
 
@@ -246,3 +246,9 @@ Two pages in Settings, in the current space's section, built on fixtures (`apps/
 - **The guided form** is `skills/Wizard.svelte`: numbered steps that become ticks, one step at a time with its heading focused, Enter moves on when the step is valid, reduced motion fades only. Onboarding has its own stepper; the two should share one (a simplification opportunity).
 - **Server operations needed** (listed in `NEEDS`, in `skills/store.svelte.ts`): `skills.list`, `skills.create`/`update`/`delete`, `agents.list`, `automations.list`, `automations.create`/`update`/`delete`/`pause`, `automations.run_now` (starts a thread) and a notes create that takes a path, so the file lands at `AI/Skills/<name>/SKILL.md`. Last result and next run come from the server's timer, not the page.
 - Checked by `e2e/skills-automations.mjs`.
+
+## Phone checks (2026-11-18)
+
+No phone layout is pushed before it has been looked at on an iPhone Simulator, in Safari, at the preview address: created, used and deleted on std (Simulator work only); the frames are attached to issue #15. The pass of 2026-11-18 went through the shell (list, thread, side panel), Settings, onboarding, the palette, Notes and the sheets.
+
+*(2026-11-18, later)* Skills page, server mode: the list is read with `skills.list {space_id}` (name and one line each; the file is `AI/Skills/<name>/SKILL.md`). Writing a skill from here and the agents that use each still need the server operations in `NEEDS`.

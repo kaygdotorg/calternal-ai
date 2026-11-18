@@ -377,6 +377,7 @@ pub fn reply(out: &Output, data: Value) -> Reply {
 /// Execute one operation on the shared client and output surface. Credential reads
 /// run on a blocking worker. JSON is a single document, including caller-safe errors.
 pub fn main(args: Args, out: &Output) -> i32 {
+    let device_zone = calternal_core::time_zone::device();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -392,6 +393,9 @@ pub fn main(args: Args, out: &Output) -> i32 {
             operation,
             "threads.create" | "threads.send" | "threads.rename"
         ) {
+            if let Some(zone) = device_zone {
+                input["client_time_zone"] = serde_json::json!(zone);
+            }
             input["client_offset_minutes"] = serde_json::json!(out.utc_offset_minutes());
         }
         agent::call(&client, operation, input, connection.request_id)

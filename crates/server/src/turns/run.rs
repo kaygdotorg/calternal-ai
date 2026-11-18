@@ -133,6 +133,7 @@ async fn execute<D: Directory>(
     };
     let provider = state
         .registry
+        .snapshot()
         .get(provider_id)
         .ok_or_else(|| Error::unavailable("provider plugin is not installed"))?
         .clone();
@@ -142,7 +143,11 @@ async fn execute<D: Directory>(
         .as_ref()
         .ok_or_else(|| Error::unavailable("plugin does not provide an adapter"))?;
     let executable = spec.executable.clone();
-    let default_model = spec.default_model.clone();
+    let model = if i.model.is_empty() {
+        spec.default_model.clone()
+    } else {
+        i.model.clone()
+    };
     let (st, key, p) = (
         state.clone(),
         SpaceId::parse(&job.space).map_err(|_| Error::not_found("turn not found"))?,
@@ -191,6 +196,7 @@ async fn execute<D: Directory>(
     checkpoint["placement"] = Value::Null;
     checkpoint["machine_id"] = json!(machine_id);
     if let Some(phases) = &mut phases {
+        crate::threads::persistence::bind_provider(&mut checkpoint, &provider.manifest, &model);
         checkpoint["message_machine"] = Value::Null;
         checkpoint["message_id"] = if job.runs == 1 {
             json!(job.id)
@@ -259,11 +265,7 @@ async fn execute<D: Directory>(
         }
         vec![
             ProviderCommand::Start {
-                model: if i.model.is_empty() {
-                    default_model
-                } else {
-                    i.model
-                },
+                model,
                 options: i.options,
                 cwd: ".".into(),
                 instructions,

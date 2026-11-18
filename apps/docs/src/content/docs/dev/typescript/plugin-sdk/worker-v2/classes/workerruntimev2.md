@@ -39,6 +39,18 @@ Cost: O(menu bytes), bounded state allocation, no I/O. Validate the menu and bin
 
 ## Methods
 
+### assertReady()
+
+> **assertReady**(): `void`
+
+Verify that every declared operation has a handler before activation. Cost: O(operations).
+
+#### Returns
+
+`void`
+
+***
+
 ### receive()
 
 > **receive**(`frame`): `Promise`\<`void`\>

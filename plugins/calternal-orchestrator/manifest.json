@@ -52,6 +52,11 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "client_time_zone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "client_offset_minutes": {
             "type": "integer",
             "minimum": -840,
@@ -278,6 +283,11 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "client_time_zone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "client_offset_minutes": {
             "type": "integer",
             "minimum": -840,
@@ -403,6 +413,11 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "client_time_zone": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
           "client_offset_minutes": {
             "type": "integer",
             "minimum": -840,

@@ -45,8 +45,8 @@ pub(crate) async fn dispatch<D: Directory>(
     let generation =
         crate::turns::enabled_generation(&state, &space.to_string(), "calternal-orchestrator")
             .await?;
-    let plugin = state
-        .registry
+    let catalog = state.registry.snapshot();
+    let plugin = catalog
         .get("calternal-orchestrator")
         .ok_or_else(|| Error::not_found("unknown operation"))?;
     plugin
@@ -124,7 +124,7 @@ pub(crate) async fn dispatch<D: Directory>(
             rid,
             i,
             generation,
-            value["thread"]["metadata"]["pending"].clone(),
+            value["intent"].clone(),
         )
         .await?;
         return Ok(json!({"thread":value["thread"],"job":job.view()}));

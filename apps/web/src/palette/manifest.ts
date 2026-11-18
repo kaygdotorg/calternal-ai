@@ -36,8 +36,18 @@ export function registerManifest(m: PaletteManifest): void {
   else manifests.push(m);
 }
 
-/** Every registered command, in registration order. */
-export const allCommands = (): CommandDef[] => manifests.flatMap((m) => m.commands);
+/** Every registered command, in registration order; a command id registered twice (the built-in app and the server's manifest for the same plugin) shows once, the first registration winning. */
+export const allCommands = (): CommandDef[] => { const seen = new Set<string>(); return manifests.flatMap((m) => m.commands).filter((c) => !seen.has(c.id) && !!seen.add(c.id)); };
+
+/** The prefix of a manifest that came from the server (`plugins.manifests`): they are replaced as a set whenever the list is read again, so a plugin turned off stops offering its commands. */
+const REMOTE = "server:";
+/** What `plugins.manifests` returns for one enabled plugin: its commands and the Settings sections it provides (each becomes a command that goes to the section). */
+export interface ServerManifest { plugin: string; version?: string; commands: CommandDef[]; settings_sections?: { id: string; label: string; go: string }[] }
+/** Replaces every server-provided manifest with this list (an empty list removes them). Built-in registrations are never touched. */
+export function replaceServerManifests(list: ServerManifest[]): void {
+  for (let i = manifests.length - 1; i >= 0; i--) if (manifests[i]!.plugin.startsWith(REMOTE)) manifests.splice(i, 1);
+  for (const m of list) manifests.push({ plugin: REMOTE + m.plugin, commands: [...m.commands, ...(m.settings_sections ?? []).map((s) => ({ id: `${m.plugin}:settings:${s.id}`, label: `Settings: ${s.label}`, group: "Settings", go: s.go }))] });
+}
 
 registerManifest({
   plugin: "calternal-threads",

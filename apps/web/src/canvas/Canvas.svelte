@@ -374,7 +374,7 @@
     else if (item === "equal") canvas.equalHeights(canvas.cols[canvas.colIndexOf(w.id)]!.id);
     else if (item.startsWith("look:")) canvas.setLook(w.id, item.slice(5) as Look);
     else if (item === "lock") canvas.toggleLock(w.id);
-    else if (item === "panel") { if (shell.narrow) shell.over("panel"); else shell.toggleRight(); }
+    else if (item === "panel") shell.openPanel();
     else if (item === "close") closeWin(w.id, source);
     else if (item.startsWith("t:")) { const t = store.get(w.item); if (t) runThreadItem(item.slice(2), t, () => toast("Rename it from the sidebar: double-click its row")); }
   }

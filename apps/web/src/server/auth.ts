@@ -133,7 +133,10 @@ export async function withFreshProof<T>(f: () => Promise<T>, again: () => Promis
     throw e;
   }
 }
-const fresh = withFreshProof;
+/** The re-verification every screen's changes use: the real passkey ceremony. Tests replace `proof.again` to answer it without a device. */
+export const proof = { again: reverify };
+/** `withFreshProof` with the shared ceremony: the one wrapper for a change that may demand a fresh passkey (docs/requests.md). */
+export const fresh = <T>(call: () => Promise<T>): Promise<T> => withFreshProof(call, () => proof.again());
 /** The account endpoints behind Settings, Account. */
 export const account = {
   me: () => get("me") as unknown as Promise<Me>,

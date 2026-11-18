@@ -150,10 +150,15 @@ impl Journals {
                 via: via.cloned(),
             };
             let mut data = serde_json::json!({ "revision": revision, "actor": actor });
-            if operation == "threads.checkpoint"
-                && let Some(append) = result.get("append")
+            let projection = match operation {
+                "threads.checkpoint" => Some("append"),
+                "threads.provider_sign_in" => Some("notice"),
+                _ => None,
+            };
+            if let Some(key) = projection
+                && let Some(value) = result.get(key)
             {
-                data["append"] = append.clone();
+                data[key] = value.clone();
             }
             store
                 .commit(Commit {

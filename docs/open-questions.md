@@ -2,37 +2,36 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 17:30 IST.
+[glossary](glossary.md). Updated 2026-11-18 18:15 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 25 | Composer chips, one point left: is a chip always shown, or hidden while it is at its default value? (kayg's answer was cut off) | Always show | Composer |
-| 45 | Editing a message that was already sent: what happens to the rest of the thread (replaced, forked, kept as a branch) | To grill; options being written up | Threads |
+| 52 | Sharing: what the share button on a note, thread or window offers beyond Copy link (people, groups, public links, the system share sheet) | To grill | Sharing |
 | 24 | Materials: how far the middle card separates from the sidebars, the readability floor for text over a wallpaper, and how much photo shows in light mode. Rebuilt from the calternal-ui plugin's defaults with a five-step Clear-to-Tinted slider | Review on the preview | Appearance |
-| 30 | Should the composer double as the command palette, or stay separate from Cmd-K? | Stay separate | Composer |
 | 31 | Thread rows: hover hides the time and state mark for the three actions; swipe right shows only Copy link; touch has no long-press menu, "More" sits in the swipe tray | Keep all three; try on a phone | Threads |
-| 42 | Long tool output: the thread file keeps only its size. Where the output lives, how the thread links to it, how long it is kept | To grill | Threads |
-| 39 | Many spaces: the dots overflow the sidebar footer (about 7 of 50 show; the rest only through the palette) | To grill | Shell |
-| 28 | The first-visit "Choose a look" chooser is a centred dialog; the record only says "a short gallery, then straight in" | Keep the dialog | Onboarding |
-| 32 | The page waits for its font before painting; painting first is earlier but the text visibly swaps | Keep waiting | First paint |
+| 28 | "Choose a look" exists twice: as a step in the onboarding stepper and as a separate centred dialog on first visit. Keep one? | Keep the stepper step, delete the dialog | Onboarding |
 | 33 | Plugin workers: where a space's workers run, sharing capacity (eight per machine today), a server with no container runtime, brokered network fetch, a lost machine | To grill | Plugins |
 | 34 | Requests: how a rotated token reaches the agent after a single-use approval; whether an unused approval belongs to the turn or the thread; dividing the limits (32 per thread, 256 per account); who may read `AI/AGENTS.md` | To grill | Requests |
-| 37 | Readiness: probe every pool machine on a refresh? Re-check provider sign-in while a machine idles? (Today: cached five minutes, refreshed on demand) | On demand only | Agents |
 | 35 | People: can a group hold a server role; what happens when a space's only Owner is disabled | Port the existing app's answer | People |
 | 36 | Notes: purging the whole Trash at once, reusing a file name after delete, renames that touch many links | To grill | Notes |
 | 40 | Performance: shortening the security-log replay at start (1,000 spaces: 320 to 860 ms against 300 ms), the cold save tail, the draft-save tail, and what the 10 ms "write reaches a subscribed client" ceiling measures | Decide the measure first | Performance |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
+
+## Automatic thread title
+
+Decided 2026-11-18: a person never signs in twice and no API key is used. The title turn runs on the person's existing provider login; the per-turn lane is finding how to run it with no tools, hooks or saved session, and proves it before any code.
 
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
-- **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing. Open: how data moves across a schema change (kayg asked for the options to be explained again).
-- **MicroVMs**: one per person with a container per thread is decided and not built; all our VMs are Proxmox VMs, so nested virtualisation is available. Starts when a backend lane frees up.
-- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone).
+- **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
+- **MicroVMs**: one per person with a container per thread is decided; the smallest memory size is chosen after the lane measures real turns at 256, 512, 1024 and 2048 MiB (issue #51).
+- **Next to write up** (kayg, 2026-11-18): plugin workers (#33), performance measures (#40), requests (#34).
+- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
 
@@ -40,6 +39,9 @@ move to the decision record they belong to and leave this list. Terms: see
 - Try phone navigation (swipe back, dragging the card) on a real phone: it is merged but not counted as done until checked on a device.
 
 ## Recently decided (2026-11-17), now in the decision records
+
+- Long tool output is kept in full for the thread's life, in a hidden plain-text file beside the thread, and counts toward storage (#42, 2026-11-18; measured at about 225 KiB a coding session).
+- 2026-11-18 evening: composer chips are always shown, also at their default (#25). The palette and the composer stay two surfaces of one engine (#30 closed; `composer.md`). Editing a sent message forks inside the same thread: the old tail is kept and shown there, never as a second thread in the list (#45). Many spaces: a horizontal strip showing three dots at once, scrolling sideways, as Aside (#39). The page waits for its font before painting (#32). Readiness is checked on demand only (#37). Wallpapers are downloaded from Unsplash on first use and served from our own copy, as the existing app does. The thread file's hidden comment line stays. Canvas: no fade on a half-scrolled window; the share menu holds the system share sheet and Copy link until the sharing round (#52).
 
 - The composer and palette: see `composer.md`.
 - Plugin interface (2026-11-18): stateful generated views: a plugin's interface code runs sandboxed and sends the host a tree of host components; sealed frames only for what the catalogue cannot express; official and community plugins are treated the same; the core (sign-in, approvals, secrets, recovery) cannot be replaced or styled. The canvas experiment is judged first, because the layout may become permanent. The largest gaps against bb, bb-lite and pi-durable get fixed in this order: live install and reload, plugin-owned slots, scoped reactive values, readiness and logs, durable waits; then another audit. Notes and Threads become ordinary plugins on public service calls. The acceptance test: a small model, given only the plugin guide, writes plugins and loads them live with no restart.

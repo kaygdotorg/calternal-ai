@@ -35,7 +35,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "palette"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "owned_slots", "palette"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
     if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
@@ -129,22 +129,38 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   const op = (r: Record<string, unknown>): void => { if (!operations.has(String(r.operation))) fail(); };
   rows("collections", ["id", "kind", "name"], r => { identifier(r.kind); text(r.name); });
   rows("views", ["id", "region", "component"], r => { identifier(r.component); if (!["sidebar", "main", "right_card"].includes(String(r.region))) fail(); });
+  if (m.owned_slots != null) {
+    if (!Array.isArray(m.owned_slots) || m.owned_slots.length > 32) fail();
+    rows("owned_slots", ["id", "required_capability", "accepts", "max_contributions"], row => {
+      const capability = row.required_capability;
+      if (typeof capability !== "string" || !capabilities.has(capability) || capability.startsWith("spaces.")) fail();
+      const { accepts, max_contributions: limit } = row;
+      if (!Array.isArray(accepts) || !accepts.length || accepts.length > 2 ||
+          new Set(accepts).size !== accepts.length || accepts.some(kind => kind !== "generated" && kind !== "command")) fail();
+      if (typeof limit !== "number" || !Number.isInteger(limit) || limit < 1 || limit > 32) fail();
+    });
+  }
   if (m.slots != null) {
     if (!Array.isArray(m.slots) || m.slots.length > 32) fail();
     rows("slots", ["id", "label", "slot", "renderer"], row => {
       if (/\p{Cc}/u.test(text(row.label, 128))) fail();
       const slot = row.slot;
-      if (!["sidebar_section", "card_window", "composer_row", "message_decoration", "thread_edge", "settings_section", "palette_commands", "toasts"].includes(String(slot))) fail();
+      const owned = typeof slot !== "string";
+      if (owned) {
+        const target = record(slot, ["plugin_id", "id"]);
+        identifier(target.plugin_id);
+        identifier(target.id);
+      } else if (!["sidebar_section", "card_window", "composer_row", "message_decoration", "thread_edge", "settings_section", "palette_commands", "toasts"].includes(slot)) fail();
       const type = (row.renderer as { type?: unknown } | null)?.type;
       if (type === "sealed") {
         const renderer = record(row.renderer, ["type", "asset"]);
         const path = text(renderer.asset, 256);
-        if (["palette_commands", "message_decoration", "toasts"].includes(String(slot)) || !path.endsWith(".html") || !path.split("/").every(part => id.test(part))) fail();
+        if (owned || ["palette_commands", "message_decoration", "toasts"].includes(String(slot)) || !path.endsWith(".html") || !path.split("/").every(part => id.test(part))) fail();
       } else {
         const renderer = record(row.renderer, ["type", "operation"]);
         const operation = operations.get(identifier(renderer.operation));
         if (!operation) fail();
-        if (type === "command" && slot === "palette_commands") return;
+        if (type === "command" && (owned || slot === "palette_commands")) return;
         if (type !== "generated" || slot === "palette_commands" || operation.mutates) fail();
         const output = operation.output_schema as { properties?: { view?: unknown }; required?: unknown } | null;
         const view = output?.properties?.view;

@@ -147,3 +147,87 @@ async fn palette_results_and_picker_operations_hide_other_spaces() {
         404
     );
 }
+
+#[tokio::test]
+async fn palette_reflects_live_install_update_and_removal_in_the_enabled_space() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let id = "palette-live-example";
+    let pid = f.child.as_ref().unwrap().id();
+    let path = f.dir.path().join("palette-live.calplugin");
+    let path = path.to_str().unwrap();
+    let appdata = f.appdata();
+    let root = appdata.to_str().unwrap();
+    let cli = |args: &[&str]| {
+        let output = Command::new(std::env::var_os("CALTERNAL_SERVER_BIN").unwrap())
+            .args(args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        serde_json::from_slice::<Value>(&output.stdout).unwrap()
+    };
+    let publish = |action: &str, version: &str, label: &str| {
+        let archive = json!({"manifest":{
+            "api_version":1,"id":id,"name":"Palette live example","icon":"puzzle","version":version,
+            "kinds":[],"operations":[],"collections":[],"views":[],"attention":[],"settings":[],
+            "schedules":[],"webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls":[],
+            "palette":{"commands":[{"id":"palette-live-example.open","label":label,"group":"Example","go":"/notes"}],
+                       "settings_sections":[]}
+        },"worker":null});
+        std::fs::write(path, archive.to_string()).unwrap();
+        let review = cli(&["plugin", "review", path]);
+        cli(&[
+            "plugin",
+            action,
+            path,
+            "--appdata",
+            root,
+            "--approve",
+            review["data"]["checksum"].as_str().unwrap(),
+        ]);
+    };
+    let command = async |who, space: &str| {
+        data(
+            f.op(who, "plugins.manifests", json!({"space_id":space}))
+                .await,
+        )["manifests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|manifest| manifest["plugin"] == id)
+            .map(|manifest| {
+                manifest["commands"][0]["label"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
+    };
+
+    assert_eq!(command(1, space).await, None);
+    publish("install", "0.1.0", "Open the example");
+    assert_eq!(command(1, space).await, None);
+    f.op(
+        1,
+        "plugins.enable",
+        json!({"space_id":space,"plugin_id":id}),
+    )
+    .await
+    .ok();
+    assert_eq!(command(1, space).await.as_deref(), Some("Open the example"));
+    assert_eq!(command(2, &f.spaces[1]).await, None);
+    assert_eq!(
+        f.op(2, "plugins.manifests", json!({"space_id":space}))
+            .await
+            .status,
+        404
+    );
+    publish("update", "0.2.0", "Open the updated example");
+    assert_eq!(
+        command(1, space).await.as_deref(),
+        Some("Open the updated example")
+    );
+    cli(&["plugin", "remove", id, "--appdata", root]);
+    assert_eq!(command(1, space).await, None);
+    assert_eq!(f.child.as_ref().unwrap().id(), pid);
+}

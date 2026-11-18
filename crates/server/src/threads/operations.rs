@@ -79,6 +79,7 @@ pub(super) fn apply<D: Directory>(
     if operation == "threads.create" {
         for (kind, placement, format) in st
             .registry
+            .snapshot()
             .get("calternal-orchestrator")
             .expect("checked plugin")
             .kind_registrations()
@@ -97,7 +98,9 @@ pub(super) fn apply<D: Directory>(
         if data.contains_key("spawned_by") && !data.contains_key("parent_thread") {
             return Err(Error::invalid_input("spawned_by requires parent_thread"));
         }
-        let now = super::headings::now(client_offset(data))?;
+        let (_, account_zone) = super::headings::profile(st, who.id)?;
+        let (zone, offset) = display_zone(account_zone, data);
+        let now = super::headings::now(zone.as_deref(), offset)?;
         let provider = data
             .get("provider")
             .and_then(Value::as_str)
@@ -248,21 +251,12 @@ pub(super) fn apply<D: Directory>(
             data.get("model").and_then(Value::as_str),
             data.get("reasoning").and_then(Value::as_str),
         )?);
-        let now = super::headings::now(client_offset(data))?;
+        let (label, account_zone) = super::headings::profile(st, who.id)?;
+        let (zone, offset) = display_zone(account_zone, data);
+        let now = super::headings::now(zone.as_deref(), offset)?;
         document::record_message(&mut item.metadata, &now);
         item.metadata["pending"] = json!({"account":who.id,"request_id":request_id,"fingerprint":fp,
-            "created_ms":calternal_types::now_ms(),"client_offset_minutes":client_offset(data)});
-        let label = st
-            .directory
-            .protected_spaces()
-            .map(|spaces| {
-                spaces
-                    .own_display_name(who.id)
-                    .map_err(crate::auth::auth_error)
-            })
-            .transpose()?
-            .flatten()
-            .unwrap_or_else(|| "Person".into());
+            "created_ms":calternal_types::now_ms(),"time_zone":zone,"client_offset_minutes":offset});
         let role = if actor.via.is_some() {
             "automation"
         } else {
@@ -277,6 +271,7 @@ pub(super) fn apply<D: Directory>(
         let mut body = document::body(&item)?.to_owned();
         super::records::append(&mut body, Uuid::now_v7(), role, &heading, prompt, None);
         let bytes = document::encode(&item.metadata, &body);
+        super::persistence::check_size(bytes.len())?;
         content.write(
             space,
             Some(item.id),
@@ -285,7 +280,11 @@ pub(super) fn apply<D: Directory>(
             item.metadata.clone(),
             bytes.as_bytes(),
             request,
-            document::receipt_view(&mut reply),
+            |item| {
+                reply = document::view(item);
+                reply["intent"] = item.metadata["pending"].clone();
+                reply.clone()
+            },
         )?;
         return Ok(reply);
     }
@@ -330,7 +329,9 @@ pub(super) fn apply<D: Directory>(
         _ => return Err(Error::not_found("unknown operation")),
     }
     document::validate_metadata(&item.metadata)?;
-    item.metadata["updated_at"] = json!(super::headings::now(client_offset(data))?);
+    let (_, account_zone) = super::headings::profile(st, who.id)?;
+    let (zone, offset) = display_zone(account_zone, data);
+    item.metadata["updated_at"] = json!(super::headings::now(zone.as_deref(), offset)?);
     let bytes = document::encode(&item.metadata, document::body(&item)?);
     if operation == "threads.delete" {
         let deleted = content.trash(
@@ -405,9 +406,16 @@ fn finish_lifecycle<D: Directory>(
     Ok(result)
 }
 
-fn client_offset(input: &JsonObject) -> i64 {
-    input
+fn display_zone(account_zone: Option<String>, input: &JsonObject) -> (Option<String>, i64) {
+    let device_zone = || {
+        input
+            .get("client_time_zone")
+            .and_then(Value::as_str)
+            .and_then(calternal_core::time_zone::canonical)
+    };
+    let offset = input
         .get("client_offset_minutes")
         .and_then(Value::as_i64)
-        .unwrap_or(0)
+        .unwrap_or(0);
+    (account_zone.or_else(device_zone), offset)
 }

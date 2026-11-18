@@ -19,13 +19,15 @@
 </script>
 
 <script lang="ts">
-  // A menu on a Popover (placement, portal and material are the Popover's); on a touch screen it is an inset sheet from the bottom instead, with rows of the native menu height (42). Items are radio-style when any is `checked`. Arrows move focus, Enter picks,
+  // A menu on a Popover (placement, portal and material are the Popover's), on a phone too: a dropdown anchored to its button or point, morphing from it. The rule (docs/ui-design-system.md, "Menus and sheets"): only a menu with a search field, or with more than `SHEET_ROWS` rows, is an inset sheet from the bottom on a touch screen (rows of the native menu height, 42); a short action or choice menu never is. Items are radio-style when any is `checked`. Arrows move focus, Enter picks,
   // Escape and an outside press close it. `compact` puts a row's second line beside its label instead of under it. `empty` is what a search that finds nothing says (default "Nothing matches."); a list that is short for another reason says so here. `search` adds an inline field at the top that filters by label and sub text (Down moves into the list).
   // Anchored to `trigger` (a button) or to `anchor` (a point, for a context menu). `label` names the menu.
   import Icon from "./Icon.svelte";
   import Popover from "./Popover.svelte";
   import { textField } from "../lib/textfield";
   import Sheet from "./Sheet.svelte";
+  /** The most rows a touch screen's dropdown shows; longer lists need the height of a sheet. */
+  const SHEET_ROWS = 8;
   import { currentForm } from "../lib/theme";
   import { roving } from "../lib/roving";
   import type { Anchor } from "../lib/place";
@@ -90,7 +92,7 @@
   </div>
 {/snippet}
 
-{#if currentForm() === "touch"}
+{#if currentForm() === "touch" && (search || items.length > SHEET_ROWS)}
   <Sheet {open} {label} onclose={onclose}><div class="sh" role={search ? "group" : "menu"} aria-label={label}>{@render content()}</div></Sheet>
 {:else}
   <Popover {open} anchor={anchor ?? trigger} {label} role={search ? "dialog" : "menu"} prefer={placement} {morph} {trigger} onclose={onclose}>{@render content()}</Popover>

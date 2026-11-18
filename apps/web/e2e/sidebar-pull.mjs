@@ -75,7 +75,7 @@ const touch = (page, type, x, y, sel = ".mid-card") => page.evaluate(([type, x, 
   const { ctx, page } = await open("phone"); await page.goto(`${BASE}/threads`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(400);
   ok((await page.locator(".switcher.bar").count()) === 1 && (await page.locator(".edge.r").count()) === 0, "phone: an empty Threads screen has the app bar at the bottom and no side-panel button (no thread, no panels)");
   await page.goto(`${BASE}/threads/t-run`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(400);
-  ok((await page.locator(".switcher.bar").count()) === 1 && (await page.locator(".edge.r").count()) === 1, "phone: an open thread has the app bar and the side-panel button");
+  ok((await page.locator(".switcher.bar").count()) === 1 && (await page.locator(".edge.r").count()) === 0, "phone: an open thread has the app bar and no side-panel button (the panel is in the three-dot menu and the pull from the right edge)");
   await ctx.close();
 }
 // ---- closing animates as opening does: by the button, for both sidebars, the card's edge moves through in-between positions both ways (not a jump), ending where the layout puts it

@@ -9,8 +9,7 @@ Add sealed components where they can stay within a bounded rectangle. This
 fits the decision against page-wide JavaScript in the [plugin API](plugin-api.md)
 and preserves the recovery surface described in the [architecture](architecture-proposal.md).
 Terms follow the [glossary](glossary.md). The foundation cannot be replaced or styled by any plugin. Sign-in, approvals,
-secrets and recovery are outside plugin reach. The slot contract below is a
-prototype.
+secrets and recovery are outside plugin reach. The server lists fixed and package-owned slots. Client mounting follows the renderer plan.
 
 ## What a plugin can contribute
 
@@ -33,6 +32,16 @@ authorize an operation. A personal shell resolves contributions separately for
 each authorized space, with no shared worker across those spaces.
 [Addresses](addresses.md) · [Orchestrator decisions](orchestrator-proposal.md#decided-in-the-grill-2026-11-17)
 
+Owned mounts use a qualified `{plugin_id, id}` target. The owner declares
+visibility, renderer types and a maximum number of visible contributions.
+The server resolves only active owners and contributors whose corresponding
+capabilities the caller holds. Missing or incompatible targets stay dormant.
+Policy and capacity changes are reflected in subsequent listings. The next
+scoped reactive values contract must publish removals and updated resolved
+contributions to the owner under the same space and capability checks.
+See the [manifest contract](plugin-api.md#authoring-and-interface-prototype).
+
+
 ## Sealed components
 
 Mount packaged assets in an isolated frame with an opaque origin, a restrictive
@@ -44,22 +53,39 @@ rechecks authority. Cancel the port and discard stale messages on navigation,
 disable or replacement. Asset serving, policy enforcement and resend/revocation
 need isolation tests before enabling this renderer.
 
-The host owns a versioned token snapshot including scheme, type scale, contrast,
-reduced motion and material role. Bootstrap only mounted frames with that
-snapshot and the permitted font assets. Share font downloads where browser
-caching allows. Send updates only when the snapshot changes. The host composes
-one adaptive backdrop for the enclosing surface. Frames receive transparent or
-solid fills and foreground tokens, with no backdrop sampling or independent blur.
-Mount frames on demand, cap visible mounts and dispose hidden mounts. Repeated
-rows and scrolling transcripts use generated views. Measure mount and first
-interaction, scrolling frame time, memory and font loading on native target
-devices before assigning live mount budgets.
+The host sends a versioned token snapshot with scheme, type scale, contrast,
+reduced motion and material role when a frame mounts or the snapshot changes.
+Frames load fonts separately. Serve only public font assets with explicit CORS
+headers or deliver font bytes over the bridge. An opaque-origin frame falls
+back to system fonts when CORS blocks its font, even if the surrounding page
+loaded the same asset. The host still owns adaptive material.
+
+**Placement rule.** A transparent frame can blur the host pixels behind it.
+The UI lane reproduced this in Chromium and on iOS Safari in the simulator.
+Mount every sealed frame inside a host-drawn opaque `Card` or `Window` surface.
+Clip it to that surface and keep it clear of chrome and protected UI. An
+opacity, token or theme change must preserve the opaque backing. A visible host
+slot may contain a sealed frame only when the host can place this backing
+under it. The frame can draw blur inside its own rectangle. An opaque origin
+controls authority and leaves compositing to the browser.
+The [isolation fixture](../tests/integration/sealed-frame-placement.test.mjs)
+checks that changing pixels behind the card does not change the frame's
+rendered pixels, and includes a transparent control that samples the backdrop.
+Run the same assertion against the actual mount before enabling sealed frames.
+
+The UI bench measured roughly 40 ms to mount one frame at 1x CPU, around
+100 ms at 4x and about 0.5 MB of heap per frame. Mount on demand, cap visible
+mounts and dispose hidden ones. Keep repeated rows and scrolling transcripts
+as generated views. Measure first interaction and memory on target devices
+before assigning live budgets. [UI host catalogue and browser measurements](https://git.kayg.org/kayg/calternal-ai/src/commit/1e61298/docs/ui-host-catalogue.md)
 
 The host controls focus entry and restoration and supplies accessible frame
 names. The frame handles local Tab order and reports boundary focus movement.
-The host owns global shortcuts. Frames may request named, context-checked
-actions and receive explicitly routed local shortcuts. The host owns drag
-handles and resize gestures, coalesces size updates and clamps requested bounds.
+Keystrokes inside the frame do not reach the host shortcut listener. Frame
+cooperation is required to forward named actions, which the host validates
+against context. Keep foundation shortcuts and recovery accessible from
+host-owned surfaces. The host owns drag handles and resize gestures,
+coalesces size updates and clamps requested bounds.
 Use typed drag payloads with host-side drop authorization. DOM inspection and
 styling outside the frame, cross-frame drag previews, capture of app keystrokes
 and a frame overlay across the host chrome are outside this mechanism.
@@ -93,27 +119,38 @@ The runtime talks through the same frozen event and operation bridge on each
 client. Every action is rebound to the authenticated scope and current
 activation. An event ID names a declared callback, with no authority attached.
 
-The shell becomes a layout tree assembled from host panes, windows,
-sidebars, splitters, stacks, tabs, slots, command menus and navigation.
-The orchestrator composes the same catalog with a virtual transcript, native
-rich text and text input, attachments, chips, composer rows, thread rail,
-progress/status and request forms. Selection, composition and IME, editing,
-scrolling, focus traversal, gesture tracking and resizing stay in the host.
-Emit bounded semantic events asynchronously. A plugin can update chips or
-propose a new composer configuration without receiving each raw keystroke.
-Host components apply tokens, fonts and adaptive material and provide
-accessible semantics. The plugin still supplies labels and must pass checks
-for its composition.
+The shell plugin returns a `Layout` tree containing `Region` nodes. The
+current pane arrangement uses cards and `Slot` nodes in those regions. The
+canvas uses a `Strip` of `Window` nodes with the same `Slot` body contract.
+Those five components are new. Other catalogue additions register existing
+host components. The guard for sign-in, approvals, secrets and recovery stays
+under the protected mount host. [UI host catalogue and both layout trees](https://git.kayg.org/kayg/calternal-ai/src/commit/1e61298/docs/ui-host-catalogue.md)
 
-Use stable component IDs, batch mutations, and replace or invalidate the
-tree when revisions diverge. The host keeps the virtual list and its scroll
-position. The worker sends a bounded visible-range page and data deltas
-rather than transferring a tree with 10,000 mounted rows. Coalesce streaming
-text and deliver append deltas at a fixed rate. Prioritize input and layout
-in the host loop. Mount a sealed frame for a custom drawing surface or an
-HTML layout the catalog cannot express. Add broadly reusable primitives for
-capabilities that need native gestures, platform editors or host-level
-composition. Keep protected forms outside the tree.
+The orchestrator places `Transcript`, `Composer` and `Editor` as one host
+component each. Plugin patches provide transcript pages and appends, composer
+chips and accessories, and editor document and configuration inputs. The
+host keeps their existing virtual list, selection, markdown editing, IME,
+attachments and send queue. A plugin receives bounded asynchronous semantic
+events. Host components supply focus, accessibility, tokens, fonts and
+adaptive material. Plugins supply labels for their composition.
+
+The versioned patch and event protocol must enforce these rules alongside
+existing GenUI component validation:
+
+- Give nodes stable IDs. Batch bounded updates and replace or invalidate a
+  tree when revisions diverge.
+- For large lists, the host owns the virtual list and sends a visible
+  `range {first, end}` event. Patch only the requested bounded rows page or
+  its deltas. Preserve host scroll position and anchoring on page changes.
+- Coalesce streaming text into ordered append deltas on a fixed cadence. The
+  browser bench exercised 60 Hz. Keep the exact production cadence and limits
+  in the protocol budget review.
+- Keep typing, scroll, drag and resize in host components. Emit their semantic
+  events or settled states, such as `sized {w}`, as asynchronous notifications.
+
+Reserve a sealed frame for custom drawing, a third-party editor or HTML the
+catalogue cannot express. Reuse the host components for forms, lists, charts
+and chrome.
 
 ## The shell decision
 
@@ -164,9 +201,16 @@ rendering, sandbox bootstrap, GenUI validation, layout and frame time.
 | 256-character append to one streaming message | 1,000 | 0.034 ms | 0.070 ms |
 
 The full snapshot nearly consumes one 120 Hz frame period at p95 before
-rendering. Keep the virtual list in the host and transfer bounded pages or
-deltas. This is an IPC comparison, not a UI performance gate.
-[Transport benchmark](../scripts/bench-plugin-view-transport.mjs)
+rendering. The browser bench used the real host components in Chromium on
+dev-02 and compared worker and direct updates. Applying a patch took
+0.0–0.1 ms p50 and up to 1.9 ms p95 in the summary at 4x CPU throttling.
+The detailed 4x window insertion and removal runs ranged up to 3.1 ms p95.
+The worker and direct cases were comparable. The 10,000-row test sent
+visible ranges, and streaming appended text at 60 Hz. At 4x, layout-heavy
+list measuring and repeated resize dropped frames. Streaming and window
+insertion stayed within the frame cadence. These dev-VM observations guide
+the protocol. The locked Node results above measure transport only.
+[Transport benchmark](../scripts/bench-plugin-view-transport.mjs) · [Browser benchmark](https://git.kayg.org/kayg/calternal-ai/src/commit/1e61298/docs/ui-host-catalogue.md#3-what-a-tree-update-costs-in-the-browser-measured)
 
 ## Swift clients
 
@@ -238,6 +282,15 @@ use in host, broker, registry and client code. Public operation and kind IDs
 remain valid. Run the source check and the renamed-package conformance suite
 together, with no exception list for official code paths.
 
+The current [conformance case](../tests/conformance/plugin_parity_cases.rs)
+installs renamed copies of both seeded TypeScript worker packages in a separate
+installation. It compares grants, slots, operation results and cross-space
+denials. Manifest v1 has no publisher identity. A publisher substitution
+test requires a provenance contract with no authority-bearing fields.
+The strict [source check](../scripts/check-plugin-parity.py) detects the
+identity references still present in the host and clients. The native app
+and provider cuts above must land before it can pass.
+
 **Interface today.** Every package can declare the same portable view slots.
 The current web shell and orchestrator visuals are client code. They cannot
 ship unchanged as ordinary plugin contributions. The host component catalog
@@ -295,8 +348,8 @@ contains the detailed constraints for the 24 previously adopted capabilities.
 
 | Extension point in the reference systems | Calternal status | What an author can do there today |
 | --- | --- | --- |
-| bb-lite plugin-declared typed slots and single or multiple selection | Decided, unbuilt | Let another package add a new kind of entry without changing the foundation. This prototype has fixed slots. |
-| bb and bb-lite local install, hot reload and development inspection | Partly built in this lane | Change worker code and receive an activation result without restarting the development server. |
+| bb-lite plugin-declared typed slots and single or multiple selection | Owner declarations, typed contributions, capacity and space-aware listing built | Have a slot owner receive changes through a live value and mount the result in the client. |
+| bb and bb-lite local install, hot reload and development inspection | Live install and scoped draft reload built. The enrolled-machine author loop measured 903 ms p95. Broader inspection remains unbuilt. | Follow readiness, logs and timing for an edited worker in one author-facing view. |
 | bb marketplace and bb-lite Git/local catalogs, dependency and engine ranges, upgrade rollback | Decided, unbuilt | Find packages by source, have compatibility checked and restore the last working activation. Local checksum review is built in this lane. |
 | bb-lite fork existing server, app or runner entry and profiles | Decided, unbuilt | Fork one part of a default feature and keep updating the other parts. |
 | bb status, logs, lifecycle timings, safe mode and bb-lite audit chain | Decided, unbuilt | See why a plugin needs setup, view handler latency and disable scoped plugins together. |

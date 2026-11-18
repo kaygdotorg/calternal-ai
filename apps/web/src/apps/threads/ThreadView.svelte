@@ -157,7 +157,7 @@
     <span class="grow"></span>
     {#if summary && !windowed}
       <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
-      <Menu open={menuOpen} items={[...threadItems(summary), ...(shell.narrow ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as const }] : [])]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.over("panel"); else if (summary) runThreadItem(item, summary, startRename); }} />
+      <Menu open={menuOpen} items={[...threadItems(summary), ...(shell.narrow ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as const }] : [])]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.openPanel(); else if (summary) runThreadItem(item, summary, startRename); }} />
     {/if}
   </header>
 

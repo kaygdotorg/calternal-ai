@@ -559,8 +559,8 @@ pub(super) async fn enabled_generation<D: Directory>(
         plugin.to_owned(),
     );
     blocking(move || {
-        let plugin = st
-            .registry
+        let catalog = st.registry.snapshot();
+        let plugin = catalog
             .get(&plugin)
             .ok_or_else(|| Error::unavailable("required plugin is not installed"))?;
         let store = &st.store;
