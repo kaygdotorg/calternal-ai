@@ -273,12 +273,19 @@ shutdown fences workers and machine leases, but does not end the live
 account, space and job event streams. Closing the tab before the untimed
 rollback let the server stop promptly.
 
-End those streams on SIGTERM, preserve their resume cursors, and let
-in-flight writes finish through their durable acknowledgement fences.
-Measure the remaining Podman, machine and proxy handoff with the same
-ten-run probe. During the outage, treat proxy 502, 503 and 504 responses as
-temporary unavailability so the interface can show the reconnect state and
-retry queued operations with their original request IDs.
+On SIGTERM the new server rejects new HTTP requests, closes the event
+streams, and lets admitted requests and room frames reach their normal
+durable acknowledgement fences. Clients can resume using the cursors they
+already hold. The machine reports that it is draining, stops admitting work,
+and releases its sandboxes while preserving persistent files. Both processes
+allow 1,750 ms and report an error if draining exceeds it. Podman allows two
+seconds for the server process and systemd allows four seconds for the
+container stop wrapper. The machine service has a two-second systemd stop
+timeout. A write whose reply is lost can replay using the same request ID.
+The first update from the old image still uses its own old stop path.
+
+The browser can treat proxy 502, 503 and 504 as temporary unavailability,
+show the reconnect state and retry with the original request IDs.
 
 ## Account onboarding and recovery
 

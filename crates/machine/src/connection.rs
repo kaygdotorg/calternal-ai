@@ -66,22 +66,50 @@ pub(crate) async fn run_at(
     ));
     let boot_id = Uuid::new_v4();
     tracing::info!(machine = %creds.machine_id, server = %creds.server, "machine role starting");
+    let mut ack = 0;
     let result = tokio::select! {
-        r = session_loop(&creds, &link, &runner, boot_id, ready) => r,
-        () = shutdown => Ok(()),
+        biased;
+        () = shutdown => None,
+        result = session_loop(&creds, &link, &runner, boot_id, ready, &mut ack) => Some(result),
     };
-    let closed = runner.release_all().await;
-    let backend_closed = config.backend.shutdown().await;
-    result.and_then(|()| {
-        if closed {
-            backend_closed.map_err(|e| Error::Protocol(e.0))
-        } else {
-            Err(Error::Protocol(
-                "sandbox teardown incomplete; restart the machine role to sweep its sandboxes"
-                    .into(),
-            ))
+    let drained = tokio::time::timeout(Duration::from_millis(1750), async {
+        if result.is_none() {
+            announce_drain(&link, &runner, ack).await;
         }
+        let closed = runner.release_all().await;
+        let backend_closed = config.backend.shutdown().await;
+        if result.is_none() {
+            announce_drain(&link, &runner, ack).await;
+        }
+        if !closed {
+            return Err(Error::Protocol(
+                "sandbox teardown incomplete; restart the machine role to sweep its sandboxes".into(),
+            ));
+        }
+        backend_closed.map_err(|e| Error::Protocol(e.0))
     })
+    .await
+    .unwrap_or_else(|_| Err(Error::Protocol(
+        "machine did not drain within 1750 ms; restart it to sweep its sandboxes".into(),
+    )));
+    result.unwrap_or(Ok(())).and(drained)
+}
+
+async fn announce_drain(link: &Link, runner: &Runner, ack: u64) {
+    // An older or an unreachable server may not answer immediately. Closing
+    // local sandboxes must still proceed before the shutdown deadline.
+    let req = SyncRequest {
+        ack,
+        capacity: runner.capacity(),
+        draining: true,
+        leases: runner.reports(),
+        discards: runner.discard_reports(),
+    };
+    if link.post::<_, SyncResponse>(
+        "/api/v1/machine/sync", &req, true, Duration::from_millis(200),
+    ).await.is_ok() {
+        runner.ack_discards(&req.discards);
+    }
 }
 
 async fn session_loop(
@@ -90,6 +118,7 @@ async fn session_loop(
     runner: &Arc<Runner>,
     boot_id: Uuid,
     ready: &Ready,
+    ack: &mut u64,
 ) -> Result<()> {
     let mut backoff = Backoff::default();
     let mut last_ok = Instant::now();
@@ -117,10 +146,10 @@ async fn session_loop(
             }
             tracing::warn!(%error, "could not update the machine service status");
         }
-        let mut ack = 0u64;
+        *ack = 0;
         loop {
             let req = SyncRequest {
-                ack,
+                ack: *ack,
                 capacity: runner.capacity(),
                 draining: false,
                 leases: runner.reports(),
@@ -140,9 +169,9 @@ async fn session_loop(
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {
-                        if env.seq > ack {
-                            ack = env.seq;
+                        if env.seq > *ack {
                             runner.handle(env.message).await;
+                            *ack = env.seq;
                         }
                     }
                     let runner = runner.clone();

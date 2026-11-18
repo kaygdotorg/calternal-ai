@@ -361,10 +361,11 @@ checkout. Run the commands in one Bash session using the existing
 `calternal` SSH deployment account. Confirm the current backup includes appdata, SSD, HDD and machine
 state. Keep the proof and both image IDs with the deployment record.
 
-Schedule a maintenance window and allow for about a minute and a half of
-unavailable writes with signed-in tabs open. The dev-01 rehearsal exceeded
-the five-second working budget while waiting for the old server to stop.
-See [Deployment rehearsal on dev-01](upgrades.md#deployment-rehearsal-on-dev-01).
+Allow a maintenance window for an update from the production baseline.
+It contains the old graceful-stop behavior. With an authenticated event
+stream open it can wait 90 seconds, including when updating to `4735733eeb09`.
+The running image owns its own shutdown. See the
+[deployment rehearsal](upgrades.md#deployment-rehearsal-on-dev-01).
 
 The intended first candidate combines automations and interface changes. The
 automations scheduler introduces `system/automations.db` at SQLite 1. Its

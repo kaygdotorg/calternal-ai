@@ -277,8 +277,18 @@ impl MachineService {
         token: &str,
         req: SyncRequest,
     ) -> Result<Vec<Envelope>, Error> {
+        self.sync_until(machine_id, token, req, None).await
+    }
+
+    pub(super) async fn sync_until(
+        self: &Arc<Self>,
+        machine_id: Uuid,
+        token: &str,
+        req: SyncRequest,
+        shutdown: Option<&crate::shutdown::Shutdown>,
+    ) -> Result<Vec<Envelope>, Error> {
         let session = hash32(token);
-        let reports = !req.discards.is_empty();
+        let ready = req.draining || !req.discards.is_empty();
         let svc = self.clone();
         let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
         let _guard = PollGuard {
@@ -289,14 +299,16 @@ impl MachineService {
         loop {
             let svc = self.clone();
             let pending = blocking(move || svc.outbox(machine_id, &session)).await?;
-            if reports || !pending.is_empty() {
+            if ready || !pending.is_empty() {
                 return Ok(pending);
             }
-            if tokio::time::timeout_at(deadline, notify.notified())
-                .await
-                .is_err()
-            {
-                return Ok(Vec::new());
+            tokio::select! {
+                () = crate::shutdown::wait(shutdown) => return Ok(Vec::new()),
+                result = tokio::time::timeout_at(deadline, notify.notified()) => {
+                    if result.is_err() {
+                        return Ok(Vec::new());
+                    }
+                }
             }
         }
     }

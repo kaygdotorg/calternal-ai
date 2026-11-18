@@ -1,4 +1,6 @@
+use std::future::IntoFuture;
 use std::path::PathBuf;
+use std::time::Duration;
 use std::sync::Arc;
 
 mod admin_cli;
@@ -217,6 +219,7 @@ fn main() {
                     &out,
                 ))
             };
+            rt.shutdown_background();
             match result {
                 Ok(()) => 0,
                 Err(e) => out.failure(&e),
@@ -611,6 +614,7 @@ async fn serve(
             .await
             .map_err(|error| boot(1, "io", error.to_string(), DATA_HINT));
     }
+    let shutdown = calternal_server::shutdown::Shutdown::default();
     let app = api::router(state.clone(), web_dir.clone())
         .layer(axum::Extension(machines.clone()))
         .layer(axum::Extension(wallpapers));
@@ -666,23 +670,42 @@ async fn serve(
         .fields(fields),
     );
 
-    let served = axum::serve(
+    let listener_stop = shutdown.clone();
+    let server = axum::serve(
         transport::listener(listener),
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        shutdown.attach(app).into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(async move {
-        shutdown_signal().await;
-        if let Some(task) = colocated {
-            task.abort();
+    .with_graceful_shutdown(async move { listener_stop.cancelled().await })
+    .into_future();
+    tokio::pin!(server);
+    let served = tokio::select! {
+        status = &mut server => status,
+        () = shutdown_signal() => {
+            shutdown.begin();
+            if let Some(task) = colocated {
+                task.abort();
+            }
+            // Keep the runtime, storage and worker pool alive until admitted
+            // requests (including response bodies) and room writes are finished.
+            let drained = tokio::time::timeout(Duration::from_millis(1750), async {
+                let status = server.await;
+                shutdown.drain_rooms().await;
+                let ((), leases) = tokio::join!(
+                    state.workers.shutdown(),
+                    tokio::task::spawn_blocking(move || machines.interrupt_on_shutdown()),
+                );
+                if !matches!(leases, Ok(Ok(()))) {
+                    tracing::warn!("machine leases could not be fenced before shutdown");
+                }
+                let _ = tokio::fs::remove_file(&startup_path).await;
+                status
+            }).await;
+            drained.map_err(|_| boot(
+                1, "unavailable", "Server did not drain within 1750 ms.",
+                "Inspect the shutdown log before retrying the deployment.",
+            ))?
         }
-        let interrupt = tokio::task::spawn_blocking(move || machines.interrupt_on_shutdown());
-        state.workers.shutdown().await;
-        if !matches!(interrupt.await, Ok(Ok(()))) {
-            tracing::warn!("machine leases could not be fenced before shutdown");
-        }
-    })
-    .await;
-    let _ = tokio::fs::remove_file(&startup_path).await;
+    };
     served.map_err(|e| {
         boot(
             1,
