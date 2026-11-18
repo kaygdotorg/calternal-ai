@@ -477,11 +477,8 @@ impl Jobs {
     ) -> Result<Option<String>, Error> {
         let conn = self.conn(space)?;
         let c = conn.lock().map_err(db_err)?;
-        thread_send_receipt(
-            &c,
-            blake3::hash(request_key.as_bytes()).as_bytes(),
-            now_ms(),
-        )
+        let key = ring::digest::digest(&ring::digest::SHA256, request_key.as_bytes());
+        thread_send_receipt(&c, key.as_ref(), now_ms())
     }
 
     /// Admit a saved turn and record its request key in the same FULL job
@@ -504,11 +501,12 @@ impl Jobs {
         let space = a.space.clone();
         let space_id = calternal_types::SpaceId::parse(&space)?;
         let _space = self.lifecycle.step(space_id.as_uuid())?;
-        let receipt = thread_send.then(|| blake3::hash(a.request_key.as_bytes()));
+        let receipt = thread_send
+            .then(|| ring::digest::digest(&ring::digest::SHA256, a.request_key.as_bytes()));
         let id = self.tx(&space, |tx| {
             let now = now_ms();
             if let Some(key) = &receipt
-                && let Some(id) = thread_send_receipt(tx, key.as_bytes(), now)?
+                && let Some(id) = thread_send_receipt(tx, key.as_ref(), now)?
             {
                 return Ok(id);
             }
@@ -569,7 +567,7 @@ impl Jobs {
                 tx.execute(
                     "INSERT INTO thread_send_receipts VALUES(?1,?2,?3)
                      ON CONFLICT(request_key) DO UPDATE SET job=excluded.job,expires_ms=excluded.expires_ms",
-                    params![key.as_bytes().as_slice(), id, expires],
+                    params![key.as_ref(), id, expires],
                 ).map_err(db_err)?;
             }
             Ok(id)
@@ -638,14 +636,14 @@ pub(crate) fn thread_send_key(account: AccountId, request_id: &str) -> String {
 
 fn thread_send_receipt(
     conn: &Connection,
-    key: &[u8; 32],
+    key: &[u8],
     now: i64,
 ) -> Result<Option<String>, Error> {
     conn.prepare_cached(
         "SELECT job FROM thread_send_receipts WHERE request_key=?1 AND expires_ms>?2",
     )
     .map_err(db_err)?
-    .query_row(params![key.as_slice(), now], |row| row.get(0))
+    .query_row(params![key, now], |row| row.get(0))
     .optional()
     .map_err(db_err)
 }
