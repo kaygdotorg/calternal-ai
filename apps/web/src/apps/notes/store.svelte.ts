@@ -5,7 +5,7 @@
 import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";
 import { Paged } from "./paged.svelte";
-import { FixtureNotes, ServerNotes, type Note, type NoteSummary, type NotesClient, type Space, type TagInfo } from "./client";
+import { FixtureNotes, ServerNotes, type Change, type Note, type NoteSummary, type NotesClient, type Space, type TagInfo } from "./client";
 import { FixtureInput, ServerInput, type Draft, type InputClient, type PendingWrite } from "./input";
 import { ServerError } from "../../server/client";
 import { say } from "../../server/say";
@@ -74,13 +74,14 @@ class NotesStore {
     this.space = next;
     void this.tagPages.reset().catch(() => {}); this.trashPages.clear();
     this.stop?.();
-    this.stop = this.client.watch(next.id, () => void this.follow());
+    this.stop = this.client.watch(next.id, (c) => void this.follow(c));
     await this.notePages.reset();
   }
   /**
    * A change came from elsewhere (the space journal, no polling): refresh the list, and if the open note changed there, show it (nothing being typed), or remember it as the conflict the next save will meet.
    */
-  async follow(): Promise<void> {
+  async follow(change?: Change): Promise<void> {
+    await this.settle(change);
     await this.refresh().catch(() => {});
     const n = this.note;
     if (!n || !this.space) return;
@@ -99,6 +100,16 @@ class NotesStore {
     if (!this.space) return;
     await this.notePages.refresh();
     void this.tagPages.refresh().catch(() => {});
+  }
+  /** A journal entry about a note the list already holds (scrolled past, so the first-page read will not show it): ask about that one note. Gone or in the Trash, it leaves the list; otherwise its row takes the new title. */
+  private async settle(change?: Change): Promise<void> {
+    if (!change || !this.space || !this.notePages.has(change.item)) return;
+    try {
+      const n = await this.client.get(this.space.id, change.item);
+      this.notePages.replace(n.id, { id: n.id, spaceId: n.spaceId, title: n.title, updatedAt: n.updatedAt, revision: n.revision });
+    } catch (e) {
+      if (e instanceof ServerError && e.code === "not_found") { this.notePages.drop(change.item); if (this.trashPages.items.length) void this.trashPages.refresh().catch(() => {}); }
+    }
   }
   /** Filters the list by a tag (null: all notes). */
   async filter(tag: string | null): Promise<void> { this.tag = tag; await this.notePages.reset(); }

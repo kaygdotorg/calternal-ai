@@ -66,6 +66,12 @@ export class Paged<T> {
   /** Clears a failure and reads the next page again. */
   async retry(): Promise<void> { this.error = ""; await this.next(); }
 
+  /** Whether a row with this id is loaded. */
+  has(id: string): boolean { return this.items.some((r) => this.key(r) === id); }
+
+  /** Replaces a loaded row with a newer copy of it (a note renamed on another device), keeping its place. */
+  replace(id: string, row: T): void { this.items = this.items.map((r) => (this.key(r) === id ? row : r)); }
+
   /** Removes a row this client removed itself, so it does not wait for the next full read. */
   drop(id: string): void { this.items = this.items.filter((r) => this.key(r) !== id); }
 }

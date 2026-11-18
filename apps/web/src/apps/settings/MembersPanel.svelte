@@ -1,12 +1,11 @@
 <script lang="ts">
   // The current space's people and groups: each person with a role you can change (if you may), Remove, and "Make owner" (the owner only); groups with their role; and the two ways to add: a person or a group already on this
   // server, or an invitation for someone who is not (Invites page). A grant can widen a role, never narrow it, so lowering one removes the person first (the server says so in words).
-  import { Button, Capsule } from "@calternal/ui";
+  import { Button, Capsule , VirtualList } from "@calternal/ui";
   import { account } from "../../server/auth";
   import * as people from "../../server/people";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
-  import { reach } from "../../lib/reach";
   import { capitalise } from "../../lib/format";
   import "./panel.css";
   let g = $state<people.SpaceGrants>({ members: [], groups: [] }), me = $state(""), error = $state(""), busy = $state(false), loaded = $state(false);
@@ -44,7 +43,8 @@
 </script>
 
 <div class="sp">
-  {#each g.members as m (m.account_id)}
+  <VirtualList inside count={g.members.length} estimate={64} overscan={600} label="People" onrange={(_, end) => { if (end >= g.members.length - 20) void more(); }}>
+    {#snippet row(i)}{@const m = g.members[i]}{#if m}
     <div class="r" class:col={canManage && m.role !== "owner" && m.account_id !== me} data-setting="space.member.{m.account_id}">
       <span class="n"><span class="t">{m.account_id === me ? `${m.name} (you)` : m.name}</span><span class="h">{capitalise(m.role)}</span></span>
       {#if canManage && m.role !== "owner" && m.account_id !== me}
@@ -55,8 +55,9 @@
         </span>
       {/if}
     </div>
-  {/each}
-  {#if pg && !pg.done}<div class="r" use:reach={more}><span class="h">Loading more people…</span></div>{/if}
+    {/if}{/snippet}
+  </VirtualList>
+  {#if pg && !pg.done}<div class="r"><span class="h">Loading more people…</span></div>{/if}
   {#if g.groups.length}<h2>Groups</h2>{/if}
   {#each g.groups as x (x.group_id)}
     <div class="r" data-setting="space.group.{x.group_id}"><span class="n"><span class="t">{x.name}</span><span class="h">{capitalise(x.role)} · {x.member_count} {x.member_count === 1 ? "person" : "people"}</span></span></div>

@@ -10,6 +10,9 @@ export interface Page<T> { items: T[]; next: string | null }
 /** The rows of a page of `size` (the server's is 100) starting where `cursor` says; the fixtures' cursor is an offset. */
 const pageOf = <T,>(all: T[], cursor?: string, size = 100): Page<T> => { const from = cursor ? Number(cursor) : 0; return { items: all.slice(from, from + size), next: from + size < all.length ? String(from + size) : null }; };
 
+/** A journal entry as the screens need it: what happened (`notes.edited`, …) and to which note. */
+export interface Change { kind: string; item: string }
+
 /** A space as Notes needs it: its UUID and the name the person sees. */
 export interface Space { id: string; name: string }
 /** A note in a list. `revision` is what a rename is checked against; in the Trash `updatedAt` is when it was deleted. */
@@ -53,7 +56,8 @@ export interface NotesClient {
   /** Tags whose name starts with `prefix`, for the `#` picker. */
   lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]>;
   /** Calls `onChange` when a note in the space changed elsewhere (the live stream). Returns the stop function. */
-  watch(spaceId: string, onChange: () => void): () => void;
+  /** Calls `onChange` when the space changed (no polling); `change` names the item and kind of the journal entry when the server sent one, so a screen can deal with that one note without reading its lists again. */
+  watch(spaceId: string, onChange: (change?: Change) => void): () => void;
 }
 
 const SEED: [string, string, string][] = [
@@ -118,7 +122,7 @@ export class FixtureNotes implements NotesClient {
   async tags(spaceId: string, cursor?: string): Promise<Page<TagInfo>> { const c = new Map<string, number>(); for (const n of this.notes.values()) if (n.spaceId === spaceId) for (const t of this.tagsOf(n)) c.set(t, (c.get(t) ?? 0) + 1); return pageOf([...c].map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name)), cursor); }
   async lookupNotes(spaceId: string, prefix: string): Promise<NoteTarget[]> { return [...this.notes.values()].filter((n) => n.spaceId === spaceId && n.title.toLowerCase().startsWith(prefix.toLowerCase())).map((n) => ({ id: n.id, title: n.title })); }
   async lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]> { return (await this.tags(spaceId)).items.filter((t) => t.name.toLowerCase().startsWith(prefix.toLowerCase())); }
-  watch(_s: string, onChange: () => void): () => void { this.listeners.add(onChange); return () => this.listeners.delete(onChange); }
+  watch(_s: string, onChange: (change?: Change) => void): () => void { this.listeners.add(onChange); return () => this.listeners.delete(onChange); }
   private ping() { for (const l of this.listeners) l(); }
 }
 
@@ -140,13 +144,13 @@ export class ServerNotes implements NotesClient {
   async tags(spaceId: string, cursor?: string): Promise<Page<TagInfo>> { const p = await this.server.operate<{ tags: TagInfo[]; next_cursor?: string }>("tags.list", { space_id: spaceId, ...(cursor ? { cursor } : {}) }); return { items: p.tags, next: p.next_cursor ?? null }; }
   async lookupNotes(spaceId: string, prefix: string): Promise<NoteTarget[]> { return (await this.server.operate<{ notes: { id: string; title: string; link_target: string }[] }>("notes.lookup", { space_id: spaceId, prefix })).notes.map((n) => ({ id: n.id, title: n.title, target: n.link_target })); }
   async lookupTags(spaceId: string, prefix: string): Promise<TagInfo[]> { return (await this.server.operate<{ tags: TagInfo[] }>("tags.lookup", { space_id: spaceId, prefix })).tags; }
-  watch(spaceId: string, onChange: () => void): () => void {
+  watch(spaceId: string, onChange: (change?: Change) => void): () => void {
     const ac = new AbortController();
     const run = async () => {
       // After a reset the derived state is stale: tell the app to reload, then subscribe again from the head.
       for (let tries = 0; !ac.signal.aborted && tries < 5; tries++) {
         let reset = false;
-        try { await this.server.live([{ space_id: spaceId, bookmark: null }], (f) => { if ("Entry" in f) onChange(); else if ("Reset" in f) { reset = true; onChange(); } }, ac.signal); } catch { /* the stream ended or the server is away */ }
+        try { await this.server.live([{ space_id: spaceId, bookmark: null }], (f) => { if ("Entry" in f) { const e = f.Entry.entry as { kind?: unknown; item?: unknown } | null; onChange(typeof e?.item === "string" ? { kind: String(e.kind ?? ""), item: e.item } : undefined); } else if ("Reset" in f) { reset = true; onChange(); } }, ac.signal); } catch { /* the stream ended or the server is away */ }
         if (!reset) break;
       }
     };

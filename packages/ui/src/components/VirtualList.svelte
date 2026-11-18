@@ -7,9 +7,13 @@
   // updated, and the scroll position is corrected once so rows above the viewport changing height never move what the reader sees.
   // Scrolling reads `scrollTop` only (no layout read per row) and writes state only when the first or last row changes.
   // A list that was at the bottom stays at the bottom while it grows (streaming) and starts there.
+  //
+  // Two ways to scroll. By default the list is its own scroller (a conversation). With `inside` it is a block inside the nearest scrollable ancestor (a sidebar, a Settings page, a card) and the
+  // window follows that ancestor's scroll; the rows above and below the list keep their normal place. `onrange` reports the rows drawn, so a list read a page at a time can fetch the next
+  // page when the window nears the last loaded row. The DOM holds only the window (about the viewport plus `overscan` px each way) however many rows exist.
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
-  import { Fenwick } from "./fenwick";
+  import { Fenwick } from "../lib/fenwick";
 
   let {
     count,
@@ -21,9 +25,18 @@
     topInset = 0,
     bottomInset = 0,
     onrange,
-  }: { topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
+    inside = false,
+    rowRole = inside ? "listitem" : "article",
+  }: { inside?: boolean; rowRole?: string; topInset?: number; bottomInset?: number; onrange?: (first: number, end: number) => void; count: number; estimate?: number; overscan?: number; label: string; row: Snippet<[number]>; startAtBottom?: boolean } = $props();
 
   let scroller = $state<HTMLDivElement>();
+  let sizer = $state<HTMLDivElement>();
+  /** The scrollable ancestor in `inside` mode. */
+  let host: HTMLElement | null = null;
+  /** What scrolls: the ancestor (`inside`) or the list's own element. */
+  const view = (): HTMLElement | null | undefined => (inside ? host : scroller);
+  /** Where the list's first row sits in the scrolled content: the insets when it is its own scroller, its measured place in the ancestor otherwise (one layout read per update). */
+  const origin = (): number => (inside && host && sizer ? sizer.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop : topInset);
   let heights = new Float64Array(0);
   let tree = new Fenwick(heights);
   let first = $state(0);
@@ -44,10 +57,11 @@
   }
 
   function update() {
-    if (!scroller) return;
-    const top = Math.max(0, scroller.scrollTop - topInset);
+    const v = view();
+    if (!v) return;
+    const top = Math.max(0, v.scrollTop - origin());
     const f = tree.find(Math.max(0, top - overscan));
-    const l = Math.min(count - 1, tree.find(top + scroller.clientHeight + overscan));
+    const l = Math.min(count - 1, tree.find(top + v.clientHeight + overscan));
     if (f !== first || l + 1 !== last) {
       first = f;
       last = l + 1;
@@ -56,15 +70,17 @@
   }
 
   function onscroll() {
-    if (!scroller) return;
-    stuck = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 24;
+    const v = view();
+    if (!v) return;
+    stuck = inside ? false : v.scrollHeight - v.scrollTop - v.clientHeight < 24;
     if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); });
   }
 
   // Measuring: one observer for all drawn rows. Each callback batches every row that changed this frame.
   const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver((entries) => {
-    if (!scroller) return;
-    const top = scroller.scrollTop;
+    const v = view();
+    if (!v) return;
+    const top = v.scrollTop, o = origin();
     let shiftAbove = 0;
     let changed = false;
     for (const e of entries) {
@@ -75,12 +91,12 @@
       heights[i] = h;
       tree.add(i, d);
       changed = true;
-      if (tree.prefix(i) + topInset < top && !stuck) shiftAbove += d;
+      if (tree.prefix(i) + o < top && !stuck) shiftAbove += d;
     }
     if (!changed) return;
     total = tree.prefix(count);
     if (stuck) queueMicrotask(toBottom);
-    else if (shiftAbove) scroller.scrollTop = top + shiftAbove;
+    else if (shiftAbove) v.scrollTop = top + shiftAbove;
     update();
   });
 
@@ -105,28 +121,47 @@
     untrack(() => {
       const wasEmpty = heights.length === 0;
       resize(n);
-      if (wasEmpty) stuck = startAtBottom;
+      if (wasEmpty) stuck = !inside && startAtBottom;
       if (wasEmpty && startAtBottom && scroller) scroller.scrollTop = total + topInset + bottomInset;
       update();
+      onrange?.(first, last); // the count changed: a list read a page at a time asks again whether the window is near its end
     });
   });
   $effect(() => () => { cancelAnimationFrame(raf); ro?.disconnect(); });
+  // `inside`: find the scrollable ancestor once and follow its scroll and size.
+  $effect(() => {
+    if (!inside || !sizer) return;
+    let e: HTMLElement | null = sizer.parentElement;
+    while (e && !/(auto|scroll)/.test(getComputedStyle(e).overflowY)) e = e.parentElement;
+    host = e;
+    if (!host) return;
+    host.addEventListener("scroll", onscroll, { passive: true });
+    const hostRo = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => update());
+    hostRo?.observe(host);
+    update();
+    return () => { host?.removeEventListener("scroll", onscroll); hostRo?.disconnect(); host = null; };
+  });
 
   const indices = $derived(Array.from({ length: Math.max(0, last - first) }, (_, k) => first + k));
   // The window sits at the sum of the heights above it; `total` changes whenever the tree does, so it is the dependency.
   const offset = $derived.by(() => { void total; return tree.prefix(first); });
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<div bind:this={scroller} class="scroller edge-fade" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
-  <div class="sizer" style:height="{total + topInset + bottomInset}px">
-    <div class="window" style:transform="translateY({offset + topInset}px)">
-      {#each indices as i (i)}
-        <div class="row" data-i={i} role="article" aria-posinset={i + 1} aria-setsize={count} use:measure>{@render row(i)}</div>
-      {/each}
-    </div>
+{#snippet windowed()}
+  <div class="window" style:transform="translateY({offset + (inside ? 0 : topInset)}px)">
+    {#each indices as i (i)}
+      <div class="row" data-i={i} role={rowRole} aria-posinset={i + 1} aria-setsize={count} use:measure>{@render row(i)}</div>
+    {/each}
   </div>
-</div>
+{/snippet}
+{#if inside}
+  <div bind:this={sizer} class="sizer" role="list" aria-label={label} style:height="{total}px">{@render windowed()}</div>
+{:else}
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div bind:this={scroller} class="scroller edge-fade" style:--fade-t="{topInset}px" style:--fade-b="{bottomInset}px" role="feed" aria-label={label} aria-busy="false" tabindex="0" onscroll={onscroll}>
+    <div class="sizer" style:height="{total + topInset + bottomInset}px">{@render windowed()}</div>
+  </div>
+{/if}
 
 <style>
   .scroller { position: absolute; inset: 0; border-radius: var(--r-card); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; contain: strict; }
