@@ -68,7 +68,7 @@ struct TrustedFile {
     plugins: Vec<TrustedEntry>,
 }
 
-/// One compiled-in trusted plugin entry. Paths are relative to `--plugin-root`.
+/// A distribution plugin entry. Paths are relative to `--plugin-root`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TrustedEntry {
@@ -254,7 +254,8 @@ pub struct Catalog {
     operations: BTreeMap<String, (usize, Policy)>,
 }
 
-/// Parse the compiled-in trusted plugin list. Cost: one small JSON parse.
+/// Parse the source tree's reference catalog for fixtures and digest reports.
+/// Serving installations use the distribution file. Cost: one small JSON parse.
 pub fn registry_entries() -> Vec<TrustedEntry> {
     let file: TrustedFile =
         serde_json::from_str(TRUSTED_JSON).expect("compiled-in trusted-plugins.json is valid");
@@ -318,7 +319,7 @@ impl Registry {
     pub fn load(plugin_root: &Path) -> Self {
         let plugins = registry_entries()
             .into_iter()
-            .filter_map(|entry| match load_one(plugin_root, &entry, None) {
+            .filter_map(|entry| match load_one(plugin_root, &entry) {
                 Ok(plugin) => Some(plugin),
                 Err(why) => {
                     tracing::warn!(plugin = %entry.id, reason = %why, "fixture plugin not loaded");
@@ -565,26 +566,19 @@ fn rel_path_ok(p: &str) -> bool {
             .all(|c| matches!(c, std::path::Component::Normal(_)))
 }
 
-fn load_one(root: &Path, entry: &TrustedEntry, fallback: Option<&[u8]>) -> Result<Plugin, String> {
+fn load_one(root: &Path, entry: &TrustedEntry) -> Result<Plugin, String> {
     if !rel_path_ok(&entry.manifest) {
         return Err("registry manifest path invalid".into());
     }
     let path = root.join(&entry.manifest);
-    let bytes = match std::fs::symlink_metadata(&path) {
-        Ok(meta) => {
-            if !meta.file_type().is_file() {
-                return Err("manifest is not a regular file".into());
-            }
-            if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
-                return Err("manifest too large".into());
-            }
-            Cow::Owned(std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound && fallback.is_some() => {
-            Cow::Borrowed(fallback.expect("checked fallback"))
-        }
-        Err(e) => return Err(format!("manifest: {e}")),
-    };
+    let meta = std::fs::symlink_metadata(&path).map_err(|e| format!("manifest: {e}"))?;
+    if !meta.file_type().is_file() {
+        return Err("manifest is not a regular file".into());
+    }
+    if meta.len() > host::MAX_MANIFEST_BYTES as u64 {
+        return Err("manifest too large".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("manifest: {e}"))?;
     let manifest = host::parse_manifest(&bytes).map_err(|e| format!("manifest invalid: {e}"))?;
     let mut unavailable = None;
     let worker = match &entry.worker {

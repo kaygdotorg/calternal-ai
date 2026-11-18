@@ -1,5 +1,5 @@
 //! Installation-local package catalog and checksum-backed worker materialization.
-use super::{Plugin, Registry, TrustedEntry, check_operations, registry_entries};
+use super::{Plugin, Registry, TrustedEntry, TrustedFile, check_operations};
 use calternal_core::ManifestV1;
 use calternal_plugin_host::{self as host, MAX_MANIFEST_BYTES};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -430,7 +430,45 @@ pub(super) fn remove(appdata: &Path, id: &str) -> Result<(), String> {
     tx.commit().map_err(reason)
 }
 
-fn seed(conn: &mut Connection, root: &Path, defaults: bool) -> Result<(), String> {
+fn distribution_entries(root: &Path) -> Result<Vec<TrustedEntry>, String> {
+    let packaged = root.join("trusted-plugins.json");
+    let source = root.join("../crates/server/trusted-plugins.json");
+    let path = match packaged.try_exists().map_err(reason)? {
+        true => packaged,
+        false if source.try_exists().map_err(reason)? => source,
+        false => return Ok(Vec::new()),
+    };
+    let bytes = read_regular(&path, MAX_MANIFEST_BYTES)?;
+    let file: TrustedFile =
+        serde_json::from_slice(&bytes).map_err(|e| format!("distribution plugin catalog: {e}"))?;
+    if file.plugins.len() > MAX_PACKAGES {
+        return Err("distribution plugin catalog exceeds the installation limit".into());
+    }
+    Ok(file.plugins)
+}
+
+fn install_distribution_package(
+    tx: &Connection,
+    package: Package,
+    default_enabled: bool,
+) -> Result<(), String> {
+    validate_registered(tx, &package)?;
+    let archive = package.archive()?;
+    let checksum = super::sha256_hex(&archive);
+    tx.execute(
+        "INSERT OR IGNORE INTO installed_plugins (id, archive, checksum, default_enabled)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![package.manifest.id, archive, checksum, default_enabled],
+    )
+    .map_err(reason)?;
+    Ok(())
+}
+
+fn initialize_distribution(
+    conn: &mut Connection,
+    root: &Path,
+    defaults: bool,
+) -> Result<(), String> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(reason)?;
@@ -442,11 +480,24 @@ fn seed(conn: &mut Connection, root: &Path, defaults: bool) -> Result<(), String
     {
         return Ok(());
     }
-    for entry in registry_entries() {
-        let fallback = (defaults && entry.id == "calternal-orchestrator").then_some(
-            include_bytes!("../../../../plugins/calternal-orchestrator/manifest.json").as_slice(),
-        );
-        let plugin = match super::load_one(root, &entry, fallback) {
+    let entries = distribution_entries(root)?;
+    if defaults
+        && !entries
+            .iter()
+            .any(|entry| entry.id == "calternal-orchestrator")
+    {
+        let manifest = host::parse_manifest(include_bytes!(
+            "../../../../plugins/calternal-orchestrator/manifest.json"
+        ))
+        .map_err(reason)?;
+        let package = Package {
+            manifest,
+            worker: None,
+        };
+        install_distribution_package(&tx, package, true)?;
+    }
+    for entry in entries {
+        let plugin = match super::load_one(root, &entry) {
             Ok(plugin) if plugin.unavailable.is_none() => plugin,
             Ok(plugin) => {
                 tracing::warn!(plugin = %entry.id, reason = ?plugin.unavailable, "seed package unavailable");
@@ -471,17 +522,14 @@ fn seed(conn: &mut Connection, root: &Path, defaults: bool) -> Result<(), String
             manifest: plugin.manifest,
             worker,
         };
-        let archive = package.archive()?;
-        let checksum = super::sha256_hex(&archive);
-        tx.execute("INSERT OR IGNORE INTO installed_plugins (id, archive, checksum, default_enabled) VALUES (?1, ?2, ?3, ?4)",
-            params![entry.id, archive, checksum, entry.default_enabled]).map_err(reason)?;
+        install_distribution_package(&tx, package, entry.default_enabled)?;
     }
     tx.execute("INSERT INTO plugin_seed VALUES (1)", [])
         .map_err(reason)?;
     tx.commit().map_err(reason)
 }
 
-/// Seed the installation once from the distribution and construct a bounded,
+/// Initialize fresh installations from the distribution catalog and construct a bounded,
 /// immutable plugin snapshot. While the server holds its installation lock,
 /// reuse private current and retained workers matching the archive and discard
 /// stale cache files. Cost: one bounded read per worker and one cache scan.
@@ -493,7 +541,7 @@ pub fn load(
     test_root: Option<&Path>,
 ) -> Result<Registry, String> {
     let mut conn = open(appdata)?;
-    seed(
+    initialize_distribution(
         &mut conn,
         seed_root.unwrap_or(Path::new("plugins")),
         seed_root.is_none(),
@@ -512,7 +560,7 @@ pub fn load(
     .map_err(reason)?;
     if let Some(root) = test_root {
         for entry in super::test_entries() {
-            match super::load_one(root, &entry, None) {
+            match super::load_one(root, &entry) {
                 Ok(plugin) => plugins.push(plugin),
                 Err(error) => {
                     tracing::warn!(plugin = %entry.id, reason = %error, "test package unavailable")

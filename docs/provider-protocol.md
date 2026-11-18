@@ -60,10 +60,18 @@ Claude adapter emits a Check result from its existing official status call
 before a regular turn. The server keeps that result private to the requesting
 account and excludes it from the shared turn stream.
 
-A Codex adapter reuses this entire protocol, machine stdin/exec transport, job
-streams/checkpoints, access tokens, instructions, risk policy, retry scheduler and
-CLI. Its own plugin would supply an executable and model metadata; only official
-Codex process control and event normalization differ.
+The Codex plugin reuses this protocol, machine transport, job checkpoints,
+access tokens, and risk policy. Its adapter drives the official App Server over
+stdio. It maps the selected model and effort to native turn parameters, forwards
+steer and interrupt to the current native turn, and persists the opaque native
+session ID for a later resume.
+
+In Least access, the host mounts the workspace read-only and the adapter selects
+a nested read-only policy with approvals disabled. In Approve for me, the host
+allows workspace writes and Codex uses on-request approval. In Full access,
+Codex allows workspace writes without native prompts. Both writable policies
+still protect the provider login and stay within the Calternal sandbox. Podman
+enforces the outer workspace mount directly or inside the MicroVM guest.
 
 ## App sign-in
 
@@ -95,7 +103,9 @@ alone. Other state stays in its original directory.
 ## Installed harness runtimes
 
 Install the provider manifest through the ordinary package review, installation
-and space activation commands. The runtime image is a separate immutable,
+and space activation commands. A fresh packaged server installs its initial
+catalog from the operator-owned distribution file. An existing installation
+keeps its approved archives and space activation. The runtime image is a separate immutable,
 operator-installed artifact. A newly installed provider needs an active tested
 runtime. The package store's migration preserves the bundled provider's existing
 image selection and private login layout.

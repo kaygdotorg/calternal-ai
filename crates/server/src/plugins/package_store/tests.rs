@@ -2,6 +2,33 @@ use super::*;
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 
 #[test]
+fn fresh_catalog_uses_operator_distribution_entries() {
+    let appdata = tempfile::tempdir().unwrap();
+    let distribution = tempfile::tempdir().unwrap();
+    let root = distribution.path();
+    fs::write(
+        root.join("trusted-plugins.json"),
+        br#"{"plugins":[{"id":"calternal-notes","version":"0.1.0","manifest":"notes.json","worker":null,"worker_sha256":null,"default_enabled":true}]}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("notes.json"),
+        include_bytes!("../../../../../plugins/calternal-notes/manifest.json"),
+    )
+    .unwrap();
+    let registry = load(appdata.path(), Some(root), None).unwrap();
+    let catalog = registry.snapshot();
+    assert_eq!(catalog.plugins().len(), 1);
+    assert!(
+        catalog
+            .get("calternal-notes")
+            .unwrap()
+            .entry
+            .default_enabled
+    );
+}
+
+#[test]
 fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
@@ -108,7 +135,18 @@ fn provider_registration_migrates_without_changing_installed_package() {
         params![package.manifest.id, &archive, &checksum],
     )
     .unwrap();
+    db.execute("INSERT INTO plugin_seed VALUES (1)", [])
+        .unwrap();
     calternal_store::migrations::migrate_release(&db, UPGRADE_SCHEMA, true).unwrap();
+    let distribution = tempfile::tempdir().unwrap();
+    fs::write(distribution.path().join("trusted-plugins.json"), b"invalid").unwrap();
+    assert!(
+        load(dir.path(), Some(distribution.path()), None)
+            .unwrap()
+            .snapshot()
+            .get(&package.manifest.id)
+            .is_some()
+    );
 
     let registration: (String, String) = db
         .query_row(
