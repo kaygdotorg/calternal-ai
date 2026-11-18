@@ -22,8 +22,8 @@ use std::{
 use uuid::Uuid;
 
 /// Queue a turn; claim prevents duplicate request retries from starting it twice.
-/// Admission is bounded per space. Only placed output readers hold the shared
-/// execution budget; offline-machine queues cannot occupy those slots.
+/// The durable per-space job bound still applies. A fenced machine lease
+/// reserves the execution memory before an output reader starts.
 pub(crate) fn schedule<D: Directory>(
     state: &Shared<D>,
     machines: &Arc<MachineService>,
