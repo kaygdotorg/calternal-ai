@@ -123,7 +123,7 @@
   @media (max-width: 520px) { .steps { flex-wrap: wrap; justify-content: center; gap: var(--s-3) var(--s-4); } .steps li { width: 3.2rem; } .many li { width: 2.4rem; } .lab { display: none; } .steps li.now .lab { display: block; position: absolute; top: calc(var(--s-9) + var(--s-2)); white-space: nowrap; } .steps { padding-bottom: var(--s-6); } }
   .wrap :global(.card) { width: min(30rem, 100%); }
   /* The action button keeps room under it for the iOS form bar when it is scrolled into view over the keyboard; the page can scroll that far while the keyboard is up. */
-  .wrap :global(button[type="submit"]) { scroll-margin-bottom: 4.5rem; }
+  .wrap :global(button[type="submit"]) { scroll-margin-bottom: 6.5rem; }
   :global(html[data-kb]) .wrap { padding-bottom: calc(var(--s-6) + 5rem); }
   .in { display: grid; gap: var(--s-5); padding: var(--s-7); animation: enter var(--dur-slow) var(--ease-out); }
   h1 { font-size: var(--text-heading); font-weight: var(--strong-weight); outline: none; }
