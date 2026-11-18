@@ -1,6 +1,9 @@
 //! Durable state for the host live-editing service. A checkpoint is committed
 //! with its content revision and outbox intent under the owning space lock.
 mod diff;
+pub(crate) mod style;
+mod wire;
+pub use wire::RoomSnapshot;
 
 use crate::{Content, FileFormat, Item, Result, SpaceId, db::Space, types::internal};
 use calternal_types::Error;
@@ -24,6 +27,11 @@ pub enum LiveEdit<'a> {
 pub(crate) enum Body<'a> {
     Replace(&'a [u8]),
     Live(LiveEdit<'a>),
+    Wire {
+        lineage: &'a str,
+        update: &'a [u8],
+        preview: &'a dyn Fn(&[u8]) -> Result<()>,
+    },
 }
 
 impl Body<'_> {
@@ -32,6 +40,12 @@ impl Body<'_> {
             Self::Replace(bytes) => Content::validate_write_size(metadata, bytes),
             Self::Live(LiveEdit::Append(text)) => {
                 Content::validate_write_size(metadata, text.as_bytes())
+            }
+            Self::Wire { update, .. } => {
+                if update.len() > MAX_STATE_BYTES {
+                    return Err(Error::invalid_input("live update exceeds its size limit"));
+                }
+                Ok(())
             }
             Self::Live(LiveEdit::Patch(edits)) => {
                 let max = crate::MAX_DOCUMENT_BYTES;
@@ -90,7 +104,8 @@ impl Document {
         options.offset_kind = OffsetKind::Utf16;
         let doc = Doc::with_options(options);
         let text = doc.get_or_insert_text(TEXT);
-        text.insert(&mut doc.transact_mut(), 0, markdown(&item.bytes)?);
+        let (_, body) = style::Style::split(markdown(&item.bytes)?);
+        text.insert(&mut doc.transact_mut(), 0, &body);
         Ok(Self {
             lineage: digest.to_hex()[..32].into(),
             doc,
@@ -112,13 +127,26 @@ impl Document {
 
     fn change(&self, body: Body<'_>) -> Result<Vec<u8>> {
         let edits = match body {
-            Body::Replace(bytes) => diff::edits(&self.text(), markdown(bytes)?),
+            Body::Wire {
+                lineage, update, ..
+            } => {
+                if self.lineage != lineage {
+                    return Err(Error::conflict("room lineage changed")
+                        .with_details(serde_json::json!({"reason":"lineage_changed"})));
+                }
+                return wire::apply_client_update(&self.doc, update);
+            }
+            Body::Replace(bytes) => {
+                let (_, text) = style::Style::split(markdown(bytes)?);
+                diff::edits(&self.text(), &text)
+            }
             Body::Live(LiveEdit::Patch(edits)) => checked_edits(&self.text(), edits)?,
             Body::Live(LiveEdit::Append(insert)) => {
                 let text = self.doc.get_or_insert_text(TEXT);
                 let mut txn = self.doc.transact_mut();
                 let at = text.len(&txn);
-                text.insert(&mut txn, at, insert);
+                let (_, insert) = style::Style::split(insert);
+                text.insert(&mut txn, at, &insert);
                 return Ok(txn.encode_update_v1());
             }
         };
@@ -129,7 +157,8 @@ impl Document {
                 text.remove_range(&mut txn, edit.at, edit.delete);
             }
             if !edit.insert.is_empty() {
-                text.insert(&mut txn, edit.at, &edit.insert);
+                let insert = edit.insert.replace("\r\n", "\n");
+                text.insert(&mut txn, edit.at, &insert);
             }
         }
         Ok(txn.encode_update_v1())
@@ -265,15 +294,16 @@ impl Space {
         base: &str,
         metadata: &mut Value,
         body: Body<'_>,
-    ) -> Result<(Vec<u8>, Checkpoint)> {
+    ) -> Result<(Vec<u8>, Checkpoint, Option<Vec<u8>>)> {
         let retained = self.checkpoint(current.id, seq)?;
         let live = match retained {
             Some(checkpoint) => Document::load(checkpoint)?,
             None if current.revision == base => Document::seed(current)?,
             None => return Err(stale()),
         };
-        if base == current.revision {
-            live.change(body)?;
+        let preview = if base == current.revision {
+            let update = live.change(body)?;
+            matches!(body, Body::Wire { .. }).then_some(update)
         } else {
             let (base_seq, base_metadata): (i64, String) = self
                 .conn
@@ -299,8 +329,10 @@ impl Space {
             }
             let fork = Document::load(checkpoint)?;
             apply(&live.doc, &fork.change(body)?)?;
-        }
-        Ok((live.text().into_bytes(), live.checkpoint()?))
+            None
+        };
+        let (style, _) = style::Style::split(markdown(&current.bytes)?);
+        Ok((style.encode(&live.text()), live.checkpoint()?, preview))
     }
 
     pub(crate) fn seed_checkpoint(&self, item: &Item) -> Result<Checkpoint> {

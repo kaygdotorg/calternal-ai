@@ -1,0 +1,428 @@
+//! Versioned WebSocket transport for opted-in host content rooms.
+mod access;
+mod hub;
+mod update;
+mod wire;
+
+pub(crate) use hub::Hub;
+use hub::{Key, Lease, closed, disk};
+
+use crate::{
+    api::Shared,
+    auth::{Directory, Identity},
+    live::{self, LiveQuery},
+    plugins::{Plugin, Session, activation},
+};
+use axum::{
+    Extension,
+    extract::{FromRequestParts, Query, Request, State, ws},
+    http::header,
+    response::{IntoResponse, Response},
+};
+use calternal_content::Content;
+use calternal_types::{AccountId, Error};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use std::{collections::HashMap, sync::Arc, time::Duration};
+use tokio::{
+    sync::{OwnedSemaphorePermit, mpsc, watch},
+    task::JoinHandle,
+    time::Instant,
+};
+
+const VERSION: &str = "calternal-live-rooms.v1";
+const MEMBERSHIPS: usize = 128;
+const CONTROL_BYTES: usize = 4096;
+const SAFE_INT: u64 = (1 << 53) - 1;
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
+
+pub(crate) async fn entry<D: Directory>(
+    State(host): State<Shared<D>>,
+    Extension(content): Extension<Arc<Content>>,
+    req: Request,
+) -> Response {
+    let upgrade = req.headers().contains_key(header::SEC_WEBSOCKET_KEY)
+        || req
+            .headers()
+            .get(header::UPGRADE)
+            .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"));
+    if !upgrade {
+        return match Query::<LiveQuery>::try_from_uri(req.uri()) {
+            Ok(query) => live::events(State(host), Extension(content), query, req).await,
+            Err(error) => error.into_response(),
+        };
+    }
+    let (mut parts, _) = req.into_parts();
+    let Some(identity) = parts.extensions.get::<Identity>().cloned() else {
+        return crate::api::error_response(Error::unauthorized("missing or invalid session"));
+    };
+    let Some(session) = parts.extensions.get::<Session>().cloned() else {
+        return crate::api::error_response(Error::unauthorized("missing or invalid session"));
+    };
+    if matches!(session, Session::Installation { .. })
+        && !parts.headers.contains_key(header::ORIGIN)
+    {
+        return crate::api::error_response(Error::forbidden(
+            "room socket requires a browser origin",
+        ));
+    }
+    let supported = parts
+        .headers
+        .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(',').map(str::trim))
+        .any(|protocol| protocol == VERSION);
+    if !supported {
+        return crate::api::error_response(Error::invalid_input(
+            "unsupported live room protocol version",
+        ));
+    }
+    let ws = match ws::WebSocketUpgrade::from_request_parts(&mut parts, &host).await {
+        Ok(ws) => ws,
+        Err(error) => return error.into_response(),
+    };
+    let socket_memory = host
+        .store
+        .live_rooms()
+        .memory()
+        .clone()
+        .try_acquire_many_owned(wire::FRAME_BYTES as u32);
+    let Ok(socket_memory) = socket_memory else {
+        return crate::api::error_response(Error::unavailable("live socket capacity is busy"));
+    };
+    ws.protocols([VERSION])
+        .max_frame_size(wire::FRAME_BYTES)
+        .max_message_size(wire::FRAME_BYTES)
+        .on_upgrade(move |socket| serve(socket, host, content, identity.id, session, socket_memory))
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum Control {
+    Join {
+        room: String,
+        membership: u64,
+        lineage: Option<String>,
+        tz: Option<String>,
+    },
+    Leave {
+        room: String,
+        membership: u64,
+    },
+    Ping,
+}
+
+struct Member {
+    key: Key,
+    plugin: Arc<Plugin>,
+    generation: u32,
+    lineage: String,
+    lease: Lease,
+    resync: bool,
+    held: Option<u64>,
+    check: u64,
+    relay: JoinHandle<()>,
+    kicked: watch::Receiver<bool>,
+}
+
+impl Drop for Member {
+    fn drop(&mut self) {
+        self.relay.abort();
+    }
+}
+
+enum Event {
+    Packet {
+        address: String,
+        frame: Arc<hub::Frame>,
+    },
+    Left(String),
+}
+
+struct Connection<D: Directory> {
+    socket: ws::WebSocket,
+    host: Shared<D>,
+    content: Arc<Content>,
+    account: AccountId,
+    session: Session,
+    members: HashMap<String, Member>,
+    event_tx: mpsc::Sender<Event>,
+    reassembly: wire::Reassembly,
+    highest: u64,
+}
+
+async fn serve<D: Directory>(
+    socket: ws::WebSocket,
+    host: Shared<D>,
+    content: Arc<Content>,
+    account: AccountId,
+    session: Session,
+    _socket_memory: OwnedSemaphorePermit,
+) {
+    let (event_tx, mut events) = mpsc::channel(64);
+    let mut conn = Connection {
+        socket,
+        host,
+        content,
+        account,
+        session,
+        members: HashMap::new(),
+        event_tx,
+        reassembly: wire::Reassembly::default(),
+        highest: 0,
+    };
+    let mut check = tokio::time::interval(Duration::from_secs(2));
+    check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        let deadline = conn.reassembly.deadline();
+        let expire = async {
+            if let Some(deadline) = deadline {
+                tokio::time::sleep_until(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        let result = tokio::select! {
+            message = conn.socket.recv() => match message {
+                Some(Ok(ws::Message::Text(value))) => conn.control(value.as_str()).await,
+                Some(Ok(ws::Message::Binary(value))) => conn.binary(&value).await,
+                Some(Ok(ws::Message::Ping(_) | ws::Message::Pong(_))) => Ok(()),
+                _ => break,
+            },
+            event = events.recv() => match event {
+                Some(event) => conn.event(event).await,
+                None => break,
+            },
+            _ = check.tick() => conn.sweep().await,
+            _ = expire => Err(Error::invalid_input("room chunk expired")),
+        };
+        if result.is_err() {
+            break;
+        }
+    }
+}
+
+impl<D: Directory> Connection<D> {
+    async fn control(&mut self, value: &str) -> Result<(), Error> {
+        if value.len() > CONTROL_BYTES {
+            return Err(Error::invalid_input("room control is too large"));
+        }
+        let control: Control = serde_json::from_str(value)
+            .map_err(|_| Error::invalid_input("invalid room control"))?;
+        match control {
+            Control::Ping => self.json(json!({"type":"pong"})).await,
+            Control::Leave { room, membership } => {
+                let address = address(&room, membership);
+                self.reassembly.discard(&address);
+                self.members.remove(&address);
+                Ok(())
+            }
+            Control::Join {
+                room,
+                membership,
+                lineage,
+                tz,
+            } => {
+                let result = if tz.as_deref().is_some_and(|value| value.len() > 32) {
+                    Err(Error::invalid_input("invalid room join metadata"))
+                } else {
+                    self.join(&room, membership, lineage.as_deref()).await
+                };
+                if let Err(error) = result {
+                    self.json(json!({"type":"join_failed","room":room,"membership":membership,"error":error})).await?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    async fn join(
+        &mut self,
+        room: &str,
+        membership: u64,
+        lineage: Option<&str>,
+    ) -> Result<(), Error> {
+        let invalid = || Error::invalid_input("invalid room join");
+        if membership <= self.highest
+            || membership > SAFE_INT
+            || lineage.is_some_and(|lineage| lineage.len() > 64)
+        {
+            return Err(invalid());
+        }
+        self.highest = membership;
+        let key = Key::parse(room).ok_or_else(invalid)?;
+        if self.members.len() >= MEMBERSHIPS {
+            return Err(Error::unavailable("socket room limit reached"));
+        }
+        if self.members.values().any(|existing| existing.key == key) {
+            return Err(invalid());
+        }
+        self.capabilities(&key, false).await?;
+        let plugin = self.catalog(&key).ok_or_else(hidden)?;
+        let (pinned, resolved) = (plugin.clone(), key.clone());
+        let host = self.host.clone();
+        let generation = disk(move || {
+            if host
+                .store
+                .locate(&resolved.kind, &resolved.item.to_string())?
+                != Some(resolved.space)
+            {
+                return Err(hidden());
+            }
+            let row = activation(&host.store, resolved.space, &pinned)?;
+            if !row.enabled {
+                return Err(hidden());
+            }
+            host.store
+                .content()
+                .enable_live_editing(resolved.space, &resolved.kind)?;
+            Ok(row.generation)
+        })
+        .await?;
+        let joined = self
+            .host
+            .store
+            .live_rooms()
+            .join(self.content.clone(), key.clone(), self.account, lineage)
+            .await?;
+        self.authorize(&key, &plugin, generation, false).await?;
+        let address = address(room, membership);
+        let bind = address.clone();
+        let tx = self.event_tx.clone();
+        let kicked = joined.kicked.clone();
+        let (mut recv, mut kick) = (joined.frames, joined.kicked);
+        let relay = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = kick.changed() => break,
+                    event = recv.recv() => match event {
+                        Ok(frame) => {
+                            if tx.try_send(Event::Packet { address: bind.clone(), frame }).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+            let _ = tx.send(Event::Left(bind)).await;
+        });
+        let lineage = joined.lineage;
+        self.members.insert(
+            address.clone(),
+            Member {
+                key,
+                plugin,
+                generation,
+                lineage: lineage.clone(),
+                lease: joined.lease,
+                resync: false,
+                held: None,
+                check: 0,
+                relay,
+                kicked,
+            },
+        );
+        self.json(json!({
+            "type":"joined","room":room,"membership":membership,
+            "info":{"id":self.members[&address].key.item,"lineage":lineage,"text":"md"},
+        }))
+        .await?;
+        for frame in joined.initial {
+            self.send(&address, &frame).await?;
+        }
+        Ok(())
+    }
+
+    async fn sweep(&mut self) -> Result<(), Error> {
+        if !self.session.is_live(&self.host.directory).await {
+            return Err(Error::unauthorized("room session ended"));
+        }
+        let mut removed = Vec::new();
+        for (address, member) in &self.members {
+            if *member.kicked.borrow()
+                || self
+                    .authorize(&member.key, &member.plugin, member.generation, false)
+                    .await
+                    .is_err()
+            {
+                removed.push(address.clone());
+            }
+        }
+        for address in removed {
+            self.left(&address).await?;
+        }
+        Ok(())
+    }
+
+    async fn event(&mut self, event: Event) -> Result<(), Error> {
+        match event {
+            Event::Left(address) => self.left(&address).await,
+            Event::Packet { address, frame } => {
+                let Some(member) = self.members.get(&address) else {
+                    return Ok(());
+                };
+                if *member.kicked.borrow()
+                    || self
+                        .authorize(&member.key, &member.plugin, member.generation, false)
+                        .await
+                        .is_err()
+                {
+                    return self.left(&address).await;
+                }
+                self.send(&address, &frame.bytes).await
+            }
+        }
+    }
+
+    async fn left(&mut self, address: &str) -> Result<(), Error> {
+        self.reassembly.discard(address);
+        if self.members.remove(address).is_some() {
+            let (room, membership) = unaddress(address).ok_or_else(closed)?;
+            self.json(json!({"type":"left","room":room,"membership":membership}))
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn send(&mut self, address: &str, bytes: &[u8]) -> Result<(), Error> {
+        for frame in wire::frames(address, bytes) {
+            if self
+                .members
+                .get(address)
+                .is_some_and(|member| *member.kicked.borrow())
+            {
+                return self.left(address).await;
+            }
+            self.frame(ws::Message::Binary(frame.into())).await?;
+        }
+        Ok(())
+    }
+
+    async fn json(&mut self, value: Value) -> Result<(), Error> {
+        self.frame(ws::Message::Text(value.to_string().into()))
+            .await
+    }
+
+    async fn frame(&mut self, frame: ws::Message) -> Result<(), Error> {
+        tokio::time::timeout_at(Instant::now() + IO_TIMEOUT, self.socket.send(frame))
+            .await
+            .map_err(|_| closed())?
+            .map_err(|_| closed())
+    }
+}
+
+fn address(room: &str, membership: u64) -> String {
+    format!("@{membership}/{room}")
+}
+
+fn unaddress(address: &str) -> Option<(&str, u64)> {
+    let (membership, room) = address.strip_prefix('@')?.split_once('/')?;
+    Some((room, membership.parse().ok()?))
+}
+
+fn hidden() -> Error {
+    Error::not_found("live room not found")
+}

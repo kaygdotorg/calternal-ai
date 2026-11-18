@@ -274,6 +274,42 @@ impl Content {
         )
     }
 
+    /// Apply a binary Yjs update against a live item's current lineage and
+    /// commit its text, checkpoint, revision and receipt through content.
+    /// A wrong lineage, held causal dependency or invalid document is refused.
+    /// The preview callback may queue bytes for peers just before commit. It
+    /// must be bounded and cannot re-enter content. Preview delivery is volatile.
+    /// Cost: one current checkpoint, CRDT apply and the shared commit path.
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_room_update(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        lineage: &str,
+        update: &[u8],
+        request: Request<'_>,
+        preview: impl Fn(&[u8]) -> Result<()>,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            Some(item),
+            kind,
+            None,
+            Value::Null,
+            Body::Wire {
+                lineage,
+                update,
+                preview: &preview,
+            },
+            request,
+            |item| serde_json::json!({"id":item.id,"revision":item.revision}),
+            Destination::Current,
+            None,
+            || Ok(()),
+        )
+    }
+
     /// Move an existing item into its space's Trash through the normal version,
     /// journal and guarded placement outbox. Identity and history remain resolvable;
     /// callers authorize deletion and provide tombstone metadata. Outside edits and
@@ -402,10 +438,11 @@ impl Content {
             let mut metadata = metadata;
             let mut bytes = match body {
                 Body::Replace(bytes) => std::borrow::Cow::Borrowed(bytes),
-                Body::Live(_) if live => std::borrow::Cow::Borrowed(&[][..]),
-                Body::Live(_) => return Err(Error::invalid_input("kind does not enable live editing")),
+                _ if live => std::borrow::Cow::Borrowed(&[][..]),
+                _ => return Err(Error::invalid_input("kind does not enable live editing")),
             };
             let mut room = None;
+            let mut preview_update = None;
             // Refuse further growth when a failed/slow disk misses ADR 0062's
             // maximum; the lifecycle worker continues retrying durable intents.
             if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
@@ -424,7 +461,7 @@ impl Content {
                     return Err(missing());
                 }
                 let merge_stale = live && destination == Destination::Current
-                    && (base.is_some() || matches!(body, Body::Live(LiveEdit::Append(_))));
+                    && (base.is_some() || matches!(body, Body::Live(LiveEdit::Append(_)) | Body::Wire { .. }));
                 if !merge_stale && base != Some(head.revision.as_str()) {
                     return Err(Error {code:ErrorCode::Conflict,message:"item has a newer revision".into(),details:Some(serde_json::json!({"reason":"stale_revision","current_revision":head.revision}))});
                 }
@@ -435,7 +472,11 @@ impl Content {
                         "restore this item from Trash first"
                     }));
                 }
-                if head.state == "pending" {
+                // A room frame keeps the same path and metadata. Consecutive
+                // admitted frames can share the lifecycle worker's file flush
+                // while each acknowledged revision remains durable in SQLite.
+                let share_placement = matches!(body, Body::Wire { .. }) && head.old_path.is_none();
+                if head.state == "pending" && !share_placement {
                     s.place_header(id,head,None,self.fault)?;
                     // Placement changes the expected hash/state. Reload only on
                     // this pending slow path, never for an ordinary warm save.
@@ -444,12 +485,16 @@ impl Content {
                 let sha = s.check_header(id,&head)?;
                 if live {
                     let current = s.get(id)?;
-                    if matches!(body, Body::Live(_)) {
+                    if !matches!(body, Body::Replace(_)) {
                         metadata = current.metadata.clone();
                     }
-                    let (merged, checkpoint) = s.merge_room_write(
+                    let (merged, checkpoint, delta) = s.merge_room_write(
                         &current, head.seq, base.unwrap_or(&head.revision), &mut metadata, body,
                     )?;
+                    if delta.as_deref() == Some(&[0, 0]) {
+                        return Ok(current);
+                    }
+                    preview_update = delta;
                     Self::validate_write_size(&metadata, &merged)?;
                     bytes = std::borrow::Cow::Owned(merged);
                     room = Some(checkpoint);
@@ -497,6 +542,10 @@ impl Content {
             }
             root.outbox(&tx,request,&response)?;
             linked_write::stage_related_outbox(&tx,&root,&related,request)?;
+            if let (Body::Wire { preview, .. }, Some(update)) = (body, preview_update) {
+                preview(&update)?;
+                (self.fault)(FaultPoint::BeforeRoomCommit);
+            }
             #[cfg(feature = "perf-timings")]
             let commit = calternal_store::timings::SaveStage::ContentCommit.start();
             tx.commit().map_err(internal)?;

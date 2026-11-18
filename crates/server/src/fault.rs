@@ -6,6 +6,8 @@
 pub enum FaultPoint {
     /// Thread message and replay intent placed, before durable turn admission.
     AfterThreadMessage,
+    /// A room update was queued as a preview before the content transaction commits.
+    BeforeRoomCommit,
     /// Content revision and publication intent committed, before journal publication.
     AfterCommit,
     /// The journal receipt and event committed before the outbox was retired.
@@ -51,6 +53,7 @@ impl FaultPoint {
     fn name(self) -> &'static str {
         match self {
             Self::AfterThreadMessage => "after_thread_message",
+            Self::BeforeRoomCommit => "before_room_commit",
             Self::AfterCommit => "after_commit",
             Self::AfterJournalCommit => "after_journal_commit",
             Self::BeforePlacement => "before_placement",

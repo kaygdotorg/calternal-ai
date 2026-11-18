@@ -9,6 +9,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
+#[path = "http/live_rooms.rs"]
+mod live_rooms;
+
 struct TempDir(PathBuf);
 impl TempDir {
     fn new(tag: &str) -> Self {

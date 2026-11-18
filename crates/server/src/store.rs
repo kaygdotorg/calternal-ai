@@ -26,6 +26,7 @@ use uuid::Uuid;
 pub struct Store {
     /// Shared with live streams and account inputs; never behind a store-wide lock.
     content: std::sync::Arc<Content>,
+    live_rooms: crate::live_rooms::Hub,
     /// The appdata root (account-input databases live under it).
     appdata: std::path::PathBuf,
     /// The three roots this store validated and locked.
@@ -65,6 +66,7 @@ fn io_err(context: &'static str, e: std::io::Error) -> Error {
 }
 fn content_fault(point: calternal_content::FaultPoint) {
     fault::hit(match point {
+        calternal_content::FaultPoint::BeforeRoomCommit => FaultPoint::BeforeRoomCommit,
         calternal_content::FaultPoint::AfterCommit => FaultPoint::AfterCommit,
         calternal_content::FaultPoint::AfterJournalCommit => FaultPoint::AfterJournalCommit,
         calternal_content::FaultPoint::BeforePlacement => FaultPoint::BeforePlacement,
@@ -221,6 +223,7 @@ impl Store {
         Ok(Self {
             cursor_key,
             content: std::sync::Arc::new(content),
+            live_rooms: crate::live_rooms::Hub::default(),
             appdata: root.clone(),
             roots: roots.clone(),
             secrets: std::sync::Arc::new(secrets),
@@ -229,6 +232,24 @@ impl Store {
             _roots: locks,
         })
     }
+    pub(crate) fn live_rooms(&self) -> &crate::live_rooms::Hub {
+        &self.live_rooms
+    }
+
+    /// Evict all of an account's live sessions on an item after its last
+    /// effective read grant is revoked. Call after the grant commits.
+    /// Cost: bounded registry and participant lookups, no storage or awaits.
+    pub fn evict_live_room_account(
+        &self,
+        space: SpaceId,
+        kind: &str,
+        item: Uuid,
+        account: AccountId,
+    ) {
+        self.live_rooms
+            .evict_item_account(space, kind, item, account);
+    }
+
     /// Returns the generic item service for trusted host integrations such as
     /// plugin kind/standard-collection provisioning. Every caller must enforce
     /// current authority before opening a selected account or space.

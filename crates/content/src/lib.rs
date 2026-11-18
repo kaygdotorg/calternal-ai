@@ -50,7 +50,7 @@ pub use search::{
 mod revision_slice;
 mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
-pub use rooms::{LiveEdit, LiveTextEdit};
+pub use rooms::{LiveEdit, LiveTextEdit, RoomSnapshot};
 mod trash;
 mod types;
 use calternal_roots::Roots;

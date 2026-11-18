@@ -129,7 +129,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
             "/api/v1/account/live",
             get(crate::account_input::events::<D>),
         )
-        .route("/api/v1/live", get(crate::live::events::<D>))
+        .route("/api/v1/live", get(crate::live_rooms::entry::<D>))
         .route("/api/v1/operations", post(operations::<D>))
         .route(
             "/api/v1/jobs/{id}/events",

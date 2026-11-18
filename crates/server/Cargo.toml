@@ -46,9 +46,10 @@ serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 clap.workspace = true
 tokio = { workspace = true, features = ["process", "sync", "signal", "fs"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json", "query", "ws"] }
 tower-http = { version = "0.7", features = ["fs"] }
 rusqlite.workspace = true
+yrs = { version = "0.28", features = ["sync"] }
 hex.workspace = true
 subtle = "2"
 getrandom.workspace = true
@@ -63,6 +64,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 reqwest.workspace = true
 
 [dev-dependencies]
+tungstenite = "0.29.0"
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 

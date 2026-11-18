@@ -158,7 +158,7 @@ impl Space {
             self.place(id, fault)?;
             let expected = self.check_file(id)?;
             let room = if self.live_editing(&source.kind)? {
-                let (merged, checkpoint) = self.merge_room_write(
+                let (merged, checkpoint, _) = self.merge_room_write(
                     &source,
                     seq,
                     &source.revision,

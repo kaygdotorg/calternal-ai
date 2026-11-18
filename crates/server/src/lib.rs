@@ -25,6 +25,7 @@ pub mod store;
 pub mod turns;
 
 pub mod live;
+mod live_rooms;
 
 pub mod account_input;
 mod netguard;

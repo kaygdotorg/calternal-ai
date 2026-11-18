@@ -104,6 +104,26 @@
       "proposal_status": "unaccepted; maximum observed head-arm p95, no added headroom; dated control only"
     },
     {
+      "metric": "sync.round_trip",
+      "percentile": "p95",
+      "budget": 10,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "from a keystroke at the writing participant through application of that edit at the other participant",
+      "reference": "reference app sync.round_trip, hard release gate",
+      "p50_budget": null
+    },
+    {
+      "metric": "sync.save_ack",
+      "percentile": "p95",
+      "budget": 40,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes",
+      "measurement": "from a keystroke through the matching durable room receipt, including normal check scheduling",
+      "reference": "reference app sync.save_ack, hard release gate",
+      "p50_budget": null
+    },
+    {
       "metric": "live.commit_to_client",
       "percentile": "p95",
       "budget": 10,
