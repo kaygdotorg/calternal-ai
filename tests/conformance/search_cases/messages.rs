@@ -2,8 +2,8 @@ use super::*;
 
 #[tokio::test]
 async fn thread_search_opens_exact_message_and_hides_unreadable_spaces() {
-    let f = Fixture::new().await;
-    let shared = &f.spaces[2];
+    let mut f = Fixture::new().await;
+    let shared = f.spaces[2].clone();
     let private = &f.spaces[0];
     let send = async |space: &str| {
         let created = data(
@@ -26,12 +26,12 @@ async fn thread_search_opens_exact_message_and_hides_unreadable_spaces() {
         (id, sent["thread"]["messages"][0].clone())
     };
     let (hidden, _) = send(private).await;
-    let (id, message) = send(shared).await;
+    let (id, message) = send(&shared).await;
     let input = json!({"query":"\"canvas nebula\"","kinds":["threads"],"limit":1});
     let page = ready_search(&f, 2, "search.query", input.clone()).await;
     let hit = &page["hits"][0];
     assert_eq!(hit["address"], format!("/threads/{}", id.as_str().unwrap()));
-    assert_eq!(hit["space_id"], *shared);
+    assert_eq!(hit["space_id"], shared);
     assert_eq!(hit["message_id"], message["id"]);
     assert_eq!(hit["message_at"], message["at"]);
     assert!(
@@ -59,13 +59,46 @@ async fn thread_search_opens_exact_message_and_hides_unreadable_spaces() {
         .await;
     assert_eq!(hidden.status, 404);
 
-    let (second, second_message) = send(shared).await;
+    let (second, second_message) = send(&shared).await;
     let page = ready_search(&f, 2, "search.query", input.clone()).await;
     assert_eq!(page["hits"][0]["message_id"], second_message["id"]);
     let mut next = input.clone();
     next["cursor"] = page["next_cursor"].clone();
     let page = ready_search(&f, 2, "search.query", next).await;
     assert_eq!(page["hits"][0]["message_id"], message["id"]);
+
+    f.stop();
+    let index_path = f
+        .appdata()
+        .join("spaces")
+        .join(&shared)
+        .join("search-messages-v1.all.db");
+    let old = Connection::open(&index_path).unwrap();
+    old.execute_batch(
+        "UPDATE build_state SET generation='1';
+         CREATE INDEX IF NOT EXISTS locations_thread ON locations(thread,position);
+         DELETE FROM postings;
+         BEGIN IMMEDIATE;",
+    )
+    .unwrap();
+    f.start().await;
+    let pending = data(f.op(2, "search.query", input.clone()).await);
+    assert_eq!(pending, json!({"hits":[],"partial":true}));
+    old.execute_batch("ROLLBACK").unwrap();
+    drop(old);
+    let page = ready_search(&f, 2, "search.query", input.clone()).await;
+    assert_eq!(page["hits"][0]["message_id"], second_message["id"]);
+    let read = Connection::open(&index_path).unwrap();
+    assert!(
+        !read
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='locations_thread')",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .unwrap()
+    );
+    drop(read);
 
     f.op(
         1,
