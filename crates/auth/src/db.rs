@@ -24,6 +24,7 @@ pub const MIGRATIONS: calternal_store::migrations::Schema<'_> =
         &[
             include_str!("account_details.sql"),
             include_str!("oidc.sql"),
+            include_str!("sharing.sql"),
         ],
     );
 
@@ -467,3 +468,6 @@ pub(crate) fn sql(e: rusqlite::Error) -> crate::Error {
 
 #[cfg(test)]
 mod role_batch_tests;
+
+#[cfg(test)]
+mod sharing_schema_tests;
