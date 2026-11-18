@@ -23,6 +23,11 @@ void appearance.start();
 const boot = serverMode() ? import("./server/boot").then((m) => ({ m, s: m.start() })) : null;
 Promise.race([loadFonts(currentScheme()).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]).then(async () => {
   const target = document.getElementById("app")!;
+  // A link someone shared (`/s/<secret>`) is the guest page: only that item, read-only, before and without any sign-in.
+  if (/^\/s\//.test(location.pathname.slice(import.meta.env.BASE_URL.replace(/\/$/, "").length))) {
+    const { default: Guest } = await import("./guest/Guest.svelte");
+    mount(Guest, { target }); document.documentElement.dataset.ready = ""; return;
+  }
   const ready = () => { document.documentElement.dataset.ready = ""; startChrome(); };
   const gate = async (b: Exclude<import("./server/boot").Boot, { screen: "app" }>) => {
     // A fresh installation or an invitation is the stepped onboarding (who you are first, then the rest); a returning person signing in is the plain card; a reload part-way resumes the onboarding.
