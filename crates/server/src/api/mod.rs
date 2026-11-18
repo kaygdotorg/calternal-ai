@@ -40,10 +40,10 @@ mod dispatch;
 mod guard;
 mod notes;
 pub(crate) mod people;
-mod spaces;
 mod plugins;
 mod request;
 mod request_action;
+mod spaces;
 mod web;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
@@ -58,7 +58,7 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = StoredDirectory> {
-    /// Six bounded mutation slots, isolated from the listener's two read slots.
+    /// Up to 32 mutation slots, isolated from the listener's two read slots.
     /// Operation declarations select scheduling; no security decision is cached.
     pub blocking: crate::blocking::RequestWorkers,
     /// Per-account input databases (drafts, pending submissions, the account feed).
@@ -127,6 +127,10 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         app = app.fallback_service(web::assets(dir, &state.registry));
     }
     let app = app
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            schedule_http::<D>,
+        ))
         .layer(middleware::from_fn_with_state(state.clone(), guard::<D>))
         .with_state(state);
     if let Some(service) = http_auth {
@@ -137,6 +141,19 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     } else {
         app
     }
+}
+
+/// HTTP mutations outside the operation endpoint use writer scheduling too.
+/// Operations choose their declared class after parsing; authentication remains
+/// outside this scope so admission reads never queue as mutations.
+async fn schedule_http<D: Directory>(
+    State(state): State<Shared<D>>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let mutates = req.uri().path() != "/api/v1/operations"
+        && !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS);
+    state.blocking.scope(mutates, next.run(req)).await
 }
 
 // ------------------------------------------------------------- envelope
@@ -321,93 +338,95 @@ async fn operations<D: Directory>(State(state): State<Shared<D>>, req: Request) 
     let thread_scheduler = machines.clone();
     let workers = state.blocking.clone();
     let mutates = operation_mutates(&state, &request.operation);
-    let mut result = workers
+    let result = workers
         .scope(mutates, async {
-            if let Some(row) = calternal_core::request_operation(&request.operation) {
-                crate::requests::dispatch(
-                    state,
-                    machines,
-                    p,
-                    session,
-                    agent,
-                    &rid,
-                    row,
-                    request.input,
-                )
-                .await
-            } else if calternal_core::AGENT_OPERATIONS
-                .iter()
-                .any(|(id, _, _)| *id == request.operation)
-            {
-                match machines {
-                    Some(m) => {
-                        crate::turns::dispatch(
-                            state,
-                            m,
-                            p,
-                            session,
-                            agent,
-                            &request.request_id,
-                            &request.operation,
-                            request.input,
-                        )
-                        .await
+            let mut result =
+                if let Some(row) = calternal_core::request_operation(&request.operation) {
+                    crate::requests::dispatch(
+                        state,
+                        machines,
+                        p,
+                        session,
+                        agent,
+                        &rid,
+                        row,
+                        request.input,
+                    )
+                    .await
+                } else if calternal_core::AGENT_OPERATIONS
+                    .iter()
+                    .any(|(id, _, _)| *id == request.operation)
+                {
+                    match machines {
+                        Some(m) => {
+                            crate::turns::dispatch(
+                                state,
+                                m,
+                                p,
+                                session,
+                                agent,
+                                &request.request_id,
+                                &request.operation,
+                                request.input,
+                            )
+                            .await
+                        }
+                        None => Err(Error::unavailable("machines are not enabled")),
                     }
-                    None => Err(Error::unavailable("machines are not enabled")),
+                } else {
+                    dispatch_scoped(
+                        state,
+                        p,
+                        session,
+                        &request.request_id,
+                        &request.operation,
+                        request.input,
+                        agent,
+                        machines,
+                    )
+                    .await
+                };
+            if request.operation == "threads.stop" {
+                if let (Some(machines), Ok(value)) = (&thread_scheduler, &result) {
+                    if let Err(error) =
+                        crate::turns::finish_thread_stop(&state_for_threads, machines, value).await
+                    {
+                        result = Err(error);
+                    }
                 }
-            } else {
-                dispatch_scoped(
-                    state,
-                    p,
-                    session,
-                    &request.request_id,
-                    &request.operation,
-                    request.input,
-                    agent,
-                    machines,
-                )
-                .await
             }
+            if matches!(
+                request.operation.as_str(),
+                "threads.send" | "pending.submit" | "pending.confirm"
+            ) {
+                if let (Some(machines), Ok(value)) = (thread_scheduler, result.as_ref()) {
+                    let value = if request.operation.starts_with("pending.") {
+                        &value["result"]
+                    } else {
+                        value
+                    };
+                    if let (Some(space), Some(id)) = (
+                        value["job"]["space_id"].as_str(),
+                        value["job"]["id"].as_str(),
+                    ) {
+                        if scheduling_space
+                            .as_ref()
+                            .is_none_or(|expected| expected == space)
+                        {
+                            crate::turns::schedule_thread(
+                                &state_for_threads,
+                                &machines,
+                                space.to_owned(),
+                                id.to_owned(),
+                                thread_account,
+                            );
+                        }
+                    }
+                }
+            }
+            result
         })
         .await;
-    if request.operation == "threads.stop" {
-        if let (Some(machines), Ok(value)) = (&thread_scheduler, &result) {
-            if let Err(error) =
-                crate::turns::finish_thread_stop(&state_for_threads, machines, value).await
-            {
-                result = Err(error);
-            }
-        }
-    }
-    if matches!(
-        request.operation.as_str(),
-        "threads.send" | "pending.submit" | "pending.confirm"
-    ) {
-        if let (Some(machines), Ok(value)) = (thread_scheduler, result.as_ref()) {
-            let value = if request.operation.starts_with("pending.") {
-                &value["result"]
-            } else {
-                value
-            };
-            if let (Some(space), Some(id)) = (
-                value["job"]["space_id"].as_str(),
-                value["job"]["id"].as_str(),
-            ) {
-                if scheduling_space
-                    .as_ref()
-                    .is_none_or(|expected| expected == space)
-                {
-                    crate::turns::schedule_thread(
-                        &state_for_threads,
-                        &machines,
-                        space.to_owned(),
-                        id.to_owned(),
-                        thread_account,
-                    );
-                }
-            }
-        }
-    }
     fault::hit(FaultPoint::BeforeReply);
     match result {
         Ok(data) => {

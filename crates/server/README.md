@@ -280,8 +280,11 @@ Synchronous test directories use the blocking adapter.
 Foreground operation callbacks use the operation catalog/manifest's `mutates`
 flag to select scheduling. The listener reserves two blocking threads for reads
 and unscoped startup/background adapters; a lazy current-thread Tokio driver
-supplies six blocking mutation threads. This retains eight foreground slots in
-all, rather than raising the limit. Writer admission permits at most 64 running
+supplies up to 32 blocking mutation threads, allowing an auth batch worth of
+writers to reach their services. Foreground capacity is bounded at 34 blocking
+slots (previously eight shared slots); mutation threads retire after ten idle
+seconds. Performance ceilings, auth batch width, the 64-space cache and retention
+are unchanged. Writer admission permits at most 64 running
 or queued callbacks; other callers await permits on the async executor. A caller
 that disconnects before admission drops its waiter; a started durable callback
 finishes as before. No per-space state is stored in the scheduler. Async spawned

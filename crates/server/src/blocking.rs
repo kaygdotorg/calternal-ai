@@ -3,7 +3,8 @@ use std::{future::Future, sync::Arc};
 use tokio::{runtime::Runtime, sync::Semaphore, task::JoinError};
 
 /// Per-host mutation executor, separate from the listener's two read slots.
-/// Six writer threads preserve the previous eight-slot total. At most 64 jobs
+/// Up to 32 writer threads allow one existing auth batch worth of callbacks
+/// to reach their workers. At most 64 jobs
 /// are running/queued; further callers await admission without blocking a thread.
 /// This partitions scheduling only: per-space locks and the auth publication
 /// barrier retain their ordering. Drop lets already started work finish.
@@ -22,13 +23,15 @@ impl Drop for Workers {
 }
 tokio::task_local! { static MUTATION: Option<RequestWorkers>; }
 impl RequestWorkers {
-    /// Create a lazy six-thread blocking executor; no thread starts until work
-    /// arrives. Returns an OS/runtime error if the driver cannot be created.
+    /// Create a lazy 32-thread blocking executor; no thread starts until work
+    /// arrives, and idle threads retire after ten seconds. Returns an OS/runtime
+    /// error if the driver cannot be created.
     pub fn new() -> std::io::Result<Self> {
         Ok(Self(Arc::new(Workers {
             runtime: Some(
                 tokio::runtime::Builder::new_current_thread()
-                    .max_blocking_threads(6)
+                    .max_blocking_threads(32)
+                    .thread_keep_alive(std::time::Duration::from_secs(10))
                     .thread_name("request-write")
                     .build()?,
             ),
@@ -91,7 +94,7 @@ mod tests {
         runtime.block_on(async {
             let mut releases = Vec::new();
             let mut jobs = Vec::new();
-            for _ in 0..6 {
+            for _ in 0..32 {
                 let (entered, ready) = tokio::sync::oneshot::channel();
                 let (release, wait) = std::sync::mpsc::channel();
                 releases.push(release);
