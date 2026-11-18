@@ -44,6 +44,101 @@ agent turns and plugin workers. Each agent sandbox has 1 CPU, 1 GiB memory and
 256 PIDs. Each plugin worker has 1 CPU, 256 MiB memory and 64 PIDs, with
 networking disabled. Operate the deployment with sandboxed machine mode.
 
+## Choose the machine sandbox backend
+
+Use `podman` on Linux machines without usable KVM and for the current provider
+turn deployment. Rootless Podman puts each thread in its own container.
+`auto` follows an account machine's server-stored execution setting and uses
+Podman on pool machines. `direct` runs processes as the machine user with the
+owner's consent and gives those processes the user's filesystem and network
+access.
+
+`microvm` is an opt-in Linux x86-64 pool backend for offline isolation testing.
+It follows the [hybrid measurements](measurements/sandbox-hybrid.md) with
+Firecracker and rootless Podman. Each account has its own booted kernel, a
+private ext4 data disk and one container per thread. Spaces have separate homes
+within that disk. The bundled guest has a single administrator-selected
+container image. Change the pinned image as a unit with a machine-role restart.
+The guest has a host-initiated vsock control channel and no NIC or host mounts.
+Provider OAuth, package downloads and the command-line tool's remote operations
+need a validated egress path. Account-wide provider credential sharing also
+requires a credential-only path across space homes.
+
+Run Firecracker as the machine user with read/write access to `/dev/kvm`.
+An installer can grant access through the device's `kvm` group or a persistent
+device ACL. Restart the role or open a fresh login after a group change. If the
+device is missing or the KVM VM-creation ioctl fails after opening it, check
+the host's KVM module and expose virtualization extensions to the machine VM on
+the hypervisor. The offline guest needs no TAP, host `CAP_NET_ADMIN`, or root.
+Firecracker bridges vsock to a Unix socket in the machine's private runtime
+directory. A private boot device authenticates the host to the guest agent
+before it decodes a control request. The guest supplies init, an unprivileged UID with guest-local
+subuid/subgid ranges, and delegated cgroups for rootless Podman.
+
+### Build and configure a disposable guest
+
+Build the OCI archive on the development VM after `npm run build:plugins`.
+Use a digest-qualified Node 24 Debian base. The archive must carry the exact
+tag `localhost/calternal-standard:current` when loaded. Its content, the
+static guest agent and CLI, the measured kernel and Nix-pinned runtime are
+included in the resulting immutable image.
+
+```sh
+nix develop .#deploy -c cargo build --locked -j6 \
+  --target x86_64-unknown-linux-musl -p calternal-machine -p calternal-server
+podman build -f deploy/microvm/Containerfile --build-arg "BASE=$NODE_BASE_DIGEST" \
+  -t localhost/calternal-standard:current .
+podman save --format docker-archive -o standard.tar localhost/calternal-standard:current
+nix develop .#microvm -c deploy/microvm/build-image.sh \
+  target/x86_64-unknown-linux-musl/debug/calternal-microvm-agent \
+  target/x86_64-unknown-linux-musl/debug/calternal standard.tar guest-image
+nix develop .#microvm -c sh -c 'command -v firecracker mkfs.ext4'
+```
+
+Use one private machine directory per enrolled identity. Put the machine-wide
+settings in an operator-owned JSON file. Replace the three absolute paths
+with the Nix store paths and `image_digest` with the SHA-256 value printed by
+the image build. Keep the store artifact rooted and immutable for the duration
+of the machine role.
+
+```json
+{
+  "firecracker": "/absolute/path/to/firecracker",
+  "mkfs_ext4": "/absolute/path/to/mkfs.ext4",
+  "image_directory": "/absolute/path/to/guest-image",
+  "image_digest": "sha256-of-the-image.sha256-manifest",
+  "vcpus": 2,
+  "memory_mib": 1024,
+  "disk_mib": 4096,
+  "max_guests": 4,
+  "warm_guests": 1
+}
+```
+
+```sh
+calternal machine run --backend microvm --dir "$MACHINE_DIR" \
+  --microvm-config "$MICROVM_CONFIG"
+```
+
+The role verifies the kernel and system disk once at startup. It keeps up to
+two prebooted guests with blank account data, within the configured VMM cap.
+A new account can take one of them. An existing account cold boots from its
+own disk. After the last container lease releases its guest reference, a sweep
+can stop the guest after ten idle minutes, with a 15-second sweep interval.
+CPU and RAM are configured per guest. The writable disk is sparse and capped
+by its logical size at creation. Reserve host disk capacity for all retained
+account disks. Changing disk size affects new disks. The plan decision bills elapsed sandbox running time. Monthly accounting
+and plan-selected sizes are separate from these operator settings.
+
+A role restart stops or fences old VMMs before clearing their transient files.
+A guest failure interrupts its active turns, which can resume from their
+checkpoint. A durable account erasure stops the guest and unlinks its disk
+before the machine acknowledges it. Thread erasure removes only the workspace
+and flushes the guest disk before acknowledgement. Account disks persist through
+normal idle stops and restarts. Treat any backups of these disks as private
+account data. Use a fresh enrollment for the offline preview to avoid splitting
+one machine identity's storage across backend types.
+
 ## Deploy and roll back
 
 From the dev-01 build checkout run `deploy/deploy.sh --target deploy/cloud.conf`.

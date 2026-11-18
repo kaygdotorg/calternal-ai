@@ -148,3 +148,17 @@ options, implementation costs and the placement revocation problem.
   when someone selects a photo, even when its image is cached. This needs a
   client hook and a budget for selection events separate from rendition fills.
   The current contract reports first wallpaper use per photo per installation.
+
+
+## Pool microVM networking and credentials (issue #51, 2026-11-18)
+
+- Egress can use operator-created TAP devices and a dedicated firewall namespace.
+  This supports ordinary provider and package traffic and adds privileged setup,
+  DNS policy and a network isolation proof. A vsock egress broker keeps guest
+  networking rootless and limits destinations in one place. It adds a proxy
+  contract and requires compatibility checks for provider, CLI and package clients.
+- Sharing account sign-in across space homes can use provider-supported
+  credential-only storage where available. This requires verifying each official
+  provider's refresh behavior. A local credential broker can maintain separate
+  space homes and centralize refresh, with more sensitive components and
+  concurrency rules.
