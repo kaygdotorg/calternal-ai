@@ -20,12 +20,12 @@ pub(super) fn authorize(owner: Owner) -> Result<(), Error> {
     }
 }
 
-/// Resolve the account limit from the same size table the machine uses.
-pub(super) fn active_limit(backend: &str, memory_mib: Option<u32>) -> Result<Option<usize>, Error> {
+/// Validate the advertised guest memory using the same rule as the machine.
+pub(super) fn guest_memory(backend: &str, memory_mib: Option<u32>) -> Result<Option<u32>, Error> {
     if is_requested(backend) {
         return memory_mib
             .and_then(GuestSize::from_mib)
-            .map(|size| size.active_threads)
+            .map(|size| Some(size.memory_mib))
             .ok_or_else(|| {
                 Error::invalid_input("microVM sessions require a supported guest size")
             });
@@ -36,6 +36,41 @@ pub(super) fn active_limit(backend: &str, memory_mib: Option<u32>) -> Result<Opt
         ));
     }
     Ok(None)
+}
+
+/// Validate resource reports against the negotiated guest profile. Duplicate
+/// account observations and samples from other backends are refused.
+pub(super) fn resources(
+    memory_mib: Option<u32>,
+    reports: &[calternal_machine::protocol::GuestResources],
+) -> Result<
+    std::collections::HashMap<
+        calternal_types::AccountId,
+        calternal_machine::protocol::GuestResources,
+    >,
+    Error,
+> {
+    let Some(memory_mib) = memory_mib else {
+        if reports.is_empty() {
+            return Ok(Default::default());
+        }
+        return Err(Error::invalid_input(
+            "only a microVM session can report guest resources",
+        ));
+    };
+    if reports.len() > calternal_machine::protocol::MAX_GUEST_RESOURCES {
+        return Err(Error::invalid_input("too many guest resource observations"));
+    }
+    let mut samples = std::collections::HashMap::with_capacity(reports.len());
+    for report in reports {
+        if report.generation.is_nil()
+            || report.memory_available_bytes > u64::from(memory_mib) * 1024 * 1024
+            || samples.insert(report.account_id, *report).is_some()
+        {
+            return Err(Error::invalid_input("invalid guest resource observation"));
+        }
+    }
+    Ok(samples)
 }
 
 pub(super) fn lost(

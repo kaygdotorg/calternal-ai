@@ -12,7 +12,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use calternal_auth::machines::MachineRecord;
+use calternal_auth::machines::{MachineRecord, ResourceOwner};
 use calternal_machine::protocol::Owner;
 use calternal_types::{AccountId, SpaceId};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -193,6 +193,8 @@ pub struct LeaseRow {
     pub space: SpaceId,
     /// Account the work runs for.
     pub account: AccountId,
+    /// Protected charging scope pinned for this lease.
+    pub resource_owner: Option<ResourceOwner>,
     /// Thread.
     pub thread: Uuid,
     /// Ephemeral plugin worker; ended on server restart rather than adopted as an agent.
@@ -246,6 +248,21 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Insert a lease and its protected resource scope in one FULL commit.
+pub(super) fn put_scoped_lease(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
+    let Some(owner) = row.resource_owner else {
+        return put_lease(c, row);
+    };
+    let (kind, id) = super::compute::encode(owner);
+    let tx = c.transaction()?;
+    put_lease(&tx, row)?;
+    tx.execute(
+        "INSERT INTO lease_resource_owners VALUES(?1,?2,?3)",
+        params![row.id.to_string(), kind, id],
+    )?;
+    tx.commit()
+}
+
 /// Insert a private title lease and its classification in one FULL commit.
 pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
@@ -256,9 +273,22 @@ pub(super) fn put_title(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<
 
 /// Commit placement and both erasure locations before sending an assignment.
 /// The location rows outlive timed lease pruning. One FULL transaction.
-pub(super) fn put_assignment(c: &mut Connection, row: &LeaseRow) -> rusqlite::Result<()> {
+pub(super) fn put_assignment(
+    c: &mut Connection,
+    row: &LeaseRow,
+    hosted: bool,
+) -> rusqlite::Result<()> {
     let tx = c.transaction()?;
     put_lease(&tx, row)?;
+    if hosted
+        && row.resource_owner.is_some()
+        && let Some(machine) = row.machine
+    {
+        tx.execute(
+            "INSERT INTO resource_assignments VALUES(?1,?2,?3)",
+            params![row.id.to_string(), row.fence as i64, machine.to_string()],
+        )?;
+    }
     if let Some(machine) = row.machine.filter(|_| !row.worker && !row.background_title) {
         let machine = machine.to_string();
         let account = row.account.to_string();
@@ -296,6 +326,11 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         id: uuid(r.get(0)?).unwrap_or_default(),
         space: typed(1, r.get(1)?)?,
         account: typed(2, r.get(2)?)?,
+        resource_owner: if r.get::<_, Option<String>>(14)?.is_some() {
+            Some(super::compute::decode(r, 14, 15)?)
+        } else {
+            None
+        },
         thread: uuid(r.get(3)?).unwrap_or_default(),
         image: r.get(4)?,
         worker: r.get::<_, bool>(11)? && !background_title,
@@ -310,7 +345,9 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
     })
 }
 
-const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id)";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, EXISTS(SELECT 1 FROM title_leases WHERE lease=leases.id),
+ (SELECT scope_kind FROM lease_resource_owners WHERE lease=leases.id),
+ (SELECT scope_id FROM lease_resource_owners WHERE lease=leases.id)";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -393,11 +430,22 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             &[SCHEMA],
             &[
                 TITLE_LEASES,
+                super::compute::MIGRATION,
+                super::runtime::MIGRATION,
                 "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
             ],
         );
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES])
+    calternal_store::migrations::Schema::new(
+        "machines.db",
+        6,
+        &[SCHEMA],
+        &[
+            TITLE_LEASES,
+            super::compute::MIGRATION,
+            super::runtime::MIGRATION,
+        ],
+    )
 }
 
 #[cfg(test)]
@@ -414,6 +462,7 @@ mod tests {
             id: Uuid::new_v4(),
             space: SpaceId::new(),
             account: AccountId::new(),
+            resource_owner: None,
             thread: Uuid::new_v4(),
             worker: false,
             background_title: false,

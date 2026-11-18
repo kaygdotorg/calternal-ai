@@ -18,8 +18,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use calternal_content::{Content, StorageLimits, StorageUsage};
 use calternal_machine::protocol::Owner;
-use calternal_types::{AccountId, Error};
+use calternal_types::{AccountId, Error, GroupId, SpaceId};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -46,6 +47,37 @@ pub enum Request {
     },
     /// List every enrolled machine, revoked ones included.
     List,
+    /// Replace byte ceilings on one space.
+    StorageLimits {
+        /// Space UUID.
+        space: SpaceId,
+        /// Current-head storage ceilings by kind.
+        limits: StorageLimits,
+    },
+    /// Read a space's current committed body bytes by storage kind.
+    StorageUsage {
+        /// Space UUID.
+        space: SpaceId,
+    },
+    /// Read confirmed hosted sandbox seconds for an account or group.
+    RuntimeUsage {
+        /// Owner of the measured scope.
+        owner: calternal_types::ResourceOwner,
+    },
+    /// Replace the manually configured hosted limits for one scope.
+    ComputeLimits {
+        /// Account or group whose limits change.
+        owner: calternal_auth::machines::ResourceOwner,
+        /// The new limits. Omitting them clears the override.
+        limits: Option<super::ComputeLimits>,
+    },
+    /// Set the accounting group of a shared space.
+    ResourceGroup {
+        /// Shared space UUID.
+        space: SpaceId,
+        /// Owning group, or none to clear the binding.
+        group: Option<GroupId>,
+    },
     /// Revoke one machine.
     Revoke {
         /// Machine UUID.
@@ -129,6 +161,24 @@ pub enum Response {
     },
     /// The grant now matches the request.
     PoolGrant,
+    /// Current committed body bytes of the requested space.
+    StorageUsage {
+        /// Counts sampled from a single space transaction boundary.
+        usage: StorageUsage,
+        /// Protected resource owner, if configured for this space.
+        owner: Option<calternal_auth::machines::ResourceOwner>,
+    },
+    /// The requested byte ceilings were committed.
+    StorageLimits,
+    /// Confirmed elapsed time of a scope's hosted guests.
+    RuntimeUsage {
+        /// Retained confirmed duration and unresolved terminal count.
+        usage: super::RuntimeUsage,
+    },
+    /// The requested compute limits were committed.
+    ComputeLimits,
+    /// The requested resource group binding was committed.
+    ResourceGroup,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -148,7 +198,11 @@ struct Reply {
 
 /// Run one request on a machine service. Blocks: at most one protected authority
 /// commit; call on a blocking thread.
-pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error> {
+pub fn execute(
+    svc: &MachineService,
+    content: &Content,
+    request: Request,
+) -> Result<Response, Error> {
     Ok(match request {
         Request::SetupCode => {
             return Err(Error::unavailable(
@@ -176,6 +230,37 @@ pub fn execute(svc: &MachineService, request: Request) -> Result<Response, Error
                 .collect(),
             erasures: svc.pending_erasures()?,
         },
+        Request::StorageLimits { space, limits } => {
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .require_resource_space(space)
+                .map_err(super::compute::authority_error)?;
+            content.set_storage_limits(space, limits)?;
+            Response::StorageLimits
+        }
+        Request::StorageUsage { space } => {
+            let authority = svc.lock()?.authority.clone();
+            Response::StorageUsage {
+                owner: authority
+                    .resource_owner(space)
+                    .map_err(super::compute::authority_error)?,
+                usage: content.storage_usage(space)?,
+            }
+        }
+        Request::RuntimeUsage { owner } => Response::RuntimeUsage {
+            usage: svc.runtime_usage(owner)?,
+        },
+        Request::ComputeLimits { owner, limits } => {
+            svc.set_compute_limits(owner, limits)?;
+            Response::ComputeLimits
+        }
+        Request::ResourceGroup { space, group } => {
+            let authority = svc.lock()?.authority.clone();
+            authority
+                .set_resource_group(space, group)
+                .map_err(super::compute::authority_error)?;
+            Response::ResourceGroup
+        }
         Request::Revoke { machine } => Response::Revoke {
             revoked: svc.revoke_any(machine)?,
         },
@@ -303,6 +388,7 @@ pub fn serve_socket(
     appdata: &Path,
     installation: Uuid,
     svc: Arc<MachineService>,
+    content: Arc<Content>,
     owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
 ) -> std::io::Result<tokio::task::JoinHandle<()>> {
     use std::os::unix::fs::PermissionsExt;
@@ -328,9 +414,10 @@ pub fn serve_socket(
                 continue;
             }
             let svc = svc.clone();
+            let content = content.clone();
             let owner_setup = owner_setup.clone();
             tokio::spawn(async move {
-                if let Err(e) = answer(stream, installation, svc, owner_setup).await {
+                if let Err(e) = answer(stream, installation, svc, content, owner_setup).await {
                     tracing::warn!(error = %e, "admin socket request failed");
                 }
             });
@@ -342,6 +429,7 @@ async fn answer(
     stream: tokio::net::UnixStream,
     installation: Uuid,
     svc: Arc<MachineService>,
+    content: Arc<Content>,
     owner_setup: Option<Arc<crate::owner_setup::OwnerSetup>>,
 ) -> std::io::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
@@ -374,7 +462,7 @@ async fn answer(
                 "passkey onboarding is unavailable on this server",
             )),
         },
-        Ok(e) => crate::blocking::spawn(move || execute(&svc, e.request))
+        Ok(e) => crate::blocking::spawn(move || execute(&svc, &content, e.request))
             .await
             .unwrap_or_else(|_| Err(Error::internal("admin task failed"))),
     };

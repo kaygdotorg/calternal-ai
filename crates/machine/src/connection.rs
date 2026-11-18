@@ -124,7 +124,17 @@ async fn session_loop(
                 capacity: runner.capacity(),
                 draining: false,
                 leases: runner.reports(),
+                guest_resources: if granted.guest_resources {
+                    runner.guest_resources().await
+                } else {
+                    Vec::new()
+                },
                 discards: runner.discard_reports(),
+                guest_runtime: if granted.guest_resources {
+                    runner.guest_runtime().await?
+                } else {
+                    Vec::new()
+                },
             };
             match link
                 .post::<_, SyncResponse>(
@@ -137,6 +147,7 @@ async fn session_loop(
             {
                 Ok(resp) => {
                     runner.ack_discards(&req.discards);
+                    runner.acknowledge_guest_runtime(&req.guest_runtime).await?;
                     backoff = Backoff::default();
                     last_ok = Instant::now();
                     for env in resp.messages {

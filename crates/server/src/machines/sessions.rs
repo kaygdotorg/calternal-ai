@@ -180,7 +180,7 @@ impl MachineService {
         } else if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
             return Err(Error::invalid_input("unsupported machine backend"));
         }
-        let thread_limit = super::microvm::active_limit(&f.backend, f.guest_memory_mib)?;
+        let guest_memory_mib = super::microvm::guest_memory(&f.backend, f.guest_memory_mib)?;
         let backend = if kvm_fallback {
             "podman"
         } else if f.backend == "auto" {
@@ -207,7 +207,8 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             kvm_fallback,
-            thread_limit,
+            guest_memory_mib,
+            guest_resources: Default::default(),
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,
@@ -244,6 +245,7 @@ impl MachineService {
             token,
             lease_ttl_ms: self.settings.lease_ttl.as_millis() as u64,
             poll_hold_ms: self.settings.poll_hold.as_millis() as u64,
+            guest_resources: guest_memory_mib.is_some(),
         })
     }
 
@@ -276,7 +278,11 @@ impl MachineService {
         req: SyncRequest,
     ) -> Result<Vec<Envelope>, Error> {
         let session = hash32(token);
-        let reports = !req.discards.is_empty();
+        let reports = !req.discards.is_empty()
+            || req
+                .guest_runtime
+                .iter()
+                .any(|report| report.state != calternal_machine::protocol::RuntimeState::Running);
         let svc = self.clone();
         let notify = blocking(move || svc.sync_begin(machine_id, &session, &req)).await?;
         let _guard = PollGuard {
@@ -312,7 +318,26 @@ impl MachineService {
             .get(&machine_id)
             .map(|m| self.owner_step(m.row.owner))
             .transpose()?;
-        live_mut(st.machines.get_mut(&machine_id), session)?;
+        {
+            let live = live_mut(st.machines.get_mut(&machine_id), session)?;
+            let samples = super::microvm::resources(live.guest_memory_mib, &req.guest_resources)?;
+            live.guest_resources = samples;
+        }
+        if !req.guest_runtime.is_empty() {
+            if st
+                .machines
+                .get(&machine_id)
+                .and_then(|machine| machine.live.as_ref())
+                .is_none_or(|live| live.guest_memory_mib.is_none())
+            {
+                return Err(Error::invalid_input(
+                    "only a microVM session can report guest clocks",
+                ));
+            }
+            for owner in super::runtime::record(&mut st.db, machine_id, &req.guest_runtime)? {
+                st.refresh_runtime(owner, db::now_ms())?;
+            }
+        }
         st.finish_discards(machine_id, &req.discards)?;
         let live = live_mut(st.machines.get_mut(&machine_id), session)?;
         live.outbox.retain(|e| e.seq > req.ack);

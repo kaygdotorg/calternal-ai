@@ -47,6 +47,10 @@
 pub mod admin;
 mod admission;
 mod capacity;
+mod compute;
+mod runtime;
+pub use compute::ComputeLimits;
+pub use runtime::RuntimeUsage;
 /// Local deployment enrollment and the first-owner onboarding operation.
 pub mod colocated;
 pub mod db;
@@ -305,9 +309,16 @@ impl MachineService {
             worker_stops: HashMap::new(),
             next_order: 0,
             pool_load: HashMap::new(),
+            compute_limits: compute::load(&db)?,
+            runtime_windows: HashMap::new(),
+            next_runtime_retirement_ms: db::now_ms(),
             db,
             authority,
         };
+        runtime::mark_missing(&st.db, None)?;
+        for owner in st.compute_limits.keys().copied().collect::<Vec<_>>() {
+            st.refresh_runtime(owner, db::now_ms())?;
+        }
         for machine in st.machines.values() {
             st.readiness.insert(machine);
         }
@@ -586,6 +597,19 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         db::prune_ended(&st.db, self.settings.ended_lease_retention).map_err(sql)?;
+        let now_ms = db::now_ms();
+        if now_ms >= st.next_runtime_retirement_ms {
+            runtime::retire(&st.db, now_ms)?;
+            st.next_runtime_retirement_ms = now_ms.saturating_add(3_600_000);
+        }
+        let rollover: Vec<_> = st
+            .runtime_windows
+            .iter()
+            .filter_map(|(owner, window)| (now_ms >= window.ends_ms).then_some(*owner))
+            .collect();
+        for owner in rollover {
+            st.refresh_runtime(owner, now_ms)?;
+        }
         let now = Instant::now();
         let offline_after = self.settings.poll_hold + Duration::from_secs(5);
         let mut expired = Vec::new();
@@ -605,14 +629,17 @@ impl MachineService {
                 && let Some(live) = m.live.take()
             {
                 st.sessions.remove(&live.session);
-                disconnected.push(m.row.owner);
+                disconnected.push((m.row.id, m.row.owner));
             }
             if silent >= self.settings.lease_ttl {
                 expired.push(m.row.id);
             }
         }
-        for owner in disconnected {
+        for (machine, owner) in disconnected {
             st.readiness_changed(owner);
+            for scope in runtime::mark_missing(&st.db, Some(machine))? {
+                st.refresh_runtime(scope, now_ms)?;
+            }
         }
         for (owner, account) in expired_checks {
             if owner != Owner::Pool || st.pool_grants.contains(&account) {

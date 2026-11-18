@@ -626,3 +626,137 @@ fn dormant_outbox_recovery_preserves_the_original_checkpoint_event() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].data["append"], reply["append"]);
 }
+
+#[test]
+fn committed_usage_counts_current_bodies_through_trash_and_reopen() {
+    use calternal_content::{StorageLimits, StorageUsage};
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), |_| {});
+    let space = SpaceId::new();
+    let account = AccountId::new();
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage::default()
+    );
+    assert!(
+        !dir.path()
+            .join("appdata/spaces")
+            .join(space.to_string())
+            .exists()
+    );
+    for (kind, format) in [
+        ("notes", FileFormat::Markdown),
+        (
+            "files",
+            FileFormat::Opaque {
+                extension: "bin".into(),
+            },
+        ),
+    ] {
+        content
+            .register_kind(
+                space,
+                kind,
+                Placement::Visible {
+                    folder: kind.into(),
+                },
+                format,
+            )
+            .unwrap();
+    }
+    let note = content
+        .write(
+            space,
+            None,
+            "notes",
+            None,
+            json!({"title":"Note"}),
+            "hé".as_bytes(),
+            request(account, "note"),
+            |_| json!({}),
+        )
+        .unwrap();
+    content
+        .write(
+            space,
+            None,
+            "files",
+            None,
+            json!({"title":"File"}),
+            &[0, 1, 2, 3],
+            request(account, "file"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage {
+            text_bytes: 3,
+            binary_bytes: 4
+        }
+    );
+    content
+        .set_storage_limits(
+            space,
+            StorageLimits {
+                text_bytes: Some(5),
+                binary_bytes: Some(4),
+            },
+        )
+        .unwrap();
+    let refused = content
+        .write(
+            space,
+            Some(note.id),
+            "notes",
+            Some(&note.revision),
+            note.metadata.clone(),
+            b"longer",
+            request(account, "update"),
+            |_| json!({}),
+        )
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::Conflict);
+    assert_eq!(content.get(space, note.id).unwrap().revision, note.revision);
+    let latest = content
+        .write(
+            space,
+            Some(note.id),
+            "notes",
+            Some(&note.revision),
+            note.metadata,
+            b"short",
+            request(account, "update"),
+            |_| json!({}),
+        )
+        .unwrap();
+    content
+        .trash(
+            &latest,
+            latest.metadata.clone(),
+            &latest.bytes,
+            request(account, "trash"),
+            |_| json!({}),
+            || Ok(()),
+        )
+        .unwrap();
+    drop(content);
+    let content = open(dir.path(), |_| {});
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage {
+            text_bytes: 5,
+            binary_bytes: 4
+        }
+    );
+    content
+        .purge(space, "notes", note.id, request(account, "purge"))
+        .unwrap();
+    assert_eq!(
+        content.storage_usage(space).unwrap(),
+        StorageUsage {
+            text_bytes: 0,
+            binary_bytes: 4
+        }
+    );
+}

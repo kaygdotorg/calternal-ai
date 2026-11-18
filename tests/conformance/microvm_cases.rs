@@ -359,16 +359,16 @@ async fn container_fallback_is_visible_only_to_entitled_accounts() {
 }
 
 #[tokio::test]
-async fn pool_guest_512_queues_a_third_thread_across_spaces() {
-    assert_pool_guest_queues_a_third_thread(512).await;
+async fn pool_guest_512_places_threads_using_measured_memory() {
+    assert_pool_guest_places_using_memory(512).await;
 }
 
 #[tokio::test]
-async fn pool_guest_1024_queues_a_third_thread_across_spaces() {
-    assert_pool_guest_queues_a_third_thread(1024).await;
+async fn pool_guest_1024_places_threads_using_measured_memory() {
+    assert_pool_guest_places_using_memory(1024).await;
 }
 
-async fn assert_pool_guest_queues_a_third_thread(memory_mib: u32) {
+async fn assert_pool_guest_places_using_memory(memory_mib: u32) {
     let f = Fixture::new().await;
     for who in [1, 2] {
         machine_admin(&f, &["pool-grant", &f.ids[who]]);
@@ -381,11 +381,19 @@ async fn assert_pool_guest_queues_a_third_thread(memory_mib: u32) {
         "microvm"
     );
     let (_, first) = tokio::join!(pool.sync_with_slots(&f, json!([]), 10), run(&f, 1, 0));
+    let generation = uuid::Uuid::new_v4();
+    let sample = |available_mib: u32, threads| {
+        json!([{
+            "account_id":f.ids[1],
+            "generation":generation,
+            "memory_available_bytes":u64::from(available_mib) * 1024 * 1024,
+            "active_threads":threads,
+        }])
+    };
+    pool.sync_with_guest_resources(&f, json!([]), 10, sample(256, 1))
+        .await;
     let (second, third) = tokio::join!(run(&f, 1, 3), run(&f, 1, 0));
-    let foreign = run(&f, 2, 3).await;
-    let mut waiting = None;
-    let mut assigned = Vec::new();
-    for lease in [first, second, third] {
+    for lease in [&first, &second, &third] {
         let view = f
             .req(
                 "GET",
@@ -396,17 +404,33 @@ async fn assert_pool_guest_queues_a_third_thread(memory_mib: u32) {
             )
             .await;
         view.ok();
-        if view.body["state"] == "waiting" {
-            assert_eq!(view.body["queue_position"], 1);
-            assert!(waiting.replace(lease).is_none());
-        } else {
-            assert_eq!(view.body["state"], "assigned");
-            assigned.push(lease);
-        }
+        assert!(matches!(
+            view.body["state"].as_str(),
+            Some("assigned" | "running")
+        ));
     }
-    assert_eq!(assigned.len(), 2);
-    let queued = waiting.expect("the third thread must be queued");
-    let unrelated = f
+    // Deliver the assignments, then lower the measured headroom for that guest.
+    pool.sync_with_guest_resources(&f, json!([]), 10, sample(256, 1))
+        .await;
+    pool.sync_with_guest_resources(&f, json!([]), 10, sample(32, 3))
+        .await;
+    let waiting = run(&f, 1, 3).await;
+    let view = f
+        .req(
+            "GET",
+            &format!("/api/v1/machines/runs/{waiting}"),
+            Some(&f.cookies[1]),
+            json!({}),
+            Some(ORIGIN),
+        )
+        .await;
+    view.ok();
+    assert_eq!(view.body["state"], "waiting");
+    assert_eq!(view.body["queue_position"], 1);
+    assert_eq!(view.body["reason"], "Waiting for sandbox memory");
+
+    let foreign = run(&f, 2, 3).await;
+    let outside = f
         .req(
             "GET",
             &format!("/api/v1/machines/runs/{foreign}"),
@@ -415,8 +439,9 @@ async fn assert_pool_guest_queues_a_third_thread(memory_mib: u32) {
             Some(ORIGIN),
         )
         .await;
-    unrelated.ok();
-    assert_eq!(unrelated.body["state"], "assigned");
+    outside.ok();
+    assert_eq!(outside.body["state"], "assigned");
+
     let later = run(&f, 1, 3).await;
     let cancel = f
         .req(
@@ -429,29 +454,17 @@ async fn assert_pool_guest_queues_a_third_thread(memory_mib: u32) {
         .await;
     cancel.ok();
     assert_eq!(cancel.body["state"], "ended");
-    let stop = f
-        .req(
-            "POST",
-            &format!("/api/v1/machines/runs/{}/stop", assigned[0]),
-            Some(&f.cookies[1]),
-            json!({}),
-            Some(ORIGIN),
-        )
+    let result = pool
+        .sync_with_guest_resources(&f, json!([]), 10, sample(192, 3))
         .await;
-    stop.ok();
-    let result = pool.sync_with_slots(&f, json!([]), 10).await;
+    assert!(
+        result
+            .iter()
+            .any(|r| r["type"] == "assign" && r["lease_id"] == waiting)
+    );
     assert!(
         !result
             .iter()
             .any(|r| r["type"] == "assign" && r["lease_id"] == later)
     );
-    let stop_index = result
-        .iter()
-        .position(|r| r["type"] == "stop" && r["lease_id"] == assigned[0])
-        .unwrap();
-    let assign_index = result
-        .iter()
-        .position(|r| r["type"] == "assign" && r["lease_id"] == queued)
-        .unwrap();
-    assert!(stop_index < assign_index);
 }

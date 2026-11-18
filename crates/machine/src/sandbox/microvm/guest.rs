@@ -85,7 +85,12 @@ impl Agent {
                     .map_err(SandboxError::new),
             };
         }
-        let response = if self.control(request).await.is_ok() {
+        let response = if matches!(request, Request::Observe) {
+            match self.observe().await {
+                Ok(sample) => sample,
+                Err(_) => Response::Error,
+            }
+        } else if self.control(request).await.is_ok() {
             Response::Ready
         } else {
             Response::Error
@@ -93,6 +98,20 @@ impl Agent {
         wire::send(&mut io, &response)
             .await
             .map_err(SandboxError::new)
+    }
+
+    async fn observe(&self) -> SandboxResult<Response> {
+        let meminfo = tokio::fs::read_to_string("/proc/meminfo")
+            .await
+            .map_err(SandboxError::new)?;
+        let memory_available_bytes = available_memory(&meminfo)
+            .ok_or_else(|| SandboxError("guest memory observation unavailable".into()))?;
+        let active_threads =
+            u32::try_from(self.threads.lock().await.len()).map_err(SandboxError::new)?;
+        Ok(Response::Resources {
+            memory_available_bytes,
+            active_threads,
+        })
     }
 
     async fn control(&self, request: Request) -> SandboxResult<()> {
@@ -121,9 +140,22 @@ impl Agent {
                 self.backend.erase(account, Some(thread)).await?;
                 sync_disk().await
             }
-            Request::Exec(..) => unreachable!(),
+            Request::Exec(..) | Request::Observe => unreachable!(),
         }
     }
+}
+
+fn available_memory(meminfo: &str) -> Option<u64> {
+    let line = meminfo.lines().find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        (key == "MemAvailable").then_some(value)
+    })?;
+    let mut parts = line.split_ascii_whitespace();
+    let kib: u64 = parts.next()?.parse().ok()?;
+    if parts.next()? != "kB" || parts.next().is_some() {
+        return None;
+    }
+    kib.checked_mul(1024)
 }
 
 async fn sync_disk() -> SandboxResult<()> {
@@ -170,4 +202,23 @@ async fn stream_exec(io: UnixStream, mut exec: crate::sandbox::Exec) -> SandboxR
     .await;
     input.abort();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::available_memory;
+
+    #[test]
+    fn available_memory_uses_the_kernel_headroom_field_and_checks_units() {
+        assert_eq!(
+            available_memory("MemTotal: 512000 kB\nMemFree: 1234 kB\nMemAvailable: 8192 kB\n"),
+            Some(8 * 1024 * 1024)
+        );
+        assert_eq!(available_memory("MemFree: 1234 kB\n"), None);
+        assert_eq!(available_memory("MemAvailable: 8 MB\n"), None);
+        assert_eq!(
+            available_memory("MemAvailable: 18446744073709551615 kB\n"),
+            None
+        );
+    }
 }

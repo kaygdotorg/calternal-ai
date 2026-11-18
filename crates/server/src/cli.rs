@@ -108,6 +108,11 @@ pub(super) enum Cmd {
         #[command(subcommand)]
         cmd: calternal_cli::people::People,
     },
+    /// Inspect usage and assign a shared space's resource group.
+    Resources {
+        #[command(subcommand)]
+        cmd: crate::admin_cli::ResourcesCmd,
+    },
     /// List and manage server groups and their members.
     Groups {
         #[command(flatten)]

@@ -22,7 +22,8 @@ pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
     pub kvm_fallback: bool,
-    pub thread_limit: Option<usize>,
+    pub guest_memory_mib: Option<u32>,
+    pub guest_resources: HashMap<AccountId, calternal_machine::protocol::GuestResources>,
     pub outbox: VecDeque<Envelope>,
     pub next_seq: u64,
     pub polls: u32,
@@ -164,6 +165,9 @@ pub(super) struct State {
     pub pool_grants: HashSet<AccountId>,
     /// In-flight pool leases per account, including placement reservations.
     pub pool_load: HashMap<AccountId, usize>,
+    pub compute_limits: HashMap<calternal_auth::machines::ResourceOwner, super::ComputeLimits>,
+    pub runtime_windows: HashMap<calternal_auth::machines::ResourceOwner, super::runtime::Window>,
+    pub next_runtime_retirement_ms: i64,
     pub leases: HashMap<Uuid, Lease>,
     pub threads: HashMap<Uuid, Uuid>,
     pub execs: HashMap<Uuid, Exec>,
@@ -221,6 +225,14 @@ impl State {
             return;
         };
         let Some(machine) = l.row.machine else { return };
+        let hosted = self
+            .machines
+            .get(&machine)
+            .is_some_and(|machine| machine.row.owner == Owner::Pool);
+        let resource_owner = l.row.resource_owner.filter(|_| hosted);
+        let guest_idle_seconds = resource_owner
+            .and_then(|owner| self.compute_limits.get(&owner))
+            .and_then(|limits| limits.idle_seconds);
         let msg = Down::Assign {
             lease_id: lease,
             fence: l.row.fence,
@@ -235,6 +247,9 @@ impl State {
                 thread_id: l.row.thread,
                 image: l.row.image.clone(),
                 limits: settings.limits,
+                resource_owner,
+                guest_idle_seconds,
+                resource_assignment: None,
             },
         };
         self.push(machine, msg);
@@ -437,14 +452,7 @@ impl State {
             let best = self
                 .machines
                 .values()
-                // Shared-space workers use initialized operator containers.
-                .filter(|m| !l.row.worker || Self::worker_machine(m, settings))
-                .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
-                .filter(|m| {
-                    self.may_use(m, l.row.account)
-                        || (l.pool_diagnostic && m.row.owner == Owner::Pool)
-                })
-                .map(|m| (m, self.free_for(m, l.row.account)))
+                .map(|m| (m, self.available_for_lease(m, l, settings)))
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
                     (
@@ -495,7 +503,7 @@ impl State {
         if self
             .machines
             .get(&machine)
-            .is_none_or(|m| self.free_for(m, l.row.account) == 0)
+            .is_none_or(|m| self.available_for_lease(m, l, settings) == 0)
         {
             return;
         }
@@ -508,7 +516,11 @@ impl State {
         row.last_machine = Some(machine);
         row.reason = None;
         row.state = LeaseState::Assigned.as_str().into();
-        if let Err(error) = db::put_assignment(&mut self.db, &row) {
+        let hosted = self
+            .machines
+            .get(&machine)
+            .is_some_and(|machine| machine.row.owner == Owner::Pool);
+        if let Err(error) = db::put_assignment(&mut self.db, &row, hosted) {
             tracing::error!(%lease, %error, "cannot persist machine assignment");
             return;
         }
@@ -618,7 +630,16 @@ impl State {
                 .machine
                 .and_then(|id| self.machines.get(&id))
                 .is_some_and(|machine| machine.row.owner == Owner::Account { id: l.row.account }),
-            reason: l.row.reason.clone(),
+            reason: l.row.reason.clone().or_else(|| {
+                (l.state == LeaseState::Waiting
+                    && self.machines.values().any(|m| {
+                        l.row.pinned_machine.is_none_or(|id| id == m.row.id)
+                            && self.may_use(m, l.row.account)
+                            && self.free(m) > 0
+                            && self.free_for(m, l.row.account) == 0
+                    }))
+                .then(|| "Waiting for sandbox memory".into())
+            }),
             queue_position,
         }
     }

@@ -21,10 +21,12 @@ mod space_paths;
 pub use actor::{Actor, Via};
 pub use capability::{Capability, CapabilitySet};
 pub use error::{Error, ErrorCode, Result};
+mod resource_owner;
 pub use id::{AccountId, GroupId, InstallationId, InviteId, SpaceId};
 pub use owner::Owner;
 pub use owner_lifecycle::{OwnerLifecycle, OwnerScoped, OwnerStep};
 pub use page::Page;
+pub use resource_owner::ResourceOwner;
 pub use space_paths::{SPACE_INSTRUCTIONS_PATH, is_reserved_space_path};
 
 /// Maximum JSON bytes in a plugin worker frame, excluding its newline (256 KiB).

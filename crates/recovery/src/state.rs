@@ -32,6 +32,7 @@ const SPECS: &[(&str, char, &str)] = &[
     ("machine_pool_grants", '1', "account"),
     ("spaces", '2', "id"),
     ("space_group_memberships", '2', "space_id"),
+    ("space_resource_groups", '2', "space_id"),
     ("space_memberships", '2', "space_id"),
     ("groups", '3', "id"),
     ("invites", '4', "id"),

@@ -80,7 +80,7 @@ pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
             crate::linked_write::SCHEMA,
             crate::trash::SCHEMA,
         ],
-        &[THREAD_SNOOZE],
+        &[THREAD_SNOOZE, crate::storage_usage::MIGRATION],
     );
 
 pub(crate) fn database(
@@ -299,6 +299,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(original, b"A");
+        assert_eq!(crate::storage_usage::read(&conn).unwrap().binary_bytes, 1);
         assert!(
             conn.execute(
                 "UPDATE items SET metadata=json_set(metadata,'$.snoozed_until_ms','invalid')",
@@ -308,7 +309,7 @@ mod tests {
         );
         assert_eq!(
             calternal_store::migrations::inspect(&conn, previous).unwrap(),
-            4
+            5
         );
         conn.execute(
             "UPDATE items SET metadata=json_set(metadata,'$.snoozed_until_ms',5000)",

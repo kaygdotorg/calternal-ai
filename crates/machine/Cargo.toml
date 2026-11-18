@@ -9,6 +9,8 @@ description = "Calternal-AI machine role: enrolment, the outbound connection to 
 [dependencies]
 calternal-types.workspace = true
 calternal-fsio.workspace = true
+calternal-store.workspace = true
+rusqlite.workspace = true
 calternal-cli.workspace = true
 serde.workspace = true
 serde_json.workspace = true

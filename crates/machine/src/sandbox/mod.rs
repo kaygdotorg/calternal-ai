@@ -128,6 +128,25 @@ pub trait Backend: Send + Sync + 'static {
     fn guest_memory_mib(&self) -> Option<u32> {
         None
     }
+    /// Sample bound guests for the control plane. Container and direct machines
+    /// have no account guest. The default performs no I/O.
+    fn guest_resources(&self) -> BoxFuture<'_, Vec<crate::protocol::GuestResources>> {
+        Box::pin(async { Vec::new() })
+    }
+    /// Flush and obtain durable guest runtime observations for the next poll.
+    /// Backends without measured guests return an empty batch without I/O.
+    fn guest_runtime(&self) -> BoxFuture<'_, SandboxResult<Vec<crate::protocol::GuestRuntime>>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    /// Retire terminal observations acknowledged by a successful server poll.
+    /// Backends without measured guests perform no I/O.
+    fn acknowledge_guest_runtime<'a>(
+        &'a self,
+        _reports: &'a [crate::protocol::GuestRuntime],
+    ) -> BoxFuture<'a, SandboxResult<()>> {
+        Box::pin(async { Ok(()) })
+    }
     /// Backend request in the machine handshake. `auto` follows the owner's stored setting.
     fn preference(&self) -> &'static str {
         self.name()

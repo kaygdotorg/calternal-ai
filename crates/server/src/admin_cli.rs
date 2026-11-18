@@ -91,6 +91,234 @@ pub enum MachinesCmd {
     },
 }
 
+/// Local operator commands for storage usage and resource ownership.
+#[derive(Subcommand)]
+pub enum ResourcesCmd {
+    /// Read the current logical text and binary body bytes of a space.
+    StorageUsage {
+        #[command(flatten)]
+        installation: Installation,
+        /// Space UUID.
+        space: String,
+    },
+    /// Replace byte ceilings by kind for an existing space.
+    SetStorage {
+        #[command(flatten)]
+        installation: Installation,
+        /// Space UUID.
+        space: String,
+        #[arg(long)]
+        /// Maximum text bytes. Omit for no ceiling.
+        text_bytes: Option<u64>,
+        #[arg(long)]
+        /// Maximum binary bytes. Omit for no ceiling.
+        binary_bytes: Option<u64>,
+    },
+    /// Read retained confirmed runtime of hosted guests for one scope.
+    RuntimeUsage {
+        #[command(flatten)]
+        installation: Installation,
+        #[arg(long, required_unless_present = "group", conflicts_with = "group")]
+        /// Account UUID.
+        account: Option<String>,
+        #[arg(long, required_unless_present = "account", conflicts_with = "account")]
+        /// Group UUID.
+        group: Option<String>,
+    },
+    /// Set or clear manual hosted compute limits for a group or account.
+    SetCompute {
+        #[command(flatten)]
+        installation: Installation,
+        #[arg(long, required_unless_present = "group", conflicts_with = "group")]
+        /// Account UUID for the override.
+        account: Option<String>,
+        #[arg(long, required_unless_present = "account", conflicts_with = "account")]
+        /// Group UUID for the override.
+        group: Option<String>,
+        #[arg(long, required_unless_present = "clear", conflicts_with = "clear")]
+        /// Allow or deny hosted compute with true or false.
+        hosted: Option<bool>,
+        #[arg(long, conflicts_with = "clear")]
+        /// Required memory profile in MiB. Omit to accept any profile.
+        memory_mib: Option<u32>,
+        #[arg(long, conflicts_with = "clear")]
+        /// Optional hard cap on active threads per guest.
+        active_threads: Option<u32>,
+        #[arg(long, conflicts_with = "clear")]
+        /// Optional bound on waiting leases.
+        queue_bound: Option<u32>,
+        #[arg(long, conflicts_with = "clear")]
+        /// Hosted guest idle timeout in seconds.
+        idle_seconds: Option<u32>,
+        #[arg(long, requires = "reset_seconds", conflicts_with = "clear")]
+        /// Confirmed sandbox seconds allowed per reset window.
+        runtime_seconds: Option<u32>,
+        #[arg(long, requires = "runtime_seconds", conflicts_with = "clear")]
+        /// Window length in seconds from the Unix epoch.
+        reset_seconds: Option<u32>,
+        #[arg(long)]
+        /// Clear the override for this scope.
+        clear: bool,
+    },
+    /// Choose which group owns a shared space's resource usage.
+    SetGroup {
+        #[command(flatten)]
+        installation: Installation,
+        /// Shared space UUID.
+        space: String,
+        /// Group UUID. Omit it to clear the resource binding.
+        group: Option<String>,
+    },
+}
+
+fn resource_owner(
+    account: Option<String>,
+    group: Option<String>,
+) -> Result<calternal_types::ResourceOwner, CliError> {
+    use calternal_types::ResourceOwner;
+    match (account, group) {
+        (Some(id), None) => Ok(ResourceOwner::Account(
+            calternal_types::AccountId::parse(&id).map_err(|_| bad_uuid("account"))?,
+        )),
+        (None, Some(id)) => Ok(ResourceOwner::Group(
+            calternal_types::GroupId::parse(&id).map_err(|_| bad_uuid("group"))?,
+        )),
+        _ => Err(CliError::usage("pass either --account or --group")),
+    }
+}
+
+/// Run an owner-only resource command through the local operator socket or
+/// the guarded stopped installation. Costs one authority read or commit.
+pub fn resources(cmd: ResourcesCmd) -> Result<Reply, CliError> {
+    let parse_space = |s: &str| calternal_types::SpaceId::parse(s).map_err(|_| bad_uuid("space"));
+    match cmd {
+        ResourcesCmd::StorageUsage {
+            installation,
+            space,
+        } => {
+            let space = parse_space(&space)?;
+            let Response::StorageUsage { usage, owner } =
+                run(installation, Request::StorageUsage { space })?
+            else {
+                return Err(unexpected());
+            };
+            let owner_label = match owner {
+                Some(calternal_auth::machines::ResourceOwner::Account(id)) => {
+                    format!("account {id}")
+                }
+                Some(calternal_auth::machines::ResourceOwner::Group(id)) => format!("group {id}"),
+                None => "unassigned".into(),
+            };
+            Ok(Reply::new(json!({
+                "space_id": space, "owner": owner, "text_bytes": usage.text_bytes, "binary_bytes": usage.binary_bytes
+            })).fields([
+                ("space", space.to_string()), ("owner", owner_label),
+                ("text bytes", usage.text_bytes.to_string()), ("binary bytes", usage.binary_bytes.to_string()),
+            ]))
+        }
+        ResourcesCmd::SetStorage {
+            installation,
+            space,
+            text_bytes,
+            binary_bytes,
+        } => {
+            let space = parse_space(&space)?;
+            let limits = calternal_content::StorageLimits {
+                text_bytes,
+                binary_bytes,
+            };
+            let Response::StorageLimits =
+                run(installation, Request::StorageLimits { space, limits })?
+            else {
+                return Err(unexpected());
+            };
+            Ok(Reply::new(json!({ "space_id": space, "limits": limits }))
+                .line("Saved storage byte ceilings."))
+        }
+        ResourcesCmd::RuntimeUsage {
+            installation,
+            account,
+            group,
+        } => {
+            let owner = resource_owner(account, group)?;
+            let Response::RuntimeUsage { usage } =
+                run(installation, Request::RuntimeUsage { owner })?
+            else {
+                return Err(unexpected());
+            };
+            Ok(
+                Reply::new(json!({ "owner": owner, "usage": usage })).fields([
+                    ("confirmed seconds", usage.running_seconds.to_string()),
+                    ("unresolved generations", usage.unresolved.to_string()),
+                    ("since", Output::iso_ms(usage.since_ms)),
+                ]),
+            )
+        }
+        ResourcesCmd::SetCompute {
+            installation,
+            account,
+            group,
+            hosted,
+            memory_mib,
+            active_threads,
+            queue_bound,
+            idle_seconds,
+            runtime_seconds,
+            reset_seconds,
+            clear,
+        } => {
+            let owner = resource_owner(account, group)?;
+            let limits = if clear {
+                None
+            } else {
+                Some(calternal_server::machines::ComputeLimits {
+                    hosted: hosted
+                        .ok_or_else(|| CliError::usage("pass --hosted true or --hosted false"))?,
+                    memory_mib,
+                    active_threads,
+                    queue_bound,
+                    idle_seconds,
+                    runtime_seconds,
+                    reset_seconds,
+                })
+            };
+            let Response::ComputeLimits =
+                run(installation, Request::ComputeLimits { owner, limits })?
+            else {
+                return Err(unexpected());
+            };
+            Ok(
+                Reply::new(json!({ "owner": owner, "limits": limits })).line(if clear {
+                    "Cleared manual compute limits."
+                } else {
+                    "Saved manual compute limits."
+                }),
+            )
+        }
+        ResourcesCmd::SetGroup {
+            installation,
+            space,
+            group,
+        } => {
+            let space = parse_space(&space)?;
+            let group = group
+                .map(|id| calternal_types::GroupId::parse(&id).map_err(|_| bad_uuid("group")))
+                .transpose()?;
+            let Response::ResourceGroup =
+                run(installation, Request::ResourceGroup { space, group })?
+            else {
+                return Err(unexpected());
+            };
+            Ok(
+                Reply::new(json!({ "space_id": space, "group_id": group })).line(match group {
+                    Some(group) => format!("Group {group} owns resources for space {space}."),
+                    None => format!("Cleared the resource group for space {space}."),
+                }),
+            )
+        }
+    }
+}
+
 fn installation_error(message: impl Into<String>) -> CliError {
     CliError::new("failed", message).hint(
         "Pass the same three roots and installation ID as `calternal serve`; see `calternal machines --help`.",
@@ -122,9 +350,9 @@ fn run(installation: Installation, request: Request) -> Result<Response, CliErro
         userdata_ssd: installation.userdata_ssd,
         userdata_hdd: installation.userdata_hdd,
     };
-    let (_store, svc) =
+    let (store, svc) =
         admin::open_offline(&roots, id).map_err(|e| installation_error(e.message))?;
-    admin::execute(&svc, request).map_err(|e| installation_error(e.message))
+    admin::execute(&svc, store.content(), request).map_err(|e| installation_error(e.message))
 }
 
 fn unexpected() -> CliError {

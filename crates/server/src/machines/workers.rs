@@ -497,6 +497,8 @@ mod tests {
             "worker_capacity"
         );
         let mut report = SyncRequest {
+            guest_resources: Vec::new(),
+            guest_runtime: Vec::new(),
             ack: 4,
             discards: vec![],
             capacity: Default::default(),

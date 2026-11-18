@@ -113,6 +113,7 @@ fn main() {
         Cmd::PluginDigest { plugin_root } => out.success(&admin_cli::plugin_digest(&plugin_root)),
         Cmd::Machine { cmd } => calternal_machine::cli::main(cmd, &out),
         Cmd::Machines { cmd } => out.finish(admin_cli::machines(cmd, &out)),
+        Cmd::Resources { cmd } => out.finish(admin_cli::resources(cmd)),
         Cmd::Upgrade { command } => out.finish(upgrade_cli::run(command)),
         Cmd::SetupCode {
             appdata,
@@ -471,11 +472,13 @@ async fn serve(
     // Operator commands reach this server here instead of writing behind it.
     let admin_root = data_dir.clone();
     let admin_machines = machines.clone();
+    let admin_content = state.store.shared_content();
     let _admin = tokio::task::spawn_blocking(move || {
         calternal_server::machines::admin::serve_socket(
             &admin_root,
             installation,
             admin_machines,
+            admin_content,
             owner_setup,
         )
     })

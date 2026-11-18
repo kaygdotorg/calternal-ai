@@ -14,6 +14,7 @@ use uuid::Uuid;
 use super::{COPY_DIR, Deployment, INTENT, Root};
 
 struct Database {
+    root: Root,
     relative: String,
     schema: Schema<'static>,
     version: i64,
@@ -47,6 +48,14 @@ impl Inventory {
     pub(super) fn plan(deploy: &Deployment, incompatible: bool) -> io::Result<Self> {
         let appdata = &deploy.roots.appdata;
         let mut databases = databases(appdata)?;
+        if let Ok(machine) = deploy.root(Root::Machine) {
+            databases.extend(inspect_database(
+                Root::Machine,
+                machine,
+                "sandboxes/microvm/runtime.db".into(),
+                calternal_machine::sandbox::microvm::RUNTIME_SCHEMA,
+            )?);
+        }
         databases.retain(|database| database.version < database.schema.version());
         let mut paths = Paths::new();
         if incompatible {
@@ -59,7 +68,7 @@ impl Inventory {
         }
         for database in &databases {
             for ending in ["", "-wal", "-shm", "-journal"] {
-                paths.insert((Root::Appdata, format!("{}{ending}", database.relative)));
+                paths.insert((database.root, format!("{}{ending}", database.relative)));
             }
             if database.relative == "system/auth.db" {
                 disk_files(
@@ -92,7 +101,10 @@ impl Inventory {
         let copies = self.paths.len();
         deploy.prepare(previous, candidate, self.paths)?;
         for database in self.databases {
-            let conn = database.open(&deploy.roots.appdata, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+            let conn = database.open(
+                deploy.root(database.root)?,
+                OpenFlags::SQLITE_OPEN_READ_WRITE,
+            )?;
             conn.execute_batch("PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON;")
                 .map_err(sqlite)?;
             migrate_release(&conn, database.schema, additive).map_err(sqlite)?;
@@ -107,24 +119,34 @@ impl Inventory {
     }
 }
 
+fn inspect_database(
+    root: Root,
+    directory: &Path,
+    relative: String,
+    schema: Schema<'static>,
+) -> io::Result<Option<Database>> {
+    let path = directory.join(&relative);
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() => {}
+        Ok(_) => return Err(io::Error::other("database must be a regular file")),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    let conn = connection(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let version = inspect(&conn, schema).map_err(sqlite)?;
+    Ok(Some(Database {
+        root,
+        relative,
+        schema,
+        version,
+    }))
+}
+
 fn databases(appdata: &Path) -> io::Result<Vec<Database>> {
     use crate::{account_input, machines, plugins};
     let mut entries = Vec::new();
-    let mut inspect_one = |relative: String, schema: Schema<'static>| -> io::Result<()> {
-        let path = appdata.join(&relative);
-        match fs::symlink_metadata(&path) {
-            Ok(meta) if meta.is_file() => {}
-            Ok(_) => return Err(io::Error::other("database must be a regular file")),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error),
-        }
-        let conn = connection(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        let version = inspect(&conn, schema).map_err(sqlite)?;
-        entries.push(Database {
-            relative,
-            schema,
-            version,
-        });
+    let mut inspect_one = |relative, schema| -> io::Result<()> {
+        entries.extend(inspect_database(Root::Appdata, appdata, relative, schema)?);
         Ok(())
     };
     for (relative, schema) in [

@@ -128,6 +128,15 @@ impl MachineService {
             .get()
             .map(|l| l.step(space.as_uuid()))
             .transpose()?;
+        let resource_owner =
+            if worker.is_none() && !pool_diagnostic && !provider_login && !background_title {
+                let authority = self.lock()?.authority.clone();
+                authority
+                    .resource_owner(space)
+                    .map_err(super::compute::authority_error)?
+            } else {
+                None
+            };
         let mut st = self.lock()?;
         let st = &mut *st;
         if background_title
@@ -171,6 +180,7 @@ impl MachineService {
             id: Uuid::new_v4(),
             space,
             account,
+            resource_owner,
             thread,
             image,
             worker: is_worker,
@@ -183,25 +193,44 @@ impl MachineService {
             reason: None,
             created_ms: db::now_ms(),
         };
-        if background_title {
-            db::put_title(&mut st.db, &row).map_err(sql)?;
-        } else {
-            db::put_lease(&st.db, &row).map_err(sql)?;
+        let lease = Lease {
+            row,
+            state: LeaseState::Waiting,
+            order: st.next_order + 1,
+            pool_diagnostic,
+            provider_login,
+        };
+        if let Some(owner) = resource_owner
+            && let Some(bound) = st
+                .compute_limits
+                .get(&owner)
+                .and_then(|limits| limits.queue_bound)
+            && st
+                .leases
+                .values()
+                .filter(|queued| {
+                    queued.state == LeaseState::Waiting && queued.row.resource_owner == Some(owner)
+                })
+                .count()
+                >= bound as usize
+            && !st
+                .machines
+                .values()
+                .any(|machine| st.available_for_lease(machine, &lease, &self.settings) > 0)
+        {
+            return Err(Error::unavailable(
+                "Resource queue is full. Retry after capacity frees.",
+            ));
         }
-        st.next_order += 1;
-        let id = row.id;
+        if background_title {
+            db::put_title(&mut st.db, &lease.row).map_err(sql)?;
+        } else {
+            db::put_scoped_lease(&mut st.db, &lease.row).map_err(sql)?;
+        }
+        st.next_order = lease.order;
+        let id = lease.row.id;
         st.threads.insert(thread, id);
-        let order = st.next_order;
-        st.leases.insert(
-            id,
-            Lease {
-                row,
-                state: LeaseState::Waiting,
-                order,
-                pool_diagnostic,
-                provider_login,
-            },
-        );
+        st.leases.insert(id, lease);
         if let Some(worker) = worker {
             st.workers.insert(id, worker);
         }

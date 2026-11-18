@@ -46,6 +46,9 @@ pub(super) async fn spawn(
     let session = WorkerSession::new(plugin.manifest.clone(), plugin.schemas.clone(), space)
         .map_err(|_| Error::unavailable("plugin manifest rejected by worker session"))?;
     let spec = SandboxSpec {
+        resource_owner: None,
+        guest_idle_seconds: None,
+        resource_assignment: None,
         space_id: Some(space),
         provider_login: false,
         // Operator-installed packages always start from the private copy of

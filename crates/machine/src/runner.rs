@@ -133,6 +133,31 @@ impl Runner {
         self.backend.guest_memory_mib()
     }
 
+    /// Sample resources of bound account guests through the backend control port.
+    /// Bounded by the backend's guest count. No runner lock spans the wait.
+    pub async fn guest_resources(&self) -> Vec<crate::protocol::GuestResources> {
+        self.backend.guest_resources().await
+    }
+
+    /// Read the durable machine-side runtime outbox in bounded batches.
+    pub async fn guest_runtime(&self) -> Result<Vec<crate::protocol::GuestRuntime>, crate::Error> {
+        self.backend
+            .guest_runtime()
+            .await
+            .map_err(|error| crate::Error::Protocol(error.0))
+    }
+
+    /// Retire terminal clock receipts the server has durably accepted.
+    pub async fn acknowledge_guest_runtime(
+        &self,
+        reports: &[crate::protocol::GuestRuntime],
+    ) -> Result<(), crate::Error> {
+        self.backend
+            .acknowledge_guest_runtime(reports)
+            .await
+            .map_err(|error| crate::Error::Protocol(error.0))
+    }
+
     /// Install the server-authorized execution setting before assignments arrive.
     /// This changes only future sandbox starts; old fenced objects keep their backend.
     pub fn configure_backend(&self, mode: &str) -> Result<(), crate::Error> {
@@ -194,6 +219,8 @@ impl Runner {
                 ..
             } => {
                 spec.space_id = Some(space_id);
+                spec.resource_assignment =
+                    Some(crate::protocol::ResourceAssignment { lease_id, fence });
                 let slot = {
                     let mut slots = self.slots.lock().expect("slots");
                     let closing_workspace = slots.iter().any(|(id, slot)| {
@@ -201,7 +228,7 @@ impl Runner {
                             && slot.spec.account_id == spec.account_id
                             && slot.spec.thread_id == spec.thread_id
                     });
-                    let (held, account_held) = slots
+                    let held = slots
                         .values()
                         .filter(|s| {
                             s.stop.get().is_none()
@@ -213,21 +240,9 @@ impl Runner {
                                     .and_then(OnceCell::get)
                                     .is_some_and(Result::is_err)
                         })
-                        .fold((0, 0), |(held, account_held), slot| {
-                            (
-                                held + 1,
-                                account_held + usize::from(slot.spec.account_id == spec.account_id),
-                            )
-                        });
-                    let account_full = self
-                        .guest_memory_mib()
-                        .and_then(crate::protocol::GuestSize::from_mib)
-                        .and_then(|size| size.active_threads)
-                        .is_some_and(|limit| account_held >= limit);
+                        .count();
                     let denied = if closing_workspace {
                         Some("previous sandbox is still closing")
-                    } else if account_full {
-                        Some("account guest capacity exhausted")
                     } else if held >= self.max_sandboxes as usize {
                         Some("machine sandbox capacity exhausted")
                     } else {

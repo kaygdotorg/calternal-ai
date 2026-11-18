@@ -104,9 +104,20 @@ impl Machine {
         discards: Value,
         slots: u32,
     ) -> Vec<Value> {
+        self.sync_with_guest_resources(f, discards, slots, json!([]))
+            .await
+    }
+
+    pub(super) async fn sync_with_guest_resources(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+        resources: Value,
+    ) -> Vec<Value> {
         let r = f.machine("/api/v1/machine/sync",Some(&self.token),json!({
             "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":slots,"running_sandboxes":0},
-            "draining":false,"leases":self.leases,"discards":discards,
+            "draining":false,"leases":self.leases,"discards":discards,"guest_resources":resources,
         })).await;
         r.ok();
         let mut messages = Vec::new();

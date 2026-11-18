@@ -49,6 +49,7 @@ pub use search::{
 };
 mod revision_slice;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+mod storage_usage;
 mod trash;
 mod types;
 use calternal_roots::Roots;
@@ -64,6 +65,7 @@ use std::{
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
+pub use storage_usage::{StorageLimits, StorageUsage};
 pub use types::{
     Collection, CollectionOwner, FaultPoint, FileFormat, Item, Placement, Receipt, Request, Result,
     Summary,
@@ -72,7 +74,10 @@ use uuid::Uuid;
 
 /// Installation content service with bounded per-space connections and idle release.
 /// The host retains root locks; opening two services for the same roots is unsupported.
+/// Dropping the last service handle waits for any active filesystem placement.
 pub struct Content {
+    // Drop before the caches and journal driver so placement cannot race a reopen.
+    sweeper: lifecycle::Sweeper,
     roots: Roots,
     search_readers: search::Readers,
     search_writers: search::Writers,
@@ -83,7 +88,6 @@ pub struct Content {
     // Declared before `journals`: open stores drain before the driver stops.
     spaces: Cache,
     root_guard: lifecycle::RootGuard,
-    sweeper: std::thread::Thread,
     idle_after: Duration,
     journals: Journals,
     fault: fn(FaultPoint),
@@ -176,8 +180,8 @@ impl Content {
         let spaces = Arc::new(Mutex::new(std::collections::HashMap::new()));
         let root_guard = Arc::new(Mutex::new(None));
         let lifecycle = calternal_types::OwnerLifecycle::default();
-        let sweeper = spawn_sweeper(&spaces, &root_guard, lifecycle.clone(), idle_after, fault)?;
         let journals = Journals::open(roots.appdata.clone(), secrets, receipt_retention)?;
+        let sweeper = spawn_sweeper(&spaces, &root_guard, lifecycle.clone(), idle_after, fault)?;
         let catalog = ReadPool::new(catalog_path);
         let content = Self {
             search_readers: search::Readers::default(),

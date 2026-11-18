@@ -9,6 +9,8 @@ mod kvm;
 #[cfg(test)]
 mod measure;
 mod network;
+mod runtime;
+pub use runtime::SCHEMA as RUNTIME_SCHEMA;
 mod vmm;
 mod wire;
 
@@ -28,7 +30,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, OnceCell};
 use uuid::Uuid;
 
 use super::{Backend, BoxFuture, Sandbox, SandboxError, SandboxResult};
-use crate::protocol::{GuestSize, SandboxSpec};
+use crate::protocol::{GuestResources, GuestRuntime, GuestSize, RuntimeState, SandboxSpec};
 use vmm::Guest;
 use wire::Request;
 
@@ -109,6 +111,8 @@ impl Config {
 struct Account {
     vm: Option<Guest>,
     last_used: Instant,
+    idle_after: Duration,
+    resource_owner: Option<calternal_types::ResourceOwner>,
 }
 
 /// Same-account gate for binding a disk to a VM, guest teardown, and erasure.
@@ -121,6 +125,7 @@ struct State {
     root: PathBuf,
     owned: OnceCell<Arc<File>>,
     network: OnceCell<Option<Arc<network::Pool>>>,
+    runtime: OnceCell<runtime::Journal>,
     accounts: Mutex<HashMap<Uuid, AccountSlot>>,
     warm: AsyncMutex<Vec<Guest>>,
     capacity: Arc<tokio::sync::Semaphore>,
@@ -142,6 +147,7 @@ impl MicrovmBackend {
             root: root.join("microvm"),
             owned: OnceCell::new(),
             network: OnceCell::new(),
+            runtime: OnceCell::new(),
             accounts: Mutex::new(HashMap::new()),
             warm: AsyncMutex::new(Vec::new()),
             capacity,
@@ -158,6 +164,78 @@ impl Backend for MicrovmBackend {
 
     fn guest_memory_mib(&self) -> Option<u32> {
         Some(self.0.config.memory_mib)
+    }
+
+    fn guest_resources(&self) -> BoxFuture<'_, Vec<GuestResources>> {
+        Box::pin(async move {
+            let slots: Vec<_> = self
+                .0
+                .accounts
+                .lock()
+                .expect("microVM slots")
+                .iter()
+                .filter_map(|(id, slot)| {
+                    let id = calternal_types::AccountId::from_uuid(*id).ok()?;
+                    let account = slot.try_lock().ok()?;
+                    account.vm.as_ref()?;
+                    Some((id, slot.clone()))
+                })
+                .take(crate::protocol::MAX_GUEST_RESOURCES)
+                .collect();
+            let mut samples = tokio::task::JoinSet::new();
+            for (id, slot) in slots {
+                samples.spawn(async move {
+                    let mut account = slot.try_lock().ok()?;
+                    let owner = account.resource_owner;
+                    let vm = account.vm.as_mut()?;
+                    if !vm.alive() {
+                        return None;
+                    }
+                    vm.observe(id, owner).await
+                });
+            }
+            let mut resources = Vec::new();
+            while let Some(sample) = samples.join_next().await {
+                if let Ok(Some(sample)) = sample {
+                    resources.push(sample);
+                }
+            }
+            resources
+        })
+    }
+
+    fn guest_runtime(&self) -> BoxFuture<'_, SandboxResult<Vec<GuestRuntime>>> {
+        Box::pin(async move {
+            let Some(journal) = self.0.runtime.get() else {
+                return Ok(Vec::new());
+            };
+            let mut samples = Vec::new();
+            for slot in self.0.slots() {
+                if let Ok(mut account) = slot.try_lock()
+                    && let Some(vm) = account.vm.as_mut()
+                    && vm.clock.is_some()
+                {
+                    if vm.alive() {
+                        samples.push(vm.clock.as_ref().expect("checked clock").sample());
+                    } else if let Some(clock) = vm.clock.take() {
+                        clock.end(false).await?;
+                    }
+                }
+            }
+            journal.report(samples).await
+        })
+    }
+
+    fn acknowledge_guest_runtime<'a>(
+        &'a self,
+        reports: &'a [GuestRuntime],
+    ) -> BoxFuture<'a, SandboxResult<()>> {
+        Box::pin(async move {
+            if let Some(journal) = self.0.runtime.get() {
+                journal.acknowledge(reports).await?;
+            }
+            Ok(())
+        })
     }
 
     fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {
@@ -204,7 +282,48 @@ impl Backend for MicrovmBackend {
                 .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
             let slot = self.0.account(spec.account_id);
             let mut account = slot.lock().await;
+            if account.resource_owner != spec.resource_owner && account.vm.is_some() {
+                // The registry and this new request each own a reference. A
+                // thread still holding its guest must finish before rebinding.
+                if Arc::strong_count(&slot) != 2 {
+                    return Err(SandboxError("previous guest scope is still active".into()));
+                }
+                if let Some(vm) = account.vm.take() {
+                    vm.stop().await?;
+                }
+            }
+            account.resource_owner = spec.resource_owner;
+            account.idle_after = spec
+                .guest_idle_seconds
+                .map(|seconds| Duration::from_secs(u64::from(seconds)))
+                .unwrap_or(IDLE);
             let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
+            let generation = vm.generation;
+            if vm.clock.is_none()
+                && let (Some(resource_owner), Some(assignment), Some(journal)) = (
+                    spec.resource_owner,
+                    spec.resource_assignment,
+                    self.0.runtime.get(),
+                )
+            {
+                let account_id = calternal_types::AccountId::from_uuid(spec.account_id)
+                    .map_err(SandboxError::new)?;
+                let clock = runtime::Clock::begin(
+                    GuestRuntime {
+                        account_id,
+                        generation,
+                        resource_owner: Some(resource_owner),
+                        assignment,
+                        started_at_ms: calternal_types::now_ms(),
+                        running_ns: 0,
+                        state: RuntimeState::Running,
+                    },
+                    journal.clone(),
+                )
+                .await?;
+                account.vm.as_mut().expect("bound guest").clock = Some(clock);
+            }
+            let vm = account.vm.as_ref().expect("bound guest");
             vm.control(&Request::Start(space, spec.clone())).await?;
             let thread = Thread::new(
                 slot.clone(),
@@ -305,6 +424,8 @@ impl State {
                 Arc::new(AsyncMutex::new(Account {
                     vm: None,
                     last_used: Instant::now(),
+                    idle_after: IDLE,
+                    resource_owner: None,
                 }))
             })
             .clone()
@@ -357,6 +478,10 @@ impl State {
         .await
         .map_err(SandboxError::new)?
         .map_err(SandboxError::new)?;
+        let runtime = runtime::Journal::open(self.root.join("runtime.db")).await?;
+        self.runtime
+            .set(runtime)
+            .map_err(|_| SandboxError("microVM runtime journal already initialized".into()))?;
         self.owned
             .set(Arc::new(lock))
             .map_err(|_| SandboxError("microVM backend already initialized".into()))
@@ -500,7 +625,7 @@ async fn maintain(backend: Weak<State>) {
             // sandbox or pending start pins the guest. No map lock spans I/O.
             if let Ok(mut account) = slot.try_lock() {
                 if Arc::strong_count(&slot) == 2
-                    && account.last_used.elapsed() >= IDLE
+                    && account.last_used.elapsed() >= account.idle_after
                     && let Some(vm) = account.vm.take()
                     && let Err(error) = vm.stop().await
                 {
