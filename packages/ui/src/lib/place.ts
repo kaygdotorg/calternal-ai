@@ -34,7 +34,8 @@ export function place(el: HTMLElement, anchor: Anchor, { prefer = "bottom", gap 
   // Reads first. A height limit from an earlier placement (a resize) has to go before the surface is measured; a first placement has none, so it costs no write.
   if (el.style.maxHeight) el.style.maxHeight = "";
   if (cover && el.style.minWidth !== `${a.right - a.left}px`) el.style.minWidth = `${a.right - a.left}px`;
-  const r = el.getBoundingClientRect();
+  // The surface's own size (layout, not drawn): a surface placed while it morphs open is drawn scaled down, and its rectangle would say it is smaller than it is.
+  const r = { width: el.offsetWidth, height: el.offsetHeight };
   // Covering, the surface grows from the anchor's own edge, so there is no gap and the room is measured from that edge.
   const g = cover ? 0 : gap;
   const above = (cover ? a.bottom : a.top) - margin - g;
