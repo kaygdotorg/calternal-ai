@@ -47,7 +47,7 @@ const go = async (p, path) => { await p.evaluate((x) => { history.pushState(null
   ok(/\/invites\/[^/]+$/.test(link), "an invitation is made and its link shown", link.replace(/\/invites\/.*/, "/invites/…"));
   const g = await mk();
   const local = new URL(link); await g.p.goto(`${url}${local.pathname}`); await g.p.waitForSelector("html[data-ready]");
-  await g.p.getByRole("heading", { name: "Join Calternal" }).waitFor({ timeout: 8000 }).catch(async () => { console.log("   guest page:", g.p.url().slice(0, 60), JSON.stringify((await g.p.evaluate(() => document.body.innerText)).slice(0, 200))); throw new Error("no join page"); });
+  await g.p.getByRole("heading", { name: "Who you are" }).waitFor({ timeout: 8000 }).catch(async () => { console.log("   guest page:", g.p.url().slice(0, 60), JSON.stringify((await g.p.evaluate(() => document.body.innerText)).slice(0, 200))); throw new Error("no join page"); });
   ok(true, "the invitation page asks for a name and a passkey");
   await signUp(g.p, "", "Guest Gus");
   await g.p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Join"), null, { timeout: 15000 }); await g.p.waitForSelector("html[data-ready]"); await g.p.waitForTimeout(1500);
