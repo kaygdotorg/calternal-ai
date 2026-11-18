@@ -40,6 +40,21 @@ async fn linked_rename_batches_are_undoable_by_job_id() {
     }
     let note = data(f.op(2, "notes.get", json!({"id":root})).await);
     assert_eq!(note["note"]["markdown"], "# Target\n\nOriginal");
+    let content = f.appdata().join("spaces").join(space).join("content.db");
+    let db = rusqlite::Connection::open_with_flags(
+        content,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let current_checkpoints: i64 = db
+        .query_row(
+            "SELECT count(*) FROM room_checkpoints JOIN items ON item=id AND room_checkpoints.seq=items.seq
+             WHERE kind='notes'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(current_checkpoints, 13);
 }
 
 async fn wait(f: &Fixture, input: &Value, expected: &str) {
