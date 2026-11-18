@@ -93,6 +93,8 @@ unsent edits can be lost during a system crash or power loss.
    the failed-transaction path. Extend the retained fixture when it lacks the
    affected data. For unattended deployment, run the exact image-pair gate
    below and check reads, acknowledged writes, and rollback against that data.
+   The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
+   a real step and how the fixture tests drive it.
 
 ## Release handoff
 
@@ -110,11 +112,15 @@ its data through the deployment rollback path. Afterwards, a compatible N
 can resume on live data, including any new acknowledgements. An incompatible
 downgrade refuses newer data. Retain one restore point during handoff and one
 prior release. The deployment script and the server unit share the local
-recovery command. A full restore point skips runtime sockets and locks.
-A workspace symlink blocks it before migration and the deployment restores
-the previous services. A person may see a reconnect while the services
-restart. Their workspace and symlink stay in place. Ordinary additive
-updates snapshot only changed stores and their witnesses.
+recovery command. Ordinary additive updates snapshot only changed stores
+and their witnesses. A full restore point copies every regular file in the
+appdata, SSD, HDD and machine roots and skips runtime sockets and locks. It
+refuses a symlink or other special file anywhere in those roots, including a
+thread workspace's `node_modules/.bin` link. The refusal comes after services
+stop and before any migration, names the entry, and the deployment restarts
+the previous release on unchanged data. A person sees a short reconnect, and
+their workspace, including the link, stays in place. The incompatible update
+does not proceed until the restore point can preserve links.
 
 ## Release gate
 

@@ -210,7 +210,11 @@ fn disk_files(root: &Path, prefix: &Path, role: Root, files: &mut Paths) -> io::
                 .ok_or_else(|| io::Error::other("snapshot path is not UTF-8"))?;
             files.insert((role, relative.to_owned()));
         } else if !kind.is_socket() {
-            return Err(io::Error::other("snapshot includes a nonregular file"));
+            // Name the entry so the operator can move it; the roots stay untouched.
+            return Err(io::Error::other(format!(
+                "{role:?} root entry {} is a symlink or special file; a full restore point copies only regular files",
+                relative.display()
+            )));
         }
     }
     Ok(())
@@ -264,4 +268,23 @@ fn recovery(deploy: &Deployment) -> io::Result<calternal_recovery::Coordinator> 
     }
     calternal_recovery::Coordinator::open(&recovery_dir, deploy.installation)
         .map_err(io::Error::other)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_restore_point_names_a_symlink_it_cannot_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("sandboxes/accounts/a/threads/t/work");
+        fs::create_dir_all(&work).unwrap();
+        fs::write(work.join("Saved.md"), b"saved").unwrap();
+        std::os::unix::fs::symlink("Saved.md", work.join("link")).unwrap();
+        let mut paths = Paths::new();
+        let error = disk_files(dir.path(), Path::new(""), Root::Machine, &mut paths).unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("sandboxes/accounts/a/threads/t/work/link"), "{message}");
+        assert!(work.join("link").is_symlink());
+    }
 }
