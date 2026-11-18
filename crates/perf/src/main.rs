@@ -9,6 +9,7 @@ mod idle;
 mod jobs;
 mod live;
 mod materialization;
+mod notes_scenario;
 mod rebuild;
 mod report;
 mod search;
@@ -62,7 +63,7 @@ struct Args {
     startup_only: bool,
     #[arg(long)]
     jobs_only: bool,
-    /// Require release timestamps and gate durable-commit-to-SSE delivery alone.
+    /// Require release timestamps. Gate delivery and file placement independently.
     #[arg(long, conflicts_with = "paired_search")]
     commit_timing_only: bool,
     /// Measure protected directory reads/writes with closed-loop client waves.
@@ -186,6 +187,21 @@ fn run(a: &Args) -> Result<i32> {
         serde_json::to_vec_pretty(&run_info)?,
     )?;
     let budgets: stats::Budgets = serde_json::from_slice(&std::fs::read(&a.budgets)?)?;
+    let placement_budget = if a.startup_only {
+        Duration::ZERO
+    } else {
+        let ms = budgets
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.metric == materialization::METRIC
+                    && matches!(entry.percentile, stats::Percentile::Max)
+            })
+            .and_then(|entry| entry.budget)
+            .filter(|ms| *ms > 0. && *ms <= 1000.)
+            .ok_or("file placement requires a maximum budget up to 1000 ms")?;
+        Duration::try_from_secs_f64(ms / 1000.)?
+    };
     if a.commit_timing_only
         && !budgets.entries.iter().any(|entry| {
             entry.metric == timings::COMMIT_TO_CLIENT
@@ -208,6 +224,9 @@ fn run(a: &Args) -> Result<i32> {
     let mut failures = Vec::new();
     let mut reproduced = false;
     let mut commit_breach = false;
+    let mut commit_incomplete = false;
+    let mut placement_breach = false;
+    let mut stopped_for_placement = false;
     let mut pooled: BTreeMap<String, Vec<f64>> = BTreeMap::new();
     let mut cases: Vec<(usize, usize)> = sizes.into_iter().map(|n| (n, 1)).collect();
     for n in a.spaces.split(',') {
@@ -277,7 +296,7 @@ fn run(a: &Args) -> Result<i32> {
                 if pair >= a.cold_pairs && !std::process::Command::new("sync").status()?.success() {
                     return Err("warm fixture sync failed".into());
                 }
-                let samples = match scenario(
+                let observation = match notes_scenario::run(
                     a,
                     bin,
                     if arm == "head" {
@@ -288,9 +307,11 @@ fn run(a: &Args) -> Result<i32> {
                     &root,
                     &fixture,
                     a.commit_timing_only && arm == "head",
+                    placement_budget,
                 ) {
-                    Ok(samples) => samples,
+                    Ok(observation) => observation,
                     Err(error) => {
+                        commit_incomplete |= a.commit_timing_only && arm == "head";
                         let failure = json!({"size":size,"spaces":spaces,"pair":pair,"arm":arm,"error":error.to_string(),"startup_timeout_seconds":a.startup_timeout_seconds,"log":root.join("server.log")});
                         std::fs::write(
                             root.join("failure.json"),
@@ -307,10 +328,29 @@ fn run(a: &Args) -> Result<i32> {
                         continue;
                     }
                 };
-                std::fs::write(root.join("raw.json"), serde_json::to_vec(&samples)?)?;
-                let summary: Vec<_> = samples
+                stopped_for_placement |= observation.placement_breach;
+                placement_breach |= arm == "head" && observation.placement_breach;
+                let placement = if a.startup_only {
+                    "unmeasured"
+                } else if observation.placement_breach {
+                    "breach"
+                } else {
+                    "pass"
+                };
+                std::fs::write(
+                    root.join("raw.json"),
+                    serde_json::to_vec(&observation.samples)?,
+                )?;
+                let summary: Vec<_> = observation
+                    .samples
                     .into_iter()
-                    .map(|(name, v)| stats::summarize(&name, v, &budgets))
+                    .map(|(name, v)| {
+                        let mut summary = stats::summarize(&name, v, &budgets);
+                        if name == materialization::METRIC {
+                            summary.breached |= observation.placement_breach;
+                        }
+                        summary
+                    })
                     .collect();
                 for s in &summary {
                     pooled
@@ -321,13 +361,20 @@ fn run(a: &Args) -> Result<i32> {
                         ))
                         .or_default()
                         .push(s.p50);
+                    if a.commit_timing_only
+                        && arm == "head"
+                        && s.metric == timings::COMMIT_TO_CLIENT
+                    {
+                        commit_incomplete |= s.samples < a.samples;
+                    }
                     if arm == "head" && s.breached {
-                        commit_breach |= s.metric == timings::COMMIT_TO_CLIENT;
+                        commit_breach |=
+                            s.metric == timings::COMMIT_TO_CLIENT && s.samples == a.samples;
                         *breaches.entry(s.metric.clone()).or_default() += 1;
                     }
                 }
                 all.push(
-                    json!({"size":size,"spaces":spaces,"pair":pair,"cache":if pair<a.cold_pairs {"disk-cold"}else{"warm"},"arm":arm,"summary":summary}),
+                    json!({"size":size,"spaces":spaces,"pair":pair,"cache":if pair<a.cold_pairs {"disk-cold"}else{"warm"},"arm":arm,"file_placement":placement,"summary":summary}),
                 );
                 std::fs::write(
                     a.work.join("summary.partial.json"),
@@ -357,178 +404,30 @@ fn run(a: &Args) -> Result<i32> {
         })
         .collect();
     let qualification = if a.commit_timing_only {
-        "release durable commit to client receipt"
+        "release durable commit to client receipt and separate file placement"
     } else {
         "incomplete: see separate release commit timing, job and idle suites"
     };
-    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":hashes,"machine":machine,"noise_pct":noise,"qualification":qualification,"hard_commit_breach":commit_breach,"seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
+    let report = json!({"commit":a.commit,"baseline_commit":a.baseline_commit,"plugins":a.plugins,"baseline_plugins":a.baseline_plugins.as_ref().unwrap_or(&a.plugins),"binary_sha256":hashes,"machine":machine,"noise_pct":noise,"qualification":qualification,"hard_commit_breach":commit_breach,"commit_to_client_incomplete":commit_incomplete,"hard_file_placement_breach":placement_breach,"seed":a.seed,"operation_concurrency":1,"subscriptions":2,"cache":"cold pairs drop OS caches; warm pairs retain OS caches","warm_pairs":a.pairs,"cold_pairs":a.cold_pairs,"reproduced_breach":reproduced,"runs":all,"failures":failures});
     std::fs::write(
         a.work.join("summary.json"),
         serde_json::to_vec_pretty(&report)?,
     )?;
     report::print(a, &report, &a.work.join("summary.json"));
-    Ok(if commit_breach || (!a.commit_timing_only && reproduced) {
-        1
-    } else if !a.commit_timing_only || !failures.is_empty() {
-        // A plain matrix is only one part of the backend performance gate.
-        2
-    } else {
-        0
-    })
-}
-fn scenario(
-    a: &Args,
-    bin: &std::path::Path,
-    plugins: &std::path::Path,
-    root: &std::path::Path,
-    fixture: &fixtures::Fixture,
-    require_commit_timings: bool,
-) -> Result<BTreeMap<String, Vec<f64>>> {
-    let (server, mut h, start) = server::Server::start(
-        bin,
-        root,
-        plugins,
-        a.test_plugin_root.as_deref(),
-        a.startup_timeout_seconds,
-    )?;
-    h.cookie = fixture.cookie.clone();
-    let space = fixture.spaces[0].clone();
-    let mut first = fixture.first.clone();
-    let mut samples: BTreeMap<String, Vec<f64>> = BTreeMap::new();
-    let mut deliveries = BTreeMap::new();
-    samples.insert(
-        format!("startup.{}_spaces", fixture.spaces.len()),
-        vec![start],
-    );
-    // External read-only evidence: startup must leave all space writers unopened
-    // before the first list can qualify as a genuinely cold-space activation.
-    std::fs::write(
-        root.join("startup-state.json"),
-        serde_json::to_vec_pretty(
-            &json!({"space_writer_threads_before_first_use":server.writers()?}),
-        )?,
-    )?;
-    let (_, ms) = h.op("notes.list", json!({"space_id":space}))?;
-    samples.insert("space.process_cold_open".into(), vec![ms]);
-    if a.startup_only {
-        return Ok(samples);
-    }
-    if a.paired_search {
-        search_stage::first_use(&server, &mut h, root, &space, &mut first, &mut samples)?;
-        let enabled = samples["search.rebuild.index_on"][0] == 1.0;
-        if enabled != (plugins == a.plugins) {
-            return Err("search opt-in did not match the paired arm".into());
-        }
-    }
-    let mut live = live::Live::open(
-        &h,
-        "/api/v1/live",
-        &[(
-            "subscriptions".into(),
-            json!([{"space_id":space,"bookmark":null}]).to_string(),
-        )],
-    )?;
-    live.wait_type("ready")?;
-    let placement =
-        materialization::Probe::open(root, space.as_str().ok_or("invalid fixture space")?)?;
-    let mut account = live::Live::open(&h, "/api/v1/account/live", &[])?;
-    account.wait_type("ready")?;
-    for i in 0..a.samples {
-        let (_, _, ms) = h.request("/api/v1/auth/me", None)?;
-        samples.entry("auth.session".into()).or_default().push(ms);
-        let (_, ms) = h.op("notes.get", json!({"id":first["id"]}))?;
-        samples.entry("notes.get".into()).or_default().push(ms);
-        let (_, ms) = h.op("notes.list", json!({"space_id":space}))?;
-        samples
-            .entry("notes.list.first100".into())
-            .or_default()
-            .push(ms);
-        let (_, ms) = h.op("resolve", json!({"kind":"notes","id":first["id"]}))?;
-        samples.entry("resolve".into()).or_default().push(ms);
-        let input = json!({"id":first["id"],"base_revision":first["revision"],"markdown":format!("seed {} save {i}",a.seed)});
-        let rid = format!("timed-save-{i}");
-        let delivery = std::time::Instant::now();
-        // Read the subscription concurrently: HTTP acknowledgement may follow delivery.
-        let (updated, ms, event, delivery_ms, received_at_ns) =
-            std::thread::scope(|scope| -> Result<_> {
-                let write = scope.spawn(|| {
-                    h.op_id("notes.update", input.clone(), &rid)
-                        .map_err(|e| e.to_string())
-                });
-                let event = live.wait_type("entry")?;
-                let received_at_ns = calternal_types::perf_monotonic_ns();
-                let elapsed = delivery.elapsed().as_secs_f64() * 1000.;
-                let (updated, ms) = write
-                    .join()
-                    .map_err(|_| "write thread panicked")?
-                    .map_err(|e| format!("update failed: {e}"))?;
-                Ok((updated, ms, event, elapsed, received_at_ns))
-            })?;
-        deliveries.insert(rid.clone(), received_at_ns);
-        samples.entry("notes.update".into()).or_default().push(ms);
-        if event["entry"]["item"] != first["id"] || event["entry"]["request_id"] != rid {
-            return Err("live event did not correlate with request and note".into());
-        }
-        samples
-            .entry("live.update_to_client".into())
-            .or_default()
-            .push(delivery_ms);
-        placement.wait(&updated["note"])?;
-        let durable_file_ms = delivery.elapsed().as_secs_f64() * 1000.;
-        if durable_file_ms > 1000. {
-            return Err("write-to-file exceeded the conservative one-second bound".into());
-        }
-        samples
-            .entry("userdata.write_to_durable_file".into())
-            .or_default()
-            .push(durable_file_ms);
-        first = updated["note"].clone();
-        let (_, ms) = h.op_id("notes.update", input, &rid)?;
-        samples
-            .entry("receipt.round_trip".into())
-            .or_default()
-            .push(ms);
-    }
-    timings::collect(
-        &root.join("server.log"),
-        &deliveries,
-        &mut samples,
-        require_commit_timings,
-    )?;
-    if a.commit_timing_only {
-        samples.retain(|metric, _| metric == timings::COMMIT_TO_CLIENT);
-        return Ok(samples);
-    }
-    for i in 0..a.samples {
-        let t = std::time::Instant::now();
-        let (_, save_ack_ms) = h.op(
-            "drafts.save",
-            json!({"space_id":space,"item_id":first["id"],"text":format!("draft {i}")}),
-        )?;
-        samples
-            .entry("account.draft_save_ack".into())
-            .or_default()
-            .push(save_ack_ms);
-        account.wait_type("changed")?;
-        samples
-            .entry("account.draft_write_to_feed".into())
-            .or_default()
-            .push(t.elapsed().as_secs_f64() * 1000.);
-    }
-    if a.paired_search {
-        search_stage::lag(&mut h, &placement, &space, &mut first, &mut samples)?;
-    }
-    drop(live);
-    drop(account);
-    for space in &fixture.spaces {
-        h.op("notes.list", json!({"space_id":space}))?;
-    }
-    std::thread::sleep(Duration::from_secs(2));
-    samples.insert(
-        format!("memory.{}_spaces.after_2s", fixture.spaces.len()),
-        vec![server.rss()?],
-    );
-    Ok(samples)
+    Ok(
+        if commit_breach || placement_breach || (!a.commit_timing_only && reproduced) {
+            1
+        } else if !a.commit_timing_only
+            || !failures.is_empty()
+            || stopped_for_placement
+            || commit_incomplete
+        {
+            // A plain matrix is only one part of the backend performance gate.
+            2
+        } else {
+            0
+        },
+    )
 }
 
 #[cfg(test)]
