@@ -53,19 +53,27 @@ impl MachineService {
         )
     }
 
-    /// Start only the image-owned tool-free adapter on a shared turn lease.
+    /// Start only an image-owned adapter on a shared turn lease.
     /// The shared provider credentials are never provided as command data.
     pub(crate) fn shared_turn_exec(
         &self,
         account: AccountId,
         lease: Uuid,
+        env: Vec<(String, String)>,
         stdin: String,
+        provider: Option<calternal_machine::protocol::SharedToolsProvider>,
     ) -> Result<Uuid, Error> {
+        let executable = match provider {
+            Some(calternal_machine::protocol::SharedToolsProvider::Codex) => {
+                "/opt/calternal-provider/bin/calternal-provider-codex"
+            }
+            _ => crate::turns::space_execution::SHARED_ADAPTER,
+        };
         self.queued_exec(
             account,
             lease,
-            vec![crate::turns::space_execution::SHARED_ADAPTER.into()],
-            Vec::new(),
+            vec![executable.into()],
+            env,
             stdin,
             false,
             false,
