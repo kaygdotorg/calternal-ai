@@ -57,7 +57,7 @@ await finger(4, 70, { steps: 3, gap: 8 }); await settle();
 const mv = await page.evaluate(() => window.__mv), speed = mv.length > 1 ? (mv.at(-1)[1] - mv[0][1]) / (mv.at(-1)[0] - mv[0][0]) : 0;
 if (process.env.CAL_GATE && speed < 0.45) console.log(`info  a short fast flick: the events arrived too slowly to be a flick (${speed.toFixed(2)} px/ms on a busy machine), not judged`);
 else ok((await side()) === "true", "a short fast flick opens the list", `${speed.toFixed(2)} px/ms`);
-await page.evaluate(() => history.back()); await settle();
+if ((await side()) === "true") { await page.evaluate(() => history.back()); await settle(); } // (a flick that was not judged may have left it closed: nothing to go back from)
 // 6. Interrupt: a touch while the card is settling holds it where it is.
 await page.getByRole("button", { name: "Show notes" }).click();
 await page.waitForTimeout(120);

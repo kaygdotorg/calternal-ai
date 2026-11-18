@@ -3,6 +3,7 @@
   // bottom of the viewport; the right card holds the app's panels. Wide screens put them side by side. Narrow screens (< 760 px) stack
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
+  import { untrack } from "svelte";
   import { Card, Pill } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
@@ -127,26 +128,47 @@
   function finishWide(vAlong: number) {
     const p = wp!;
     const open = settleOpen(p.vis, p.w, vAlong);
-    const from = p.vis;
     lastSide = p.side;
-    const changed = open !== p.layoutOpen;
-    if (changed) shell.setOpen(p.side, open);
-    const newOpen = open;
+    if (open !== p.layoutOpen) shell.setOpen(p.side, open);
+    settleWide(p.side, p.w, p.vis, open);
+  }
+  /**
+   * The one animation of a sidebar going to `open` (its layout is already in the new state) from `from` px showing: the card and the sidebar's content ease from where they are to rest on the sheet tokens, `transform` and
+   * `translate` only. A pull ends in it, and so do the button, the shortcut and the menu: opening and closing are the same motion in either direction, whatever started it. While it runs the sidebar stays drawn
+   * (fixed at its edge) so a closing one slides away instead of vanishing; a new gesture takes hold of it where it is.
+   */
+  function settleWide(side: Side, w: number, from: number, open: boolean) {
     // The card's offset from where its layout now puts it, so the screen position is unchanged at this instant.
-    const cardFrom = p.side === "left" ? from - (newOpen ? p.w : 0) : -(from - (newOpen ? p.w : 0));
+    const cardFrom = side === "left" ? from - (open ? w : 0) : -(from - (open ? w : 0));
     const timing = sheet();
+    lastSide = side;
     requestAnimationFrame(() => {
       midEl?.animate([{ transform: `translateX(${cardFrom}px)` }, { transform: "translateX(0px)" }], timing);
-      const inner = (p.side === "left" ? sideEl : rightEl)?.firstElementChild as HTMLElement | undefined;
-      const sideFrom = p.side === "left" ? from - p.w : p.w - from;
-      const sideTo = newOpen ? 0 : p.side === "left" ? -p.w : p.w;
+      const inner = (side === "left" ? sideEl : rightEl)?.firstElementChild as HTMLElement | undefined;
+      const sideFrom = side === "left" ? from - w : w - from;
+      const sideTo = open ? 0 : side === "left" ? -w : w;
       const a = inner?.animate([{ translate: `${sideFrom}px 0`, opacity: 1 }, { translate: `${sideTo}px 0`, opacity: 1 }], timing);
-      if (newOpen || !a) wp = null;
+      if (open || !a) wp = null;
       else a.onfinish = a.oncancel = () => { if (wp?.settling) wp = null; };
     });
-    // Until the next frame the pieces stay where the finger left them, now laid out for the new state (the screen does not move at this instant).
-    wp = { ...p, vis: from, layoutOpen: open, settling: true };
+    // Until the next frame the pieces stay where they were, now laid out for the new state (the screen does not move at this instant).
+    wp = { side, vis: from, w, layoutOpen: open, settling: true };
   }
+  // A sidebar opened or closed by anything but a pull (a button, a shortcut, a menu, the palette) goes through the same motion, from fully closed to fully open or back, or from wherever a running one had got to.
+  let seenLeft = shell.sidebarOpen, seenRight = false, seenInit = false;
+  $effect(() => {
+    const l = shell.sidebarOpen, r = rightOpen;
+    untrack(() => {
+      if (!seenInit) { seenInit = true; seenLeft = l; seenRight = r; return; }
+      const changedSide: Side | null = l !== seenLeft ? "left" : r !== seenRight ? "right" : null;
+      seenLeft = l; seenRight = r;
+      if (!changedSide || shell.narrow || wp) return; // a phone has its own CSS motion; a pull already runs this
+      const open = changedSide === "left" ? l : r;
+      const w = sideWidth(changedSide);
+      if (!w) return;
+      settleWide(changedSide, w, moving(midEl) ? grabWide(changedSide) : open ? 0 : w, open);
+    });
+  });
   // A trackpad's horizontal two-finger swipe over the app: the same pull, fed by `wheel` events (./pull.ts WheelSwipe). Only on a wide screen; the events are consumed (so the browser does not take
   // the swipe as Back) only while a pull owns them.
   const ws = new WheelSwipe();
