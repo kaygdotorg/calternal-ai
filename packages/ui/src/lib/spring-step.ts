@@ -4,6 +4,7 @@
  */
 export interface SpringConfig { stiffness: number; damping: number; mass: number }
 
+/** One value on a damped spring: `value` and `velocity`, advanced with `step`; the caller decides the target each frame and when it has arrived (`atRest`). */
 export class Spring {
   value: number;
   velocity = 0;
