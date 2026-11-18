@@ -707,6 +707,7 @@ async fn all_operations_hide_foreign_ids() {
         ),
     ];
     cases.extend(notes_cases::foreign_cases(&f.spaces[0], &n, &missing));
+    cases.extend(automation_cases::foreign_cases(&f.spaces[0], &missing));
     let catalog = f
         .req(
             "GET",

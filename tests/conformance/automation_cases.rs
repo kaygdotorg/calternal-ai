@@ -1,6 +1,62 @@
 //! Creator authority, readable automation schedules, and portable skill bundles.
 use super::*;
 
+pub(super) fn foreign_cases(foreign: &str, missing: &str) -> Vec<(&'static str, Value, Value)> {
+    let skill = "---\nname: review\ndescription: Review a document.\n---\nReview it.";
+    let automation = uuid::Uuid::now_v7();
+    [
+        ("skills.read", json!({"name":"review"})),
+        ("skills.create", json!({"name":"review","markdown":skill})),
+        (
+            "skills.update",
+            json!({"name":"review","markdown":skill,"base_revision":"probe"}),
+        ),
+        (
+            "skills.remove",
+            json!({"name":"review","base_revision":"probe"}),
+        ),
+        (
+            "automations.preview_schedule",
+            json!({"schedule_text":"daily at 9"}),
+        ),
+        ("automations.list", json!({})),
+        (
+            "automations.create",
+            json!({"name":"Inspect","prompt":"Inspect the draft.",
+            "schedule_text":"daily at 9","schedule":"*-*-* 09:00:00","timezone":"UTC"}),
+        ),
+        ("automations.read", json!({"id":automation})),
+        (
+            "automations.update",
+            json!({"id":automation,"base_revision":"probe","name":"Review"}),
+        ),
+        (
+            "automations.enable",
+            json!({"id":automation,"base_revision":"probe"}),
+        ),
+        (
+            "automations.pause",
+            json!({"id":automation,"base_revision":"probe"}),
+        ),
+        (
+            "automations.remove",
+            json!({"id":automation,"base_revision":"probe"}),
+        ),
+        ("automations.run_now", json!({"id":automation})),
+        ("automations.next_run", json!({"id":automation})),
+        ("automations.last_run", json!({"id":automation})),
+    ]
+    .into_iter()
+    .map(|(operation, input)| {
+        let mut inaccessible = input.clone();
+        inaccessible["space_id"] = json!(foreign);
+        let mut nonexistent = input;
+        nonexistent["space_id"] = json!(missing);
+        (operation, inaccessible, nonexistent)
+    })
+    .collect()
+}
+
 fn data(answer: Answer) -> Value {
     answer.ok();
     answer.body["data"].clone()
