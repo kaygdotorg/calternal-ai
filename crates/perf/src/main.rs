@@ -1,4 +1,4 @@
-//! Disposable real-server benchmark runner. Never links the server or changes product code.
+//! Disposable real-server benchmark runner. HTTP scenarios use a separate server process.
 #![deny(missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links)]
 mod concurrency;
@@ -9,7 +9,9 @@ mod idle;
 mod jobs;
 mod live;
 mod materialization;
+mod rebuild;
 mod report;
+mod search;
 mod server;
 mod stats;
 mod timings;
@@ -65,6 +67,18 @@ struct Args {
     /// Client wave sizes; each client owns a separate space (maximum 128).
     #[arg(long, default_value = "8,32,128")]
     clients: String,
+    /// Measure authorized first-page search and same-space note saves.
+    #[arg(long)]
+    search_only: bool,
+    /// Measure staged file-origin and actual first-use index rebuilding.
+    #[arg(long)]
+    rebuild_only: bool,
+    /// A stopped, 100,000-note, one-space search benchmark fixture.
+    #[arg(long)]
+    rebuild_source: Option<PathBuf>,
+    /// Measure the selected rebuild sizes without re-running the admission waves.
+    #[arg(long, requires = "rebuild_only")]
+    rebuild_no_admission: bool,
     #[arg(long)]
     prepare_only: bool,
     #[arg(long)]
@@ -103,6 +117,8 @@ fn run(a: &Args) -> Result<i32> {
         a.fsync_probe,
         a.startup_only,
         a.concurrency_only,
+        a.search_only,
+        a.rebuild_only,
     ]
     .into_iter()
     .filter(|v| *v)
@@ -110,7 +126,7 @@ fn run(a: &Args) -> Result<i32> {
         > 1
     {
         return Err(
-            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only or --concurrency-only".into(),
+            "choose one measurement mode: --prepare-only, --jobs-only, --idle-only, --fsync-probe, --startup-only, --concurrency-only, --search-only or --rebuild-only".into(),
         );
     }
     if a.startup_timeout_seconds == 0 || a.startup_timeout_seconds > 300 {
@@ -130,6 +146,12 @@ fn run(a: &Args) -> Result<i32> {
     }
     if a.concurrency_only {
         return concurrency::run(a);
+    }
+    if a.rebuild_only {
+        return rebuild::run(a);
+    }
+    if a.search_only {
+        return search::run(a);
     }
     if a.samples < 20 || a.pairs < 3 {
         return Err("at least 20 samples and three interleaved pairs are required".into());

@@ -15,6 +15,8 @@ pub mod fault;
 pub mod machines;
 mod notes;
 pub mod plugins;
+#[cfg(feature = "rebuild-probe")]
+pub mod rebuild_probe;
 pub mod resolve;
 pub mod secrets;
 pub mod store;
