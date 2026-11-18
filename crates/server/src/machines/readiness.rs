@@ -256,6 +256,51 @@ impl MachineService {
         }
     }
 
+    /// Drop observations made against a prior version of one provider.
+    /// One registry lock and no disk writes.
+    pub(crate) fn invalidate_harness_checks(&self, id: &str) -> Result<(), Error> {
+        let mut st = self.lock()?;
+        let mut accounts = std::collections::HashSet::new();
+        for machine in st.machines.values_mut() {
+            for (account, providers) in &mut machine.checks {
+                if providers.remove(id).is_some() {
+                    accounts.insert(*account);
+                }
+            }
+        }
+        for account in accounts {
+            st.readiness.change(account);
+        }
+        Ok(())
+    }
+
+    /// Require the selected diagnostic machine to report the candidate's
+    /// backend and the isolated harness protocol. No machine-side calls.
+    pub(crate) fn verify_harness_target(
+        &self,
+        account: AccountId,
+        id: Uuid,
+        guest: bool,
+    ) -> Result<bool, Error> {
+        let pool = self.verify_target(account, id, true)?;
+        let st = self.lock()?;
+        let matches = st
+            .machines
+            .get(&id)
+            .and_then(|machine| machine.live.as_ref())
+            .is_some_and(|live| {
+                live.harness_protocol
+                    && !live.direct
+                    && (live.thread_limit.is_some() && !live.kvm_fallback) == guest
+            });
+        if !matches {
+            return Err(Error::unavailable(
+                "the selected machine does not support the candidate backend",
+            ));
+        }
+        Ok(pool)
+    }
+
     /// Cache a bounded Check event only while the same account still holds the
     /// current machine lease. One registry lock, zero flushes.
     pub(crate) fn record_check(

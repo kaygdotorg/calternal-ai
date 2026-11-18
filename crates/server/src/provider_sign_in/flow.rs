@@ -48,7 +48,37 @@ pub(super) async fn run<D: Directory>(
         None
     };
     let svc = machines.clone();
-    let lease = blocking(move || svc.request_sign_in(space, account, machine)).await;
+    let appdata = state.store.appdata().to_owned();
+    let provider = target.provider.clone();
+    let login_scope = target.login_scope;
+    let lease =
+        blocking(move || {
+            match crate::plugins::package_store::provider_runtime::read_pin(&appdata, &provider)
+                .map_err(|_| failed())?
+            {
+                Some((pin, legacy)) => {
+                    let mut sandbox = crate::plugins::package_store::provider_runtime::sandbox(
+                        &pin,
+                        provider,
+                        login_scope,
+                        false,
+                    );
+                    sandbox.legacy_profile = legacy;
+                    svc.request_harness(
+                        space,
+                        account,
+                        Uuid::new_v4(),
+                        Some(machine),
+                        pin.image,
+                        sandbox,
+                        true,
+                        false,
+                    )
+                }
+                None => svc.request_sign_in(space, account, machine),
+            }
+        })
+        .await;
     let done = match lease {
         Ok(lease) => {
             let lease = lease.lease_id;

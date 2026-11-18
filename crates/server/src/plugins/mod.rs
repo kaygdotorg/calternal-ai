@@ -18,6 +18,7 @@ pub mod agent_access;
 pub mod agent_settings;
 pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
+pub(crate) mod harness_admin;
 pub mod job_api;
 pub mod job_sql;
 mod job_streams;
@@ -456,6 +457,19 @@ impl Catalog {
     /// Look up a plugin by identifier. Cost: O(plugins), no allocation.
     pub fn get(&self, id: &str) -> Option<&Arc<Plugin>> {
         self.plugins.iter().find(|p| p.manifest.id == id)
+    }
+
+    /// Choose the distribution's default provider if installed, otherwise the
+    /// first available provider. An installation with no provider keeps its
+    /// normal thread metadata default until a provider is installed.
+    pub(crate) fn default_provider(&self) -> &str {
+        self.plugins
+            .iter()
+            .filter(|plugin| plugin.manifest.provider.is_some() && plugin.unavailable.is_none())
+            .max_by_key(|plugin| plugin.entry.default_enabled)
+            .map_or("calternal-claude-code", |plugin| {
+                plugin.manifest.id.as_str()
+            })
     }
 
     /// Find code already pinned to an invocation or durable job. Removed and narrowed

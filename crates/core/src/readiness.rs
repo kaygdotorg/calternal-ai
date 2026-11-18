@@ -52,7 +52,7 @@ pub struct MachineVerifyInput {
     pub space_id: String,
     /// Enrolled machine UUID. Pool machines require server settings authority.
     pub machine_id: String,
-    /// Optional provider plugin. An empty or absent value checks Claude Code.
+    /// Optional provider plugin. An empty or absent value checks the installation's default provider.
     #[serde(default)]
     pub provider_id: String,
 }

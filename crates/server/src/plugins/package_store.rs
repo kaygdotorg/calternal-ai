@@ -422,6 +422,11 @@ pub(super) fn remove(appdata: &Path, id: &str) -> Result<(), String> {
     }
     tx.execute("DELETE FROM retained_plugins WHERE id = ?1", [id])
         .map_err(reason)?;
+    tx.execute(
+        "DELETE FROM provider_runtime WHERE id = ?1 AND legacy = 0",
+        [id],
+    )
+    .map_err(reason)?;
     tx.commit().map_err(reason)
 }
 

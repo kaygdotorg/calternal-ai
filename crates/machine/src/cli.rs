@@ -92,7 +92,7 @@ pub enum Command {
         /// Space UUID where the diagnostic can run.
         #[arg(long)]
         space_id: String,
-        /// Provider plugin to check. Defaults to Claude Code.
+        /// Provider plugin to check. Uses the server default when omitted.
         #[arg(long, default_value = "")]
         provider: String,
         /// Person credential used to check machine ownership.

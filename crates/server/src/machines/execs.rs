@@ -28,6 +28,33 @@ impl MachineService {
         env: Vec<(String, String)>,
         stdin: String,
     ) -> Result<Uuid, Error> {
+        self.queued_exec(account, lease, argv, env, stdin, false, false)
+    }
+
+    /// Start a host-controlled provider process in its assigned harness sandbox.
+    /// Interactive input is permitted only for the negotiated adapter.
+    pub(crate) fn harness_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        argv: Vec<String>,
+        env: Vec<(String, String)>,
+        stdin: String,
+        interactive: bool,
+    ) -> Result<Uuid, Error> {
+        self.queued_exec(account, lease, argv, env, stdin, true, interactive)
+    }
+
+    fn queued_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        argv: Vec<String>,
+        env: Vec<(String, String)>,
+        stdin: String,
+        harness: bool,
+        interactive: bool,
+    ) -> Result<Uuid, Error> {
         if stdin.len() > 128 * 1024 {
             return Err(Error::invalid_input("exec input exceeds 128 KiB"));
         }
@@ -39,7 +66,10 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         let _steps = match st.leases.get(&lease) {
-            Some(l) if l.row.account == account && (l.row.worker || l.provider_login) => {
+            Some(l)
+                if l.row.account == account
+                    && (l.row.worker || l.provider_login || l.row.harness.is_some() != harness) =>
+            {
                 return Err(Error::forbidden(
                     "internal machine execs are host-controlled",
                 ));
@@ -55,6 +85,7 @@ impl MachineService {
         let id = Uuid::new_v4();
         let mut exec = Exec::new(lease, account, argv, env, ExecState::Queued);
         exec.stdin = stdin;
+        exec.interactive = interactive;
         st.execs.insert(id, exec);
         st.send_execs(lease);
         Ok(id)

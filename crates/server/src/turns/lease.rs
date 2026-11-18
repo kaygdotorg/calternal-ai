@@ -11,6 +11,7 @@ pub(super) async fn prepare<D: Directory>(
     live: &Arc<crate::plugins::live::Live>,
     space: SpaceId,
     thread: Uuid,
+    runtime: Option<(String, calternal_machine::protocol::HarnessSandbox)>,
 ) -> Result<Value, Error> {
     let account = job.account;
     let mut initial = job.checkpoint.clone();
@@ -47,7 +48,18 @@ pub(super) async fn prepare<D: Directory>(
     let checkpoint = blocking(move || {
         let mut lease = None;
         let result = s.jobs.checkpoint_prepared(&sp, &id, run, &l, || {
-            let admitted = if pool_diagnostic {
+            let admitted = if let Some((image, harness)) = runtime {
+                m.request_harness(
+                    space,
+                    account,
+                    thread,
+                    pin,
+                    image,
+                    harness,
+                    false,
+                    pool_diagnostic,
+                )?
+            } else if pool_diagnostic {
                 let machine =
                     pin.ok_or_else(|| Error::internal("pool diagnostic has no target"))?;
                 m.request_pool_diagnostic(space, account, thread, machine)?

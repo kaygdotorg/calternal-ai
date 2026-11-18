@@ -29,9 +29,9 @@ pub enum Command {
         /// Human-readable title, at most 256 UTF-8 bytes.
         #[arg(long)]
         title: String,
-        /// Enabled provider plugin.
-        #[arg(long, default_value = "calternal-claude-code")]
-        provider: String,
+        /// Enabled provider plugin. The server chooses its default when omitted.
+        #[arg(long)]
+        provider: Option<String>,
         /// least_access, approve_for_me, or full_access.
         #[arg(long, default_value = "approve_for_me")]
         mode: String,
@@ -133,8 +133,10 @@ impl Command {
                 mode,
                 parent_thread,
             } => {
-                let mut v =
-                    json!({"space_id":space_id,"title":title,"provider":provider,"mode":mode});
+                let mut v = json!({"space_id":space_id,"title":title,"mode":mode});
+                if let Some(provider) = provider {
+                    v["provider"] = json!(provider);
+                }
                 if let Some(parent) = parent_thread {
                     v["parent_thread"] = json!(parent);
                 }

@@ -39,6 +39,7 @@ pub(super) async fn verify(
 pub(super) enum Request {
     Ready,
     Start(SpaceId, SandboxSpec),
+    StartHarness(SpaceId, SandboxSpec, crate::protocol::HarnessSandbox),
     Discard(Uuid, Uuid),
     Exec(Uuid, ExecRequest),
     Freeze(Uuid),

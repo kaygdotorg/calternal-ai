@@ -91,3 +91,31 @@ directory. Podman mounts the shared directory read-only during a turn. Direct
 uses distinct homes under the same Unix account and retains its documented
 host filesystem access. Existing Linux homes import the Claude OAuth record
 alone. Other state stays in its original directory.
+
+## Installed harness runtimes
+
+Install the provider manifest through the ordinary package review, installation
+and space activation commands. The runtime image is a separate immutable,
+operator-installed artifact. A newly installed provider needs an active tested
+runtime. The package store's migration preserves the bundled provider's existing
+image selection and private login layout.
+
+Install both release candidates with the same lifecycle commands on their manifest
+executable. `--harness-version` reports the installed official CLI version,
+`--harness-update` describes the exact package release and public sign-in metadata,
+and `--harness-smoke-test VERSION` checks the candidate in a scratch sandbox.
+The host requires the expected version and a bounded successful result before
+offering an update. The installation administrator calls `harnesses.list`,
+`harnesses.stage`, `harnesses.activate`, and `harnesses.rollback` to query and
+change the runtime pin. Routes work through the standard operation endpoint.
+
+Managed leases carry a provider ID and an explicit login scope. The sign-in
+recipient is the person who initiated the request. Account scope is supported by
+the current placement code. A future space login needs owner/manager settings,
+an authorized space-scoped placement and profile volume, per-member override,
+revocation and erasure, scoped readiness and session-binding checks. The current
+machine rejects unsupported space-scoped assignments before mounting any profile.
+
+Interactive runtimes accept `agent.steer`, `agent.approval`, and a bounded graceful
+`agent.stop`. Approvals expire and apply only to the pending request in its current
+run. The adapter may refuse a native approval that would bypass the sandbox.

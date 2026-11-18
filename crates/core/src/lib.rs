@@ -32,6 +32,8 @@ pub use plugin_settings::*;
 
 mod provider;
 pub use provider::*;
+mod harness;
+pub use harness::*;
 
 mod agent;
 pub use agent::*;

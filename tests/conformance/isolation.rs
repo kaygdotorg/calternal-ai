@@ -24,6 +24,7 @@ mod jobs_cases;
 mod kind_page_cases;
 mod people_cases;
 
+mod harness_admin_cases;
 mod provider_sign_in_cases;
 mod requests_cases;
 mod requests_review_cases;
@@ -724,6 +725,7 @@ async fn all_operations_hide_foreign_ids() {
 
     covered.extend(requests_cases::OPERATIONS.iter().copied());
     covered.extend(provider_sign_in_cases::OPERATIONS.iter().copied());
+    covered.extend(harness_admin_cases::OPERATIONS.iter().copied());
     covered.extend(plugin_settings_cases::OPERATIONS.iter().copied());
     covered.extend(search_cases::OPERATIONS.iter().copied());
     // Private account input is exercised with real sessions in drafts_cases.rs.

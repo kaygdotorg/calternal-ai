@@ -35,6 +35,7 @@ impl MachineService {
             pinned_machine,
             false,
             false,
+            None,
         )
     }
 
@@ -56,6 +57,7 @@ impl MachineService {
             Some(machine),
             true,
             false,
+            None,
         )
     }
 
@@ -76,6 +78,33 @@ impl MachineService {
             Some(machine),
             false,
             true,
+            None,
+        )
+    }
+
+    /// Admit a harness on a machine that supports its isolated profile and policy.
+    /// Uses the same fenced placement and durability as a legacy provider lease.
+    pub(crate) fn request_harness(
+        &self,
+        space: SpaceId,
+        account: AccountId,
+        thread: Uuid,
+        target: Option<Uuid>,
+        image: String,
+        harness: calternal_machine::protocol::HarnessSandbox,
+        sign_in: bool,
+        pool_diagnostic: bool,
+    ) -> Result<RunView, Error> {
+        self.request_work(
+            space,
+            account,
+            thread,
+            Some(image),
+            None,
+            target,
+            pool_diagnostic,
+            sign_in,
+            Some(harness),
         )
     }
 
@@ -92,6 +121,7 @@ impl MachineService {
         pinned_machine: Option<Uuid>,
         pool_diagnostic: bool,
         provider_login: bool,
+        harness: Option<calternal_machine::protocol::HarnessSandbox>,
     ) -> Result<RunView, Error> {
         let _account = self
             .lifecycle
@@ -113,6 +143,8 @@ impl MachineService {
             if l.row.account != account
                 || l.row.space != space
                 || l.row.pinned_machine != pinned_machine
+                || l.row.harness != harness
+                || l.row.image != image
             {
                 return Err(Error::conflict("thread is running for another context"));
             }
@@ -129,6 +161,7 @@ impl MachineService {
             account,
             thread,
             image,
+            harness,
             worker: is_worker,
             machine: None,
             last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,

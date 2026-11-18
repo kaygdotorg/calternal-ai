@@ -223,6 +223,42 @@ pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
         crate::PluginSettingChange
     ),
     operation!(
+        "harnesses.list",
+        "List installed harnesses and their tested updates",
+        Account,
+        ServerSettings,
+        Read,
+        crate::AccountInputList,
+        crate::HarnessList
+    ),
+    operation!(
+        "harnesses.stage",
+        "Smoke-test a candidate harness runtime in a disposable sandbox",
+        Account,
+        ServerSettings,
+        Reversible,
+        crate::HarnessStage,
+        crate::HarnessPin
+    ),
+    operation!(
+        "harnesses.activate",
+        "Select an exact smoke-tested harness runtime for new work",
+        Account,
+        ServerSettings,
+        Reversible,
+        crate::HarnessSelect,
+        crate::HarnessPin
+    ),
+    operation!(
+        "harnesses.rollback",
+        "Restore a previously tested harness runtime",
+        Account,
+        ServerSettings,
+        Reversible,
+        crate::HarnessSelect,
+        crate::HarnessPin
+    ),
+    operation!(
         "provider.sign_in.start",
         "Start a private provider sign-in",
         Account,

@@ -193,6 +193,9 @@ pub struct LeaseRow {
     pub worker: bool,
     /// Requested base image.
     pub image: Option<String>,
+    /// Provider profile and confinement selected at admission. It is immutable
+    /// across lease reassignments and server restarts.
+    pub harness: Option<calternal_machine::protocol::HarnessSandbox>,
     /// Current machine, while assigned.
     pub machine: Option<Uuid>,
     /// Machine that last held it (placement affinity).
@@ -212,9 +215,15 @@ pub struct LeaseRow {
 /// Insert or update a lease.
 pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
     let now = now_ms();
+    let harness = l
+        .harness
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     c.execute(
-        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)
+        "INSERT INTO leases (id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, updated_ms, worker, pinned_machine, harness)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)
          ON CONFLICT(id) DO UPDATE SET machine=excluded.machine, last_machine=excluded.last_machine,
            fence=excluded.fence, state=excluded.state, reason=excluded.reason, updated_ms=excluded.updated_ms",
         params![
@@ -231,7 +240,8 @@ pub fn put_lease(c: &Connection, l: &LeaseRow) -> rusqlite::Result<()> {
             l.created_ms,
             now,
             l.worker,
-            l.pinned_machine.map(|machine| machine.to_string())
+            l.pinned_machine.map(|machine| machine.to_string()),
+            harness,
         ],
     )?;
     Ok(())
@@ -288,10 +298,21 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         reason: r.get(9)?,
         created_ms: r.get(10)?,
         pinned_machine: uuid(r.get(12)?),
+        harness: r
+            .get::<_, Option<String>>(13)?
+            .map(|value| serde_json::from_str(&value))
+            .transpose()
+            .map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    13,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
     })
 }
 
-const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine";
+const LEASE_COLUMNS: &str = "id, space, account, thread, image, machine, last_machine, fence, state, reason, created_ms, worker, pinned_machine, harness";
 
 /// Leases that have not ended, oldest first.
 pub fn active_leases(c: &Connection) -> rusqlite::Result<Vec<LeaseRow>> {
@@ -363,6 +384,9 @@ pub(crate) fn last_thread_machine(
     Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }
 
+const ADD_HARNESS: &str =
+    "ALTER TABLE leases ADD COLUMN harness TEXT CHECK (harness IS NULL OR json_valid(harness));";
+
 /// Return the machine registry schema shared by normal startup and upgrade admission.
 /// Baseline 6 is the first production schema, including durable erased-worker stops.
 pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
@@ -372,8 +396,11 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             "machines.db",
             6,
             &[SCHEMA],
-            &["CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;"],
+            &[
+                ADD_HARNESS,
+                "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+            ],
         );
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[])
+    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[ADD_HARNESS])
 }
