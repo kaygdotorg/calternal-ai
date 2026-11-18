@@ -129,9 +129,10 @@ Input: `docs/reviews/plugin-and-client-map-sol.md`.
   (`docs/measurements/sandbox-hybrid.md`). CPU is shared by weights at both levels.
 - Drafts live until sent or erased, capped by count and size per account. A message queued
   while offline stays until sent or cancelled; after 7 days it asks before sending.
-- Plugin network access: none by default. A plugin declares destinations in its manifest;
-  a Manager approves them at enable time; the plugin fetches through the server, which
-  logs the request, attaches secrets by handle and may cache results. No raw sockets.
+- Plugin workers have no sockets. A manifest requests distinct named, content
+  fetch, open internet and private grants. The trusted host enforces the current
+  per-space approval and remote-content preferences. See the
+  [network contract](plugin-interface-proposal.md#brokered-network-capabilities).
 - Protocols that need long-lived connections (mail: IMAP, JMAP, SMTP) are Rust engines in
   the server behind a contract, with every outbound connection through one guard
   (the existing app's netguard, ADR 0071); the plugin is the product layer on top.
@@ -389,3 +390,26 @@ sections enter the command list as navigation commands in the Settings group.
 from the current catalog snapshot. Live install, update, disable and removal
 take effect on the next request.
 See [Search and palette lookups](search.md).
+
+
+## Sealed plugin content
+
+For the image and font proxy, declare `network.content_fetch` and
+`content_prepare_v1`. The declaration names the `images_fonts` profile and at
+most 32 of the package's text kinds through `sources`, for example
+`{"kind":"mail-message","field":"text"}`. Prepare an exact, live stored item
+revision through `prepareContent(context, {kind, item_id, revision, field})`.
+The host takes the person and space from the invocation. It returns only an
+opaque frame ID. Caller-supplied URLs have no direct fetch operation.
+
+Read frame metadata with `plugins.network.content.get`, passing the space
+and frame IDs. The host rechecks the viewer, source revision and plugin
+activation. Mount the returned frame URL with a sandbox that enables no
+features. External navigation goes through the host's explicit action using
+the returned links. Frame references expire after five minutes or on eviction.
+
+Use `plugins.network.content.preference.get` and
+`plugins.network.content.preference.set` with the space UUID to read or edit
+the signed-in person's choice. Defaults are Always, with Ask for explicit
+loads and Never for placeholders. Fetch timing for the completed proxy is
+defined in the [content profile](plugin-interface-proposal.md#b-content-fetch).

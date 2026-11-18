@@ -280,7 +280,7 @@ pub async fn cookie_middleware(
         || (api
             && response
                 .extensions()
-                .get::<crate::api::wallpapers::ImageResponse>()
+                .get::<crate::api::assets::CacheResponse>()
                 .is_none())
     {
         response

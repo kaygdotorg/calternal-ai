@@ -328,6 +328,22 @@ fn review(source: &Path, appdata: Option<&Path>) -> Result<Reply, CliError> {
         ("Host calls", calls.join(", ")),
         ("Secret names", manifest.secrets.join(", ")),
     ]);
+    if let Some(fetch) = manifest
+        .network
+        .as_ref()
+        .and_then(|network| network.content_fetch.as_ref())
+    {
+        let sources = fetch
+            .sources
+            .iter()
+            .map(|source| source.kind.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        reply = reply.fields([(
+            "Network content fetch",
+            format!("Load images and fonts referenced by {sources} via anonymous HTTPS. Servers see asset URLs and fetch times."),
+        )]);
+    }
     if let Some((operations, calls, secrets)) = changed {
         reply = reply.fields([
             ("New or changed operations", operations.join(", ")),
