@@ -261,6 +261,9 @@ try {
       failure_statuses: [...new Set(samples.filter(sample => !sample.note).map(sample => sample.status))],
       reconnect_banner: await Promise.race([bannerSeen, sleep(600).then(() => false)]),
     }));
+    // The handoff above keeps the tab open. The untimed rollback check needs
+    // only the session cookie and the acknowledged note.
+    await page.close();
     execFileSync(rollback, ["--target", target], { stdio: "inherit" });
     assert.equal(imageId(), previous);
     assert.equal((await op("notes.get", { id: next.note.id })).note.id, next.note.id);
