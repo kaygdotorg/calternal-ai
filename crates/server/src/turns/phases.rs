@@ -104,8 +104,8 @@ impl Phases {
         Ok(())
     }
 
-    /// Fold one compact timing marker into the existing terminal output write.
-    /// Turns that never emitted assistant activity leave no empty message.
+    /// Attach timing to the existing terminal write. The thread writer updates
+    /// the heading without interpreting arbitrary assistant body text.
     pub(super) fn finish(&mut self, checkpoint: &mut Value) {
         if !self.activity {
             return;
@@ -113,12 +113,12 @@ impl Phases {
         self.activity = false;
         self.record();
         let [queued, sandbox, running, tools] = self.totals;
-        let duration = sandbox + running + tools;
-        let text = checkpoint["thread_text"].as_str().unwrap_or("");
-        checkpoint["thread_text"] = json!(format!(
-            "{text}\n\n<!-- turn-timing duration-ms:{duration} reasoning-ms:{} queued-ms:{queued} sandbox-ms:{sandbox} tool-ms:{tools} -->\n",
-            self.reasoning_ms,
-        ));
+        checkpoint["message_timing"] = json!({
+            "duration_ms": sandbox + running + tools,
+            "reasoning_ms": self.reasoning_ms, "queued_ms": queued,
+            "sandbox_ms": sandbox, "tool_ms": tools,
+            "outcome": checkpoint["message_outcome"].as_str().unwrap_or("interrupted"),
+        });
     }
 
     fn record(&mut self) {

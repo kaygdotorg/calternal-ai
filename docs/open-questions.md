@@ -25,6 +25,12 @@ move to the decision record they belong to and leave this list. Terms: see
 | 40 | Performance: shortening the security-log replay at start (1,000 spaces: 320 to 860 ms against 300 ms), the cold save tail, the draft-save tail, and what the 10 ms "write reaches a subscribed client" ceiling measures | Decide the measure first | Performance |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
+## Automatic thread title
+
+- Clean subscription profile: a cheap Haiku title turn keeps subscription billing, with a separate sign-in and a proof that the profile loads no hooks or tools.
+- API key: Claude Code bare mode can isolate the turn, with a separately authorized key and per-request API billing.
+- Defer automatic titles until the provider supports isolated subscription login. Codex also needs a Calternal adapter and subscription readiness for GPT-6 Luna, medium reasoning, fast tier.
+
 ## Design rounds
 
 - **In progress: Settings and Appearance**: first eleven answers recorded in `settings.md`; second batch asked. Appearance (wordmark and its font, fonts, wallpaper, accent, themes and presets), agents (retry and snooze, streaming, default permission mode), shortcuts, machines, plugins, skills, automations.

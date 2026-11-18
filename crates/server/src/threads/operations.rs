@@ -75,6 +75,7 @@ pub(super) fn apply<D: Directory>(
             .collect();
         return Ok(json!({"threads":threads,"next_cursor":page.next}));
     }
+    let mut reply = Value::Null;
     if operation == "threads.create" {
         for (kind, placement, format) in st
             .registry
@@ -97,7 +98,9 @@ pub(super) fn apply<D: Directory>(
         if data.contains_key("spawned_by") && !data.contains_key("parent_thread") {
             return Err(Error::invalid_input("spawned_by requires parent_thread"));
         }
-        let now = calternal_content::now_rfc3339();
+        let (_, account_zone) = super::headings::profile(st, who.id)?;
+        let (zone, offset) = display_zone(account_zone, data);
+        let now = super::headings::now(zone.as_deref(), offset)?;
         let provider = data
             .get("provider")
             .and_then(Value::as_str)
@@ -122,18 +125,17 @@ pub(super) fn apply<D: Directory>(
         }
         document::validate_metadata(&metadata)?;
         let bytes = document::encode(&metadata, "");
-        return content
-            .write(
-                space,
-                None,
-                "threads",
-                None,
-                metadata,
-                bytes.as_bytes(),
-                request,
-                document::view,
-            )
-            .map(|item| document::view(&item));
+        content.write(
+            space,
+            None,
+            "threads",
+            None,
+            metadata,
+            bytes.as_bytes(),
+            request,
+            document::receipt_view(&mut reply),
+        )?;
+        return Ok(reply);
     }
     let mut item = content.get(
         space,
@@ -143,7 +145,7 @@ pub(super) fn apply<D: Directory>(
         return Err(Error::not_found("item not found"));
     }
     if operation == "threads.get" {
-        let mut result = document::view(&item);
+        let mut result = document::checked_view(&item)?;
         result["thread"]["turn_state"] = json!("idle");
         result["thread"]["turn_reason"] = crate::turns::reason::describe(None, &Value::Null, false);
         if item.metadata["deleted"] != true
@@ -249,29 +251,42 @@ pub(super) fn apply<D: Directory>(
             data.get("model").and_then(Value::as_str),
             data.get("reasoning").and_then(Value::as_str),
         )?);
-        let now = calternal_content::now_rfc3339();
+        let (label, account_zone) = super::headings::profile(st, who.id)?;
+        let (zone, offset) = display_zone(account_zone, data);
+        let now = super::headings::now(zone.as_deref(), offset)?;
         document::record_message(&mut item.metadata, &now);
-        item.metadata["pending"] = json!({"account":who.id,"request_id":request_id,"fingerprint":fp,"created_ms":calternal_types::now_ms()});
-        let body = format!(
-            "{}\n<!-- message:{} role:person actor:{} time:{now} -->\n{}\n<!-- /message -->\n",
-            document::body(&item)?,
-            Uuid::now_v7(),
-            actor,
-            prompt
-        );
+        item.metadata["pending"] = json!({"account":who.id,"request_id":request_id,"fingerprint":fp,
+            "created_ms":calternal_types::now_ms(),"time_zone":zone,"client_offset_minutes":offset});
+        let role = if actor.via.is_some() {
+            "automation"
+        } else {
+            "person"
+        };
+        let label = if role == "automation" {
+            format!("Automation {}", super::headings::label(&label))
+        } else {
+            super::headings::label(&label)
+        };
+        let heading = format!("{label} · {}", super::headings::time(&now)?);
+        let mut body = document::body(&item)?.to_owned();
+        super::records::append(&mut body, Uuid::now_v7(), role, &heading, prompt, None);
         let bytes = document::encode(&item.metadata, &body);
-        return content
-            .write(
-                space,
-                Some(item.id),
-                "threads",
-                Some(&item.revision),
-                item.metadata.clone(),
-                bytes.as_bytes(),
-                request,
-                document::view,
-            )
-            .map(|i| document::view(&i));
+        super::persistence::check_size(bytes.len())?;
+        content.write(
+            space,
+            Some(item.id),
+            "threads",
+            Some(&item.revision),
+            item.metadata.clone(),
+            bytes.as_bytes(),
+            request,
+            |item| {
+                reply = document::view(item);
+                reply["intent"] = item.metadata["pending"].clone();
+                reply.clone()
+            },
+        )?;
+        return Ok(reply);
     }
     if operation == "threads.stop" {
         return content.admit_item(space, item.id, request, |current, saved| {
@@ -314,7 +329,9 @@ pub(super) fn apply<D: Directory>(
         _ => return Err(Error::not_found("unknown operation")),
     }
     document::validate_metadata(&item.metadata)?;
-    item.metadata["updated_at"] = json!(calternal_content::now_rfc3339());
+    let (_, account_zone) = super::headings::profile(st, who.id)?;
+    let (zone, offset) = display_zone(account_zone, data);
+    item.metadata["updated_at"] = json!(super::headings::now(zone.as_deref(), offset)?);
     let bytes = document::encode(&item.metadata, document::body(&item)?);
     if operation == "threads.delete" {
         let deleted = content.trash(
@@ -322,7 +339,7 @@ pub(super) fn apply<D: Directory>(
             item.metadata.clone(),
             bytes.as_bytes(),
             request,
-            document::view,
+            document::receipt_view(&mut reply),
             || {
                 if st
                     .jobs
@@ -334,7 +351,7 @@ pub(super) fn apply<D: Directory>(
                 Ok(())
             },
         )?;
-        finish_lifecycle(st, space, deleted.id, request, document::view(&deleted))
+        finish_lifecycle(st, space, deleted.id, request, reply)
     } else {
         let archived = content.write(
             space,
@@ -344,9 +361,9 @@ pub(super) fn apply<D: Directory>(
             item.metadata.clone(),
             bytes.as_bytes(),
             request,
-            document::view,
+            document::receipt_view(&mut reply),
         )?;
-        finish_lifecycle(st, space, archived.id, request, document::view(&archived))
+        finish_lifecycle(st, space, archived.id, request, reply)
     }
 }
 
@@ -387,4 +404,18 @@ fn finish_lifecycle<D: Directory>(
         st.inputs.invalidate(account)?;
     }
     Ok(result)
+}
+
+fn display_zone(account_zone: Option<String>, input: &JsonObject) -> (Option<String>, i64) {
+    let device_zone = || {
+        input
+            .get("client_time_zone")
+            .and_then(Value::as_str)
+            .and_then(calternal_core::time_zone::canonical)
+    };
+    let offset = input
+        .get("client_offset_minutes")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    (account_zone.or_else(device_zone), offset)
 }

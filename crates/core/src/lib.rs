@@ -55,3 +55,6 @@ pub const ACCOUNT_ERASURE_PATH: &str = "/api/v1/auth/account/delete";
 
 /// CLI and HTTP action identity for permanent account erasure.
 pub const ACCOUNT_ERASURE_ACTION: &str = "account.delete";
+
+/// IANA time-zone validation and civil offsets for account settings and clients.
+pub mod time_zone;

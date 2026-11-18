@@ -188,6 +188,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RolesResult,
         ProfileInput,
         ProfileResult,
+        TimeZoneInput,
+        TimeZoneResult,
         PersonInput,
         DirectoryPerson,
         PeopleResult,

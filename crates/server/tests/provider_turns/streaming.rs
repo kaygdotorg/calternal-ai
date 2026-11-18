@@ -105,12 +105,13 @@ pub(super) async fn exercise(server: &Server, data: &TempDir, space: &str) {
     assert!(!live.iter().any(|frame| frame["event"]["type"] == "done"));
     let saved = op(server, "threads.get", json!({"id":full_id})).await;
     let reason = &saved["thread"]["turn_reason"];
-    assert_eq!(reason["why"], "thread_full");
+    assert_eq!(reason["code"], "thread_full");
     assert!(reason["message"].as_str().unwrap().contains("not saved"));
     let markdown = saved["thread"]["markdown"].as_str().unwrap();
     assert!(markdown.len() <= calternal_content::MAX_DOCUMENT_BYTES);
     assert!(markdown.len() > calternal_content::MAX_DOCUMENT_BYTES - 32 * 1024);
     assert!(markdown.contains("overflow-segment-0:"));
     assert!(!markdown.contains("overflow-segment-32:"));
-    assert!(markdown.ends_with("\n<!-- /message -->\n"));
+    assert!(markdown.ends_with('\n'));
+    assert_eq!(saved["thread"]["messages"].as_array().unwrap().len(), 2);
 }

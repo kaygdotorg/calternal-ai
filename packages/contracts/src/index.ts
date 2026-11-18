@@ -2565,6 +2565,28 @@ account_id: string,
  */
 name: string, };
 /**
+ * The caller's IANA time zone preference. Null follows the device.
+ */
+
+export type TimeZoneInput = {
+/**
+ * IANA time zone name, or null to clear the stored preference.
+ */
+time_zone: string | null, };
+/**
+ * The caller's saved time-zone preference.
+ */
+
+export type TimeZoneResult = {
+/**
+ * The unchanged account UUID.
+ */
+account_id: string,
+/**
+ * Canonically cased IANA name, or null when following the device.
+ */
+time_zone: string | null, };
+/**
  * Target of a server people operation.
  */
 

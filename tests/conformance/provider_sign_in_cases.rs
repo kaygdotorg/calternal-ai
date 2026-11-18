@@ -94,6 +94,17 @@ async fn until(f: &Fixture, op: &str, input: Value, condition: impl Fn(&Value) -
 async fn provider_sign_in_relays_only_the_owners_challenge_and_answer() {
     let f = Fixture::new().await;
     let mut machine = Machine::enroll(&f).await;
+    f.op(
+        1,
+        "account.set_time_zone",
+        json!({"time_zone":"Asia/Kolkata"}),
+    )
+    .await
+    .ok();
+    let mut journal = crate::live_cases::Live::open(&f, 1, json!([{"space_id":f.spaces[0]}]))
+        .await
+        .unwrap();
+    journal.next().await.expect("journal hello");
     let (id, thread, exec) = fixture_start(&f, &mut machine).await;
     until(&f, "requests.list", json!({}), |v| {
         v.to_string().contains("PRIVATE_TEST_LINK")
@@ -170,6 +181,49 @@ async fn provider_sign_in_relays_only_the_owners_challenge_and_answer() {
     let text = document.to_string();
     assert_eq!(
         text.matches("Sign-in was done for Claude Code at").count(),
+        1
+    );
+    let notices = tokio::time::timeout(Duration::from_secs(15), async {
+        let mut statuses = Vec::new();
+        loop {
+            let frame = journal.next().await.expect("sign-in journal event");
+            let entry = &frame["entry"];
+            if entry["kind"] != "threads.provider_sign_in" || entry["item"] != thread {
+                continue;
+            }
+            let data = &entry["data"];
+            assert!(data.get("append").is_none());
+            assert!(!data.to_string().contains("PRIVATE_TEST"));
+            assert_eq!(data["notice"]["provider"], "Claude Code");
+            assert!(data["notice"]["at"].as_str().unwrap().ends_with("+05:30"));
+            let status = data["notice"]["status"].as_str().unwrap();
+            statuses.push(status.to_owned());
+            if status == "done" {
+                break statuses;
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(notices, ["attempted", "done"]);
+    assert!(text.contains("+05:30"));
+    assert_eq!(document["data"]["thread"]["messages"], json!([]));
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":thread,"message":"Keep this exact body."}),
+        )
+        .await;
+    sent.ok();
+    let saved = &sent.body["data"]["thread"];
+    assert_eq!(saved["messages"][0]["text"], "Keep this exact body.");
+    assert_eq!(
+        saved["markdown"]
+            .as_str()
+            .unwrap()
+            .matches("Sign-in was done for Claude Code at")
+            .count(),
         1
     );
     assert!(!text.contains("PRIVATE_TEST"));

@@ -41,6 +41,10 @@ pub(super) async fn save<D: Directory>(
     })
     .await?;
     checkpoint["thread_text"] = json!("");
+    checkpoint
+        .as_object_mut()
+        .expect("prepared checkpoint object")
+        .remove("message_timing");
     let (st, sp, id, run, live, checkpoint) = (
         state.clone(),
         job.space.clone(),
@@ -78,6 +82,10 @@ pub(super) async fn finish_full<D: Directory>(
     let code = crate::threads::persistence::THREAD_FULL;
     checkpoint["thread_text"] = json!("");
     checkpoint["text_tail"] = Value::Null;
+    checkpoint
+        .as_object_mut()
+        .expect("prepared checkpoint object")
+        .remove("message_timing");
     checkpoint["error"] = json!({
         "code":code,"class":"permanent","message":error.message,"origin":"thread_storage"
     });

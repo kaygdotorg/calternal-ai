@@ -92,10 +92,10 @@ impl Auth {
     pub async fn account_profile(&self, account: AccountId) -> Result<Value> {
         self.inner.db.run(move |c| {
             let id = account.to_string();
-            let (name, username, role): (String,String,String) = c.query_row("SELECT name, username, role FROM users WHERE id=?1", [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(crate::db::sql)?;
+            let (name, username, role, time_zone): (String,String,String,Option<String>) = c.query_row("SELECT name, username, role, time_zone FROM users WHERE id=?1", [&id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).map_err(crate::db::sql)?;
             let mut stmt = c.prepare("SELECT capability FROM role_capabilities WHERE role=?1 ORDER BY capability").map_err(crate::db::sql)?;
             let capabilities = stmt.query_map([&role], |r| r.get::<_,String>(0)).map_err(crate::db::sql)?.collect::<rusqlite::Result<Vec<_>>>().map_err(crate::db::sql)?;
-            Ok(json!({"id":account,"name":name,"username":username,"role":role,"capabilities":capabilities}))
+            Ok(json!({"id":account,"name":name,"username":username,"role":role,"capabilities":capabilities,"time_zone":time_zone}))
         }).await
     }
 }

@@ -104,12 +104,18 @@ async fn checkpoint_replay_reads_only_its_own_append_and_stop_keeps_the_step() {
         .op(
             1,
             "threads.send",
-            json!({"id":thread,"message":"scripted-tool-steps hang"}),
+            json!({"id":thread,"message":"scripted-tool-steps hang","client_offset_minutes":330}),
         )
         .await;
     sent.ok();
     let data = &sent.body["data"];
     let job = data["job"]["id"].as_str().unwrap();
+    assert!(
+        data["thread"]["messages"][0]["at"]
+            .as_str()
+            .unwrap()
+            .ends_with("+05:30")
+    );
     let mut revision = data["thread"]["revision"].clone();
     let mut cached_body = body(&data["thread"]).to_owned();
 
@@ -128,24 +134,33 @@ async fn checkpoint_replay_reads_only_its_own_append_and_stop_keeps_the_step() {
             since["actor"],
             json!({"account":f.ids[1],"via":{"Agent":{"thread":thread}}})
         );
-        assert_eq!(since["append"]["base_revision"], revision);
-        let input = json!({"id":thread,"since":since});
-        let chunk = f.op(2, "threads.get", input.clone()).await;
-        chunk.ok();
-        let delta = &chunk.body["data"]["delta"];
-        let markdown = delta["markdown"].as_str().unwrap();
-        assert_eq!(
-            markdown.len(),
-            since["append"]["length"].as_u64().unwrap() as usize
-        );
-        assert_eq!(delta["base_revision"], revision);
-        revision = delta["revision"].clone();
-        cached_body.insert_str(delta["offset"].as_u64().unwrap() as usize, markdown);
-        if first.is_none() {
-            first = Some((input.clone(), delta.clone()));
+        if since.get("append").is_none() {
+            let fresh = f.op(2, "threads.get", json!({"id":thread})).await;
+            fresh.ok();
+            let latest = &fresh.body["data"]["thread"];
+            revision = latest["revision"].clone();
+            cached_body = body(latest).to_owned();
+        } else {
+            let input = json!({"id":thread,"since":since});
+            let chunk = f.op(2, "threads.get", input.clone()).await;
+            chunk.ok();
+            let delta = &chunk.body["data"]["delta"];
+            let markdown = delta["markdown"].as_str().unwrap();
+            assert_eq!(
+                markdown.len(),
+                since["append"]["length"].as_u64().unwrap() as usize
+            );
+            if delta["base_revision"] == revision {
+                revision = delta["revision"].clone();
+                cached_body.insert_str(delta["offset"].as_u64().unwrap() as usize, markdown);
+            }
+            if first.is_none() && !markdown.is_empty() {
+                assert_eq!(delta["messages"][0]["role"], "agent");
+                saved_step_input = input.clone();
+                first = Some((input, delta.clone()));
+            }
         }
         if cached_body.contains("(started)") && cached_body.contains("Tool Read") {
-            saved_step_input = input;
             break;
         }
     }
@@ -293,35 +308,25 @@ async fn provider_selection_reasoning_and_timing_survive_live_and_delta_reads() 
     assert_eq!(thinking_text, "Inspecting [redacted]");
     assert!(thinking_ms >= 15);
 
-    let mut cached_body = body(&sent.body["data"]["thread"]).to_owned();
-    let mut revision = sent.body["data"]["thread"]["revision"].clone();
+    let mut saw_refresh = false;
     for _ in 0..32 {
         let frame = journal.next().await.expect("checkpoint journal entry");
-        if frame["entry"]["kind"] != "threads.checkpoint" || frame["entry"]["item"] != *thread {
-            continue;
-        }
-        let delta = f
-            .op(
-                2,
-                "threads.get",
-                json!({"id":thread,"since":frame["entry"]["data"]}),
-            )
-            .await;
-        delta.ok();
-        let delta = &delta.body["data"]["delta"];
-        assert_eq!(delta["base_revision"], revision);
-        revision = delta["revision"].clone();
-        cached_body.insert_str(
-            delta["offset"].as_u64().unwrap() as usize,
-            delta["markdown"].as_str().unwrap(),
-        );
-        if cached_body.contains("<!-- turn-timing ") {
+        if frame["entry"]["kind"] == "threads.checkpoint"
+            && frame["entry"]["item"] == *thread
+            && frame["entry"]["data"].get("append").is_none()
+        {
+            saw_refresh = true;
             break;
         }
     }
+    assert!(
+        saw_refresh,
+        "replacing a heading or length must signal a full refresh"
+    );
     let saved = f.op(2, "threads.get", json!({"id":thread})).await;
     saved.ok();
-    assert_eq!(body(&saved.body["data"]["thread"]), cached_body);
+    let snapshot = &saved.body["data"]["thread"];
+    let cached_body = body(snapshot);
     let status = f.op(1, "agent.events", json!({"job_id":job})).await;
     status.ok();
     let machine = status.body["data"]["job"]["checkpoint"]["machine_id"]
@@ -329,20 +334,25 @@ async fn provider_selection_reasoning_and_timing_survive_live_and_delta_reads() 
         .unwrap();
     assert!(uuid::Uuid::parse_str(machine).is_ok());
     assert!(!cached_body.contains(machine));
-    let retained = cached_body
-        .lines()
-        .find_map(|line| line.strip_prefix("<!-- message:")?.split_once(" machine:"))
-        .map(|(marker, reference)| (marker, reference.split_whitespace().next().unwrap()))
-        .expect("assistant marker has a machine reference");
-    assert!(
-        retained
-            .0
-            .contains("provider:calternal-claude-code model:claude-sonnet-5-5 reasoning:xhigh")
-    );
-    assert_eq!(retained.1.len(), 64);
-    assert!(retained.1.bytes().all(|b| b.is_ascii_hexdigit()));
-    assert!(cached_body.contains("duration-ms:"));
-    assert!(cached_body.contains(&format!("reasoning-ms:{thinking_ms} ")));
+    assert!(!cached_body.contains("provider-session"));
+    assert!(snapshot["metadata"].get("provider_session").is_none());
+    let messages = snapshot["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 2);
+    let heading = messages[1]["heading"].as_str().unwrap();
+    assert!(heading.contains("Claude Code via "));
+    assert!(heading.contains("Sonnet 5.5 · xhigh requested"));
+    assert!(!heading.contains("In progress"));
+    assert!(cached_body.contains(&format!(
+        "Thought for {:.1} s",
+        thinking_ms as f64 / 1_000.0
+    )));
+    let provenance = &messages[1]["provenance"];
+    assert_eq!(provenance["provider_id"], "calternal-claude-code");
+    assert_eq!(provenance["model_id"], "claude-sonnet-5-5");
+    assert_eq!(provenance["reasoning_level"], "xhigh");
+    assert_eq!(provenance["reasoning_ms"], thinking_ms);
+    assert!(provenance["duration_ms"].is_u64());
+    assert!(provenance["machine_id"].is_string());
     assert!(!cached_body.contains("Inspecting"));
 }
 
@@ -395,4 +405,65 @@ async fn person_wait_phase_is_shared_and_request_details_stay_private() {
     owner.ok();
     assert!(owner.body["data"]["job"]["checkpoint"]["person_request"].is_string());
     f.op(1, "threads.stop", json!({"id":thread})).await.ok();
+}
+
+#[tokio::test]
+async fn thread_full_reaches_live_and_saved_reads_without_losing_prior_output() {
+    let f = Fixture::new().await;
+    let _machine = direct_fixture(&f).await;
+    let thread = f
+        .op(
+            1,
+            "threads.create",
+            json!({
+                "space_id":f.spaces[2],"title":"HTTP checkpoint ceiling"
+            }),
+        )
+        .await;
+    thread.ok();
+    let id = &thread.body["data"]["thread"]["id"];
+    let sent = f
+        .op(
+            1,
+            "threads.send",
+            json!({"id":id,"message":"thread-size-limit"}),
+        )
+        .await;
+    sent.ok();
+    let job = sent.body["data"]["job"]["id"].as_str().unwrap();
+    assert!(Sse::open(&f, &f.cookies[3], job, None).await.is_err());
+    let mut feed = Sse::open(&f, &f.cookies[2], job, None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(60), async {
+        let mut failure = false;
+        loop {
+            let (kind, _, frame) = feed.next().await.expect("terminal turn event");
+            if kind == "end" {
+                assert!(failure, "the terminal stream lost the storage failure");
+                break;
+            }
+            let event = &frame["data"]["event"];
+            if event["code"] == "thread_full" {
+                assert_eq!(event["class"], "permanent");
+                assert!(event["message"].as_str().unwrap().contains("not saved"));
+                failure = true;
+            }
+        }
+    })
+    .await
+    .expect("thread ceiling");
+    let saved = f.op(2, "threads.get", json!({"id":id})).await;
+    saved.ok();
+    let saved = &saved.body["data"]["thread"];
+    assert_eq!(saved["turn_state"], "failed");
+    assert_eq!(saved["turn_reason"]["code"], "thread_full");
+    assert!(
+        saved["turn_reason"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not saved")
+    );
+    let text = saved["messages"][1]["text"].as_str().unwrap();
+    assert!(text.contains("overflow-segment-0:"));
+    assert!(!text.contains("overflow-segment-32:"));
+    assert!(saved["markdown"].as_str().unwrap().len() <= 2 * 1024 * 1024);
 }
