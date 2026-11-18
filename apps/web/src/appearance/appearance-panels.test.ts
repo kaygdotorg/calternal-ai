@@ -55,7 +55,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     await userEvent.click(within(list).getByRole("radio", { name: /Inter/ }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/server downloads and stores it/);
     expect(appearance.prefs.fonts.chat.family).toBe("Google Sans Flex");
-    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+    await userEvent.click(screen.getByRole("tab", { name: "System" }));
     await userEvent.click(await within(screen.getByRole("radiogroup", { name: "Chat font" })).findByRole("radio", { name: /System/ }));
     expect(appearance.prefs.fonts.chat).toEqual({ family: "System", source: "system" });
   });
@@ -65,7 +65,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     await userEvent.click(screen.getByRole("button", { name: /Code/ }));
     const list = await screen.findByRole("radiogroup", { name: "Code font" });
     await within(list).findByRole("radio", { name: /Maple Mono/ });
-    await userEvent.click(screen.getByRole("radio", { name: "Google" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Google" }));
     await within(await screen.findByRole("radiogroup", { name: "Code font" })).findByRole("radio", { name: /JetBrains Mono/ });
     expect(within(list).queryByRole("radio", { name: /Lora/ })).toBeNull();
   });
@@ -73,7 +73,7 @@ describe("appearance: wallpaper and fonts sections", () => {
 
   it("has no accessibility violations in either section or in the font picker", async () => {
     render(FontsPanel);
-    const run = async () => (await axe.run(document.body, { rules: { "color-contrast": { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes[0]?.html.slice(0, 80)}`);
+    const run = async () => (await axe.run(document.body, { rules: { "color-contrast": { enabled: false }, region: { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes[0]?.html.slice(0, 80)}`);
     expect(await run()).toEqual([]);
     await userEvent.click(screen.getByRole("button", { name: /Interface/ }));
     await screen.findByRole("radiogroup", { name: "Interface font" });

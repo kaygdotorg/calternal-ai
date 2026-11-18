@@ -12,6 +12,7 @@
   import { layout, type Container } from "./layout.svelte";
   import { archiveThread, containerName, containersOf, copyThreadLink, runThreadItem, snoozeItems, threadItems, topLevelIds } from "./thread-menu";
   import { backLabel, backShort } from "./snooze";
+  import { snoozeAvailable } from "./snooze.svelte";
   import StateMark from "./StateMark.svelte";
   import SwipeRow, { type SwipeAction } from "../../lib/swipe/SwipeRow.svelte";
   import { swipeRows } from "../../lib/swipe/rows";
@@ -208,13 +209,13 @@
         <ul class="threads" aria-label="Waiting for you">
           {#each items as it (it.thread.id)}
             <li data-thread={it.thread.id}>
-              <SwipeRow lead={[]} trail={snoozeItems(it.thread).length ? [{ id: "snooze", label: "Snooze", icon: "clock", tone: "plain", run: (el) => menuFrom(el, it.thread, true) }] : []}>
+              <SwipeRow lead={[]} trail={snoozeAvailable() ? [{ id: "snooze", label: "Snooze", icon: "clock", tone: "plain", run: (el) => menuFrom(el, it.thread, true) }] : []}>
                 <div class="rw">
                   <Row title={it.thread.title} href={href(`/threads/${it.thread.id}`)} selected={current === it.thread.id}>
                     {#snippet leading()}<span class="mark"><Icon inline name={it.thread.provider} /></span>{/snippet}
                     {#snippet trailing()}<span class="tail"><ReasonMark reasons={it.reasons} /></span>{/snippet}
                   </Row>
-                  {#if snoozeItems(it.thread).length}<span class="acts"><IconButton small icon="clock" label="Snooze" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, it.thread, true)} /></span>{/if}
+                  {#if snoozeAvailable()}<span class="acts"><IconButton small icon="clock" label="Snooze" aria-haspopup="menu" onclick={(e) => menuFrom(e.currentTarget as HTMLElement, it.thread, true)} /></span>{/if}
                 </div>
               </SwipeRow>
             </li>

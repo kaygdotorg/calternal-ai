@@ -36,6 +36,16 @@ for (const phone of [false, true]) {
     ok(g.current === 1 && g.tabbable === 1 && g.labels.every((l) => !!l) && g.text === "", `${where}, ${n} apps: every icon is a named tab, one chosen, one tab stop, no words`);
     await ctx.close();
   }
+  // ---- the glide lasts the motion token (a custom property reads back as ".22s"; read as a bare number it was 0.22 ms and the glide was instant)
+  {
+    const { ctx, page } = await open(phone, "/threads?apps=20&firstrun=0");
+    const nav = page.locator('aside.side footer nav[aria-label="Apps"]');
+    const token = await page.evaluate(() => { const e = document.createElement("i"); e.style.transitionDuration = "var(--dur-base)"; document.body.append(e); const s = getComputedStyle(e).transitionDuration; e.remove(); return parseFloat(s) * (s.endsWith("ms") ? 1 : 1000); });
+    await nav.getByRole("tab", { name: "Notes" }).click(); await page.waitForTimeout(100);
+    const ms = Number(await nav.locator(".selector").getAttribute("data-glide-ms"));
+    ok(token >= 100 && Math.abs(ms - token) < 1, `${where}: the capsule glide lasts the --dur-base token`, `${ms} ms, token ${token} ms`);
+    await ctx.close();
+  }
   // ---- keys, links, current app after navigation
   {
     const { ctx, page } = await open(phone, "/threads?apps=20&firstrun=0");

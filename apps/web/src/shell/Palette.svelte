@@ -10,7 +10,7 @@
   import { spaces } from "./spaces.svelte";
   import { navigate, segments } from "../lib/route.svelte";
   import { client, startThread, store } from "../apps/threads/store.svelte";
-  import { messageSearch } from "../apps/threads/search.svelte";
+  import { startMessageSearch } from "../apps/threads/search.svelte";
   import { shell } from "./shell.svelte";
   import PalettePreview from "./PalettePreview.svelte";
   import { serverMode } from "../server/client";
@@ -69,7 +69,7 @@
     if (a.op?.startsWith("space.switch:")) { spaces.switchTo(a.op.slice(13)); navigate("/threads"); }
     else if (a.go) navigate(a.go);
     else if (a.op === "help.shortcuts") shell.helpOpen = true;
-    else if (a.op === "messages.search") { messageSearch.text = a.text ?? ""; messageSearch.open = true; }
+    else if (a.op === "messages.search") startMessageSearch(a.text);
     else if (a.op === "thread.new") void startThread().then((t) => navigate(`/threads/${t.id}`)).catch((e: Error) => toast(`Could not start a thread: ${e.message}`));
     else if (a.ask) {
       const s = segments();

@@ -1,7 +1,8 @@
 <script lang="ts">
-  // Fonts, as a section of Settings, Appearance: a family per role (interface, chat, code, and the wordmark) from Google Fonts, Fontsource, Fontshare, the person's own files or the system. Wide: the roles on the left and the chosen role's
-  // picker beside them (no nested page); narrow: the list, then the picker with a Back button. Everything goes through the adapters in fonts.ts, so the real server plugs in without changes here.
-  import { Button, Icon, Row, Selector, SplitView, textField } from "@calternal/ui";
+  // Fonts, as a section of Settings, Appearance: a family per role (interface, chat, code, and the wordmark) from Google Fonts, Fontsource, Fontshare, the person's own files or the system.
+  // The roles are rows in the page at every width; a row opens its picker (a search and a long list), as a sheet on touch and as a dropdown beside the row otherwise: no nested page, no Back.
+  // Everything goes through the adapters in fonts.ts, so the real server plugs in without changes here.
+  import { Button, Icon, Popover, Row, Selector, Sheet, currentForm, textField } from "@calternal/ui";
   import { SOURCE_LABEL, type FontInfo, type FontRole, type FontSource } from "./fonts";
   import { appearance as A } from "./prefs.svelte";
   let error = $state("");
@@ -11,8 +12,9 @@
   let ownName = $state("");
   const ROLE: Record<FontRole, string> = { ui: "Interface", chat: "Chat", code: "Code", brand: "Wordmark" };
   const ROLES = ["ui", "chat", "code", "brand"] as const;
-  /** The role whose picker is open (the list on the left stays: no nested page when the card is wide). */
+  /** The role whose picker is open, and the row it opened from (the dropdown anchors to it). */
   let view = $state<FontRole | null>(null);
+  let anchor = $state<HTMLElement | undefined>();
   $effect(() => {
     if (!view) return;
     const s = source, q = fq, mono = view === "code";
@@ -42,18 +44,10 @@
     }
   }
   const label = (r: FontRole) => `${A.prefs.fonts[r].family} · ${SOURCE_LABEL[A.prefs.fonts[r].source]}`;
-  function choose(r: FontRole | null) { view = r; error = ""; fq = ""; if (r) source = A.prefs.fonts[r].source; }
+  function choose(r: FontRole | null, from?: HTMLElement) { anchor = from; view = r; error = ""; fq = ""; if (r) source = A.prefs.fonts[r].source; }
 </script>
 
-<div class="fp">
-  <SplitView selected={view !== null} onback={() => choose(null)} listLabel="Font roles" breakpoint="30rem" listWidth="13rem">
-    {#snippet list()}
-      {#each ROLES as r (r)}
-        <Row tall title={ROLE[r]} sub={label(r)} selected={view === r} onclick={() => choose(r)}>{#snippet trailing()}<Icon name="chevron" inline />{/snippet}</Row>
-      {/each}
-      <p class="note">Google Sans Flex and Maple Mono are the defaults. A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>
-    {/snippet}
-    {#snippet detail()}
+{#snippet picker()}
       {#if view}
         <h2>{ROLE[view]} font</h2>
         <Selector class="sources" label="Font source" fill={false} options={(["google", "fontsource", "fontshare", "upload", "system"] as const).map((s) => ({ value: s, label: SOURCE_LABEL[s] }))} value={source} onchange={(v) => { source = v as FontSource; fq = ""; error = ""; }} />
@@ -82,15 +76,26 @@
           <p class="note">Use only fonts you are licensed to use. Several files under one name become its weights and italics, read from the file names.</p>
         {/if}
         {#if error}<p class="err" role="alert">{error}</p>{/if}
-      {:else}
-        <p class="note">Choose a role to pick its font.</p>
       {/if}
     {/snippet}
-  </SplitView>
+
+<div class="fp">
+  {#each ROLES as r (r)}
+    <Row tall title={ROLE[r]} sub={label(r)} selected={view === r} onclick={(e) => choose(r, e.currentTarget as HTMLElement)}>{#snippet trailing()}<Icon name="chevron" inline />{/snippet}</Row>
+  {/each}
+  <p class="note">Google Sans Flex and Maple Mono are the defaults. A font from a catalogue is downloaded and stored by the server once, so pages never load from those sites.</p>
+  {#if view}
+    {#if currentForm() === "touch"}
+      <Sheet open label="{ROLE[view]} font" onclose={() => choose(null)}><div class="sh">{@render picker()}</div></Sheet>
+    {:else}
+      <Popover open {anchor} trigger={anchor} label="{ROLE[view]} font" onclose={() => choose(null)}><div class="sh">{@render picker()}</div></Popover>
+    {/if}
+  {/if}
 </div>
 
 <style>
-  .fp { min-height: 22rem; }
+  .fp { display: grid; gap: var(--s-1); }
+  .sh { padding: var(--s-5); width: min(28rem, 100vw); box-sizing: border-box; max-height: min(70dvh, 34rem); overflow-y: auto; }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); margin-bottom: var(--s-4); }
   .note { font-size: var(--text-label); color: var(--ink-3); margin-top: var(--s-3); }
   .err { color: var(--danger); font-size: var(--text-label); }

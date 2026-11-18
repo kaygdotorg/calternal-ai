@@ -47,7 +47,7 @@ describe("plan", () => {
     expect(p.parsed.spans.some((s) => s.type === "date")).toBe(true);
   });
   test("commands from plugin data are found by their extra words", () => {
-    const hit = plan("wallpaper").rows.find((r) => r.label === "Wallpaper and fonts");
+    const hit = plan("wallpaper").rows.find((r) => r.label === "Wallpaper");
     expect(hit?.action.go).toBe("/settings/appearance/appearance.wallpaper");
   });
   test("results from another space say which", () => {

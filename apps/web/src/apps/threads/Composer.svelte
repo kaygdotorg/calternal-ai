@@ -9,7 +9,7 @@
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
   import { motionAllowed, snapshot, play, type FoldSnap } from "./fold";
-  import { Button, Icon, InlineEditor, Menu, Panel, Pill, PillRow, Popover, Sheet, currentForm, type IconName, type MenuItem } from "@calternal/ui";
+  import { Button, Icon, InlineEditor, Menu, Panel, Pill, PillRow, Popover, Sheet, currentForm, tokenEase, tokenMs, type IconName, type MenuItem } from "@calternal/ui";
   import type { Attachment } from "./model";
   import type { FieldEditor, FieldTrigger } from "../../../../../packages/editor/src/index";
   import { marksOf } from "../../palette/engine";
@@ -177,11 +177,7 @@
     prevOpen = now;
     const go = snap; snap = null;
     const animate = !!go && motionAllowed();
-    const cs = getComputedStyle(document.documentElement);
-    // A custom property comes back as the browser normalised it (".35s"), so the unit is read.
-    const dur = cs.getPropertyValue("--dur-morph").trim();
-    const ms = (dur.endsWith("ms") ? parseFloat(dur) : parseFloat(dur) * 1000) || 350;
-    const easing = cs.getPropertyValue("--ease-morph").trim() || "ease-out";
+    const ms = tokenMs("--dur-morph", 350), easing = tokenEase("--ease-morph", "ease-out");
     panelEl.dispatchEvent(new CustomEvent("cmp-fold", { bubbles: true, detail: { animate, ms, easing } }));
     if (animate && go) play(panelEl, go, ms, easing);
   });

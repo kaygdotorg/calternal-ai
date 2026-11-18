@@ -44,7 +44,7 @@ describe("composer", () => {
     expect(within(picker).getByRole("radiogroup", { name: "Machine" })).toBeTruthy();
     await userEvent.click(within(picker).getByRole("radio", { name: "laptop" }));
     expect(onrunson).toHaveBeenLastCalledWith({ machine: "laptop", mode: "sandboxed" });
-    await userEvent.click(within(picker).getByRole("radio", { name: /Direct/ }));
+    await userEvent.click(within(picker).getByRole("tab", { name: /Direct/ }));
     expect(onrunson).toHaveBeenLastCalledWith({ machine: "dev-02", mode: "direct" });
   });
   it("Enter sends, Shift+Enter does not, and the send button is named", async () => {

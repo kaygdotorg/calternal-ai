@@ -43,6 +43,19 @@ try {
     await p.getByRole("button", { name: "Thread actions" }).click(); await p.waitForTimeout(900);
     s = await stray(p); ok(s.length === 0, "desktop: and the thread menu", s.join("; "));
     await ctx.close(); }
+  // The shell surfaces: sidebar footer capsule, account menu, settings list and pages, right sidebar tabs.
+  for (const device of ["desktop", "phone"]) {
+    const { page: p, ctx } = await open(browser, device, "light", "/settings/appearance");
+    await p.waitForTimeout(1500);
+    let s = await stray(p); ok(s.length === 0, `${device}: Settings (list, sections, rows) are token sizes`, s.join("; "));
+    await p.goto(p.url().replace(/\/settings.*/, "/notes")); await p.waitForTimeout(1200);
+    s = await stray(p); ok(s.length === 0, `${device}: the app capsule and sidebar rows of Notes are token sizes`, s.join("; "));
+    const caps = await p.evaluate(() => [...document.querySelectorAll("[aria-label=Apps] svg")].map((v) => `${v.getAttribute("stroke-width") ?? getComputedStyle(v).strokeWidth}/${Math.round(v.getBoundingClientRect().width)}`));
+    ok(new Set(caps).size <= 1, `${device}: capsule icons share one stroke weight and size`, caps.join(" "));
+    await p.getByRole("button", { name: /Account/ }).first().click().catch(() => {}); await p.waitForTimeout(700);
+    s = await stray(p); ok(s.length === 0, `${device}: and in the account menu`, s.join("; "));
+    await ctx.close();
+  }
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 await browser.close(); await stop();
 process.exit(bad ? 1 : 0);
