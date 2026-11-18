@@ -1,5 +1,11 @@
 //! Journal receipts and reads for durable plugin content effects.
 use super::*;
+use serde_json::Value;
+
+pub(crate) enum PluginItemWrite<'a> {
+    Replace { metadata: Value, text: &'a str },
+    Edit(calternal_content::LiveEdit<'a>),
+}
 
 impl Store {
     /// Records the result of a mutating plugin operation under the caller's request ID,
@@ -44,13 +50,13 @@ impl Store {
         }
         Ok(item)
     }
-    /// Creates (no `id`) or updates (against `base`) one plugin-kind item with a
+    /// Creates (no `id`) or updates (against `base`) one plugin-kind item, or appends/patches its live text, with a
     /// per-account receipt, so a retry returns the original ID and revision.
     /// The kind must already be registered in the space (plugin enable does that).
     /// Cost: one generic content write: journal and FULL SQL commits, file and
     /// directory fsync.
     #[allow(clippy::too_many_arguments)]
-    pub fn write_item(
+    pub(crate) fn write_item(
         &self,
         actor: impl Into<calternal_types::Actor>,
         request_id: &str,
@@ -59,8 +65,7 @@ impl Store {
         kind: &str,
         id: Option<Uuid>,
         base: Option<&str>,
-        metadata: serde_json::Value,
-        text: &str,
+        body: PluginItemWrite<'_>,
     ) -> Result<serde_json::Value, Error> {
         let actor = actor.into();
         if let Some(id) = id {
@@ -74,16 +79,28 @@ impl Store {
             fingerprint,
         };
         let encode = |i: &Item| serde_json::json!({"id": i.id, "revision": i.revision});
-        match self.content.write(
-            space_id,
-            id,
-            kind,
-            base,
-            metadata,
-            text.as_bytes(),
-            request,
-            encode,
-        ) {
+        let write = match body {
+            PluginItemWrite::Replace { metadata, text } => self.content.write(
+                space_id,
+                id,
+                kind,
+                base,
+                metadata,
+                text.as_bytes(),
+                request,
+                encode,
+            ),
+            PluginItemWrite::Edit(edit) => self.content.edit_live(
+                space_id,
+                id.ok_or_else(|| Error::invalid_input("a live edit requires an item"))?,
+                kind,
+                base,
+                edit,
+                request,
+                encode,
+            ),
+        };
+        match write {
             Ok(item) => Ok(encode(&item)),
             Err(error) => {
                 let Some(saved) = self.receipt(actor.account, space_id, request_id)? else {

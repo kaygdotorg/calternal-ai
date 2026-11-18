@@ -283,3 +283,212 @@ async fn plugin_write_after_sign_out_does_not_land() {
         "a plugin write landed after sign-out"
     );
 }
+
+fn wait_input(wait: &str, delay_ms: u64) -> Value {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    json!({"steps":0,"delay_ms":0,"every":1,"wait":wait,"deadline_ms":now+delay_ms})
+}
+
+async fn question_id(f: &Fixture, who: usize) -> String {
+    let r = f.op(who, "requests.list", json!({})).await;
+    r.ok();
+    r.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["detail"]["label"] == "Release selection")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn plugin_question_wait_survives_restart_and_replays_only_the_first_answer() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let id = start_job(&f, 1, &space, wait_input("question", 60_000)).await;
+    let parked = until(&f, 1, &id, |j| j["state"] == "waiting").await;
+    assert_eq!(parked["wait"]["reason"], "Waiting for a release");
+    assert_eq!(parked["checkpoint"], json!({"saved":"before-signal"}));
+    let request = question_id(&f, 1).await;
+
+    let mut events = Sse::open(&f, &f.cookies[1], &id, None).await.unwrap();
+    loop {
+        let (event, _, data) = events.next().await.expect("waiting state event");
+        if event == "state" {
+            assert_eq!(data["job"]["wait"]["reason"], "Waiting for a release");
+            break;
+        }
+    }
+    drop(events);
+
+    f.stop();
+    f.start().await;
+    assert_eq!(question_id(&f, 1).await, request);
+    assert_eq!(
+        job(&f, 1, &id).await.body["data"]["job"]["state"],
+        "waiting"
+    );
+    let invalid = f
+        .op(
+            1,
+            "requests.answer",
+            json!({"id":request,"answer":{"text":7}}),
+        )
+        .await;
+    assert_eq!(invalid.status, 400, "{}", invalid.body);
+
+    let answer = json!({"id":request,"answer":{"text":"go"}});
+    let foreign = f
+        .op_id(2, "requests.answer", answer.clone(), "resolve")
+        .await;
+    assert_eq!(foreign.status, 404, "{}", foreign.body);
+    f.op_id(1, "requests.answer", answer.clone(), "resolve")
+        .await
+        .ok();
+    f.op_id(1, "requests.answer", answer, "resolve").await.ok();
+    let changed = f
+        .op_id(
+            1,
+            "requests.answer",
+            json!({"id":request,"answer":{"text":"stop"}}),
+            "resolve",
+        )
+        .await;
+    assert_eq!(changed.status, 409, "{}", changed.body);
+    let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+    assert_eq!(
+        done["result"],
+        json!({
+            "checkpoint":{"saved":"before-signal"}, "signal":{"kind":"answer","value":{"text":"go"}}
+        })
+    );
+}
+
+#[tokio::test]
+async fn plugin_deadline_resumes_after_restart_and_cancel_wins_once() {
+    let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let id = start_job(&f, 1, &space, wait_input("deadline", 8_000)).await;
+    until(&f, 1, &id, |j| j["state"] == "waiting").await;
+    let other = start_job(&f, 1, &space, wait_input("deadline", 8_000)).await;
+    until(&f, 1, &other, |j| j["state"] == "waiting").await;
+    f.op(1, "jobs.cancel", json!({"job_id":other})).await.ok();
+
+    f.stop();
+    f.start().await;
+    let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+    assert_eq!(done["result"]["signal"], json!({"kind":"deadline"}));
+    assert_eq!(
+        job(&f, 1, &other).await.body["data"]["job"]["state"],
+        "cancelled"
+    );
+}
+
+#[tokio::test]
+async fn plugin_approval_resumes_with_the_inbox_decision() {
+    let f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    for approved in [false, true] {
+        let id = start_job(&f, 1, &space, wait_input("approval", 60_000)).await;
+        until(&f, 1, &id, |j| j["state"] == "waiting").await;
+        let inbox = f.op(1, "requests.list", json!({})).await;
+        inbox.ok();
+        let pending = inbox.body["data"]["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["detail"]["kind"] == "approval" && r["detail"]["app"] == "jobs-demo")
+            .unwrap();
+        let request = &pending["id"];
+        if approved {
+            assert_eq!(pending["detail"]["lifetimes"], json!(["once"]));
+            f.op(
+                1,
+                "requests.approve",
+                json!({"id":request,"lifetime":"once"}),
+            )
+            .await
+            .ok();
+        } else {
+            f.op(1, "requests.deny", json!({"id":request})).await.ok();
+        }
+        let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+        assert_eq!(
+            done["result"]["signal"],
+            json!({"kind":"approval","approved":approved})
+        );
+    }
+}
+
+#[tokio::test]
+async fn plugin_webhook_requires_the_space_signature_and_deduplicates_delivery() {
+    let f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let correlation = uuid::Uuid::now_v7().to_string();
+    let mut input = wait_input("webhook", 60_000);
+    input["correlation"] = json!(correlation);
+    let id = start_job(&f, 1, &space, input).await;
+    until(&f, 1, &id, |j| j["state"] == "waiting").await;
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    let pending = inbox.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["detail"]["name"] == "plugin:jobs-demo:delivery")
+        .unwrap();
+    let key = "fixture-key-only-32-bytes-or-more";
+    f.auth(
+        "secrets/provide",
+        Some(&f.cookies[1]),
+        json!({"space_id":space,"request_id":pending["id"],"value":key}),
+    )
+    .await
+    .ok();
+
+    let path = format!("/api/v1/plugin-webhooks/{space}/jobs-demo/delivery/{id}/{correlation}");
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let sign = |body: &str| {
+        let key = ring::hmac::Key::new(ring::hmac::HMAC_SHA256, key.as_bytes());
+        let message = format!("{timestamp}\nPOST\n{path}\n{body}");
+        ring::hmac::sign(&key, message.as_bytes())
+            .as_ref()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+    let send = |body: &str, signature: String| {
+        f.client
+            .post(format!("{}{path}", f.base))
+            .header("host", "localhost:18080")
+            .header("x-calternal-timestamp", timestamp)
+            .header("x-calternal-signature", signature)
+            .body(body.to_owned())
+            .send()
+    };
+    let body = r#"{"text":"ships"}"#;
+    let signature = sign(body);
+    assert_eq!(send(body, "0".repeat(64)).await.unwrap().status(), 404);
+    let wrong = r#"{"text":42}"#;
+    assert_eq!(send(wrong, sign(wrong)).await.unwrap().status(), 400);
+    assert_eq!(send(body, signature.clone()).await.unwrap().status(), 202);
+    assert_eq!(send(body, signature).await.unwrap().status(), 202);
+    let different = r#"{"text":"stop"}"#;
+    assert_eq!(
+        send(different, sign(different)).await.unwrap().status(),
+        409
+    );
+    let done = until(&f, 1, &id, |j| j["state"] == "done").await;
+    assert_eq!(
+        done["result"]["signal"],
+        json!({"kind":"webhook","value":{"text":"ships"}})
+    );
+}

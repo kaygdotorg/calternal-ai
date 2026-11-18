@@ -1,11 +1,11 @@
-//! Addressed operations for space-scoped plugin settings.
+//! Addressed operations for shared and personal plugin settings.
 use crate::{ManifestSetting, ManifestSettingType};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
-/// Read one manifest-declared setting as a Manager of the addressed space.
+/// Address one manifest-declared setting in an accessible space.
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct PluginSettingAddress {
@@ -34,6 +34,22 @@ pub struct PluginSettingEdit {
     /// Explicit conflict resolution echoes every alternative the caller saw.
     #[ts(optional)]
     pub resolve: Option<Vec<Value>>,
+}
+
+/// Replace the caller's override if their observed value still matches.
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct PluginPersonalSettingEdit {
+    /// Space UUID.
+    pub space_id: String,
+    /// Installed package ID.
+    pub plugin_id: String,
+    /// Personal setting key in that package's manifest.
+    pub key: String,
+    /// Last observed override. Null means no override.
+    pub base: Value,
+    /// New override. Null restores the manifest default.
+    pub value: Value,
 }
 
 /// Current values for a setting. The worker receives only its effective value.
