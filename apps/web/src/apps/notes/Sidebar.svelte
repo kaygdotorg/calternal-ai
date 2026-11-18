@@ -1,6 +1,7 @@
 <script lang="ts">
   // Notes sidebar: the current space's notes (the fixture's, or the server's in server mode), newest first, and a way to make a new one.
-  import { Button, IconButton, Menu, Row, VirtualList, type MenuItem } from "@calternal/ui";
+  import { Button, IconButton, Menu, pressRow, pressRows, registerPreview, Row, VirtualList, type MenuItem, type PressBag } from "@calternal/ui";
+  import NotePressPreview from "./NotePressPreview.svelte";
   import { href, navigate, route, segments } from "../../lib/route.svelte";
   import { spaces } from "../../shell/spaces.svelte";
   import { notes } from "./store.svelte";
@@ -23,6 +24,9 @@
   let renaming = $state<string | null>(null), draft = $state("");
   const items: MenuItem[] = [{ id: "rename", label: "Rename" }, { id: "trash", label: "Move to Trash", danger: true }];
   const menuAt = (e: MouseEvent, note: (typeof notes.list)[number], el?: HTMLElement) => { e.preventDefault(); e.stopPropagation(); const r = el?.getBoundingClientRect(); ctx = { x: r?.right ?? e.clientX, y: r?.bottom ?? e.clientY, note }; };
+  registerPreview<string>("note", NotePressPreview);
+  /** What a held or right-clicked row says to the shared press (ui/lib/press.ts): the same menu as the three dots, and a preview of the note's top. */
+  const bagOf = (n: (typeof notes.list)[number]): PressBag => ({ label: `Note: ${n.title}`, items: () => items, onpick: (id) => { if (id === "rename") { renaming = n.id; draft = n.title; } else void notes.remove(n.id, n.title); }, preview: { kind: "note", item: n.id } });
   function pick(id: string) { const c = ctx; ctx = null; if (!c) return; if (id === "rename") { renaming = c.note.id; draft = c.note.title; } else void notes.remove(c.note.id, c.note.title); }
   const focusNow = (el: HTMLElement) => { el.focus(); (el as HTMLInputElement).select(); };
   const commit = (n: (typeof notes.list)[number]) => { const t = draft; renaming = null; void notes.rename(n, t); };
@@ -32,7 +36,7 @@
   }
 </script>
 
-<nav aria-label="Notes">
+<nav aria-label="Notes" use:pressRows>
   {#if notes.space}<p class="section-heading first">{notes.space.name}</p>{/if}
   {#if notes.tags.length}
     <div class="tags" role="group" aria-label="Filter by tag">
@@ -49,7 +53,7 @@
   {#if notes.list.length}
     <!-- Only the rows near the view exist in the DOM (VirtualList), however many notes there are; the next page is read when the window nears the last loaded row. -->
     <VirtualList inside count={notes.list.length} estimate={40} overscan={600} label="Notes" onrange={(_, end) => { if (end >= notes.list.length - 40) void notes.notePages.next(); }}>
-      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" role="presentation" oncontextmenu={(e) => menuAt(e, n)}>
+      {#snippet row(i)}{@const n = notes.list[i]}{#if n}<div class="li" role="presentation" use:pressRow={() => bagOf(n)}>
     {#if renaming === n.id}
       <input class="ren" aria-label="Note title" bind:value={draft} onkeydown={(e) => { if (e.key === "Enter") commit(n); else if (e.key === "Escape") renaming = null; }} onblur={() => commit(n)} use:focusNow />
     {:else}

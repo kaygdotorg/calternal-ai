@@ -2,6 +2,7 @@
  * Reactive state for the Notes app: the current space's note list (read a page at a time as it is scrolled, a tag filter), the open note and its save state (saved, saving, conflict, offline), the Trash, and the private draft, kept current by
  * the backend's change feed. The backend is the fixture by default and the real server in server mode (server/client.ts). A save never touches what the editor shows (`view`), so typing is never overwritten.
  */
+import { rememberTop } from "./tops";
 import { spaces as shellSpaces } from "../../shell/spaces.svelte";
 import { server, serverMode } from "../../server/client";
 import { Paged } from "./paged.svelte";
@@ -180,6 +181,7 @@ class NotesStore {
     if (!id || !this.space) { this.note = null; return; }
     try {
       this.note = await this.client.get(this.space.id, id);
+      rememberTop(this.note.id, this.note.markdown);
       this.show(this.note); this.saveState = "saved"; this.conflict = null; this.typing = false;
       this.error = ""; this.errorCode = "";
       if (this.note.spaceId !== this.space.id) shellSpaces.switchTo(this.note.spaceId); // a note of another space (from the palette, a link): that space becomes current
