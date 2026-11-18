@@ -59,6 +59,14 @@ server restarts. Acknowledged cleanup changes the durable lease to `ended`. A ma
 restart fences its execs through the existing boot-ID handling. Failed starts
 remain unavailable; there is no automatic direct fallback or runtime pull.
 
+Newly installed and edited revisions start a separate worker container. The
+host sends a short worker-v2 readiness challenge before an invocation. The SDK
+checks the operation handlers and answers the challenge without space data.
+The server publishes the candidate after readiness. Failed candidates leave
+the prior revision available. A widening update preserves the old revision's
+previously granted authority. Narrowing and removal fence old calls through
+the broker. See the [authoring guide](plugin-authoring.md) for commands.
+
 ## Placement and unresolved contracts
 
 Remote workers currently admit only to operator-enrolled pool machines, and use

@@ -44,6 +44,17 @@ pub struct ResolvedPluginSlot {
     /// Validated declaration; it conveys no authority to dispatch or mount code.
     pub contribution: PluginSlotContribution,
 }
+/// An owned mount available in the caller's selected space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct ResolvedOwnedPluginSlot {
+    /// Owner package. Pair it with the local ID from the definition.
+    pub plugin_id: String,
+    /// Current owner activation generation, used to invalidate a mounted slot.
+    pub generation: u32,
+    /// The validated declaration, including renderer and capacity constraints.
+    pub definition: OwnedPluginSlot,
+}
 /// Result for `plugins.list`, including registered manifests and activation state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
@@ -54,6 +65,10 @@ pub struct PluginsListResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub slots: Option<Vec<ResolvedPluginSlot>>,
+    /// Available owned mounts, ordered by owner package and local slot ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub owned_slots: Option<Vec<ResolvedOwnedPluginSlot>>,
 }
 /// Result for `plugins.enable` and `plugins.disable` after the state transition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]

@@ -686,6 +686,156 @@ folder: string, } | {
  */
 hidden: boolean, };
 /**
+ * Picker filter within one space.
+ */
+
+export type SpaceLookupInput = {
+/**
+ * Selected space UUID.
+ */
+space_id: string,
+/**
+ * Literal display-name prefix. Omit to browse.
+ */
+prefix?: string, };
+/**
+ * A named account or group directly granted access to the selected space.
+ */
+
+export type PersonMatch = {
+/**
+ * Account or group UUID.
+ */
+id: string,
+/**
+ * Display name.
+ */
+name: string,
+/**
+ * Subject type, either account or group.
+ */
+kind: string, };
+/**
+ * The first page of matching mention subjects.
+ */
+
+export type PeopleLookupResult = {
+/**
+ * Matching direct accounts and groups.
+ */
+people: Array<PersonMatch>, };
+/**
+ * One externally placed space skill.
+ */
+
+export type SkillMatch = {
+/**
+ * Skill directory name.
+ */
+name: string,
+/**
+ * One-line description declared in the file.
+ */
+description: string, };
+/**
+ * Bounded skill matches for the selected space.
+ */
+
+export type SkillsResult = {
+/**
+ * Skill descriptors, ordered by name.
+ */
+skills: Array<SkillMatch>, };
+/**
+ * One palette command, in the web palette's command shape.
+ */
+
+export type PaletteCommand = {
+/**
+ * Stable, globally unique command identifier.
+ */
+id: string,
+/**
+ * Searchable command label.
+ */
+label: string,
+/**
+ * Display group.
+ */
+group: string,
+/**
+ * Extra phrases that match this command.
+ */
+words?: Array<string>,
+/**
+ * Navigation address, if this command navigates.
+ */
+go?: string,
+/**
+ * Named host action, if the command invokes one.
+ */
+op?: string, };
+/**
+ * A discoverable Settings section.
+ */
+
+export type PaletteSettingsSection = {
+/**
+ * Stable section identifier.
+ */
+id: string,
+/**
+ * Section label.
+ */
+label: string,
+/**
+ * Settings address.
+ */
+go: string, };
+/**
+ * Optional palette declarations in a plugin manifest.
+ */
+
+export type PaletteDeclaration = {
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections that the plugin contributes.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * A registered palette contribution in the web palette's manifest shape.
+ */
+
+export type PaletteManifest = {
+/**
+ * Owning plugin identifier.
+ */
+plugin: string,
+/**
+ * Exact package version.
+ */
+version: string,
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections provided by this plugin.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * Palette declarations visible in the selected space.
+ */
+
+export type PaletteResult = {
+/**
+ * Enabled plugins with palette contributions.
+ */
+manifests: Array<PaletteManifest>, };
+/**
  * Kind identity remains independent of plugin identity.
  */
 
@@ -943,22 +1093,83 @@ reasoning_levels: Array<string>, };
 
 export type PluginSlot = "sidebar_section" | "card_window" | "composer_row" | "message_decoration" | "thread_edge" | "settings_section" | "palette_commands" | "toasts";
 /**
+ * A package-qualified slot. Its namespace cannot address a host surface.
+ */
+
+export type OwnedPluginSlotId = {
+/**
+ * Registered package that declares the slot.
+ */
+plugin_id: string,
+/**
+ * Local slot ID in that package.
+ */
+id: string, };
+/**
+ * Mount addressed either by the fixed host vocabulary or a package-qualified name.
+ */
+
+export type PluginSlotTarget = PluginSlot | OwnedPluginSlotId;
+/**
+ * Operation-backed contribution types available to a package-owned mount.
+ */
+
+export type OwnedPluginSlotKind = "generated" | "command";
+/**
+ * One package-owned slot, with explicit visibility, accepted renderers and capacity.
+ */
+
+export type OwnedPluginSlot = {
+/**
+ * Stable local name; the host obtains the owner ID from the enclosing manifest.
+ */
+id: string,
+/**
+ * Space capability a caller must hold to resolve this slot.
+ */
+required_capability: ManifestCapability,
+/**
+ * Nonempty set of operation-backed renderer types. Duplicates are invalid.
+ */
+accepts: Array<OwnedPluginSlotKind>,
+/**
+ * Maximum visible contributions per listing, between 1 and 32.
+ */
+max_contributions: number, };
+/**
+ * An owned mount available in the caller's selected space.
+ */
+
+export type ResolvedOwnedPluginSlot = {
+/**
+ * Owner package. Pair it with the local ID from the definition.
+ */
+plugin_id: string,
+/**
+ * Current owner activation generation, used to invalidate a mounted slot.
+ */
+generation: number,
+/**
+ * The validated declaration, including renderer and capacity constraints.
+ */
+definition: OwnedPluginSlot, };
+/**
  * A portable operation-backed contribution or a reference to a sealed web bundle.
  */
 
-export type PluginSlotRenderer = { "Generated": {
+export type PluginSlotRenderer = { "type": "generated",
 /**
  * Plugin-local operation declaration to dispatch with current authority.
  */
-operation: string, } } | { "Sealed": {
+operation: string, } | { "type": "sealed",
 /**
  * Relative HTML asset path. The prototype does not serve or mount this asset.
  */
-asset: string, } } | { "Command": {
+asset: string, } | { "type": "command",
 /**
  * Operation to dispatch with current authority and normal approval checks.
  */
-operation: string, } };
+operation: string, };
 /**
  * One plugin-owned contribution that the host can resolve without running code.
  */
@@ -973,9 +1184,9 @@ id: string,
  */
 label: string,
 /**
- * Host mount point, independent of renderer implementation.
+ * Extensible host mount or package-owned target, independent of the renderer.
  */
-slot: PluginSlot,
+slot: PluginSlotTarget,
 /**
  * Renderer or command to resolve.
  */
@@ -1004,6 +1215,10 @@ contribution: PluginSlotContribution, };
 
 export type ManifestV1 = {
 /**
+ * Optional commands, extra phrases and Settings sections for the palette.
+ */
+palette?: PaletteDeclaration,
+/**
  * Machine-side provider adapter; omitted by plugins that offer no provider.
  */
 provider?: ManifestProvider,
@@ -1011,6 +1226,10 @@ provider?: ManifestProvider,
  * Optional contributions to host slots, validated without running code.
  */
 slots?: Array<PluginSlotContribution>,
+/**
+ * Up to 32 mounts owned by this package, resolved only while enabled.
+ */
+owned_slots?: Array<OwnedPluginSlot>,
 /**
  * Stable plugin identifier.
  */
@@ -1963,7 +2182,11 @@ plugins: Array<PluginState>,
 /**
  * Available contributions in slot, package ID and local ID order.
  */
-slots?: Array<ResolvedPluginSlot>, };
+slots?: Array<ResolvedPluginSlot>,
+/**
+ * Available owned mounts, ordered by owner package and local slot ID.
+ */
+owned_slots?: Array<ResolvedOwnedPluginSlot>, };
 /**
  * Result for `plugins.enable` and `plugins.disable` after the state transition.
  */

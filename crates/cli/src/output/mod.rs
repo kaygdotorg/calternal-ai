@@ -372,20 +372,7 @@ impl Output {
     /// otherwise `error: …` and `hint: …` on stderr.
     pub fn render_error(&self, e: &CliError) -> (String, String) {
         if self.json {
-            let mut err = Map::new();
-            err.insert("code".into(), json!(e.code));
-            err.insert("message".into(), json!(e.message));
-            err.insert("hint".into(), json!(e.hint));
-            if let Some(d) = &e.details {
-                err.insert("details".into(), (**d).clone());
-            }
-            let mut doc = Map::new();
-            doc.insert("ok".into(), Value::Bool(false));
-            doc.insert("error".into(), Value::Object(err));
-            if let Some(id) = &e.request_id {
-                doc.insert("request_id".into(), json!(id));
-            }
-            return (pretty(Value::Object(doc)), String::new());
+            return (pretty(error_document(e)), String::new());
         }
         let message = e.human_message.as_ref().unwrap_or(&e.message);
         let hint = e.human_hint.as_ref().or(e.hint.as_ref());
@@ -404,6 +391,24 @@ impl Output {
         } else {
             self.render(reply)
         };
+        self.write_event(&text)
+    }
+    /// Print a recoverable streaming failure. JSON uses one compact error document;
+    /// human output keeps the ordinary diagnostic on stderr.
+    /// Returns failure only if the streaming output cannot be written.
+    pub fn event_error(&self, error: &CliError) -> i32 {
+        if self.json {
+            return self.write_event(&format!("{}\n", error_document(error)));
+        }
+        let (_, text) = self.render_error(error);
+        if std::io::stderr().write_all(text.as_bytes()).is_ok() {
+            EXIT_OK
+        } else {
+            EXIT_FAILURE
+        }
+    }
+
+    fn write_event(&self, text: &str) -> i32 {
         let mut stdout = std::io::stdout().lock();
         if stdout
             .write_all(text.as_bytes())
@@ -434,6 +439,23 @@ impl Output {
             Err(e) => self.failure(&e),
         }
     }
+}
+
+fn error_document(e: &CliError) -> Value {
+    let mut err = Map::new();
+    err.insert("code".into(), json!(e.code));
+    err.insert("message".into(), json!(e.message));
+    err.insert("hint".into(), json!(e.hint));
+    if let Some(d) = &e.details {
+        err.insert("details".into(), (**d).clone());
+    }
+    let mut doc = Map::new();
+    doc.insert("ok".into(), Value::Bool(false));
+    doc.insert("error".into(), Value::Object(err));
+    if let Some(id) = &e.request_id {
+        doc.insert("request_id".into(), json!(id));
+    }
+    Value::Object(doc)
 }
 
 /// Whether a successful result may show a next-step hint.

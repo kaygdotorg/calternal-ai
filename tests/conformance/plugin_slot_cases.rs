@@ -96,29 +96,48 @@ async fn guide_operations_observe_space_isolation_and_activation() {
 }
 
 #[tokio::test]
-async fn installed_package_has_the_same_worker_and_space_boundary_after_restart() {
+async fn installed_package_is_live_and_survives_restart() {
     let mut f = Fixture::new().await;
+    let space = f.spaces[0].clone();
+    let account = f.ids[1].clone();
+    let other_account = f.ids[2].clone();
     let source = f.dir.path().join("fixture.calplugin");
     let id = "conformance-package";
     let op = "conformance-package.read";
+    let note = f.note(1, &space).await;
+    let note_id = note["id"].as_str().unwrap();
     let archive = |version, body| {
         json!({
             "manifest": {
                 "id": id, "name":"Conformance package", "icon":"puzzle", "version":version,
                 "api_version":1, "kinds":[],
                 "operations":[{
-                    "id":op, "input_schema":{"type":"object","additionalProperties":false},
+                    "id":op, "input_schema":{"type":"object","properties":{"hold":{"type":"boolean"}},"additionalProperties":false},
                     "output_schema":{"type":"object"},"required_capability":"space.read",
                     "mutates":false,"idempotency":"read_only","risk":"read"
                 }],
                 "collections":[],"views":[],"attention":[],"settings":[],"schedules":[],
-                "webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls": if version == "0.3.0" { vec!["read_item"] } else { vec![] }
+                "webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls": match version {
+                    "0.3.0" | "0.5.0" => vec!["read_item", "write_item"],
+                    "0.4.0" => vec!["write_item"],
+                    _ => vec!["read_item"],
+                }
             },
             "worker": format!(
                 "require('node:readline').createInterface({{input:process.stdin}}).on('line', line => {{
-                    const {{invocation_id}} = JSON.parse(line);
-                    console.log(JSON.stringify({{protocol_version:2, invocation_id,
-                      message:{{type:'complete',data:{{ value:{body} }}}}}}));
+                    const request = JSON.parse(line);
+                    if (request.type === 'ready') {{
+                        console.log(JSON.stringify(request)); return;
+                    }}
+                    const {{invocation_id, message}} = request;
+                    const send = message => console.log(JSON.stringify({{protocol_version:2, invocation_id, message}}));
+                    if (message.type === 'host_reply') {{
+                        if (message.ok) send({{type:'complete',data:{{value:{body}}}}});
+                        else send({{type:'failed'}});
+                    }} else if (message.input.hold) {{
+                        setTimeout(() => send({{type:'host_call',call_id:'late',method:'read_item',
+                            input:{{kind:'notes',item_id:'{note_id}'}},authority:message.authority}}), 500);
+                    }} else send({{type:'complete',data:{{value:{body}}}}});
                 }});",
             )
         })
@@ -134,7 +153,7 @@ async fn installed_package_has_the_same_worker_and_space_boundary_after_restart(
         let reviewed = run(&["plugin", "review", source.to_str().unwrap()]);
         assert!(reviewed.status.success(), "{:?}", reviewed);
         let review: Value = serde_json::from_slice(&reviewed.stdout).unwrap();
-        let args = |approval| {
+        let args = |approval, target_account| {
             run(&[
                 "plugin",
                 action,
@@ -143,18 +162,31 @@ async fn installed_package_has_the_same_worker_and_space_boundary_after_restart(
                 appdata.to_str().unwrap(),
                 "--approve",
                 approval,
+                "--space",
+                &space,
+                "--account",
+                target_account,
             ])
         };
-        assert!(!args("wrong-checksum").status.success());
-        let result = args(review["data"]["checksum"].as_str().unwrap());
+        assert!(!args("wrong-checksum", &account).status.success());
+        let checksum = review["data"]["checksum"].as_str().unwrap();
+        if action == "install" {
+            let denied = args(checksum, &other_account);
+            assert!(!denied.status.success(), "{denied:?}");
+            let reply: Value = serde_json::from_slice(&denied.stdout).unwrap();
+            assert!(
+                reply["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("cannot manage plugins")
+            );
+        }
+        let result = args(checksum, &account);
         assert!(result.status.success(), "{:?}", result);
     };
 
-    let space = f.spaces[0].clone();
     std::fs::write(&source, archive("0.1.0", 1).to_string()).unwrap();
     stage("install", &f.appdata());
-    f.stop();
-    f.start().await;
     let scoped = || json!({"space_id":space});
     assert_eq!(f.op(1, op, scoped()).await.status, 403);
     f.op(
@@ -175,17 +207,20 @@ async fn installed_package_has_the_same_worker_and_space_boundary_after_restart(
 
     std::fs::write(&source, archive("0.2.0", 2).to_string()).unwrap();
     stage("update", &f.appdata());
-    f.stop();
-    f.start().await;
     let second = f.op(1, op, scoped()).await;
     second.ok();
     assert_eq!(second.body["data"]["value"], 2);
 
-    std::fs::write(&source, archive("0.3.0", 3).to_string()).unwrap();
-    stage("update", &f.appdata());
-    f.stop();
-    f.start().await;
-    assert_eq!(f.op(1, op, scoped()).await.status, 403);
+    let hold = || json!({"space_id":space,"hold":true});
+    let widening = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        std::fs::write(&source, archive("0.3.0", 3).to_string()).unwrap();
+        stage("update", &f.appdata());
+        assert_eq!(f.op(1, op, scoped()).await.status, 403);
+    };
+    let (old, ()) = tokio::join!(f.op(1, op, hold()), widening);
+    old.ok();
+    assert_eq!(old.body["data"]["value"], 2);
     f.op(
         1,
         "plugins.enable",
@@ -196,16 +231,152 @@ async fn installed_package_has_the_same_worker_and_space_boundary_after_restart(
     let third = f.op(1, op, scoped()).await;
     third.ok();
     assert_eq!(third.body["data"]["value"], 3);
-
-    let removed = run(&[
-        "plugin",
-        "remove",
-        id,
-        "--appdata",
-        f.appdata().to_str().unwrap(),
-    ]);
-    assert!(removed.status.success(), "{:?}", removed);
     f.stop();
     f.start().await;
+    f.op(1, op, scoped()).await.ok();
+
+    let narrowing = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        std::fs::write(&source, archive("0.4.0", 4).to_string()).unwrap();
+        stage("update", &f.appdata());
+    };
+    let (revoked, ()) = tokio::join!(f.op(1, op, hold()), narrowing);
+    assert_ne!(
+        revoked.status, 200,
+        "a narrowed revision delivered a result"
+    );
+    assert_eq!(f.op(1, op, scoped()).await.body["data"]["value"], 4);
+
+    std::fs::write(&source, archive("0.5.0", 5).to_string()).unwrap();
+    stage("update", &f.appdata());
+    f.op(
+        1,
+        "plugins.enable",
+        json!({"plugin_id":id,"space_id":space}),
+    )
+    .await
+    .ok();
+    let removal = async {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let removed = run(&[
+            "plugin",
+            "remove",
+            id,
+            "--appdata",
+            f.appdata().to_str().unwrap(),
+        ]);
+        assert!(removed.status.success(), "{removed:?}");
+    };
+    let (revoked, ()) = tokio::join!(f.op(1, op, hold()), removal);
+    assert_ne!(revoked.status, 200, "a removed revision delivered a result");
     assert_eq!(f.op(1, op, scoped()).await.status, 404);
+}
+
+#[tokio::test]
+async fn drafts_require_the_development_build_and_stay_in_one_space() {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+
+    let mut f = Fixture::new().await;
+    let binary = std::env::var_os("CALTERNAL_SERVER_BIN").unwrap();
+    let help = Command::new(&binary)
+        .args(["plugin", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    let development_build = String::from_utf8(help.stdout)
+        .unwrap()
+        .lines()
+        .any(|line| line.trim_start().starts_with("dev "));
+    let id = "conformance-draft";
+    let op = "conformance-draft.result";
+    let space = f.spaces[0].clone();
+    let account = f.ids[1].clone();
+    let send = |root: &Path, worker: &str, account: &str| {
+        let package = json!({
+            "action": "draft", "space": space, "account": account,
+            "package": {
+                "manifest": {
+                    "id": id, "name":"Conformance draft", "icon":"puzzle", "version":"0.1.0",
+                    "api_version":1, "kinds":[],
+                    "operations":[{
+                        "id":op, "input_schema":{"type":"object","additionalProperties":false},
+                        "output_schema":{"type":"object"},"required_capability":"space.read",
+                        "mutates":false,"idempotency":"read_only","risk":"read"
+                    }],
+                    "collections":[],"views":[],"attention":[],"settings":[],"schedules":[],
+                    "webhooks":[],"secrets":[],"hooks":[],"themes":[],"host_calls":[]
+                },
+                "worker":worker
+            }
+        });
+        let body = serde_json::to_vec(&package).unwrap();
+        let mut sock = UnixStream::connect(root.join("system/admin.plg")).unwrap();
+        sock.write_all(&(body.len() as u32).to_be_bytes()).unwrap();
+        sock.write_all(&body).unwrap();
+        let mut reply = Vec::new();
+        sock.read_to_end(&mut reply).unwrap();
+        serde_json::from_slice::<Result<(), String>>(&reply).unwrap()
+    };
+    let worker = |result| {
+        format!(
+        "require('node:readline').createInterface({{input:process.stdin}}).on('line', line => {{
+            const request = JSON.parse(line);
+            if (request.type === 'ready') {{ console.log(line); return; }}
+            console.log(JSON.stringify({{protocol_version:2,invocation_id:request.invocation_id,
+                message:{{type:'complete',data:{{value:{result}}}}}}}));
+        }});"
+    )
+    };
+    let scope = || json!({"space_id":space});
+    let first = send(&f.appdata(), &worker(1), &account);
+    if !development_build {
+        assert!(first.unwrap_err().contains("unknown variant `draft`"));
+        f.stop();
+        f.development = true;
+        f.start().await;
+        assert!(
+            send(&f.appdata(), &worker(1), &account)
+                .unwrap_err()
+                .contains("unknown variant `draft`")
+        );
+        assert_eq!(f.op(1, op, scope()).await.status, 404);
+        return;
+    }
+    assert_eq!(first.unwrap_err(), "drafts require a development server");
+    f.stop();
+    f.development = true;
+    f.start().await;
+    assert!(
+        send(&f.appdata(), &worker(1), &f.ids[2])
+            .unwrap_err()
+            .contains("cannot manage plugins")
+    );
+    assert_eq!(f.op(1, op, scope()).await.status, 404);
+    send(&f.appdata(), &worker(1), &account).unwrap();
+    let result = f.op(1, op, scope()).await;
+    result.ok();
+    assert_eq!(result.body["data"]["value"], 1);
+    let other = f
+        .op(2, "plugins.list", json!({"space_id":f.spaces[1]}))
+        .await;
+    other.ok();
+    assert!(
+        !other.body["data"]["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|plugin| plugin["manifest"]["id"] == id)
+    );
+    assert_eq!(
+        f.op(2, op, json!({"space_id":f.spaces[1]})).await.status,
+        404
+    );
+    assert!(send(&f.appdata(), "process.exit(1)", &account).is_err());
+    assert_eq!(f.op(1, op, scope()).await.body["data"]["value"], 1);
+    send(&f.appdata(), &worker(2), &account).unwrap();
+    assert_eq!(f.op(1, op, scope()).await.body["data"]["value"], 2);
+    f.stop();
+    f.start().await;
+    assert_eq!(f.op(1, op, scope()).await.status, 404);
 }

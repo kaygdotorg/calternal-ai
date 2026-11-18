@@ -30,6 +30,8 @@ pub mod notes;
 /// Account requests and trusted person decisions.
 pub mod requests;
 
+pub mod search;
+
 /// Validate an opaque page cursor, reading one bounded value from stdin for `-`.
 pub(crate) fn parse_cursor(argument: &str) -> Result<String, String> {
     use std::io::Read;

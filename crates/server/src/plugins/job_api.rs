@@ -95,7 +95,12 @@ async fn visible<D: Directory>(
     );
     blocking(move || {
         let caps = st.directory.capabilities(account, space);
-        let Some(plugin) = st.registry.get(&plugin) else {
+        let catalog = st.registry.snapshot();
+        let Some(plugin) = catalog
+            .get(&plugin)
+            .filter(|p| p.job_revision() == revision)
+            .or_else(|| catalog.revision(&plugin, revision))
+        else {
             return Ok(false);
         };
         let row = activation(&st.store, space, plugin)?;

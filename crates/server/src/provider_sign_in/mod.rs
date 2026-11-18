@@ -201,7 +201,8 @@ async fn start<D: Directory>(
     retry: bool,
     job: Option<String>,
 ) -> Result<Value, Error> {
-    let plugin = state.registry.get(&provider).ok_or_else(missing)?;
+    let catalog = state.registry.snapshot();
+    let plugin = catalog.get(&provider).ok_or_else(missing)?;
     let metadata = plugin
         .manifest
         .provider
@@ -222,7 +223,8 @@ async fn start<D: Directory>(
                 return Err(missing());
             }
         }
-        let plugin = s.registry.get(&name).ok_or_else(missing)?;
+        let catalog = s.registry.snapshot();
+        let plugin = catalog.get(&name).ok_or_else(missing)?;
         if !crate::plugins::activation(&s.store, space, plugin)?.enabled {
             return Err(missing());
         }

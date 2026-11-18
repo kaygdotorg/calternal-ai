@@ -183,8 +183,8 @@ fn prepare<D: Directory>(
                     "pending target does not match operation",
                 ));
             }
-            let policy = st
-                .registry
+            let catalog = st.registry.snapshot();
+            let policy = catalog
                 .policy(&i.request.operation)
                 .ok_or_else(|| Error::not_found("unknown operation"))?;
             if policy.required != Capability::ContentWrite {

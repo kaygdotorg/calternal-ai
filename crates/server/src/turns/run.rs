@@ -133,6 +133,7 @@ async fn execute<D: Directory>(
     };
     let provider = state
         .registry
+        .snapshot()
         .get(provider_id)
         .ok_or_else(|| Error::unavailable("provider plugin is not installed"))?
         .clone();
