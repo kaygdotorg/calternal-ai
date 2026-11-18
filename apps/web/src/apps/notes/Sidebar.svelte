@@ -91,15 +91,6 @@
     {#if allTags && notes.tagPages.more}<div class="end" aria-hidden="true" use:reach={() => notes.tagPages.next()}></div>{/if}
     </div>
   {/if}
-  {#if picking}
-    <Panel class="bulk" radius="card" dense floating role="toolbar" aria-label="Selected notes">
-      <span class="cnt" role="status">{selection.ids.size} selected</span>
-      <Button variant="primary" text="Share" disabled={!selection.ids.size} onclick={(e) => void shareSelection(e.currentTarget)} />
-      <Button variant="destructive" text="Move to Trash" disabled={!selection.ids.size} onclick={() => void trashSelection()} />
-      <Button variant="quiet" text={allPicked() ? "Deselect all" : "Select all"} onclick={() => (allPicked() ? setPicked([]) : selectAll())} />
-      <Button variant="quiet" text="Done" onclick={endSelect} />
-    </Panel>
-  {/if}
   <SearchField class="find" bind:value={q} label="Find a note by title" placeholder="Find a note" />
   {#if hits}
     <ul>{#each hits as n (n.id)}<li><Row title={n.title} icon="notes" href={href(`/notes/${n.id}`)} selected={current === n.id} /></li>{:else}<li class="none">No note starts with “{q.trim()}”.</li>{/each}</ul>
@@ -142,6 +133,15 @@
       {/each}
     </div>
   {/if}
+  {#if picking}
+    <Panel class="bulk" radius="card" dense floating role="toolbar" aria-label="Selected notes">
+      <span class="cnt" role="status">{selection.ids.size} selected</span>
+      <Button variant="primary" text="Share" disabled={!selection.ids.size} onclick={(e) => void shareSelection(e.currentTarget)} />
+      <Button variant="destructive" text="Move to Trash" disabled={!selection.ids.size} onclick={() => void trashSelection()} />
+      <Button variant="quiet" text={allPicked() ? "Deselect all" : "Select all"} onclick={() => (allPicked() ? setPicked([]) : selectAll())} />
+      <Button variant="quiet" text="Done" onclick={endSelect} />
+    </Panel>
+  {/if}
 </nav>
 {#if shareUi.item?.kind === "collections"}<ShareHost item={shareUi.item} />{/if}
 <Menu open={!!ctx} {items} label="Note actions" anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
@@ -161,8 +161,8 @@
   /* The group is a grid like the nav, so its heading keeps the shared distances (the nav gap above it is part of the space above). */
   .grp { display: grid; gap: var(--s-2); }
   .later { margin-top: calc(var(--section-above) - var(--s-2)); }
-  /* The bar stays in reach while a long list scrolls: stuck above the bottom tier, on the shared glass. */
-  nav :global(.bulk) { position: sticky; bottom: calc(var(--foot-h) + var(--s-2)); z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-3) var(--s-4); }
+  /* The bar is the last thing in the list and sticks to the bottom of the scroller, above the bottom tier, so it is in reach however far the list is scrolled (a sticky bottom holds an element that would scroll off the bottom edge). */
+  nav :global(.bulk) { position: sticky; bottom: var(--s-2); z-index: 2; background: color-mix(in oklab, var(--paper) 90%, transparent); display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding: var(--s-3) var(--s-4); }
   .cnt { flex: 1 1 100%; font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
   .li[data-picked] :global(.row) { background: var(--accent-soft); }
   .dot { width: var(--s-3); height: var(--s-3); border-radius: 50%; background: var(--accent); }
