@@ -63,7 +63,7 @@ try {
     const { page: p, ctx } = await open(browser, device, "light", "/notes/n-4?firstrun=0");
     if (device === "phone") { await p.getByRole("button", { name: /Show notes/ }).first().click(); await p.waitForTimeout(600); }
     ok(await p.getByRole("group", { name: "Shared with me" }).count() === 1, `${device}: the sidebar has a Shared with me section`);
-    ok(await p.getByRole("group", { name: "Shared with me" }).getByRole("link").count() === 2, `${device}: two rows, one line each`);
+    ok(await p.getByRole("group", { name: "Shared with me" }).getByRole("link").count() === 3, `${device}: three rows (two notes, a collection), one line each`);
     await shot(p, `${device}-shared-with-me`);
     if (device === "phone") await p.keyboard.press("Escape");
     await ctx.close();
@@ -106,6 +106,29 @@ try {
     const n = await p.getByRole("status").filter({ hasText: "selected" }).textContent();
     ok(/^[3-4] selected/.test(n), "two fingers down the list select the rows they cross", n);
     await ctx.close(); }
+  // A collection: shared with me in the sidebar, its page, adding and taking out a note, Share for it, and a new one from multi-select.
+  for (const device of ["desktop", "phone"]) {
+    const { page: p, ctx } = await open(browser, device, "light", "/notes/n-1?firstrun=0");
+    if (device === "phone") { await p.getByRole("button", { name: /Show notes/ }).first().click(); await p.waitForTimeout(600); }
+    ok(await p.getByRole("group", { name: "Collections" }).getByRole("link").count() >= 2, `${device}: the sidebar lists the space's collections`);
+    await p.getByRole("group", { name: "Shared with me" }).getByRole("link", { name: "Launch notes" }).click();
+    await p.getByRole("heading", { name: "Launch notes" }).waitFor({ timeout: 8000 });
+    ok(await p.getByRole("list", { name: "Notes in this collection" }).getByRole("link").count() === 2, `${device}: a collection shared with me opens as a page of its notes`);
+    await p.getByRole("button", { name: /Take Release checklist out/ }).click();
+    await p.waitForFunction(() => document.querySelectorAll('[aria-label="Notes in this collection"] a').length === 1);
+    ok(true, `${device}: a note can be taken out (collections.set_members)`);
+    await p.getByRole("textbox", { name: "Add notes" }).fill("Stor"); await p.locator('[aria-label="Notes to add"] button').first().click();
+    await p.waitForFunction(() => document.querySelectorAll('[aria-label="Notes in this collection"] a').length === 2);
+    ok(true, `${device}: and a note can be added`);
+    await p.getByRole("button", { name: "Share", exact: true }).first().click(); await sheet(p).waitFor();
+    ok(/Launch notes/.test(await sheet(p).locator("h2").textContent()), `${device}: Share opens the sheet for the collection`);
+    await shot(p, `${device}-collection`);
+    await p.keyboard.press("Escape");
+    // A collection the person may not change: no way to add or take out.
+    await p.goto(p.url().replace(/\/collections\/.*/, "/collections/c-ro?firstrun=0")); await p.getByRole("heading", { name: "Read-only set" }).waitFor({ timeout: 8000 });
+    ok(await p.getByRole("textbox", { name: "Add notes" }).count() === 0 && await p.getByRole("button", { name: /Take .* out/ }).count() === 0, `${device}: without can_edit the collection cannot be changed`);
+    await ctx.close();
+  }
   // Access ended while writing: the edits are kept and the person is told in one line where they went.
   { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-2?firstrun=0&revoked=1");
     await p.locator(".cm-content").click(); await p.keyboard.press("End"); await p.keyboard.type("\n\nA new paragraph of mine."); 

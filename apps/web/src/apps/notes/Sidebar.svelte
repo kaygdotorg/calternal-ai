@@ -8,14 +8,16 @@
   import { notes } from "./store.svelte";
   import { reach } from "../../lib/reach";
   import { shell } from "../../shell/shell.svelte";
-  import { incoming } from "./share/incoming.svelte";
+  import { incoming, incomingCollections } from "./share/incoming.svelte";
+  import { collectionList } from "./share/collections-list.svelte";
   import { beginSelect, endSelect, selectAll, allPicked, selection, selecting, toggleId, pickRange, provideList, setPicked } from "../../lib/select.svelte";
   import { collectionTitle, createCollection } from "./share/collections";
   import { twoFinger } from "../../lib/two-finger";
   import ShareHost from "./share/ShareHost.svelte";
   import { openShare, shareUi } from "./share/share.svelte";
     // What others have shared with the person, read once (the live stream refreshes it when the sharing lane publishes it).
-  $effect(() => { void incoming.pages.refresh().catch(() => {}); });
+  $effect(() => { const space = notes.space?.id; if (space) void collectionList.load(space); });
+  $effect(() => { void incoming.pages.refresh().catch(() => {}); void incomingCollections.pages.refresh().catch(() => {}); });
   // The list follows the space the shell is showing.
   $effect(() => { void notes.useSpace(spaces.current.id); });
   const current = $derived(segments()[0] === "notes" ? segments()[1] : undefined);
@@ -66,6 +68,7 @@
     try {
       const item = ids.length === 1 ? { kind: "notes" as const, id: ids[0]! } : { kind: "collections" as const, id: (await createCollection(space, title, ids)).id };
       endSelect();
+      if (item.kind === "collections") { navigate(`/collections/${item.id}`); void collectionList.load(space); }
       openShare(item, title, from);
     } catch (e) { failed(say(e, "share these notes")); }
   }
@@ -113,12 +116,25 @@
   {:else}<ul><li class="none">{notes.error || "No notes yet."}{#if notes.error} <button type="button" class="retry" onclick={() => notes.retry()}>Try again</button>{/if}</li></ul>{/if}
   {/if}
   {#if !hits}{#if notes.notePages.error}<p class="cap" role="alert">{notes.notePages.error} <button type="button" class="retry" onclick={() => notes.notePages.retry()}>Try again</button></p>{/if}{/if}
-  {#if !hits && incoming.items.length}
+  {#if !hits && collectionList.items.length}
+    <div role="group" aria-label="Collections" class="grp">
+      <p class="section-heading later">Collections</p>
+      <ul>
+        {#each collectionList.items as c (c.id)}
+          <li><Row title={c.title} icon="folder" href={href(`/collections/${c.id}`)} selected={route.path === `/collections/${c.id}`} /></li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
+  {#if !hits && (incoming.items.length || incomingCollections.items.length)}
     <div role="group" aria-label="Shared with me" class="grp">
       <p class="section-heading later">Shared with me</p>
       <ul>
         {#each incoming.items as s (s.item.id)}
           <li><Row title={s.title} icon="notes" href={href(`/notes/${s.item.id}`)} selected={current === s.item.id}>{#snippet trailing()}{#if s.unread}<span class="dot" role="img" aria-label="Changed since you last looked"></span>{/if}{/snippet}</Row></li>
+        {/each}
+        {#each incomingCollections.items as s (s.item.id)}
+          <li><Row title={s.title} icon="folder" href={href(`/collections/${s.item.id}`)} selected={route.path === `/collections/${s.item.id}`}>{#snippet trailing()}{#if s.unread}<span class="dot" role="img" aria-label="Changed since you last looked"></span>{/if}{/snippet}</Row></li>
         {/each}
       </ul>
     </div>
@@ -147,7 +163,8 @@
     </Panel>
   {/if}
 </nav>
-{#if shareUi.item?.kind === "collections"}<ShareHost item={shareUi.item} />{/if}
+<!-- A collection that is open draws its own sheet (CollectionView); this one is for a collection just made and not open. -->
+{#if shareUi.item?.kind === "collections" && route.path !== `/collections/${shareUi.item.id}`}<ShareHost item={shareUi.item} />{/if}
 <Menu open={!!ctx} {items} label="Note actions" anchor={ctx ? { left: ctx.x, top: ctx.y, right: ctx.x, bottom: ctx.y } : null} placement="bottom" onclose={() => (ctx = null)} onpick={pick} />
 
 <style>
