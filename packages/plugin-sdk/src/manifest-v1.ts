@@ -1,15 +1,20 @@
 /** Data-only manifest v1 validation; requests never issue grants.
  * @module
  */
-import type { ManifestV1 } from "@calternal/contracts";
+import type { HostCallKind, ManifestV1 } from "@calternal/contracts";
 import { SPACE_INSTRUCTIONS_PATH } from "./space-paths.js";
 const reservedInstructionParts=SPACE_INSTRUCTIONS_PATH.toLowerCase().split("/");
 
 const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
 /** Closed broker method vocabulary; declaration never grants permission. */
-export type HostCallKind = "read_item" | "write_item" | "list_collection" | "emit_event" | "start_job" | "checkpoint_job" | "request_secret_handle";
-const hostCalls = new Set(["read_item", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
+export type { HostCallKind } from "@calternal/contracts";
+const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
+
+/** Check a manifest or frame's method against the same closed vocabulary. No I/O. */
+export function isHostCallKind(value: unknown): value is HostCallKind {
+  return typeof value === "string" && hostCalls.has(value as HostCallKind);
+}
 function fail(): never { throw new Error("invalid manifest v1"); }
 function record(v: unknown, keys: string[], optional: string[] = []): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return fail();
@@ -175,6 +180,6 @@ export function validateManifestV1(value: unknown): ManifestV1 {
   rows("webhooks", ["id", "operation"], op);
   rows("hooks", ["id", "mode", "patterns", "operation"], r => { op(r); if (!["watch", "block"].includes(String(r.mode)) || !Array.isArray(r.patterns) || !r.patterns.length || r.patterns.length > 128) fail(); for (const p of r.patterns as unknown[]) identifier(typeof p === "string" && p.endsWith(".*") ? p.slice(0, -2) : p); });
   rows("themes", ["id", "stylesheet"], r => { const p = text(r.stylesheet, 4096); if (!p.endsWith(".css") || /[:\\]/.test(p) || p.split("/").some(x => !x || x === "." || x === "..")) fail(); });
-  for (const key of ["secrets", "host_calls"]) { const list = m[key]; if (!Array.isArray(list) || list.length > 128 || new Set(list).size !== list.length) fail(); for (const v of list as unknown[]) { identifier(v); if (key === "host_calls" && !hostCalls.has(String(v))) fail(); } }
+  for (const key of ["secrets", "host_calls"]) { const list = m[key]; if (!Array.isArray(list) || list.length > 128 || new Set(list).size !== list.length) fail(); for (const v of list as unknown[]) { identifier(v); if (key === "host_calls" && !isHostCallKind(v)) fail(); } }
   return value as ManifestV1;
 }

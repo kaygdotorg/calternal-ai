@@ -11,6 +11,18 @@ impl HostBroker for Broker<'_> {
             !a.cancel.as_ref().is_some_and(|c| c.is_cancelled()) && a.host.authorize(required)
         })
     }
+    fn authorize_pinned(&mut self, authority: &Authority, required: ManifestCapability) -> bool {
+        self.0.get(&authority.grant).is_some_and(|a| {
+            !a.cancel.as_ref().is_some_and(|c| c.is_cancelled())
+                && a.host.authorize_pinned(required)
+        })
+    }
+    fn authorize_delivery(&mut self, authority: &Authority, required: ManifestCapability) -> bool {
+        self.0.get(&authority.grant).is_some_and(|a| {
+            !a.cancel.as_ref().is_some_and(|c| c.is_cancelled())
+                && a.host.authorize_delivery(required)
+        })
+    }
     fn call(
         &mut self,
         authority: &Authority,

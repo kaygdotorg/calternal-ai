@@ -1,21 +1,23 @@
 <script lang="ts">
   // The line under a message: its time (always visible) and, beside it, three bare small icons (copy, reply in side chat, more) that fade in when the
   // message is hovered or one of them has keyboard focus. On a touch screen, where there is no hover, they stay visible. Each has a tooltip.
-  import { IconButton, Menu, toast, type MenuItem } from "@calternal/ui";
+  import { Icon, IconButton, Menu, toast, type MenuItem } from "@calternal/ui";
   import { bridge } from "./compose.svelte";
   import type { Message } from "./model";
   // `armed`: the message has been pointed at or focused (or there is no hover). The three controls and the menu are only created then, so a long list does not
   // pay for hundreds of controls nobody has reached for.
-  let { message, armed = false }: { message: Message; armed?: boolean } = $props();
+  // `onedit` is given for the person's own messages when the client can edit (the edit is another version of the thread from this message on); `onversion` for a message that has more than one version.
+  let { message, armed = false, onedit, onversion }: { message: Message; armed?: boolean; onedit?: () => void; onversion?: (version: number) => void } = $props();
   const text = $derived(message.blocks.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("\n\n"));
   const time = $derived(new Date(message.at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }));
   let menu = $state(false);
   let more = $state<HTMLButtonElement>();
-  const items: MenuItem[] = [{ id: "quote", label: "Quote in the message box" }, { id: "link", label: "Copy link to this message" }];
+  const items = $derived<MenuItem[]>([...(onedit ? [{ id: "edit", label: "Edit message", icon: "edit" as const }] : []), { id: "quote", label: "Quote in the message box" }, { id: "link", label: "Copy link to this message" }]);
   const copy = async () => { try { await navigator.clipboard.writeText(text); } catch { /* no clipboard: nothing to confirm */ } };
   function pick(id: string) {
     menu = false;
-    if (id === "quote") bridge.comment(text);
+    if (id === "edit") onedit?.();
+    else if (id === "quote") bridge.comment(text);
     else if (id === "link") void navigator.clipboard?.writeText(`${location.origin}${location.pathname}#${message.id}`).then(() => toast("Link copied"));
   }
 </script>
@@ -26,6 +28,7 @@
 {#snippet acts()}
   <span class="acts" data-open={menu ? "" : undefined}>
     {#if armed}
+      {#if onedit}<IconButton small icon="edit" label="Edit message" onclick={() => onedit?.()} />{/if}
       <IconButton small icon="copy" label="Copy message" onclick={copy} />
       <IconButton small icon="threads" label="Reply in side chat" onclick={() => bridge.ask(text)} />
       <IconButton small icon="more" label="Message actions" aria-haspopup="menu" aria-expanded={menu} bind:el={more} onclick={() => (menu = !menu)} />
@@ -33,6 +36,15 @@
   </span>
 {/snippet}
 <div class="meta {message.role}">
+  {#if message.version && message.version.of > 1}
+    <!-- The versions of an edited message (one shows at a time, the same for everyone): previous and next, with Alt+[ and Alt+] from anywhere in the message. -->
+    <span class="ver" role="group" aria-label="Versions of this message">
+      <button type="button" class="vb prev" aria-label="Previous version" disabled={message.version.n <= 1} onclick={() => onversion?.(message.version!.n - 1)}><Icon name="chevron" inline /></button>
+      <span class="vn" aria-live="polite">{message.version.n} / {message.version.of}</span>
+      <button type="button" class="vb" aria-label="Next version" disabled={message.version.n >= message.version.of} onclick={() => onversion?.(message.version!.n + 1)}><Icon name="chevron" inline /></button>
+    </span>
+    {#if message.version.n > 1}<span class="ed">Edited</span>{/if}
+  {/if}
   {#if message.role === "agent"}{@render acts()}<span class="t">{time}</span>{:else}<span class="t">{time}</span>{@render acts()}{/if}
   {#if armed}<Menu open={menu} {items} label="Message actions" trigger={more} onclose={() => (menu = false)} onpick={pick} />{/if}
 </div>
@@ -41,6 +53,13 @@
   .meta { display: flex; align-items: center; min-height: var(--ib-small); color: var(--ink-3); font-size: var(--text-label); }
   .meta.user { justify-content: flex-end; }
   .t { font-variant-numeric: tabular-nums; }
+  .ver { display: inline-flex; align-items: center; margin-right: var(--s-3); }
+  .vn { font-variant-numeric: tabular-nums; padding: 0 var(--s-1); }
+  .vb { display: inline-grid; place-items: center; width: var(--ib-small); height: var(--ib-small); border-radius: 50%; color: inherit; }
+  .vb.prev :global(svg) { transform: scaleX(-1); }
+  .vb:disabled { opacity: 0.35; }
+  @media (hover: hover) and (pointer: fine) { .vb:not(:disabled):hover { background: var(--hover); color: var(--ink); } }
+  .ed { margin-right: var(--s-3); }
   .acts { display: inline-flex; align-items: center; }
   /* A touch screen has no hover: the actions are always there, beside the time. */
   @media (hover: none) { .acts { margin-inline: var(--s-4) 0; } .meta.agent .acts { margin-inline: 0 var(--s-4); } }

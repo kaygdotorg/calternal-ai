@@ -105,11 +105,6 @@ impl MachineService {
             .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;
-        if worker.is_some() && !st.recovery_stops.is_empty() {
-            return Err(Error::unavailable(
-                "plugin workers are waiting for machine teardown confirmation after restart",
-            ));
-        }
         if let Some(id) = st.threads.get(&thread).copied() {
             let l = &st.leases[&id];
             if l.row.worker != worker.is_some() || l.provider_login != provider_login {
@@ -123,13 +118,18 @@ impl MachineService {
             }
             return Ok(st.view(id));
         }
+        let is_worker = worker.is_some();
+        if is_worker {
+            st.place_waiting(&self.settings);
+            st.check_worker_capacity(account, &self.settings)?;
+        }
         let row = db::LeaseRow {
             id: Uuid::new_v4(),
             space,
             account,
             thread,
             image,
-            worker: worker.is_some(),
+            worker: is_worker,
             machine: None,
             last_machine: db::last_thread_machine(&st.db, account, thread).map_err(sql)?,
             pinned_machine,
@@ -157,6 +157,12 @@ impl MachineService {
             st.workers.insert(id, worker);
         }
         st.place_waiting(&self.settings);
+        if is_worker && st.leases[&id].state == LeaseState::Waiting {
+            st.end_lease(id, "worker placement failed", &self.settings);
+            return Err(Error::unavailable(
+                "Plugin worker placement failed. Retry shortly.",
+            ));
+        }
         Ok(st.view(id))
     }
 }

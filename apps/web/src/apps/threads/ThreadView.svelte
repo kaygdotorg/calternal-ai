@@ -157,7 +157,7 @@
     <span class="grow"></span>
     {#if summary && !windowed}
       <Pill icon="more" label="Thread actions" aria-haspopup="menu" aria-expanded={menuOpen} bind:el={moreEl} onclick={() => (menuOpen = !menuOpen)} />
-      <Menu open={menuOpen} items={[...threadItems(summary), ...(shell.narrow ? [{ id: "panel", label: "Open side panel", icon: "sidebar-right" as const }] : [])]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.openPanel(); else if (summary) runThreadItem(item, summary, startRename); }} />
+      <Menu open={menuOpen} items={[...threadItems(summary), { id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" as const }]} label="Thread actions" trigger={moreEl} morph onclose={() => (menuOpen = false)} onpick={(item) => { menuOpen = false; if (item === "panel") shell.toggleRight(); else if (summary) runThreadItem(item, summary, startRename); }} />
     {/if}
   </header>
 
@@ -174,7 +174,7 @@
           {#snippet row(i)}
             {#if conv && i < conv.count}
               {@const m = conv.get(i)}
-              {#if m}<MessageRow message={m} hit={hit === m.id} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
+              {#if m}<MessageRow message={m} threadId={id} hit={hit === m.id} provider={summary?.provider ?? "claude"} providers={store.providers} />{:else}<div class="skeleton" aria-hidden="true"></div>{/if}
             {:else if conv?.stream && i === conv.count}
               <StreamRow turn={conv.stream} provider={summary?.provider ?? "claude"} providers={store.providers} />
             {:else if conv}

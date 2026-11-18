@@ -106,6 +106,32 @@ exec podman "$@"
 }
 
 #[tokio::test]
+async fn unavailable_worker_explains_operator_enrollment_after_space_admission() {
+    let mut f = Fixture::new().await;
+    f.stop();
+    f.remote_workers = true;
+    f.start().await;
+    jobs_cases::enable(&f, 1, &f.spaces[0]).await;
+    let input = json!({"space_id":f.spaces[0],"text":"fixture"});
+    let unavailable = f.op(1, "jobs-demo.write", input.clone()).await;
+    assert_eq!(unavailable.status, 503);
+    assert_eq!(unavailable.body["error"]["code"], "unavailable");
+    assert_eq!(
+        unavailable.body["error"]["details"]["reason"],
+        "worker_machine_required"
+    );
+    assert!(
+        unavailable.body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("enroll")
+    );
+    let foreign = f.op(2, "jobs-demo.write", input).await;
+    assert_eq!(foreign.status, 404);
+    assert!(foreign.body["error"]["details"].is_null());
+}
+
+#[tokio::test]
 async fn remote_worker_keeps_broker_authority_and_restarts_after_container_death() {
     if !calternal_machine::sandbox::podman::PodmanBackend::available(Path::new("podman")).await {
         eprintln!("SKIP remote worker conformance: Podman unavailable");

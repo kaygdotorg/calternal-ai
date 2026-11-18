@@ -2,7 +2,7 @@
   // The note: the block editor in a narrow centred column with no inner card, and a thin rail at the card's left edge that expands into a small contents card (hover, focus or press;
   // Escape folds it). The document is the note's Markdown (the fixture's or the server's); every edit is kept as the note's private draft after a short pause and saved after a longer one.
   import { getContext } from "svelte";
-  import { Button, IconButton, Panel } from "@calternal/ui";
+  import { Button, IconButton, Menu, Panel, Pill } from "@calternal/ui";
   import { shell } from "../../shell/shell.svelte";
   import NoteEditor from "./NoteEditor.svelte";
   import TrashView from "./TrashView.svelte";
@@ -16,6 +16,8 @@
   // Fixture words for the # picker; in server mode the editor asks the space's tag index instead.
   const TAGS = ["design", "journal", "release", "storage", "reading"];
   let { id }: { id?: string } = $props();
+  let moreOpen = $state(false);
+  let moreEl = $state<HTMLButtonElement>();
   /** In a canvas window the window's own pill (three buttons) floats at the top right: the save state leaves room for it and the sidebar's way back is the shell's. */
   const windowed = getContext<boolean | undefined>("canvas-window") === true;
   // Leaving a note saves what is pending first (against that note), then the next one opens.
@@ -72,6 +74,11 @@
     {#if shell.narrow && !windowed}<IconButton icon="sidebar" label="Show notes" onclick={() => shell.toggleSidebar()} />{/if}
     <span class="grow"></span>
     {#if notes.note}<span class="state" role="status" aria-live="polite" data-state={notes.saveState}>{STATE[notes.saveState]}</span>{/if}
+    <!-- The side panel's only button is an item of this menu (a window in the canvas has the same item in its own three-dot menu). -->
+    {#if !windowed}
+      <Pill icon="more" label="Note actions" aria-haspopup="menu" aria-expanded={moreOpen} bind:el={moreEl} onclick={() => (moreOpen = !moreOpen)} />
+      <Menu open={moreOpen} items={[{ id: "panel", label: shell.rightOpen ? "Hide side panel" : "Show side panel", icon: "sidebar-right" }]} label="Note actions" trigger={moreEl} morph onclose={() => (moreOpen = false)} onpick={() => { moreOpen = false; shell.toggleRight(); }} />
+    {/if}
   </header>
 
   <article class="nc-article">

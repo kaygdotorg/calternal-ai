@@ -185,8 +185,7 @@
   // A closed sidebar or side panel always has a way back: a button at the card's top corner on the same side, with the shortcut in its tooltip. (A phone has its own header button and the edge swipe.)
   // (A phone shows it for Settings only: Threads and Notes have their own header button, and the Settings page has no header.)
   const showLeft = $derived((!shell.narrow && !shell.sidebarOpen) || (shell.narrow && (app.kind === "settings" || !id) && !shell.sidebarOpen)); // a phone card with no header of its own (Settings, or an app with nothing open) still has a way to the list
-  // The side panel's button at the card's corner: on a wide screen when it is closed. A phone has none (owner, 2026-11-18: it overlaid a window's top-right pills): the way in is "Open side panel" in the three-dot menu (`shell.openPanel()`) or the one-finger pull from the right edge.
-  const showRight = $derived(hasRight && !rightOpen && !shell.narrow);
+  // The side panel has no button of its own at the card's corner (owner, 2026-11-18: it was drawn over the three-dot pill): it opens from "Show side panel" in the three-dot menu, the shortcut, or on a phone the pull from the right edge.
 </script>
 
 <Backdrop />
@@ -195,11 +194,10 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
   <aside class="side" class:pulled={wp?.side === "left"} style:--vis={wp?.side === "left" ? `${wp.vis}px` : undefined} style:--w={wp?.side === "left" ? `${wp.w}px` : undefined} bind:this={sideEl} onclick={choose} data-ink={surfaces.left ?? undefined} aria-label="{app.name} sidebar" inert={!shell.sidebarOpen}><Sidebar {app} /></aside>
 
-  <main class="mid" class:cv={canvasEnabled} bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) * 2 + var(--s-3))" : undefined} style:--edge-r={showRight && !shell.narrow ? "calc(var(--pill-h) + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode && drag !== null ? `translateX(${dragMode === "card" ? drag : -drag}px)` : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
+  <main class="mid" class:cv={canvasEnabled} bind:this={midEl} style:--edge-l={showLeft && !shell.narrow ? "calc(var(--pill-h) * 2 + var(--s-3))" : undefined} class:dragging={drag !== null} style:transform={wp ? `translateX(${wp.side === "left" ? wp.vis - (wp.layoutOpen ? wp.w : 0) : -(wp.vis - (wp.layoutOpen ? wp.w : 0))}px)` : dragMode && drag !== null ? `translateX(${dragMode === "card" ? drag : -drag}px)` : undefined} inert={shell.narrow && (shell.sidebarOpen || rightOpen)}>
     {#if !shell.narrow && shell.sidebarOpen}<ResizeHandle side="left" />{/if}
     {#if !shell.narrow && hasRight && rightOpen}<ResizeHandle side="right" />{/if}
     {#if showLeft}<div class="edge l">{#if shell.narrow}<Pill icon="sidebar" label="Show the sidebar" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("sidebar"))} onclick={() => shell.toggleSidebar()} />{:else}<CollapsedPill {app} />{/if}</div>{/if}
-    {#if showRight}<div class="edge r"><Pill icon="sidebar-right" label="Show the side panel" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("panel"))} onclick={() => shell.toggleRight()} /></div>{/if}
     {#if canvasEnabled}
       <!-- The canvas experiment (canvas/Canvas.svelte): no card round it; the area between the sidebars is the canvas and each window is a middle card. The app switcher is in the sidebar's footer. -->
       <div class="area" role="region" aria-label={app.name}>
@@ -252,7 +250,6 @@
   .mid { min-width: 0; padding: 0 var(--inset); position: relative; }
   .edge { position: absolute; z-index: 6; top: calc(var(--safe-top) + (var(--bar-h) - var(--pill-h)) / 2); }
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
-  .edge.r { right: calc(var(--inset) + var(--s-4)); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
   /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
   .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }

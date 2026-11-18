@@ -8,7 +8,7 @@
 //! and activation row, so sign-out, a revoked installation or membership, or a
 //! disabled/re-enabled plugin stops the invocation at its next boundary.
 //!
-//! Implemented host calls: `read_item` and `write_item`, both through
+//! Implemented host calls: `read_item`, `list_items_v1` and `write_item` through
 //! [`calternal_content`] via [`crate::store::Store`]; `start_job` and
 //! `checkpoint_job` through [`super::jobs::Jobs`]; `request_secret_handle` through
 //! [`crate::secrets::plugin_handle`]. Every other declared host call is
@@ -34,6 +34,8 @@ use crate::auth::{Directory, Identity};
 use crate::store::sha256_hex;
 use calternal_types::{Capability, SpaceId};
 
+mod item_pages;
+
 /// Fixed fixture text served to previews. Never user data.
 pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
 /// Synthetic item ID used only by previews; a UUIDv7-shaped value no store allocates.
@@ -44,6 +46,14 @@ pub const PREVIEW_ITEM_ID: &str = "00000000-0000-7000-8000-000000000000";
 pub trait InvocationHost: Send + Sync {
     /// Recheck current authority for `required`: grants, plugin activation and generation.
     fn authorize(&self, required: ManifestCapability) -> bool;
+    /// Reuse the admitted activation during internal worker routing.
+    fn authorize_pinned(&self, required: ManifestCapability) -> bool {
+        self.authorize(required)
+    }
+    /// Check a result handed to the adapter before any caller-facing delivery.
+    fn authorize_delivery(&self, required: ManifestCapability) -> bool {
+        self.authorize(required)
+    }
     /// Validate one host call's input and apply it under current authority.
     /// Errors reach the worker as `ok: false` with no detail.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error>;
@@ -334,10 +344,17 @@ impl<D: Directory> SpaceHost<D> {
 }
 
 impl<D: Directory> InvocationHost for SpaceHost<D> {
-    /// Cost: one session check (see [`Session::is_live`]), one directory capability
-    /// read and one pooled activation read; no content I/O. The worker
-    /// session calls this up to four times per host call.
+    /// At an effect or worker disclosure, recheck live session, capabilities
+    /// and activation. Costs one additional space-local control read.
     fn authorize(&self, required: ManifestCapability) -> bool {
+        self.authorize_pinned(required)
+            && activation(&self.state.store, self.space, &self.plugin)
+                .is_ok_and(|row| row.enabled && row.generation == self.generation)
+    }
+
+    /// Check live session and grants, reusing the enabled generation captured
+    /// at admission. The live catalog lookup also fences removed revisions.
+    fn authorize_pinned(&self, required: ManifestCapability) -> bool {
         let Some(required) = host_capability(required) else {
             return false;
         };
@@ -348,18 +365,28 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
             return false;
         }
         self.state.registry.snapshot().authorizes(&self.plugin)
-            && activation(&self.state.store, self.space, &self.plugin)
-                .is_ok_and(|row| row.enabled && row.generation == self.generation)
+    }
+
+    /// Jobs publish here. HTTP dispatch separately checks current activation
+    /// before returning a result or recording a receipt, including on refusal.
+    fn authorize_delivery(&self, required: ManifestCapability) -> bool {
+        if self.run.is_some() {
+            self.authorize(required)
+        } else {
+            self.authorize_pinned(required)
+        }
     }
 
     /// Cost: `read_item` is one pooled catalog route read and one item read under
-    /// the space's lock; `write_item` adds a durable content write (journal, file and
+    /// the space's lock; `list_items_v1` is one indexed space query. `write_item`
+    /// adds a durable content write (journal, file and
     /// directory fsync); `start_job` and `checkpoint_job` are one FULL transaction on
     /// the space's job file; `request_secret_handle` one secret-database read (plus one
     /// fsync'd insert when it records a request). Other methods are refused.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error> {
         match method {
             HostCallKind::ReadItem => self.read_item(input),
+            HostCallKind::ListItemsV1 => self.list_items(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),

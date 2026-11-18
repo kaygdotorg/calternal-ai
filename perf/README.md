@@ -1,5 +1,44 @@
 # Server performance gate
 
+## Warm browser-to-worker gate
+
+`plugin.warm_browser_worker` in `perf/budgets.json` is a 15 ms p95 gate.
+The measured fixed p95 was 5.2 ms on perf-01 and 10.1 ms on perf-02.
+The ceiling leaves headroom for the slower VM and catches even one
+reintroduced 20 ms batching wait.
+The gate's verdict calculation was checked against the archived perf-01
+vectors. The 5.2 ms fixed run passes and the 48.8 ms control fails.
+An independent fixed run on perf-02 measured 6.2 ms p50 and 16.7 ms p95,
+above the proposed ceiling.
+
+Stage the prebuilt development-mode server, built plugin bundles,
+Chromium headless shell, rootless Podman and its cached worker image
+on the perf VM. Copy `perf/browser-worker.mjs` and `perf/budgets.json`
+into the same directory. Run this from that directory on the perf VM:
+
+```sh
+/usr/local/bin/perf-lock.sh node browser-worker.mjs \
+  /abs/calternal /abs/plugins /abs/chrome-headless-shell /abs/browser-worker.json
+```
+
+The gate provisions a disposable server and an enrolled pool runner.
+It measures the complete response for one real broker read in a warm
+worker, over loopback. Ten browser warm-ups precede 100 serial samples.
+The JSON includes the raw samples and the budget verdict. A breach exits
+1, and a fixture or configuration error also fails. Set
+`CALTERNAL_PERF_PODMAN` when using the perf VM's lane-owned Podman wrapper.
+For controlled A/B diagnosis only, `CALTERNAL_PERF_WORKER_RUNNER` can
+select a separately built runner. Leave it unset for qualification.
+
+The coordinator also runs this check in `scripts/perf-check.sh`. Use
+`PERF_CHROMIUM` and `PERF_PODMAN` to supply executable paths on the perf
+VM when they are absent from its PATH. As with the wider gate, an initial
+breach triggers an independent repeat, and a reproduced breach fails the
+suite. Each run keeps its JSON evidence. A missing runner or browser
+leaves qualification incomplete.
+
+## Wider backend gate
+
 Build on `claude@calternal-dev-01-compute02`; run only on
 `kayg@calternal-perf-01-backup01` under `/usr/local/bin/perf-lock.sh`.
 The new crate is tooling, never a product dependency. `scripts/perf-check.sh`

@@ -15,8 +15,24 @@ export interface InboxItem {
 const ORDER = ["Question", "Approval", "Secret", "Sign in", "Failed", "Interrupted"];
 const OF_REQUEST: Record<Request["kind"], string> = { question: "Question", approval: "Approval", secret: "Secret", signin: "Sign in" };
 
-/** The Inbox for these threads and their open requests. Cost: one pass over each. */
-export function inboxOf(threads: readonly ThreadSummary[], requests: readonly Request[]): InboxItem[] {
+/** When `t` comes back if it is snoozed at `now`, else undefined: the person's snooze, or, with no action, a thread waiting for a subscription limit to reset (its retrying notice says when). */
+export function snoozeEnd(t: ThreadSummary, now: number): { until: number; auto: boolean } | undefined {
+  if (t.snoozedUntil !== undefined && t.snoozedUntil > now) return { until: t.snoozedUntil, auto: false };
+  const n = t.notice;
+  if (n?.kind === "retrying" && n.rule === "subscription_reset" && n.nextAt !== undefined && n.nextAt > now) return { until: n.nextAt, auto: true };
+  return undefined;
+}
+
+/** A snoozed thread and when it returns. `auto` is a subscription limit waiting to reset (no manual snooze to undo). */
+export interface SnoozedItem { thread: ThreadSummary; until: number; auto: boolean }
+
+/** The snoozed threads, the soonest to return first. Cost: one pass. */
+export function snoozedOf(threads: readonly ThreadSummary[], now: number): SnoozedItem[] {
+  return threads.flatMap((thread) => { const s = snoozeEnd(thread, now); return s ? [{ thread, ...s }] : []; }).sort((a, b) => a.until - b.until);
+}
+
+/** The Inbox for these threads and their open requests: only what waits on the person and is not snoozed at `now`. Cost: one pass over each. */
+export function inboxOf(threads: readonly ThreadSummary[], requests: readonly Request[], now = Date.now()): InboxItem[] {
   const by = new Map<string, Set<string>>();
   const add = (id: string, reason: string) => (by.get(id) ?? by.set(id, new Set()).get(id)!).add(reason);
   for (const r of requests) add(r.threadId, OF_REQUEST[r.kind]);
@@ -26,7 +42,7 @@ export function inboxOf(threads: readonly ThreadSummary[], requests: readonly Re
     if (t.notice?.kind === "interrupted") add(t.id, "Interrupted");
   }
   return threads
-    .filter((t) => by.has(t.id))
+    .filter((t) => by.has(t.id) && !snoozeEnd(t, now))
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .map((thread) => ({ thread, reasons: ORDER.filter((r) => by.get(thread.id)!.has(r)) }));
 }

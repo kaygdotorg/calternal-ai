@@ -26,6 +26,7 @@ for (const phone of [false, true]) {
   for (const [n, route, outerWant] of [[1, "/threads", 0], [3, "/threads", 0], [4, "/threads", 1], [4, "/notes", 1], [20, "/settings/appearance", 2], [20, "/threads", 1]]) {
     const { ctx, page } = await open(phone, `${route}?apps=${n}&firstrun=0`);
     const g = await geom(page);
+    if (n === 3) { const looks = await page.evaluate(() => [...document.querySelectorAll('aside.side footer nav[aria-label="Apps"] a')].map((a) => { const c = getComputedStyle(a); return `${c.opacity}/${c.scale}`; })); ok(looks.every((l) => l === "1/none"), `${where}, exactly 3 apps: no icon is faded or shrunk (nothing is hidden on either side)`, looks.join(" ")); }
     const wholeWant = Math.min(3, n);
     ok(g.total === n && g.whole === wholeWant, `${where}, ${n} apps (on ${route}): ${wholeWant} whole icon${wholeWant > 1 ? "s" : ""} in view, none clipped`, `${g.whole} of ${g.total}`);
     ok(g.outer === outerWant, `${where}, ${n} apps on ${route}: ${outerWant ? "the outer icon on the side with more is smaller and fainter" : "all icons full size"}`, `${g.outer} outer`);
