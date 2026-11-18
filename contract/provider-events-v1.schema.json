@@ -137,7 +137,7 @@
           "additionalProperties": false
         },
         {
-          "description": "A tool step began; arguments are deliberately not forwarded.",
+          "description": "A tool step began with a short target or description.",
           "type": "object",
           "required": [
             "id",
@@ -168,12 +168,52 @@
           "additionalProperties": false
         },
         {
+          "description": "A tool returned output. Only a bounded description and byte count are shared.",
+          "type": "object",
+          "required": [
+            "bytes",
+            "id",
+            "name",
+            "summary",
+            "type"
+          ],
+          "properties": {
+            "bytes": {
+              "description": "UTF-8 bytes of tool text identified by the adapter.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "id": {
+              "description": "Provider-issued step identity.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Tool name, at most 128 bytes.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "Short target or description, at most 512 bytes.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "tool_output"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "description": "A tool step ended, creating a natural checkpoint boundary.",
           "type": "object",
           "required": [
             "detail",
             "failed",
             "id",
+            "name",
+            "summary",
             "type"
           ],
           "properties": {
@@ -187,6 +227,14 @@
             },
             "id": {
               "description": "Provider-issued step identity.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Tool name, at most 128 bytes.",
+              "type": "string"
+            },
+            "summary": {
+              "description": "Short target or description, at most 512 bytes.",
               "type": "string"
             },
             "type": {

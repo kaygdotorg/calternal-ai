@@ -50,10 +50,18 @@ pub(super) fn encode(metadata: &Value, body: &str) -> String {
     out.push_str(body);
     out
 }
+/// Exclude checkpoint transport coordinates from the existing public metadata.
+pub(super) fn public_metadata(mut metadata: Value) -> Value {
+    if let Some(fields) = metadata.as_object_mut() {
+        fields.remove(super::delta::METADATA_KEY);
+    }
+    metadata
+}
+
 /// Encode the existing document response with one allocation proportional to
 /// the stored UTF-8 body. Callers add their current authorized job view.
 pub(super) fn view(item: &Item) -> Value {
-    json!({"thread":{"id":item.id,"space_id":item.space,"address":format!("/threads/{}",item.id),"revision":item.revision,"metadata":item.metadata,"markdown":String::from_utf8_lossy(&item.bytes)}})
+    json!({"thread":{"id":item.id,"space_id":item.space,"address":format!("/threads/{}",item.id),"revision":item.revision,"metadata":public_metadata(item.metadata.clone()),"markdown":String::from_utf8_lossy(&item.bytes)}})
 }
 
 /// The configured provider default, if the trusted manifest declares one. No I/O.

@@ -11,6 +11,7 @@ pub(super) fn summary(reason: &Value) -> Option<&'static str> {
         "provider_signed_out" => "Provider signed out",
         "waiting_on_person" => "Waiting for a person",
         "retrying" => "Retry scheduled",
+        "failed" if reason["why"] == "thread_full" => "Thread size limit reached",
         "failed" => "Turn failed",
         "interrupted" => "Turn interrupted",
         _ => return None,
@@ -32,7 +33,12 @@ pub(super) fn details(out: &Output, mut reply: Reply, reason: &Value) -> Reply {
             reply = reply.fields([(label, value)]);
         }
     }
-    if let Some(why) = reason["why"].as_str() {
+    if let Some(message) = reason["message"].as_str() {
+        reply = reply.fields([("Details", message)]);
+    }
+    if reason["code"] == "interrupted"
+        && let Some(why) = reason["why"].as_str()
+    {
         let message = match why {
             "machine_offline" => "The machine stopped responding.",
             "server_restarted" => "The server restarted.",

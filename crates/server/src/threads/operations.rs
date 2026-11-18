@@ -3,8 +3,9 @@ use super::*;
 use calternal_content::Request;
 
 /// Serve one authorized thread operation on a blocking worker. List reads the
-/// bounded index, get reads one document plus its job, and writes retain content's
-/// revision checks, receipts and publication. Storage failures propagate.
+/// bounded index. Get reads one document and its job, or one immutable checkpoint
+/// range. Writes retain content's revision checks, receipts and publication.
+/// Storage failures propagate.
 pub(super) fn apply<D: Directory>(
     st: &Shared<D>,
     who: &Identity,
@@ -16,6 +17,16 @@ pub(super) fn apply<D: Directory>(
     actor: &calternal_types::Actor,
 ) -> Result<Value, Error> {
     let content = st.store.content();
+    if operation == "threads.get"
+        && let Some(since) = data.get("since")
+    {
+        return super::delta::read(
+            &content,
+            space,
+            id.ok_or_else(|| Error::invalid_input("id is required"))?,
+            since,
+        );
+    }
     let fp = crate::api::fingerprint(operation, data);
     let request = Request {
         account: who.id,
@@ -63,7 +74,7 @@ pub(super) fn apply<D: Directory>(
                     && parent.is_none_or(|p| r.metadata["parent_thread"] == p)
             })
             .take(limit)
-            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":r.metadata,"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
+            .map(|r| json!({"id":r.id,"address":format!("/threads/{}",r.id),"revision":r.revision,"metadata":document::public_metadata(r.metadata),"turn_state":r.turn_state,"turn_reason":r.turn_reason}))
             .collect();
         return Ok(json!({"threads":threads}));
     }

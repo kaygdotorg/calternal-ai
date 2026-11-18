@@ -1,5 +1,7 @@
 //! Every thread operation is exercised with real passkey sessions and foreign spaces.
 use super::*;
+#[path = "threads_cases/streaming.rs"]
+mod streaming;
 
 #[tokio::test]
 async fn thread_operations_hide_foreign_targets_and_keep_children_after_archive() {

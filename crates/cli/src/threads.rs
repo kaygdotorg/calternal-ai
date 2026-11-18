@@ -54,10 +54,13 @@ pub enum Command {
         #[arg(long, default_value_t = 100)]
         limit: u32,
     },
-    /// Read the Markdown conversation and its metadata.
+    /// Read the Markdown conversation or a saved checkpoint addition.
     Get {
         /// Thread UUID.
         id: String,
+        /// JSON data from a threads.checkpoint journal entry.
+        #[arg(long, value_parser = |text: &str| text.parse::<Value>())]
+        since: Option<Value>,
     },
     /// Save your message and admit a provider turn; reuse request-id after failure.
     Send {
@@ -134,7 +137,13 @@ impl Command {
                 }
                 ("threads.list", v)
             }
-            Self::Get { id } => ("threads.get", json!({"id":id})),
+            Self::Get { id, since } => {
+                let mut input = json!({"id":id});
+                if let Some(since) = since {
+                    input["since"] = since;
+                }
+                ("threads.get", input)
+            }
             Self::Stop { id } => ("threads.stop", json!({"id":id})),
             Self::Archive { id } => ("threads.archive", json!({"id":id})),
             Self::Rename { id, title } => ("threads.rename", json!({"id":id,"title":title})),
@@ -211,6 +220,29 @@ pub fn reply(out: &Output, data: Value) -> Reply {
                 "No threads in this space.",
             )
             .hint("Next: calternal threads create --help");
+    }
+    if let Some(delta) = data.get("delta") {
+        return Reply::new(data.clone())
+            .fields([
+                ("Thread", delta["id"].as_str().unwrap_or("").to_owned()),
+                (
+                    "Base revision",
+                    delta["base_revision"].as_str().unwrap_or("").to_owned(),
+                ),
+                (
+                    "Revision",
+                    delta["revision"].as_str().unwrap_or("").to_owned(),
+                ),
+                (
+                    "Body offset (bytes)",
+                    delta["offset"].as_u64().unwrap_or(0).to_string(),
+                ),
+            ])
+            .blank()
+            .text(delta["markdown"].as_str().unwrap_or(""))
+            .hint(
+                "Next: use calternal threads get without --since to reload the full conversation.",
+            );
     }
     let thread = &data["thread"];
     let fields = vec![

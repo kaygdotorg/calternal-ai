@@ -19,7 +19,7 @@ are permitted; source labels are at most 128 bytes.
 
 Each stdout line is `{version:1,seq,event}`. Event numbers start at one per adapter
 process, independently of machine exec and job stream sequence numbers. Events:
-check, session, text_delta, tool_started, tool_finished, question,
+check, session, text_delta, tool_started, tool_output, tool_finished, question,
 approval_request, usage, error, done. Lines are at most 12 KiB including newline.
 Text and tool detail are at most 4 KiB; IDs and tool names 128 bytes; summaries and
 safe error messages 512 bytes. JSON integers must be exactly representable in JS.
@@ -27,6 +27,13 @@ Unknown versions, malformed frames, sequence gaps and partial final lines fail
 closed. Error classes distinguish transient, usage_limit, authentication,
 refusal, permanent and unknown. Billing is api, subscription or unknown. A reset,
 when reported, is Unix milliseconds. It is not guessed from error prose.
+
+All tool events carry the same step ID, tool name and short target or
+description. The Claude Code adapter emits `tool_output` for a nonempty tool
+result and reports its text byte count. It omits the raw result. Completion
+carries `failed` and a short detail. The server folds the scrubbed step notices
+into a saved thread's Markdown, using starts and completions as checkpoint
+boundaries.
 
 Back-pressure is end to end: the adapter awaits stdout drain; the machine buffers
 16 chunks of 16 KiB plus at most 256 KiB unacknowledged; machine output is fenced

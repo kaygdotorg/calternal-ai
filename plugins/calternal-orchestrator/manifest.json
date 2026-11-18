@@ -115,6 +115,25 @@
           "space_id": {
             "type": "string",
             "format": "uuid"
+          },
+          "since": {
+            "type": "object",
+            "properties": {
+              "revision": { "type": "string", "minLength": 1, "maxLength": 80 },
+              "append": {
+                "type": "object",
+                "properties": {
+                  "base_revision": { "type": "string", "minLength": 1, "maxLength": 80 },
+                  "offset": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+                  "start": { "type": "integer", "minimum": 0, "maximum": 2097152 },
+                  "length": { "type": "integer", "minimum": 0, "maximum": 33280 }
+                },
+                "required": ["base_revision", "offset", "start", "length"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["revision", "append"],
+            "additionalProperties": false
           }
         },
         "required": [

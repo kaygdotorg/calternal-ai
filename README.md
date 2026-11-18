@@ -5,7 +5,8 @@ A file-first AI orchestrator and personal productivity app, under development. T
 ## Local development preview
 
 This branch implements a **disposable-data engineering preview**, not the complete orchestrator or a daily-use replacement for Calternal. It includes real Notes operations, version history, permission checks, a trusted TypeScript statistics extension and the `cl` CLI. Saved conversations now use manifest-owned thread operations,
-Markdown files and `calternal threads`; see [thread format and limits](docs/threads.md).
+Markdown files and `calternal threads`. Checkpoint journal entries support
+incremental reads for clients. See the [thread format and limits](docs/threads.md).
 There is no web UI yet; it will be built from [docs/ui-shell.md](docs/ui-shell.md).
 
 Requirements: Linux/macOS build environment, pinned Rust 1.99.1, a C linker, Node 22.13 or later, npm and Python 3 for the CLI integration check. The current server has been exercised on Linux; macOS and Apple bindings need their own execution checks. `scripts/with-toolchain.sh` uses an installed C compiler and limits Cargo concurrency; it does not install system packages.

@@ -262,7 +262,7 @@ and [the software passkey conformance fixture](../tests/conformance/isolation.rs
 `GET /api/v1/jobs/<job-uuid>/events` returns SSE. The `chunk` payload
 contains the stream sequence at `seq` and the provider protocol envelope
 at `data`. The view consumes `data.event`; its `type` is
-`text_delta`, `tool_started`, `tool_finished`, or another provider event.
+`text_delta`, `tool_started`, `tool_output`, `tool_finished`, or another provider event.
 For example:
 
 ```text
@@ -288,6 +288,15 @@ and `end` carries `{"job":{…}}`. The `state` and `end` payloads expose
 the job’s lifecycle. Live text and steps come from `chunk.data.event`.
 See the [provider event schema](../contract/provider-events-v1.schema.json)
 and [job stream implementation](../crates/server/src/plugins/job_api.rs).
+
+The account-free fixture accepts these prompt phrases:
+
+| Prompt | Expected behavior |
+| --- | --- |
+| `scripted-tool-steps` | Bash starts with target `Run ls`, emits an output-size notice and finishes. A Read step starts, emits an output-size notice and ends with `failed: true`. |
+| `scripted-tool-steps long-output` | The Bash output is at least 96 KiB. The stream and saved message show its size. |
+| `scripted-tool-steps hang` | Bash completes and Read waits after starting. Reopen the job stream to replay the retained steps, then Stop the turn. The saved thread retains the incomplete Read step. |
+| `thread-size-limit` | Assistant text crosses the saved-thread limit. The job fails with `thread_full` and the last committed Markdown stays readable. |
 
 ## Bring-up results
 

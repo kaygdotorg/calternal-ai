@@ -137,13 +137,19 @@ impl Journals {
                 }
                 return Ok(());
             }
+            let mut data = serde_json::json!({ "revision": revision });
+            if operation == "threads.checkpoint"
+                && let Some(append) = result.get("append")
+            {
+                data["append"] = append.clone();
+            }
             store
                 .commit(Commit {
                     events: vec![StampedEvent {
                         author: account,
                         kind: operation.to_owned(),
                         item: item.map(|id| id.to_string()).unwrap_or_default(),
-                        data: serde_json::json!({ "revision": revision }),
+                        data,
                         installation: None,
                         request_id: Some(id.to_owned()),
                     }],

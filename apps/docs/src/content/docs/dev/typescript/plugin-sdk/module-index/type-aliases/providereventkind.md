@@ -14,7 +14,7 @@ title: "plugin-sdk: index/type-aliases/ProviderEventKind"
 
 # Type Alias: ProviderEventKind
 
-> **ProviderEventKind** = `object` & `ProviderCheck` \| \{ `session_id`: `string`; `type`: `"session"`; \} \| \{ `text`: `string`; `type`: `"text_delta"`; \} \| \{ `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_started"`; \} \| \{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `type`: `"tool_finished"`; \} \| \{ `text`: `string`; `type`: `"question"`; \} \| \{ `summary`: `string`; `type`: `"approval_request"`; \} \| \{ `input_tokens`: `number`; `output_tokens`: `number`; `type`: `"usage"`; \} \| \{ `billing`: [`ProviderBilling`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/); `class`: [`ProviderFailureClass`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/); `code`: `string`; `message`: `string`; `reset_at_ms?`: `number`; `type`: `"error"`; \} \| \{ `outcome`: `string`; `type`: `"done"`; \}
+> **ProviderEventKind** = `object` & `ProviderCheck` \| \{ `session_id`: `string`; `type`: `"session"`; \} \| \{ `text`: `string`; `type`: `"text_delta"`; \} \| \{ `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_started"`; \} \| \{ `bytes`: `number`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_output"`; \} \| \{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_finished"`; \} \| \{ `text`: `string`; `type`: `"question"`; \} \| \{ `summary`: `string`; `type`: `"approval_request"`; \} \| \{ `input_tokens`: `number`; `output_tokens`: `number`; `type`: `"usage"`; \} \| \{ `billing`: [`ProviderBilling`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerbilling/); `class`: [`ProviderFailureClass`](/docs/dev/typescript/plugin-sdk/module-index/type-aliases/providerfailureclass/); `code`: `string`; `message`: `string`; `reset_at_ms?`: `number`; `type`: `"error"`; \} \| \{ `outcome`: `string`; `type`: `"done"`; \}
 
 Normalized provider output. Untrusted provider text conveys no authority.
 
@@ -86,7 +86,41 @@ Short description, at most 512 bytes.
 
 ### Type Literal
 
-\{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `type`: `"tool_finished"`; \}
+\{ `bytes`: `number`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_output"`; \}
+
+#### bytes
+
+> **bytes**: `number`
+
+UTF-8 bytes of tool text identified by the adapter.
+
+#### id
+
+> **id**: `string`
+
+Provider-issued step identity.
+
+#### name
+
+> **name**: `string`
+
+Tool name, at most 128 bytes.
+
+#### summary
+
+> **summary**: `string`
+
+Short target or description, at most 512 bytes.
+
+#### type
+
+> **type**: `"tool_output"`
+
+***
+
+### Type Literal
+
+\{ `detail`: `string`; `failed`: `boolean`; `id`: `string`; `name`: `string`; `summary`: `string`; `type`: `"tool_finished"`; \}
 
 #### detail
 
@@ -105,6 +139,18 @@ Whether the tool reported failure.
 > **id**: `string`
 
 Provider-issued step identity.
+
+#### name
+
+> **name**: `string`
+
+Tool name, at most 128 bytes.
+
+#### summary
+
+> **summary**: `string`
+
+Short target or description, at most 512 bytes.
 
 #### type
 
