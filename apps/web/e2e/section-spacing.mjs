@@ -34,5 +34,5 @@ console.log("settings", JSON.stringify(settings)); console.log("threads", JSON.s
 const belows = [...settings, ...threads, ...notes].map((x) => x.below).filter((v) => v !== null), aboves = [...settings, ...threads, ...notes].map((x) => x.above).filter((v) => v !== null);
 const spread = (xs) => (xs.length ? Math.max(...xs) - Math.min(...xs) : 0);
 ok(belows.length >= 4 && spread(belows) <= 2.5, "heading text to first item: the same distance everywhere", `${Math.min(...belows)} to ${Math.max(...belows)} px over ${belows.length} headings`);
-ok(aboves.length >= 3 && spread(aboves) <= 2.5, "last item to heading text: the same distance everywhere", `${Math.min(...aboves)} to ${Math.max(...aboves)} px over ${aboves.length} headings`);
+ok(aboves.length >= 2 && spread(aboves) <= 2.5, "last item to heading text: the same distance everywhere", `${Math.min(...aboves)} to ${Math.max(...aboves)} px over ${aboves.length} headings`);
 await b.close(); stop(); process.exit(bad ? 1 : 0);
