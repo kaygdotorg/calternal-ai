@@ -8,7 +8,7 @@ const { page, ctx } = await open(b, "phone", "light", "/threads/t-run");
 await page.getByRole("button", { name: "Show threads" }).click();
 await page.waitForTimeout(500);
 // Pull to refresh on the sidebar list.
-await page.getByRole("button", { name: "Show threads" }).click().catch(() => {});
+await page.getByRole("button", { name: "Show threads" }).click({ timeout: 1500 }).catch(() => {});
 await page.waitForTimeout(500);
 const sc = await page.locator(".scroll").first().boundingBox();
 const pt = (type, y) => page.evaluate(([t, x, y]) => { const el = document.querySelector(".scroll"); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 11, clientX: x, clientY: y })); }, [type, sc.x + 100, y]);
@@ -22,7 +22,7 @@ await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: tru
 await page.waitForTimeout(400);
 // Edge swipe: from the left edge opens the sidebar; a swipe left closes it. A sheet's grabber drags it away.
 await page.keyboard.press("Escape").catch(() => {});
-await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: true }).catch(() => {});
+await page.getByRole("button", { name: /Close the sidebar/ }).click({ force: true, timeout: 1500 }).catch(() => {});
 await page.waitForTimeout(500);
 const touch = (type, x, y, sel = "body") => page.evaluate(([t, x, y, sel]) => { const el = document.elementFromPoint(x, y) ?? document.querySelector(sel); el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerType: "touch", pointerId: 9, clientX: x, clientY: y })); }, [type, x, y, sel]);
 await touch("pointerdown", 6, 400); await touch("pointermove", 60, 402); await touch("pointermove", 150, 405);

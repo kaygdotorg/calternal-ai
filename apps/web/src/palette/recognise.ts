@@ -34,7 +34,7 @@ export type Slots = {
 /** The whole reading of one line: what it is (`kind`), the slots the phrases filled, the title that is left, and the spans to highlight. */
 export type Parsed = Slots & {
   kind: Kind;
-  /** What is left of the words once the recognised ones are taken out. */
+  /** What is left of the words once the recognised ones are taken out, spaces folded, a trailing `on`, `at`, `by`, `for`, `from`, `until`, `in`, `this` or `next` and edge punctuation dropped; the whole line when nothing is left. */
   title: string;
   spans: Span[];
   /** What the phrases voted before any forcing: the kind Enter would have used. */
@@ -49,9 +49,9 @@ export type Reader = {
   now: Now;
   slots: Slots;
   spans: Span[];
-  /** Claim [start, end) for a type; false (and nothing claimed) when some of it is already taken. */
+  /** Claim [start, end) for a type; false (and nothing claimed) when some of it is already claimed or the user kept it as text (quotes, backticks, `keep`). */
   claim(start: number, end: number, type: SpanType): boolean;
-  /** Runs `fn` for every match of `re` in the text. */
+  /** Runs `fn` for every match of `re` in the text. `re` must carry the `g` flag (a non-global one would match the first hit forever); its `lastIndex` is reset first. */
   each(re: RegExp, fn: (m: RegExpExecArray) => void): void;
   /** Whether a span of the text is already claimed. */
   free(start: number, end: number): boolean;
