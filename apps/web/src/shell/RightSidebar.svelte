@@ -19,7 +19,7 @@
     {#key panel.id}<panel.component {id} {...panel.props} />{/key}
   </div>
   {#if !shell.narrow}
-    <div class="tabs"><Selector label="{app.name} panels" options={app.panels.map((p) => ({ value: p.id, label: p.tab ?? p.label, iconName: p.icon }))} value={panel.id} onchange={(v) => shell.showPanel(v)} /></div>
+    <div class="tabs"><Selector label="{app.name} panels" options={app.panels.map((p) => ({ value: p.id, label: p.tab ?? p.label, iconName: p.icon }))} value={panel.id} fill onchange={(v) => shell.showPanel(v)} /></div>
   {/if}
 </div>
 
@@ -31,5 +31,5 @@
   .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) var(--foot-inset); }
   .tabs :global(.selector) { width: 100%; }
   /* Four tabs, each with its icon and its label: a tab keeps the width of its content and the capsule shares what is left. */
-  .tabs :global(.cap .seg) { flex: 1 1 auto; min-width: 0; padding-inline: var(--s-3); } /* shrinks with the sidebar (its labels end in an ellipsis): the capsule never runs out of the sidebar */
+  .tabs :global(.selector .opt) { min-width: 0; padding-inline: var(--s-2); overflow: hidden; } .tabs :global(.selector .lbl) { overflow: hidden; text-overflow: ellipsis; min-width: 0; } /* shrinks with the sidebar (labels end in an ellipsis): the tabs never run out of it */
 </style>
