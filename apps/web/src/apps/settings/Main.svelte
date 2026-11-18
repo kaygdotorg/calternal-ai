@@ -10,7 +10,7 @@
   let { id }: { id?: string } = $props();
   const page = $derived(pageById(id));
   const target = $derived(segments()[0] === "settings" ? segments()[2] : undefined);
-  // A page shown as sections: the section on the right is the selected one; wide, the first is selected until the person picks; narrow, nothing is (the list shows first). The address's setting id selects its section.
+  // A page that opted into sections is two panes only where the card is wide (the list of sections, the selected one beside it, the first selected until the person picks); narrow, it is one flat page: every section in order under its heading, full width, no drill-in and no Back. The address's setting id selects its section.
   let sel = $state<number | null>(null), width = $state(0);
   const wide = $derived(width >= 640);
   $effect(() => { void page?.id; sel = null; });
@@ -18,7 +18,7 @@
     if (!page?.split) return;
     const t = target;
     const i = t ? page.groups.findIndex((g) => g.settings.some((x) => x.id === t)) : -1;
-    if (i >= 0) sel = i; else if (wide && sel === null) sel = 0;
+    if (i >= 0) sel = i; else if (sel === null) sel = 0;
   });
   let lit = $state<string | undefined>();
   $effect(() => {
@@ -34,12 +34,14 @@
 </script>
 
 <div class="scroller edge-fade" style:--fade-t="calc(var(--safe-top) + var(--bar-h))" style:--fade-b="var(--s-8)" bind:clientWidth={width}>
-{#if page?.split}
+{#if width === 0}
+  <!-- the card is not measured yet: nothing, so the page never flashes the wrong arrangement -->
+{:else if page?.split && wide}
   <div class="page split">
     <h1>{page.name}</h1>
     <p class="blurb">{page.blurb}</p>
     <div class="sp">
-      <SplitView selected={sel !== null} onback={() => (sel = null)} listLabel="{page.name} sections" detailLabel={sel !== null ? page.groups[sel]?.title : page.name} backLabel={page.name}>
+      <SplitView listLabel="{page.name} sections" detailLabel={sel !== null ? page.groups[sel]?.title : page.name}>
         {#snippet list()}
           <ul class="sections">
             {#each page.groups as g, i (g.title)}
