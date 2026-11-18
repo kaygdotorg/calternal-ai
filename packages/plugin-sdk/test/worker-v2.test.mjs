@@ -74,3 +74,25 @@ test('standing instruction files cannot become kind directories',()=>{
  assert.throws(()=>validateManifestV1(m));
  m.kinds[0].storage={folder:'ai',subdirectories:['agents.md','child']};assert.throws(()=>validateManifestV1(m));
 });
+
+test("owned slot declarations and qualified targets are closed and bounded", () => {
+  const candidate = structuredClone(manifest);
+  candidate.owned_slots = [{ id: "stats", required_capability: "space.read", accepts: ["generated"], max_contributions: 2 }];
+  candidate.slots[0].slot = { plugin_id: candidate.id, id: "stats" };
+  assert.equal(validateManifestV1(candidate), candidate);
+  for (const change of [
+    m => m.owned_slots[0].required_capability = "spaces.list",
+    m => m.owned_slots[0].max_contributions = 0,
+    m => m.owned_slots[0].max_contributions = 33,
+    m => m.owned_slots[0].accepts.push("generated"),
+    m => m.owned_slots[0].accepts = ["sealed"],
+    m => m.slots[0].slot = "approvals",
+    m => m.slots[0].slot.plugin_id = "../host",
+    m => m.slots[0].slot = { plugin_id: "host", id: "approvals", foundation: true },
+    m => m.slots[0].renderer = { type: "sealed", asset: "panel.html" },
+  ]) {
+    const invalid = structuredClone(candidate);
+    change(invalid);
+    assert.throws(() => validateManifestV1(invalid));
+  }
+});

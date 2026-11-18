@@ -10,7 +10,7 @@ pub(super) fn list<D: Directory>(
 ) -> Result<Value, Error> {
     let (_, controls) = super::index::readiness_context(state, space, None, who.id)?;
     let mut providers = Vec::new();
-    for plugin in state.registry.plugins() {
+    for plugin in state.registry.snapshot().plugins().iter() {
         let Some(spec) = plugin.manifest.provider.as_ref() else {
             continue;
         };
@@ -35,8 +35,8 @@ pub(super) fn select<D: Directory>(
     model: Option<&str>,
     reasoning: Option<&str>,
 ) -> Result<String, Error> {
-    let spec = state
-        .registry
+    let catalog = state.registry.snapshot();
+    let spec = catalog
         .get(provider)
         .filter(|p| p.unavailable.is_none())
         .and_then(|p| p.manifest.provider.as_ref())

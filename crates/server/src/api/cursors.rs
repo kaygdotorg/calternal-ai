@@ -21,11 +21,11 @@ pub(super) async fn admitted_operation<D: Directory>(
     agent: Option<crate::turns::access::Authority>,
     policy: Policy,
     job_scoped: bool,
+    catalog: std::sync::Arc<crate::plugins::Catalog>,
 ) -> Result<Value, Error> {
     let supports_cursor = |schema: &Value| schema["properties"].get("cursor").is_some();
     let paged = (op == "threads.list"
-        && state
-            .registry
+        && catalog
             .owner_of_operation(op)
             .and_then(|plugin| plugin.operation(op))
             .is_some_and(|d| supports_cursor(&d.input_schema)))
@@ -59,6 +59,7 @@ pub(super) async fn admitted_operation<D: Directory>(
         agent,
         policy,
         job_scoped,
+        catalog,
     )
     .await?;
     if let Some(scope) = scope {

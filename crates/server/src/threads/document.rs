@@ -71,6 +71,7 @@ pub(super) fn default_model<D: crate::auth::Directory>(
 ) -> Value {
     state
         .registry
+        .snapshot()
         .get(provider)
         .and_then(|p| p.manifest.provider.as_ref())
         .map_or(Value::Null, |p| json!(p.default_model))

@@ -1,4 +1,4 @@
-//! Installation-local package catalog. The server uses one immutable startup snapshot.
+//! Installation-local package catalog and checksum-backed worker materialization.
 use super::{Plugin, Registry, TrustedEntry, check_operations, registry_entries};
 use calternal_core::ManifestV1;
 use calternal_plugin_host::{self as host, MAX_MANIFEST_BYTES};
@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io::Read, path::Path, time::Duration};
 
 const MAX_WORKER: usize = calternal_machine::sandbox::worker::MAX_SOURCE_BYTES;
-const MAX_PACKAGES: usize = 128;
-const MAX_ARCHIVE: usize = (MAX_MANIFEST_BYTES + MAX_WORKER) * 6 + 1024;
+pub(super) const MAX_PACKAGES: usize = 128;
+pub(super) const MAX_RETAINED: usize = 128;
+pub(super) const MAX_ARCHIVE: usize = (MAX_MANIFEST_BYTES + MAX_WORKER) * 6 + 1024;
 
 /// One self-contained UTF-8 package. Contains data only until activation.
 #[derive(Serialize, Deserialize)]
@@ -56,7 +57,7 @@ impl Package {
         serde_json::to_vec(self).map_err(reason)
     }
 
-    fn validate(&self) -> Result<(), String> {
+    pub(super) fn validate(&self) -> Result<(), String> {
         host::validate_manifest(&self.manifest).map_err(reason)?;
         if self
             .worker
@@ -68,7 +69,7 @@ impl Package {
         Ok(())
     }
 
-    fn entry(&self, default_enabled: bool) -> TrustedEntry {
+    pub(super) fn entry(&self, default_enabled: bool) -> TrustedEntry {
         TrustedEntry {
             id: self.manifest.id.clone(),
             version: self.manifest.version.clone(),
@@ -134,9 +135,35 @@ fn open(appdata: &Path) -> Result<Connection, String> {
             default_enabled INTEGER NOT NULL CHECK (default_enabled IN (0, 1)),
             approval INTEGER NOT NULL DEFAULT 0
         );
+        CREATE TABLE IF NOT EXISTS retained_plugins (
+            revision INTEGER PRIMARY KEY, id TEXT NOT NULL, archive BLOB NOT NULL,
+            checksum TEXT NOT NULL, default_enabled INTEGER NOT NULL, approval INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS retained_plugins_id ON retained_plugins (id);
         CREATE TABLE IF NOT EXISTS plugin_seed (singleton INTEGER PRIMARY KEY CHECK (singleton = 1));",
     ).map_err(reason)?;
     Ok(db)
+}
+
+// Reserve an ID in a disjoint namespace. Only the counter is durable so an
+// interrupted job cannot claim a different draft after the server restarts.
+#[cfg(feature = "dev-plugin-drafts")]
+pub(super) fn next_draft_revision(root: &Path) -> Result<u32, String> {
+    let db = open(root)?;
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS plugin_draft_counter (
+            singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+            revision INTEGER NOT NULL CHECK (revision BETWEEN 2147483648 AND 4294967295)
+        );",
+    )
+    .map_err(reason)?;
+    db.query_row(
+        "INSERT INTO plugin_draft_counter VALUES (1, 2147483648)
+         ON CONFLICT DO UPDATE SET revision = revision + 1 RETURNING revision",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(reason)
 }
 
 fn validate_registered(conn: &Connection, package: &Package) -> Result<(), String> {
@@ -215,15 +242,19 @@ pub fn authority_changed(old: &ManifestV1, new: &ManifestV1) -> bool {
         || new.provider != old.provider
 }
 
-/// Stage an installation or update for the next server startup. A write uses
-/// one immediate transaction and atomically replaces the manifest and package.
-/// The exact reviewed checksum is required on both installation and update.
-pub fn install(
+pub(super) struct Candidate {
+    pub(super) plugin: std::sync::Arc<Plugin>,
+    archive: Vec<u8>,
+    checksum: String,
+    retain_previous: bool,
+}
+
+pub(super) fn prepare(
     appdata: &Path,
-    package: &Package,
-    approved: &str,
+    package: Package,
+    approved: String,
     update: bool,
-) -> Result<(), String> {
+) -> Result<Option<Candidate>, String> {
     package.validate()?;
     let archive = package.archive()?;
     if super::sha256_hex(&archive) != approved {
@@ -265,10 +296,10 @@ pub fn install(
     if previous.is_none() && count >= MAX_PACKAGES as i64 {
         return Err("the installation has reached its 128-plugin limit".into());
     }
-    let (default_enabled, approval) =
+    let (default_enabled, approval, retain_previous) =
         if let Some((enabled, previous_bytes, previous_checksum, approval)) = previous {
             if approved == previous_checksum {
-                return Ok(());
+                return Ok(None);
             }
             let old = decode(previous_bytes, previous_checksum)?;
             if old.manifest.kinds != package.manifest.kinds
@@ -285,10 +316,11 @@ pub fn install(
                         .into(),
                 );
             }
+            let retain_previous = !authority_changed(&package.manifest, &old.manifest);
             if authority_changed(&old.manifest, &package.manifest) {
-                (false, None)
+                (false, None, retain_previous)
             } else {
-                (enabled, Some(approval))
+                (enabled, Some(approval), retain_previous)
             }
         } else {
             if package.worker.is_none() && !package.manifest.operations.is_empty() {
@@ -297,32 +329,94 @@ pub fn install(
                         .into(),
                 );
             }
-            (false, None)
+            (false, None, false)
         };
-    validate_registered(&tx, package)?;
+    validate_registered(&tx, &package)?;
+    let revision: u32 = tx.query_row(
+        "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'installed_plugins'), 0) + 1",
+        [], |row| row.get(0),
+    ).map_err(reason)?;
+    drop(tx);
+    let entry = package.entry(default_enabled);
+    let worker = package
+        .worker
+        .as_ref()
+        .map(|code| {
+            let path = appdata
+                .join("installed-plugin-workers")
+                .join(format!("{id}.{revision}.js"));
+            calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600).map_err(reason)?;
+            Ok::<_, String>(path)
+        })
+        .transpose()?;
+    let mut plugin = Plugin::new(entry, package.manifest, worker)?;
+    plugin.revision = revision;
+    plugin.activation_approval = approval.unwrap_or(revision);
+    Ok(Some(Candidate {
+        plugin: std::sync::Arc::new(plugin),
+        archive,
+        checksum: approved,
+        retain_previous,
+    }))
+}
+
+pub(super) fn commit(appdata: &Path, candidate: Candidate) -> Result<(), String> {
+    let mut conn = open(appdata)?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(reason)?;
+    let plugin = &candidate.plugin;
+    let next: u32 = tx.query_row(
+        "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'installed_plugins'), 0) + 1",
+        [], |row| row.get(0),
+    ).map_err(reason)?;
+    if plugin.revision != next {
+        return Err("the package catalog changed while the worker was starting".into());
+    }
+    let id = &plugin.manifest.id;
+    if candidate.retain_previous {
+        tx.execute(
+            "INSERT INTO retained_plugins SELECT * FROM installed_plugins WHERE id = ?1",
+            [id],
+        )
+        .map_err(reason)?;
+    } else {
+        tx.execute("DELETE FROM retained_plugins WHERE id = ?1", [id])
+            .map_err(reason)?;
+    }
     tx.execute("DELETE FROM installed_plugins WHERE id = ?1", [id])
         .map_err(reason)?;
     tx.execute(
-        "INSERT INTO installed_plugins (id, archive, checksum, default_enabled, approval)
-         VALUES (?1, ?2, ?3, ?4, COALESCE(?5,
-             COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'installed_plugins'), 0) + 1))",
-        params![id, archive, approved, default_enabled, approval],
+        "INSERT INTO installed_plugins (revision, id, archive, checksum, default_enabled, approval)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            plugin.revision,
+            id,
+            candidate.archive,
+            candidate.checksum,
+            plugin.entry.default_enabled,
+            plugin.activation_approval
+        ],
     )
     .map_err(reason)?;
     tx.commit().map_err(reason)
 }
 
-/// Remove a published package from the next startup snapshot. Space content and
-/// activation records remain under their existing retention rules.
-pub fn remove(appdata: &Path, id: &str) -> Result<(), String> {
-    let db = open(appdata)?;
-    let count = db
+// Space content and activation records keep their existing retention policy.
+pub(super) fn remove(appdata: &Path, id: &str) -> Result<(), String> {
+    let mut db = open(appdata)?;
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(reason)?;
+    let count = tx
         .execute("DELETE FROM installed_plugins WHERE id = ?1", [id])
         .map_err(reason)?;
     if count != 1 {
         return Err("plugin is not installed".into());
     }
-    Ok(())
+    tx.execute("DELETE FROM retained_plugins WHERE id = ?1", [id])
+        .map_err(reason)?;
+    tx.commit().map_err(reason)
 }
 
 fn seed(conn: &mut Connection, root: &Path, defaults: bool) -> Result<(), String> {
@@ -377,7 +471,7 @@ fn seed(conn: &mut Connection, root: &Path, defaults: bool) -> Result<(), String
 }
 
 /// Seed the installation once from the distribution and construct a bounded,
-/// immutable plugin snapshot. Materialize only current worker bundles while the
+/// immutable plugin snapshot. Materialize current and retained worker bundles while the
 /// server holds its installation lock. Starts verify the worker hash again.
 pub fn load(
     appdata: &Path,
@@ -405,29 +499,8 @@ pub fn load(
             fs::remove_file(file.path()).map_err(reason)?;
         }
     }
-    let mut query = conn.prepare(
-        "SELECT archive, checksum, default_enabled, revision, approval FROM installed_plugins ORDER BY revision"
-    ).map_err(reason)?;
-    let mut rows = query.query([]).map_err(reason)?;
-    let mut plugins = Vec::new();
-    while let Some(row) = rows.next().map_err(reason)? {
-        if plugins.len() >= MAX_PACKAGES {
-            return Err("the installed plugin catalog exceeds its capacity".into());
-        }
-        let package = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
-        let entry = package.entry(row.get(2).map_err(reason)?);
-        let worker = if let Some(code) = package.worker {
-            let path = cache.join(format!("{}.js", entry.id));
-            calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600).map_err(reason)?;
-            Some(path)
-        } else {
-            None
-        };
-        let mut plugin = Plugin::new(entry, package.manifest, worker)?;
-        plugin.revision = row.get(3).map_err(reason)?;
-        plugin.activation_approval = row.get(4).map_err(reason)?;
-        plugins.push(plugin);
-    }
+    let mut plugins = load_rows(&conn, &cache, "installed_plugins", MAX_PACKAGES)?;
+    let retained = load_rows(&conn, &cache, "retained_plugins", MAX_RETAINED)?;
     if let Some(root) = test_root {
         for entry in super::test_entries() {
             match super::load_one(root, &entry, None) {
@@ -438,5 +511,50 @@ pub fn load(
             }
         }
     }
-    Ok(Registry::from_plugins(plugins))
+    let registry = Registry::from_plugins(plugins);
+    let mut catalog = (*registry.snapshot()).clone();
+    catalog.retained = retained
+        .into_iter()
+        .map(|plugin| {
+            (
+                (plugin.manifest.id.clone(), plugin.revision),
+                std::sync::Arc::new(plugin),
+            )
+        })
+        .collect();
+    registry.publish(catalog);
+    Ok(registry)
+}
+
+fn load_rows(
+    conn: &Connection,
+    cache: &Path,
+    table: &str,
+    limit: usize,
+) -> Result<Vec<Plugin>, String> {
+    let mut query = conn.prepare(&format!(
+        "SELECT archive, checksum, default_enabled, revision, approval FROM {table} ORDER BY revision"
+    )).map_err(reason)?;
+    let mut rows = query.query([]).map_err(reason)?;
+    let mut plugins = Vec::new();
+    while let Some(row) = rows.next().map_err(reason)? {
+        if plugins.len() >= limit {
+            return Err("the installed plugin catalog exceeds its capacity".into());
+        }
+        let package = decode(row.get(0).map_err(reason)?, row.get(1).map_err(reason)?)?;
+        let entry = package.entry(row.get(2).map_err(reason)?);
+        let revision: u32 = row.get(3).map_err(reason)?;
+        let worker = if let Some(code) = package.worker {
+            let path = cache.join(format!("{}.{revision}.js", entry.id));
+            calternal_fsio::write_atomic_mode(&path, code.as_bytes(), 0o600).map_err(reason)?;
+            Some(path)
+        } else {
+            None
+        };
+        let mut plugin = Plugin::new(entry, package.manifest, worker)?;
+        plugin.revision = revision;
+        plugin.activation_approval = row.get(4).map_err(reason)?;
+        plugins.push(plugin);
+    }
+    Ok(plugins)
 }

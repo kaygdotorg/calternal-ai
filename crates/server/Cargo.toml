@@ -16,8 +16,11 @@ path = "src/lib.rs"
 [features]
 # Trust the test-only plugins under tests/plugins (never in a shipped build).
 test-plugins = ["calternal-store/test-timings"]
+# Local-only authoring transport. Never enabled in the shipped binary.
+dev-plugin-drafts = []
 
 [dependencies]
+arc-swap = "1.9.2"
 pulldown-cmark = { version = "0.13.4", default-features = false }
 calternal-types.workspace = true
 calternal-content.workspace = true

@@ -78,6 +78,7 @@ pub(super) fn apply<D: Directory>(
     if operation == "threads.create" {
         for (kind, placement, format) in st
             .registry
+            .snapshot()
             .get("calternal-orchestrator")
             .expect("checked plugin")
             .kind_registrations()

@@ -575,9 +575,12 @@ impl Store {
                 } else {
                     PluginRow {
                         enabled,
-                        generation: current.generation.checked_add(1).ok_or_else(|| {
-                            Error::internal("plugin activation generation exhausted")
-                        })?,
+                        generation: current
+                            .generation
+                            .checked_add(u32::from(current.enabled != enabled))
+                            .ok_or_else(|| {
+                                Error::internal("plugin activation generation exhausted")
+                            })?,
                         approval: default.approval,
                     }
                 };

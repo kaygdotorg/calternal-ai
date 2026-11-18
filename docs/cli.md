@@ -76,10 +76,15 @@ given another one. Use `plugin review SOURCE` to get the package's approval
 checksum, optionally with `--appdata DIR` to compare with the installed version.
 `plugin pack DIR FILE.calplugin` writes a portable package. `plugin install`
 and `plugin update` accept the source, `--appdata DIR` and `--approve SHA256`.
-`plugin remove ID --appdata DIR` stages removal. Start the server again to apply
-catalog changes. `plugin enable ID --space UUID` and `plugin disable ID --space UUID`
-use the server credential and change activation immediately. See the
-[plugin authoring guide](plugin-authoring.md).
+For packages with workers, supply `--space UUID` and `--account UUID` for
+sandbox readiness. The running server applies successful catalog changes,
+including `plugin remove ID --appdata DIR`. `plugin enable ID --space UUID`
+and `plugin disable ID --space UUID` use the server credential and change
+space activation immediately.
+
+The development-only build adds `plugin dev DIR --appdata DIR --space UUID
+--account UUID`, with `--once` for one attempt. Its continuous mode emits one
+JSON record per attempt with `--json`. See the [plugin authoring guide](plugin-authoring.md).
 
 People, groups, and invitations use the HTTP session in an owner-only file
 supplied with `--token-file` or `CALTERNAL_TOKEN_FILE`. Use `--base-url` to choose
