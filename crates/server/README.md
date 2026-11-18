@@ -278,17 +278,21 @@ auth-worker publication barrier, including removals, role edits and account disa
 Synchronous test directories use the blocking adapter.
 
 Foreground operation callbacks use the operation catalog/manifest's `mutates`
-flag to select scheduling. The listener reserves two blocking threads for reads
-and unscoped startup/background adapters; a lazy current-thread Tokio driver
-supplies up to 32 blocking mutation threads, allowing an auth batch worth of
-writers to reach their services. Foreground capacity is bounded at 34 blocking
-slots (previously eight shared slots); mutation threads retire after ten idle
-seconds. Performance ceilings, auth batch width, the 64-space cache and retention
-are unchanged. Writer admission permits at most 64 running
-or queued callbacks; other callers await permits on the async executor. A caller
-that disconnects before admission drops its waiter; a started durable callback
-finishes as before. No per-space state is stored in the scheduler. Async spawned
-background tasks do not inherit request scope. They retain their existing
-adapters and can contend with the listener's background/read work; foreground
-writers cannot consume those reserved slots. These scheduling reservations do
-not bypass a space's locks or the auth worker's mandatory publication barrier.
+flag to select scheduling. Separate lazy current-thread Tokio drivers supply two
+blocking readers and up to 32 blocking writers. Each lane admits at most 64
+running/queued callbacks; further callers await permits on the async executor.
+The listener's two unscoped blocking slots remain separate for authentication
+adapters, startup and background tasks. Thus foreground reads never join the
+writer or background queue. There can be 36 blocking threads across these three
+executors, versus the previous eight shared foreground/background slots; all
+new lane threads retire after ten idle seconds. Performance ceilings, auth
+batch width, the 64-space cache and retention are unchanged.
+
+A caller that disconnects before admission drops its waiter; a started durable
+callback finishes as before. No per-space state is stored in the scheduler.
+Async spawned background tasks do not inherit request scope. Non-operation HTTP
+mutations also use writer scheduling; operation requests derive their class
+from their declaration after parsing. Authentication runs before that scope.
+These scheduling reservations do not bypass a space's locks or the auth
+worker's mandatory publication barrier. A read blocked on those resources can
+still delay other reads within the bounded reader lane.

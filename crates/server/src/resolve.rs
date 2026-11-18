@@ -13,7 +13,7 @@ use calternal_types::{Capability, CapabilitySet, Error};
 /// lookup (`required` = content.write) permits write authority without read.
 /// Returns the caller's capabilities in the owning space so admission needs no second
 /// lookup. Cost: one indexed global route, one authority check and a small access vector;
-/// no content database or file I/O and no work proportional to membership count.
+/// no content database or userdata-file I/O, and no membership-count-dependent work.
 /// Routing runs on a blocking task; native authority awaits its existing worker
 /// outside the general blocking pool, retaining the publication barrier.
 pub(crate) async fn resolve_for<D: Directory>(

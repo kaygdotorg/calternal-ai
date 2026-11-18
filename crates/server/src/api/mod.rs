@@ -58,7 +58,8 @@ pub const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' '
 /// The default preserves fixture integrations; stored directories plug in without
 /// changing operation handlers or caching membership in authenticated identities.
 pub struct AppState<D: Directory = StoredDirectory> {
-    /// Up to 32 mutation slots, isolated from the listener's two read slots.
+    /// Two foreground read slots and up to 32 mutation slots, each isolated
+    /// from the listener's unscoped background executor.
     /// Operation declarations select scheduling; no security decision is cached.
     pub blocking: crate::blocking::RequestWorkers,
     /// Per-account input databases (drafts, pending submissions, the account feed).
