@@ -9,7 +9,7 @@ const id = /^[a-z0-9][a-z0-9._-]{0,79}$/;
 const capabilities = new Set(["space.read", "content.write", "plugins.use", "plugins.manage", "members.invite", "members.manage", "managers.manage", "space.settings", "space.transfer", "space.delete", "spaces.list", "spaces.create"]);
 /** Closed broker method vocabulary; declaration never grants permission. */
 export type { HostCallKind } from "@calternal/contracts";
-const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
+const hostCalls = new Set<HostCallKind>(["read_item", "list_items_v1", "read_setting_v1", "content_prepare_v1", "write_item", "list_collection", "emit_event", "start_job", "checkpoint_job", "request_secret_handle"]);
 
 /** Check a manifest or frame's method against the same closed vocabulary. No I/O. */
 export function isHostCallKind(value: unknown): value is HostCallKind {
@@ -40,7 +40,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "owned_slots", "palette", "kinds"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "owned_slots", "palette", "kinds", "network"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
     if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
@@ -129,6 +129,24 @@ export function validateManifestV1(value: unknown): ManifestV1 {
       }
     } else { record(placement, ["hidden"]); if (placement.hidden !== true) fail(); }
   }, ["extension", "searchable"]);
+  const content = m.network === undefined
+    ? undefined
+    : record(m.network, [], ["content_fetch"]).content_fetch;
+  if (content !== undefined) {
+    const fetch = record(content, ["profile", "sources"]);
+    if (fetch.profile !== "images_fonts" || !Array.isArray(fetch.sources)
+        || fetch.sources.length === 0 || fetch.sources.length > 32) fail();
+    const kinds = new Set(
+      (m.kinds as { id: string; claimed_text: boolean }[] | undefined)
+        ?.filter(kind => kind.claimed_text).map(kind => kind.id),
+    );
+    for (const value of fetch.sources) {
+      const source = record(value, ["kind", "field"]);
+      if (source.field !== "text" || !kinds.delete(identifier(source.kind))) fail();
+    }
+  }
+  if (!Array.isArray(m.host_calls)
+      || m.host_calls.includes("content_prepare_v1") !== (content !== undefined)) fail();
   rows("operations", ["id", "input_schema", "output_schema", "required_capability", "mutates", "idempotency", "risk"], r => {
     if (!["read", "reversible", "irreversible", "external", "widens_access"].includes(String(r.risk)) || (r.risk === "read") === r.mutates) fail();
     operations.set(identifier(r.id), r); schema(r.input_schema); schema(r.output_schema);

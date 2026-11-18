@@ -1,67 +1,22 @@
 //! Item authorization is checked at join and writes. A View proof can serve
 //! later frames only while the authorizer still publishes the same clean revision.
 use super::*;
-use crate::api::authorization;
-use calternal_types::{Capability, ErrorCode};
+use crate::resolve::{authorize_item_access, item_access_revision};
+use calternal_core::SharePermission;
+use calternal_types::ErrorCode;
 use std::{
     future::Future,
-    pin::Pin,
     sync::atomic::{AtomicU64, Ordering},
 };
 use tokio::time::Instant;
 
-type Check = Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>;
-
-trait ItemAuthority<D: Directory> {
-    fn revision(
-        host: &Shared<D>,
-        key: &Key,
-        account: AccountId,
-    ) -> Result<Option<Arc<AtomicU64>>, Error>;
-    fn view(host: Shared<D>, key: Key, account: AccountId) -> Check;
-    fn edit(host: Shared<D>, key: Key, account: AccountId) -> Check;
-}
-
-// Existing space grants keep the protocol usable on this branch. This adapter
-// deliberately provides no revision proof. The sharing adapter will use the
-// resolver's item access check and process-wide revision for both methods.
-struct CurrentAuthority;
-
-impl<D: Directory> ItemAuthority<D> for CurrentAuthority {
-    fn revision(
-        _host: &Shared<D>,
-        _key: &Key,
-        _account: AccountId,
-    ) -> Result<Option<Arc<AtomicU64>>, Error> {
-        Ok(None)
-    }
-
-    fn view(host: Shared<D>, key: Key, account: AccountId) -> Check {
-        space_capability(host, key, account, Capability::SpaceRead)
-    }
-
-    fn edit(host: Shared<D>, key: Key, account: AccountId) -> Check {
-        space_capability(host, key, account, Capability::ContentWrite)
-    }
-}
-
-fn space_capability<D: Directory>(
-    host: Shared<D>,
-    key: Key,
+async fn authorize<D: Directory>(
+    host: &Shared<D>,
+    key: &Key,
     account: AccountId,
-    required: Capability,
-) -> Check {
-    Box::pin(async move {
-        let caps = authorization::capabilities(&host, account, key.space)
-            .await?
-            .filter(|caps| caps.contains(Capability::SpaceRead))
-            .ok_or_else(hidden)?;
-        if caps.contains(required) {
-            Ok(())
-        } else {
-            Err(Error::forbidden("room is read-only"))
-        }
-    })
+    permission: SharePermission,
+) -> Result<(), Error> {
+    authorize_item_access(host, key.space, &key.kind, key.item, account, permission).await
 }
 
 const UNCACHED: u64 = u64::MAX;
@@ -121,11 +76,14 @@ impl<D: Directory> Connection<D> {
         plugin: &Arc<Plugin>,
     ) -> Result<(Arc<Proof>, u32), Error> {
         let hub = self.host.store.live_rooms();
-        if hub.item_authority_epoch().is_none()
-            && let Some(revision) =
-                <CurrentAuthority as ItemAuthority<D>>::revision(&self.host, key, self.account)?
-        {
-            hub.retain_item_revision(revision)?;
+        if hub.item_authority_epoch().is_none() {
+            hub.retain_item_revision(item_access_revision(
+                &self.host,
+                key.space,
+                &key.kind,
+                key.item,
+                self.account,
+            )?)?;
         }
         let proof = Arc::new(Proof::new());
         let deadline = Instant::now() + WAIT;
@@ -136,7 +94,7 @@ impl<D: Directory> Connection<D> {
                 if !self.session.is_live(&self.host.directory).await {
                     return Err(Error::unauthorized("room session ended"));
                 }
-                CurrentAuthority::view(self.host.clone(), key.clone(), self.account).await?;
+                authorize(&self.host, key, self.account, SharePermission::View).await?;
                 let (host, opening, pinned) = (self.host.clone(), key.clone(), plugin.clone());
                 let generation = disk(move || {
                     let row = activation(&host.store, opening.space, &pinned)?;
@@ -199,26 +157,26 @@ impl<D: Directory> Connection<D> {
                     if !session.is_live(&host.directory).await {
                         return Err(Error::unauthorized("room session ended"));
                     }
-                    let access = if write {
-                        CurrentAuthority::edit(host.clone(), key.clone(), account)
-                            .await
-                            .map_err(|error| {
-                                if error.code == ErrorCode::NotFound {
-                                    revoked(error)
-                                } else {
-                                    error
-                                }
-                            })
-                    } else if !proof.has_view(item_epoch) {
-                        CurrentAuthority::view(host.clone(), key.clone(), account)
-                            .await
-                            .map_err(|error| match error.code {
-                                ErrorCode::Forbidden | ErrorCode::NotFound => revoked(error),
-                                _ => error,
-                            })
-                    } else {
+                    let access = async {
+                        if !proof.has_view(item_epoch) {
+                            authorize(&host, &key, account, SharePermission::View)
+                                .await
+                                .map_err(|error| match error.code {
+                                    ErrorCode::Forbidden | ErrorCode::NotFound => revoked(error),
+                                    _ => error,
+                                })?;
+                        }
+                        if write {
+                            authorize(&host, &key, account, SharePermission::Edit)
+                                .await
+                                .map_err(|error| match error.code {
+                                    ErrorCode::NotFound => revoked(error),
+                                    _ => error,
+                                })?;
+                        }
                         Ok(())
-                    };
+                    }
+                    .await;
                     if let Err(error) = access {
                         if host.store.live_rooms().item_authority_epoch() != item_epoch {
                             wait_for_revision(deadline).await?;
@@ -252,11 +210,9 @@ impl<D: Directory> Connection<D> {
                     if host.store.live_rooms().item_authority_epoch() == item_epoch
                         && host.store.live_rooms().activation_epoch(key.space) == plugin_epoch
                     {
-                        if !write {
-                            proof
-                                .view
-                                .store(item_epoch.unwrap_or(UNCACHED), Ordering::Relaxed);
-                        }
+                        proof
+                            .view
+                            .store(item_epoch.unwrap_or(UNCACHED), Ordering::Relaxed);
                         proof.activation.store(plugin_epoch, Ordering::Relaxed);
                         return Ok(());
                     }

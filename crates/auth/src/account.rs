@@ -28,16 +28,16 @@ impl Auth {
     /// Opens `state/system/auth.db` and builds the WebAuthn verifier.
     /// The host must validate and lock its state root first; this creates missing
     /// database parents and does not implement recovery of lost security state.
-    /// Initializes the private invite key if there are no stored invites.
-    /// A missing key with stored invites is an error. This startup does not
-    /// provision any accounts or spaces.
+    /// Initializes the private installation key when no stored credentials use it.
+    /// Existing invites, recovery records, OIDC providers and public item links
+    /// require the original key. Account and space provisioning are separate.
     pub fn open(state: &Path, config: AuthConfig) -> Result<Self> {
         let webauthn = crate::passkey::build(&config)?;
         let database = state.join("system/auth.db");
         let db = crate::db::Db::open(&database)?;
         let invite_key = crate::invite_key::Key::open(&state.join("system/invite.key"), || {
             crate::db::open_conn(&database)?
-                .query_row("SELECT EXISTS(SELECT 1 FROM invites) OR EXISTS(SELECT 1 FROM account_recovery_codes) OR EXISTS(SELECT 1 FROM account_email_challenges) OR EXISTS(SELECT 1 FROM account_recovery_flows) OR EXISTS(SELECT 1 FROM account_recovery_grants) OR EXISTS(SELECT 1 FROM oidc_providers)", [], |r| r.get(0))
+                .query_row("SELECT EXISTS(SELECT 1 FROM invites) OR EXISTS(SELECT 1 FROM account_recovery_codes) OR EXISTS(SELECT 1 FROM account_email_challenges) OR EXISTS(SELECT 1 FROM account_recovery_flows) OR EXISTS(SELECT 1 FROM account_recovery_grants) OR EXISTS(SELECT 1 FROM oidc_providers) OR EXISTS(SELECT 1 FROM item_grants WHERE link_hash IS NOT NULL)", [], |r| r.get(0))
                 .map_err(crate::db::sql)
         })?;
         Ok(Self {

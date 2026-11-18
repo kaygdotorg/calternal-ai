@@ -61,6 +61,7 @@ impl Content {
             Destination::Current,
             None,
             || Ok(()),
+            |_| Ok(()),
         )?;
         Ok(true)
     }

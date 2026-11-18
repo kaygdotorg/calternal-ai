@@ -126,13 +126,12 @@ after an epoch change, with no eager scan of other memberships. Join
 checks View and writes check Edit. The post-commit eviction hook cuts
 off queued frames for recipients who lost their last grant.
 
-On a stable epoch with the sharing adapter, a production peer frame
-uses one current session statement, zero item or grant statements, and
-zero plugin activation statements. A View refresh adds three reads for
-Notes. A changed plugin activation epoch adds its own indexed read.
-The interim space-grant adapter provides no revision, so its stable path
-uses a current space capability statement in addition to the session
-statement. These are path counts, measured latency is still required.
+On a stable epoch a production peer frame uses one current session
+statement, zero item or grant statements, and zero plugin activation
+statements. A View refresh adds three reads for Notes. A changed plugin
+activation epoch adds its own indexed read. Every write checks Edit,
+and it refreshes View first if its membership's proof expired.
+These are path counts, measured latency is still required.
 
 For the additional sharing qualification, pass
 `--rooms-only --room-access-storm`. The fixture opens 32 rooms with 32

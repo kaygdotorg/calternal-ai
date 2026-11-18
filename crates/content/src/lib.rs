@@ -284,6 +284,7 @@ impl Content {
     /// Unroute an owner whose lifecycle has drained. One indexed deletion
     /// from the rebuildable identifier catalog. Repeating it is safe.
     pub fn unroute_owner(&self, id: Uuid, is_space: bool) -> Result<()> {
+        let _revision = calternal_types::begin_item_access_change();
         let sql = if is_space {
             "DELETE FROM items WHERE space=?1"
         } else {

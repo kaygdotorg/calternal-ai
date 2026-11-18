@@ -305,6 +305,28 @@ impl<D: Directory> SpaceHost<D> {
         Ok(item_json(&item))
     }
 
+    fn prepare_content(&self, input: &Value) -> Result<Value, Error> {
+        let request: calternal_core::ContentPrepareInput =
+            serde_json::from_value(input.clone()).map_err(|_| Error::Invalid)?;
+        if !self.has(Capability::SpaceRead)
+            || !self.has(Capability::PluginsUse)
+            || self.kind_actor(&request.kind, false).is_none()
+        {
+            return Err(Error::Refused);
+        }
+        let content = super::network::prepare(
+            &self.state.store,
+            self.identity.id,
+            self.session.clone(),
+            self.space,
+            &self.plugin,
+            self.generation,
+            request,
+        )
+        .map_err(|_| Error::Refused)?;
+        serde_json::to_value(content).map_err(|_| Error::Invalid)
+    }
+
     fn write_item(&self, input: &Value) -> Result<Value, Error> {
         let object = exact(
             input,
@@ -466,6 +488,7 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                     .map_err(|_| Error::Refused)?;
                 Ok(super::settings::effective(setting, record).effective)
             }
+            HostCallKind::ContentPrepareV1 => self.prepare_content(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),

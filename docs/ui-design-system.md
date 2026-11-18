@@ -58,7 +58,7 @@ Studied read-only at `/home/kayg/Developer/bb-plugins/calternal-ui` (`frame/css.
 | `pill-contrast.ts`: a pill gets a faint fill (up to 0.35) only where its backdrop fights its glyphs, estimated from the wallpaper's brightness grid and from "hazards" scrolling under it (images, video, solid blocks) | The wallpaper half is taken (`material()` from the brightness grid, up to 0.35). The hazards half is not: pills here float over chat text, not over arbitrary media, so far |
 | Contrast: ink stays legible whatever the wallpaper (the plugin raised light washes by hand after measuring 2.3 to 2.7:1) | Derived instead of hand-tuned: `washFor` solves for the wash that brings secondary ink to 4.5:1 over the darkest (light scheme) or brightest (dark) cell under the sidebars. Checked by axe on all 8 built-ins in both schemes (`e2e/wallpapers.mjs`) |
 | Edge fade: rows fade progressively as they pass under floating bars (CSS scroll-driven animations, per row) | Not yet: a static mask fades the message list's top and bottom |
-| Fonts per role (interface, chat, code, terminal) from Google, Fontsource, Fontshare, own files, System; stored on the server so pages never load from those sites; SF/system stack for Apple | Taken for three roles (`appearance/fonts.ts`, `SettingsSheet.svelte`); the catalogues are fixture lists until the server exists |
+| Fonts per role (interface, chat, code, terminal) from Google, Fontsource, Fontshare, own files, System; stored on the server so pages never load from those sites; SF/system stack for Apple | The settings page has all five roles. Server operations and the browser wiring are tracked separately |
 | Settings sections: Wallpaper (upload, link, library, Unsplash), Glass, Colour and size, Fonts, Wordmark, Storage | Wallpaper (upload, library, Unsplash), Glass, Colour, Fonts. Not yet: paste a link, Wordmark, Storage list with sizes |
 | The composer is one tidy row: model, context, permission, environment | Taken as three chips (provider and model, permission, where it runs) with labels that shorten on the composer's own width |
 | The thread title is a pill; wordmark row with the sidebar button at the other end; swipe gestures on phones; root size 17.6 px; card corner 62 px with squircle corners; 12 px gap | Not taken: sizes follow the native study (13 px text, pane radius 20, inset 8); title pill, wordmark and gestures are still to build |
@@ -111,10 +111,10 @@ initial, where the existing app does not use it; and the text sat at 14 to 15 px
 (the owner's 13 px and the existing weights are now the only ones). A browser that fails to load the font (a wrong base path, a blocked file) would
 show a system face; `e2e/preview-check.mjs` checks on the deployed copy that Google Sans Flex and Cascadia Code are loaded.
 
-Font choice is a setting per role (interface, chat, code): sources Google Fonts, Fontsource, Fontshare, own files and System. The server will
-download a chosen family once and serve it from its own storage; `FontLibrary.install` is that call. Own files are registered in the browser
-(`FontFace`) with weights and italics read from their file names. In this fixture only the shipped families and own files can be drawn; the others are
-listed and say they need the server.
+Font choice is a setting per role (interface, chat, code, terminal and wordmark).
+Sources include Google Fonts, Fontsource, Fontshare, own files and System.
+The [font and account appearance contract](fonts.md) describes same-origin
+face delivery, server preference synchronization and the browser cache.
 
 ## Adaptive material
 

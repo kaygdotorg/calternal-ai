@@ -6,7 +6,7 @@ title: "Plugin manifest schema"
 
 > **Preview: the app is not released.** This site describes a development preview and accepted designs; it does not establish production readiness.
 
-Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.
+Plugin menu read without running plugin code. Only documented optional fields may be omitted.
 
 | Field | Required | Type / reference | Description |
 | --- | --- | --- | --- |
@@ -19,6 +19,7 @@ Plugin menu read without running plugin code. Every top-level field is required;
 | `id` | yes | string | Stable plugin identifier. |
 | `kinds` | no | array | Kinds offered by this plugin. An omitted list declares no kinds. |
 | `name` | yes | string | Human-readable plugin name. |
+| `network` | no | schema | Optional outbound network declarations. Omit for no network access. |
 | `operations` | yes | array | Public operation schemas and policy. |
 | `owned_slots` | no | array, null | Up to 32 mounts owned by this package, resolved only while enabled. |
 | `palette` | no | schema | Optional commands, extra phrases and Settings sections for the palette. |
@@ -31,6 +32,87 @@ Plugin menu read without running plugin code. Every top-level field is required;
 | `version` | yes | string | Exact package version. |
 | `views` | yes | array | Shell region component references. |
 | `webhooks` | yes | array | Webhook declarations. |
+
+## ContentFetchField
+
+Stored source fields supported by the content proxy.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+
+
+```json
+{
+  "description": "Stored source fields supported by the content proxy.",
+  "oneOf": [
+    {
+      "description": "The item's UTF-8 text body.",
+      "type": "string",
+      "enum": [
+        "text"
+      ]
+    }
+  ]
+}
+```
+
+## ContentFetchProfile
+
+Host-owned remote media policy. Each additional profile requires review.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+
+
+```json
+{
+  "description": "Host-owned remote media policy. Each additional profile requires review.",
+  "oneOf": [
+    {
+      "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+      "type": "string",
+      "enum": [
+        "images_fonts"
+      ]
+    }
+  ]
+}
+```
+
+## ContentFetchSource
+
+A stored field the broker may read to derive proxy references.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `field` | yes | #/definitions/ContentFetchField | The source field interpreted as HTML. |
+| `kind` | yes | string | The declaring package's own text kind. |
+
+```json
+{
+  "description": "A stored field the broker may read to derive proxy references.",
+  "type": "object",
+  "required": [
+    "field",
+    "kind"
+  ],
+  "properties": {
+    "field": {
+      "description": "The source field interpreted as HTML.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ContentFetchField"
+        }
+      ]
+    },
+    "kind": {
+      "description": "The declaring package's own text kind.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}
+```
 
 ## HostCallKind
 
@@ -63,6 +145,13 @@ The only broker methods a worker may request.
       "type": "string",
       "enum": [
         "read_setting_v1"
+      ]
+    },
+    {
+      "description": "Prepare remote asset references from a declared, stored content revision.",
+      "type": "string",
+      "enum": [
+        "content_prepare_v1"
       ]
     },
     {
@@ -279,6 +368,46 @@ Provisioning template; the host allocates a fresh Collection UUID per enable.
 }
 ```
 
+## ManifestContentFetch
+
+Anonymous content proxy scope shown during trusted installation review.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `profile` | yes | #/definitions/ContentFetchProfile | Host-enforced media and transport policy. |
+| `sources` | yes | array | Up to 32 distinct text sources owned by the declaring package. |
+
+```json
+{
+  "description": "Anonymous content proxy scope shown during trusted installation review.",
+  "type": "object",
+  "required": [
+    "profile",
+    "sources"
+  ],
+  "properties": {
+    "profile": {
+      "description": "Host-enforced media and transport policy.",
+      "allOf": [
+        {
+          "$ref": "#/definitions/ContentFetchProfile"
+        }
+      ]
+    },
+    "sources": {
+      "description": "Up to 32 distinct text sources owned by the declaring package.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ContentFetchSource"
+      },
+      "maxItems": 32,
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false
+}
+```
+
 ## ManifestHook
 
 Space-scoped hook enabled by a Manager; never a global interceptor.
@@ -450,6 +579,35 @@ Kind identity remains independent of plugin identity.
       "allOf": [
         {
           "$ref": "#/definitions/ManifestPlacement"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+## ManifestNetwork
+
+Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.
+
+| Field | Required | Type / reference | Description |
+| --- | --- | --- | --- |
+| `content_fetch` | no | schema | Anonymous remote assets from stored content. Omit for no proxy access. |
+
+```json
+{
+  "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+  "type": "object",
+  "properties": {
+    "content_fetch": {
+      "description": "Anonymous remote assets from stored content. Omit for no proxy access.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ManifestContentFetch"
+        },
+        {
+          "type": "null"
         }
       ]
     }

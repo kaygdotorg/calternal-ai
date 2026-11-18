@@ -1,5 +1,5 @@
 //! Initial sync, author and observer delivery, and restart on a disposable server.
-use super::{TempDir, create, op, raw, start_full};
+use super::{Server, TempDir, create, op, raw, start_full};
 use serde_json::{Value, json};
 use std::{
     net::TcpStream,
@@ -97,6 +97,19 @@ fn apply(doc: &Doc, bytes: &[u8]) {
 
 fn body(doc: &Doc) -> String {
     doc.get_or_insert_text("md").get_string(&doc.transact())
+}
+
+fn guest_id(srv: &Server) -> String {
+    let identity = raw(
+        srv.port,
+        "GET",
+        "/api/v1/describe",
+        &[("Authorization", &format!("Bearer {}", srv.guest))],
+        None,
+    )
+    .unwrap();
+    assert_eq!(identity.status, 200, "{}", identity.body);
+    identity.body["principal"]["id"].as_str().unwrap().into()
 }
 
 #[test]
@@ -294,21 +307,12 @@ fn losing_view_ends_only_that_membership_and_requests_rescue() {
         recv(&mut guest, &format!("@1/{room}")),
         Message::Awareness(_)
     ));
-    let identity = raw(
-        srv.port,
-        "GET",
-        "/api/v1/describe",
-        &[("Authorization", &format!("Bearer {}", srv.guest))],
-        None,
-    )
-    .unwrap();
-    assert_eq!(identity.status, 200, "{}", identity.body);
     let removed = op(
         &srv,
         &srv.owner,
         "revoke-room-view",
         "spaces.remove_member",
-        json!({"space_id":srv.shared,"account_id":identity.body["principal"]["id"]}),
+        json!({"space_id":srv.shared,"account_id":guest_id(&srv)}),
     );
     assert_eq!(removed.status, 200, "{}", removed.body);
     let saved = op(
@@ -331,4 +335,61 @@ fn losing_view_ends_only_that_membership_and_requests_rescue() {
         guest.read().unwrap().to_text().unwrap(),
         r#"{"type":"pong"}"#
     );
+}
+
+#[test]
+fn item_only_edit_admits_a_room_and_last_grant_revocation_evicts_it() {
+    let data = TempDir::new("live-room-item-grant");
+    let plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let srv = start_full(&data.0, None, None, Some(&plugins));
+    let note = create(&srv, "item-grant-room", &srv.personal, "original");
+    let id = note["id"].as_str().unwrap();
+    let item = json!({"kind":"notes","id":id});
+    let grant = op(
+        &srv,
+        &srv.owner,
+        "grant-room-edit",
+        "sharing.grant",
+        json!({"item":item,"audience":{"account_id":guest_id(&srv)},"permission":"edit"}),
+    );
+    assert_eq!(grant.status, 200, "{}", grant.body);
+    let room = format!("{}/notes/{id}", srv.personal);
+    let address = format!("@1/{room}");
+    let mut guest = socket(srv.port, &srv.guest);
+    let (doc, _) = join(&mut guest, &room, None);
+    let text = doc.get_or_insert_text("md");
+    let update = {
+        let mut txn = doc.transact_mut();
+        text.insert(&mut txn, 8, "!");
+        txn.encode_update_v1()
+    };
+    send(
+        &mut guest,
+        &address,
+        Message::Sync(SyncMessage::Update(update)),
+    );
+    send(&mut guest, &address, Message::Custom(100, vec![1]));
+    loop {
+        if let Message::Custom(101, ack) = recv(&mut guest, &address) {
+            assert_eq!(ack, vec![1]);
+            break;
+        }
+    }
+    let removed = op(
+        &srv,
+        &srv.owner,
+        "remove-grant-room-edit",
+        "sharing.revoke",
+        json!({"item":item,"grant_id":grant.body["data"]["grant_id"]}),
+    );
+    assert_eq!(removed.status, 200, "{}", removed.body);
+    loop {
+        if let Frame::Text(left) = guest.read().unwrap() {
+            assert_eq!(
+                serde_json::from_str::<Value>(&left).unwrap(),
+                json!({"type":"left","room":room,"membership":1,"reason":"access_revoked"})
+            );
+            break;
+        }
+    }
 }
