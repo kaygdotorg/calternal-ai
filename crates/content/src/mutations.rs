@@ -133,16 +133,30 @@ impl Content {
         self.admit_content_head(space, id, request, Space::get, run)
     }
 
-    /// Admit a receipted control using just current item metadata. The same
-    /// space slot fences deletion, without reading the file or a revision BLOB.
-    pub fn admit_summary(
+    /// Fence deletion while a downstream store commits a control and its own
+    /// receipt. Reads one indexed summary and checks legacy journal receipts.
+    /// The callback must not re-enter content.
+    pub fn admit_summary<T>(
         &self,
         space: SpaceId,
         id: Uuid,
         request: Request<'_>,
-        run: impl FnOnce(&crate::Summary, Option<Value>) -> Result<Value>,
-    ) -> Result<Value> {
-        self.admit_content_head(space, id, request, Space::summary, run)
+        run: impl FnOnce(&crate::Summary, Option<Value>) -> Result<T>,
+    ) -> Result<T> {
+        let _actor = self.lifecycle.step(request.account.as_uuid())?;
+        self.with_space(space, |s| {
+            self.publish_pending(s)?;
+            let current = s.summary(id)?;
+            let saved = self
+                .journals
+                .receipt(&s.journal, request.account, request.id)?;
+            if saved.as_ref().is_some_and(|r| {
+                r.operation != request.operation || r.fingerprint != request.fingerprint
+            }) {
+                return Err(Error::request_reused());
+            }
+            run(&current, saved.map(|receipt| receipt.result))
+        })
     }
 
     fn admit_content_head<T>(

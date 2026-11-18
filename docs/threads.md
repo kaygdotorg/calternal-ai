@@ -38,12 +38,11 @@ Deleted IDs remain resolvable as deleted. Listing children by `parent_thread`
 includes archived children and deleted child tombstones, preserving provenance. A thread credential cannot address another thread,
 even with Full access, and no operation trusts a caller's space hint over its ID.
 
-Send has two recoverable commits, rather than pretending content.db and jobs.db
-share a SQLite transaction. The first records the message plus a pending intent
-and request receipt through content's existing outbox. The second holds that
-space's content lock while it checks the current head, admits the existing turn
-job with a stable key and publishes a separate admission receipt. It never
-re-enters content from a callback. Trash checks job state under the same content lock. Once its tombstone is
+Send has two recoverable phases. The first records the message and a pending
+intent through the content outbox, then publishes the message receipt. The
+second holds the same space lock while it checks the current head, admits the
+job with a stable key, and stores the admission receipt in that same jobs
+transaction. The admission callback never re-enters content. Trash checks job state under the same content lock. Once its tombstone is
 durable, protected authority cleanup runs under an item-aware admission check;
 a failure is replayable before deletion is acknowledged. Removing authority before
 the content commit could otherwise forget the saved mode after a failed delete.
@@ -54,8 +53,8 @@ A crash between message placement and admission leaves one visible message.
 Retry the identical `threads.send` with its original request ID: the message
 receipt replays, admission finishes once, and the same job is scheduled. Until
 that retry, another send is refused with the next step. A crash after job admission
-uses its stable key; after admission receipt publication it uses that receipt.
-Job retention never permits a retained admission receipt to start work twice.
+replays its receipt. Job retention never permits a retained admission receipt to
+start work twice.
 After the operator's receipt-retention window, a request is new, as for every
 other write. The default window is seven days. An expired pending intent no
 longer blocks a new send; its saved message is preserved.

@@ -48,7 +48,7 @@ use super::Session;
 use super::job_sql::{ACTIVE, COLUMNS, SCHEMA, db_err, parse_state, retain, row};
 use super::live::{Live, LiveMap};
 use super::worker::CancelFlag;
-use calternal_types::{AccountId, Error};
+use calternal_types::{AccountId, Error, now_ms};
 
 /// Active (admitted, running or waiting) jobs allowed per space.
 pub const MAX_ACTIVE_JOBS_PER_SPACE: usize = 64;
@@ -468,9 +468,35 @@ impl Jobs {
         self.admit_package(a, 0)
     }
 
+    /// Find a retained saved-thread admission even when its completed job has
+    /// already been evicted. One indexed lookup under the space job lock.
+    pub(crate) fn thread_admission(
+        &self,
+        space: &str,
+        request_key: &str,
+    ) -> Result<Option<String>, Error> {
+        let conn = self.conn(space)?;
+        let c = conn.lock().map_err(db_err)?;
+        thread_send_receipt(
+            &c,
+            blake3::hash(request_key.as_bytes()).as_bytes(),
+            now_ms(),
+        )
+    }
+
+    /// Admit a saved turn and record its request key in the same FULL job
+    /// transaction. The receipt survives the bounded completed-job history.
+    pub(crate) fn admit_thread(&self, a: Admission) -> Result<String, Error> {
+        self.admit_job(a, 0, true)
+    }
+
     /// Admit a job with the immutable worker revision it must use on resume.
     /// Cost and error conditions match native job admission.
     pub(super) fn admit_package(&self, a: Admission, revision: u32) -> Result<String, Error> {
+        self.admit_job(a, revision, false)
+    }
+
+    fn admit_job(&self, a: Admission, revision: u32, thread_send: bool) -> Result<String, Error> {
         let generation = (i64::from(revision) << 32) | i64::from(a.generation);
         let _actor = self.lifecycle.step(a.account.as_uuid())?;
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
@@ -478,7 +504,14 @@ impl Jobs {
         let space = a.space.clone();
         let space_id = calternal_types::SpaceId::parse(&space)?;
         let _space = self.lifecycle.step(space_id.as_uuid())?;
+        let receipt = thread_send.then(|| blake3::hash(a.request_key.as_bytes()));
         let id = self.tx(&space, |tx| {
+            let now = now_ms();
+            if let Some(key) = &receipt
+                && let Some(id) = thread_send_receipt(tx, key.as_bytes(), now)?
+            {
+                return Ok(id);
+            }
             if let Some(id) = tx
                 .query_row("SELECT id FROM jobs WHERE request_key=?1", [&a.request_key], |r| {
                     r.get::<_, String>(0)
@@ -522,6 +555,23 @@ impl Jobs {
                 params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, generation, a.request_key],
             )
             .map_err(db_err)?;
+            if let Some(key) = &receipt {
+                calternal_store::migrations::require_writer_version(tx, THREAD_SEND_RECEIPT_VERSION).map_err(db_err)?;
+                let expires = now.saturating_add(
+                    i64::try_from(self.receipt_retention.as_millis()).unwrap_or(i64::MAX),
+                );
+                tx.execute(
+                    "DELETE FROM thread_send_receipts WHERE request_key IN
+                     (SELECT request_key FROM thread_send_receipts WHERE expires_ms<=?1
+                      ORDER BY expires_ms LIMIT 128)",
+                    [now],
+                ).map_err(db_err)?;
+                tx.execute(
+                    "INSERT INTO thread_send_receipts VALUES(?1,?2,?3)
+                     ON CONFLICT(request_key) DO UPDATE SET job=excluded.job,expires_ms=excluded.expires_ms",
+                    params![key.as_bytes().as_slice(), id, expires],
+                ).map_err(db_err)?;
+            }
             Ok(id)
         })?;
         self.routes
@@ -567,6 +617,109 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
         "jobs.db",
         2,
         BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
-        &[],
+        &[THREAD_SEND_RECEIPTS],
     )
+}
+
+const THREAD_SEND_RECEIPT_VERSION: i64 = 3;
+const THREAD_SEND_RECEIPTS: &str = "
+    CREATE TABLE thread_send_receipts(
+        request_key BLOB PRIMARY KEY CHECK(length(request_key)=32),
+        job TEXT NOT NULL,
+        expires_ms INTEGER NOT NULL
+    ) STRICT, WITHOUT ROWID;
+    CREATE INDEX thread_send_receipts_expiry ON thread_send_receipts(expires_ms);
+";
+
+/// Stable request key for one account's saved-thread admission.
+pub(crate) fn thread_send_key(account: AccountId, request_id: &str) -> String {
+    format!("threads/{account}/{request_id}")
+}
+
+fn thread_send_receipt(
+    conn: &Connection,
+    key: &[u8; 32],
+    now: i64,
+) -> Result<Option<String>, Error> {
+    conn.prepare_cached(
+        "SELECT job FROM thread_send_receipts WHERE request_key=?1 AND expires_ms>?2",
+    )
+    .map_err(db_err)?
+    .query_row(params![key.as_slice(), now], |row| row.get(0))
+    .optional()
+    .map_err(db_err)
+}
+
+#[cfg(test)]
+mod admission_receipt_tests {
+    use super::*;
+    use calternal_store::migrations::{Schema, inspect, migrate_release};
+    use serde_json::json;
+
+    #[test]
+    fn thread_send_receipt_transition_survives_job_retention_and_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let space = calternal_types::SpaceId::new().to_string();
+        let space_dir = dir.path().join("spaces").join(&space);
+        std::fs::create_dir_all(&space_dir).unwrap();
+        let path = space_dir.join("jobs.db");
+        let initial = [SCHEMA, crate::threads::turn_events::schema()];
+        let previous = Schema::new("jobs.db", 2, &initial, &[]);
+        let conn = Connection::open(&path).unwrap();
+        migrate_release(&conn, previous, false).unwrap();
+        conn.execute(
+            "INSERT INTO child_results VALUES('p','c','done','null')",
+            [],
+        )
+        .unwrap();
+        let next = upgrade_schema();
+        assert_eq!(next.version(), previous.version() + 1);
+        assert_eq!(next.version(), THREAD_SEND_RECEIPT_VERSION);
+        migrate_release(&conn, next, true).unwrap();
+        assert_eq!(inspect(&conn, previous).unwrap(), next.version());
+        assert_eq!(
+            conn.query_row("SELECT state FROM child_results WHERE child='c'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+            "done"
+        );
+        drop(conn);
+
+        let account = AccountId::new();
+        let thread = Uuid::now_v7();
+        let key = thread_send_key(account, "saved-send");
+        let admission = || Admission {
+            space: space.clone(),
+            account,
+            session: Session::Static,
+            plugin: "calternal-orchestrator".into(),
+            operation: "agent.turn".into(),
+            input: json!({"request":{"thread_id":thread}}),
+            parent: None,
+            generation: 1,
+            request_key: key.clone(),
+        };
+        let jobs = Jobs::open(dir.path()).unwrap();
+        let job = jobs.admit_thread(admission()).unwrap();
+        assert_eq!(
+            jobs.thread_admission(&space, &key).unwrap(),
+            Some(job.clone())
+        );
+        drop(jobs);
+
+        let conn = Connection::open(&path).unwrap();
+        assert!(inspect(&conn, previous).is_err());
+        conn.execute("DELETE FROM jobs WHERE id=?1", [&job])
+            .unwrap();
+        drop(conn);
+
+        let jobs = Jobs::open(dir.path()).unwrap();
+        assert_eq!(
+            jobs.thread_admission(&space, &key).unwrap(),
+            Some(job.clone())
+        );
+        assert_eq!(jobs.admit_thread(admission()).unwrap(), job);
+        assert!(jobs.get(&space, &job).unwrap().is_none());
+    }
 }

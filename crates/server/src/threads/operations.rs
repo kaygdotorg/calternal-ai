@@ -262,17 +262,21 @@ pub(super) fn apply<D: Directory>(
                 .as_str()
                 .and_then(|s| s.parse().ok())
                 .ok_or_else(|| Error::internal("invalid pending account"))?;
-            let key = format!(
-                "thread-admit/{}",
-                pending["request_id"].as_str().unwrap_or("")
-            );
-            if content.receipt(space, account, &key)?.is_none()
-                && calternal_types::now_ms()
-                    .saturating_sub(pending["created_ms"].as_i64().unwrap_or(i64::MAX))
-                    < content
-                        .receipt_retention()
-                        .as_millis()
-                        .min(i64::MAX as u128) as i64
+            let request_id = pending["request_id"].as_str().unwrap_or("");
+            let key = crate::plugins::jobs::thread_send_key(account, request_id);
+            if calternal_types::now_ms()
+                .saturating_sub(pending["created_ms"].as_i64().unwrap_or(i64::MAX))
+                < content
+                    .receipt_retention()
+                    .as_millis()
+                    .min(i64::MAX as u128) as i64
+                && st
+                    .jobs
+                    .thread_admission(&space.to_string(), &key)?
+                    .is_none()
+                && content
+                    .receipt(space, account, &format!("thread-admit/{request_id}"))?
+                    .is_none()
             {
                 return Err(Error::conflict(
                     "retry the pending send with its original request_id before sending another message",
