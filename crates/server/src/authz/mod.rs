@@ -68,6 +68,18 @@ pub struct Policy {
 /// closed instead of receiving inferred authority.
 pub const POLICIES: &[Policy] = &[
     Policy {
+        operation: Cow::Borrowed(calternal_core::ONBOARDING_STATE),
+        required: Capability::SpacesList,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
+    Policy {
+        operation: Cow::Borrowed(calternal_core::ONBOARDING_FINISH),
+        required: Capability::SpacesList,
+        scope: Scope::Account,
+        constraint: Constraint::None,
+    },
+    Policy {
         operation: Cow::Borrowed(calternal_core::WALLPAPERS_LIST),
         required: Capability::SpacesList,
         scope: Scope::Account,

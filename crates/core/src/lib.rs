@@ -18,6 +18,8 @@ mod sharing;
 pub use sharing::*;
 mod spaces;
 pub use spaces::*;
+mod onboarding;
+pub use onboarding::*;
 mod wallpapers;
 pub use wallpapers::*;
 mod secrets;

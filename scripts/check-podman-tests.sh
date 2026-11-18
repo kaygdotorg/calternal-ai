@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run one test command with a private TMPDIR. Fail on orphan containers or VMMs.
+# Run one test command with a private TMPDIR. Fail on orphan containers, VMMs or
+# provider sign-in processes (the adapter and the official `claude auth login`).
 set -euo pipefail
 if (($# == 0)); then
   echo 'Usage: check-podman-tests.sh COMMAND [ARG ...]' >&2
@@ -42,6 +43,16 @@ import sys
 
 root = Path(sys.argv[1])
 leaked = []
+sign_in = []
+
+
+def home_of(proc):
+    for item in (proc / "environ").read_bytes().split(b"\0"):
+        if item.startswith(b"HOME="):
+            return Path(os.fsdecode(item[5:]))
+    return None
+
+
 for proc in Path("/proc").iterdir():
     if not proc.name.isdecimal():
         continue
@@ -49,16 +60,29 @@ for proc in Path("/proc").iterdir():
         if proc.stat().st_uid != os.geteuid():
             continue
         argv = (proc / "cmdline").read_bytes().rstrip(b"\0").split(b"\0")
-        if not argv or Path(os.fsdecode(argv[0])).name != "firecracker":
+        if not argv:
             continue
-        config = Path(os.fsdecode(argv[argv.index(b"--config-file") + 1]))
-        if config.is_relative_to(root):
-            leaked.append(proc.name)
+        if Path(os.fsdecode(argv[0])).name == "firecracker":
+            config = Path(os.fsdecode(argv[argv.index(b"--config-file") + 1]))
+            if config.is_relative_to(root):
+                leaked.append(proc.name)
+        # A sign-in left running after its test ends holds shared resources for
+        # minutes. Match the adapter (`main.js --sign-in`) and the login it
+        # starts (`... auth login`) by the private home inside this test root.
+        is_adapter = argv[-1:] == [b"--sign-in"] and argv[-2:-1] and argv[-2].endswith(b"main.js")
+        is_login = argv[-2:] == [b"auth", b"login"]
+        if is_adapter or is_login:
+            home = home_of(proc)
+            if home is not None and home.is_relative_to(root):
+                sign_in.append(proc.name)
     except (OSError, ValueError, IndexError):
         continue
 if leaked:
     sys.exit(f"Test command left Firecracker processes in {root}: {', '.join(leaked)}")
 print("Firecracker leak check passed.")
+if sign_in:
+    sys.exit(f"Test command left provider sign-in processes in {root}: {', '.join(sign_in)}")
+print("Provider sign-in leak check passed.")
 PYTHON
 fi
 exit "$status"

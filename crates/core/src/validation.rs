@@ -135,6 +135,8 @@ pub fn is_known_operation(operation: &str) -> bool {
         || matches!(
             operation,
             WALLPAPERS_LIST
+                | ONBOARDING_STATE
+                | ONBOARDING_FINISH
                 | "spaces.list"
                 | "spaces.create"
                 | "spaces.leave"
@@ -244,6 +246,10 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         )?;
     }
     match operation {
+        ONBOARDING_STATE | ONBOARDING_FINISH => {
+            let _: OnboardingInput = decode(input)?;
+            Ok(())
+        }
         WALLPAPERS_LIST => {
             let _: WallpapersListInput = decode(input)?;
             Ok(())
@@ -454,6 +460,16 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
         }
     }
     let mut catalog = vec![
+        entry::<OnboardingInput, OnboardingState>(
+            ONBOARDING_STATE,
+            "Read your onboarding status",
+            false,
+        ),
+        entry::<OnboardingInput, OnboardingState>(
+            ONBOARDING_FINISH,
+            "Mark your onboarding finished",
+            true,
+        ),
         entry::<WallpapersListInput, WallpapersListResult>(
             WALLPAPERS_LIST,
             "List built-in wallpapers with Unsplash attribution",
