@@ -1,5 +1,6 @@
-//! Read-only journal positions for rebuildable per-space projections.
-use crate::{Error, ErrorCode, Result, SpaceId, SyncToken, schema};
+//! Read-only journal access for rebuildable per-space projections and diagnostics.
+use crate::{Error, ErrorCode, Result, SpaceId, SyncToken, receipt_key, schema};
+use calternal_types::AccountId;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::path::Path;
 
@@ -51,6 +52,25 @@ impl ProjectionJournal {
             "SELECT value,(SELECT coalesce(max(seq),0) FROM journal) FROM meta WHERE key='epoch'",
         ).map_err(Error::internal)?
             .query_row([], |row| Ok(SyncToken { epoch: row.get(0)?, seq: row.get(1)? }))
+            .map_err(Error::internal)
+    }
+
+    /// Find the earliest journal receipt timestamp among the supplied outbox
+    /// keys. Unpublished intents have no matching receipt. Cost: one indexed
+    /// lookup per pin in one read snapshot, without loading replies or writing.
+    /// Returns an error if the receipt table cannot be read.
+    pub fn oldest_receipt_ms(&self, pins: &[(AccountId, String)]) -> Result<Option<i64>> {
+        let keys: Vec<_> = pins
+            .iter()
+            .map(|(account, request)| receipt_key(*account, request))
+            .collect();
+        let keys = serde_json::to_string(&keys).map_err(Error::internal)?;
+        self.0
+            .query_row(
+                "SELECT min(at_ms) FROM idempotency WHERE key IN (SELECT value FROM json_each(?1))",
+                [keys],
+                |row| row.get(0),
+            )
             .map_err(Error::internal)
     }
 
