@@ -2,7 +2,7 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-18 18:50 IST.
+[glossary](glossary.md). Updated 2026-11-18 19:40 IST.
 
 ## Waiting now
 
@@ -26,9 +26,9 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 - **Machines without a terminal**, partly decided 2026-11-18 (below); still to grill: pre-configuring machines at deploy time, the `curl | sh` installer at calternal.com/install for both a server and a machine, the macOS app that bundles the CLI, how a machine behind NAT stays reachable for people who know nothing about networking, and how a group's allowance of pool compute is configured and shown.
 - **Pricing**: plans are listed at calternal.com/pricing; storage is bought separately; what the sizes, hours and storage steps are.
 - **Upgrades with real data**: decided 2026-11-18 that updates are automatic and a failed one rolls back without the person or admin noticing; the index rebuild is made faster first (search is unavailable for 67 to 80 s at 100,000 notes today), then migrations are written for the small core (accounts, spaces, roles, secrets), which cannot be rebuilt from files.
-- **MicroVMs**: one per person with a container per thread is decided; the smallest memory size is chosen after the lane measures real turns at 256, 512, 1024 and 2048 MiB (issue #51).
+- **MicroVMs**: one per person with a container per thread; sizes decided; the lane posts its build plan on issue #51 for review.
 - **Next to write up** (kayg, 2026-11-18): plugin workers (#33), performance measures (#40), requests (#34).
-- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. Open: where the app switcher belongs (bottom centre for now, auto-hide available and off by default, never hidden on a phone). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
+- **The canvas experiment** (kayg, 2026-11-18; still an experiment behind `?canvas=1`): no outer card; the area between the sidebars is the canvas and each window is a middle card, so one window looks exactly like the app today and a second animates as a split; structured columns as in niri; windows touch the top; one continuous veiled background behind them, as under the sidebars; windows opaque or transparent with no blur of their own; both sidebars follow the focused window's app; on a phone one window at a time. The app switcher is no longer part of the canvas (it moved to the left sidebar's footer). Feedback 2026-11-18 17:00, being fixed by the Threads lane: one window must match the app without the canvas exactly (fonts, spacing, animations); no fade on a half-scrolled window; windows are neutral dark or light, never tinted by the wallpaper's accent; no accent border on the selected window (inactive windows dim instead, to be judged); the fullscreen icon is two diagonal chevrons and the link icon becomes a real share menu.
 
 ## Queued, no decision needed
 
@@ -37,6 +37,9 @@ Decided 2026-11-18: a person never signs in twice and no API key is used. The ti
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Shell footer (2026-11-18 evening, replaces the space dots and the capsule under the card): spaces sit behind the account picture on desktop and phone; the app switcher is an icon-only capsule of three apps at the bottom centre of the left sidebar, scrolling sideways. This also settles where the switcher sits in the canvas.
+- MicroVM sizes (2026-11-18): the smallest is 512 MiB with at most two active threads, then 1,024 MiB; measured on real turns (issue #51).
+- Plugin network access is refused for private addresses by default, with an explicit grant approved by a server admin or the machine's owner; only cloud metadata addresses are always refused. Design to be written up.
 - Plugin workers (#33, 2026-11-18): a shared space's workers run only on the operator's pool machines; with no machine able to run containers the plugin says it is unavailable and how to add a machine; revoking a machine frees its capacity, nothing is freed on a timeout; network access is declared in the manifest, approved by a Manager and fetched by the server on the plugin's behalf, with the design for broad needs (mail, money) still to be written up.
 - Requests (#34, 2026-11-18): an unused single-use approval belongs to the turn; limits are 32 open requests per person per thread and 256 per account, standing grants counted separately; any member may read `AI/AGENTS.md`, Managers and the Owner edit it; a replaced token reaches the running agent through a protected local channel only the `calternal` command reads.
 - Performance (2026-11-18): the 10 ms ceiling measures from the durable commit to the client receiving it, in release builds, as a hard gate; the full round trip gets its own limit.
