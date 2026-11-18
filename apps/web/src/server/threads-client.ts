@@ -18,9 +18,8 @@ import type { ThreadEvents, ThreadsClient } from "../apps/threads/client";
 import type { Answer, Attachment, Change, Message, Permission, ProviderOption, Request, RunInfo, RunsOn, Step, ThreadState, ThreadSummary } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
 import { ServerRequests } from "./requests";
-import { applyAppend, bodyOf, type Body } from "./thread-delta";
 import { SpaceFeed, type FeedEntry } from "./space-feed";
-import { parseMessages, providerPlugin, readinessNotice, reasonNotice, stateOfTurn, summaryOf, updatedAtOf, wireMode, type WireReadiness, type WireReason, type WireRow, type WireThread, type WireJob } from "./thread-file";
+import { appendRecords, messagesOf, providerPlugin, readinessNotice, reasonNotice, stateOfTurn, summaryOf, wireMode, type WireReadiness, type WireReason, type WireRow, type WireThread, type WireJob, type WireRecord } from "./thread-file";
 
 /** Development tracing (`localStorage["cal.debug.threads"] = "1"`): every journal entry, read and stream event with a timestamp, to the console. Off by default; a read of one storage key at start-up. */
 const TRACE = (() => { try { return localStorage.getItem("cal.debug.threads") === "1"; } catch { return false; } })();
@@ -33,11 +32,11 @@ const PROVIDER_OF: Record<string, ProviderOption["id"]> = { "calternal-claude-co
 const PROVIDERS: ProviderOption[] = [{ id: "claude", name: "Claude Code", models: [{ id: "default", name: "Default", default: true }], listed: false }];
 
 /** One thread held in memory: the last read (its revision), its parsed messages, its summary and the Markdown as `Body` (bytes, so the next addition can be spliced in; the string is not kept). */
-interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; body: Body; at: number }
+interface Open { thread: WireThread; messages: Message[]; summary: ThreadSummary; at: number }
 /** A checkpoint journal entry's `data`: the revision it reached and the addition (`threads.checkpoint`, docs/threads.md). */
 interface CheckpointData { revision: string; append: { base_revision: string; offset: number; start: number; length: number } }
-/** The answer to `threads.get` with `since`: the bytes to insert at `offset` of the body, taking `base_revision` to `revision`. */
-interface WireDelta { id: string; base_revision: string; revision: string; offset: number; markdown: string }
+/** The answer to `threads.get` with `since`: the complete new messages the checkpoint added, taking `base_revision` to `revision` (none for a checkpoint that only recorded a session). */
+interface WireDelta { id: string; base_revision: string; revision: string; messages?: WireRecord[] }
 /** The composer's choices for the next send, kept per thread on this page. */
 type Choices = Partial<Pick<ThreadSummary, "provider" | "model" | "permission" | "runsOn" | "reasoning">>;
 
@@ -209,12 +208,12 @@ export class ServerThreads implements ThreadsClient {
     let delta: WireDelta | undefined;
     try { delta = (await this.server.operate<{ delta?: WireDelta }>("threads.get", { id, space_id: this.space(), since: data })).delta; } catch { /* conflict, or the server is away: the whole read below */ }
     if (!delta || delta.base_revision !== have.thread.revision || this.opened.get(id) !== have) return this.pull(id, true);
-    const next = applyAppend(have.body, have.messages, delta.offset, delta.markdown, have.summary.updatedAt, have.summary.updatedAt);
+    const next = appendRecords(have.messages, delta.messages ?? []); // null: it extended a held message, which the server answers with no insertion
     if (!next) return this.pull(id, true);
-    have.body = next.body; have.messages = next.messages;
+    have.messages = next;
     have.thread = { ...have.thread, revision: delta.revision };
-    have.summary = { ...have.summary, messageCount: next.messages.length };
-    trace("delta", id.slice(0, 8), "rev", delta.revision.slice(0, 8), "bytes", delta.markdown.length, "messages", next.messages.length);
+    have.summary = { ...have.summary, messageCount: next.length };
+    trace("delta", id.slice(0, 8), "rev", delta.revision.slice(0, 8), "messages", next.length);
     this.publish(id, have);
   }
 
@@ -233,9 +232,8 @@ export class ServerThreads implements ThreadsClient {
     if (job && !isFinal(job.state)) this.turns.set(id, { state: base.state, job: job.id });
     const have = this.opened.get(id);
     if (have && have.thread.revision === thread.revision && !force) { have.at = Date.now(); have.summary = { ...base, messageCount: have.messages.length }; return have; }
-    const updatedAt = updatedAtOf(thread.markdown ?? "", base.updatedAt);
-    const messages = parseMessages(thread.markdown ?? "", base.updatedAt, updatedAt);
-    const open: Open = { at: Date.now(), thread: { ...thread, markdown: undefined }, body: bodyOf(thread.markdown ?? ""), messages, summary: { ...base, updatedAt: Math.max(base.updatedAt, updatedAt), messageCount: messages.length } };
+    const messages = messagesOf(thread.messages);
+    const open: Open = { at: Date.now(), thread: { ...thread, markdown: undefined, messages: undefined }, messages, summary: { ...base, messageCount: messages.length } };
     this.opened.set(id, open);
     return open;
   }
