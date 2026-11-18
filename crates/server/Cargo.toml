@@ -42,6 +42,7 @@ calternal-cli.workspace = true
 calternal-client.workspace = true
 calternal-secrets.workspace = true
 serde.workspace = true
+serde_yaml = "=0.9.34"
 serde_json = { workspace = true, features = ["raw_value"] }
 uuid.workspace = true
 clap.workspace = true

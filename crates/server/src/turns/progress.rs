@@ -146,6 +146,14 @@ pub(super) async fn place<D: Directory>(
         if !live.is_current(job.runs) || !super::session_live(state, job).await? {
             return Ok(Placement::Ended(RunEnd::Failed));
         }
+        if job.runs == 1
+            && job.input["thread_request"]["automation_run"].is_object()
+            && !crate::automations::scheduling::within_scheduled_day(job)
+        {
+            checkpoint["interruption"] = json!({"why":"automation_day_ended"});
+            save_placement(state, job, live, checkpoint).await?;
+            return Ok(Placement::Ended(RunEnd::Failed));
+        }
         super::authorize(state, &who, &job.space, Capability::PluginsUse).await?;
         let m = machines.clone();
         let view = blocking(move || m.run(account, lease_id)).await?;

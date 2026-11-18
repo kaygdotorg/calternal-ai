@@ -2,6 +2,7 @@
 //! All durable work runs on blocking workers; no independent store or global lock.
 #[cfg(target_os = "linux")]
 mod append_checkpoint;
+pub(crate) mod automation;
 mod delta;
 mod document;
 mod headings;
@@ -77,14 +78,12 @@ pub(crate) async fn dispatch<D: Directory>(
     if op == "threads.models" {
         return blocking(move || models::list(&state, space, &who)).await;
     }
-    let mut read = None;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while read.is_none() {
+    let value = retry_verifying(|| {
         let (st, operation, request_id, data) =
             (state.clone(), op.to_owned(), rid.to_owned(), input.clone());
         let caller = who.clone();
         let message_actor = actor.clone();
-        let result = blocking(move || {
+        blocking(move || {
             operations::apply(
                 &st,
                 &caller,
@@ -96,20 +95,8 @@ pub(crate) async fn dispatch<D: Directory>(
                 &message_actor,
             )
         })
-        .await;
-        if result.as_ref().is_err_and(|error| {
-            error
-                .details
-                .as_ref()
-                .is_some_and(|details| details["reason"] == "thread_verifying")
-        }) && std::time::Instant::now() < deadline
-        {
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        } else {
-            read = Some(result?);
-        }
-    }
-    let value = read.expect("thread operation returned");
+    })
+    .await?;
     if op == "threads.send" {
         crate::fault::hit(crate::fault::FaultPoint::AfterThreadMessage);
         let thread = value["thread"]["id"]
@@ -151,4 +138,25 @@ pub(crate) async fn dispatch<D: Directory>(
         return Ok(json!({"thread":value["thread"],"job":job.view()}));
     }
     Ok(value)
+}
+
+/// Let background file verification complete without occupying a blocking worker.
+async fn retry_verifying<T, Fut>(mut attempt: impl FnMut() -> Fut) -> Result<T, Error>
+where
+    Fut: std::future::Future<Output = Result<T, Error>>,
+{
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let result = attempt().await;
+        let pending = result.as_ref().is_err_and(|error| {
+            error
+                .details
+                .as_ref()
+                .is_some_and(|d| d["reason"] == "thread_verifying")
+        });
+        if !pending || std::time::Instant::now() >= deadline {
+            return result;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
 }

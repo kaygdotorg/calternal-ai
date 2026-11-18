@@ -232,6 +232,8 @@ directory lacks `plugins/calternal-orchestrator/manifest.json`. Deployments
 using `--plugin-root` provide their own trusted plugin tree. An authorized
 fresh space lists zero threads before any conversation is created.
 
+The [Skills and Automations operations](/docs/user/automations/) cover portable skill bundles and scheduled turn admission.
+
 ## Snoozing the Inbox
 
 Call `threads.snooze` with `space_id`, `id`, and a future Unix timestamp

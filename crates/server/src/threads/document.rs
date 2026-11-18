@@ -162,6 +162,14 @@ pub(super) fn checked_view(item: &Item) -> Result<Value, Error> {
     )
 }
 
+/// Reply with thread identity and a bounded set of records from a large transcript.
+#[cfg(target_os = "linux")]
+pub(super) fn partial_view(item: &Item, messages: Vec<Value>) -> Value {
+    json!({"thread":{"id":item.id,"space_id":item.space,"address":format!("/threads/{}",item.id),
+        "revision":item.revision,"metadata":public_metadata(item.metadata.clone()),
+        "partial":true,"messages":messages}})
+}
+
 /// Encode a just-written snapshot for its receipt. The writer constructs the
 /// record framing and validated inputs before entering the content transaction.
 pub(super) fn view(item: &Item) -> Value {

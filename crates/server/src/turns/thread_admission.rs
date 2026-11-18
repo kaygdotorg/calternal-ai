@@ -64,7 +64,7 @@ pub(crate) async fn admit<D: Directory>(
                     return Err(Error::conflict("the pending send has been superseded"));
                 }
                 let resume = ProviderSession::owned(&current.metadata, who.id);
-                st.jobs.admit_thread(Admission {
+                let id = st.jobs.admit_thread(Admission {
                     space,
                     plugin: "calternal-orchestrator".into(),
                     account: who.id,
@@ -72,12 +72,16 @@ pub(crate) async fn admit<D: Directory>(
                     operation: "agent.turn".into(),
                     input: json!({
                         "request":input, "check":false, "retry_settings":settings,
-                        "thread_request":intent, (KEY):resume,
+                        "thread_request":intent, "check_target":input.machine_id, (KEY):resume,
                     }),
                     parent: None,
                     generation,
                     request_key,
-                })
+                })?;
+                if intent["automation_run"].is_object() {
+                    crate::fault::hit(crate::fault::FaultPoint::AutomationAfterJob);
+                }
+                Ok(id)
             })
     })
     .await?;

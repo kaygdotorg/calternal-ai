@@ -151,23 +151,39 @@ pub(super) fn apply<D: Directory>(
             "archived": false,
             "deleted": false,
         });
-        for key in ["parent_thread", "spawned_by"] {
+        for key in ["parent_thread", "spawned_by", "automation_id"] {
             if let Some(v) = data.get(key) {
                 metadata[key] = v.clone();
             }
         }
         document::validate_metadata(&metadata)?;
         let bytes = document::encode(&metadata, "");
-        content.write(
-            space,
-            None,
-            "threads",
-            None,
-            metadata,
-            bytes.as_bytes(),
-            request,
-            document::receipt_view(&mut reply),
-        )?;
+        if let Some(id) = data
+            .get("assigned_thread_id")
+            .and_then(Value::as_str)
+            .and_then(|id| Uuid::parse_str(id).ok())
+        {
+            content.create_assigned(
+                space,
+                id,
+                "threads",
+                metadata,
+                bytes.as_bytes(),
+                request,
+                document::receipt_view(&mut reply),
+            )?;
+        } else {
+            content.write(
+                space,
+                None,
+                "threads",
+                None,
+                metadata,
+                bytes.as_bytes(),
+                request,
+                document::receipt_view(&mut reply),
+            )?;
+        }
         return Ok(reply);
     }
     let id = id.ok_or_else(|| Error::invalid_input("id is required"))?;
@@ -245,6 +261,20 @@ pub(super) fn apply<D: Directory>(
         return snooze::set(&content, item, until, request);
     }
     if operation == "threads.send" {
+        if let Some(origin) = data.get("automation_run")
+            && item.metadata["pending"]["automation_run"] == *origin
+        {
+            #[cfg(target_os = "linux")]
+            let mut reply = if item.bytes.is_empty() {
+                document::partial_view(&item, Vec::new())
+            } else {
+                document::view(&item)
+            };
+            #[cfg(not(target_os = "linux"))]
+            let mut reply = document::view(&item);
+            reply["intent"] = item.metadata["pending"].clone();
+            return Ok(reply);
+        }
         if item.metadata["archived"] == true {
             return Err(Error::conflict("this thread is archived"));
         }
@@ -332,43 +362,86 @@ pub(super) fn apply<D: Directory>(
         document::record_message(&mut item.metadata, &now);
         item.metadata["pending"] = json!({"account":who.id,"request_id":request_id,"fingerprint":fp,
             "created_ms":calternal_types::now_ms(),"time_zone":zone,"client_offset_minutes":offset});
+        if let Some(origin) = data.get("automation_run") {
+            item.metadata["pending"]["automation_run"] = origin.clone();
+        }
         let role = if actor.via.is_some() {
             "automation"
         } else {
             "person"
         };
         let label = if role == "automation" {
-            format!("Automation {}", super::headings::label(&label))
+            format!(
+                "Automation {}",
+                super::headings::label(
+                    data.get("automation_name")
+                        .and_then(Value::as_str)
+                        .unwrap_or(&label)
+                )
+            )
         } else {
             super::headings::label(&label)
         };
         let heading = format!("{label} · {}", super::headings::time(&now)?);
+        let message;
+        let saved_prompt = if let Some(id) = data
+            .get("automation_run")
+            .and_then(|origin| origin["automation"].as_str())
+        {
+            message = format!("{prompt}\n\n[Automation](/automations/{id})");
+            message.as_str()
+        } else {
+            prompt
+        };
         #[cfg(target_os = "linux")]
         {
             let mut record = String::new();
-            super::records::append(&mut record, Uuid::now_v7(), role, &heading, prompt, None);
+            super::records::append(
+                &mut record,
+                Uuid::now_v7(),
+                role,
+                &heading,
+                saved_prompt,
+                None,
+            );
             let frame = format!("\n{record}\n");
             super::persistence::check_size(send_size + frame.len())?;
             let metadata = item.metadata.clone();
             let base = item.revision.clone();
-            content.append_thread_record(space, id, &base, metadata, frame.as_bytes(), request, |revision| {
-                item.revision = revision.to_owned();
-                reply = if item.bytes.is_empty() {
-                    json!({"thread":{"id":id,"space_id":space,"address":format!("/threads/{id}"),
-                        "revision":revision,"metadata":document::public_metadata(item.metadata.clone()),
-                        "partial":true,"messages":super::records::view(&record).expect("generated record")}})
-                } else {
-                    item.bytes.extend_from_slice(frame.as_bytes());
-                    document::view(&item)
-                };
-                reply["intent"] = item.metadata["pending"].clone();
-                reply.clone()
-            })?;
+            content.append_thread_record(
+                space,
+                id,
+                &base,
+                metadata,
+                frame.as_bytes(),
+                request,
+                |revision| {
+                    item.revision = revision.to_owned();
+                    reply = if item.bytes.is_empty() {
+                        document::partial_view(
+                            &item,
+                            super::records::view(&record).expect("generated record"),
+                        )
+                    } else {
+                        item.bytes.extend_from_slice(frame.as_bytes());
+                        document::view(&item)
+                    };
+                    reply["intent"] = item.metadata["pending"].clone();
+                    reply.clone()
+                },
+            )?;
         }
         #[cfg(not(target_os = "linux"))]
         {
             let mut body = document::body(&item)?.to_owned();
-            super::records::append(&mut body, Uuid::now_v7(), role, &heading, prompt, None);
+            super::records::append(
+                &mut body,
+                Uuid::now_v7(),
+                role,
+                &heading,
+                saved_prompt,
+                None,
+            );
             let bytes = document::encode(&item.metadata, &body);
             super::persistence::check_size(bytes.len())?;
             content.write(
