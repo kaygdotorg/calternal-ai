@@ -8,7 +8,7 @@ title: "cl notes list"
 
 | Arguments | Purpose | Human output | JSON data |
 | --- | --- | --- | --- |
-| `notes list [--space ID]` | List notes. | Table `ID TITLE UPDATED REVISION`, or a friendly empty result with a command to create one. | `notes[]` |
+| `notes list [--space ID] [--cursor CURSOR]` | List notes. | Table `ID TITLE UPDATED REVISION`, or a friendly empty result with a command to create one. | `notes[]` |
 
 ## JSON data shape
 
@@ -22,7 +22,8 @@ title: "cl notes list"
       "revision": "string",
       "updated_at": "string"
     }
-  ]
+  ],
+  "next_cursor?": "string"
 }
 ```
 

@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# Diagnostic observations exist only in debug test-plugin builds, never release.
+test-timings = []
+
 [dependencies]
 calternal-types.workspace = true
 blake3.workspace = true

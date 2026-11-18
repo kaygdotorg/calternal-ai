@@ -14,7 +14,6 @@
   import SelectionActions from "./SelectionActions.svelte";
   import StreamRow from "./StreamRow.svelte";
   import StateMark from "./StateMark.svelte";
-  import ActiveChildren from "./ActiveChildren.svelte";
   import Composer from "./Composer.svelte";
   import MessageRow from "./MessageRow.svelte";
   import ThreadNotices from "./ThreadNotices.svelte";
@@ -127,7 +126,6 @@
       <div class="inner">
         <ThreadNotices thread={summary} onresume={() => client.resume(id).catch((e: Error) => toast(`Could not resume: ${e.message}`))} oncheck={() => client.check(id).then(() => toast("Checked"), (e: Error) => toast(`Could not check: ${e.message}`))} />
         <RequestBar requests={reqs} onanswer={(rid, a) => client.answer(rid, a).catch((e: Error) => toast(`Not sent: ${e.message}`))} />
-        <ActiveChildren {id} />
         <Composer thread={summary} providers={store.providers} machines={store.machines} onpermission={(p) => client.setPermission(id, p)} onrunson={(r) => client.setRunsOn(id, r)} onsend={(t) => client.send(id, t, crypto.randomUUID()).catch((e: Error) => { toast(`Not sent: ${e.message}`); throw e; })} onstop={() => client.stop(id).catch((e: Error) => toast(`Could not stop: ${e.message}`))} onprovider={(p, m) => client.setProvider(id, p, m)} />
       </div>
     </div>

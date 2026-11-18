@@ -25,6 +25,9 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
+        Self::with_listeners(Limits::default().listeners).await
+    }
+    async fn with_listeners(listeners: usize) -> Self {
         let (dir, tokens, token, guest_token, owner, spaces, store) =
             tokio::task::spawn_blocking(|| {
                 let dir = tempfile::tempdir().unwrap();
@@ -70,6 +73,7 @@ impl Fixture {
                     pending: 2,
                     bytes: 4096,
                     events: 3,
+                    listeners,
                     ..Default::default()
                 },
                 Arc::new(move || injected.load(Ordering::SeqCst)),
@@ -403,4 +407,94 @@ async fn restored_offline_input_keeps_age_and_transfers_to_confirmation_request(
             .unwrap()["notes"],
         json!([])
     );
+}
+
+/// Active and closing readers share the existing admission bound; dropping a
+/// stream eventually closes its SQLite handle and permits a new stream.
+#[tokio::test]
+async fn account_live_reader_release_preserves_the_listener_bound() {
+    let fixture = Fixture::with_listeners(1).await;
+    let http = reqwest::Client::new();
+    let endpoint = format!("{}/api/v1/account/live", fixture.url);
+    let live = http
+        .get(&endpoint)
+        .bearer_auth(fixture.token.trim())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(live.status(), 200);
+    let refused = http
+        .get(&endpoint)
+        .bearer_auth(fixture.token.trim())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 503);
+    drop(live);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let next = http
+            .get(&endpoint)
+            .bearer_auth(fixture.token.trim())
+            .send()
+            .await
+            .unwrap();
+        if next.status() == 200 {
+            break;
+        }
+        assert_eq!(next.status(), 503);
+        assert!(
+            std::time::Instant::now() < deadline,
+            "closed feed retained its admission lease"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+/// Feed maintenance still advances the seven-day confirmation state while idle;
+/// committed change hints do not need to repeat the mutation's cleanup scan.
+#[tokio::test]
+async fn idle_account_feed_advances_pending_confirmation_without_an_operation() {
+    let fixture = Fixture::new().await;
+    fixture
+        .op(false, "pending.queue", fixture.queue("idle-age", 0))
+        .await
+        .unwrap();
+    let mut response = reqwest::Client::new()
+        .get(format!("{}/api/v1/account/live", fixture.url))
+        .bearer_auth(fixture.token.trim())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let mut buffer = Vec::new();
+    async fn frame(response: &mut reqwest::Response, buffer: &mut Vec<u8>) -> AccountFrame {
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if let Some(end) = buffer.windows(2).position(|w| w == b"\n\n") {
+                    let bytes: Vec<_> = buffer.drain(..end + 2).collect();
+                    let text = std::str::from_utf8(&bytes).unwrap();
+                    if let Some(data) = text.lines().find_map(|line| line.strip_prefix("data: ")) {
+                        return serde_json::from_str(data).unwrap();
+                    }
+                }
+                buffer.extend_from_slice(&response.chunk().await.unwrap().expect("open feed"));
+            }
+        })
+        .await
+        .expect("account feed frame")
+    }
+    assert!(matches!(
+        frame(&mut response, &mut buffer).await,
+        AccountFrame::Ready { .. }
+    ));
+    fixture
+        .clock
+        .fetch_add(7 * 24 * 60 * 60 * 1000 + 1, Ordering::SeqCst);
+    assert!(matches!(
+        frame(&mut response, &mut buffer).await,
+        AccountFrame::Changed { .. }
+    ));
+    let pending = fixture.op(false, "pending.list", json!({})).await.unwrap();
+    assert_eq!(pending["records"][0]["state"], "confirmation_required");
 }

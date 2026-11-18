@@ -44,9 +44,12 @@ currently capped at 100 rows without pagination; its inherited page budget expos
 the responses have equivalent sizes. Session check is `/api/v1/auth/me`; address
 resolution is the `resolve` operation, not a fabricated static route.
 
-Still missing: isolated admission timing, exact server-commit-to-SSE timing,
-and a three-host-call worker. See `docs/performance.md`. Until those are implemented,
-this is a partial qualification and cannot certify the whole backend merge gate.
+Debug-only admission, receipt-lookup and post-commit/SSE stage observations are
+available as described below. Plain releases exclude those hooks, so the default
+incomplete-backend qualification label remains; debug observations do not certify
+release stage latency. A three-host-call worker is still missing. See
+`docs/performance.md` and the issue #31 follow-up report for measured coverage.
+The harness cannot certify the whole backend merge gate.
 
 Exit 1 means a reproduced numeric breach. Exit 2 means an error or incomplete
 mandatory coverage; neither is green. A summary is written before either numeric
@@ -94,3 +97,51 @@ the releasable memory cases while that is fixed, select
 `perf/summarize-evidence.py <suite>` reproduces the dated summary without exporting
 raw vectors. Its source selections intentionally exclude the first run's
 unsynced warm copies. See `docs/performance.md` for conditioning and qualifications.
+
+The performance-fixes lane records `startup-state.json` in each arm before first
+use. A zero space-writer count, together with lazy content initialization, makes
+`space.process_cold_open` a real first activation for that binary. The baseline
+may eagerly open spaces; its first-list observation keeps that qualification.
+
+Every measured update now checks the read-only content placement mark, written
+only after file and directory syncs. `userdata.write_to_durable_file` starts before
+the HTTP write, making it a conservative upper bound on acknowledgement-to-file
+lag; any observation over 1,000 ms fails the arm. This check runs after the timed
+acknowledgement, never inside its span. An independent library test checks that
+placement also completes without a follow-up request or receipt replay.
+
+`--fsync-probe` traces one warmed, same-title update using the already extracted
+strace on perf-01. Run separately under the lock, once with the baseline binary
+and once with the new binary, each in a fresh work directory. It records successful
+`fsync`/`fdatasync` calls by descriptor role, with witness/other work separated.
+The diagnostic takes four seconds and never contributes latency acceptance data.
+It needs the same `sudo -n` profiling permissions as `profile.sh`.
+
+A debug server built with `--features test-plugins` emits small `CALTERNAL_STAGE`
+JSON lines for capability admission, receipt lookup and a post-durable-commit
+marker before journal broadcast. The driver correlates that marker by request ID
+with SSE receipt. These hooks are absent from **all release builds**, even when
+`test-plugins` is enabled; they allocate nothing and read no clock in release.
+Admission includes item resolution/capability lookup but excludes HTTP sign-in
+and later agent scope review. Lookup includes its per-space lock and pending
+outbox check; cold recovery is visible rather than subtracted. Commit/delivery
+uses the shared millisecond clock, so its precision is 1 ms. These instrumented
+debug observations stay separate from plain-release latency qualification.
+
+`--startup-only` uses the same seeded fixtures, alternating binaries, cache-drop
+conditioning, first-use writer evidence and first-list timing, then stops the
+scenario before subscriptions and write loops. Use it for a focused startup
+comparison; it cannot qualify update, delivery or idle-memory budgets.
+
+When the baseline pins an older trusted worker digest, use
+`--baseline-plugins /absolute/matching/baseline/plugins`. Head fixture provisioning
+uses `--plugins`; each measured arm validates its own pinned bundle. Both bundle
+paths are recorded in the summary. Keep this difference explicit when catalog or
+worker changes affect comparability; never bypass trusted-worker validation.
+
+The schema-6 fixture builder reuses the UUID of the personal space created during
+account enrollment, then creates the remaining spaces. Nominal fixture counts
+therefore include every space in the enrolled account. Historical schema-5
+binaries cannot read schema-6 roots; keep the pinned pre-integration comparison
+and use schema-compatible controls for an integrated release. No old-schema
+reader or migration is added to make a benchmark comparison run.

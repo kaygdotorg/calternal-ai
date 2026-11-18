@@ -31,8 +31,12 @@ use tokio::sync::oneshot;
 use super::{InvocationHost, Plugin};
 use calternal_types::Error;
 
-/// Deadline after resource admission, including cold launch and queued execution.
+/// Interactive execution budget after admission. The first call to a fresh
+/// enrolled worker also allows time to start Podman and Node on its machine.
 pub const WORKER_TIMEOUT: Duration = Duration::from_secs(3);
+// Round up the measured 2.184 s dev-01 p99 for a fresh enrolled worker's first
+// call. Add that allowance to the interactive execution budget.
+const REMOTE_WORKER_START_ALLOWANCE: Duration = Duration::from_secs(3);
 /// Controller admission deadline covering prior teardown and capacity. Podman
 /// teardown alone takes about two seconds on the development VM; it is distinct
 /// from the invocation deadline, which also bounds launch after capacity is held.
@@ -111,8 +115,8 @@ pub struct Call {
     pub account: AccountId,
     /// Trusted broker carrying this invocation's authority.
     pub host: Arc<dyn InvocationHost>,
-    /// Deadline from admission to delivery: [`WORKER_TIMEOUT`] for operations, longer
-    /// for job runs. A missed deadline stops the whole worker.
+    /// Execution budget: [`WORKER_TIMEOUT`] for operations, longer for job runs.
+    /// A missed deadline stops the whole worker.
     pub timeout: Duration,
     /// Cancels this invocation from outside, as `jobs.cancel` does for a job's run.
     pub cancel: Option<Arc<CancelFlag>>,
@@ -431,7 +435,13 @@ impl WorkerPool {
                         ));
                     }
                 };
-                pending.deadline = Instant::now() + pending.call.timeout;
+                let timeout = pending.call.timeout;
+                let budget = if backend.name() == "machine" && timeout == WORKER_TIMEOUT {
+                    timeout + REMOTE_WORKER_START_ALLOWANCE
+                } else {
+                    timeout
+                };
+                pending.deadline = Instant::now() + budget;
                 let execution_deadline =
                     startup_deadline.min(tokio::time::Instant::from_std(pending.deadline));
                 let (node, plugin2, bundle2, in_flight) = (

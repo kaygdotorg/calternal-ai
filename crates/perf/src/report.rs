@@ -48,6 +48,16 @@ fn human_reply(report: &Value, path: &Path) -> Reply {
     } else if report["summary"].is_object() {
         reply = metrics(reply, std::slice::from_ref(&report["summary"]));
     }
+    if let Some(counts) = report["sync_calls"].as_object() {
+        reply = reply.blank().table(
+            &["DESCRIPTOR", "SYNC CALLS"],
+            counts
+                .iter()
+                .map(|(kind, count)| vec![kind.replace('_', " "), count.to_string()])
+                .collect(),
+            "No sync calls observed.",
+        );
+    }
     if let Some(rows) = report["observations"].as_array() {
         reply = reply.blank().table(
             &["SPACES", "REPEAT", "BEFORE MiB", "AFTER MiB", "WRITERS"],

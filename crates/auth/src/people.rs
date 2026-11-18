@@ -270,15 +270,13 @@ pub(crate) fn take_one_more() -> usize {
     calternal_core::DIRECTORY_PAGE_SIZE + 1
 }
 
-pub(crate) fn page_value(key: &str, mut rows: Vec<Value>, id: &str) -> Value {
-    let next = if rows.len() == take_one_more() {
-        rows.pop();
-        rows.last().map(|row| row[id].clone())
-    } else {
-        None
-    };
-    let mut result = json!({key: rows});
-    if let Some(next) = next {
+pub(crate) fn page_value(key: &str, rows: Vec<Value>, id: &str) -> Value {
+    let page =
+        calternal_types::Page::from_lookahead(rows, calternal_core::DIRECTORY_PAGE_SIZE, |row| {
+            row[id].clone()
+        });
+    let mut result = json!({key: page.rows});
+    if let Some(next) = page.next {
         result["next_cursor"] = next;
     }
     result
@@ -296,7 +294,7 @@ fn fill_members(c: &Connection, group: &mut Value, after: Option<AccountId>) -> 
         "SELECT m.user_id FROM group_members m JOIN users u ON u.id=m.user_id
          WHERE m.group_id=?1 AND m.user_id>?2 AND u.disabled_at IS NULL ORDER BY m.user_id LIMIT ?3",
     ).map_err(sql)?;
-    let mut members = stmt
+    let members = stmt
         .query_map(
             params![group["group_id"].as_str(), after, take_one_more() as i64],
             |r| r.get::<_, String>(0),
@@ -304,11 +302,15 @@ fn fill_members(c: &Connection, group: &mut Value, after: Option<AccountId>) -> 
         .map_err(sql)?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(sql)?;
-    if members.len() == take_one_more() {
-        members.pop();
-        group["members_next_cursor"] = json!(members.last());
+    let page = calternal_types::Page::from_lookahead(
+        members,
+        calternal_core::DIRECTORY_PAGE_SIZE,
+        String::clone,
+    );
+    if let Some(next) = page.next {
+        group["members_next_cursor"] = json!(next);
     }
-    group["members"] = json!(members);
+    group["members"] = json!(page.rows);
     Ok(())
 }
 

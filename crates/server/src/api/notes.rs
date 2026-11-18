@@ -1,88 +1,15 @@
-//! Native Notes handlers called after the operation gate.
+//! Native Notes mutations called after the operation gate.
 use super::*;
-use calternal_core::{
-    NoteMatch, NotePrefixInput, NotesListInput, NotesListResult, NotesLookupResult, SpaceInput,
-    TagCount, TagsResult,
-};
-
-pub(super) async fn discover<D: Directory>(
-    state: &Shared<D>,
-    op: &str,
-    input: JsonObject,
-) -> Result<Value, Error> {
-    match op {
-        "trash.list" => {
-            let i: SpaceInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let notes = blocking(state, move |s| {
-                s.content()
-                    .list_trash(space, "notes", 100)
-                    .map(|rows| rows.into_iter().map(crate::store::note_summary).collect())
-            })
-            .await?;
-            to_value(NotesListResult { notes })
-        }
-        "notes.list" => {
-            let i: NotesListInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let notes = blocking(state, move |s| {
-                if let Some(tag) = i.tag {
-                    s.content()
-                        .discover(space, "notes", None, Some(&tag))
-                        .map(|rows| rows.into_iter().map(crate::store::note_summary).collect())
-                } else {
-                    s.list(space, 100)
-                }
-            })
-            .await?;
-            to_value(NotesListResult { notes })
-        }
-        "notes.lookup" => {
-            let i: NotePrefixInput = decode(input)?;
-            let space = space_of(&i.space_id)?;
-            let prefix = crate::notes::title_key(&i.prefix);
-            let notes = blocking(state, move |s| {
-                s.content()
-                    .discover(space, "notes", Some(&prefix), None)
-                    .map(|rows| {
-                        rows.into_iter()
-                            .map(|i| NoteMatch {
-                                link_target: crate::notes::link_target(&i.path),
-                                note: crate::store::note_summary(i),
-                            })
-                            .collect()
-                    })
-            })
-            .await?;
-            to_value(NotesLookupResult { notes })
-        }
-        _ => {
-            let (space, prefix) = if op == "tags.list" {
-                let i: SpaceInput = decode(input)?;
-                (space_of(&i.space_id)?, String::new())
-            } else {
-                let i: NotePrefixInput = decode(input)?;
-                (space_of(&i.space_id)?, i.prefix)
-            };
-            let tags = blocking(state, move |s| s.content().labels(space, "notes", &prefix))
-                .await?
-                .into_iter()
-                .map(|(name, count)| TagCount { name, count })
-                .collect();
-            to_value(TagsResult { tags })
-        }
-    }
-}
 
 pub(super) async fn mutate<D: Directory>(
     state: &Shared<D>,
     actor: Identity,
     rid: &str,
     op: &str,
-    mut input: JsonObject,
+    input: JsonObject,
 ) -> Result<Value, Error> {
     use calternal_core::{NoteRenameInput, NoteTarget};
-    let fp = fingerprint(op, &input);
+    let (fp, mut input) = super::request::fingerprint(op, input).await?;
     let space = space_of(
         input
             .remove("space_id")

@@ -15,8 +15,11 @@ export type Chord = string | null;
 
 /** One command the person can run. */
 export interface Command {
+  /** Stable id; the key the person's remapping is saved under. */
   id: string;
+  /** The name shown in the help sheet and the palette. */
   label: string;
+  /** The help sheet section it is listed in. */
   group: "Navigation" | "Threads" | "Help";
   /** Where it applies, in plain words, shown in the help sheet. */
   where: string;
@@ -26,6 +29,7 @@ export interface Command {
   run: () => boolean | void;
 }
 
+/** Whether this device uses ⌘ as its command key (Mac, iPhone, iPad); decides `Mod` and the symbols shown. Read once at load, so it is false when rendered without a browser. */
 export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 const KEY = "cal.shortcuts";

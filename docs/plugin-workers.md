@@ -33,13 +33,16 @@ outbound frames, 64 session events, and 16 input frames per exec at each machine
 transport stage; exec output retains the existing bounded back-pressure.
 
 Admission has a separate 10-second deadline covering prior cleanup, capacity
-and controller setup. After capacity is reserved, the invocation deadline also
-bounds cold launch and queueing. A timed-out launch is detached and holds its
-permits until cleanup; it never receives the cancelled invocation.
+and controller setup. After capacity is reserved, a fresh enrolled worker has
+six seconds to start and answer its first interactive call. That includes a
+three-second startup allowance rounded up from the
+[measured dev-01 p99](reviews/dev-e2e-2026-11-17.md#enrolled-worker-cold-starts-on-dev-01).
+A timed-out launch is detached and holds its permits until cleanup. It never
+receives the cancelled invocation.
 
 A worker idles out after 60 seconds without an invocation, even if it emits
-unsolicited output. Operations have a 3-second deadline; job run invocations keep
-the existing 600-second checkpoint deadline. Sessions retire after 4096 calls.
+unsolicited output. Warm operations have a three-second deadline. Job runs
+keep the 600-second checkpoint deadline. Sessions retire after 4096 calls.
 Malformed/oversized output, process death or a deadline ends the worker and
 returns a safe `unavailable` error to all affected callers. The next call starts
 a clean worker; uncertain operations are never replayed automatically. Cancellation

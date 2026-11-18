@@ -33,10 +33,9 @@ Capability: groups.manage.
   "properties": {
     "cursor": {
       "description": "Use the group list cursor or, with `group_id`, its member cursor.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "maxLength": 524288,
+      "minLength": 1,
+      "type": "string"
     },
     "group_id": {
       "description": "Group UUID when reading one group's members.",

@@ -199,6 +199,7 @@ PRAGMA user_version=2;COMMIT;").map_err(internal)?;
         d: &impl Directory,
         p: &Identity,
     ) -> Result<(), Error> {
+        let before = c.total_changes();
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(internal)?;
@@ -240,7 +241,12 @@ PRAGMA user_version=2;COMMIT;").map_err(internal)?;
                 self.set_state(&tx, &mut row, "confirmation_required")?;
             }
         }
-        tx.commit().map_err(internal)
+        let changed = tx.total_changes() > before;
+        tx.commit().map_err(internal)?;
+        if changed {
+            self.wakes.committed(p.id);
+        }
+        Ok(())
     }
     pub(super) fn head(c: &Connection) -> Result<String, Error> {
         Ok(c.query_row(
@@ -302,6 +308,7 @@ impl Inputs {
             return Ok(());
         }
         let mut c = self.open(id)?;
+        let before = c.total_changes();
         let tx = c
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(internal)?;
@@ -312,7 +319,12 @@ impl Inputs {
         {
             self.change(&tx)?;
         }
-        tx.commit().map_err(internal)
+        let changed = tx.total_changes() > before;
+        tx.commit().map_err(internal)?;
+        if changed {
+            self.wakes.committed(id);
+        }
+        Ok(())
     }
 }
 

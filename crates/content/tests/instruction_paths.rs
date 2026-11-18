@@ -85,6 +85,9 @@ fn kinds_cannot_claim_write_or_replay_the_reserved_instruction_path() {
             |i| json!({"id":i.id}),
         )
         .unwrap();
+    // Finish the baseline placement before deliberately corrupting its intent;
+    // the background worker must not race the test-only direct SQLite mutation.
+    content.materialize(space, ordinary.id).unwrap();
     let db = rusqlite::Connection::open(
         dir.path()
             .join("appdata/spaces")

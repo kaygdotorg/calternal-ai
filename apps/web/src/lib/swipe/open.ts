@@ -16,11 +16,13 @@ export function shutOpenRow(animate = true) {
   open?.shut(animate);
 }
 
+/** Registers `next` as the one open row and starts watching for the tap or scroll that shuts it; cheap, and the listeners go away in `markShut`. */
 export function markOpen(next: Open) {
   open = next;
   unwatch ??= watchOutside();
 }
 
+/** Forgets `node` as the open row and drops the outside listeners; does nothing for a row that is not the open one. */
 export function markShut(node: HTMLElement) {
   if (open?.node !== node) return;
   open = null;

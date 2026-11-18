@@ -37,6 +37,16 @@ async fn address(f: &Fixture, who: usize, id: &Value) -> Value {
     data(f.op(who, "resolve", json!({"kind":"notes","id":id})).await)
 }
 
+async fn wait_for_placement(path: &Path) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !path.is_file() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("note placement should finish after save acknowledgment");
+}
+
 #[tokio::test]
 async fn notes_index_and_trash_follow_the_current_space_and_head() {
     let f = Fixture::new().await;
@@ -54,7 +64,7 @@ async fn notes_index_and_trash_follow_the_current_space_and_head() {
     let trashed = paths
         .join(".trash")
         .join(format!("{}.md", id.as_str().unwrap()));
-    assert!(old.is_file());
+    wait_for_placement(&old).await;
     let visible = data(f.op(2, "tags.list", tags(space)).await);
     assert_eq!(
         visible["tags"],
@@ -226,6 +236,8 @@ async fn notes_moves_recover_after_the_file_move_before_placement_bookkeeping() 
     let original = paths.join("Notes/Secret.md");
     let trashed = paths.join(".trash").join(format!("{id}.md"));
     let fault = f.dir.path().join("content-fault");
+    // Arm the move fault only after the initial save has placed its file.
+    wait_for_placement(&original).await;
 
     for (op, expected, moved, old, rid) in [
         (

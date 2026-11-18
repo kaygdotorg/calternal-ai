@@ -1,13 +1,29 @@
 //! One physically space-bound metadata/history database, with no space predicates.
 use crate::types::{internal, missing};
-use crate::{Error, Item, Result, SpaceId, Summary};
+use crate::{Error, Item, Result, SpaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
 use std::{
+    cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
 };
 use uuid::Uuid;
+
+/// Shared eviction ceiling for per-space kind/name caches; eviction affects cost only.
+pub(crate) const KIND_CACHE: usize = 32;
+
+/// One current revision's header, loaded under the selected space lock. Reused
+/// for admission, the outside-edit guard and placement; contains no body bytes.
+pub(crate) struct Header {
+    pub(crate) kind: String,
+    pub(crate) revision: String,
+    pub(crate) seq: i64,
+    pub(crate) path: String,
+    pub(crate) state: String,
+    pub(crate) file_hash: Option<String>,
+    pub(crate) old_path: Option<String>,
+}
 
 pub(crate) struct Space {
     pub(crate) id: SpaceId,
@@ -15,6 +31,11 @@ pub(crate) struct Space {
     pub(crate) journal: calternal_store::SpaceStore,
     pub(crate) conn: Connection,
     pub(crate) files: PathBuf,
+    /// Oldest acknowledged head awaiting file durability; never reset by new writes.
+    pub(crate) pending_since: Option<std::time::Instant>,
+    /// Immutable kind definitions, shared by validation, naming and placement;
+    /// bounded like the existing name cache and dropped with this space.
+    pub(crate) registrations: RefCell<HashMap<String, (crate::Placement, crate::FileFormat)>>,
     pub(crate) names: HashMap<String, calternal_fsio::names::DirectoryNames>,
 }
 pub(crate) fn database(path: &Path) -> Result<Connection> {
@@ -83,8 +104,34 @@ impl Space {
             conn,
             files: userdata_ssd.join("spaces").join(id.to_string()),
             names: HashMap::new(),
+            registrations: RefCell::new(HashMap::new()),
+            pending_since: None,
         })
     }
+    /// Load one indexed header without body or file reads. Missing items fail;
+    /// callers decide whether Trash/purge states are visible for their operation.
+    pub(crate) fn header(&self, id: Uuid) -> Result<Header> {
+        self.conn
+            .query_row(
+                "SELECT kind,revision,seq,path,mat_state,file_hash,old_path FROM items WHERE id=?1",
+                [id.to_string()],
+                |r| {
+                    Ok(Header {
+                        kind: r.get(0)?,
+                        revision: r.get(1)?,
+                        seq: r.get(2)?,
+                        path: r.get(3)?,
+                        state: r.get(4)?,
+                        file_hash: r.get(5)?,
+                        old_path: r.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(internal)?
+            .ok_or_else(missing)
+    }
+
     pub(crate) fn get(&self, id: Uuid) -> Result<Item> {
         self.get_selected(id, false)
     }
@@ -99,37 +146,6 @@ impl Space {
             revision: row.3,
             updated_at: row.4,
         })
-    }
-    pub(crate) fn list(&self, kind: &str, limit: u32, trashed: bool) -> Result<Vec<Summary>> {
-        let mut stmt = self.conn.prepare_cached(if trashed {
-            "SELECT id,metadata,revision,updated_at,path FROM items WHERE kind=?1 AND substr(path,1,7) = '.trash/' AND mat_state NOT IN ('purging','purged') ORDER BY updated_at DESC,id LIMIT ?2"
-        } else {
-            "SELECT id,metadata,revision,updated_at,path FROM items WHERE kind=?1 AND substr(path,1,7) <> '.trash/' ORDER BY updated_at DESC,id LIMIT ?2"
-        }).map_err(internal)?;
-        let rows = stmt
-            .query_map(params![kind, limit.min(1000)], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
-                    r.get::<_, String>(4)?,
-                ))
-            })
-            .map_err(internal)?;
-        rows.map(|row| {
-            let (id, metadata, revision, updated_at, path) = row.map_err(internal)?;
-            Ok(Summary {
-                id: Uuid::parse_str(&id).map_err(internal)?,
-                space: self.id,
-                kind: kind.into(),
-                path,
-                metadata: serde_json::from_str(&metadata).map_err(internal)?,
-                revision,
-                updated_at,
-            })
-        })
-        .collect()
     }
     pub(crate) fn history(
         &self,
@@ -170,7 +186,7 @@ impl Space {
                 ))
             })
             .map_err(internal)?;
-        let mut versions: Vec<Item> = rows
+        let versions: Vec<Item> = rows
             .map(|row| {
                 let (meta, bytes, revision, updated_at) = row.map_err(internal)?;
                 Ok(Item {
@@ -184,13 +200,22 @@ impl Space {
                 })
             })
             .collect::<Result<_>>()?;
-        let more = versions.len() > limit as usize;
-        versions.truncate(limit as usize);
-        let cursor = if more {
-            versions.last().map(|v| format!("h{}", v.revision))
-        } else {
-            None
-        };
-        Ok((versions, cursor))
+        let page = calternal_types::Page::from_lookahead(versions, limit as usize, |v| {
+            format!("h{}", v.revision)
+        });
+        Ok((page.rows, page.next))
     }
+}
+
+/// Replayable bookkeeping never owns original bytes. NORMAL may lose these
+/// changes after power loss; durable intents and file hashes make replay safe.
+/// Always restore FULL before admitting another content/history transaction.
+pub(crate) fn bookkeeping(conn: &Connection, run: impl FnOnce() -> Result<()>) -> Result<()> {
+    conn.pragma_update(None, "synchronous", "NORMAL")
+        .map_err(internal)?;
+    let result = run();
+    let restored = conn
+        .pragma_update(None, "synchronous", "FULL")
+        .map_err(internal);
+    restored.and(result)
 }

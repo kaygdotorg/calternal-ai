@@ -119,6 +119,18 @@ impl Reply {
         });
         self
     }
+    /// Show the continuation as a copyable labelled field in human output.
+    /// Leaves the response data intact and only replaces the hint on a partial page.
+    pub fn page_cursor(self) -> Self {
+        if let Some(cursor) = self.json["next_cursor"].as_str().map(str::to_owned) {
+            self.blank()
+                .fields([("next cursor", cursor)])
+                .hint("Next: repeat with the same arguments and --cursor.")
+        } else {
+            self
+        }
+    }
+
     /// Add one short next-step hint for terminal human output.
     ///
     /// The hint is omitted from JSON and from piped output. Calling this more

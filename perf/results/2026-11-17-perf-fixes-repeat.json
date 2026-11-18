@@ -1,0 +1,1585 @@
+{
+  "baseline_commit": "f484570",
+  "baseline_plugins": "/home/kayg/calternal-ai-perf/perf-fixes-final/plugins-baseline",
+  "binary_sha256": "f5df68d453aba06f8712348ff7386a3b6163621600d19c53af78ca35b8a8dda2  /home/kayg/calternal-ai-perf/perf-fixes-final/bin/calternal-final\n4704638272f60bcea2ad3b0ef9cb8a89e5dab799b11970c2eaa97fbfb35d41ed  /home/kayg/calternal-ai-perf/perf-fixes-startup/bin/calternal\n19654337071f74bd1942dd7eb82accc8346ba2f2edc5956ca8840a4675423dc0  /home/kayg/calternal-ai-perf/perf-fixes-final/bin/calternal-perf-final\n",
+  "cache": "cold pairs drop OS caches; warm pairs retain OS caches",
+  "cold_pairs": 3,
+  "commit": "0126438",
+  "failures": [],
+  "machine": "Linux calternal-perf-01-backup01 6.12.115+deb13.1-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.115-2 (2026-11-01) x86_64 GNU/Linux\nArchitecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  4\nOn-line CPU(s) list:                     0-3\nVendor ID:                               AuthenticAMD\nModel name:                              AMD Ryzen 7 3700X 8-Core Processor\nCPU family:                              23\nModel:                                   113\nThread(s) per core:                      1\nCore(s) per socket:                      4\nSocket(s):                               1\nStepping:                                0\nBogoMIPS:                                7186.49\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm rep_good nopl xtopology cpuid extd_apicid tsc_known_freq pni pclmulqdq ssse3 fma cx16 sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy svm cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw perfctr_core ssbd ibpb stibp vmmcall fsgsbase tsc_adjust bmi1 avx2 smep bmi2 rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 clzero xsaveerptr wbnoinvd arat npt lbrv nrip_save tsc_scale vmcb_clean flushbyasid pausefilter pfthreshold v_vmsave_vmload vgif umip rdpid overflow_recov succor\nVirtualization:                          AMD-V\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               256 KiB (4 instances)\nL1i cache:                               256 KiB (4 instances)\nL2 cache:                                2 MiB (4 instances)\nL3 cache:                                64 MiB (4 instances)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-3\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; untrained return thunk; SMT disabled\nVulnerability Spec rstack overflow:      Mitigation; SMT disabled\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n               total        used        free      shared  buff/cache   available\nMem:      8262774784  1299877888  6319882240   600051712  1511276544  6962896896\nSwap:              0           0           0\nTARGET SOURCE    FSTYPE OPTIONS\n/      /dev/sda1 ext4   rw,relatime,discard,errors=remount-ro\nNAME      SIZE ROTA FSTYPE  MOUNTPOINTS\nsda       400G    0         \n├─sda1  399.9G    0 ext4    /\n├─sda14     3M    0         \n└─sda15   124M    0 vfat    /boot/efi\nsdb       100G    1         \n└─sdb1    100G    1 xfs     /srv/homes\nsr0         4M    1 iso9660 \n",
+  "noise_pct": {
+    "1000x100/baseline/cold/account.draft_save_ack": 1.8144078540275297,
+    "1000x100/baseline/cold/account.draft_write_to_feed": 2.0563499550938427,
+    "1000x100/baseline/cold/auth.session": 3.207599326514713,
+    "1000x100/baseline/cold/live.update_to_client": 1.0475689812254976,
+    "1000x100/baseline/cold/memory.1000_spaces.after_2s": 16.450109105336242,
+    "1000x100/baseline/cold/notes.get": 4.469708172495898,
+    "1000x100/baseline/cold/notes.list.first100": 5.370334052428581,
+    "1000x100/baseline/cold/notes.update": 0.9939301412114493,
+    "1000x100/baseline/cold/receipt.round_trip": 0.3356514644877225,
+    "1000x100/baseline/cold/resolve": 7.258849032179016,
+    "1000x100/baseline/cold/space.process_cold_open": 0.9990378582316534,
+    "1000x100/baseline/cold/startup.1000_spaces": 19.199962975988747,
+    "1000x100/baseline/cold/userdata.write_to_durable_file": 0.9963341073054757,
+    "1000x100/baseline/warm/account.draft_save_ack": 2.1659587275789347,
+    "1000x100/baseline/warm/account.draft_write_to_feed": 1.5924627427698663,
+    "1000x100/baseline/warm/auth.session": 7.3669586104763845,
+    "1000x100/baseline/warm/live.update_to_client": 6.706946702140009,
+    "1000x100/baseline/warm/memory.1000_spaces.after_2s": 26.22030022865096,
+    "1000x100/baseline/warm/notes.get": 7.022985561425435,
+    "1000x100/baseline/warm/notes.list.first100": 9.009458928076649,
+    "1000x100/baseline/warm/notes.update": 6.76392492778822,
+    "1000x100/baseline/warm/receipt.round_trip": 6.937075777001676,
+    "1000x100/baseline/warm/resolve": 9.40350691717515,
+    "1000x100/baseline/warm/space.process_cold_open": 16.799593115021604,
+    "1000x100/baseline/warm/startup.1000_spaces": 8.851356145601763,
+    "1000x100/baseline/warm/userdata.write_to_durable_file": 6.813077936723377,
+    "1000x100/head/cold/account.draft_save_ack": 6.151036253981245,
+    "1000x100/head/cold/account.draft_write_to_feed": 5.771437631554652,
+    "1000x100/head/cold/auth.session": 5.182657663031797,
+    "1000x100/head/cold/live.update_to_client": 1.459943936715115,
+    "1000x100/head/cold/memory.1000_spaces.after_2s": 7.538126361655773,
+    "1000x100/head/cold/notes.get": 4.183735727359879,
+    "1000x100/head/cold/notes.list.first100": 5.562474996882192,
+    "1000x100/head/cold/notes.update": 1.2850771316320495,
+    "1000x100/head/cold/receipt.round_trip": 8.932129645983574,
+    "1000x100/head/cold/resolve": 8.640153388010532,
+    "1000x100/head/cold/space.process_cold_open": 24.71820816222024,
+    "1000x100/head/cold/startup.1000_spaces": 9.467622502335221,
+    "1000x100/head/cold/userdata.write_to_durable_file": 1.0068910772714759,
+    "1000x100/head/warm/account.draft_save_ack": 1.9335263896565873,
+    "1000x100/head/warm/account.draft_write_to_feed": 1.5955204822102584,
+    "1000x100/head/warm/auth.session": 4.981732050900936,
+    "1000x100/head/warm/live.update_to_client": 4.774037546003275,
+    "1000x100/head/warm/memory.1000_spaces.after_2s": 0.29110568175911006,
+    "1000x100/head/warm/notes.get": 4.094829677206533,
+    "1000x100/head/warm/notes.list.first100": 3.1882411989163986,
+    "1000x100/head/warm/notes.update": 5.965609751647171,
+    "1000x100/head/warm/receipt.round_trip": 11.029167755620513,
+    "1000x100/head/warm/resolve": 3.9300017608206175,
+    "1000x100/head/warm/space.process_cold_open": 15.131480068729191,
+    "1000x100/head/warm/startup.1000_spaces": 24.859365013400883,
+    "1000x100/head/warm/userdata.write_to_durable_file": 4.418618537524917
+  },
+  "operation_concurrency": 1,
+  "plugins": "/home/kayg/calternal-ai-perf/perf-fixes-final/plugins",
+  "qualification": "incomplete: admission, commit timestamp and three-host-call worker; see separate job and idle suites",
+  "reproduced_breach": true,
+  "runs": [
+    {
+      "arm": "baseline",
+      "cache": "disk-cold",
+      "pair": 0,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 25.073876,
+          "metric": "account.draft_save_ack",
+          "p50": 14.390663,
+          "p95": 22.826749,
+          "p99": 23.331971,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 253.583846,
+          "metric": "account.draft_write_to_feed",
+          "p50": 32.469553999999995,
+          "p95": 252.976184,
+          "p99": 253.259008,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.524278,
+          "metric": "auth.session",
+          "p50": 0.194687,
+          "p95": 0.229663,
+          "p99": 0.455179,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 64.659977,
+          "metric": "live.update_to_client",
+          "p50": 41.877063,
+          "p95": 57.437626,
+          "p99": 61.207744,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 74.62890625,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 74.62890625,
+          "p95": 74.62890625,
+          "p99": 74.62890625,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.013952,
+          "metric": "notes.get",
+          "p50": 0.381479,
+          "p95": 0.49026500000000006,
+          "p99": 0.596525,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.835815,
+          "metric": "notes.list.first100",
+          "p50": 0.579573,
+          "p95": 0.683119,
+          "p99": 0.750364,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 64.67235000000001,
+          "metric": "notes.update",
+          "p50": 41.946154,
+          "p95": 57.473053,
+          "p99": 61.22176,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.923482,
+          "metric": "receipt.round_trip",
+          "p50": 0.709929,
+          "p95": 0.881112,
+          "p99": 0.915767,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.569384,
+          "metric": "resolve",
+          "p50": 0.25459099999999996,
+          "p95": 0.330543,
+          "p99": 0.457662,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 23.142198,
+          "metric": "space.process_cold_open",
+          "p50": 23.142198,
+          "p95": 23.142198,
+          "p99": 23.142198,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 1458.731236,
+          "metric": "startup.1000_spaces",
+          "p50": 1458.731236,
+          "p95": 1458.731236,
+          "p99": 1458.731236,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 67.805458,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 42.171749,
+          "p95": 57.673821,
+          "p99": 61.415596,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "disk-cold",
+      "pair": 0,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 17.410173,
+          "metric": "account.draft_save_ack",
+          "p50": 8.026513000000001,
+          "p95": 11.951459,
+          "p99": 13.918124,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 19.025457,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.196995000000001,
+          "p95": 12.589049999999999,
+          "p99": 16.625235,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.855371,
+          "metric": "auth.session",
+          "p50": 0.209545,
+          "p95": 0.277974,
+          "p99": 0.421755,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 41.414563,
+          "metric": "live.update_to_client",
+          "p50": 22.0241,
+          "p95": 37.482316000000004,
+          "p99": 40.91883,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 80.68359375,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 80.68359375,
+          "p95": 80.68359375,
+          "p99": 80.68359375,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.286714,
+          "metric": "notes.get",
+          "p50": 0.41261800000000004,
+          "p95": 0.516182,
+          "p99": 0.728924,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.841726,
+          "metric": "notes.list.first100",
+          "p50": 0.6174229999999999,
+          "p95": 0.725797,
+          "p99": 0.807181,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 37.750783000000006,
+          "metric": "notes.update",
+          "p50": 21.813381,
+          "p95": 25.634411,
+          "p99": 29.954021,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.2519689999999999,
+          "metric": "receipt.round_trip",
+          "p50": 0.768138,
+          "p95": 1.004802,
+          "p99": 1.119159,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.39725900000000003,
+          "metric": "resolve",
+          "p50": 0.253397,
+          "p95": 0.336143,
+          "p99": 0.385837,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 26.421364999999998,
+          "metric": "space.process_cold_open",
+          "p50": 26.421364999999998,
+          "p95": 26.421364999999998,
+          "p99": 26.421364999999998,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 810.469999,
+          "metric": "startup.1000_spaces",
+          "p50": 810.469999,
+          "p95": 810.469999,
+          "p99": 810.469999,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 51.247453,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 36.117936,
+          "p95": 42.558721,
+          "p99": 49.947462,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "disk-cold",
+      "pair": 1,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 12.014474,
+          "metric": "account.draft_save_ack",
+          "p50": 7.543775,
+          "p95": 10.952594,
+          "p99": 11.621724,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 12.234849,
+          "metric": "account.draft_write_to_feed",
+          "p50": 7.734704,
+          "p95": 11.089561,
+          "p99": 11.784059,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.7025129999999999,
+          "metric": "auth.session",
+          "p50": 0.206519,
+          "p95": 0.27173200000000003,
+          "p99": 0.338777,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 48.068135999999996,
+          "metric": "live.update_to_client",
+          "p50": 22.257704,
+          "p95": 38.10090700000001,
+          "p99": 45.990352,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 74.8125,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 74.8125,
+          "p95": 74.8125,
+          "p99": 74.8125,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.4722929999999999,
+          "metric": "notes.get",
+          "p50": 0.413028,
+          "p95": 0.518025,
+          "p99": 1.006927,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.138383,
+          "metric": "notes.list.first100",
+          "p50": 0.6126630000000001,
+          "p95": 0.7450319999999999,
+          "p99": 1.1256899999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 38.694344,
+          "metric": "notes.update",
+          "p50": 21.848494,
+          "p95": 30.164454,
+          "p99": 35.054821,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.197445,
+          "metric": "receipt.round_trip",
+          "p50": 0.8039740000000001,
+          "p95": 1.0326039999999999,
+          "p99": 1.075636,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.419962,
+          "metric": "resolve",
+          "p50": 0.264949,
+          "p95": 0.346832,
+          "p99": 0.387059,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 24.821060999999997,
+          "metric": "space.process_cold_open",
+          "p50": 24.821060999999997,
+          "p95": 24.821060999999997,
+          "p99": 24.821060999999997,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 881.144631,
+          "metric": "startup.1000_spaces",
+          "p50": 881.144631,
+          "p95": 881.144631,
+          "p99": 881.144631,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 71.384763,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 36.213350999999996,
+          "p95": 49.861954,
+          "p99": 62.206308,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "disk-cold",
+      "pair": 1,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 34.714953,
+          "metric": "account.draft_save_ack",
+          "p50": 14.607741,
+          "p95": 24.060641,
+          "p99": 31.954138,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 253.992096,
+          "metric": "account.draft_write_to_feed",
+          "p50": 33.072289,
+          "p95": 253.28398099999998,
+          "p99": 253.833172,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.5977349999999999,
+          "metric": "auth.session",
+          "p50": 0.198965,
+          "p95": 0.257114,
+          "p99": 0.575151,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 64.337694,
+          "metric": "live.update_to_client",
+          "p50": 42.062242,
+          "p95": 49.383630999999994,
+          "p99": 62.729921999999995,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 78.765625,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 78.765625,
+          "p95": 78.765625,
+          "p99": 78.765625,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.1434920000000002,
+          "metric": "notes.get",
+          "p50": 0.392218,
+          "p95": 0.535628,
+          "p99": 0.760221,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.309976,
+          "metric": "notes.list.first100",
+          "p50": 0.612433,
+          "p95": 0.78624,
+          "p99": 0.923829,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 64.488278,
+          "metric": "notes.update",
+          "p50": 42.093401,
+          "p95": 49.488609000000004,
+          "p99": 62.711639,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.1018340000000002,
+          "metric": "receipt.round_trip",
+          "p50": 0.708473,
+          "p95": 0.892449,
+          "p99": 0.9769180000000001,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.37171,
+          "metric": "resolve",
+          "p50": 0.261102,
+          "p95": 0.330814,
+          "p99": 0.370909,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 23.375494,
+          "metric": "space.process_cold_open",
+          "p50": 23.375494,
+          "p95": 23.375494,
+          "p99": 23.375494,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 1744.6977540000003,
+          "metric": "startup.1000_spaces",
+          "p50": 1744.6977540000003,
+          "p95": 1744.6977540000003,
+          "p99": 1744.6977540000003,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 64.752285,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 42.307294,
+          "p95": 49.6809,
+          "p99": 62.910011000000004,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "disk-cold",
+      "pair": 2,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 30.99402,
+          "metric": "account.draft_save_ack",
+          "p50": 14.655707,
+          "p95": 25.191755,
+          "p99": 30.445768,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 253.854193,
+          "metric": "account.draft_write_to_feed",
+          "p50": 33.149636,
+          "p95": 253.301263,
+          "p99": 253.84478900000002,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.6047370000000001,
+          "metric": "auth.session",
+          "p50": 0.201069,
+          "p95": 0.26574,
+          "p99": 0.357543,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 69.944994,
+          "metric": "live.update_to_client",
+          "p50": 42.317694,
+          "p95": 56.983391000000005,
+          "p99": 67.247318,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 87.5859375,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 87.5859375,
+          "p95": 87.5859375,
+          "p99": 87.5859375,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.07386,
+          "metric": "notes.get",
+          "p50": 0.39901,
+          "p95": 0.503027,
+          "p99": 0.763196,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.911465,
+          "metric": "notes.list.first100",
+          "p50": 0.61188,
+          "p95": 0.75007,
+          "p99": 0.788583,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 69.96499200000001,
+          "metric": "notes.update",
+          "p50": 42.364533,
+          "p95": 56.993679,
+          "p99": 67.23693,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.0990570000000002,
+          "metric": "receipt.round_trip",
+          "p50": 0.7075509999999999,
+          "p95": 0.855329,
+          "p99": 1.051277,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.35630999999999996,
+          "metric": "resolve",
+          "p50": 0.273544,
+          "p95": 0.330221,
+          "p99": 0.352753,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 23.352068,
+          "metric": "space.process_cold_open",
+          "p50": 23.352068,
+          "p95": 23.352068,
+          "p99": 23.352068,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 1489.41182,
+          "metric": "startup.1000_spaces",
+          "p50": 1489.41182,
+          "p95": 1489.41182,
+          "p99": 1489.41182,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 70.19327,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 42.593271,
+          "p95": 57.21683,
+          "p99": 67.436835,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "disk-cold",
+      "pair": 2,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 17.968363,
+          "metric": "account.draft_save_ack",
+          "p50": 7.848076000000001,
+          "p95": 11.539005,
+          "p99": 15.49844,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 18.503189,
+          "metric": "account.draft_write_to_feed",
+          "p50": 8.00998,
+          "p95": 11.880197,
+          "p99": 15.880137999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.644943,
+          "metric": "auth.session",
+          "p50": 0.217379,
+          "p95": 0.289213,
+          "p99": 0.338756,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 41.488458,
+          "metric": "live.update_to_client",
+          "p50": 22.34905,
+          "p95": 35.835398,
+          "p99": 39.816702,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 80.89453125,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 80.89453125,
+          "p95": 80.89453125,
+          "p99": 80.89453125,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.182243,
+          "metric": "notes.get",
+          "p50": 0.429898,
+          "p95": 0.596491,
+          "p99": 0.747687,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.911846,
+          "metric": "notes.list.first100",
+          "p50": 0.647007,
+          "p95": 0.783653,
+          "p99": 0.825723,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 41.546015,
+          "metric": "notes.update",
+          "p50": 22.094151,
+          "p95": 30.944992000000003,
+          "p99": 39.397234000000005,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.61649,
+          "metric": "receipt.round_trip",
+          "p50": 0.83995,
+          "p95": 1.067177,
+          "p99": 1.098345,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.5282830000000001,
+          "metric": "resolve",
+          "p50": 0.276289,
+          "p95": 0.359916,
+          "p99": 0.375517,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 31.351948999999998,
+          "metric": "space.process_cold_open",
+          "p50": 31.351948999999998,
+          "p95": 31.351948999999998,
+          "p99": 31.351948999999998,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 804.412391,
+          "metric": "startup.1000_spaces",
+          "p50": 804.412391,
+          "p95": 804.412391,
+          "p99": 804.412391,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 66.699309,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 36.482565,
+          "p95": 51.357873999999995,
+          "p99": 62.411756,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "warm",
+      "pair": 3,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 11.637112,
+          "metric": "account.draft_save_ack",
+          "p50": 7.537006,
+          "p95": 9.615953,
+          "p99": 11.067321,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 11.822711,
+          "metric": "account.draft_write_to_feed",
+          "p50": 7.717795000000001,
+          "p95": 9.726220000000001,
+          "p99": 11.195261,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.379965,
+          "metric": "auth.session",
+          "p50": 0.21349100000000001,
+          "p95": 0.26184199999999996,
+          "p99": 0.327225,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 41.010783,
+          "metric": "live.update_to_client",
+          "p50": 22.233738,
+          "p95": 36.901588,
+          "p99": 39.048943,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 75.14453125,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 75.14453125,
+          "p95": 75.14453125,
+          "p99": 75.14453125,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 2.981824,
+          "metric": "notes.get",
+          "p50": 0.412276,
+          "p95": 0.521571,
+          "p99": 0.6497919999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.85754,
+          "metric": "notes.list.first100",
+          "p50": 0.6280800000000001,
+          "p95": 0.8055939999999999,
+          "p99": 1.190618,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 40.960919,
+          "metric": "notes.update",
+          "p50": 22.031478,
+          "p95": 30.022688,
+          "p99": 38.381318,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.964693,
+          "metric": "receipt.round_trip",
+          "p50": 0.843295,
+          "p95": 1.0779859999999999,
+          "p99": 1.299973,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.417936,
+          "metric": "resolve",
+          "p50": 0.26692099999999996,
+          "p95": 0.373171,
+          "p99": 0.402987,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 15.436314,
+          "metric": "space.process_cold_open",
+          "p50": 15.436314,
+          "p95": 15.436314,
+          "p99": 15.436314,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 300.474319,
+          "metric": "startup.1000_spaces",
+          "p50": 300.474319,
+          "p95": 300.474319,
+          "p99": 300.474319,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 62.815523,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 36.542462,
+          "p95": 45.678574,
+          "p99": 57.410877,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "warm",
+      "pair": 3,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 25.358700000000002,
+          "metric": "account.draft_save_ack",
+          "p50": 14.55967,
+          "p95": 23.428071000000003,
+          "p99": 24.665177,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 254.04285399999998,
+          "metric": "account.draft_write_to_feed",
+          "p50": 32.850309,
+          "p95": 253.01141900000002,
+          "p99": 253.538165,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.369434,
+          "metric": "auth.session",
+          "p50": 0.18718200000000002,
+          "p95": 0.24486000000000002,
+          "p99": 0.36510600000000004,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 64.798262,
+          "metric": "live.update_to_client",
+          "p50": 41.803352000000004,
+          "p95": 53.839761,
+          "p99": 60.111866,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 78.5859375,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 78.5859375,
+          "p95": 78.5859375,
+          "p99": 78.5859375,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 0.587063,
+          "metric": "notes.get",
+          "p50": 0.37033600000000005,
+          "p95": 0.460575,
+          "p99": 0.524215,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.7620119999999999,
+          "metric": "notes.list.first100",
+          "p50": 0.562898,
+          "p95": 0.671541,
+          "p99": 0.72933,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 64.74279800000001,
+          "metric": "notes.update",
+          "p50": 41.815756,
+          "p95": 53.87688,
+          "p99": 60.118298,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.898388,
+          "metric": "receipt.round_trip",
+          "p50": 0.6591290000000001,
+          "p95": 0.791798,
+          "p99": 0.874353,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.419299,
+          "metric": "resolve",
+          "p50": 0.242366,
+          "p95": 0.311275,
+          "p99": 0.375656,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 18.948297,
+          "metric": "space.process_cold_open",
+          "p50": 18.948297,
+          "p95": 18.948297,
+          "p99": 18.948297,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 1018.6759400000001,
+          "metric": "startup.1000_spaces",
+          "p50": 1018.6759400000001,
+          "p95": 1018.6759400000001,
+          "p99": 1018.6759400000001,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 64.93808399999999,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 41.993891,
+          "p95": 54.076876000000006,
+          "p99": 60.298868,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "warm",
+      "pair": 4,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 31.248103,
+          "metric": "account.draft_save_ack",
+          "p50": 14.572346,
+          "p95": 23.436087,
+          "p99": 29.098544,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 253.791418,
+          "metric": "account.draft_write_to_feed",
+          "p50": 32.953738,
+          "p95": 253.135357,
+          "p99": 253.58702399999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.78324,
+          "metric": "auth.session",
+          "p50": 0.19649899999999998,
+          "p95": 0.242385,
+          "p99": 0.417684,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 63.809777,
+          "metric": "live.update_to_client",
+          "p50": 41.833462000000004,
+          "p95": 55.104052,
+          "p99": 57.074784,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 62.2265625,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 62.2265625,
+          "p95": 62.2265625,
+          "p99": 62.2265625,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.063068,
+          "metric": "notes.get",
+          "p50": 0.394291,
+          "p95": 0.525117,
+          "p99": 0.620276,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.9579480000000002,
+          "metric": "notes.list.first100",
+          "p50": 0.617199,
+          "p95": 0.7826000000000001,
+          "p99": 0.8828090000000001,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 63.760473999999995,
+          "metric": "notes.update",
+          "p50": 41.856393,
+          "p95": 55.080157,
+          "p99": 57.077991000000004,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.5281909999999999,
+          "metric": "receipt.round_trip",
+          "p50": 0.694947,
+          "p95": 0.87339,
+          "p99": 0.9751719999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.447981,
+          "metric": "resolve",
+          "p50": 0.264848,
+          "p95": 0.338826,
+          "p99": 0.43750100000000003,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 16.119222,
+          "metric": "space.process_cold_open",
+          "p50": 16.119222,
+          "p95": 16.119222,
+          "p99": 16.119222,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 941.668504,
+          "metric": "startup.1000_spaces",
+          "p50": 941.668504,
+          "p95": 941.668504,
+          "p99": 941.668504,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 64.009281,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 42.096304,
+          "p95": 55.31073,
+          "p99": 57.290028,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "warm",
+      "pair": 4,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 15.817268999999998,
+          "metric": "account.draft_save_ack",
+          "p50": 7.477696,
+          "p95": 10.968753,
+          "p99": 12.172853000000002,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 16.035519,
+          "metric": "account.draft_write_to_feed",
+          "p50": 7.6777310000000005,
+          "p95": 11.264478,
+          "p99": 12.278621999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.219199,
+          "metric": "auth.session",
+          "p50": 0.203101,
+          "p95": 0.264017,
+          "p99": 0.37223,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 42.445927000000005,
+          "metric": "live.update_to_client",
+          "p50": 22.166124,
+          "p95": 35.453160999999994,
+          "p99": 40.725024,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 74.9296875,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 74.9296875,
+          "p95": 74.9296875,
+          "p99": 74.9296875,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.28813,
+          "metric": "notes.get",
+          "p50": 0.398318,
+          "p95": 0.497685,
+          "p99": 0.639031,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.173945,
+          "metric": "notes.list.first100",
+          "p50": 0.608261,
+          "p95": 0.733418,
+          "p99": 0.87322,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 35.271601,
+          "metric": "notes.update",
+          "p50": 21.775541,
+          "p95": 27.338189,
+          "p99": 30.378709,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 2.4231119999999997,
+          "metric": "receipt.round_trip",
+          "p50": 0.7525630000000001,
+          "p95": 0.9990559999999999,
+          "p99": 1.5182520000000002,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.49448899999999996,
+          "metric": "resolve",
+          "p50": 0.262313,
+          "p95": 0.350738,
+          "p99": 0.48943900000000007,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 16.128224,
+          "metric": "space.process_cold_open",
+          "p50": 16.128224,
+          "p95": 16.128224,
+          "p99": 16.128224,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 320.64531800000003,
+          "metric": "startup.1000_spaces",
+          "p50": 320.64531800000003,
+          "p95": 320.64531800000003,
+          "p99": 320.64531800000003,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 62.435832,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 35.949282,
+          "p95": 45.758196,
+          "p99": 54.385391,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "head",
+      "cache": "warm",
+      "pair": 5,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 13.311388,
+          "metric": "account.draft_save_ack",
+          "p50": 7.623426,
+          "p95": 10.518513,
+          "p99": 13.30138,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 13.446062,
+          "metric": "account.draft_write_to_feed",
+          "p50": 7.80087,
+          "p95": 10.693923,
+          "p99": 13.434669999999999,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.100247,
+          "metric": "auth.session",
+          "p50": 0.208562,
+          "p95": 0.30345,
+          "p99": 0.495261,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 55.211054000000004,
+          "metric": "live.update_to_client",
+          "p50": 23.227570999999998,
+          "p95": 40.222747000000005,
+          "p99": 46.382564,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 75.1484375,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 75.1484375,
+          "p95": 75.1484375,
+          "p99": 75.1484375,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 0.619143,
+          "metric": "notes.get",
+          "p50": 0.4152,
+          "p95": 0.526019,
+          "p99": 0.600066,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.859886,
+          "metric": "notes.list.first100",
+          "p50": 0.6216280000000001,
+          "p95": 0.7575029999999999,
+          "p99": 0.787449,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 55.143527999999996,
+          "metric": "notes.update",
+          "p50": 23.089853,
+          "p95": 27.976218,
+          "p99": 29.372961,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 3.799435,
+          "metric": "receipt.round_trip",
+          "p50": 0.822655,
+          "p95": 1.079427,
+          "p99": 1.196607,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.515846,
+          "metric": "resolve",
+          "p50": 0.272803,
+          "p95": 0.345489,
+          "p99": 0.40991999999999995,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 17.876752999999997,
+          "metric": "space.process_cold_open",
+          "p50": 17.876752999999997,
+          "p95": 17.876752999999997,
+          "p99": 17.876752999999997,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 380.184709,
+          "metric": "startup.1000_spaces",
+          "p50": 380.184709,
+          "p95": 380.184709,
+          "p99": 380.184709,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 67.468262,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 37.563953999999995,
+          "p95": 43.890254,
+          "p99": 51.111225000000005,
+          "samples": 100
+        }
+      ]
+    },
+    {
+      "arm": "baseline",
+      "cache": "warm",
+      "pair": 5,
+      "size": 100,
+      "spaces": 1000,
+      "summary": [
+        {
+          "breached": false,
+          "max": 34.534260999999994,
+          "metric": "account.draft_save_ack",
+          "p50": 14.875301,
+          "p95": 27.221061000000002,
+          "p99": 32.304123999999995,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 253.923964,
+          "metric": "account.draft_write_to_feed",
+          "p50": 33.375085,
+          "p95": 253.089084,
+          "p99": 253.899796,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.385233,
+          "metric": "auth.session",
+          "p50": 0.201658,
+          "p95": 0.27515599999999996,
+          "p99": 0.340008,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 86.658786,
+          "metric": "live.update_to_client",
+          "p50": 44.6091,
+          "p95": 56.436287,
+          "p99": 58.504241,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 82.83203125,
+          "metric": "memory.1000_spaces.after_2s",
+          "p50": 82.83203125,
+          "p95": 82.83203125,
+          "p99": 82.83203125,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 1.1189209999999998,
+          "metric": "notes.get",
+          "p50": 0.398027,
+          "p95": 0.526669,
+          "p99": 0.626737,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 1.3193059999999999,
+          "metric": "notes.list.first100",
+          "p50": 0.602711,
+          "p95": 0.761429,
+          "p99": 0.8680899999999999,
+          "samples": 100
+        },
+        {
+          "breached": true,
+          "max": 86.599224,
+          "metric": "notes.update",
+          "p50": 44.646891000000004,
+          "p95": 56.40672,
+          "p99": 58.66381,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.9375,
+          "metric": "receipt.round_trip",
+          "p50": 0.7073379999999999,
+          "p95": 0.844205,
+          "p99": 0.917934,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 0.607502,
+          "metric": "resolve",
+          "p50": 0.26727100000000004,
+          "p95": 0.375506,
+          "p99": 0.40287599999999996,
+          "samples": 100
+        },
+        {
+          "breached": false,
+          "max": 16.84014,
+          "metric": "space.process_cold_open",
+          "p50": 16.84014,
+          "p95": 16.84014,
+          "p99": 16.84014,
+          "samples": 1
+        },
+        {
+          "breached": true,
+          "max": 935.3255069999999,
+          "metric": "startup.1000_spaces",
+          "p50": 935.3255069999999,
+          "p95": 935.3255069999999,
+          "p99": 935.3255069999999,
+          "samples": 1
+        },
+        {
+          "breached": false,
+          "max": 86.800011,
+          "metric": "userdata.write_to_durable_file",
+          "p50": 44.861945,
+          "p95": 56.59243,
+          "p99": 58.900295,
+          "samples": 100
+        }
+      ]
+    }
+  ],
+  "seed": 20261117,
+  "subscriptions": 2,
+  "warm_pairs": 3
+}

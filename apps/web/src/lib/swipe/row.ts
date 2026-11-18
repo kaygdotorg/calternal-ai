@@ -40,6 +40,7 @@ import { FLICK, GAP, fullAt, band, sideOf, tileLook, trayWidth, type Side, type 
 import { markOpen, markShut, shutOthers } from "./open";
 
 export type { Side, SideConf };
+/** What a swipe row is made of: the buttons on each side and what to do when a long swipe is let go. Read fresh on each touch, so it may change between swipes. */
 export type SwipeConfig = {
   /** Buttons on each side, and what a long swipe does there. */
   lead: SideConf;
@@ -72,6 +73,10 @@ function speed(samples: Sample[]) {
   return a && b && b.t > a.t ? (b.x - a.x) / (b.t - a.t) : 0;
 }
 
+/**
+ * Attaches the swipe behaviour to one row element: touch and wheel tracking, the spring on release and the open-row bookkeeping. Cost: no work while idle;
+ * during a drag one transform write per frame and the row's width read once per touch. Returns the touch, wheel and key handlers the component wires to the row and a `destroy` that stops the animation and forgets the row.
+ */
 export function createRow(node: HTMLElement, handle: RowHandle) {
   const cfg = () => handle.config();
   const content = () => node.querySelector<HTMLElement>(":scope > .ra-content")!;
@@ -434,4 +439,5 @@ export function createRow(node: HTMLElement, handle: RowHandle) {
     },
   };
 }
+/** What `createRow` returns: the event handlers to attach and `destroy`. */
 export type Row = ReturnType<typeof createRow>;

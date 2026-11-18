@@ -14,12 +14,15 @@ fn notes_commands_match_human_and_json_goldens() {
         row[field] = json!(value);
         row
     };
-    let tags = json!({"tags":[{"name":"work","count":3}]});
+    let tags = json!({"tags":[{"name":"work","count":3}],"next_cursor":"c-next"});
     for (op, data) in [
-        ("notes.list", json!({"notes":[summary.clone()]})),
+        (
+            "notes.list",
+            json!({"notes":[summary.clone()],"next_cursor":"c-next"}),
+        ),
         (
             "notes.lookup",
-            json!({"notes":[with("link_target","New Plan.md")]}),
+            json!({"notes":[with("link_target","New Plan.md")],"next_cursor":"c-next"}),
         ),
         ("notes.delete", json!({"note":summary.clone()})),
         ("notes.restore", json!({"note":summary.clone()})),
@@ -27,7 +30,10 @@ fn notes_commands_match_human_and_json_goldens() {
             "notes.rename",
             json!({"note":with("markdown","# New Plan\n")}),
         ),
-        ("trash.list", json!({"notes":[summary.clone()]})),
+        (
+            "trash.list",
+            json!({"notes":[summary.clone()],"next_cursor":"c-next"}),
+        ),
         ("trash.purge", json!({"id":summary["id"],"state":"deleted"})),
         ("tags.list", tags.clone()),
         ("tags.lookup", tags),

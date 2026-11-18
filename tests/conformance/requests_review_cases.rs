@@ -240,6 +240,19 @@ async fn unreceipted_actions_replay_success_and_spend_approval_even_on_failure()
     .await;
     assert_eq!(status, 403, "{denial}");
     let id = &denial["error"]["details"]["approval_id"];
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    let pending = inbox.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| &request["id"] == id)
+        .unwrap();
+    assert_eq!(pending["detail"]["lifetimes"], json!(["once"]));
+    let other = f.op(2, "requests.list", json!({})).await;
+    other.ok();
+    assert_eq!(other.body["data"]["requests"], json!([]));
+
     f.op(1, "requests.approve", json!({"id":id,"lifetime":"once"}))
         .await
         .ok();

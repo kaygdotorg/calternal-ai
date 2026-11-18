@@ -77,7 +77,9 @@ pub(super) fn check_view(plugin: &Plugin, value: &Value) -> Result<(), Error> {
 /// request ID and input returns the original result without invoking the worker, and
 /// different input under that ID is a conflict. The worker's own `write_item` calls
 /// carry per-call receipts, so a retry after an undelivered result replays them.
-/// Cost for mutating operations: one receipt lookup before, one journal append after.
+/// Cost: one blocking canonical-hash task without a body clone, plus worker
+/// interaction. Mutations add one receipt lookup before and one journal append
+/// after; brokered writes retain their own documented durability costs.
 ///
 /// Admission (already done by the caller) checked the manifest-derived policy.
 /// Here: the plugin must be enabled; its activation generation is captured; every
@@ -91,14 +93,14 @@ pub(super) async fn invoke_plugin<D: Directory>(
     request_id: &str,
     op: &str,
     policy: authz::Policy,
-    mut input: JsonObject,
+    input: JsonObject,
 ) -> Result<Value, Error> {
     let plugin = state
         .registry
         .owner_of_operation(op)
         .ok_or_else(|| Error::not_found("unknown operation"))?
         .clone();
-    let fp = fingerprint(op, &input);
+    let (fp, mut input) = super::request::fingerprint(op, input).await?;
     let mutates = plugin.operation(op).is_some_and(|o| o.mutates);
     let space = match input.remove("space_id") {
         Some(Value::String(space)) => space_of(&space)?,
