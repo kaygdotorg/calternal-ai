@@ -58,8 +58,25 @@ are looked up only for rows in the parked state.
   passed, including four for approval, deadlines, typed answers and
   signed webhook replay. The initial HTTP run failed until the changed
   test worker and official bundles were pinned to their generated digests.
-- The assigned dev-01 full gate is pending. No production release proof
-  or performance result has been obtained.
+- The dev-01 slot 1 run at `c5aaf3de` passed the plugin build and both
+  formatting checks. The Rust workspace passed 671 tests with 2 ignored.
+  Plugin suites passed 32 tests with 1 skipped. Both integration tests and
+  all 141 serial conformance tests passed. The generated contract and CLI
+  contract checks passed. Podman, Firecracker and provider sign-in cleanup
+  checks passed. The strict source scan reported the same 48 package
+  references as its merged baseline.
+- The initial docs run exposed an absolute target-directory issue, a missing
+  Git origin in the verification checkout and undocumented SDK fields. The
+  corrected `npm run docs:site` and `scripts/check-docs.sh` passed on dev-02
+  at `dd62cc00` with 356 documentation sources and 357 pages built. The
+  docs tip includes the subsequent account follow-up from dev. A full
+  runtime gate for that tip is pending.
+- A quoting error invoked the local docs script during retry setup. That
+  command was stopped during the SDK build and the dependency directories
+  it created were moved to the system Trash. All reported verification
+  came from the development VMs.
+- Browser Inbox rendering, the trial kit refresh, scoped reactive values,
+  and installed-package diagnostics are pending.
 
 ## Simplification opportunities
 
