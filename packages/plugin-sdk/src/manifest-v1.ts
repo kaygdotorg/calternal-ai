@@ -193,7 +193,10 @@ export function validateManifestV1(value: unknown): ManifestV1 {
     });
   }
   rows("attention", ["id", "operation"], op);
-  rows("settings", ["id", "value_type", "default"], r => { if (!["string", "boolean", "number"].includes(String(r.value_type)) || typeof r.default !== r.value_type || (typeof r.default === "number" && !Number.isFinite(r.default))) fail(); });
+  rows("settings", ["id", "value_type", "default"], r => {
+    if (!["string", "boolean", "number"].includes(String(r.value_type)) || typeof r.default !== r.value_type || (typeof r.default === "number" && !Number.isFinite(r.default))) fail();
+    if (r.scope != null && r.scope !== "space" && r.scope !== "personal") fail();
+  }, ["scope"]);
   rows("schedules", ["id", "operation", "expression"], r => { op(r); text(r.expression); });
   rows("webhooks", ["id", "operation"], op);
   rows("hooks", ["id", "mode", "patterns", "operation"], r => { op(r); if (!["watch", "block"].includes(String(r.mode)) || !Array.isArray(r.patterns) || !r.patterns.length || r.patterns.length > 128) fail(); for (const p of r.patterns as unknown[]) identifier(typeof p === "string" && p.endsWith(".*") ? p.slice(0, -2) : p); });

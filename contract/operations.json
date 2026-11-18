@@ -1595,7 +1595,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -1603,6 +1603,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -1619,6 +1630,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -3146,7 +3176,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -3154,6 +3184,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -3170,6 +3211,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -4618,7 +4678,7 @@
         },
         "ManifestSetting": {
           "additionalProperties": false,
-          "description": "Typed space setting; secrets use separate handles.",
+          "description": "Typed plugin setting; secrets use separate handles.",
           "properties": {
             "default": {
               "description": "Default setting value."
@@ -4626,6 +4686,17 @@
             "id": {
               "description": "Stable setting identifier.",
               "type": "string"
+            },
+            "scope": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ManifestSettingScope"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Override owner. Omission selects the shared space setting."
             },
             "value_type": {
               "allOf": [
@@ -4642,6 +4713,25 @@
             "value_type"
           ],
           "type": "object"
+        },
+        "ManifestSettingScope": {
+          "description": "Owner of an override for a declared plugin setting.",
+          "oneOf": [
+            {
+              "description": "Each person in the space can have their own value.",
+              "enum": [
+                "personal"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Space managers can change the shared value.",
+              "enum": [
+                "space"
+              ],
+              "type": "string"
+            }
+          ]
         },
         "ManifestSettingType": {
           "description": "Primitive setting value type.",
@@ -5660,7 +5750,7 @@
               "type": "string"
             },
             {
-              "description": "Parked without a process until its child jobs report or its person request is resolved.",
+              "description": "Parked without a process until its child jobs report, a signal arrives or a deadline passes.",
               "enum": [
                 "waiting"
               ],
@@ -5739,7 +5829,7 @@
               "type": "string"
             },
             "result": {
-              "description": "Final result of a `done` job, or null."
+              "description": "Final result, a caller-safe wait rejection, or null."
             },
             "space_id": {
               "description": "Space UUID that owns the job.",
@@ -5752,6 +5842,17 @@
                 }
               ],
               "description": "Current lifecycle state."
+            },
+            "wait": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/JobWait"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Public summary while a plugin job waits for a signal."
             }
           },
           "required": [
@@ -5762,6 +5863,26 @@
             "result",
             "space_id",
             "state"
+          ],
+          "type": "object"
+        },
+        "JobWait": {
+          "additionalProperties": false,
+          "description": "Public summary of a parked plugin job with no signal payload or credentials.",
+          "properties": {
+            "deadline_ms": {
+              "description": "Unix milliseconds when the wait ends if no signal arrives.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "reason": {
+              "description": "Why the job is waiting, supplied by the worker at the checkpoint.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "deadline_ms",
+            "reason"
           ],
           "type": "object"
         }
@@ -5827,7 +5948,7 @@
               "type": "string"
             },
             {
-              "description": "Parked without a process until its child jobs report or its person request is resolved.",
+              "description": "Parked without a process until its child jobs report, a signal arrives or a deadline passes.",
               "enum": [
                 "waiting"
               ],
@@ -5906,7 +6027,7 @@
               "type": "string"
             },
             "result": {
-              "description": "Final result of a `done` job, or null."
+              "description": "Final result, a caller-safe wait rejection, or null."
             },
             "space_id": {
               "description": "Space UUID that owns the job.",
@@ -5919,6 +6040,17 @@
                 }
               ],
               "description": "Current lifecycle state."
+            },
+            "wait": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/JobWait"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Public summary while a plugin job waits for a signal."
             }
           },
           "required": [
@@ -5929,6 +6061,26 @@
             "result",
             "space_id",
             "state"
+          ],
+          "type": "object"
+        },
+        "JobWait": {
+          "additionalProperties": false,
+          "description": "Public summary of a parked plugin job with no signal payload or credentials.",
+          "properties": {
+            "deadline_ms": {
+              "description": "Unix milliseconds when the wait ends if no signal arrives.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "reason": {
+              "description": "Why the job is waiting, supplied by the worker at the checkpoint.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "deadline_ms",
+            "reason"
           ],
           "type": "object"
         }
@@ -12919,6 +13071,162 @@
   },
   {
     "risk": "read",
+    "id": "plugins.diagnostics",
+    "description": "Inspect an installed plugin's readiness and recent worker failures",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Input for `plugins.enable`, `plugins.disable` and `plugins.preview`.",
+      "properties": {
+        "plugin_id": {
+          "description": "Registered trusted-plugin identifier, not a package path or source of authority.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Owning/access space identifier: 1..80 ASCII letters, digits or `_.:-`; never proof of authority.",
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "PluginReadiness": {
+          "description": "Last observed state of an installed package in one space.",
+          "oneOf": [
+            {
+              "description": "Disabled in this space.",
+              "enum": [
+                "disabled"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "A manifest or bundle verification problem prevents execution.",
+              "enum": [
+                "unavailable"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The enabled worker starts on its first invocation.",
+              "enum": [
+                "not_started"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Native package or a worker whose last start completed.",
+              "enum": [
+                "ready"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The last startup or running worker failed.",
+              "enum": [
+                "failed"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "PluginRuntimeFailure": {
+          "description": "One caller-safe runtime failure from this space.",
+          "properties": {
+            "at_ms": {
+              "description": "When the host observed the failure, in Unix milliseconds.",
+              "format": "int64",
+              "type": "integer"
+            },
+            "operation": {
+              "description": "Operation attempted, when the failure belongs to an invocation.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "description": "Stable reason code without private input or output values.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "at_ms",
+            "reason"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Installed-package diagnostics exposed to authorized space managers.",
+      "properties": {
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "readiness": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PluginReadiness"
+            }
+          ],
+          "description": "Last observed readiness in this space."
+        },
+        "reason": {
+          "description": "Caller-safe reason when the package is unavailable or failed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recent_errors": {
+          "description": "Up to eight recent failures, newest first.",
+          "items": {
+            "$ref": "#/definitions/PluginRuntimeFailure"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "description": "Revision inspected by this read.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "space_id": {
+          "description": "Explicit space UUID.",
+          "type": "string"
+        },
+        "stderr_tail": {
+          "description": "Up to 4 KiB from the last failed worker's own stderr in this space.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "plugin_id",
+        "readiness",
+        "recent_errors",
+        "revision",
+        "space_id"
+      ],
+      "title": "PluginDiagnostics",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
     "id": "plugins.network.content.get",
     "description": "Get a prepared sealed content frame",
     "mutates": false,
@@ -13144,13 +13452,157 @@
   },
   {
     "risk": "read",
+    "id": "plugins.personal_settings.get",
+    "description": "Read your own declared plugin setting",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Address one manifest-declared setting in an accessible space.",
+      "properties": {
+        "key": {
+          "description": "Stable setting key from that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "plugin_id",
+        "space_id"
+      ],
+      "title": "PluginSettingAddress",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "plugins.personal_settings.set",
+    "description": "Edit your own declared plugin setting",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Replace the caller's override if their observed value still matches.",
+      "properties": {
+        "base": {
+          "description": "Last observed override. Null means no override."
+        },
+        "key": {
+          "description": "Personal setting key in that package's manifest.",
+          "type": "string"
+        },
+        "plugin_id": {
+          "description": "Installed package ID.",
+          "type": "string"
+        },
+        "space_id": {
+          "description": "Space UUID.",
+          "type": "string"
+        },
+        "value": {
+          "description": "New override. Null restores the manifest default."
+        }
+      },
+      "required": [
+        "base",
+        "key",
+        "plugin_id",
+        "space_id",
+        "value"
+      ],
+      "title": "PluginPersonalSettingEdit",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Current values for a setting. The worker receives only its effective value.",
+      "properties": {
+        "alternatives": {
+          "description": "Concurrent alternatives preserved until explicit resolution.",
+          "items": true,
+          "type": "array"
+        },
+        "effective": {
+          "description": "Value the package sees, using the manifest default when needed."
+        },
+        "repair": {
+          "description": "Caller-safe description of the file and line to repair, when applicable.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "description": "Stored override for the next edit's base. Null indicates no override."
+        },
+        "writable": {
+          "description": "True when the current settings file can be changed through the API.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alternatives",
+        "effective",
+        "value",
+        "writable"
+      ],
+      "title": "PluginSettingValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
     "id": "plugins.settings.get",
     "description": "Read a declared space plugin setting",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
-      "description": "Read one manifest-declared setting as a Manager of the addressed space.",
+      "description": "Address one manifest-declared setting in an accessible space.",
       "properties": {
         "key": {
           "description": "Stable setting key from that package's manifest.",
@@ -13570,6 +14022,13 @@
             "id": {
               "description": "Stable request UUID.",
               "type": "string"
+            },
+            "job_id": {
+              "description": "Job UUID for a plugin wait addressed to this person.",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "space_id": {
               "description": "Addressed space UUID, absent for personal secret requests.",
