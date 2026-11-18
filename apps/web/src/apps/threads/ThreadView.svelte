@@ -36,6 +36,12 @@
     if (!bottomEl) return;
     const el = bottomEl;
     const feed = () => listEl?.querySelector<HTMLElement>("[role=feed]") ?? null;
+    // Plays `el` from `d` px away to its place. A slide that is still running is taken over from where it is (its offset is added to `d` and it is cancelled), so reversing mid-morph is continuous.
+    const slide = (el: Element, d: number, ms: number, easing: string) => {
+      let cur = 0;
+      for (const a of el.getAnimations()) { const t = getComputedStyle(el).transform; if (t && t !== "none") cur = new DOMMatrixReadOnly(t).m42; a.cancel(); }
+      el.animate([{ transform: `translateY(${cur + d}px)` }, { transform: "none" }], { duration: ms, easing });
+    };
     const settle = (h: number, morph?: { ms: number; easing: string }) => {
       const f = feed(); const d = h - bottomH;
       if (d === 0) return;
@@ -45,7 +51,7 @@
       // After the list has taken the new inset (its state flush is a microtask scheduled by the line above).
       queueMicrotask(() => {
         f.scrollTop = f.scrollHeight;
-        if (morph && Math.abs(d) > 1) f.querySelector(".sizer")?.animate([{ transform: `translateY(${d}px)` }, { transform: "none" }], { duration: morph.ms, easing: morph.easing });
+        const sz = f.querySelector(".sizer"); if (morph && sz && Math.abs(d) > 1) slide(sz, d, morph.ms, morph.easing);
       });
     };
     const ro = new ResizeObserver(() => settle(Math.ceil(el.getBoundingClientRect().height)));
@@ -54,7 +60,7 @@
       const h = Math.ceil(el.getBoundingClientRect().height);
       const moved = h - bottomH;
       // What sits above the composer (the request bar, the notices) moves by the same amount in the one layout; it is played from where it was, so a press that began on it still lands on it.
-      if (d.animate && Math.abs(moved) > 1) for (const n of el.querySelectorAll<HTMLElement>(".inner > :not(.composer)")) n.animate([{ transform: `translateY(${moved}px)` }, { transform: "none" }], { duration: d.ms, easing: d.easing });
+      if (d.animate && Math.abs(moved) > 1) for (const n of el.querySelectorAll<HTMLElement>(".inner > :not(.composer)")) slide(n, moved, d.ms, d.easing);
       settle(h, d.animate ? d : undefined);
     };
     ro.observe(el);

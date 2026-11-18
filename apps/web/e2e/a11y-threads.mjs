@@ -1,7 +1,7 @@
 // axe-core over the Threads app in every state a person meets: the list, an open thread, the composer with each popover open, the request bar's three kinds, the first-use and failure states, the
 // row's hover actions, a swiped row, the rename field and the context menu; light and dark, desktop and phone. Exits 1 on any violation.
 import AxeBuilder from "@axe-core/playwright";
-import { launch, open, serve } from "./lib.mjs";
+import { expandComposer, launch, open, serve } from "./lib.mjs";
 // Waits for what the page is doing, not for a guessed time: nothing has been pointed at, typed or focused for longer than a tooltip's own delay (400 ms: one that is about to open has opened), every finite
 // animation and transition has ended, and the shared tooltip is at rest (fully shown or gone) for a few frames in a row. A loaded machine makes it slower, never wrong; at most 8 s.
 const TRACK = () => { const t = () => (window.__lastInput = performance.now()); for (const e of ["pointermove", "pointerdown", "keydown", "focusin", "scroll", "wheel"]) addEventListener(e, t, { capture: true, passive: true }); window.__lastInput = performance.now(); };
@@ -13,7 +13,7 @@ const settle = (p) => p.evaluate(() => new Promise((res) => { const t0 = perform
   still = quiet ? still + 1 : 0;
   if (still >= 4 || now - t0 > 8000) res(); else requestAnimationFrame(tick);
 }; tick(); }));
-const chip = (i) => (p) => p.locator(".composer .chips .pill").nth(i).click();
+const chip = (i) => async (p) => { await expandComposer(p); await p.locator(".composer .chips .pill").nth(i).click(); };
 const states = [
   ["list and a thread", "/threads/t-run", null],
   ["thread with steps open", "/threads/t-run", async (p) => { await p.locator("button[aria-expanded]").first().click().catch(() => {}); }],
@@ -49,7 +49,7 @@ async function attempt(j, i) {
   const { page, ctx } = await open(browser, j.device, j.scheme, j.path);
   await page.evaluate(TRACK);
   try {
-    try { if (j.act) { await j.act(page); await settle(page); } } catch (e) { lines[i] = `skip ${j.device} ${j.scheme} ${j.name}: ${String(e.message).split("\n")[0]}`; return; }
+    try { if (j.act) { await j.act(page); await settle(page); } } catch (e) { lines[i] = `FAIL ${j.device} ${j.scheme} ${j.name}: could not be set up (${String(e.message).split("\n")[0]})`; bad++; return; }
     const r = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "best-practice"]).analyze();
     const v = r.violations.map((x) => `${x.id} (${x.nodes.length}): ${x.nodes[0].target.join(" ")} :: ${x.nodes[0].failureSummary?.split("\n")[1] ?? ""}`);
     lines[i] = `${v.length ? "FAIL" : "ok  "} ${j.device} ${j.scheme} ${j.name}${v.length ? "\n   " + v.join("\n   ") : ""}`;
