@@ -1,5 +1,5 @@
-// Every message action does what it says, one check for fixtures and for the server (shared by message-actions.mjs and steps-server.mjs): hover opens the actions beside the time (an agent's before its time, your own
-// after it); Copy puts the message on the clipboard; Reply in side chat shows the side chat with the message quoted; Quote in the message box quotes it in the composer; Copy link copies the message's address.
+// Every message action does what it says, one check for fixtures and for the server (shared by message-actions.mjs and steps-server.mjs): hover opens the actions beside the time (one rule for both sides: the time sits at the message's own edge and the actions follow it toward the middle: an agent's after its time, your own
+// before it); Copy puts the message on the clipboard; Reply in side chat shows the side chat with the message quoted; Quote in the message box quotes it in the composer; Copy link copies the message's address.
 /** Runs the checks on `page` (an open thread with at least one agent message), reporting through `ok`. `device` is "desktop" or "phone". */
 /** Points at a message the way a person does (from outside it) and waits until its actions have opened beside the time. */
 async function point(page, msg, device) {
@@ -20,10 +20,10 @@ export async function checkMessageActions(page, ok, device) {
     await page.mouse.move(box.x + 120, box.y + 10); await page.mouse.move(box.x + 140, box.y + 14);
     await page.waitForFunction((sel) => { const a = document.querySelector(sel); return a && getComputedStyle(a).opacity === "1" && a.getBoundingClientRect().width > 40; }, ".msg.agent-row:last-of-type .acts", { timeout: 4000 }).catch(() => {});
     const order = await msg.locator(".meta").evaluate((m) => [...m.children].map((c) => c.className.split(" ")[0]));
-    ok(order[0] === "acts" && order[1] === "t", "an agent message's actions come before its time", order.join(","));
+    ok(order[0] === "t" && order[1] === "acts", "an agent message's actions come after its time (the time at its own edge)", order.join(","));
     const user = page.locator(".msg.user").last();
     const uo = await user.locator(".meta").evaluate((m) => [...m.children].map((c) => c.className.split(" ")[0])).catch(() => []);
-    ok(uo[0] === "t" && uo[1] === "acts", "your own message's actions come after its time", uo.join(","));
+    ok(uo.at(-1) === "t" && uo.includes("acts") && uo.indexOf("acts") < uo.indexOf("t"), "your own message's actions come before its time (the time at its own edge)", uo.join(","));
   }
   const act = (name) => msg.getByRole("button", { name });
   const reply = async () => {

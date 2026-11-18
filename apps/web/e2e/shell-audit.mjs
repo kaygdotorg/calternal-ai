@@ -58,8 +58,9 @@ const wallpapers = JSON.parse(readFileSync("wallpapers.json", "utf8"));
   // message actions
   await page.locator(".msg").nth(2).hover(); await page.waitForTimeout(300);
   ok((await page.locator(".msg [aria-label='Copy message']").count()) > 0 && (await page.locator(".msg [aria-label='Reply in side chat']").count()) > 0, "Each message has small actions beside its time (copy, reply in side chat, more) on hover");
-  // selection actions
-  await page.evaluate(() => { const p = document.querySelector(".msg.assistant p, .agent p"); const r = document.createRange(); r.selectNodeContents(p); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event("selectionchange")); });
+  // selection actions (after the composer's collapse has settled: a list that follows its end scrolls when the layout under it changes, and a scroll hides the selection toolbar)
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { const p = [...document.querySelectorAll(".msg.assistant p, .agent .selectable p")].filter((e) => { const r = e.getBoundingClientRect(); return r.top > 120 && r.bottom < innerHeight - 160; }).at(-1); /* a paragraph in view (a thread opens at its true end now, so the first one in the DOM is overscan above the screen) */ const r = document.createRange(); r.selectNodeContents(p); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event("selectionchange")); });
   await page.mouse.up(); await page.waitForTimeout(500);
   ok((await page.getByRole("button", { name: /Comment/ }).count()) > 0 && (await page.getByRole("button", { name: /Ask in side chat/i }).count()) > 0, "Selecting text offers Comment and Ask in Side Chat");
   const cap = await page.locator("aside.side footer nav[aria-label='Apps'] .opt").evaluateAll((l) => l.map((e) => e.getAttribute("aria-label")));
