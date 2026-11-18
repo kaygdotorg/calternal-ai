@@ -29,7 +29,7 @@ Recorded test fixture:
 machine:      aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
 owner:        pool
 server:       https://cal.example.org
-credentials:  /home/u/.local/share/calternal/machine/credentials
+credentials:  $HOME/.local/share/calternal/machine/credentials
 ```
 
 ## JSON example
@@ -39,7 +39,7 @@ Recorded test fixture:
 ```json
 {
   "data": {
-    "credentials_file": "/home/u/.local/share/calternal/machine/credentials",
+    "credentials_file": "$HOME/.local/share/calternal/machine/credentials",
     "machine_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "owner": "pool",
     "server": "https://cal.example.org"

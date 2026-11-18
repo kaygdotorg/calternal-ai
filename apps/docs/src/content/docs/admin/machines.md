@@ -45,13 +45,17 @@ Exit code 3 means the machine was revoked.
   on both sides.
 - **Leases and fencing**: every assignment carries a fence. The server refuses output
   with an old fence or from another machine (409). After `lease_ttl` without contact,
-  the machine freezes its sandboxes. The server fences the leases and marks them interrupted. Only an explicit
-  resume operation makes them eligible for placement again.
-- **Sandboxes** (`sandbox`): a trait with start-or-adopt, exec
+  the machine removes its disposable containers and keeps their mounted workspaces.
+  The server fences silent leases. Only an explicit resume makes an interrupted lease
+  eligible for placement again.
+- **Sandboxes** (`sandbox`): a trait with start, exec
   (streamed output), freeze, resume, stop, release and resource limits. The Podman
-  backend runs one rootless container per thread, with the base image by reference, the
-  container's own writable layer, a work directory at `/work`, and `--memory`/`--cpus`/
-  `--pids-limit`. The direct backend runs as the machine user with no isolation, only after the
+  backend runs one rootless container per active thread or worker slot, with a disposable
+  writable layer, work mounted at `/work`, and `--memory`/`--cpus`/`--pids-limit`.
+  The role enforces `--max-sandboxes` across turns and workers, 10 by default. A
+  successful poll parks provider containers idle for a lease TTL, 90 seconds by default.
+  Startup sweeps orphan containers scoped to the locked sandbox directory. The direct
+  backend runs as the machine user with no isolation, only after the
   account owner marks that machine direct. Pool machines refuse direct execution. A microVM backend would implement
   the same trait.
 - **Back-pressure**: at most 256 KiB per exec in the channel and 256 KiB unacknowledged
@@ -66,9 +70,9 @@ credentials. `tests/podman.rs` prints `SKIPPED` and passes when Podman or the im
 End-to-end tests with both roles are in `crates/server/tests/machines.rs`.
 
 Provider stdin and the account-qualified home mounts are described in
-manual turns. Provider release stops processes while
-retaining workspace files; destructive machine-stop operations still remove the
-thread workspace.
+manual turns. Provider release removes the container
+and retains mounted workspace files. Destructive machine-stop operations still
+remove the thread workspace.
 
 Explicit disposal: `calternal agent discard <job-id>` requests machine-confirmed
 removal of a stopped turn's workspace/container. It preserves the account home.
