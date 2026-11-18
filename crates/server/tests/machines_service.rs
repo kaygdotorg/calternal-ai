@@ -472,9 +472,7 @@ async fn waiting_lease_is_not_assigned_after_its_space_closes() {
     svc.bind_lifecycle(lifecycle.clone());
     let (id, key) = enrol(&svc, owner);
     let space = SpaceId::new();
-    let run = svc
-        .request_run(space, owner, Uuid::new_v4(), None)
-        .unwrap();
+    let run = svc.request_run(space, owner, Uuid::new_v4(), None).unwrap();
     lifecycle.close(space.as_uuid());
     let m = connect(&svc, id, key, Uuid::new_v4());
     let msgs = sync(&svc, &m, vec![]).await;
@@ -500,11 +498,12 @@ async fn exec_is_refused_after_its_space_closes() {
     let m = connect(&svc, id, key, Uuid::new_v4());
     sync(&svc, &m, vec![]).await;
     let space = SpaceId::new();
-    let run = svc
-        .request_run(space, owner, Uuid::new_v4(), None)
-        .unwrap();
+    let run = svc.request_run(space, owner, Uuid::new_v4(), None).unwrap();
     let msgs = sync(&svc, &m, vec![]).await;
-    assert!(matches!(msgs.first(), Some(Down::Assign { .. })), "{msgs:?}");
+    assert!(
+        matches!(msgs.first(), Some(Down::Assign { .. })),
+        "{msgs:?}"
+    );
     lifecycle.close(space.as_uuid());
     let queued = svc.exec(owner, run.lease_id, vec!["true".into()], vec![]);
     assert!(queued.is_err(), "exec admitted for a closed space");
