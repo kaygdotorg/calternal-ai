@@ -1,6 +1,6 @@
 // Behaviour checks for the owner's list: one-line rows, one state signal, tooltip, title rename, archive + undo toast, pill press.
 import { chromium } from "playwright";
-import { serve, open } from "./lib.mjs";
+import { serve, open, expandComposer } from "./lib.mjs";
 const stop = await serve();
 const browser = await chromium.launch();
 const out = [];
@@ -25,6 +25,7 @@ ok("tooltip waits ~400 ms then shows", early === 0 && late === 1);
 await page.mouse.move(5, 5);
 await rows.first().click();
 await page.waitForSelector("h1");
+await expandComposer(page);
 const pill = page.locator(".composer .chip.prov button").first();
 await pill.click();
 await page.waitForTimeout(60);

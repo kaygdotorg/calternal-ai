@@ -116,7 +116,8 @@
   const mentions = $derived(marks.filter((m) => m.kind === "mention" || m.kind === "person").map((m) => ({ ...m, label: text.slice(m.start + 1, m.end).replace(/^\[|\]$/g, "") })));
   const dropMention = (m: { start: number; end: number }) => { text = (text.slice(0, m.start) + text.slice(m.end)).replace(/ {2,}/g, " ").replace(/^ /, ""); queueMicrotask(() => field?.focus()); };
   // Collapsed when not in use, like ChatGPT's and Claude's: the context and chips rows fold away (and on a phone the box takes a wider inset) until the composer has focus, or one of its menus is open.
-  // Focus is read after the event (a window losing focus keeps the field active and so keeps the composer open). Pointer, touch and keyboard focus alike set it; the keyboard's change is instant.
+  // Focus is read after the event (a window losing focus keeps the field active and so keeps the composer open). Pointer, touch and keyboard focus of the field or a chip set it; a mouse press on a button
+  // (Stop, Send) does not (such a button is not `:focus-visible`): pressing it must not move it away from under the pointer by expanding the box before the click is done. The keyboard's change is instant.
   let panelEl = $state<HTMLElement>();
   let focused = $state(false);
   const open = $derived(focused || menuOpen || permOpen || whereOpen || trig !== null);
@@ -143,7 +144,7 @@
   }
 </script>
 
-<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={() => (focused = true)} onfocusout={() => queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement)))}>
+<Panel class="composer" data-narrow={sheet ? "" : undefined} radius="pane" data-ring-host bind:el={panelEl} data-collapsed={open ? undefined : ""} onfocusin={(e) => { if ((e.target as HTMLElement).matches(":focus-visible")) focused = true; }} onfocusout={() => queueMicrotask(() => (focused = !!panelEl?.contains(document.activeElement)))}>
   <div class="fold" data-fold><div class="ctx" aria-label="Context">
     {#if thread.workspace}<span class="cx"><Icon inline name="folder" /><span>{thread.workspace}</span></span>{/if}
     <ActiveChildren id={thread.id} />

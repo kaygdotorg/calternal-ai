@@ -326,6 +326,8 @@ export class ServerThreads implements ThreadsClient {
     this.streams.get(id)?.abort();
     this.streams.delete(id);
     await this.server.operate("threads.stop", { id, space_id: this.space() });
+    // Stopping cancels the turn's pending requests on the server; the state is already idle here, so the journal's turn entry will not say the turn left `waiting`: read the inbox now.
+    void this.asks.refresh();
     this.turns.set(id, { state: "idle" });
     this.follows.get(id)?.ev.onStreamEnd?.();
     this.announce(id);

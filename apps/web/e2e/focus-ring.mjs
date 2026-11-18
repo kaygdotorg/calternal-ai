@@ -1,7 +1,7 @@
 // A pointer click never leaves a focus ring; a key press draws one that follows the control's radius.
 // Clicks the composer's three chips (and closes each picker three ways), the sidebar row actions and the menu items with a mouse, and lists every element on the page that draws an outline.
 import { chromium } from "playwright";
-import { serve, open } from "./lib.mjs";
+import { serve, open, expandComposer } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch();
 let bad = 0;
 const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${note ? "  " + note : ""}`); if (!p) bad++; };
@@ -10,6 +10,7 @@ const { page, ctx } = await open(b, "desktop", "dark", "/threads/t-idle");
 const rings = () => page.evaluate(() => [...document.querySelectorAll("*")].map((e) => { const c = getComputedStyle(e); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0 ? `${e.tagName.toLowerCase()}.${e.className?.baseVal ?? e.className} r=${c.borderTopLeftRadius}` : ""; }).filter(Boolean));
 const chips = [["Provider and model", "menu"], ["Permission mode", "menu"], ["Where it runs", "dialog"]];
 for (const [name, kind] of chips) {
+  await expandComposer(page);
   const chip = page.locator(".composer .chips .pill").nth(chips.findIndex((c) => c[0] === name));
   await chip.click();
   await page.waitForTimeout(500);
@@ -20,12 +21,14 @@ for (const [name, kind] of chips) {
   ok(`... and after it closes`, (await rings()).length === 0, (await rings()).join("; "));
 }
 // Pick a row of a menu with the mouse.
+await expandComposer(page);
 await page.locator(".composer .chips .pill").nth(1).click();
 await page.waitForTimeout(400);
 await page.getByRole("menuitemradio").nth(1).click();
 await page.waitForTimeout(500);
 ok("picking a menu row with the mouse leaves no ring", (await rings()).length === 0, (await rings()).join("; "));
 // A modifier or an OS chord (a screenshot shortcut) is not the keyboard: with the chip clicked and its picker open, the chip draws no ring.
+await expandComposer(page);
 const where = page.locator(".composer .chips .pill").nth(2);
 await where.click();
 await page.waitForTimeout(400);

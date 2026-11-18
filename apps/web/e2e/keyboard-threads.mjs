@@ -1,6 +1,6 @@
 // A keyboard-only walk through the Threads app, then reduced motion and 200% zoom. Every step uses the keyboard only (Tab, Shift+Tab, arrows, Enter, Escape, the context-menu key, F2).
 import { chromium } from "playwright";
-import { serve, open, DEVICES, BASE } from "./lib.mjs";
+import { serve, open, DEVICES, BASE, expandComposer } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch();
 let bad = 0;
 const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${note ? "  " + note : ""}`); if (!p) bad++; };
@@ -66,6 +66,7 @@ async function tabTo(p, test, max = 60) { for (let i = 0; i < max; i++) { if (aw
 {
   const ctx = await b.newContext({ ...DEVICES.desktop, reducedMotion: "reduce" }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(BASE + "/threads/t-idle"); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(800);
+  await expandComposer(page);
   await page.locator(".composer .chips .pill").nth(2).click(); await page.waitForTimeout(100);
   const clip = await page.evaluate(() => { const g = document.querySelector(".pop .glass"); return g ? getComputedStyle(g).clipPath : "gone"; });
   const anims = await page.evaluate(() => document.getAnimations().filter((a) => a.playState === "running" && !(a instanceof CSSTransition && a.effect?.getTiming().duration <= 1)).length);
