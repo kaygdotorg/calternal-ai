@@ -290,6 +290,65 @@ pub struct ManifestTheme {
     /// Relative packaged CSS asset; activation requires sealed theme validation.
     pub stylesheet: String,
 }
+/// Host-defined mount point for an activated plugin contribution.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginSlot {
+    /// A section in the single navigation sidebar.
+    SidebarSection,
+    /// Content within a host-managed card or window.
+    CardWindow,
+    /// Accessory row beside the host-owned composer.
+    ComposerRow,
+    /// Generated decoration within a message row.
+    MessageDecoration,
+    /// Bounded panel along a thread edge.
+    ThreadEdge,
+    /// Section outside protected account controls.
+    SettingsSection,
+    /// Command discoverable in the host action palette.
+    PaletteCommands,
+    /// Host-timed notification content.
+    Toasts,
+}
+
+/// A portable operation-backed contribution or a reference to a sealed web bundle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PluginSlotRenderer {
+    /// Resolve through a declared read-only operation returning a generated view.
+    Generated {
+        /// Plugin-local operation declaration to dispatch with current authority.
+        operation: String,
+    },
+    /// Advertise a packaged entry point for a sealed web renderer.
+    Sealed {
+        /// Relative HTML asset path. The prototype does not serve or mount this asset.
+        asset: String,
+    },
+    /// Register a named palette action targeting a declared operation.
+    Command {
+        /// Operation to dispatch with current authority and normal approval checks.
+        operation: String,
+    },
+}
+
+/// One plugin-owned contribution that the host can resolve without running code.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(deny_unknown_fields)]
+pub struct PluginSlotContribution {
+    /// Stable identifier unique within this manifest.
+    pub id: String,
+    /// Accessible name and visible label, bounded to 128 UTF-8 bytes.
+    pub label: String,
+    /// Host mount point, independent of renderer implementation.
+    pub slot: PluginSlot,
+    /// Renderer or command to resolve.
+    pub renderer: PluginSlotRenderer,
+}
+
 /// Plugin menu read without running plugin code. Every top-level field is required;
 /// only the documented optional fields inside declarations may be omitted.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
@@ -299,6 +358,10 @@ pub struct ManifestV1 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub provider: Option<ManifestProvider>,
+    /// Optional contributions to host slots, validated without running code.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub slots: Option<Vec<PluginSlotContribution>>,
     /// Stable plugin identifier.
     pub id: String,
     /// Human-readable plugin name.

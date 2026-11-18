@@ -1,12 +1,9 @@
 //! Trusted plugin registry over manifest v1, manifest-derived policy rows, and
 //! the long-lived worker pool.
 //!
-//! Only plugins listed in the compiled-in `trusted-plugins.json` can load. The
-//! browser can never supply code, paths or URLs. Each manifest is read once at
-//! startup, parsed and validated by [`calternal_plugin_host`] without running
-//! plugin code, and registered atomically (kind, operation, collection and folder
-//! collisions are refused). Worker bundle SHA-256 digests are pinned in the trusted
-//! file and checked again before every worker start.
+//! Startup loads an immutable snapshot of operator-reviewed packages. Shipped
+//! entries seed it on first start. Manifests are validated without running code,
+//! and worker bundle hashes are checked again before each worker start.
 //!
 //! Policy: every plugin operation's authorization row is derived from its manifest
 //! declaration ([`calternal_plugin_host::Registry::policy_rows`]) and checked through
@@ -26,6 +23,7 @@ mod job_streams;
 pub mod jobs;
 pub mod live;
 mod machine_worker;
+pub mod package_store;
 mod requests;
 pub(crate) use requests::OnceAdmission;
 pub mod runner;
@@ -96,6 +94,8 @@ pub struct Plugin {
     pub unavailable: Option<String>,
     /// Operation schemas compiled once, shared by every (plugin, space) worker.
     pub schemas: Arc<host::CompiledSchemas>,
+    revision: u32,
+    activation_approval: u32,
 }
 
 impl Plugin {
@@ -124,7 +124,19 @@ impl Plugin {
             worker,
             unavailable: None,
             schemas,
+            revision: 0,
+            activation_approval: 0,
         })
+    }
+
+    /// Revision that durable jobs created by this worker must continue under.
+    /// Cost: one field access, without storage I/O.
+    fn job_revision(&self) -> u32 {
+        if self.worker.is_some() {
+            self.revision
+        } else {
+            0
+        }
     }
 
     /// The declared operation `id`, if this plugin declares it.
@@ -249,46 +261,20 @@ impl Registry {
         Self::default()
     }
 
-    /// Load every trusted entry from `plugin_root`. Plugins whose manifest is
-    /// missing, invalid or colliding are skipped with a warning; plugins whose worker
-    /// is missing or whose digest differs load but are marked unavailable.
-    /// Cost: one bounded manifest read and one bundle hash per entry, at startup only.
+    /// Load the shipped fixture catalog directly for in-memory server fixtures.
+    /// The serving binary seeds and loads packages through [`package_store::load`].
+    /// Cost: one manifest read and optional bundle verification per shipped package.
     pub fn load(plugin_root: &Path) -> Self {
-        Self::load_with_tests(plugin_root, None)
-    }
-
-    /// [`Self::load`], plus the test-only plugins from `test_root` when the server was
-    /// built with the `test-plugins` feature (otherwise there are none to load).
-    /// Cost: as [`Self::load`], per test entry as well.
-    pub fn load_with_tests(plugin_root: &Path, test_root: Option<&Path>) -> Self {
-        Self::load_at(plugin_root, test_root, false)
-    }
-
-    /// Load ./plugins and use the shipped native Threads manifest when that
-    /// default directory lacks its copy. Explicit roots use `load_with_tests`.
-    /// Cost: normal startup registry reads and one embedded manifest parse on miss.
-    pub fn load_server_defaults(test_root: Option<&Path>) -> Self {
-        Self::load_at(Path::new("plugins"), test_root, true)
-    }
-
-    fn load_at(plugin_root: &Path, test_root: Option<&Path>, defaults: bool) -> Self {
-        let mut plugins = Vec::new();
-        let tests = test_root.map(|root| (root, test_entries()));
-        let all = std::iter::once((plugin_root, registry_entries())).chain(tests);
-        for (root, entry) in
-            all.flat_map(|(root, entries)| entries.into_iter().map(move |e| (root, e)))
-        {
-            let fallback = (defaults && entry.id == "calternal-orchestrator").then_some(
-                include_bytes!("../../../../plugins/calternal-orchestrator/manifest.json")
-                    .as_slice(),
-            );
-            match load_one(root, &entry, fallback) {
-                Ok(p) => plugins.push(p),
+        let plugins = registry_entries()
+            .into_iter()
+            .filter_map(|entry| match load_one(plugin_root, &entry, None) {
+                Ok(plugin) => Some(plugin),
                 Err(why) => {
-                    tracing::warn!(plugin = %entry.id, reason = %why, "trusted plugin not loaded")
+                    tracing::warn!(plugin = %entry.id, reason = %why, "fixture plugin not loaded");
+                    None
                 }
-            }
-        }
+            })
+            .collect();
         Self::from_plugins(plugins)
     }
 
@@ -393,7 +379,7 @@ pub fn activation(store: &Store, space: SpaceId, plugin: &Plugin) -> Result<Plug
     let mut row = store
         .plugin_row(space, &plugin.manifest.id)?
         .unwrap_or_else(|| default_row(plugin));
-    row.enabled &= plugin.unavailable.is_none();
+    row.enabled &= plugin.unavailable.is_none() && row.approval == plugin.activation_approval;
     Ok(row)
 }
 
@@ -402,6 +388,7 @@ pub fn default_row(plugin: &Plugin) -> PluginRow {
     PluginRow {
         enabled: plugin.entry.default_enabled && plugin.unavailable.is_none(),
         generation: 1,
+        approval: plugin.activation_approval,
     }
 }
 

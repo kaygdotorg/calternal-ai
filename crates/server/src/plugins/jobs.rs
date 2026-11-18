@@ -115,8 +115,10 @@ pub struct Job {
     pub result: Value,
     /// Runs started so far.
     pub runs: u32,
-    /// Plugin activation generation the job was admitted under.
+    /// Space activation generation captured with the job.
     pub generation: u32,
+    /// Installed worker revision captured with the job. Native jobs use zero.
+    pub(super) package_revision: u32,
 }
 
 impl Job {
@@ -476,6 +478,13 @@ impl Jobs {
     /// final, of another plugin, or already has [`MAX_CHILDREN`] children.
     /// Cost: one FULL transaction with a few indexed reads and one insert.
     pub fn admit(&self, a: Admission) -> Result<String, Error> {
+        self.admit_package(a, 0)
+    }
+
+    /// Admit a job with the immutable worker revision it must use on resume.
+    /// Cost and error conditions match native job admission.
+    pub(super) fn admit_package(&self, a: Admission, revision: u32) -> Result<String, Error> {
+        let generation = (i64::from(revision) << 32) | i64::from(a.generation);
         let _actor = self.lifecycle.step(a.account.as_uuid())?;
         let input = bounded_json(&a.input, MAX_CHECKPOINT_BYTES)?;
         let session = serde_json::to_string(&a.session).map_err(|_| Error::internal("encode"))?;
@@ -523,7 +532,7 @@ impl Jobs {
             let id = Uuid::now_v7().to_string();
             tx.execute(
                 "INSERT INTO jobs VALUES(?1,?2,?3,?4,?5,?6,?7,'admitted','null',0,0,'null',0,?8,?9,NULL)",
-                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, a.generation, a.request_key],
+                params![id, a.plugin, a.account.to_string(), session, a.operation, input, a.parent, generation, a.request_key],
             )
             .map_err(db_err)?;
             Ok(id)

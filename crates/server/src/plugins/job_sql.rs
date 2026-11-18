@@ -66,6 +66,9 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     let json = |i: usize| -> rusqlite::Result<Value> {
         Ok(serde_json::from_str(&r.get::<_, String>(i)?).unwrap_or(Value::Null))
     };
+    // Low bits preserve the per-space activation generation. High bits fence the
+    // installed package revision independently, including after server restart.
+    let generation = r.get::<_, i64>(13)?;
     Ok(Job {
         id: r.get(0)?,
         space: space.to_owned(),
@@ -87,7 +90,8 @@ pub(super) fn row(space: &str, r: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
         checkpoints: r.get(10)?,
         result: json(11)?,
         runs: r.get(12)?,
-        generation: r.get(13)?,
+        generation: (generation & i64::from(u32::MAX)) as u32,
+        package_revision: (generation >> 32) as u32,
     })
 }
 
