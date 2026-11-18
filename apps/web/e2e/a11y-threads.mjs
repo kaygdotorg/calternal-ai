@@ -34,7 +34,7 @@ const states = [
   ["turn interrupted", "/threads/t-idle?scenario=interrupted", null],
   ["row hover actions", "/threads/t-idle", async (p) => { if (p.viewportSize().width > 760) { await p.locator("nav[aria-label=Threads] a.row").nth(1).hover(); await settle(p); } }],
   ["row context menu", "/threads/t-idle", async (p) => { if (p.viewportSize().width > 760) { await p.locator("nav[aria-label=Threads] a.row").nth(1).click({ button: "right" }); await settle(p); } }],
-  ["rename field", "/threads/t-idle", async (p) => { await p.locator("h1").dblclick(); await settle(p); }],
+  ["rename field", "/threads/t-idle", async (p) => { await p.getByRole("button", { name: "Thread actions" }).click(); await p.getByRole("menuitem", { name: "Rename" }).click(); await settle(p); }],
 ];
 const stop = await serve(); const browser = await launch();
 let bad = 0;
