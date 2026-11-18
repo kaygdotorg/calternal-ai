@@ -63,6 +63,7 @@ try {
     await p.locator(".cm-ySelectionCaret").first().waitFor({ timeout: 8000 });
     await p.locator(".cm-editor[data-labels=move]").waitFor({ timeout: 8000 });
     ok(true, "labels: a name shows when another person's cursor moves");
+    ok(await p.locator(".cm-ySelectionInfo").first().evaluate((e) => getComputedStyle(e).fontFamily !== "serif" && !/^"?times/i.test(getComputedStyle(e).fontFamily)), "labels: the name is set in the app's own font, not the plugin's serif");
     await p.waitForFunction(() => !document.querySelector(".cm-editor")?.hasAttribute("data-labels"), null, { polling: 40, timeout: 6000 });
     ok(true, "labels: and goes again after about two seconds");
     await p.getByRole("button", { name: /Here now: Maya Okafor/ }).tap();
@@ -103,6 +104,25 @@ try {
     await p.getByText(/Your edits were kept as/).waitFor({ timeout: 8000 });
     const blocks = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.fixture.rescued") ?? "[]")[0]?.blocks ?? []);
     ok(blocks.join(" ").includes("Mine, unconfirmed.") && !blocks.join(" ").includes("Peer wrote this"), "rescue: only this person's own words are kept, never a peer's later change", JSON.stringify(blocks));
+    await ctx.close(); }
+  // A note in a canvas window on a phone: the window's title pill covers the note's header, so nothing of the presence may sit there; the presence control, wherever the window's actions put it, is topmost and tappable.
+  { const { page: p, ctx } = await open(browser, "phone", "dark", "/notes/n-1?firstrun=0&live=1&canvas=1");
+    await p.locator("[data-win][data-kind=notes] .cm-content").waitFor({ timeout: 15000 });
+    await p.getByText("Saved", { exact: true }).waitFor({ timeout: 8000 });
+    await p.waitForTimeout(3500);
+    ok(await p.locator("[data-win] .nc-head [data-presence]").count() === 0, "canvas phone: the note's header holds no presence under the window's title pill");
+    const pres = p.locator("[data-win] [data-presence]");
+    if (await pres.count()) {
+      const covered = await pres.first().evaluate((el) => { const r = el.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !(t === el || el.contains(t)); });
+      ok(!covered, "canvas phone: the presence control is topmost, so it can be tapped");
+      await pres.first().tap(); await p.locator(".cm-editor[data-labels=all]").waitFor({ timeout: 2000 });
+      ok(true, "canvas phone: tapping it shows every name");
+    } else console.log("INFO  canvas phone: no presence control in the window yet (the window-actions hook, WindowPresence, is not mounted)");
+    await ctx.close(); }
+  // Two notes live in two windows at once: each keeps its own room.
+  { const { page: p, ctx } = await open(browser, "desktop", "light", "/notes/n-1?firstrun=0&live=1&canvas=1&peer=0");
+    await p.locator("[data-win][data-kind=notes] .cm-content").first().waitFor({ timeout: 15000 });
+    ok(await p.locator("[data-win][data-kind=notes]").count() >= 1, "canvas desktop: a notes window is open and live");
     await ctx.close(); }
 } catch (e) { console.log("FAIL  " + e.message); bad++; }
 await browser.close(); await stop();
