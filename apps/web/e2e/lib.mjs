@@ -50,6 +50,8 @@ export const DEVICES = {
 export async function open(browser, device, scheme, path) {
   const ctx = await browser.newContext({ ...DEVICES[device], colorScheme: scheme, reducedMotion: "no-preference" });
   if (!process.env.CAL_FIRSTRUN) await ctx.addInitScript(() => { try { localStorage.setItem("cal.firstrun", "1"); } catch { /* none */ } });
+  // CAL_CANVAS=1 runs any suite with the canvas on (the fixtures build's `?canvas=1` is remembered for the visit in sessionStorage): the same checks, windows instead of one card.
+  if (process.env.CAL_CANVAS === "1") await ctx.addInitScript(() => { try { sessionStorage.setItem("cal.canvas.on", "1"); if (!localStorage.getItem("cal.canvas.prefs") && !location.search.includes("canvas=1")) localStorage.setItem("cal.canvas.prefs", JSON.stringify({ look: "card", width: 1 })); /* a window opens at the full width, as the one card the suites were written for does */ } catch { /* none */ } });
   const page = await ctx.newPage();
   await page.goto(BASE + path);
   await page.waitForSelector("html[data-ready]");
@@ -63,7 +65,7 @@ export const launch = () => chromium.launch();
 /** Focuses the composer and waits until it has expanded and its morph has finished (the context and chips rows are in the layout and fully drawn): unfocused, the composer is collapsed and its chips are not there to click. Waits for the state, not for a time. */
 export async function expandComposer(page) {
   await page.locator("#composer-field").click();
-  await page.waitForFunction(() => { const c = document.querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
+  await page.waitForFunction(() => { const c = (document.querySelector("[data-win][data-focused]") ?? document).querySelector(".composer"); const r = c?.querySelector(".chips"); return !!c && !c.hasAttribute("data-collapsed") && !!r && getComputedStyle(r).display !== "none" && !c.getAnimations({ subtree: true }).some((a) => a.playState === "running" && a.effect?.getComputedTiming().iterations !== Infinity); });
 }
 
 /** The Threads sidebar opens on its Inbox when something waits on the person; suites that work on the whole list switch to All Threads first (a no-op when that tab is already showing or there are no tabs). */
@@ -89,3 +91,40 @@ export function busyNow() {
 }
 /** True when timing checks must be judged: the quiet list (`CAL_QUIET=1`) or a machine that is not busy. */
 export const judgeTimings = () => process.env.CAL_QUIET === "1" || !busyNow().busy;
+
+/** The username a test account gets from its name (3 to 32 letters, digits and single hyphens). */
+const usernameOf = (name) => (name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) + "-qa").replace(/^-+/, "");
+
+/** First-owner (or invited) signup through the real screens up to the passkey screen: setup code, name, username, then the email screen left empty (optional on a server with no mail). */
+export async function fillWho(p, token, name) {
+  if (token) await p.fill('input[name="token"]', token);
+  await p.fill('input[name="name"]', name);
+  await p.fill('input[name="username"]', usernameOf(name));
+  await p.getByRole("button", { name: "Continue" }).click();
+  await p.getByLabel(/^Email/).waitFor();
+  await p.getByRole("button", { name: "Continue" }).click();
+  await p.getByRole("button", { name: "Create passkey" }).waitFor();
+}
+
+/** A whole signup for tests that only need an account: the screens above, the passkey, the recovery codes saved, every optional step skipped, then into the app. */
+export async function signUp(p, token, name) {
+  await fillWho(p, token, name);
+  await p.getByRole("button", { name: "Create passkey" }).click();
+  await p.getByRole("button", { name: "I have saved them" }).click();
+  for (const step of ["A second passkey", "Choose a look"]) { await p.getByRole("heading", { name: step }).waitFor({ timeout: 15000 }); await p.locator("footer").getByRole("button", { name: "Skip" }).click(); }
+  for (let i = 0; i < 3; i++) {
+    const done = p.getByRole("button", { name: "Start the first thread" });
+    if (await done.isVisible().catch(() => false)) break;
+    await p.waitForTimeout(600);
+    const skip = p.locator("footer").getByRole("button", { name: "Skip" });
+    if (await skip.isVisible().catch(() => false)) await skip.click();
+  }
+  await p.getByRole("button", { name: "Start the first thread" }).click();
+  await p.waitForSelector("html[data-ready]");
+}
+
+/**
+ * The window a suite is looking at: the focused canvas window when the canvas is on, the middle card when it is not. A canvas can hold several windows (each with its own composer, header and
+ * headings), so a suite scopes `.composer`, `h1`, the header and the list to this, never to the page. (The composer's field keeps the id `composer-field` in the focused window alone.)
+ */
+export const win = (page) => page.locator("[data-win][data-focused], .mid-card:not([data-win])").first();

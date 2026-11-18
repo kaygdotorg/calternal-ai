@@ -8,6 +8,7 @@
   //   phone     provider icon only          "Approve for me"  machine icon only
   // The permission mode's own name is the last label to go. Every chip keeps its full name as its accessible name and tooltip.
   // The provider control changes nothing visible in the thread (the handover is internal), and never creates a thread.
+  import { getContext } from "svelte";
   import { motionAllowed, snapshot, play, type FoldSnap } from "./fold";
   import { Button, Icon, InlineEditor, Menu, Panel, Pill, PillRow, Popover, Sheet, currentForm, tokenEase, tokenMs, type IconName, type MenuItem } from "@calternal/ui";
   import type { Attachment } from "./model";
@@ -59,6 +60,9 @@
 
   const drafts = new Map<string, string>();
   let text = $state("");
+  // In a canvas several composers are on the page: the focused window's has the page's `composer-field` id (shortcuts and "Write a message" reach it), the others a private one, so ids stay unique.
+  const focusedWin = getContext<(() => boolean) | undefined>("canvas-focused"), own = Math.random().toString(36).slice(2, 8);
+  const fieldId = $derived(!focusedWin || focusedWin() ? "composer-field" : `composer-field-${own}`);
   let field = $state<HTMLInputElement | HTMLTextAreaElement>();
   let editor = $state<FieldEditor | undefined>();
   let menuOpen = $state(false);
@@ -287,7 +291,7 @@
   {/if}
   <input bind:this={picker} type="file" multiple hidden onchange={(e) => { addFiles([...(e.currentTarget.files ?? [])]); e.currentTarget.value = ""; }} />
   <div class="field" data-fold-row bind:this={fieldBox}>
-    <InlineEditor id="composer-field" class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
+    <InlineEditor id={fieldId} class="field-input" multiline label="Message" bind:el={field} bind:editor bind:value={text} {marks} triggers={{ kinds: ["mention", "skill"], on: (t) => (trig = t) }} onkeydown={onkey} onsubmit={() => send()} placeholder={running ? "Steer the running turn…" : `Message ${provider?.name ?? "the agent"}…`} />
     {#if (running || parked) && !text.trim()}
       <SendControl state="stop" label="Stop the turn" onclick={onstop} />
     {:else}

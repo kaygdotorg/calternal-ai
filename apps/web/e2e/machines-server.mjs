@@ -1,3 +1,4 @@
+import { signUp } from "./lib.mjs";
 // Machines and provider readiness against a real server (this tree's build) with a real enrolled machine: make a code in the page, enroll and run `calternal machine` (direct execution), then the Machines page shows the machine
 // and the providers' readiness from `agent.readiness`; Check again runs `agent.check` and the account feed keeps the page current. Env: CAL_BIN, CAL_DIST, CAL_MACH_PORT.
 import { spawn } from "node:child_process";
@@ -21,7 +22,7 @@ try {
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   await cdp.send("WebAuthn.enable"); await cdp.send("WebAuthn.addVirtualAuthenticator", { options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
   await p.goto(`${url}/?server=1`); await p.waitForSelector("html[data-ready]");
-  await p.fill('input[name="token"]', token); await p.fill('input[name="name"]', "Mach Owner"); await p.getByRole("button", { name: "Create passkey" }).click();
+  await signUp(p, token, "Mach Owner");
   await p.waitForFunction(() => !document.querySelector("h1")?.textContent?.includes("Set up"), null, { timeout: 15000 }); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(1200);
   const go = async (path) => { await p.evaluate((x) => { history.pushState(null, "", x); dispatchEvent(new PopStateEvent("popstate")); }, path); await p.waitForTimeout(600); };
   await go("/settings/machines");

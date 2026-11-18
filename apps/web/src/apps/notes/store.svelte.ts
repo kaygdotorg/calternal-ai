@@ -11,6 +11,8 @@ import { ServerError } from "../../server/client";
 import { say } from "../../server/say";
 import { failed, undoable } from "@calternal/ui";
 import { navigate, segments } from "../../lib/route.svelte";
+import { sharing } from "./share/sharing";
+import { changedBlocks, rescueLine, textKey } from "./share/rescue";
 
 class NotesStore {
   client: NotesClient = serverMode() ? new ServerNotes(server) : new FixtureNotes();
@@ -211,6 +213,12 @@ class NotesStore {
         this.saveState = "waiting"; this.error = "";
         return true;
       }
+      if (e instanceof ServerError && (e.code === "forbidden" || e.code === "not_found")) {
+        // Access ended while the person was writing: their edits are kept, not lost.
+        this.saveState = "failed";
+        await this.rescue(this.note.title, this.note.markdown, markdown, `${this.note.id}:${textKey(markdown)}`);
+        return false;
+      }
       if (e instanceof ServerError && e.code === "conflict") {
         try { this.conflict = await this.client.get(this.space.id, this.note.id); this.saveState = "conflict"; } catch { this.saveState = "failed"; this.error = say(e, "save the note"); }
         return false;
@@ -241,9 +249,29 @@ class NotesStore {
       return n;
     } catch (e) { this.error = say(e, "make the note"); return null; }
   }
-  /** Sends a waiting write now; if the server is still away it stays queued. */
+  /**
+   * Access to a shared note ended and a write of it was refused: sends only the blocks the person changed (against the text they started from) with the cached title to `sharing.rescue`, which keeps them as a note in their
+   * personal space, and says in one line where they went. `requestId` is stable for the same text, so a retry is the same request. Nothing else is touched; if the rescue itself fails the person is told and the text stays here.
+   */
+  async rescue(title: string, base: string, local: string, requestId: string): Promise<void> {
+    const blocks = changedBlocks(base, local);
+    if (!blocks.length) { this.error = `You can no longer open “${title}”. You had changed nothing in it.`; return; }
+    try {
+      const { note } = await sharing.rescue(title, blocks, requestId);
+      this.error = rescueLine(title, note.title);
+    } catch (e) { this.error = `${say(e, "keep your edits")} Your text is still here.`; }
+  }
+  /** Sends a waiting write now; if the server is still away it stays queued. A write refused because access ended is kept as a rescue note and leaves the queue. */
   async sendWaiting(id: string): Promise<void> {
-    try { await this.input.send(id); await this.refresh(); await this.open(this.note?.id); this.error = ""; } catch (e) { this.error = say(e, "send the waiting change"); }
+    const w = this.waiting.find((x) => x.id === id);
+    try { await this.input.send(id); await this.refresh(); await this.open(this.note?.id); this.error = ""; }
+    catch (e) {
+      if (w && e instanceof ServerError && (e.code === "forbidden" || e.code === "not_found")) {
+        const base = this.note?.id === w.itemId ? this.note.markdown : "";
+        await this.rescue(String(w.input.title ?? this.note?.title ?? "a note"), base, String(w.input.markdown ?? ""), w.id);
+        await this.input.cancel(id).catch(() => {});
+      } else this.error = say(e, "send the waiting change");
+    }
     await this.reloadInput();
   }
   async cancelWaiting(id: string): Promise<void> { await this.input.cancel(id); await this.reloadInput(); }

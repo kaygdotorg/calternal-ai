@@ -2,7 +2,7 @@
   // The left region. Not a card: it sits on the wallpaper. A wordmark at the top (the person's own name for the product, in a cursive face, both set in
   // Settings; no icon) with the sidebar button at the other end; the attention card and the app's own body scroll as one column that fades out under
   // the wordmark row and the footer (no opaque band); the footer holds the account picture, the app capsule (icon-only, three at a time) and search. Switching apps happens here.
-  import { Menu, Pill, type MenuItem } from "@calternal/ui";
+  import { Avatar, Menu, Pill, type MenuItem } from "@calternal/ui";
   import { appearance } from "../appearance/prefs.svelte";
   import type { AppDef } from "../apps/registry";
   import { navigate } from "../lib/route.svelte";
@@ -38,7 +38,7 @@
   </div>
 
   <footer>
-    <button type="button" class="avatar" bind:this={trigger} aria-label="Account, spaces and settings: Kay" aria-haspopup="menu" aria-expanded={menu} onclick={() => (menu = !menu)}><span aria-hidden="true">K</span></button>
+    <button type="button" class="avatar" bind:this={trigger} aria-label="Account, spaces and settings: Kay" aria-haspopup="menu" aria-expanded={menu} onclick={() => (menu = !menu)}><Avatar name="Kay" size="md" /></button>
     <Menu open={menu} {items} {search} label="Account" {trigger} onclose={() => (menu = false)} onpick={pick} />
     <span class="switch"><AppSwitcher current={app.kind} /></span>
     <Pill icon="search" label="Search" aria-keyshortcuts={ariaKeys(shortcuts.chordFor("search"))} onclick={() => (shell.searchOpen = true)} />
@@ -55,7 +55,7 @@
   .scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; display: flex; flex-direction: column; gap: var(--s-4); padding: var(--bar-h) var(--s-4) var(--foot-h); --fade-t: var(--bar-h); --fade-b: var(--foot-h); }
   .body { flex: none; }
   footer { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; height: var(--foot-h); display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-2) var(--s-4) 0; }
-  .avatar { flex: none; width: var(--pill-h); height: var(--pill-h); border-radius: 50%; display: grid; place-items: center; background: color-mix(in oklab, var(--accent-base) 22%, rgb(var(--tint) / 0.6)); color: var(--accent); font-weight: var(--strong-weight); transition: scale var(--dur-fast) var(--ease-out); }
+  .avatar { flex: none; border-radius: 50%; display: grid; place-items: center; transition: scale var(--dur-fast) var(--ease-out); }
   .avatar:active { scale: var(--press-scale); }
   .switch { flex: 1; min-width: 0; display: flex; justify-content: center; }
   .body { animation: space-in var(--dur-base) var(--ease-out); }

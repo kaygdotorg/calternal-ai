@@ -4,6 +4,7 @@
   // message text appears under it as it is written. When the turn ends the finished message replaces this row: the same blocks, collapsed to "Thought for 4 s" and "Worked for 12 s · 3 tools".
   import Md from "../../lib/Md.svelte";
   import ProviderMark from "./ProviderMark.svelte";
+  import "./lead-mark.css";
   import Steps from "./Steps.svelte";
   import Thought from "./Thought.svelte";
   import type { Turn } from "./conversation.svelte";
@@ -12,8 +13,8 @@
 </script>
 
 <div class="msg">
-  <div class="lead row"><ProviderMark {provider} {providers} row /></div>
-  <div class="agent">
+  <div class="agent lead-host {turn.thought || turn.steps.length ? 'lead-row' : 'lead-work'}">
+    <div class="lead row"><ProviderMark {provider} {providers} row /></div>
     {#if turn.thought}<Thought text={turn.thought.text} ms={turn.thought.ms ?? 0} running={turn.thought.ms === undefined} />{/if}
     {#if turn.steps.length}<Steps steps={turn.steps} ms={0} running />{/if}
     <div class="working" role="status"><span class="word pulse">Working</span><span class="phase">{turn.phase}</span></div>
@@ -22,10 +23,7 @@
 </div>
 
 <style>
-  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: grid; grid-template-columns: var(--s-8) minmax(0, 1fr); column-gap: var(--s-4); }
-  /* The mark sits in a line of the message's own font and line height, so its centre is the first line's x-height centre at every text size and zoom (ProviderMark.svelte). */
-  .lead.row { display: grid; align-items: center; height: calc(var(--s-9) + var(--s-3)); line-height: 1; }
-  .lead { font-size: var(--text-ui); line-height: 1.55; font-weight: var(--body-weight); }
+  .msg { width: 100%; max-width: var(--msg-w); margin: 0 auto; padding: var(--s-4) var(--msg-pad-r, var(--pad-region)) var(--s-4) var(--msg-pad-l, var(--pad-region)); display: block; }
   .agent { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-5); min-width: 0; }
   .working { display: flex; align-items: center; gap: var(--s-3); color: var(--ink-3); font-size: var(--text-ui); min-height: calc(var(--s-9) + var(--s-3)); }
   .word { font-weight: var(--strong-weight); color: var(--ink-2); }
