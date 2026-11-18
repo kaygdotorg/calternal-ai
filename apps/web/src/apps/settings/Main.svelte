@@ -14,7 +14,7 @@
   // A page that opted into sections is two panes only where the card is wide (the list of sections, the selected one beside it, the first selected until the person picks); narrow, it is one flat page: every section in order under its heading, full width, no drill-in and no Back. The address's setting id selects its section.
   let sel = $state<number | null>(null), width = $state(0), scrollEl = $state<HTMLElement>();
   // Fixtures only: `?scroll=N` opens the page already scrolled N px, so a phone Simulator (which cannot be dragged by script) can show the sticky header pill.
-  $effect(() => { const n = Number(new URLSearchParams(location.search).get("scroll")); if (scrollEl && width && n > 0 && !serverMode) scrollEl.scrollTop = n; });
+  $effect(() => { const n = Number(new URLSearchParams(location.search).get("scroll")); if (scrollEl && width && n > 0 && !serverMode()) scrollEl.scrollTop = n; });
   const wide = $derived(width >= 640);
   $effect(() => { void page?.id; sel = null; });
   $effect(() => {
