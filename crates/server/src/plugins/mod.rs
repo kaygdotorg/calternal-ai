@@ -88,6 +88,8 @@ pub struct Plugin {
     pub entry: TrustedEntry,
     /// Validated manifest v1; immutable for the server's lifetime.
     pub manifest: ManifestV1,
+    /// Palette data projected once from this immutable manifest version.
+    pub(crate) palette: Option<calternal_core::PaletteManifest>,
     /// Canonical absolute worker path, when the plugin has a built worker.
     pub worker: Option<PathBuf>,
     /// Why the plugin cannot execute or be enabled, if it cannot (digest mismatch etc).
@@ -118,9 +120,33 @@ impl Plugin {
                 manifest.id, manifest.version, entry.id, entry.version
             ));
         }
+        let palette = manifest
+            .palette
+            .as_ref()
+            .map(|menu| calternal_core::PaletteManifest {
+                plugin: manifest.id.clone(),
+                version: manifest.version.clone(),
+                commands: menu
+                    .commands
+                    .iter()
+                    .cloned()
+                    .chain(menu.settings_sections.iter().map(|section| {
+                        calternal_core::PaletteCommand {
+                            id: section.id.clone(),
+                            label: section.label.clone(),
+                            group: "Settings".into(),
+                            words: Vec::new(),
+                            go: Some(section.go.clone()),
+                            op: None,
+                        }
+                    }))
+                    .collect(),
+                settings_sections: menu.settings_sections.clone(),
+            });
         Ok(Self {
             entry,
             manifest,
+            palette,
             worker,
             unavailable: None,
             schemas,

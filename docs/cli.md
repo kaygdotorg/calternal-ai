@@ -269,3 +269,13 @@ See [account input](account-input.md) for queue files, stable nested request IDs
 seven-day confirmation, examples and operator safety ceilings.
 
 `calternal threads create|list|get|send|stop|rename|archive|unarchive|delete` operates on saved conversations using manifest-backed operations. See [threads](threads.md) for arguments, file format, retry behavior and current limits. Every subcommand supports `--json` and shared terminal hints.
+
+### Palette search and lookups
+
+| Arguments | Purpose | Human output | JSON data |
+| --- | --- | --- | --- |
+| `search people --space UUID [PREFIX]` | Find accounts and groups to mention. | Name, subject type and ID. | `people` |
+| `search skills --space UUID [PREFIX]` | List space skill names and descriptions. | Skill table. | `skills` |
+| `search manifests --space UUID` | Read enabled plugin palette contributions. | Plugin, command and Settings tables. | `manifests` |
+
+Use the normal Calternal connection flags and `--json` for structured results.

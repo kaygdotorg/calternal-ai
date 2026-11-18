@@ -1,0 +1,30 @@
+{
+  "data": {
+    "manifests": [
+      {
+        "commands": [
+          {
+            "group": "Notes",
+            "id": "notes.new",
+            "label": "New note",
+            "op": "note.new",
+            "words": [
+              "create note"
+            ]
+          }
+        ],
+        "plugin": "calternal-notes",
+        "settings_sections": [
+          {
+            "go": "/settings/notes.display",
+            "id": "notes.display",
+            "label": "Display"
+          }
+        ],
+        "version": "0.1.0"
+      }
+    ]
+  },
+  "ok": true,
+  "request_id": "req-search"
+}

@@ -686,6 +686,156 @@ folder: string, } | {
  */
 hidden: boolean, };
 /**
+ * Picker filter within one space.
+ */
+
+export type SpaceLookupInput = {
+/**
+ * Selected space UUID.
+ */
+space_id: string,
+/**
+ * Literal display-name prefix. Omit to browse.
+ */
+prefix?: string, };
+/**
+ * A named account or group directly granted access to the selected space.
+ */
+
+export type PersonMatch = {
+/**
+ * Account or group UUID.
+ */
+id: string,
+/**
+ * Display name.
+ */
+name: string,
+/**
+ * Subject type, either account or group.
+ */
+kind: string, };
+/**
+ * The first page of matching mention subjects.
+ */
+
+export type PeopleLookupResult = {
+/**
+ * Matching direct accounts and groups.
+ */
+people: Array<PersonMatch>, };
+/**
+ * One externally placed space skill.
+ */
+
+export type SkillMatch = {
+/**
+ * Skill directory name.
+ */
+name: string,
+/**
+ * One-line description declared in the file.
+ */
+description: string, };
+/**
+ * Bounded skill matches for the selected space.
+ */
+
+export type SkillsResult = {
+/**
+ * Skill descriptors, ordered by name.
+ */
+skills: Array<SkillMatch>, };
+/**
+ * One palette command, in the web palette's command shape.
+ */
+
+export type PaletteCommand = {
+/**
+ * Stable, globally unique command identifier.
+ */
+id: string,
+/**
+ * Searchable command label.
+ */
+label: string,
+/**
+ * Display group.
+ */
+group: string,
+/**
+ * Extra phrases that match this command.
+ */
+words?: Array<string>,
+/**
+ * Navigation address, if this command navigates.
+ */
+go?: string,
+/**
+ * Named host action, if the command invokes one.
+ */
+op?: string, };
+/**
+ * A discoverable Settings section.
+ */
+
+export type PaletteSettingsSection = {
+/**
+ * Stable section identifier.
+ */
+id: string,
+/**
+ * Section label.
+ */
+label: string,
+/**
+ * Settings address.
+ */
+go: string, };
+/**
+ * Optional palette declarations in a plugin manifest.
+ */
+
+export type PaletteDeclaration = {
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections that the plugin contributes.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * A registered palette contribution in the web palette's manifest shape.
+ */
+
+export type PaletteManifest = {
+/**
+ * Owning plugin identifier.
+ */
+plugin: string,
+/**
+ * Exact package version.
+ */
+version: string,
+/**
+ * Commands with their extra search phrases.
+ */
+commands: Array<PaletteCommand>,
+/**
+ * Settings sections provided by this plugin.
+ */
+settings_sections: Array<PaletteSettingsSection>, };
+/**
+ * Palette declarations visible in the selected space.
+ */
+
+export type PaletteResult = {
+/**
+ * Enabled plugins with palette contributions.
+ */
+manifests: Array<PaletteManifest>, };
+/**
  * Kind identity remains independent of plugin identity.
  */
 
@@ -1003,6 +1153,10 @@ contribution: PluginSlotContribution, };
  */
 
 export type ManifestV1 = {
+/**
+ * Optional commands, extra phrases and Settings sections for the palette.
+ */
+palette?: PaletteDeclaration,
 /**
  * Machine-side provider adapter; omitted by plugins that offer no provider.
  */

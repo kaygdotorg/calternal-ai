@@ -35,7 +35,7 @@ function schema(v: unknown): void { if (typeof v !== "boolean" && (!v || typeof 
  */
 export function validateManifestV1(value: unknown): ManifestV1 {
   if (new TextEncoder().encode(JSON.stringify(value)).length > 256 * 1024) fail();
-  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots"]);
+  const m = record(value, ["id", "name", "icon", "version", "api_version", "kinds", "operations", "collections", "views", "attention", "settings", "schedules", "webhooks", "secrets", "hooks", "themes", "host_calls"], ["provider", "slots", "palette"]);
   if (m.provider !== undefined) {
     const p = record(m.provider, ["protocol_version", "executable", "default_model", "models", "sign_in"]);
     if (p.sign_in !== undefined && typeof p.sign_in !== "boolean") throw new Error("invalid provider sign_in");
@@ -61,6 +61,43 @@ export function validateManifestV1(value: unknown): ManifestV1 {
     const list = m[key]; if (!Array.isArray(list) || list.length > 128) return fail();
     const seen = new Set<string>();
     for (const v of list) { const r = record(v, keys, optional); const key = identifier(r.id); if (seen.has(key)) fail(); seen.add(key); visit(r); }
+  }
+  if (m.palette !== undefined) {
+    const palette = record(m.palette, ["commands", "settings_sections"]);
+    const ids = new Set<string>();
+    const checkRows = (value: unknown, check: (v: unknown) => string): void => {
+      if (!Array.isArray(value) || value.length > 128) fail();
+      for (const row of value) {
+        const id = check(row);
+        if (ids.has(id)) fail();
+        ids.add(id);
+      }
+    };
+    const label = (value: unknown): string => {
+      const valueText = text(value);
+      if (/\p{Cc}/u.test(valueText)) fail();
+      return valueText;
+    };
+    const address = (value: unknown): void => {
+      if (!/^\/(?!\/)[^\\]*$/.test(label(value))) fail();
+    };
+    checkRows(palette.commands, value => {
+      const row = record(value, ["id", "label", "group"], ["words", "go", "op"]);
+      label(row.label); label(row.group);
+      if ((row.go === undefined) === (row.op === undefined)) fail();
+      if (row.go !== undefined) address(row.go);
+      if (row.op !== undefined) identifier(row.op);
+      if (row.words !== undefined) {
+        if (!Array.isArray(row.words) || row.words.length > 32) fail();
+        row.words.forEach(label);
+      }
+      return identifier(row.id);
+    });
+    checkRows(palette.settings_sections, value => {
+      const row = record(value, ["id", "label", "go"]);
+      label(row.label); address(row.go);
+      return identifier(row.id);
+    });
   }
   const operations = new Map<string, Record<string, unknown>>();
   rows("kinds", ["id", "schema", "storage", "claimed_text"], r => {

@@ -354,6 +354,10 @@ pub struct PluginSlotContribution {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestV1 {
+    /// Optional commands, extra phrases and Settings sections for the palette.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub palette: Option<crate::PaletteDeclaration>,
     /// Machine-side provider adapter; omitted by plugins that offer no provider.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]

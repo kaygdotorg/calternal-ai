@@ -175,3 +175,12 @@ paths are validated as metadata. The prototype omits them from the resolved
 listing pending the asset and frame isolation contracts. `plugins.list`
 returns resolved slots for active plugins whose operations the caller can
 invoke in the selected space. See the [interface proposal](plugin-interface-proposal.md).
+
+## Palette discovery
+
+A plugin can declare `palette.commands` for commands with optional matching
+phrases in `words`, and `palette.settings_sections` for Settings links. The
+host projects these declarations once per loaded manifest version. Settings
+sections enter the command list as navigation commands in the Settings group.
+`plugins.manifests` presents the enabled contributions in the selected space
+without executing plugin code.

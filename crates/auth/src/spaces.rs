@@ -12,6 +12,7 @@ mod erasure;
 mod membership;
 mod receipt;
 mod recovery;
+mod search;
 pub use development::DevelopmentIds;
 use membership::*;
 pub use membership::{GroupMember, MemberPage, MemberTarget};
