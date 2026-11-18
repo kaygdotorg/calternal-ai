@@ -1,14 +1,16 @@
 # Plugin-delivered interface
 
-2026-11-18 · Proposal for review · [Lane #50](https://git.kayg.org/kayg/calternal-ai/issues/50)
+2026-11-18 · Interface decision and implementation proposal · [Lane #50](https://git.kayg.org/kayg/calternal-ai/issues/50)
 
 Keep a protected renderer and mount points in the client. Package the visible
 shell and orchestrator as ordinary plugins that use the same slots, tokens,
-operations and confinement as community plugins. Use generated views by default, with sandboxed state and logic for rich interaction.
+operations and confinement as community plugins. The owner chose stateful generated views for rich plugin interfaces on 2026-11-18.
 Add sealed components where they can stay within a bounded rectangle. This
 fits the decision against page-wide JavaScript in the [plugin API](plugin-api.md)
 and preserves the recovery surface described in the [architecture](architecture-proposal.md).
-Terms follow the [glossary](glossary.md). The slot contract below is a prototype.
+Terms follow the [glossary](glossary.md). The foundation cannot be replaced or styled by any plugin. Sign-in, approvals,
+secrets and recovery are outside plugin reach. The slot contract below is a
+prototype.
 
 ## What a plugin can contribute
 
@@ -64,7 +66,7 @@ and a frame overlay across the host chrome are outside this mechanism.
 
 ## Stateful generated views
 
-A third option is the recommended default for rich plugin interfaces. A
+The owner selected this model for rich plugin interfaces. A
 plugin runs ordinary TypeScript in an isolated worker. It produces a typed
 tree of host components, updates that tree via bounded patches and receives
 typed events. The same component IDs, property types, accessibility rules and
@@ -121,12 +123,13 @@ composition. Keep protected forms outside the tree.
 | Static generated layout with a protected mount host | The visible shell is replaceable through declarative layout, theme and slots. A package can contribute at any supported slot subject to scope and grants. | The foundation still owns drawing boundaries, window and focus policy, and recovery. If “shell” means that privileged mount layer, that layer is host code. Custom global effects need a reviewed host primitive. |
 | Stateful generated layout with a protected mount host | Any package can compose and update the host tree, run sandboxed layout logic and receive semantic events through the same interfaces. | Requires a shared catalog, bounded patch protocol and platform runtimes. The renderer retains control over the protected surfaces and fast interaction paths. |
 
-Stateful generated views win for replaceable shell and orchestrator behavior.
+Stateful generated views are the selected model for replaceable shell and orchestrator behavior.
 Static GenUI remains the smallest authoring path. Sealed frames cover the
 custom visual cases. All three use the same install process and renderer
 permissions for official and community packages. Keep recovery, app-level
-shortcuts and protected prompts in the foundation. Ask the owner to confirm where they want replacement to stop
-before adding a shell-layout contract.
+shortcuts and protected prompts in the foundation. The canvas experiment comes first. Design layout primitives
+that support both fixed panes and windows on a scrollable canvas. Wait for the
+layout result before implementing the shell renderer.
 
 bb accepts full-trust server plugins and supports page content scripts as well
 as named slots. Its Calternal UI plugin uses a content script for the frame and
@@ -196,6 +199,59 @@ First expose versioned service calls over the existing engines, then move
 product routing and composition to TypeScript. Direct userdata access would
 duplicate the authorization and durability boundaries. Decide separately when
 the public engine replacement contract should support alternative formats.
+
+## Can official plugins use the same contract?
+
+**Server today.** Notes Insights and the guide use the same manifest, worker
+and broker path that a community package can use. Notes and Threads still
+depend on native host handlers. The existing packages cannot run unchanged
+as ordinary TypeScript packages. Official packages also seed the installation
+catalog, which is a distribution default. Provider executables and images are
+machine provisions. The provider manifest describes them and conveys neither
+installation nor login authority. The plan is to expose versioned engine
+operations behind the same public checks, then move Notes and Threads one
+contract at a time. Notes listing and lifecycle go first. Threads wait for
+the thread file work in #46.
+
+**Interface today.** Every package can declare the same portable view slots.
+The current web shell and orchestrator visuals are client code. They cannot
+ship unchanged as ordinary plugin contributions. The host component catalog
+must gain layout primitives, native editors, virtual transcript and composer
+accessories before the visible shell and orchestrator fit. Protected forms
+remain foundation features for everyone.
+
+The implementation order is live install and reload, plugin-owned slots,
+scoped reactive values, readiness and logs and timing, then durable waits and
+continuations. Update the comparison after each step. In parallel with that
+sequence, the versioned Notes engine contracts need the existing isolation,
+recovery and performance gates. Measure plugin-run Notes save and list against
+the existing budgets on perf-01. Report the boundary and host costs separately.
+
+## Acceptance check for the author workflow
+
+Run three independent GPT-6 Luna sessions chosen by the coordinator. Give
+each the same version of the packaged authoring skill and one paragraph.
+Start from a fresh project directory and one already-running disposable
+development server per run. Provide connection details and preinstalled
+tooling as environment, without recipes or additional instructions. Record
+the server PID, starting space UUID, initial package catalog, command output
+and full transcript. Use a separate passkey account without access for the
+isolation checks.
+
+| Request paragraph | Observable success |
+| --- | --- |
+| Create a reading-list plugin with a readable Markdown kind and a generated list that shows the items in this space. | The package is active, the authored kind stores a fixture item, and the view operation renders that item. Another space cannot list it. |
+| Create a checklist runner with a start operation that launches a durable job, streams its progress and returns a final count. | Starting through the ordinary operation path produces ordered progress and the final count. A foreign account cannot read the job. |
+| Create a composer chip with a configurable label, exposed as a plugin setting. | The slot listing resolves the chip in the enabled space and the generated view reflects the setting. An unrelated space sees no resolved chip. |
+
+Each session must scaffold, implement, run check and tests, and live-load
+its package. Invoke through the normal authenticated operations route.
+Change one visible output, confirm the updated behavior, and check the same
+server PID throughout. Record edit-to-success time from the final file write
+through the first valid result. Require every step to succeed without
+assistance. A failed check, misleading error or manual repair is a defect
+to record against the guide, scaffold, diagnostic or API. The coordinator
+runs the model trials after live reload and all three contracts are ready.
 
 ## Extension points in bb, bb-lite and pi-durable
 
