@@ -10,7 +10,15 @@ const open = async (device, shellState) => {
   const page = await ctx.newPage(); await page.goto(`${BASE}/threads/t-run`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(600);
   return { ctx, page };
 };
-const wheel = async (page, dx, n, at = [700, 450]) => { await page.mouse.move(...at); for (let i = 0; i < n; i++) { await page.mouse.wheel(-dx, 0); await page.waitForTimeout(16); } };
+// A trackpad swipe as the browser delivers it: wheel events, finger travel right = negative `deltaX`. They are dispatched from inside the page at a trackpad's pace (one every 16 ms): `page.mouse.wheel`
+// takes 80 to 110 ms per event on a slower machine (the protocol round trip), which is not a trackpad and splits one swipe into several. `dx` is the finger travel per event, `n` the number of events,
+// `mode` the deltaMode (0 pixels, 1 lines of 16 px, 2 pages of 400 px, so the same travel can be fed as `dx / 16` lines), `dy` a vertical part.
+const wheel = (page, dx, n, at = [700, 450], mode = 0, dy = 0) => page.evaluate(([dx, n, at, mode, dy]) => new Promise((res) => {
+  const target = document.elementFromPoint(at[0], at[1]);
+  let i = 0;
+  const f = () => { target.dispatchEvent(new WheelEvent("wheel", { deltaX: -dx, deltaY: dy, deltaMode: mode, bubbles: true, cancelable: true, clientX: at[0], clientY: at[1] })); if (++i < n) setTimeout(f, 16); else res(); };
+  f();
+}), [dx, n, at, mode, dy]);
 const sideRight = (page) => page.evaluate(() => document.querySelector("aside.side").firstElementChild.getBoundingClientRect().right);
 const cardLeft = (page) => page.evaluate(() => document.querySelector(".mid-card").getBoundingClientRect().left);
 // ---- desktop trackpad, both sidebars closed
@@ -18,25 +26,24 @@ const cardLeft = (page) => page.evaluate(() => document.querySelector(".mid-card
   const { ctx, page } = await open("desktop", { sidebarOpen: false, rightOpen: false });
   const w = await page.evaluate(() => document.querySelector("aside.side").firstElementChild.getBoundingClientRect().width);
   const card0 = await cardLeft(page);
-  await wheel(page, 20, 5); // 100 px of finger travel, still held (events are still arriving)
+  await wheel(page, 4, 25); // 100 px of finger travel as many small events; the swipe is still held (it ends after a quiet moment)
   const vis = await sideRight(page), card = await cardLeft(page);
   ok(Math.abs(vis - 100) < 6, "the sidebar's visible width tracks the pull one to one", `pulled 100, visible ${Math.round(vis)}`);
   ok(Math.abs(card - card0 - 100) < 6, "the card moves with it", `card moved ${Math.round(card - card0)}`);
   await page.waitForTimeout(900); // released below half: it goes back
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "released under half, slowly: it closes again");
-  await wheel(page, 20, 9); await page.waitForTimeout(1000); // 180 > half
+  await wheel(page, 60, 3); await page.waitForTimeout(1000); // 180 px as a few large events, past half
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "true", "released past half: it opens", `width ${Math.round(w)}`);
   ok(Math.abs((await sideRight(page)) - w) < 3 && Math.abs((await cardLeft(page)) - (w + (card0))) < 14, "and rests in its column");
-  await wheel(page, 20, 9); await page.waitForTimeout(1000); // swipe left = finger goes left: wheel positive
   await ctx.close();
 }
 // ---- the opposite swipe closes, and the right sidebar comes from the right
 {
   const { ctx, page } = await open("desktop", { sidebarOpen: true, rightOpen: false });
-  await page.mouse.move(700, 450); for (let i = 0; i < 12; i++) { await page.mouse.wheel(25, 0); await page.waitForTimeout(16); } // finger moves left
+  await wheel(page, -1.5, 12, [700, 450], 1); // finger moves left, fed in lines (deltaMode 1: 12 x 1.5 x 16 px)
   await page.waitForTimeout(1000);
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "the opposite swipe closes the open sidebar");
-  for (let i = 0; i < 14; i++) { await page.mouse.wheel(25, 0); await page.waitForTimeout(16); }
+  await wheel(page, -40, 7); // and again, in pixels, a few large events
   await page.waitForTimeout(1000);
   ok((await page.locator(".shell").getAttribute("data-right")) === "true", "a swipe left then brings the right sidebar in");
   await ctx.close();
@@ -47,7 +54,7 @@ const cardLeft = (page) => page.evaluate(() => document.querySelector(".mid-card
   await page.evaluate(() => { const d = document.createElement("div"); d.id = "wide"; d.style.cssText = "position:fixed;left:400px;top:200px;width:300px;height:60px;overflow-x:auto;z-index:50;background:#888"; d.innerHTML = '<div style="width:1200px;height:40px">x</div>'; document.querySelector(".mid").append(d); d.scrollLeft = 300; });
   await wheel(page, 20, 8, [500, 230]); await page.waitForTimeout(700);
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "a swipe that starts on a code block or table that can still scroll that way scrolls it, not the card");
-  await page.mouse.move(700, 450); for (let i = 0; i < 8; i++) { await page.mouse.wheel(-4, 60); await page.waitForTimeout(16); }
+  await wheel(page, 4, 8, [700, 450], 0, 60);
   await page.waitForTimeout(700);
   ok((await page.locator(".shell").getAttribute("data-sidebar")) === "false", "a mostly vertical scroll is not a pull");
   await ctx.close();

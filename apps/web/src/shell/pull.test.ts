@@ -43,6 +43,13 @@ describe("a trackpad swipe", () => {
     expect(w.feed(ev(-10, 0, 400), () => true)).toBe("start"); // a new swipe after the pause
     expect(w.dx).toBe(10);
   });
+  it("every delta counts however the events are batched: one large event, many small ones and lines give the same travel", () => {
+    const one = new WheelSwipe(); one.feed(ev(-100, 0, 0), () => true);
+    const many = new WheelSwipe(); for (let i = 0; i < 25; i++) many.feed(ev(-4, 0, i * 16), () => true);
+    const lines = new WheelSwipe(); for (let i = 0; i < 25; i++) lines.feed({ deltaX: -0.25, deltaY: 0, deltaMode: 1, timeStamp: i * 16 }, () => true);
+    const pages = new WheelSwipe(); pages.feed({ deltaX: -0.25, deltaY: 0, deltaMode: 2, timeStamp: 0 }, () => true);
+    expect([one.dx, many.dx, lines.dx, pages.dx]).toEqual([100, 100, 100, 100]);
+  });
   it("a vertical scroll and a swipe handed to a sideways scroller are left alone for the whole stream", () => {
     const w = new WheelSwipe();
     expect(w.feed(ev(2, 30, 0), () => true)).toBe("leave");
