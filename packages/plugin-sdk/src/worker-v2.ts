@@ -264,9 +264,26 @@ export interface ResourceAdmissionInput {
 
 /** A block hook's validated decision. The host still enforces its own authority and ceilings. */
 export type ResourceAdmissionDecision =
-  | { decision: "allow"; memory_mib?: number }
-  | { decision: "queue"; reason: string; retry_after_ms: number }
-  | { decision: "refuse"; reason: string };
+  | {
+    /** Permit one placement attempt under the installation's limits. */
+    decision: "allow";
+    /** Optional eligible sandbox memory profile in MiB. */
+    memory_mib?: number;
+  }
+  | {
+    /** Continue waiting for a later admission check. */
+    decision: "queue";
+    /** Caller-visible text explaining why work is waiting. */
+    reason: string;
+    /** Delay before reconsideration, in milliseconds. The host bounds the delay. */
+    retry_after_ms: number;
+  }
+  | {
+    /** End the pending request with a caller-visible reason. */
+    decision: "refuse";
+    /** Caller-visible text explaining the refusal. */
+    reason: string;
+  };
 
 /** Confirmed runtime within a retained window for the authorized resource scope. */
 export interface RuntimeWindow {
