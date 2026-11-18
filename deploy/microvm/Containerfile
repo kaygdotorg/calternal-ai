@@ -1,0 +1,11 @@
+# Use a digest-qualified Node 24 Debian base. Build after npm run build:plugins.
+ARG BASE
+FROM ${BASE}
+COPY plugins/calternal-claude-code/dist /opt/calternal-provider/dist
+COPY plugins/calternal-claude-code/bin /opt/calternal-provider/bin
+ENV PATH="/home/agent/.local/bin:/opt/calternal-provider/bin:/usr/local/bin:/usr/bin:/bin"
+RUN npm install --global --no-audit --no-fund @anthropic-ai/claude-code@2.1.326 \
+    && claude --version \
+    && npm cache clean --force
+WORKDIR /work
+CMD ["sleep", "2147483647"]

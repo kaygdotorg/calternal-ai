@@ -33,6 +33,8 @@ pub(crate) struct Space {
     pub(crate) files: PathBuf,
     /// Oldest acknowledged head awaiting file durability; never reset by new writes.
     pub(crate) pending_since: Option<std::time::Instant>,
+    /// Monotonic throttle for the existing lifecycle worker's receipt maintenance.
+    pub(crate) last_receipt_prune: std::time::Instant,
     /// Immutable kind definitions, shared by validation, naming and placement;
     /// bounded like the existing name cache and dropped with this space.
     pub(crate) registrations: RefCell<HashMap<String, (crate::Placement, crate::FileFormat)>>,
@@ -110,6 +112,7 @@ impl Space {
             names: HashMap::new(),
             registrations: RefCell::new(HashMap::new()),
             pending_since: None,
+            last_receipt_prune: std::time::Instant::now(),
         })
     }
     /// Load one indexed header without body or file reads. Missing items fail;

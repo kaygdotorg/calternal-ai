@@ -1,19 +1,66 @@
 //! Per-space recovery performed under the existing cache slot lock before admission.
-use crate::{Content, ErrorCode, Result, db::Space, types::internal};
+use crate::{Content, ErrorCode, Result, db::Space, journal::block_on, types::internal};
+use calternal_types::{AccountId, now_ms};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
+const RECEIPT_PRUNE_INTERVAL: Duration = Duration::from_secs(3600);
+
 impl Content {
-    /// Replays committed outbox intents before materializing pending heads. Failure
-    /// leaves the cache slot unopened, so a later call retries recovery. External
-    /// file conflicts remain preserved and blocked; no other space is touched.
+    /// Prunes eligible receipts with the as-opened outbox pinned, then replays
+    /// committed intents before materializing heads. Failure leaves the slot
+    /// unopened. External file conflicts remain preserved and blocked.
     pub(crate) fn recover_space(&self, space: &mut Space) -> Result<()> {
+        self.recover_space_at(space, now_ms())
+    }
+
+    fn recover_space_at(&self, space: &mut Space, at_ms: i64) -> Result<()> {
         space.cleanup()?;
+        space.prune_receipts_at(at_ms);
         self.publish_pending(space)?;
         space.materialize_pending(self.fault)
     }
 }
 
 impl Space {
+    /// Prune only after reading every pin under this same space's slot. Holding
+    /// the slot until the command replies prevents publication, retirement and
+    /// retries from changing the set during the indexed journal delete.
+    fn prune_receipts_at(&mut self, at_ms: i64) {
+        self.last_receipt_prune = Instant::now();
+        let result = (|| -> Result<()> {
+            let mut stmt = self
+                .conn
+                .prepare("SELECT account,request FROM outbox")
+                .map_err(internal)?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(internal)?;
+            let mut pins = Vec::new();
+            for row in rows {
+                let (account, request) = row.map_err(internal)?;
+                pins.push((AccountId::parse(&account).map_err(internal)?, request));
+            }
+            block_on(self.journal.prune_receipts(at_ms, pins)).map_err(internal)
+        })();
+        if let Err(error) = result {
+            tracing::warn!(space = %self.id, ?error, "receipt pruning skipped");
+        }
+    }
+
+    /// Hourly maintenance on the existing space worker. Most passes check only
+    /// the monotonic throttle; eligible work reads the outbox and waits for
+    /// one bounded journal writer command. Returns whether it attempted work.
+    pub(crate) fn prune_receipts_if_due(&mut self) -> bool {
+        if self.last_receipt_prune.elapsed() < RECEIPT_PRUNE_INTERVAL {
+            return false;
+        }
+        self.prune_receipts_at(now_ms());
+        true
+    }
+
     /// Complete durable pending heads in this space. Called under its slot lock
     /// by lazy recovery and the existing lifecycle worker, never an async worker.
     pub(crate) fn materialize_pending(&mut self, fault: fn(crate::FaultPoint)) -> Result<()> {
@@ -49,3 +96,6 @@ impl Space {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests;

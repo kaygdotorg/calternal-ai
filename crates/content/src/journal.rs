@@ -45,8 +45,8 @@ impl Journals {
         Ok(Self {
             appdata,
             secrets,
-            // Bounded receipts (owner decision, 2026-11-17): the store prunes them
-            // after this; a later retry runs as a new request.
+            // Eligibility age (owner decision, 2026-11-17). Content supplies
+            // outbox pins before pruning; a successfully pruned ID can be reused.
             options: Options {
                 idempotency_retention: receipt_retention,
                 ..Options::default()
@@ -122,7 +122,7 @@ impl Journals {
     /// Records the receipt and journal event of one mutation, idempotently and
     /// durably, in one transaction. A different operation or input under the same
     /// request ID is a conflict; a matching one is already recorded and durable.
-    /// Nothing outlives the receipt: when it expires, the request ID is new again.
+    /// Pruning retains the receipt while a durable outbox intent can replay it.
     /// Cost: one indexed read and, when new, one FULL writer transaction (one WAL
     /// fsync) on the space's writer thread.
     #[allow(clippy::too_many_arguments)]
@@ -213,7 +213,7 @@ impl Drop for Journals {
 }
 
 /// Polls `future` on this thread, parking between wake-ups. Cost: one Arc per call.
-fn block_on<F: Future>(future: F) -> F::Output {
+pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
     struct Unpark(std::thread::Thread);
     impl Wake for Unpark {
         fn wake(self: Arc<Self>) {

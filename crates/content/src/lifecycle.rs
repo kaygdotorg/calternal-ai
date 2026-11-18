@@ -56,21 +56,25 @@ pub(crate) fn sweep(spaces: &Cache, idle: Duration) -> usize {
 /// Attempts placement without blocking work for the other cached spaces.
 /// Retries a failed placement or a contended slot, whose pending state cannot be
 /// checked. A lock holder can release the slot without waking this worker.
-fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
+pub(crate) fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
     let mut held = match slot.space.try_lock() {
         Ok(held) => held,
         Err(TryLockError::WouldBlock) => return true,
         Err(TryLockError::Poisoned(_)) => return false,
     };
     held.as_mut().is_some_and(|space| {
-        space.pending_since.is_some() && space.materialize_pending(fault).is_err()
+        let retry = space.pending_since.is_some() && space.materialize_pending(fault).is_err();
+        // The journal wait can consume a placement wake. A quick pass after
+        // pruning also catches a write to a slot this pass already visited.
+        space.prune_receipts_if_due() || retry
     })
 }
 
 /// Materializes pending heads and retires idle spaces on the existing worker.
 /// Wakes after writes and retries failed or contended slots in 50 ms. Idle
 /// sweeping remains every 30 seconds. Visits at most 64 slots, with write
-/// backpressure at one second. No queue, per-write task or second cache is added.
+/// backpressure at one second. Cold recovery and hourly maintenance provide
+/// outbox pins before receipt pruning. No per-write task or second cache is added.
 pub(crate) fn spawn_sweeper(
     spaces: &Cache,
     root_guard: &RootGuard,

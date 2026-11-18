@@ -65,6 +65,7 @@ fn io_err(context: &'static str, e: std::io::Error) -> Error {
 fn content_fault(point: calternal_content::FaultPoint) {
     fault::hit(match point {
         calternal_content::FaultPoint::AfterCommit => FaultPoint::AfterCommit,
+        calternal_content::FaultPoint::AfterJournalCommit => FaultPoint::AfterJournalCommit,
         calternal_content::FaultPoint::BeforePlacement => FaultPoint::BeforePlacement,
         calternal_content::FaultPoint::AfterPlacement => FaultPoint::AfterPlacement,
     });

@@ -178,9 +178,20 @@ release commit marker per matching head-arm SSE entry, keyed by request ID.
 The marker is sampled immediately after the FULL journal transaction commits.
 The server and client share a nanosecond monotonic clock on the perf VM. The
 client timestamps the decoded event as soon as the subscribed connection
-receives it. The instrumented writer reads the clock once per durable commit
-and emits one diagnostic line per request-bearing entry after broadcasting.
+receives it. The instrumented writer brackets the durable SQLite commit and
+emits one diagnostic line per request-bearing entry after broadcasting. Its
+`commit_ns` duration excludes journal queue and response work.
 The build excludes this work entirely when `perf-timings` is off in release.
+
+An HTTP `notes.update` that commits content also emits one `notes_save` record
+keyed by the same request ID. `admission_wait_ns` goes from the HTTP guard to
+the start of the blocking write callback and includes its final
+`blocking_wait_ns` handoff. The callback accumulates time waiting for the
+space mutex across its receipt and write operations. It also records the file
+guard, filename selection, content commit, journal round trip and outbox
+retirement in nanoseconds. `journal_ns` includes the separate SQLite
+`commit_ns` from `journal_committed`. The callback emits its record after
+releasing the space lock. A receipt replay emits no save record.
 
 The delivery p95 ceiling is 10 ms on every head arm. The separate
 `live.update_to_client` round trip starts before the HTTP save on the writing

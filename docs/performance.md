@@ -2,7 +2,33 @@
 
 The release delivery gate and current profiles are tracked in
 [the November 18 report](reviews/perf-profile-2026-11-18.md). The measurements
-below describe the November 17 artifacts and their budgets.
+under November 17 qualification describe that day's artifacts and budgets.
+
+## MicroVM plan sizing — 2026-11-18
+
+On locked perf-02, each trial started a fresh Firecracker guest with 1,024 MiB
+of RAM and ran real Claude Code coding turns in concurrent thread containers.
+Each cell includes three trials. All 81 turns completed with zero OOM kills
+and zero swap activity. Peak memory is host-side VMM proportional set size.
+
+| vCPUs | Active threads | Median turn | p90 turn | Peak VM PSS |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 2 | 12.50 s | 13.37 s | 685.02 MiB |
+| 1 | 3 | 14.93 s | 17.11 s | 844.72 MiB |
+| 1 | 4 | 20.31 s | 21.74 s | 980.75 MiB |
+| 2 | 2 | 11.10 s | 12.76 s | 673.02 MiB |
+| 2 | 3 | 12.83 s | 15.80 s | 853.65 MiB |
+| 2 | 4 | 35.72 s | 41.07 s | 977.04 MiB |
+| 4 | 2 | 11.02 s | 13.18 s | 687.09 MiB |
+| 4 | 3 | 12.13 s | 13.52 s | 853.06 MiB |
+| 4 | 4 | 15.20 s | 21.52 s | 978.48 MiB |
+
+Four active threads reached at least 977 MiB of peak VMM PSS at every tested
+CPU count. The four-thread slowdown at two vCPUs appeared in all three trials.
+The current 1,024 MiB profile holds its two-thread cap while CPU and RAM
+pairings are under review. [Method and trial details](reviews/microvm-build-2026-11-18.md#1024-mib-cpu-matrix-on-locked-perf-02)
+
+## November 17 qualification
 
 The performance-fixes follow-up is tracked in
 [issue #31](https://git.kayg.org/kayg/calternal-ai/issues/31) and its

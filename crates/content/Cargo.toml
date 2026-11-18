@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+perf-timings = ["calternal-store/perf-timings"]
+
 [dependencies]
 calternal-types.workspace = true
 calternal-fsio.workspace = true

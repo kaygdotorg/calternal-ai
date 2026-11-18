@@ -260,6 +260,10 @@ available: boolean,
  */
 execution: MachineExecution,
 /**
+ * The cloud machine is using containers because KVM is unavailable.
+ */
+sandbox_fallback: SandboxFallback | null,
+/**
  * Installed provider plugins and their account-scoped check results.
  */
 providers: { [key in string]?: ProviderReadiness }, };
@@ -297,6 +301,10 @@ available: boolean,
  */
 execution: MachineExecution,
 /**
+ * The cloud machine is using containers because KVM is unavailable.
+ */
+sandbox_fallback: SandboxFallback | null,
+/**
  * Installed provider plugins and their account-scoped check results.
  */
 providers: { [key in string]?: ProviderReadiness }, };
@@ -305,6 +313,11 @@ providers: { [key in string]?: ProviderReadiness }, };
  */
 
 export type MachineExecution = "sandboxed" | "direct";
+/**
+ * Why a machine is running a reduced sandbox configuration.
+ */
+
+export type SandboxFallback = "kvm_unavailable";
 /**
  * A bounded observation of the official provider program's own check.
  */
