@@ -64,3 +64,27 @@ A Codex adapter reuses this entire protocol, machine stdin/exec transport, job
 streams/checkpoints, access tokens, instructions, risk policy, retry scheduler and
 CLI. Its own plugin would supply an executable and model metadata; only official
 Codex process control and event normalization differ.
+
+## App sign-in
+
+A provider that declares `sign_in: true` implements a private `--sign-in`
+mode on its manifest executable. The host starts this mode in a fenced scratch
+sandbox. The program may write one bounded JSON challenge line with `url`,
+`display_code` and `needs_code`. An authorization code is supplied to
+the original process on stdin. Exit 0 means the official CLI's own status
+check succeeded. The program keeps all other output on the machine.
+
+`provider.sign_in.start` selects a provider, space, and optional thread and
+machine. `requests.list` carries the private `provider_sign_in` challenge.
+`provider.sign_in.answer` supplies a code, `provider.sign_in.status` reads the
+result, and `provider.sign_in.typing` offers sign-in again when a failed turn's
+owner resumes composing. A pending request expires after 10 minutes. The
+private machine process has its own timeout. The server keeps challenge data
+in memory and exposes only the current person's requests.
+
+Normal execution uses a home per space and account. The Claude Code adapter
+links only the shared machine-local login file into the space's configuration
+directory. Podman mounts the shared directory read-only during a turn. Direct
+uses distinct homes under the same Unix account and retains its documented
+host filesystem access. Existing Linux homes import the Claude OAuth record
+alone. Other state stays in its original directory.

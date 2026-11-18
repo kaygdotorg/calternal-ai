@@ -4,9 +4,13 @@ Machine-side TypeScript adapter for the installed, unmodified `claude` program.
 It uses the documented print-mode stream (`-p --output-format stream-json
 --verbose --include-partial-messages`), `--resume`, `--append-system-prompt` and
 `--disallowedTools`. Unlike an Agent SDK integration, it launches the CLI directly
-and handles no OAuth token, API key or provider login file. The person uses
-`claude auth login` inside their account sandbox home; status is checked through
-`claude auth status` (only exit status and the billing-method enum are used).
+and never sends the resulting credential to the server. The app starts the
+official `claude auth login` through the adapter's private sign-in mode. The
+adapter relays the provider-owned browser URL and pipes a pasted
+authorization code to the same command. `claude auth status` verifies the
+login before the adapter publishes it to the account's machine-local login
+directory. Normal Podman turns mount that directory read-only and retain
+separate provider settings and transcripts for each space.
 
 Build from the repository root: `npm ci && npm run build:plugins`. Install `dist/`
 and `bin/` together in the sandbox image; put `bin/` on PATH. The Containerfile is

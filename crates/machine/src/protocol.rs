@@ -269,7 +269,13 @@ pub struct SandboxSpec {
     /// backend. Never serialized: a remote assignment can carry source only.
     #[serde(skip)]
     pub code_directory: Option<std::path::PathBuf>,
-    /// Account owning the persistent login home; validated UUID from the server.
+    /// Space from the enclosing assignment, or supplied by a local backend caller.
+    #[serde(skip)]
+    pub space_id: Option<SpaceId>,
+    /// Start a disposable login home with write access to shared provider login state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub provider_login: bool,
+    /// Account owning the persistent shared login; validated UUID from the server.
     pub account_id: Uuid,
     /// The thread; one sandbox per thread, reused across leases.
     pub thread_id: Uuid,

@@ -16,12 +16,17 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 const CHECK_TTL: Duration = Duration::from_secs(300);
+// Keep only a short-lived machine observation, so a timed-out flow can be
+// offered on the next explicit compose gesture without polling the provider.
+const SIGNED_OUT_HINT_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 const MAX_CHECKS_PER_MACHINE: usize = 128;
 
 /// Account-qualified provider status; the check never returns credentials.
 pub(crate) struct Observation {
     pub(super) at: Instant,
     pub(super) value: ProviderCheck,
+    offered_sign_in: bool,
+    expired_notified: bool,
 }
 
 /// Account-keyed in-memory index and invalidation listeners for the registry.
@@ -302,11 +307,16 @@ impl MachineService {
             }
         }
         let m = st.machines.get_mut(&machine).expect("checked machine");
-        let old = m.checks.entry(account).or_default().insert(
+        let checks = m.checks.entry(account).or_default();
+        let offered_sign_in =
+            !value.signed_in && checks.get(&provider).is_some_and(|old| old.offered_sign_in);
+        let old = checks.insert(
             provider,
             Observation {
                 at: Instant::now(),
                 value: value.clone(),
+                offered_sign_in,
+                expired_notified: false,
             },
         );
         if old.is_none_or(|check| check.value != value || check.at.elapsed() >= CHECK_TTL) {
@@ -372,8 +382,88 @@ impl MachineService {
 
 pub(super) fn expire(m: &mut Machine) -> impl Iterator<Item = AccountId> + '_ {
     m.checks.iter_mut().filter_map(|(account, checks)| {
-        let count = checks.len();
-        checks.retain(|_, check| check.at.elapsed() < CHECK_TTL);
-        (count != checks.len()).then_some(*account)
+        let mut changed = false;
+        checks.retain(|_, check| {
+            let age = check.at.elapsed();
+            if age < CHECK_TTL {
+                return true;
+            }
+            if !check.expired_notified {
+                check.expired_notified = true;
+                changed = true;
+            }
+            check.value.installed && !check.value.signed_in && age < SIGNED_OUT_HINT_TTL
+        });
+        changed.then_some(*account)
     })
+}
+
+impl MachineService {
+    /// Select a connected machine with a recent signed-out hint for an explicit
+    /// compose gesture. Hints outlive the pending request and carry no challenge.
+    pub(crate) fn signed_out_target(
+        &self,
+        account: AccountId,
+        pin: Option<Uuid>,
+        provider: &str,
+    ) -> Result<Option<Uuid>, Error> {
+        let st = self.lock()?;
+        Ok(st
+            .eligible(account, pin)
+            .filter(|m| connected(m, &self.settings))
+            .filter(|m| {
+                m.checks
+                    .get(&account)
+                    .and_then(|checks| checks.get(provider))
+                    .is_some_and(|check| {
+                        check.value.installed
+                            && !check.value.signed_in
+                            && check.at.elapsed() < SIGNED_OUT_HINT_TTL
+                    })
+            })
+            .min_by_key(|m| (m.row.owner == Owner::Pool, m.row.id))
+            .map(|m| m.row.id))
+    }
+
+    /// Claim the first automatic offer for a continuous signed-out observation.
+    /// Later signed-out checks keep the claim until successful authentication.
+    pub(crate) fn claim_sign_in_offer(
+        &self,
+        account: AccountId,
+        machine: Uuid,
+        provider: &str,
+    ) -> Result<bool, Error> {
+        let mut state = self.lock()?;
+        let Some(check) = state
+            .machines
+            .get_mut(&machine)
+            .and_then(|m| m.checks.get_mut(&account))
+            .and_then(|checks| checks.get_mut(provider))
+        else {
+            return Ok(false);
+        };
+        if check.offered_sign_in || !check.value.installed || check.value.signed_in {
+            return Ok(false);
+        }
+        check.offered_sign_in = true;
+        Ok(true)
+    }
+
+    /// Pick an entitled, connected machine without exposing a pool identity.
+    /// An exact target is for a previously selected machine or an explicit
+    /// personal machine. This reads the readiness registry once.
+    pub(crate) fn sign_in_target(
+        &self,
+        account: AccountId,
+        target: Option<Uuid>,
+        pool: Option<bool>,
+    ) -> Result<Uuid, Error> {
+        let st = self.lock()?;
+        st.eligible(account, target)
+            .filter(|m| pool.is_none_or(|pool| (m.row.owner == Owner::Pool) == pool))
+            .filter(|m| connected(m, &self.settings))
+            .min_by_key(|m| (m.row.owner == Owner::Pool, m.row.id))
+            .map(|m| m.row.id)
+            .ok_or_else(|| Error::not_found("connected machine not found"))
+    }
 }

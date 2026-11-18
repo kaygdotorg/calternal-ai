@@ -62,6 +62,7 @@ pub(super) struct Lease {
     pub state: LeaseState,
     pub order: u64,
     pub pool_diagnostic: bool,
+    pub provider_login: bool,
 }
 
 impl Lease {
@@ -220,6 +221,8 @@ impl State {
             space_id: l.row.space,
             account_id: l.row.account,
             spec: SandboxSpec {
+                space_id: Some(l.row.space),
+                provider_login: l.provider_login,
                 code_directory: None,
                 worker: self.workers.get(&lease).cloned(),
                 account_id: l.row.account.as_uuid(),

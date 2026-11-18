@@ -66,6 +66,10 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [pending.cancel](./pending-cancel/): pending cancel
 - [pending.confirm](./pending-confirm/): pending confirm
 - [pending.submit](./pending-submit/): pending submit
+- [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
+- [provider.sign_in.answer](./provider-sign-in-answer/): Supply a code to the official provider login
+- [provider.sign_in.status](./provider-sign-in-status/): Read a private provider sign-in result
+- [provider.sign_in.typing](./provider-sign-in-typing/): Offer provider re-authentication while composing
 - [requests.list](./requests-list/): List requests waiting on the signed-in account
 - [requests.ask](./requests-ask/): Ask the person a question from the current turn
 - [requests.answer](./requests-answer/): Answer a pending question
