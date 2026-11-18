@@ -653,3 +653,5 @@ agent. It reruns without replacing an existing identity for that server.
 - **Backups.** Confirm HDD coverage and select a retention and restore policy
   for the SSD, HDD and sensitive machine state. Retaining more coordinated
   restore points uses more storage.
+
+For operator-provided machine downloads, see [Publish machine releases](machine-install.md#publish-machine-releases).

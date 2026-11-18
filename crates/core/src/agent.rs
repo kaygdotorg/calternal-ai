@@ -123,7 +123,7 @@ pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
     ),
     (
         crate::MACHINES_INSTALL,
-        "Create a single-use personal machine enrollment script",
+        "Create a single-use personal machine enrollment command",
         true,
     ),
     (

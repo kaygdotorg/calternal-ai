@@ -6,6 +6,10 @@ image=${1:?Usage: build-image.sh IMAGE}
 target=x86_64-unknown-linux-musl
 build_dir=${CARGO_TARGET_DIR:-target}
 binary=$build_dir/$target/release/calternal
+# Coordinated machine artifacts use this same revision and an owner-supplied public key.
+if [[ -n ${RELEASE_REVISION:-} ]]; then
+  export CALTERNAL_MACHINE_RELEASE_ID=${CALTERNAL_MACHINE_RELEASE_ID:-$RELEASE_REVISION}
+fi
 
 npm ci --ignore-scripts --no-audit --no-fund
 npm run build:plugins

@@ -25,6 +25,9 @@ mod ownership;
 pub use ownership::{OwnerLock, lock_for_upgrade};
 pub mod protocol;
 mod ready;
+/// Build identity and limits for signed machine releases.
+pub mod release;
+mod update;
 pub mod runner;
 pub mod sandbox;
 

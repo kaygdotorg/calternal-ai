@@ -157,6 +157,9 @@ pub enum Command {
         /// Operator configuration file for the experimental microVM backend.
         #[arg(long)]
         microvm_config: Option<PathBuf>,
+        /// Verify and install the server's signed machine release after active leases finish.
+        #[arg(long, conflicts_with = "bootstrap_handoff")]
+        self_update: bool,
         /// Most threads run at once.
         #[arg(long, default_value_t = 10)]
         max_sandboxes: u32,
@@ -457,6 +460,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             image,
             podman,
             microvm_config,
+            self_update,
             max_sandboxes,
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
@@ -516,7 +520,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 backend,
                 max_sandboxes,
             };
-            connection::run_at(config, connect_address.as_ref(), &ready, shutdown_signal())
+            connection::run_at(config, connect_address.as_ref(), &ready, self_update, shutdown_signal())
                 .await
                 .map_err(|e| fail("machine run", e))?;
             Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))

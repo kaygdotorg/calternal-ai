@@ -236,12 +236,11 @@ async fn personal_machine_installer_uses_a_private_one_time_code() {
                 .as_millis() as i64
     );
     let script = data["script"].as_str().unwrap();
-    assert!(script.starts_with("#!/bin/sh\n"));
-    assert!(script.contains("# Enrollment code expires at "));
-    assert!(script.contains("launchctl bootstrap"));
-    assert!(script.contains("systemctl --user restart"));
+    assert!(script.starts_with("curl --disable --proto '=https'"));
+    assert!(script.contains("/install' | CALTERNAL_ENROLL_CODE='"));
+    assert_eq!(script.lines().count(), 1);
     let code = script
-        .split(" code='")
+        .split("CALTERNAL_ENROLL_CODE='")
         .nth(1)
         .unwrap()
         .split('\'')

@@ -58,7 +58,11 @@ type Svc = Option<Extension<Arc<MachineService>>>;
 /// Every machine route. Handlers answer 404 when no [`MachineService`]
 /// extension is installed (tests that build the router without one).
 pub fn routes<D: Directory>() -> Router<Shared<D>> {
+    let release_path = calternal_machine::release::PATH;
     Router::new()
+        .route("/install", get(super::install::installer))
+        .route(&format!("{release_path}/version"), get(super::install::version))
+        .route(&format!("{release_path}/{{version}}/{{platform}}/{{asset}}"), get(super::install::asset))
         .route("/api/v1/machine/enroll", post(enrol))
         .route("/api/v1/machine/session/start", post(session_start))
         .route("/api/v1/machine/session/finish", post(session_finish))
