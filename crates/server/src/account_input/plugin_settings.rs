@@ -196,14 +196,28 @@ mod tests {
     #[test]
     fn v2_account_input_keeps_its_binding_when_settings_are_added() {
         let c = Connection::open_in_memory().unwrap();
-        let v2 = calternal_store::migrations::Schema::new("input.db", 2, &[super::super::db::SCHEMA], &[]);
+        let v2 = calternal_store::migrations::Schema::new(
+            "input.db",
+            2,
+            &[super::super::db::SCHEMA],
+            &[],
+        );
         calternal_store::migrations::migrate(&c, v2).unwrap();
-        c.execute("INSERT INTO binding VALUES('existing','epoch')", []).unwrap();
+        c.execute("INSERT INTO binding VALUES('existing','epoch')", [])
+            .unwrap();
         calternal_store::migrations::migrate(&c, super::super::db::UPGRADE_SCHEMA).unwrap();
         assert_eq!(
-            c.query_row("SELECT epoch FROM binding WHERE account='existing'", [], |r| r.get::<_, String>(0)).unwrap(),
+            c.query_row(
+                "SELECT epoch FROM binding WHERE account='existing'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
             "epoch"
         );
-        assert_eq!(stored(&c, SpaceId::new(), "package", "key").unwrap(), Value::Null);
+        assert_eq!(
+            stored(&c, SpaceId::new(), "package", "key").unwrap(),
+            Value::Null
+        );
     }
 }
