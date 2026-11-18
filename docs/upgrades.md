@@ -34,6 +34,15 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/upgrade-intent.json` and role-local `.calternal-upgrade/` | Temporary authority | Deploy writes the private `calternal-upgrade-intent/v1` decision and one restore point. The manifest binds installation, both image digests and the raw file proofs. The gate supplies `calternal-upgrade-proof/v1` evidence for the two images. |
 | Appdata `startup.json`, `setup.token`, operator and release config | Mixed | Server startup publishes `calternal-startup/v1` and a replaceable setup code. Auth retains its hash and expiry. Operator owns the pinned installation ID and deployment secrets. Deploy owns image IDs, units and release pointers. |
 
+The live-editing migration adds `room_kinds` and `room_checkpoints` to
+space content SQLite as version 5, following the version 4 thread snooze
+step. Checkpoints belong to an immutable revision and commit with its outbox
+intent. A checkpoint is limited to 8 MiB. Each item retains up to 64 recent
+checkpoints and 16 MiB total. Purge removes them with the referenced revisions.
+The preceding writer ignores these tables. A head written without a
+checkpoint is a new lineage on the next live access. Older live bases cannot
+be merged automatically across that boundary.
+
 ## Forward changes
 
 The shared runner in `calternal-store` ports the existing app's

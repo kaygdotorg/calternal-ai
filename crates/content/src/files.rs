@@ -125,7 +125,7 @@ pub(crate) fn encoded(item: &Item, format: &FileFormat) -> Result<Vec<u8>> {
     }
 }
 impl Space {
-    fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
+    pub(crate) fn registration(&self, kind: &str) -> Result<(Placement, FileFormat)> {
         if let Some(definition) = self.registrations.borrow().get(kind) {
             return Ok(definition.clone());
         }

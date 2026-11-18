@@ -48,7 +48,9 @@ pub use search::{
     SearchKey, SearchKind, SearchMatch, SearchProbe, fold_title, message_terms, typo_expression,
 };
 mod revision_slice;
+mod rooms;
 use lifecycle::{Cache, Slot, spawn_sweeper, sweep};
+pub use rooms::{LiveEdit, LiveTextEdit};
 mod trash;
 mod types;
 use calternal_roots::Roots;

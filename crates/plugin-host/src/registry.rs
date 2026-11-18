@@ -252,7 +252,10 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
     crate::slots::validate(m)?;
     let op = |id: &str| m.operations.iter().any(|x| x.id == id);
     for (index, x) in m.kinds.iter().enumerate() {
-        if x.searchable == Some(true) && !x.claimed_text
+        if (x.searchable == Some(true) || x.live_editing()) && !x.claimed_text
+            || x.schema
+                .get(calternal_core::ManifestKind::LIVE_EDITING)
+                .is_some_and(|value| !value.is_boolean())
             || !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
             || !match &x.storage {

@@ -333,3 +333,23 @@ sections enter the command list as navigation commands in the Settings group.
 from the current catalog snapshot. Live install, update, disable and removal
 take effect on the next request.
 See [Search and palette lookups](search.md).
+
+
+## Live editing
+
+A Markdown kind can opt in by declaring `"x-calternal-live-editing": true`
+in its root kind schema. The annotation is compatible with older manifest
+readers. The host registers the opt-in when the kind is provisioned for a
+space. It owns merge and persistence for the kind. A replacement must name
+the opaque revision it was based on. The host merges against that base while
+it remains retained in the current lineage. An unavailable base returns a
+conflict before any write. Retrying with the same request ID follows the
+existing receipt contract.
+
+
+Instead of `text` and `metadata`, `write_item` can pass an `edit` object
+for an existing live item. Use `{"type":"append","text":"…"}` with no
+`base_revision`, or `{"type":"patch","changes":[{"at":0,"delete":0,"insert":"…"}]}`
+with a `base_revision`. A patch accepts at most 256 non-overlapping changes.
+Positions and lengths are UTF-16 units on grapheme boundaries in the base.
+Both operations preserve the current metadata and use the normal write receipt.

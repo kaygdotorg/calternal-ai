@@ -23,5 +23,9 @@ blake3.workspace = true
 tracing.workspace = true
 time = { workspace = true, features = ["formatting", "macros"] }
 
+similar = "3.2.0"
+unicode-segmentation = "1.13.3"
+yrs = { version = "0.28", features = ["sync"] }
+
 [dev-dependencies]
 tempfile.workspace = true

@@ -7,6 +7,7 @@
 //! [`Store::open`] validates and locks the three roots through `calternal-roots`
 //! before it creates or opens anything, and holds those locks for its lifetime.
 mod plugin_items;
+pub(crate) use plugin_items::PluginItemWrite;
 
 use crate::fault::{self, FaultPoint};
 use calternal_content::{Content, Item, Request};
@@ -421,14 +422,18 @@ impl Store {
             String,
             calternal_content::Placement,
             calternal_content::FileFormat,
+            bool,
         )],
         collections: &[(String, String, String)],
     ) -> Result<(), Error> {
         let space = space_id;
         let actor = actor.into();
-        for (kind, placement, format) in kinds {
+        for (kind, placement, format, live_editing) in kinds {
             self.content
                 .register_kind(space, kind, placement.clone(), format.clone())?;
+            if *live_editing {
+                self.content.enable_live_editing(space, kind)?;
+            }
         }
         if collections.is_empty() {
             return Ok(());

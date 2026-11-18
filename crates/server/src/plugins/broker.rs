@@ -308,22 +308,58 @@ impl<D: Directory> SpaceHost<D> {
     fn write_item(&self, input: &Value) -> Result<Value, Error> {
         let object = exact(
             input,
-            &["kind", "item_id", "base_revision", "metadata", "text"],
+            &[
+                "kind",
+                "item_id",
+                "base_revision",
+                "metadata",
+                "text",
+                "edit",
+            ],
         )?;
         let kind = str_field(object, "kind")?.ok_or(Error::Invalid)?;
         let actor = self.kind_actor(kind, true).ok_or(Error::Refused)?;
-        let text = object
-            .get("text")
-            .and_then(Value::as_str)
-            .ok_or(Error::Invalid)?;
         let id = str_field(object, "item_id")?
             .map(|s| Uuid::parse_str(s).map_err(|_| Error::Invalid))
             .transpose()?;
         let base = str_field(object, "base_revision")?;
-        let metadata = match object.get("metadata") {
-            None => json!({}),
-            Some(m @ Value::Object(_)) => m.clone(),
-            Some(_) => return Err(Error::Invalid),
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+        enum Edit {
+            Append {
+                text: String,
+            },
+            Patch {
+                changes: Vec<calternal_content::LiveTextEdit>,
+            },
+        }
+        use crate::store::PluginItemWrite;
+        let edit = object
+            .get("edit")
+            .map(|value| serde_json::from_value::<Edit>(value.clone()).map_err(|_| Error::Invalid))
+            .transpose()?;
+        let body = match edit.as_ref() {
+            Some(_) if object.contains_key("text") || object.contains_key("metadata") => {
+                return Err(Error::Invalid);
+            }
+            Some(Edit::Append { text }) => {
+                PluginItemWrite::Edit(calternal_content::LiveEdit::Append(text))
+            }
+            Some(Edit::Patch { changes }) => {
+                PluginItemWrite::Edit(calternal_content::LiveEdit::Patch(changes))
+            }
+            None => {
+                let text = object
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .ok_or(Error::Invalid)?;
+                let metadata = match object.get("metadata") {
+                    None => json!({}),
+                    Some(m @ Value::Object(_)) => m.clone(),
+                    Some(_) => return Err(Error::Invalid),
+                };
+                PluginItemWrite::Replace { metadata, text }
+            }
         };
         // A plugin writes only its own kinds, and only with current write authority.
         if !self.plugin.declares_kind(kind) || !self.has(Capability::ContentWrite) {
@@ -355,8 +391,7 @@ impl<D: Directory> SpaceHost<D> {
                 kind,
                 id,
                 base,
-                metadata,
-                text,
+                body,
             )
             .map_err(|_| Error::Refused)?;
         // WorkerSession runs callbacks serially. Slot zero remains available

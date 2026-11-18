@@ -626,3 +626,128 @@ fn dormant_outbox_recovery_preserves_the_original_checkpoint_event() {
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].data["append"], reply["append"]);
 }
+
+#[test]
+fn opted_in_kind_merges_a_stale_replace_after_reopening() {
+    let dir = tempfile::tempdir().unwrap();
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    let content = open(dir.path(), |_| {});
+    content
+        .register_kind(
+            space,
+            "documents",
+            Placement::Visible {
+                folder: "Documents".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content.enable_live_editing(space, "documents").unwrap();
+    let write = |content: &Content, id, base, key, bytes: &[u8]| {
+        content.write(
+            space,
+            id,
+            "documents",
+            base,
+            json!({"title":"Shared"}),
+            bytes,
+            request(actor, key),
+            |item| json!({"id":item.id}),
+        )
+    };
+    let base = write(&content, None, None, "seed", b"Start\nMiddle\nEnd\n").unwrap();
+    write(
+        &content,
+        Some(base.id),
+        Some(&base.revision),
+        "person",
+        b"Start!\nMiddle\nEnd\n",
+    )
+    .unwrap();
+    drop(content);
+    let reopened = open(dir.path(), |_| {});
+    let merged = write(
+        &reopened,
+        Some(base.id),
+        Some(&base.revision),
+        "agent",
+        b"Start\nMiddle\nEnd!\n",
+    )
+    .unwrap();
+    assert_eq!(merged.bytes, b"Start!\nMiddle\nEnd!\n");
+}
+
+#[test]
+fn live_patch_preserves_concurrent_typing_and_append_uses_the_head() {
+    use calternal_content::{LiveEdit, LiveTextEdit};
+    let dir = tempfile::tempdir().unwrap();
+    let content = open(dir.path(), |_| {});
+    let space = SpaceId::new();
+    let actor = AccountId::new();
+    content
+        .register_kind(
+            space,
+            "documents",
+            Placement::Visible {
+                folder: "Documents".into(),
+            },
+            FileFormat::Markdown,
+        )
+        .unwrap();
+    content.enable_live_editing(space, "documents").unwrap();
+    let base = content
+        .write(
+            space,
+            None,
+            "documents",
+            None,
+            json!({"title":"Document"}),
+            b"abc",
+            request(actor, "seed"),
+            |_| json!({}),
+        )
+        .unwrap();
+    content
+        .write(
+            space,
+            Some(base.id),
+            "documents",
+            Some(&base.revision),
+            base.metadata.clone(),
+            b"ab!c",
+            request(actor, "typing"),
+            |_| json!({}),
+        )
+        .unwrap();
+    let patch = [LiveTextEdit {
+        at: 1,
+        delete: 2,
+        insert: String::new(),
+    }];
+    let patched = content
+        .edit_live(
+            space,
+            base.id,
+            "documents",
+            Some(&base.revision),
+            LiveEdit::Patch(&patch),
+            request(actor, "patch"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(patched.bytes, b"a!");
+    let appended = content
+        .edit_live(
+            space,
+            base.id,
+            "documents",
+            None,
+            LiveEdit::Append("z"),
+            request(actor, "append"),
+            |_| json!({}),
+        )
+        .unwrap();
+    assert_eq!(appended.bytes, b"a!z");
+    assert_eq!(appended.metadata, base.metadata);
+}
