@@ -18,6 +18,19 @@ pub(super) fn apply<D: Directory>(
 ) -> Result<Value, Error> {
     let content = st.store.content();
     if operation == "threads.get"
+        && let Some(message) = data.get("message_id").and_then(Value::as_str)
+    {
+        if data.contains_key("since") {
+            return Err(Error::invalid_input("choose one of message_id or since"));
+        }
+        return super::search::open(
+            &content,
+            space,
+            id.ok_or_else(|| Error::invalid_input("id is required"))?,
+            message,
+        );
+    }
+    if operation == "threads.get"
         && let Some(since) = data.get("since")
     {
         return super::delta::read(

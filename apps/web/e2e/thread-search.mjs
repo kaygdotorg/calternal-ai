@@ -35,10 +35,10 @@ try {
   await p.keyboard.press("Escape"); await p.waitForTimeout(400);
   ok(p.url() === before, "Esc closes and returns to where you were", p.url());
   // sidebar button and a tap
-  await p.locator("aside.side").getByRole("button", { name: "Search messages" }).click();
-  await p.keyboard.type("the"); await rows.first().waitFor();
+  await p.keyboard.press("Control+k"); await p.waitForTimeout(500); await p.keyboard.type("the"); await p.waitForTimeout(500);
+  await p.locator("[role=option]", { hasText: "Search messages for" }).click(); await p.locator(".msg-search-input").waitFor({ timeout: 3000 }); await rows.first().waitFor();
   await rows.nth(2).click(); await p.waitForTimeout(500);
-  ok(/\?m=/.test(p.url()) && (await p.locator(".msg-search-input").count()) === 0, "the sidebar button opens it and a tap opens the message");
+  ok(/\?m=/.test(p.url()) && (await p.locator(".msg-search-input").count()) === 0, "the palette's Search messages row opens it and a tap opens the message");
   await ctx.close();
 } catch (err) { console.log("FAIL  " + err.message); bad++; }
 await browser.close(); await stop();

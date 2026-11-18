@@ -1,82 +1,67 @@
 <script lang="ts">
-  // THE app switcher: an icon-only capsule at the bottom centre of the left sidebar (footer order: account picture, this, search), three icons at a time, the rest reached by scrolling it sideways; a click or tap
-  // switches app. It is a `nav` of real links (Enter opens, "Threads, link, current page" is announced, the address is right-clickable); every icon has its name as its accessible name and as a tooltip (hover,
-  // keyboard focus, long press). One tab stop (the current app); Left, Right, Home and End move focus and bring that icon to the middle. The current app is always in view: centred when it can be (at the ends the strip rests flush), on mount and whenever the app changes by
-  // any route. The strip shows exactly three whole icons; when more apps exist on a side, the outer icon on that side is smaller and fainter (the page-indicator pattern, no clipped icon, no gradient); with three or fewer
-  // all are full size and nothing scrolls. Scrolling snaps one icon at a time. Motion (tokens): the current marker and the outer icons' scale and opacity over `--dur-base` on `--ease-out`; press `--press-scale`; centring after a
-  // key or an outside change is an animation of `scrollLeft` over `--dur-base` on `--ease-out`, cancelled by the next touch, wheel or key (interruptible), instant under reduced motion.
-  import { Icon, tip } from "@calternal/ui";
+  // THE app switcher: an icon-only capsule at the bottom centre of the left sidebar (footer order: account picture, this, search), three icons at a time, the rest reached by scrolling it sideways; a click or tap switches app.
+  // It is the shared Selector (packages/ui: an outer pill with the chosen option as a pill inside it, arrow keys, Home and End, one tab stop, a tooltip with each app's name), sized to three icons; this component only adds what an
+  // app list needs: scrolling, keeping the current app in view, and the hint that more apps exist. The current app is centred when it can be (at an end the strip rests flush) on mount and whenever it changes by any route (centring
+  // is an animation of `scrollLeft` over `--dur-base` on an out curve, cancelled by the next touch, wheel or key, instant under reduced motion). The strip shows exactly three whole icons; when more apps exist on a side, the outer
+  // icon on that side is drawn smaller and fainter (the page-indicator pattern: no clipped icon, no gradient); with three or fewer all are full size and nothing scrolls. Apps from plugins are data (switcherApps.svelte.ts).
+  import { Icon, Selector, tip, tokenMs } from "@calternal/ui";
   import { navigate } from "../lib/route.svelte";
-  import { letterOf, switcherApps, type SwitcherApp } from "./switcherApps.svelte";
+  import { letterOf, switcherApps } from "./switcherApps.svelte";
   let { current }: { current: string } = $props();
   const apps = $derived(switcherApps());
-  let track = $state<HTMLElement>(), at = $state(1); // `at`: the index of the icon in the middle slot (the three in view are at-1, at, at+1)
-  const slot = () => (track && track.children[0] ? (track.children[0] as HTMLElement).offsetWidth : 40);
-  /** The scrollLeft that puts icon `i` in the middle slot, held inside the strip: the first and last icons cannot be centred, so at the ends the strip rests flush and the current app sits at that end. */
-  const middleOf = (i: number) => Math.max(0, Math.min((apps.length - 3) * slot(), (i - 1) * slot()));
+  const options = $derived(apps.map((a) => ({ value: a.kind, label: a.name, iconOnly: true })));
+  // The Selector marks the chosen app itself; this copy follows the address (a choice made elsewhere, the palette, Back).
+  // svelte-ignore state_referenced_locally
+  let chosen = $state(current);
+  $effect(() => { chosen = current; });
+  let root = $state<HTMLElement>(), at = $state(1); // `at`: the index of the app in the middle slot (the three in view are at-1, at, at+1)
+  const scroller = () => root?.querySelector<HTMLElement>(".selector") ?? null;
+  const pitch = () => { const o = scroller()?.querySelectorAll<HTMLElement>(".opt"); return o && o.length > 1 ? o[1]!.offsetLeft - o[0]!.offsetLeft : 40; };
+  /** The scrollLeft that puts app `i` in the middle slot, held inside the strip: the first and last cannot be centred, so at the ends the strip rests flush. */
+  const middleOf = (i: number) => Math.max(0, Math.min((apps.length - 3) * pitch(), (i - 1) * pitch()));
   const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches || document.documentElement.dataset.input === "key";
   let glideId = 0;
-  /** Animates the track to `left` over the base duration on the out curve; cancelled by any later gesture. */
   function glide(left: number) {
-    if (!track) return;
-    const cs = getComputedStyle(document.documentElement);
-    const ms = parseFloat(cs.getPropertyValue("--dur-base")) || 220;
+    const el = scroller();
+    if (!el) return;
+    const ms = tokenMs("--dur-base", 220);
+    el.dataset.glideMs = String(ms); // read by e2e/app-switcher.mjs: the glide is a scroll, which Element.animate cannot record
     cancelAnimationFrame(glideId);
-    if (reduced() || ms <= 1) { track.scrollLeft = left; return; }
-    const from = track.scrollLeft, t0 = performance.now();
-    const ease = (t: number) => 1 - Math.pow(1 - t, 4); // an out curve; the exact token curve is cubic-bezier(.23,1,.32,1)
-    const step = (now: number) => { if (!track) return; const t = Math.min(1, (now - t0) / ms); track.scrollLeft = from + (left - from) * ease(t); if (t < 1) glideId = requestAnimationFrame(step); };
+    if (reduced() || ms <= 1) { el.scrollLeft = left; return; }
+    const from = el.scrollLeft, t0 = performance.now();
+    const step = (now: number) => { const t = Math.min(1, (now - t0) / ms); el.scrollLeft = from + (left - from) * (1 - Math.pow(1 - t, 4)); if (t < 1) glideId = requestAnimationFrame(step); };
     glideId = requestAnimationFrame(step);
   }
   const stop = () => cancelAnimationFrame(glideId);
-  const indexOfCurrent = () => Math.max(0, apps.findIndex((a) => a.kind === current));
-  // Centred on mount (no animation) and whenever the current app or the list changes.
   let first = true;
   $effect(() => {
     void current; void apps.length;
-    const i = indexOfCurrent();
-    queueMicrotask(() => { if (!track) return; if (first) { track.scrollLeft = middleOf(i); first = false; } else glide(middleOf(i)); measure(); });
+    const i = Math.max(0, apps.findIndex((a) => a.kind === current));
+    queueMicrotask(() => { const el = scroller(); if (!el) return; if (first) { el.scrollLeft = middleOf(i); first = false; } else glide(middleOf(i)); measure(); });
   });
-  function measure() { if (!track) return; at = Math.max(1, Math.min(apps.length - 2, Math.round(track.scrollLeft / slot()) + 1)); }
-  // A side has more apps when the icon beyond the visible three exists on it; the outer visible icon on that side is then drawn smaller and fainter.
-  const outer = (i: number): boolean => apps.length > 3 && ((i === at - 1 && at - 1 > 0) || (i === at + 1 && at + 1 < apps.length - 1));
-  function key(e: KeyboardEvent) {
-    const cur = apps.findIndex((a) => a.kind === (document.activeElement as HTMLElement | null)?.dataset.kind);
-    const from = cur < 0 ? indexOfCurrent() : cur;
-    const to = e.key === "ArrowRight" ? from + 1 : e.key === "ArrowLeft" ? from - 1 : e.key === "Home" ? 0 : e.key === "End" ? apps.length - 1 : null;
-    if (to === null || to < 0 || to >= apps.length) return;
-    e.preventDefault(); stop();
-    glide(middleOf(to));
-    queueMicrotask(() => track?.querySelector<HTMLElement>(`[data-kind="${apps[to]!.kind}"]`)?.focus({ preventScroll: true }));
-  }
-  const go = (e: MouseEvent, a: SwitcherApp) => { if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return; e.preventDefault(); navigate(`/${a.kind}`); };
+  function measure() { const el = scroller(); if (el) at = Math.max(1, Math.min(apps.length - 2, Math.round(el.scrollLeft / pitch()) + 1)); }
+  $effect(() => { const el = scroller(); if (!el) return; el.addEventListener("scroll", measure, { passive: true }); el.addEventListener("pointerdown", stop); el.addEventListener("wheel", stop, { passive: true }); return () => { el.removeEventListener("scroll", measure); el.removeEventListener("pointerdown", stop); el.removeEventListener("wheel", stop); }; });
+  const outer = (kind: string): boolean => { const i = apps.findIndex((a) => a.kind === kind); return apps.length > 3 && ((i === at - 1 && at - 1 > 0) || (i === at + 1 && at + 1 < apps.length - 1)); };
 </script>
 
-<nav class="switcher" aria-label="Apps" data-count={apps.length}>
-  <div class="track" bind:this={track} onscroll={measure} onkeydown={key} onpointerdown={stop} onwheel={stop} role="presentation">
-    {#each apps as a, i (a.kind)}
-      <a class="app" class:cur={a.kind === current} class:outer={outer(i)} href="/{a.kind}" data-kind={a.kind} aria-label={a.name} aria-current={a.kind === current ? "page" : undefined} tabindex={a.kind === current ? 0 : -1} use:tip={{ label: a.name }} onclick={(e) => go(e, a)}>
-        {#if a.icon}<Icon name={a.icon} />{:else if a.iconPath}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d={a.iconPath} /></svg>{:else}<span class="letter" aria-hidden="true">{letterOf(a.name)}</span>{/if}
-      </a>
-    {/each}
-  </div>
+<nav class="switcher" aria-label="Apps" bind:this={root} data-count={apps.length}>
+  <Selector label="Apps" bind:value={chosen} {options} size="lg" fill={false} class="apps" tooltip={tip} onpick={(k) => navigate(`/${k}`)}>
+    {#snippet optionIcon(o)}
+      {@const a = apps.find((x) => x.kind === o.value)}
+      <span class="ic" class:outer={outer(o.value)}>
+        {#if a?.icon}<Icon name={a.icon} />{:else if a?.iconPath}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d={a.iconPath} /></svg>{:else}<span class="letter" aria-hidden="true">{letterOf(o.label)}</span>{/if}
+      </span>
+    {/snippet}
+  </Selector>
 </nav>
 
 <style>
-  /* Three slots wide; the first and last icons cannot be centred, so at the ends the strip rests flush. */
-  .switcher { --slot: var(--pill-h); min-width: 0; display: flex; justify-content: center; }
-  .track { display: flex; width: calc(var(--slot) * 3); max-width: 100%; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; box-sizing: border-box; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.07); }
-  .switcher[data-count="1"] .track, .switcher[data-count="2"] .track, .switcher[data-count="3"] .track { overflow-x: visible; width: auto; justify-content: center; scroll-snap-type: none; }
-  .track::-webkit-scrollbar { display: none; }
-  .app { flex: none; width: var(--slot); height: var(--slot); display: grid; place-items: center; scroll-snap-align: center; border-radius: var(--r-pill); color: var(--ink-2); position: relative; isolation: isolate; transition: scale var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }
-  /* The marker behind the current icon fades and scales in on the tokens. */
-  .app::before { content: ""; position: absolute; inset: var(--s-1); z-index: -1; border-radius: var(--r-pill); background: rgb(var(--ink-rgb) / 0.14); opacity: 0; scale: 0.8; transition: opacity var(--dur-base) var(--ease-out), scale var(--dur-base) var(--ease-out); }
-  .app.cur { color: var(--ink); }
-  .app.cur::before { opacity: 1; scale: 1; }
-  .app.outer { scale: 0.75; opacity: 0.55; }
-  .app:active { scale: var(--press-scale); }
+  .switcher { min-width: 0; display: flex; justify-content: center; }
+  /* Three icons wide (the Selector scrolls sideways by itself); with three or fewer apps it is as wide as they are. */
+  .switcher :global(.apps) { max-width: calc(var(--pill-h) * 3 + 8px); }
+  .ic { display: grid; place-items: center; transition: scale var(--dur-base) var(--ease-out), opacity var(--dur-base) var(--ease-out); }
+  .ic.outer { scale: 0.75; opacity: 0.55; }
   .letter { display: grid; place-items: center; width: var(--glyph); height: var(--glyph); border-radius: 50%; border: 1.5px solid currentColor; font-size: calc(var(--glyph) * 0.6); font-weight: var(--strong-weight); line-height: 1; }
   svg { width: var(--glyph); height: var(--glyph); stroke-width: var(--glyph-stroke); stroke-linecap: round; stroke-linejoin: round; }
-  @media (hover: hover) and (pointer: fine) { .app:not(.cur):hover { color: var(--ink); } }
-  @media (prefers-reduced-motion: reduce) { .app, .app::before { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .ic { transition: none; } }
 </style>

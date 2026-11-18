@@ -12,6 +12,9 @@ import { values } from "./store.svelte";
 import { navigate } from "../../lib/route.svelte";
 import { shell } from "../../shell/shell.svelte";
 import { spaces } from "../../shell/spaces.svelte";
+import { canvasEnabled } from "../../canvas/model.svelte";
+import { canvasPrefs, LOOKS, OPEN_WIDTHS } from "../../canvas/prefs.svelte";
+import type { Look } from "../../canvas/layout";
 import { devToken, serverMode } from "../../server/client";
 import { caps } from "../../shell/capabilities.svelte";
 
@@ -54,7 +57,7 @@ export interface Setting {
 /** A card of rows with an optional header; `danger` puts it last, under the Danger area header. */
 export interface Group { title?: string; settings: Setting[]; danger?: boolean }
 /** One Settings page: its address id (`/settings/<id>`), sidebar name and icon, a one-line purpose, and its groups. */
-export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[] }
+export interface Page { id: string; name: string; icon: IconName; blurb: string; groups: Group[]; /** Show the groups as sections: a list beside the selected section where the card is wide, the list then the section (drill-in) where it is narrow. Every group needs a title. */ split?: boolean }
 /** A sidebar section: `user` (this person), `space` (the current space) or `server` (Admin). Which sections and pages exist depends on the source and the capabilities, so read them through `visibleSections`. */
 export interface Section { id: "user" | "space" | "server"; name: string; pages: Page[] }
 
@@ -69,12 +72,17 @@ const signOutAction = (): void => {
 const confirmLater = (what: string) => () => alert(`${what}\n\nThis is a fixture: nothing is changed. The real action asks for confirmation (and a passkey when it changes access).`);
 
 const appearancePage: Page = {
-  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.",
+  id: "appearance", name: "Appearance", icon: "image", blurb: "How the app looks. Everything applies at once.", split: true,
   groups: [
     { title: "Look", settings: [
       { id: "appearance.scheme", label: "Colour scheme", help: "Auto follows the system.", control: { type: "scheme" }, get: () => A.scheme, set: (v) => A.setScheme(v as never) },
       { id: "appearance.preset", label: "Preset", help: "A preset sets the wallpaper and the colours together; each stays adjustable.", control: { type: "presets" } },
-      { id: "appearance.wallpaper", label: "Wallpaper and fonts", help: "Choose a photograph, upload your own, search Unsplash, pick fonts.", control: { type: "drill", summary: () => A.wallpaper?.name ?? "None", run: () => navigate("/settings/appearance?sheet=1") } },
+    ] },
+    { title: "Wallpaper", settings: [
+      { id: "appearance.wallpaper", label: "Wallpaper", help: "A photograph from the library, your own picture, a link, or an Unsplash search.", control: { type: "custom", load: () => import("../../appearance/WallpaperPanel.svelte") } },
+    ] },
+    { title: "Fonts", settings: [
+      { id: "appearance.fonts", label: "Fonts", help: "A family for each role.", control: { type: "custom", load: () => import("../../appearance/FontsPanel.svelte") } },
     ] },
     { title: "Materials", settings: [
       { id: "appearance.blur", label: "Blur", help: "Frosts the picture behind the sidebars and the card.", control: { type: "checkbox" }, get: () => A.prefs.materials.blur, set: (v) => ap((p) => (p.materials.blur = !!v)) },
@@ -90,11 +98,18 @@ const appearancePage: Page = {
     { title: "Chat", settings: [
       { id: "appearance.chat-width", label: "Chat layout", help: "Wide: messages and the composer use the whole card, yours on the right, the agent's from the left. Centred: a readable column.", control: { type: "segmented", options: [{ id: "wide", label: "Wide" }, { id: "centered", label: "Centred" }] }, get: () => A.prefs.chatWidth, set: (v) => ap((p) => (p.chatWidth = v === "centered" ? "centered" : "wide")) },
     ] },
+    ...(canvasEnabled ? [{ title: "Windows", settings: [
+      { id: "appearance.window-look", label: "Window look", help: "How every window on the canvas looks: the middle card as it is, a transparent card, or a solid one.", control: { type: "segmented", options: LOOKS.map((l) => ({ id: l.value, label: l.label })) }, get: () => canvasPrefs.look, set: (v) => canvasPrefs.setLook(v as Look) },
+      { id: "appearance.window-width", label: "New window width", help: "How wide a new window opens, as a share of the canvas. Drag a window's edge to change one.", control: { type: "popup", options: OPEN_WIDTHS.map((w) => ({ id: String(w.value), label: w.label })) }, get: () => String(canvasPrefs.width), set: (v) => canvasPrefs.setWidth(v === "null" ? null : Number(v)) },
+    ] } as Group] : []),
     { title: "Motion", settings: [
       { id: "appearance.motion", label: "Animations", help: "Follows the system's reduce-motion setting; this switch turns them off as well.", control: { type: "switch" }, get: () => A.prefs.motion, set: (v) => ap((p) => (p.motion = !!v)) },
     ] },
-    { title: "Layout", settings: [
-      { id: "appearance.app-order", label: "Apps", help: "The order of the apps in the switcher under the card (and the bottom bar on a phone). Move one up or down.", control: { type: "order" }, get: () => A.prefs.appOrder, set: (v) => ap((p) => (p.appOrder = (v as string[]).slice())) },
+    { title: "Apps", settings: [
+      { id: "appearance.app-order", label: "Apps", help: "The order of the apps in the capsule at the bottom of the sidebar. Move one up or down.", control: { type: "order" }, get: () => A.prefs.appOrder, set: (v) => ap((p) => (p.appOrder = (v as string[]).slice())) },
+    ] },
+    { title: "Reset", settings: [
+      { id: "appearance.reset", label: "Restore defaults", help: "Puts every appearance setting back to its default.", control: { type: "button", text: "Restore defaults", run: () => A.reset() } },
     ] },
   ],
 };

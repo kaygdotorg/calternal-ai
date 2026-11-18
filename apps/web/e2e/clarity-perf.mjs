@@ -2,7 +2,7 @@
 // (their blob URLs stay the same), and each step is on the screen within three frames. Both colour schemes. A step used to re-blur the picture and re-solve everything (a long task of hundreds of milliseconds at 4x).
 // Usage: node e2e/clarity-perf.mjs (after `npm run build`, through with-preview).
 import { chromium } from "playwright";
-import { BASE, serve } from "./lib.mjs";
+import { BASE, busyNow, judgeTimings, serve } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 const q = (a, f) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * f))] : 0; };
@@ -10,7 +10,7 @@ for (const scheme of ["dark", "light"]) {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
   await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage();
-  await page.goto(`${BASE}/settings/appearance?firstrun=0`); await page.waitForSelector("html[data-ready]");
+  await page.goto(`${BASE}/settings/appearance/appearance.clarity?firstrun=0`); await page.waitForSelector("html[data-ready]");
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--wall-side").includes("blob"), null, { timeout: 20000 }); await page.waitForTimeout(800);
   const slider = page.getByRole("slider", { name: /Clear to tinted/ }); await slider.scrollIntoViewIfNeeded();
   const walls = () => page.evaluate(() => ["--wall-side", "--wall-card"].map((k) => getComputedStyle(document.documentElement).getPropertyValue(k)).join("|"));
@@ -28,9 +28,11 @@ for (const scheme of ["dark", "light"]) {
   await page.mouse.up(); await page.waitForTimeout(500);
   const long = await page.evaluate(() => __long.slice()); const after = await walls();
   console.log(`   ${scheme}: step on screen p50 ${q(lat, 0.5).toFixed(0)} ms, max ${Math.max(...lat).toFixed(0)} ms; long tasks ${long.length}${long.length ? " (" + long.map((x) => x.toFixed(0)).join(", ") + " ms)" : ""}`);
-  ok(Math.max(0, ...long) <= 50, `${scheme}: no main-thread task over 50 ms while the slider moves through all five steps at 4x CPU`, `longest ${Math.max(0, ...long).toFixed(0)} ms`);
+  const judge = judgeTimings();
+  if (!judge) console.log(`SKIP  ${scheme}: timing judgement (numbers above, not judged): the machine is busy (${busyNow().why}); the quiet list judges it: npm run e2e:quiet`);
+  else ok(Math.max(0, ...long) <= 50, `${scheme}: no main-thread task over 50 ms while the slider moves through all five steps at 4x CPU`, `longest ${Math.max(0, ...long).toFixed(0)} ms`);
   ok(before === after, `${scheme}: the blurred wallpaper copies are not rebuilt (same blob URLs before and after)`);
-  ok(Math.max(...lat) < 150, `${scheme}: each step is on the screen within a few frames at 4x`, `max ${Math.max(...lat).toFixed(0)} ms`);
+  if (judge) ok(Math.max(...lat) < 150, `${scheme}: each step is on the screen within a few frames at 4x`, `max ${Math.max(...lat).toFixed(0)} ms`);
   await ctx.close();
 }
 await b.close(); stop(); process.exit(bad ? 1 : 0);

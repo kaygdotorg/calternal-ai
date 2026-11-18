@@ -1,7 +1,7 @@
 <script lang="ts">
   // Invitations to the current space: make one (a role and how long it lasts), copy the link of a live one, revoke an unused one. A link is a credential: it is shown only here, to people who may manage it, and the
   // person who opens it makes their own account and passkey and lands in their own space with this one added.
-  import { Button, Capsule , VirtualList } from "@calternal/ui";
+  import { Button, Selector, VirtualList } from "@calternal/ui";
   import * as people from "../../server/people";
   import { say } from "../../server/say";
   import { spaces } from "../../shell/spaces.svelte";
@@ -35,8 +35,8 @@
 
 <div class="sp">
   <div class="r"><span class="n"><span class="t">Invite someone</span><span class="h">They open the link, make a passkey, and join with this role.</span>
-    <Capsule label="Role" kind="radio" glass={false} items={ROLES} value={role} onchange={(v) => (role = v as people.GrantRole)} />
-    <Capsule label="Lasts" kind="radio" glass={false} items={WHEN} value={days} onchange={(v) => (days = v)} /></span>
+    <Selector label="Role" fill={false} options={ROLES.map((r) => ({ value: r.id, label: r.label }))} value={role} onchange={(v) => (role = v as people.GrantRole)} />
+    <Selector label="Lasts" fill={false} options={WHEN.map((r) => ({ value: r.id, label: r.label }))} value={days} onchange={(v) => (days = v)} /></span>
     <Button text="Make an invitation" variant="primary" disabled={busy} onclick={() => act(() => people.createInvite(space, role, Date.now() + Number(days) * 86400000))} /></div>
   <VirtualList inside count={shown.length} estimate={90} overscan={600} label="Invitations" onrange={(_, end) => { if (end >= shown.length - 20) void more(); }}>
     {#snippet row(ix)}{@const i = shown[ix]}{#if i}

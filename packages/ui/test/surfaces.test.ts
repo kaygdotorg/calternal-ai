@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { describe, expect, it, vi } from "vitest";
-import { Badge, Button, Capsule, Card, IconButton, Menu, Pill, Row, Sheet, Toolbar } from "../src";
+import { Badge, Button, Card, IconButton, Menu, Pill, Row, Sheet, Toolbar } from "../src";
 
 const html = (s: string) => createRawSnippet(() => ({ render: () => s }));
 const audit = async (node: HTMLElement) => (await axe.run(node, { rules: { "color-contrast": { enabled: false } } })).violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`);
@@ -34,36 +34,6 @@ describe("buttons carry their name", () => {
   it("Badge says its tone in words", () => {
     render(Badge, { text: "running", tone: "accent", dot: true });
     expect(screen.getByText("running")).toBeTruthy();
-  });
-});
-
-describe("Capsule", () => {
-  const items = [{ id: "a", label: "Alpha", icon: "file" as const }, { id: "b", label: "Beta", icon: "code" as const }, { id: "c", label: "Gamma", icon: "table" as const }];
-  it("is a tab list with one selected tab in the tab order", () => {
-    render(Capsule, { items, value: "a", label: "Sections" });
-    expect(screen.getByRole("tablist", { name: "Sections" })).toBeTruthy();
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.getAttribute("aria-selected"))).toEqual(["true", "false", "false"]);
-    expect(tabs.map((t) => t.tabIndex)).toEqual([0, -1, -1]);
-  });
-  it("arrow keys move focus and select, Home and End jump", async () => {
-    const onchange = vi.fn();
-    render(Capsule, { items, value: "a", label: "Sections", onchange });
-    screen.getByRole("tab", { name: "Alpha" }).focus();
-    await userEvent.keyboard("{ArrowRight}");
-    expect(onchange).toHaveBeenLastCalledWith("b");
-    await userEvent.keyboard("{End}");
-    expect(onchange).toHaveBeenLastCalledWith("c");
-  });
-  it("the radio kind is a radio group", () => {
-    render(Capsule, { items, value: "b", label: "Scheme", kind: "radio" });
-    expect(screen.getByRole("radiogroup", { name: "Scheme" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Beta" }).getAttribute("aria-checked")).toBe("true");
-  });
-  it("morph shows only the selected label (the others are named by aria-label)", () => {
-    render(Capsule, { items, value: "a", label: "Sections", morph: true });
-    expect(screen.getByRole("tab", { name: "Beta" }).querySelector(".icononly")).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Alpha" }).querySelector(".icononly")).toBeNull();
   });
 });
 
@@ -129,7 +99,6 @@ describe("accessibility audit (axe, structure and names)", () => {
     const host = document.createElement("div");
     document.body.append(host);
     mount(Toolbar, { target: host, props: { label: "Tools", children: html('<button aria-label="Copy">c</button>') } });
-    mount(Capsule, { target: host, props: { items: [{ id: "a", label: "A" }, { id: "b", label: "B" }], value: "a", label: "Switch" } });
     mount(Card, { target: host, props: { label: "Details", children: html("<h2>Hi</h2>") } });
     mount(Button, { target: host, props: { text: "Go" } });
     mount(IconButton, { target: host, props: { icon: "close", label: "Close" } });

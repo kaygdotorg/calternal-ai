@@ -17,10 +17,10 @@ export const SNAP = 12;
 /** Below this canvas width every column is the full width (a phone). */
 export const NARROW = 760;
 
-/** The three looks of a window (docs/ui-shell-status.md, "The look of a window"). */
+/** The three looks a window can have (docs/ui-shell-status.md, "The look of a window"), chosen once for every window in the canvas preferences (prefs.svelte.ts). */
 export type Look = "card" | "clear" | "solid";
 
-/** One window: an app's item (a thread, a note) with its own look. */
+/** One window: an app's item (a thread, a note). */
 export interface Win {
   id: string;
   /** The app's kind in addresses (`threads`, `notes`). */
@@ -29,8 +29,6 @@ export interface Win {
   item: string;
   /** Its share of the column's height among the windows stacked in it. */
   weight: number;
-  /** How the window looks: the middle card as it is today (default), transparent (only a tint over the blurred, veiled background behind it) or solid (an opaque surface in the wallpaper's hue). */
-  look: Look;
   /** The input lock: all input and scrolling stays in this window and the canvas never moves. */
   locked: boolean;
 }

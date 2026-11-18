@@ -3,6 +3,42 @@
   "policy": "Never raise budgets silently. Null means no accepted limit and incomplete qualification, never a pass. Separate measured proposals are unaccepted. Inherited ceilings remain breaches even when comparisons are imperfect.",
   "entries": [
     {
+      "metric": "search.messages.common.warm",
+      "percentile": "p95",
+      "budget": 25,
+      "unit": "ms",
+      "fixture": "1M and 10M framed messages in one space",
+      "measurement": "authenticated HTTP search.query, newest 50 common exact token, warm",
+      "reference": "Issue #47 approved layout probe, plus HTTP and storage headroom"
+    },
+    {
+      "metric": "search.messages.rare.warm",
+      "percentile": "p95",
+      "budget": 25,
+      "unit": "ms",
+      "fixture": "1M and 10M framed messages in one space",
+      "measurement": "authenticated HTTP search.query, newest 50 rare exact token, warm",
+      "reference": "Issue #47 approved layout probe, plus HTTP and storage headroom"
+    },
+    {
+      "metric": "search.messages.phrase.warm",
+      "percentile": "p95",
+      "budget": 25,
+      "unit": "ms",
+      "fixture": "1M and 10M framed messages in one space",
+      "measurement": "authenticated HTTP search.query, newest 50 quoted exact phrase with adjacency verification, warm",
+      "reference": "Issue #47 approved layout probe, plus HTTP and storage headroom"
+    },
+    {
+      "metric": "search.messages.phrase.cold",
+      "percentile": "p95",
+      "budget": 150,
+      "unit": "ms",
+      "fixture": "1M and 10M framed messages in one space",
+      "measurement": "authenticated HTTP search.query, newest 50 quoted exact phrase after OS cache drop, including revision byte reads",
+      "reference": "Issue #47 approved layout probe, plus HTTP and storage headroom"
+    },
+    {
       "metric": "notes.get",
       "percentile": "p95",
       "budget": 50,
@@ -190,6 +226,15 @@
       "fixture": "all",
       "reference": "owner decision 2026-11-18; notes.update 40 ms plus live.commit_to_client 10 ms",
       "measurement": "client starts the HTTP update through receipt of the matching journal SSE event by the subscribed client"
+    },
+    {
+      "metric": "userdata.ack_to_durable_file",
+      "percentile": "max",
+      "budget": 1000,
+      "unit": "ms",
+      "fixture": "1k,10k,100k notes and multi-space Notes fixtures",
+      "measurement": "from receipt of the HTTP acknowledgment to observation of the matching revision's post-fsync file placement mark; one head sample over budget fails",
+      "reference": "ADR 0062 one-second durable file materialization bound"
     },
     {
       "metric": "account.draft_write_to_feed",

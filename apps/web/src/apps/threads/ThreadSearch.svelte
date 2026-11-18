@@ -8,18 +8,18 @@
   import { navigate, route } from "../../lib/route.svelte";
   import { shell } from "../../shell/shell.svelte";
   import { client } from "./store.svelte";
-  import { messageSearch } from "./search.svelte";
+  import { closeMessageSearch, messageSearch, messageSearchAvailable, takeMessageSearchText } from "./search.svelte";
   import type { MessageHit } from "./model";
   let text = $state("");
   let sel = $state(0);
   let hits = $state<MessageHit[]>([]);
   let list = $state<HTMLElement>();
   let from = "";
-  const available = typeof client.searchMessages === "function";
+  const available = messageSearchAvailable();
   const ago = (at: number | undefined) => at === undefined ? "" : new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   $effect(() => {
     if (!messageSearch.open) return;
-    text = ""; sel = 0; hits = [];
+    text = untrack(takeMessageSearchText); sel = 0; hits = [];
     // (read untracked: following a result changes the address, and this effect must not run again and clear the typed text)
     untrack(() => { const qs = route.query.toString(); from = route.path + (qs ? `?${qs}` : ""); });
     const f = () => document.querySelector<HTMLElement>(".msg-search-input");
@@ -35,7 +35,7 @@
   });
   const target = (h: MessageHit) => `/threads/${h.threadId}${h.messageId ? `?m=${encodeURIComponent(h.messageId)}` : ""}`;
   function follow() { const h = hits[sel]; if (h) navigate(target(h), true); }
-  function close(restore: boolean) { messageSearch.open = false; if (restore && from) navigate(from, true); }
+  function close(restore: boolean) { closeMessageSearch(); if (restore && from) navigate(from, true); }
   function open(h: MessageHit | undefined) { if (!h) return; navigate(target(h), true); close(false); }
   function key(e: KeyboardEvent) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;

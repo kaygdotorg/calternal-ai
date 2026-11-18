@@ -1,3 +1,4 @@
+import { cpus, loadavg } from "node:os";
 // Shared by the e2e scripts: starts `vite preview` of the built app, opens Chromium, and exposes small helpers.
 import { spawn } from "node:child_process";
 import { readdirSync, readFileSync, readlinkSync } from "node:fs";
@@ -70,3 +71,21 @@ export async function allThreads(page) {
   const tab = page.locator("aside.side [role=tab]", { hasText: "All Threads" });
   if (await tab.count() && (await tab.getAttribute("aria-selected")) !== "true") { await tab.click(); await page.waitForTimeout(150); }
 }
+
+/**
+ * Whether this machine is too busy to judge a timing: the one-minute load is over half the cores, or a short spin of 30 ms of CPU takes noticeably longer than 30 ms of wall time (other processes are taking the CPU). A timing check run in the
+ * gate records its numbers and says "SKIP judgement" when this is true, and judges them when it is not; `CAL_QUIET=1` (the quiet list, `npm run e2e:quiet`) always judges. Cost: about 100 ms.
+ */
+export function busyNow() {
+  const load = loadavg()[0], cores = cpus().length;
+  let worst = 1;
+  for (let i = 0; i < 3; i++) {
+    const c0 = process.cpuUsage(), w0 = performance.now();
+    for (;;) { const c = process.cpuUsage(c0); if (c.user + c.system >= 30000) break; }
+    worst = Math.max(worst, (performance.now() - w0) / 30);
+  }
+  const busy = load > cores / 2 || worst > 1.4;
+  return { busy, load, cores, spin: worst, why: `load ${load.toFixed(1)} on ${cores} cores, a 30 ms spin took ${(worst * 30).toFixed(0)} ms` };
+}
+/** True when timing checks must be judged: the quiet list (`CAL_QUIET=1`) or a machine that is not busy. */
+export const judgeTimings = () => process.env.CAL_QUIET === "1" || !busyNow().busy;

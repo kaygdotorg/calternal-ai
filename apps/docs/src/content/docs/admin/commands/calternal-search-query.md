@@ -20,6 +20,8 @@ title: "calternal search query"
       "kind": "string",
       "space_id": "string",
       "title": "string",
+      "message_id?": "string",
+      "message_at?": "string",
       "excerpt": [
         {
           "text": "string",

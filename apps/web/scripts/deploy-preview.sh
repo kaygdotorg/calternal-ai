@@ -12,3 +12,10 @@ code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ai/)
 deep=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ai/threads/t-run)
 font=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/ai/fonts/google-sans-flex-latin-opsz-normal.woff2)
 echo "preview: / $code, deep link $deep, font $font"
+# The same tip on fixtures data (no server, nothing to sign in to), served over NetBird only on 10.69.69.222:4310 for the iPhone Simulator. Built at base / into a stable directory, then served by serve-fixtures.mjs.
+CAL_BASE=/ CAL_OUT=dist-fixtures npm run build >/dev/null
+fx=$HOME/fixtures-preview; rm -rf "$fx.new" && cp -r dist-fixtures "$fx.new" && rm -rf "$fx" && mv "$fx.new" "$fx"
+pkill -f "serve-fixtures.mjs $fx" 2>/dev/null || true
+setsid nohup node scripts/serve-fixtures.mjs "$fx" 10.69.69.222 4310 > "$HOME/fixtures-preview.log" 2>&1 < /dev/null &
+sleep 1
+echo "fixtures: http://10.69.69.222:4310/threads/t-run $(curl -s -o /dev/null -w '%{http_code}' http://10.69.69.222:4310/threads/t-run)"
