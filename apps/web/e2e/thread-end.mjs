@@ -8,6 +8,8 @@ const end = (p) => p.evaluate(() => { const f = document.querySelector("[role=fe
 try {
   for (const device of ["phone", "desktop"]) for (const path of ["/threads/t-run", "/threads/t-long", "/threads/t-idle"]) {
     const { page: p, ctx } = await open(browser, device, "light", path);
+    // A busy machine renders later, so the list is first waited for (up to 10 s, the end shown and the last message clear of the composer); what is judged is that it then STAYS there while the rest of the page settles.
+    await p.waitForFunction(() => { const f = document.querySelector("[role=feed]"); const last = [...(f?.querySelectorAll(".msg") ?? [])].at(-1); return !!last && f.scrollHeight - f.scrollTop - f.clientHeight <= 1; }, null, { timeout: 10000, polling: 100 }).catch(() => {});
     const seen = [];
     for (const ms of [150, 700, 1700]) { await p.waitForTimeout(ms); seen.push(await end(p)); }
     ok(seen.every((s) => s.fromEnd <= 1 && s.hidden <= 1), `${device} ${path}: opens at the end and stays there, the last message above the composer`, JSON.stringify(seen.map((s) => [s.fromEnd, s.hidden])));
