@@ -2,7 +2,7 @@
 use crate::{JsonObject, OperationDescription, OperationRisk, validation::decode};
 use calternal_types::{AccountId, Error, SpaceId};
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// A recognized kind and stable item UUID.
@@ -163,6 +163,63 @@ pub struct CollectionGetInput {
     pub id: Uuid,
 }
 
+/// List saved Notes collections in a space the caller can read.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CollectionListInput {
+    /// Owning space UUID.
+    #[schemars(with = "String")]
+    pub space_id: SpaceId,
+    /// Opaque continuation from this space and account.
+    pub cursor: Option<String>,
+    /// Page size, clamped to 1–50. Defaults to 50.
+    pub limit: Option<u32>,
+}
+
+/// A saved Notes collection as shown in its space's list.
+#[derive(Serialize, JsonSchema)]
+pub struct CollectionSummary {
+    /// Stable collection UUID.
+    #[schemars(with = "String")]
+    pub id: Uuid,
+    /// Current display title.
+    pub title: String,
+    /// Current opaque content revision.
+    pub revision: String,
+    /// Whether the caller may replace collection membership.
+    pub can_edit: bool,
+}
+
+/// A continuation page of saved Notes collections.
+#[derive(Serialize, JsonSchema)]
+pub struct CollectionPage {
+    /// Saved Notes collections in this page.
+    pub items: Vec<CollectionSummary>,
+    /// Opaque continuation when another page may exist.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+/// A visible note in a saved collection.
+#[derive(Serialize, JsonSchema)]
+pub struct CollectionMember {
+    /// Canonical note UUID.
+    #[schemars(with = "String")]
+    pub id: Uuid,
+    /// Current display title.
+    pub title: String,
+}
+
+/// A saved Notes collection and its current visible members.
+#[derive(Serialize, JsonSchema)]
+pub struct CollectionGetResult {
+    /// Identity, title, revision and membership-edit permission.
+    #[serde(flatten)]
+    pub summary: CollectionSummary,
+    /// Same-space live notes in collection order.
+    pub members: Vec<CollectionMember>,
+}
+
 /// Create a saved set of notes in one space.
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -220,6 +277,7 @@ pub struct SharingOperation {
     pub risk: OperationRisk,
     description: &'static str,
     schema: fn() -> JsonObject,
+    output: fn() -> JsonObject,
     validate_input: fn(&JsonObject) -> Result<(), Error>,
 }
 
@@ -234,12 +292,16 @@ fn validate_input<T: serde::de::DeserializeOwned>(input: &JsonObject) -> Result<
 
 macro_rules! operation {
     ($name:literal, $doc:literal, $input:ty, $mutates:literal, $risk:ident) => {
+        operation!($name, $doc, $input, $mutates, $risk, JsonObject)
+    };
+    ($name:literal, $doc:literal, $input:ty, $mutates:literal, $risk:ident, $out:ty) => {
         SharingOperation {
             id: $name,
             mutates: $mutates,
             risk: OperationRisk::$risk,
             description: $doc,
             schema: schema::<$input>,
+            output: schema::<$out>,
             validate_input: validate_input::<$input>,
         }
     };
@@ -252,7 +314,16 @@ pub const SHARING_OPERATIONS: &[SharingOperation] = &[
         "Read a saved notes collection and its current revision",
         CollectionGetInput,
         false,
-        Read
+        Read,
+        CollectionGetResult
+    ),
+    operation!(
+        "collections.list",
+        "List saved notes collections in a space",
+        CollectionListInput,
+        false,
+        Read,
+        CollectionPage
     ),
     operation!(
         "collections.create",
@@ -298,7 +369,7 @@ pub const SHARING_OPERATIONS: &[SharingOperation] = &[
     ),
     operation!(
         "sharing.shared_with_me",
-        "List items shared with the signed-in account",
+        "List items shared with the signed-in account, including membership edit access for collections",
         SharesReceivedInput,
         false,
         Read
@@ -368,7 +439,7 @@ impl SharingOperation {
             required_capability: None,
             target: None,
             input_schema: (self.schema)(),
-            output_schema: schema::<JsonObject>(),
+            output_schema: (self.output)(),
         }
     }
 }

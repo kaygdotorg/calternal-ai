@@ -66,13 +66,14 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [skills.list](./skills-list/): List visible space skills and their descriptions.
 - [plugins.manifests](./plugins-manifests/): List palette contributions from enabled plugins.
 - [collections.get](./collections-get/): Read a saved notes collection and its current revision
+- [collections.list](./collections-list/): List saved notes collections in a space
 - [collections.create](./collections-create/): Save an explicit set of notes in one space
 - [collections.set_members](./collections-set-members/): Replace a saved collection's explicit notes
 - [sharing.mark_seen](./sharing-mark-seen/): Mark a received item share as seen
 - [sharing.rescue](./sharing-rescue/): Save the caller's blocked offline edits as a private note
 - [sharing.list](./sharing-list/): List sharing controls and grants for an item
 - [sharing.audiences](./sharing-audiences/): Find visible people or groups to share an item with
-- [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account
+- [sharing.shared_with_me](./sharing-shared-with-me/): List items shared with the signed-in account, including membership edit access for collections
 - [sharing.grant](./sharing-grant/): Set view or edit access for one named audience
 - [sharing.revoke](./sharing-revoke/): Revoke one item grant, including while the item is in Trash
 - [sharing.link_create](./sharing-link-create/): Issue a read-only public link

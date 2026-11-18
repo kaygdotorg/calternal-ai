@@ -47,8 +47,60 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
 ```json
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "additionalProperties": true,
-  "title": "Map_of_AnyValue",
+  "definitions": {
+    "CollectionMember": {
+      "description": "A visible note in a saved collection.",
+      "properties": {
+        "id": {
+          "description": "Canonical note UUID.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Current display title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "type": "object"
+    }
+  },
+  "description": "A saved Notes collection and its current visible members.",
+  "properties": {
+    "can_edit": {
+      "description": "Whether the caller may replace collection membership.",
+      "type": "boolean"
+    },
+    "id": {
+      "description": "Stable collection UUID.",
+      "type": "string"
+    },
+    "members": {
+      "description": "Same-space live notes in collection order.",
+      "items": {
+        "$ref": "#/definitions/CollectionMember"
+      },
+      "type": "array"
+    },
+    "revision": {
+      "description": "Current opaque content revision.",
+      "type": "string"
+    },
+    "title": {
+      "description": "Current display title.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "can_edit",
+    "id",
+    "members",
+    "revision",
+    "title"
+  ],
+  "title": "CollectionGetResult",
   "type": "object"
 }
 ```

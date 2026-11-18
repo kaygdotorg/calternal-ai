@@ -83,6 +83,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         "resolve", // dedicated address matrix in resolver.rs
         // Dedicated item sharing fixtures in resolver.rs.
         "collections.get",
+        "collections.list",
         "collections.create",
         "collections.set_members",
         "sharing.list",

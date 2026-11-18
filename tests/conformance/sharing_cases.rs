@@ -5,6 +5,7 @@ use super::*;
 pub(super) const OPERATIONS: &[&str] = &[
     "collections.create",
     "collections.get",
+    "collections.list",
     "collections.set_members",
     "sharing.audiences",
     "sharing.grant",
@@ -82,6 +83,89 @@ async fn bearer_open_discloses_item_address_only_to_an_independently_authorized_
     );
     assert_eq!(get(Some(2)).await, (200, anonymous));
     assert_eq!(get(Some(1)).await.1["item"], item);
+}
+
+#[tokio::test]
+async fn collection_lists_are_space_scoped_and_membership_editing_is_owner_only() {
+    let f = Fixture::new().await;
+    let space = &f.spaces[0];
+    let first = data(
+        f.op(
+            1,
+            "collections.create",
+            json!({
+                "space_id":space,"title":"First saved set","members":[]
+            }),
+        )
+        .await,
+    );
+    let second = data(
+        f.op(
+            1,
+            "collections.create",
+            json!({
+                "space_id":space,"title":"Second saved set","members":[]
+            }),
+        )
+        .await,
+    );
+    let one = data(
+        f.op(1, "collections.list", json!({"space_id":space,"limit":1}))
+            .await,
+    );
+    assert_eq!(one["items"].as_array().unwrap().len(), 1);
+    assert_eq!(one["items"][0]["can_edit"], true);
+    let cursor = one["next_cursor"].as_str().unwrap();
+    let two = data(
+        f.op(
+            1,
+            "collections.list",
+            json!({
+                "space_id":space,"limit":1,"cursor":cursor
+            }),
+        )
+        .await,
+    );
+    assert!(two.get("next_cursor").is_none());
+    let ids = [&one["items"][0]["id"], &two["items"][0]["id"]];
+    assert_ne!(ids[0], ids[1]);
+    assert!(ids.contains(&&first["id"]) && ids.contains(&&second["id"]));
+    let wrong_scope = f
+        .op(
+            1,
+            "collections.list",
+            json!({
+                "space_id":f.spaces[2],"limit":1,"cursor":cursor
+            }),
+        )
+        .await;
+    assert_eq!(wrong_scope.status, 400);
+
+    let id = &first["id"];
+    f.op(
+        1,
+        "sharing.grant",
+        json!({
+            "item":{"kind":"collections","id":id},
+            "audience":{"account_id":f.ids[2]},
+            "permission":"edit"
+        }),
+    )
+    .await
+    .ok();
+    let owner = data(f.op(1, "collections.get", json!({"id":id})).await);
+    let recipient = data(f.op(2, "collections.get", json!({"id":id})).await);
+    assert_eq!(owner["can_edit"], true);
+    assert_eq!(recipient["can_edit"], false);
+    let shared = data(
+        f.op(2, "sharing.shared_with_me", json!({"kind":"collections"}))
+            .await,
+    );
+    assert_eq!(shared["items"][0]["item"]["id"], *id);
+    assert_eq!(shared["items"][0]["permission"], "edit");
+    assert_eq!(shared["items"][0]["can_edit"], false);
+    let private = f.op(2, "collections.list", json!({"space_id":space})).await;
+    assert_eq!(private.status, 404);
 }
 
 #[tokio::test]

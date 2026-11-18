@@ -9054,8 +9054,153 @@
     },
     "output_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
-      "additionalProperties": true,
-      "title": "Map_of_AnyValue",
+      "definitions": {
+        "CollectionMember": {
+          "description": "A visible note in a saved collection.",
+          "properties": {
+            "id": {
+              "description": "Canonical note UUID.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Current display title.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "title"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "A saved Notes collection and its current visible members.",
+      "properties": {
+        "can_edit": {
+          "description": "Whether the caller may replace collection membership.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "Stable collection UUID.",
+          "type": "string"
+        },
+        "members": {
+          "description": "Same-space live notes in collection order.",
+          "items": {
+            "$ref": "#/definitions/CollectionMember"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "description": "Current opaque content revision.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Current display title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "can_edit",
+        "id",
+        "members",
+        "revision",
+        "title"
+      ],
+      "title": "CollectionGetResult",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "collections.list",
+    "description": "List saved notes collections in a space",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List saved Notes collections in a space the caller can read.",
+      "properties": {
+        "cursor": {
+          "description": "Opaque continuation from this space and account.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "description": "Page size, clamped to 1–50. Defaults to 50.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "space_id": {
+          "description": "Owning space UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "space_id"
+      ],
+      "title": "CollectionListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "definitions": {
+        "CollectionSummary": {
+          "description": "A saved Notes collection as shown in its space's list.",
+          "properties": {
+            "can_edit": {
+              "description": "Whether the caller may replace collection membership.",
+              "type": "boolean"
+            },
+            "id": {
+              "description": "Stable collection UUID.",
+              "type": "string"
+            },
+            "revision": {
+              "description": "Current opaque content revision.",
+              "type": "string"
+            },
+            "title": {
+              "description": "Current display title.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "can_edit",
+            "id",
+            "revision",
+            "title"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "A continuation page of saved Notes collections.",
+      "properties": {
+        "items": {
+          "description": "Saved Notes collections in this page.",
+          "items": {
+            "$ref": "#/definitions/CollectionSummary"
+          },
+          "type": "array"
+        },
+        "next_cursor": {
+          "description": "Opaque continuation when another page may exist.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "CollectionPage",
       "type": "object"
     }
   },
@@ -9358,7 +9503,7 @@
   {
     "risk": "read",
     "id": "sharing.shared_with_me",
-    "description": "List items shared with the signed-in account",
+    "description": "List items shared with the signed-in account, including membership edit access for collections",
     "mutates": false,
     "input_schema": {
       "$schema": "http://json-schema.org/draft-07/schema#",

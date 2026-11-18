@@ -21,7 +21,7 @@ An item reference is `{"kind":"notes"|"collections","id":"<uuid>"}`. Permissions
 | `sharing.link_update` | `item, grant_id, label?, expires_at?` | Updated link grant row. An omitted field stays as written, while a null expiry means Never. |
 | `sharing.link_copy` | `item, grant_id` | `url`, for Copy, QR, and the system share sheet. |
 | `sharing.revoke` | `item, grant_id` | `grant_id`. Other routes to the item retain their own access. |
-| `sharing.shared_with_me` | `kind, cursor?` | `items, next_cursor?`. Each row has `item, title, shared_by, permission, unread`. |
+| `sharing.shared_with_me` | `kind, cursor?` | `items, next_cursor?`. Each row has `item, title, shared_by, permission, unread`. Collection rows also carry `can_edit`. |
 | `sharing.set_link_policy` | `space_id, editors_can_manage_links` | `editors_can_manage_links`. Restricted to space settings authority. |
 
 A grant row has `grant_id` and `permission`. Named grants also have `audience` and `name`. Link grants have `label` and `expires_at`, and report `"view"`. The list contains the space audience summary and management flags separately so the sheet can show effective access without exposing other audiences to ordinary recipients. Open received items at their canonical item address. Missing and hidden addresses have the same response.
@@ -29,10 +29,18 @@ A grant row has `grant_id` and `permission`. Named grants also have `audience` a
 | Collection and recovery operation | Input | Result |
 | --- | --- | --- |
 | `collections.create` | `space_id, title, members` | `id, revision`. Members are same-space live Notes UUIDs. |
-| `collections.get` | `id` | `id, title, revision, members`. Rows have `id, title`. |
+| `collections.get` | `id` | `id, title, revision, can_edit, members`. Member rows have `id, title`. |
+| `collections.list` | `space_id, cursor?, limit?` | `items, next_cursor?`. Rows have `id, title, revision, can_edit`. Go to the next page when a cursor is present, including after an empty page. |
 | `collections.set_members` | `id, base_revision, members` | `id, revision`. Restricted to the collection's space Owner. |
 | `sharing.mark_seen` | `item` | `seen` for the signed-in recipient. |
 | `sharing.rescue` | `title, changed_blocks` | `note` in the signed-in account's personal space. The client sends only its own changed Markdown blocks. The server uses the local title and supplied blocks to create the copy. |
+
+The space list requires the caller's space role to allow reading. Item-only
+recipients use `sharing.shared_with_me`. For collections, `can_edit` means the
+caller may change membership as the space Owner. A collection Edit grant
+still permits editing the included notes. The list uses one space-local
+metadata page of up to 51 rows and two space authority checks, with zero
+body reads or flushes.
 
 Putting a note in Trash suspends existing links and grants. Someone with link management permission can revoke a suspended link. Restoring the note makes surviving grants active again. Permanent purge removes authority. Losing group membership or revoking an individual grant removes only the access gained through that grant. Item-only editors can edit the note's Markdown. Renaming uses the space's linked rewrite operation and requires space Edit. Shared Notes search reuses the source space's index with allowed item IDs and checks current access before sending matches.
 
