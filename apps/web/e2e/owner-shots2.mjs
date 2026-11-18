@@ -19,10 +19,10 @@ for (const scheme of ["dark", "light"]) {
   await p.waitForTimeout(500);
   await p.screenshot({ path: `${dir}/${scheme}-5-lone-window-no-full-screen.png`, clip: { x: 330, y: 0, width: 1170, height: 90 } });
   await p.keyboard.press("Alt+Shift+KeyN"); await p.waitForTimeout(400);
-  await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click(); await p.waitForTimeout(700);
+  await p.locator("[data-win]").first().getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click(); await p.waitForTimeout(700);
   await p.screenshot({ path: `${dir}/${scheme}-6-window-menu.png` });
   await p.keyboard.press("Escape"); await p.setViewportSize({ width: 1500, height: 330 }); await p.waitForTimeout(500);
-  await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click(); await p.waitForTimeout(800);
+  await p.locator("[data-win]").first().getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click(); await p.waitForTimeout(800);
   await p.screenshot({ path: `${dir}/${scheme}-7-menu-short-screen.png`, clip: { x: 700, y: 0, width: 800, height: 330 } });
   await ctx.close();
 }
