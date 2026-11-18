@@ -41,7 +41,9 @@ export interface Veil {
   ratio: number;
 }
 
-const lin = (v: number): number => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+/** sRGB to linear light: a table for whole channel values (the blends that are measured are rounded to them), the formula between. */
+const LIN = new Float64Array(256).map((_, i) => { const v = i / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+const lin = (v: number): number => (Number.isInteger(v) && v >= 0 && v <= 255 ? LIN[v]! : (v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
 const delin = (l: number): number => Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055));
 /** WCAG relative luminance of an encoded colour. */
 export const lum = ([r, g, b]: RGB): number => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
@@ -50,8 +52,17 @@ export const ratio = (a: number, b: number): number => (Math.max(a, b) + 0.05) /
 /** `a` of `v` over `w`, in encoded sRGB. */
 export const over = (w: RGB, v: RGB, a: number): RGB => [(1 - a) * w[0] + a * v[0], (1 - a) * w[1] + a * v[1], (1 - a) * w[2] + a * v[2]];
 const mix = (x: RGB, y: RGB, t: number): RGB => over(x, y, t);
-/** The 1st percentile of a list. */
-export const p01 = (xs: number[]): number => [...xs].sort((a, b) => a - b)[Math.floor(0.01 * (xs.length - 1))]!;
+/** The 1st percentile of a list: the element a full sort would put at index `floor(0.01 * (n - 1))`, found by selection (linear time; the sort it replaces was most of the cost of solving a veil, repeated for every surface on the page). */
+export function p01(xs: number[]): number {
+  const k = Math.floor(0.01 * (xs.length - 1)), a = Float64Array.from(xs);
+  let lo = 0, hi = a.length - 1;
+  while (lo < hi) {
+    const pivot = a[(lo + hi) >> 1]!; let i = lo, j = hi;
+    while (i <= j) { while (a[i]! < pivot) i++; while (a[j]! > pivot) j--; if (i <= j) { const t = a[i]!; a[i] = a[j]!; a[j] = t; i++; j--; } }
+    if (k <= j) hi = j; else if (k >= i) lo = i; else break;
+  }
+  return a[k]!;
+}
 
 /** The starting opacity of a surface's tint layer when `tint` is on (a sidebar's 0.35 is the plugin's sidebar default; the card's 0.85 its chat default); the solver raises Dim (or Tint when Dim is off) above the starting values only as far as the readability floor needs. The card's veil is computed, not started from here. */
 export const TINT_A: Record<Role, number> = { side: 0.35, card: 0.85 };
