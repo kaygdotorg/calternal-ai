@@ -12,6 +12,7 @@ import { spaces } from "../shell/spaces.svelte";
 import type { RequestsClient } from "../apps/threads/client";
 import type { Answer, Request } from "../apps/threads/model";
 import { ServerClient, ServerError } from "./client";
+import { reverify as reverifyPasskey } from "./auth";
 
 /** One request as the server lists it. */
 export interface WireRequest {
@@ -68,7 +69,20 @@ export class ServerRequests implements RequestsClient {
   private known = new Map<string, Request>();
   /** Set when the server answered `not_found` to `requests.list`: it does not offer requests, so there is nothing to ask again until the page is reloaded. */
   private absent = false;
-  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id) { void this.space; }
+  /** `reverify` asks for the passkey again (a real ceremony in a browser); tests pass a stand-in. */
+  constructor(private server: ServerClient, private space: () => string = () => spaces.current.id, private reverify: () => Promise<void> = reverifyPasskey) { void this.space; }
+  /**
+   * Runs a call that needs a fresh passkey proof (an approval, a secret's value). The server answers a stale session with a plain `forbidden`, not a
+   * dedicated code, so a forbidden answer is retried once after asking for the passkey; if the second try is refused too, that refusal is thrown.
+   * Cost: none unless the proof is stale; then one passkey ceremony (two requests and the person's touch).
+   */
+  private async fresh<T>(call: () => Promise<T>): Promise<T> {
+    try { return await call(); } catch (e) {
+      if (!(e instanceof ServerError) || e.code !== "forbidden") throw e;
+      await this.reverify();
+      return call();
+    }
+  }
 
   async requests(): Promise<Request[]> {
     if (this.absent) return [];
@@ -95,12 +109,12 @@ export class ServerRequests implements RequestsClient {
   async answer(id: string, a: Answer): Promise<void> {
     if (a.kind === "secret") await this.provide(id, a.value);
     else if (a.kind === "secret-skip") this.skipped.add(id);
-    else { const call = answerInput(id, a)!; await this.server.operate(call.operation, call.input); }
+    else { const call = answerInput(id, a)!; const run = () => this.server.operate(call.operation, call.input); await (call.operation === "requests.approve" ? this.fresh(run) : run()); }
     await this.refresh();
   }
   /** Sends a secret's value to the trusted endpoint. The value is not kept; a refusal (no fresh passkey check, expired) is thrown as the server said it. */
   private async provide(id: string, value: string): Promise<void> {
     const r = this.known.get(id);
-    await this.server.post("/api/v1/auth/secrets/provide", { request_id: id, ...(r?.kind === "secret" && r.spaceId ? { space_id: r.spaceId } : {}), value });
+    await this.fresh(() => this.server.post("/api/v1/auth/secrets/provide", { request_id: id, ...(r?.kind === "secret" && r.spaceId ? { space_id: r.spaceId } : {}), value }));
   }
 }

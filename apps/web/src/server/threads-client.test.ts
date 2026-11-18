@@ -41,9 +41,10 @@ function double(handlers: Record<string, (input: any, requestId: string) => unkn
     const h = handlers[b.operation];
     return h ? (() => { const r = h(b.input, b.request_id); return r instanceof Response ? r : ok(r); })() : fail("not_found", "unknown operation");
   }) as never;
-  const client = new ServerThreads(new ServerClient({ token: () => "T", fetch }), () => SPACE);
+  const reverified: number[] = [];
+  const client = new ServerThreads(new ServerClient({ token: () => "T", fetch }), () => SPACE, async () => { reverified.push(1); });
   const push = (kind: string, item: string, data?: object) => live!.enqueue(frame("message", { type: "entry", space_id: SPACE, entry: { kind, item, data } }));
-  return { client, calls, eventUrls, hasFeed: () => live !== null, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
+  return { client, calls, reverified, eventUrls, hasFeed: () => live !== null, push, setEvents: (r: Response) => (events = r), ops: (name: string) => calls.filter((c) => c.operation === name) };
 }
 
 describe("the saved thread's Markdown", () => {
@@ -343,5 +344,13 @@ describe("requests (docs/requests.md, crates/core/src/requests.rs)", () => {
   test("a refused approval (no fresh passkey proof) is thrown with the server's words", async () => {
     const d = double({ "requests.approve": () => new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "forbidden", message: "verify with your passkey again first" } }), { status: 403 }) });
     await expect(d.client.answer("a1", { kind: "approval", decision: "once" })).rejects.toMatchObject({ message: "verify with your passkey again first" });
+    expect(d.reverified).toHaveLength(1);
+  });
+  test("a stale passkey proof asks for the passkey once and tries the approval again", async () => {
+    let n = 0;
+    const d = double({ "requests.approve": () => (n++ === 0 ? new Response(JSON.stringify({ request_id: "r", ok: false, error: { code: "forbidden", message: "sign in again with a passkey to approve access" } }), { status: 403 }) : { id: "a1", status: "approved" }), "requests.list": () => ({ requests: [] }) });
+    await d.client.answer("a1", { kind: "approval", decision: "once" });
+    expect(d.reverified).toHaveLength(1);
+    expect(d.ops("requests.approve")).toHaveLength(2);
   });
 });
