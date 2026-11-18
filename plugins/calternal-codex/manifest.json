@@ -8,11 +8,11 @@
     "protocol_version": 1,
     "sign_in": true,
     "executable": "calternal-provider-codex",
-    "default_model": "gpt-5.5",
+    "default_model": "gpt-6-luna",
     "models": [
       {
-        "id": "gpt-5.5",
-        "name": "GPT-5.5",
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
         "reasoning_levels": [
           "low",
           "medium",
@@ -21,8 +21,8 @@
         ]
       },
       {
-        "id": "gpt-6-luna",
-        "name": "GPT-6 Luna",
+        "id": "gpt-5.5",
+        "name": "GPT-5.5",
         "reasoning_levels": [
           "low",
           "medium",

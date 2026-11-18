@@ -244,6 +244,8 @@ class Adapter {
           await this.error('subscription_limit', 'usage_limit', 'Codex reported a subscription limit.', this.resetAt);
         } else if (/unauthorized/.test(info)) {
           await this.error('provider_signed_out', 'authentication', 'Sign in to Codex again.');
+        } else if (/modelNotFound/.test(info)) {
+          await this.error('provider_model_unavailable', 'permanent', 'This ChatGPT account cannot use the selected Codex model.');
         } else {
           await this.error('codex_turn_failed', 'unknown', 'Codex could not finish the turn.');
         }

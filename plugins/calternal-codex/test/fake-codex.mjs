@@ -36,7 +36,13 @@ for await (const line of createInterface({input: process.stdin})) {
   if (method === 'turn/interrupt' && params.turnId !== turnId) process.exit(2);
   write({id, result});
   if (method === 'account/login/start') notify('account/login/completed', {success: true});
-  if (method === 'turn/start') notify('turn/started', {turn: {id: turnId}});
+  if (method === 'turn/start') {
+    notify('turn/started', {turn: {id: turnId}});
+    if (params.input[0].text === 'unsupported model fixture') {
+      notify('turn/completed', {turn: {id: turnId, status: 'failed',
+        error: {message: 'PRIVATE_FIXTURE_DETAIL', codexErrorInfo: 'modelNotFound'}}});
+    }
+  }
   if (method === 'turn/steer') notify('item/agentMessage/delta', {delta: 'Steered.', itemId: 'm1'});
   if (method === 'turn/interrupt') notify('turn/completed', {turn: {id: turnId, status: 'interrupted'}});
 }

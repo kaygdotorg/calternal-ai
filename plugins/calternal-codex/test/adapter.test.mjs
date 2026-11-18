@@ -75,6 +75,24 @@ test('a failed account probe reports a check failure without claiming sign-out',
   assert.ok(!JSON.stringify(events).includes('PRIVATE_FIXTURE_DETAIL'));
 });
 
+test('reports when the account cannot use the selected model', {timeout: 8000}, async t => {
+  const {child} = await fixture(t, []);
+  const exited = once(child, 'exit');
+  const commands = [
+    {type: 'start', model: 'gpt-5.5', options: {reasoning: 'high'}, instructions: 'fixture', cwd: '.'},
+    {type: 'send', prompt: 'unsupported model fixture', context: []},
+  ];
+  child.stdin.end(commands.map((command, i) => JSON.stringify({version: 1, seq: i + 1, command})).join('\n') + '\n');
+  const events = [];
+  for await (const line of createInterface({input: child.stdout})) events.push(JSON.parse(line).event);
+  assert.deepEqual(await exited, [0, null]);
+  assert.deepEqual(events.map(event => event.type), ['check', 'session', 'error', 'done']);
+  assert.equal(events[2].code, 'provider_model_unavailable');
+  assert.equal(events[2].class, 'permanent');
+  assert.equal(events[3].outcome, 'failed');
+  assert.ok(!JSON.stringify(events).includes('PRIVATE_FIXTURE_DETAIL'));
+});
+
 test('relays only the private device challenge and confirms official sign-in', {timeout: 8000}, async t => {
   const {child} = await fixture(t, ['--sign-in']);
   const exited = once(child, 'exit');
