@@ -70,7 +70,7 @@
   :global(.sheet:focus) { outline: none; }
   :global(.sheet) { position: fixed; z-index: 41; isolation: isolate; overflow: auto; max-height: 88dvh; color: var(--ink); overscroll-behavior: contain; }
   /* A bottom sheet is inset like an iPhone's: 8 in from the sides and the bottom, the bottom corners concentric with the display's (its radius less the inset) and smaller ones on top (lib/sheet-radius.ts; the pane radius all round elsewhere). */
-  :global(.sheet.bottom) { left: var(--sheet-inset); right: var(--sheet-inset); bottom: var(--sheet-inset); border-radius: var(--sheet-corners); --origin: bottom center; translate: 0 0; padding-bottom: calc(var(--safe-bottom, 0px) * 0.5); }
+  :global(.panel.sheet.bottom) { left: var(--sheet-inset); right: var(--sheet-inset); bottom: var(--sheet-inset); border-radius: var(--sheet-corners); --origin: bottom center; translate: 0 0; padding-bottom: calc(var(--safe-bottom, 0px) * 0.5); }
   :global(.sheet.right) { top: var(--inset); bottom: var(--inset); right: var(--inset); width: min(480px, 92vw); border-radius: var(--r-pane); --origin: right center; }
   /* The palette: centred under the top edge. */
   :global(.sheet.top) { top: 10dvh; left: 50%; width: min(40rem, calc(100vw - 2 * var(--inset))); border-radius: var(--r-pane); --origin: top center; translate: -50% 0; max-height: 80dvh; }
