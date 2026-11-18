@@ -2,12 +2,13 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 17:20 IST.
+[glossary](glossary.md). Updated 2026-11-19 18:10 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
+| 65 | Using Codex's own cloud sandboxes for people with no machine and no paid plan: only through what OpenAI officially supports from another program; being researched | Decide after the research | Harnesses |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
 ## In progress, no decision needed
@@ -20,7 +21,8 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Recently decided (2026-11-17), now in the decision records
 
-- Also 2026-11-19 evening: the plugin gallery is at calternal.com/plugins; a username is a changeable handle and everything internal uses IDs; email is required on the hosted service and optional when self-hosted, and carries only recovery and security notices; Sign in with Apple, Google and Authentik come as plugins (calternal-oidc-apple, calternal-oidc-google, calternal-oidc-authentik), with the host running the flow; dictation should use ChatGPT's Live Dictation through the Codex subscription if that is open to other apps (to be checked).
+- First invite (2026-11-19): the bar for inviting the first person other than kayg is threads with skills and automations, and notes with full sharing and collaboration. Dictation falls back to an API key added as a secret if the Codex subscription does not offer Live Dictation to other apps.
+- Also 2026-11-19 evening: the plugin gallery is at calternal.com/plugins; a username is a changeable handle and everything internal uses IDs; email is required on the hosted service and optional when self-hosted, and carries only recovery and security notices; sign in with Apple, Google and Authentik is part of the core, configured by a server admin, not plugins (corrected the same evening: the core's sign-in is never pluggable); either a provider or a passkey signs you in, a passkey is offered after a provider sign-in and not forced, and an identity is linked only by the signed-in person, never matched by email; dictation should use ChatGPT's Live Dictation through the Codex subscription if that is open to other apps (to be checked).
 - Accounts and hosting (2026-11-19, reversing the earlier "no email"): an account has a username and an email address, both asked in onboarding; a second passkey is prompted; recovery codes are shown at sign-up; passkeys stay the only way to sign in. The hosted service is invitation only until billing exists. A push shows the thread's title and that it needs you or finished, never message text. Crash reports go to our own server with a switch, and there is no usage analytics. Plugins are submitted through a separate public repository with a process an agent can follow, itself explained by a plugin (calternal-plugin-submission-guide), with automated checks and kayg's approval at first. Agent memory is never part of the core: a Honcho plugin first, a popular wiki-style one may follow. A long press on a row shows a preview with the row's menu beneath it, as Apple Notes and the existing app do, as one shared component.
 - Shared spaces (2026-11-19): the Owner or a Manager sets up a shared space's machine and signs in once, and every member's turns there use it; any login the Owner chooses is allowed, with a plain notice that a personal subscription is licensed to one person; a turn uses the Owner's plan hours; a member may switch their own turns to their own machine and login. Personal spaces stay per person. Threads and subagents start freely while the sandbox has memory to spare and wait when it is short, with no fixed count. Live voice uses the ChatGPT subscription, not an API key.
 - 2026-11-19 afternoon: plans are $20 (2 GiB, 150 h), $50 (4 GiB, 400 h), $100 (4 GiB, 750 h) and $200 (8 GiB, 1,500 h); the canvas becomes the default, kept behind a clean boundary so it can become a shell plugin, with a switch back in Settings; no separate limit on subagents beyond a person's compute; native apps after the web app is solid, iPhone first; mail starts with reading; voice input (speech to text and live voice) comes first once the plugin API is stable; in shared spaces the machine and provider login are configured per space, not per person.

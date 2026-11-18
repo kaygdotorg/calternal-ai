@@ -195,6 +195,14 @@ worker protocol still treats a failed handler as a failed invocation.
 
 ## Provider and risk contract (step 1)
 
+A provider may declare `title_generation: true` to enable its stateless
+`--title` adapter entry point. The host sends at most 16 KiB of conversation
+text to stdin in a scratch sandbox on the account's last personal machine.
+The entry point returns one JSON line with `title` or a fixed `reason`.
+It uses the subscription already present and must check managed policy
+before launching. It receives neither a scoped agent credential nor the
+conversation's provider session. See [automatic titles](threads.md#automatic-thread-title).
+
 Manifest v1 operations require `risk`: `read`, `reversible`, `irreversible`,
 `external`, or `widens_access`. Read risk is consistent with `mutates: false`;
 other classes require a mutating operation. There are no defaults or legacy

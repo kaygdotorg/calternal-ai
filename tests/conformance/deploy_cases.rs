@@ -55,6 +55,7 @@ async fn colocated_machine_waits_for_first_owner_and_connects_as_pool() {
     }
 
     let mut f = Fixture::empty();
+    f.bind_ip = Some("127.0.0.2");
     let handoff = f.dir.path().join("machine-handoff");
     let machine = f.dir.path().join("machine");
     std::fs::DirBuilder::new()
@@ -62,15 +63,41 @@ async fn colocated_machine_waits_for_first_owner_and_connects_as_pool() {
         .create(&handoff)
         .unwrap();
     f.start().await;
+    let port = f.base.rsplit_once(':').unwrap().1;
+    let origin = format!("http://localhost:{port}");
+    let route = format!("localhost:{port}=127.0.0.2");
+    let direct = reqwest::Client::builder().no_proxy().build().unwrap();
+    assert!(
+        direct
+            .get(format!("{origin}/api/v1/auth/status"))
+            .send()
+            .await
+            .is_err()
+    );
+
+    #[cfg(target_os = "linux")]
+    let notify_path = f.dir.path().join("notify.sock");
+    #[cfg(target_os = "linux")]
+    let notify = tokio::net::UnixDatagram::bind(&notify_path).unwrap();
+    let mut command = Command::new(std::env::var("CALTERNAL_SERVER_BIN").unwrap());
+    #[cfg(target_os = "linux")]
+    command.env("NOTIFY_SOCKET", &notify_path);
     let _child = MachineChild(
-        Command::new(std::env::var("CALTERNAL_SERVER_BIN").unwrap())
-            .args(["machine", "run", "--podman", "/nonexistent"])
+        command
+            .args([
+                "machine",
+                "run",
+                "--podman",
+                "/nonexistent",
+                "--connect-address",
+                &route,
+            ])
             .arg("--dir")
             .arg(&machine)
             .arg("--bootstrap-handoff")
             .arg(&handoff)
             .arg("--bootstrap-server")
-            .arg(&f.base)
+            .arg(&origin)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .spawn()
@@ -104,6 +131,8 @@ async fn colocated_machine_waits_for_first_owner_and_connects_as_pool() {
     );
     assert!(!handoff.join("enrolled").exists());
     assert!(!Credentials::path(&machine).exists());
+    #[cfg(target_os = "linux")]
+    assert_notification(&notify, "waiting for first-owner handoff").await;
 
     let token = std::fs::read_to_string(f.appdata().join("setup.token")).unwrap();
     f.enroll(&token).await;
@@ -122,6 +151,9 @@ async fn colocated_machine_waits_for_first_owner_and_connects_as_pool() {
     let credentials = Credentials::load(&machine).unwrap();
     assert_eq!(data["machine_id"], credentials.machine_id.to_string());
     assert_eq!(credentials.owner, Owner::Pool);
+    assert_eq!(credentials.server, origin);
+    #[cfg(target_os = "linux")]
+    assert_notification(&notify, "Machine session opened").await;
     assert!(!request.exists());
     assert!(!handoff.join("enrolled").exists());
 
@@ -143,6 +175,20 @@ async fn colocated_machine_waits_for_first_owner_and_connects_as_pool() {
     let restarted = f.op(0, "machines.onboarding", json!({})).await;
     restarted.ok();
     assert_eq!(restarted.body["data"]["machine_id"], data["machine_id"]);
+}
+
+#[cfg(target_os = "linux")]
+async fn assert_notification(socket: &tokio::net::UnixDatagram, status: &str) {
+    let mut buffer = [0; 512];
+    let bytes = tokio::time::timeout(Duration::from_secs(10), socket.recv(&mut buffer))
+        .await
+        .expect("machine readiness notification")
+        .unwrap();
+    let message = std::str::from_utf8(&buffer[..bytes]).unwrap();
+    assert!(
+        message.starts_with("READY=1\nSTATUS=") && message.ends_with(status),
+        "{message}"
+    );
 }
 
 #[tokio::test]
