@@ -75,7 +75,7 @@ for qualification and remaining platform work.
 
 ## Verification
 
-`./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs SDK/Rust tests and backend integration checks. Where Podman is installed, it checks for containers left by the workspace tests.
+`./scripts/verify-preview.sh` builds the packages, checks generated-contract drift, runs SDK/Rust tests and backend integration checks. On Linux with Podman installed, it checks for containers and test Firecracker processes left by the workspace tests.
 
 ### UI merge gate (browser suites)
 
@@ -133,4 +133,4 @@ setup, lifecycle bounds and unresolved placement/network contracts.
 Notes supports title and tag pickers, relative-link rename, and 30-day space
 Trash. See the [Notes operations reference](docs/notes-operations.md).
 
-The [deployment runbook](docs/deploy.md) covers the rootless Podman image, machine service and calternal.cloud cutover.
+The [deployment runbook](docs/deploy.md) covers the rootless Podman image, machine service and calternal.cloud cutover. It also describes the opt-in Linux pool microVM preview and its KVM requirements.

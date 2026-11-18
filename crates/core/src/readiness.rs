@@ -124,8 +124,21 @@ pub struct MachineReadiness {
     pub available: bool,
     /// How this machine runs turns.
     pub execution: MachineExecution,
+    /// The cloud machine is using containers because KVM is unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox_fallback: Option<SandboxFallback>,
     /// Installed provider plugins and their account-scoped check results.
     pub providers: BTreeMap<String, ProviderReadiness>,
+}
+
+/// Why a machine is running a reduced sandbox configuration.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema, TS,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxFallback {
+    /// The current machine user cannot create KVM guests, so the role uses Podman.
+    KvmUnavailable,
 }
 
 /// Readiness for a machine owned by the caller.

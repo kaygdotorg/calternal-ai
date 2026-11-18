@@ -23,7 +23,7 @@
 //! operator granted (`calternal machines pool-grant`). Space authority for a run
 //! is checked by [`http`] on every call. Machine authority (codes, enrolment,
 //! revocation, pool grants) commits in `auth.db` through the recovery barrier
-//! ([`calternal_auth::machines`]); `machines.db` holds only leases and draining.
+//! ([`calternal_auth::machines`]); `machines.db` holds placement and cleanup state.
 //!
 //! Locking and cost: machines are installation-wide (not per-space), so one
 //! registry mutex guards them. Every method except [`MachineService::sync`] and
@@ -46,6 +46,7 @@
 
 pub mod admin;
 mod admission;
+mod capacity;
 /// Local deployment enrollment and the first-owner onboarding operation.
 pub mod colocated;
 pub mod db;
@@ -55,6 +56,7 @@ mod erasure_queue;
 mod execs;
 pub mod http;
 pub(crate) mod install;
+mod microvm;
 mod owners;
 pub mod provider;
 pub(crate) mod readiness;
@@ -262,7 +264,7 @@ impl MachineService {
     /// Open `<data>/system/machines.db`, then load machines and grants from
     /// `authority` and active leases. The host opens `data_dir` under the root
     /// guard and passes the authority handle of its recovery-protected `auth.db`.
-    /// Blocks: one schema check, two authority reads and two placement reads.
+    /// Blocks: schema checks, authority and placement reads, and recovery writes.
     pub fn open(
         data_dir: &Path,
         authority: calternal_auth::machines::Machines,
@@ -300,12 +302,14 @@ impl MachineService {
             workers: HashMap::new(),
             worker_stops: HashMap::new(),
             next_order: 0,
+            pool_load: HashMap::new(),
             db,
             authority,
         };
         for machine in st.machines.values() {
             st.readiness.insert(machine);
         }
+        st.restore_erased_worker_stops()?;
         db::prune_ended(&st.db, settings.ended_lease_retention).map_err(sql)?;
         for mut row in db::active_leases(&st.db).map_err(sql)? {
             if row.worker {
@@ -316,9 +320,12 @@ impl MachineService {
                     .filter(|id| st.machines.get(id).is_some_and(|m| !m.row.revoked))
                 {
                     row.state = "stopping".into();
-                    st.worker_stops.insert(row.id, (machine, [0; 32], u64::MAX));
+                    st.worker_stops.insert(
+                        row.id,
+                        workers::WorkerStop::recovered(machine, Some(row.account)),
+                    );
                     db::put_lease(&st.db, &row).map_err(sql)?;
-                    st.take_slot(Some(machine));
+                    st.take_slot(Some(machine), Some(row.account));
                     st.leases.insert(
                         row.id,
                         Lease {
@@ -346,7 +353,7 @@ impl MachineService {
                 pool_diagnostic: false,
                 provider_login: false,
             };
-            st.take_slot(lease.assigned_machine());
+            st.take_slot(lease.assigned_machine(), Some(lease.row.account));
             st.leases.insert(lease.row.id, lease);
         }
         Ok(Arc::new(Self {

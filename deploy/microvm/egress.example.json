@@ -1,0 +1,10 @@
+{
+  "namespace": "calvm",
+  "uplink": "wan0",
+  "slots": [
+    { "name": "calvm0", "address": "10.213.0.2", "prefix": 30, "gateway": "10.213.0.1", "dns": "1.1.1.1" },
+    { "name": "calvm1", "address": "10.213.0.6", "prefix": 30, "gateway": "10.213.0.5", "dns": "1.1.1.1" }
+  ],
+  "deny": [],
+  "allow": []
+}

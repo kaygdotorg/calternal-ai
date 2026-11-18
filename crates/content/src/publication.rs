@@ -92,6 +92,8 @@ impl Content {
             } else {
                 payload
             };
+            #[cfg(feature = "perf-timings")]
+            let journal = calternal_store::timings::SaveStage::Journal.start();
             self.journals.publish(
                 &space.journal,
                 account.parse().map_err(internal)?,
@@ -103,6 +105,12 @@ impl Content {
                 &revision,
                 payload,
             )?;
+            #[cfg(feature = "perf-timings")]
+            journal.finish();
+            #[cfg(debug_assertions)]
+            (self.fault)(crate::FaultPoint::AfterJournalCommit);
+            #[cfg(feature = "perf-timings")]
+            let retirement = calternal_store::timings::SaveStage::Retirement.start();
             space
                 .conn
                 .execute(
@@ -110,6 +118,8 @@ impl Content {
                     params![account, request],
                 )
                 .map_err(internal)?;
+            #[cfg(feature = "perf-timings")]
+            retirement.finish();
         }
     }
 }
