@@ -205,6 +205,33 @@ macro_rules! operation {
 /// Static policy rows, ordered by the public operation catalog.
 pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
     operation!(
+        "plugins.network.content.get",
+        "Get a prepared sealed content frame",
+        Space,
+        PluginsUse,
+        Read,
+        crate::ContentFrameAddress,
+        crate::ContentFrameView
+    ),
+    operation!(
+        "plugins.network.content.preference.get",
+        "Read your remote content preference",
+        Space,
+        PluginsUse,
+        Read,
+        crate::ContentFetchPreferenceAddress,
+        crate::ContentFetchPreference
+    ),
+    operation!(
+        "plugins.network.content.preference.set",
+        "Set your remote content preference",
+        Space,
+        PluginsUse,
+        Reversible,
+        crate::ContentFetchPreferenceEdit,
+        crate::ContentFetchPreference
+    ),
+    operation!(
         "plugins.settings.get",
         "Read a declared space plugin setting",
         Space,

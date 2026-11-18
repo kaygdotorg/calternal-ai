@@ -46,7 +46,10 @@ mod plugins;
 mod request;
 mod search;
 pub(crate) mod search_skills;
+mod sharing;
 
+pub(crate) mod appearance;
+pub(crate) mod assets;
 mod request_action;
 mod spaces;
 pub mod wallpapers;
@@ -142,6 +145,11 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
         )
         .merge(crate::machines::http::routes::<D>())
         .route(wallpapers::ROUTE, get(wallpapers::image))
+        .route(
+            crate::plugins::network::http::FRAME_ROUTE,
+            get(crate::plugins::network::http::document::<D>),
+        )
+        .merge(appearance::routes::<D>())
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found))
@@ -150,6 +158,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
     let mut app = Router::new().merge(api);
     if let Some(service) = &http_auth {
         app = app.merge(crate::account_http::routes(service.clone()));
+        app = app.merge(sharing::routes::<D>());
         app = app.merge(Router::new().route(
             calternal_core::ACCOUNT_ERASURE_PATH,
             post(crate::account_http::erasure::delete::<D>),

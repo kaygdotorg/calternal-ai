@@ -136,16 +136,20 @@ pub(crate) fn save_email(
             ));
         }
     }
-    let changed = tx.execute(
-        "INSERT INTO account_details(user_id, email, verified_at)
-         VALUES(?1,?2,?3) ON CONFLICT(user_id) DO UPDATE SET email=excluded.email, verified_at=excluded.verified_at",
-        params![user.to_string(), email, verified_at],
-    ).map_err(sql)?;
-    if changed != 1 {
-        return Err(Error::new(
-            ErrorCode::Conflict,
-            "verified address unavailable",
-        ));
+    let user = user.to_string();
+    // An UPSERT update would override the recovery trigger's OR IGNORE policy.
+    let changed = tx
+        .execute(
+            "UPDATE account_details SET email=?2, verified_at=?3 WHERE user_id=?1",
+            params![user, email, verified_at],
+        )
+        .map_err(sql)?;
+    if changed == 0 {
+        tx.execute(
+            "INSERT INTO account_details(user_id,email,verified_at) VALUES(?1,?2,?3)",
+            params![user, email, verified_at],
+        )
+        .map_err(sql)?;
     }
     Ok(())
 }

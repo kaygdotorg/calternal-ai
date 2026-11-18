@@ -234,6 +234,7 @@ impl Content {
             None,
             None,
             || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -265,6 +266,7 @@ impl Content {
             Some(limit),
             None,
             || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -297,6 +299,41 @@ impl Content {
             None,
             Some(id),
             || Ok(()),
+            |_| Ok(()),
+        )
+    }
+
+    /// Write one shared note after rechecking live collection and directory
+    /// authority under the space lock. The callback may consult the auth worker
+    /// after reading this note's indexed memberships and must not re-enter
+    /// content. It runs before exposing receipt or revision conflict details.
+    #[allow(clippy::too_many_arguments)]
+    pub fn write_shared_note(
+        &self,
+        space: SpaceId,
+        id: Uuid,
+        base: &str,
+        metadata: Value,
+        bytes: &[u8],
+        request: Request<'_>,
+        result: impl FnOnce(&Item) -> Value,
+        authorize: impl FnOnce(Vec<Uuid>) -> Result<()>,
+    ) -> Result<Item> {
+        self.write_placed(
+            space,
+            Some(id),
+            "notes",
+            Some(base),
+            metadata,
+            bytes,
+            request,
+            result,
+            Destination::Current,
+            None,
+            None,
+            None,
+            || Ok(()),
+            |space| authorize(space.sharing_collections(id)?),
         )
     }
 
@@ -334,6 +371,7 @@ impl Content {
             None,
             None,
             guard,
+            |_| Ok(()),
         )
     }
 
@@ -360,6 +398,7 @@ impl Content {
             None,
             None,
             || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -396,6 +435,7 @@ impl Content {
             None,
             None,
             || Ok(()),
+            |_| Ok(()),
         )
     }
 
@@ -424,6 +464,7 @@ impl Content {
         limit: Option<u32>,
         assigned: Option<Uuid>,
         guard: impl FnOnce() -> Result<()>,
+        authorize: impl FnOnce(&crate::db::Space) -> Result<()>,
     ) -> Result<Item> {
         let _actor = self.lifecycle.step(request.account.as_uuid())?;
         Self::validate_write_size(&metadata, bytes)?;
@@ -437,6 +478,7 @@ impl Content {
             if s.pending_since.is_some_and(|at| at.elapsed() >= Duration::from_secs(1)) {
                 return Err(Error::unavailable("userdata materialization exceeded one second; check the SSD root and retry"));
             }
+            authorize(s)?;
             if let Some(limit) = limit {
                 let count: u32 = s.conn.query_row(
                     "SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE kind=?1
@@ -505,6 +547,12 @@ impl Content {
             };
             #[cfg(feature = "perf-timings")]
             filename.finish();
+            // Body-only writes leave room delivery caches valid. Lifecycle,
+            // membership and path changes can invalidate existing handles.
+            let _revision = (kind == "collections"
+                || destination != Destination::Current
+                || old_path.as_ref().is_some_and(|old| *old != path))
+                .then(calternal_types::begin_item_access_change);
             let item=Item {id,space,kind:kind.into(),metadata,bytes:bytes.to_vec(),revision:Staged::version(seq),updated_at:now_rfc3339()};
             let mut root = Staged {item,seq,path,expected};
             let related = if let (Some(edit), Some(old)) = (retarget, old_path.as_deref()) {
