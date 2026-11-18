@@ -97,7 +97,8 @@ impl Agent {
     async fn control(&self, request: Request) -> SandboxResult<()> {
         match request {
             Request::Ready => Ok(()),
-            Request::Start(spec) => {
+            Request::Start(space, mut spec) => {
+                spec.space_id = Some(space);
                 let sandbox = self.backend.start(&spec).await?;
                 self.threads.lock().await.insert(spec.thread_id, sandbox);
                 Ok(())

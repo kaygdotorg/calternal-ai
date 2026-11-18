@@ -1,13 +1,27 @@
 #!/usr/bin/env node
 // Account-free fixture of the documented stream-json output, selected by prompt.
-import { existsSync,readFileSync,writeFileSync } from 'node:fs';
+import { existsSync,readFileSync,writeFileSync,mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 const args=process.argv.slice(2);
+const loginFile = join(process.env.HOME, '.claude', '.credentials.json');
+if (args.join(' ') === 'auth login') {
+  console.log('Open https://claude.ai/oauth/authorize?state=FIXTURE_BROWSER_LINK');
+  console.error('PRIVATE_LOGIN_SENTINEL');
+  let code = '';
+  for await (const data of process.stdin) {
+    code += data;
+    if (code.includes('\n')) break;
+  }
+  if (code.trim() !== 'FIXTURE_BROWSER_ANSWER') process.exit(1);
+  mkdirSync(join(process.env.HOME, '.claude'), { recursive: true });
+  writeFileSync(loginFile, 'FIXTURE_MACHINE_ONLY_LOGIN', { mode: 0o600 });
+  process.exit(0);
+}
 if(args.join(' ')==='auth status'){
   // Raw status and stderr must never reach the adapter's caller.
   console.log(JSON.stringify({authMethod:existsSync(join(process.env.HOME,'subscription'))?'claude.ai':'api_key',private:'PRIVATE_LOGIN_SENTINEL'})); console.error('PRIVATE_LOGIN_SENTINEL');
-  process.exit(existsSync(join(process.env.HOME,'signed-in'))?0:1);
+  process.exit(existsSync(join(process.env.HOME,'signed-in')) || existsSync(loginFile)?0:1);
 }
 // The machine supplies the same operation CLI inside both execution backends.
 if(process.env.CALTERNAL_AGENT_TOKEN) execFileSync('calternal',['--help'],{stdio:'ignore'});

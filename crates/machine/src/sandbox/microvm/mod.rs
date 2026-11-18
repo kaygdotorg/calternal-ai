@@ -174,10 +174,13 @@ impl Backend for MicrovmBackend {
         spec: &'a SandboxSpec,
     ) -> BoxFuture<'a, SandboxResult<Arc<dyn Sandbox>>> {
         Box::pin(async {
+            let space = spec
+                .space_id
+                .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
             let slot = self.0.account(spec.account_id);
             let mut account = slot.lock().await;
             let vm = self.0.ensure_guest(spec.account_id, &mut account).await?;
-            vm.control(&Request::Start(spec.clone())).await?;
+            vm.control(&Request::Start(space, spec.clone())).await?;
             let thread = Thread::new(
                 slot.clone(),
                 vm.socket.clone(),

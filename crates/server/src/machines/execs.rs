@@ -39,8 +39,10 @@ impl MachineService {
         let mut st = self.lock()?;
         let st = &mut *st;
         let _steps = match st.leases.get(&lease) {
-            Some(l) if l.row.account == account && l.row.worker => {
-                return Err(Error::forbidden("plugin worker execs are host-controlled"));
+            Some(l) if l.row.account == account && (l.row.worker || l.provider_login) => {
+                return Err(Error::forbidden(
+                    "internal machine execs are host-controlled",
+                ));
             }
             Some(l) if l.row.account == account && l.state != LeaseState::Ended => {
                 st.lease_steps(&l.row)?

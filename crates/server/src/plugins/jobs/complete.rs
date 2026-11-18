@@ -81,6 +81,30 @@ impl Jobs {
         Ok(wake)
     }
 
+    /// Readmit a signed-out turn after its machine reports a verified login.
+    /// A later turn or another account cannot be resumed through this update.
+    pub(crate) fn resume_signed_out(
+        &self,
+        space: &str,
+        job: &str,
+        account: calternal_types::AccountId,
+    ) -> Result<bool, Error> {
+        self.tx(space, |tx| {
+            let affected = tx.execute(
+                "UPDATE jobs AS j SET state='admitted',finished_ms=NULL,
+                   checkpoint=json_set(checkpoint,'$.request_machine',json_extract(checkpoint,'$.machine_id'))
+                 WHERE id=?1 AND account=?2 AND operation='agent.turn' AND state='failed'
+                  AND json_extract(checkpoint,'$.error.class')='authentication'
+                  AND NOT EXISTS(SELECT 1 FROM jobs AS newer WHERE newer.rowid>j.rowid
+                   AND newer.operation='agent.turn'
+                   AND json_extract(newer.input,'$.check') IS NOT 1
+                   AND json_extract(newer.input,'$.request.thread_id')=json_extract(j.input,'$.request.thread_id'))",
+                rusqlite::params![job, account.to_string()],
+            ).map_err(db_err)?;
+            Ok(affected == 1)
+        })
+    }
+
     /// Cancel a job and every active descendant. Their runs are told to stop, their
     /// later output is discarded, and the job reports `cancelled` to its parent unless
     /// that parent was cancelled too. Returns the jobs to schedule (a woken parent).

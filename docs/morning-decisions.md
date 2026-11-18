@@ -137,6 +137,25 @@ options, implementation costs and the placement revocation problem.
   expiry bounds storage and needs an explicit expired-output state. Define
   the inline threshold and the point at which the artifact becomes durable.
 
+## Machine onboarding and provider sign-in (issue #48)
+
+- **Pool access.** Provision an initial group and limits at deployment, or
+  define a default owner group across installations. The latter needs a rule
+  for accounts with multiple groups.
+- **Installer distribution.** Publish signed binaries for supported platforms
+  or bundle them in installers. The former needs a release index and
+  verification keys. The latter requires distribution packages per platform.
+- **Native macOS sandboxing.** The existing launchd installer can run with
+  Podman. The native process sandbox needs the backend and real-device
+  verification.
+- **SSH enrollment.** Reuse the printed installer over an authorized SSH
+  connection. This needs host-key verification, binary distribution, and a
+  private stdin handoff.
+
+[Machine lane review](reviews/machine-ux-2026-11-18.md) records the initial
+enrollment gate.
+
+
 ## Wallpaper attribution and tracking (issue #49)
 
 - **Same-origin image views.** Ask Unsplash about its documented view-beacon
@@ -157,8 +176,3 @@ options, implementation costs and the placement revocation problem.
   DNS policy and a network isolation proof. A vsock egress broker keeps guest
   networking rootless and limits destinations in one place. It adds a proxy
   contract and requires compatibility checks for provider, CLI and package clients.
-- Sharing account sign-in across space homes can use provider-supported
-  credential-only storage where available. This requires verifying each official
-  provider's refresh behavior. A local credential broker can maintain separate
-  space homes and centralize refresh, with more sensitive components and
-  concurrency rules.

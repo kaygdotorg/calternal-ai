@@ -39,7 +39,8 @@ async fn backend(root: &std::path::Path) -> Option<PodmanBackend> {
 
 fn spec(limits: Limits) -> SandboxSpec {
     SandboxSpec {
-        space_id: calternal_types::SpaceId::new(),
+        space_id: Some(calternal_types::SpaceId::new()),
+        provider_login: false,
         code_directory: None,
         worker: None,
         account_id: Uuid::new_v4(),
@@ -216,6 +217,7 @@ async fn persistent_homes_are_shared_only_with_the_same_account() {
     let first = spec(Limits::default());
     let mut same = spec(Limits::default());
     same.account_id = first.account_id;
+    same.space_id = first.space_id;
     let mut other = spec(Limits::default());
     other.thread_id = first.thread_id;
     let a = backend.start(&first).await.unwrap();
@@ -284,10 +286,10 @@ async fn parking_a_lease_removes_its_container_and_restart_reuses_its_mount() {
     let lease_id = Uuid::new_v4();
     let mut sandbox = spec(Limits::default());
     sandbox.account_id = account_id.as_uuid();
-    sandbox.space_id = space_id;
     let assign = || Down::Assign {
         lease_id,
         fence: 1,
+        space_id,
         account_id,
         spec: sandbox.clone(),
     };
@@ -335,4 +337,61 @@ async fn parking_a_lease_removes_its_container_and_restart_reuses_its_mount() {
     assert!(exec.status.success());
     assert_eq!(exec.stdout, b"retained");
     assert!(runner.release_all().await);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn one_account_shares_claude_login_but_not_space_transcripts() {
+    let root = tempfile::tempdir().unwrap();
+    let Some(backend) = backend(root.path()).await else {
+        return;
+    };
+    let _containers = PodmanGuard::new(root.path());
+    let a_spec = spec(Limits::default());
+    let mut b_spec = spec(Limits::default());
+    b_spec.account_id = a_spec.account_id;
+    let credentials = root
+        .path()
+        .join(format!("accounts/{}/home/.claude", a_spec.account_id));
+    std::fs::create_dir_all(&credentials).unwrap();
+    std::fs::write(
+        credentials.join(".credentials.json"),
+        r#"{"claudeAiOauth":{"accessToken":"fixture-login"},"mcpOAuth":"private-mcp"}"#,
+    )
+    .unwrap();
+    let a = backend.start(&a_spec).await.unwrap();
+    let b = backend.start(&b_spec).await.unwrap();
+    assert_eq!(
+        sh(
+            &a,
+            "mkdir -p ~/.claude/projects; echo private-space-a > ~/.claude/projects/transcript"
+        )
+        .await
+        .1,
+        0
+    );
+    for sandbox in [&a, &b] {
+        assert_eq!(
+            sh(
+                sandbox,
+                "cat \"$CALTERNAL_CLAUDE_LOGIN_DIR/.credentials.json\""
+            )
+            .await,
+            (
+                r#"{"claudeAiOauth":{"accessToken":"fixture-login"}}"#.into(),
+                0
+            )
+        );
+    }
+    assert_eq!(sh(&b, "test ! -e ~/.claude/projects/transcript").await.1, 0);
+    assert_ne!(
+        sh(
+            &b,
+            "echo replaced > \"$CALTERNAL_CLAUDE_LOGIN_DIR/.credentials.json\""
+        )
+        .await
+        .1,
+        0
+    );
+    a.stop().await.unwrap();
+    b.stop().await.unwrap();
 }

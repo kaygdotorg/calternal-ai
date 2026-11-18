@@ -46,12 +46,15 @@
 
 pub mod admin;
 mod admission;
+/// Local deployment enrollment and the first-owner onboarding operation.
+pub mod colocated;
 pub mod db;
 mod discards;
 mod erasure;
 mod erasure_queue;
 mod execs;
 pub mod http;
+pub(crate) mod install;
 mod microvm;
 mod owners;
 pub mod provider;
@@ -322,6 +325,7 @@ impl MachineService {
                             state: LeaseState::Stopping,
                             order: 0,
                             pool_diagnostic: false,
+                            provider_login: false,
                         },
                     );
                 } else {
@@ -339,6 +343,7 @@ impl MachineService {
                 state,
                 order,
                 pool_diagnostic: false,
+                provider_login: false,
             };
             st.take_slot(lease.assigned_machine());
             st.leases.insert(lease.row.id, lease);
@@ -466,7 +471,7 @@ impl MachineService {
     pub fn run_space(&self, lease: Uuid) -> Result<Option<SpaceId>, Error> {
         let st = self.lock()?;
         Ok(match st.leases.get(&lease) {
-            Some(l) => (!l.row.worker).then_some(l.row.space),
+            Some(l) => (!l.row.worker && !l.provider_login).then_some(l.row.space),
             None => db::lease(&st.db, lease)
                 .map_err(sql)?
                 .filter(|r| !r.worker)
@@ -482,7 +487,7 @@ impl MachineService {
             .execs
             .get(&exec)
             .and_then(|e| st.leases.get(&e.lease))
-            .filter(|l| !l.row.worker)
+            .filter(|l| !l.row.worker && !l.provider_login)
             .map(|l| l.row.space))
     }
 

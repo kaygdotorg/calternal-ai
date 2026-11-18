@@ -176,30 +176,12 @@ impl Backend for PodmanBackend {
             .join(spec.thread_id.to_string());
             let result = async {
                 let account = root.join("accounts").join(spec.account_id.to_string());
-                let home = if self.guest {
-                    account
-                        .join("spaces")
-                        .join(spec.space_id.to_string())
-                        .join("home")
-                } else {
-                    account.join("home")
-                };
                 let dir = if spec.worker.is_some() {
                     worker_dir.clone()
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
-                if spec.worker.is_none() {
-                    tokio::fs::create_dir_all(&home)
-                        .await
-                        .map_err(SandboxError::new)?;
-                }
-                use std::os::unix::fs::PermissionsExt;
-                if spec.worker.is_none() {
-                    tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
-                        .await
-                        .map_err(SandboxError::new)?;
-                }
+                let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
                     SandboxError(format!("cannot create work directory: {}", e.kind()))
@@ -250,6 +232,18 @@ impl Backend for PodmanBackend {
                 .iter()
                 .map(|s| s.to_string())
                 .collect();
+                if spec.worker.is_none() {
+                    let mode = if spec.provider_login { "rw" } else { "ro" };
+                    args.extend([
+                        "--volume".into(),
+                        format!("{}:/run/calternal-provider-login:{mode}", login.display()),
+                        "--env".into(),
+                        "CALTERNAL_CLAUDE_LOGIN_DIR=/run/calternal-provider-login".into(),
+                    ]);
+                    if spec.provider_login {
+                        args.extend(["--env".into(), "CALTERNAL_PROVIDER_LOGIN=1".into()]);
+                    }
+                }
                 if spec.worker.is_some() {
                     // A worker sees only code. In particular it never inherits the
                     // account home, writable work tree, CLI or Nix store mounts.

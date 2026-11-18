@@ -1,8 +1,7 @@
 //! Direct workspace processes on a machine its account owner marked direct.
 //!
 //! Each thread gets `<root>/accounts/<account-id>/threads/<thread-id>/work`; each exec runs there in its own
-//! process group with an empty environment apart from `PATH`, `HOME` (the persistent account
-//! directory) and what the exec asks for. Freeze, resume and stop signal the
+//! process group with its space-scoped `HOME`, machine login directory, and requested environment. Freeze, resume and stop signal the
 //! process groups (`SIGSTOP`, `SIGCONT`, `SIGKILL`).
 //!
 //! Direct mode provides no isolation: processes share the machine user's file system, network
@@ -112,23 +111,12 @@ impl Backend for DirectBackend {
         Box::pin(async move {
             let result = async {
                 let account = self.root.join("accounts").join(spec.account_id.to_string());
-                let home = account.join("home");
                 let dir = if spec.worker.is_some() {
                     self.root.join("workers").join(spec.thread_id.to_string())
                 } else {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
-                if spec.worker.is_none() {
-                    tokio::fs::create_dir_all(&home)
-                        .await
-                        .map_err(SandboxError::new)?;
-                }
-                use std::os::unix::fs::PermissionsExt;
-                if spec.worker.is_none() {
-                    tokio::fs::set_permissions(&account, std::fs::Permissions::from_mode(0o700))
-                        .await
-                        .map_err(SandboxError::new)?;
-                }
+                let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
                 let work = dir.join("work");
                 tokio::fs::create_dir_all(&work).await.map_err(|e| {
                     SandboxError(format!("cannot create work directory: {}", e.kind()))
@@ -141,6 +129,8 @@ impl Backend for DirectBackend {
                     work: spec.code_directory.clone().unwrap_or(work),
                     worker: spec.worker.is_some(),
                     home,
+                    login,
+                    provider_login: spec.provider_login,
                     groups: Mutex::new(HashSet::new()),
                 }) as Arc<dyn Sandbox>)
             }
@@ -161,6 +151,8 @@ pub struct DirectSandbox {
     dir: PathBuf,
     work: PathBuf,
     home: PathBuf,
+    login: PathBuf,
+    provider_login: bool,
     worker: bool,
     /// Process groups started here; pruned lazily when they no longer exist.
     groups: Mutex<HashSet<i32>>,
@@ -200,7 +192,11 @@ impl Sandbox for DirectSandbox {
                 .env_clear()
                 .env("PATH", path)
                 .env("HOME", &self.home)
-                .envs(request.env.iter().map(|(k, v)| (k, v)));
+                .envs(request.env.iter().map(|(k, v)| (k, v)))
+                .env("CALTERNAL_CLAUDE_LOGIN_DIR", &self.login);
+            if self.provider_login {
+                cmd.env("CALTERNAL_PROVIDER_LOGIN", "1");
+            }
             if self.worker {
                 cmd.env_clear().env("LANG", "C.UTF-8");
             }
@@ -262,7 +258,8 @@ mod tests {
 
     fn spec() -> SandboxSpec {
         SandboxSpec {
-            space_id: calternal_types::SpaceId::new(),
+            space_id: Some(calternal_types::SpaceId::new()),
+            provider_login: false,
             code_directory: None,
             worker: None,
             account_id: Uuid::new_v4(),

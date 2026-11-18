@@ -1,5 +1,6 @@
 //! One request per vsock connection. Length prefixes bound allocations before parsing.
 
+use calternal_types::SpaceId;
 use ring::hmac;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -37,7 +38,7 @@ pub(super) async fn verify(
 #[derive(Serialize, Deserialize)]
 pub(super) enum Request {
     Ready,
-    Start(SandboxSpec),
+    Start(SpaceId, SandboxSpec),
     Discard(Uuid, Uuid),
     Exec(Uuid, ExecRequest),
     Freeze(Uuid),

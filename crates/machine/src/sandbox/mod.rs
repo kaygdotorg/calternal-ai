@@ -24,6 +24,7 @@ pub mod direct;
 #[cfg(target_os = "linux")]
 pub mod microvm;
 pub mod podman;
+mod provider_home;
 pub mod worker;
 
 use std::future::Future;

@@ -77,6 +77,7 @@ fn schedule_checked<D: Directory>(
         };
         let (s, sp, jid, run) = (st.clone(), space, id.clone(), claimed.job.runs);
         let waiting = matches!(end, RunEnd::RetryWaiting);
+        let failed = matches!(end, RunEnd::Failed);
         if !waiting {
             if let Ok(latest) = super::load(&st, &id).await
                 && latest.runs == claimed.job.runs
@@ -96,6 +97,12 @@ fn schedule_checked<D: Directory>(
         .await;
         if waiting && finished.is_ok() {
             super::retry::schedule(&st, &svc, wait_space, wait_id);
+        } else if failed
+            && !verify
+            && finished.is_ok()
+            && let Ok(job) = super::load(&st, &id).await
+        {
+            let _ = crate::provider_sign_in::offer_failed(st, svc, job.session.clone(), &job).await;
         }
     });
 }
@@ -458,8 +465,17 @@ async fn execute<D: Directory>(
                                         checkpoint["provider_check"] = json!(status);
                                     }
                                     sign_in_command = Some(status.sign_in_command.clone());
+                                    let needs_sign_in = check && status.installed && !status.signed_in;
+
                                     let (m, provider, status) = (machines.clone(), provider_id.to_owned(), status.clone());
                                     blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
+                                    if needs_sign_in {
+                                        let (s, svc, job, provider) = (state.clone(), machines.clone(), job.clone(), provider_id.to_owned());
+                                        tokio::spawn(async move {
+                                            let _ = crate::provider_sign_in::offer_check(s, svc, &job, machine_id, provider).await;
+                                        });
+                                    }
+
                                     // Only the owning person can observe a manual Check job.
                                     // Normal turns record readiness privately without a public chunk.
                                     if !check {
