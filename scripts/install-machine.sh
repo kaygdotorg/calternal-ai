@@ -52,13 +52,15 @@ fi
 
 printf '%s\n' 'Copying Calternal into your user bin directory.'
 mkdir -p "$HOME/.local/bin"
-if ! [ "$binary" -ef "$target" ]; then
+changed=false
+if ! [ -x "$target" ] || ! cmp -s "$binary" "$target"; then
   binary_stage=$(mktemp "$target.XXXXXX")
   trap 'rm -f "$binary_stage"' EXIT
   cp "$binary" "$binary_stage"
   chmod 0755 "$binary_stage"
   mv -f "$binary_stage" "$target"
   trap - EXIT
+  changed=true
 fi
 
 if [ -f "$machine_dir/credentials" ]; then
@@ -89,10 +91,19 @@ case $system in
       done
       printf '\n%s\n' 'Restart=on-failure' 'RestartSec=5' 'RestartPreventExitStatus=3' '[Install]' 'WantedBy=default.target'
     } > "$unit.new"
-    mv -f "$unit.new" "$unit"
-    systemctl --user daemon-reload
-    systemctl --user enable calternal-machine.service
-    systemctl --user restart calternal-machine.service
+    if cmp -s "$unit.new" "$unit"; then
+      rm -f "$unit.new"
+    else
+      mv -f "$unit.new" "$unit"
+      systemctl --user daemon-reload
+      changed=true
+    fi
+    if "$changed"; then
+      systemctl --user enable calternal-machine.service
+      systemctl --user restart calternal-machine.service
+    else
+      systemctl --user enable --now calternal-machine.service
+    fi
     ;;
   Darwin)
     agents=$HOME/Library/LaunchAgents
@@ -108,9 +119,18 @@ case $system in
       done
       printf '%s\n' '</array><key>RunAtLoad</key><true/>' '<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>' '</dict></plist>'
     } > "$plist.new"
-    mv -f "$plist.new" "$plist"
-    launchctl bootout "$domain/org.calternal.machine" 2>/dev/null || true
-    launchctl bootstrap "$domain" "$plist"
+    if cmp -s "$plist.new" "$plist"; then
+      rm -f "$plist.new"
+    else
+      mv -f "$plist.new" "$plist"
+      changed=true
+    fi
+    if "$changed"; then
+      launchctl bootout "$domain/org.calternal.machine" 2>/dev/null || true
+    fi
+    if ! launchctl print "$domain/org.calternal.machine" >/dev/null 2>&1; then
+      launchctl bootstrap "$domain" "$plist"
+    fi
     ;;
 esac
 printf '%s\n' 'The service is installed. Return to Calternal to check that the machine connected.'
