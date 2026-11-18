@@ -950,7 +950,10 @@ fn development_tokens_require_an_explicit_startup_flag() {
     assert!(!d.0.join("appdata/dev-tokens").exists());
     let status = raw(normal.port, "GET", "/api/v1/auth/status", &[], None).unwrap();
     assert_eq!(status.status, 200);
-    assert_eq!(status.body, json!({"setup":true,"signed_in":false}));
+    assert_eq!(
+        status.body,
+        json!({"setup":true,"signed_in":false,"email_required":false,"mail_available":false})
+    );
     assert_eq!(
         std::os::unix::fs::PermissionsExt::mode(
             &std::fs::metadata(d.0.join("appdata/setup.token"))
