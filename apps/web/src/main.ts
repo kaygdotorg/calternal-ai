@@ -7,6 +7,7 @@ import { shell } from "./shell/shell.svelte";
 import { appearance } from "./appearance/prefs.svelte";
 import { serverMode } from "./server/client";
 import { startChrome } from "./shell/chrome";
+import "./canvas/area"; // the canvas is the shell's window area (shell/window-area.ts)
 
 registerFonts(import.meta.env.BASE_URL);
 initInputModality();
