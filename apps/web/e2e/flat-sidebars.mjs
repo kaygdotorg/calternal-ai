@@ -52,7 +52,7 @@ try {
   const { page, ctx } = await open(browser, "desktop", "light", "/threads/t-run?panel=changes");
   await page.evaluate(() => localStorage.setItem("cal.appearance", JSON.stringify({ wallpaperId: "fbV03MdVtJA" }))); await page.reload(); await page.waitForSelector("html[data-ready]");
   await page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--c-dim-a").trim() !== "", null, { timeout: 15000 }); await page.waitForTimeout(500);
-  await page.addStyleTag({ content: ".wash.l { width: var(--side-w) !important } .wash.r { width: var(--right-w) !important }" });
+  await page.addStyleTag({ content: ".wash { right: auto !important; width: var(--side-w) !important }" }); // the old structure: a veil that stops at the sidebar (one veil now spans the window)
   const m = await measure(page);
   const sees = m.right.worst > STEP || m.left.worst > STEP;
   console.log(`${sees ? "PASS" : "FAIL"}  the check finds the old edge (largest step ${Math.max(m.right.worst, m.left.worst).toFixed(2)})`);

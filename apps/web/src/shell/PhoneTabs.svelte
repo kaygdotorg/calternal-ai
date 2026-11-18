@@ -12,7 +12,7 @@
 <nav class="phone-tabs" aria-label="{app.name} sections"><Capsule label="{app.name} sections" morph tall {items} {value} onchange={(v) => (v === "main" ? shell.dismiss() : shell.showPanel(v))} /></nav>
 
 <style>
-  .phone-tabs { transform: var(--pull-x, none); transition: transform var(--dur-sheet) var(--ease-sheet); position: fixed; z-index: 5; left: var(--s-6); right: var(--s-6); bottom: var(--cap-offset); /* native: the bottom pill sits 28 above the screen edge, inside the home-indicator area */ display: flex; justify-content: center; }
+  .phone-tabs { transform: var(--pull-x, none); transition: transform var(--dur-sheet) var(--ease-sheet); position: fixed; z-index: 5; left: var(--s-6); right: var(--s-6); bottom: calc(var(--cap-offset) + var(--kb, 0px)); /* native: the bottom pill sits 28 above the screen edge, inside the home-indicator area */ display: flex; justify-content: center; }
   .phone-tabs :global(.cap) { width: 100%; max-width: 26rem; }
 :global(.shell:has(.mid.dragging)) .phone-tabs { transition: none; }
 </style>

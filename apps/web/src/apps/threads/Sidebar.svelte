@@ -255,8 +255,9 @@
   li.edit { padding: var(--s-1) 0; }
   .hint { padding: var(--s-4) var(--s-5); border-radius: var(--r-select); color: var(--ink-3); font-size: var(--text-label); }
   .hint.over { background: var(--accent-soft); color: var(--accent); }
-  .sec { display: grid; gap: var(--s-1); margin-top: var(--s-3); }
-  .sh { display: flex; align-items: center; gap: var(--s-1); border-radius: var(--r-select); }
+  /* A section header is an interactive row, taller than the heading line: its margins take the difference out so the distances from its text are the shared ones (base.css `.section-heading`). */
+  .sec { display: grid; gap: 0; margin-top: max(0px, calc(var(--section-above) - var(--section-pad))); }
+  .sh { display: flex; align-items: center; gap: var(--s-1); border-radius: var(--r-select); margin-bottom: max(0px, calc(var(--section-below) - var(--section-pad))); }
   .sh.over { background: var(--accent-soft); }
   .tg { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--s-2); min-height: var(--row-h); padding: 0 var(--s-4); border-radius: var(--r-select); text-align: start; font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-3); }
   .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

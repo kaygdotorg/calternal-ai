@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WheelSwipe, pickTarget, settleOpen, visible } from "./pull";
+import { WheelSwipe, parseMs, pickTarget, settleOpen, visible } from "./pull";
 
 const none = { leftOpen: false, rightOpen: false, hasRight: true };
 describe("what a swipe does", () => {
@@ -57,5 +57,15 @@ describe("a trackpad swipe", () => {
     const v = new WheelSwipe();
     expect(v.feed(ev(-30, 0, 0), () => false)).toBe("leave");
     expect(v.feed(ev(-30, 0, 16), () => true)).toBe("leave");
+  });
+});
+
+describe("CSS times", () => {
+  it("reads milliseconds and seconds, and falls back on anything else", () => {
+    expect(parseMs("340ms", 1)).toBe(340);
+    expect(parseMs(" 0.19s ", 1)).toBeCloseTo(190);
+    expect(parseMs("200", 1)).toBe(200);
+    expect(parseMs("", 7)).toBe(7);
+    expect(parseMs("var(--x)", 7)).toBe(7);
   });
 });
