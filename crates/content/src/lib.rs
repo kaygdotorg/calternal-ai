@@ -416,8 +416,8 @@ impl Content {
             )
         })
     }
-    /// How long a request receipt is kept; a retry after that runs as a new
-    /// request. Cost: a copy.
+    /// Age at which a request receipt becomes eligible for pruning. A durable
+    /// pending outbox intent pins its receipt. Cost: a copy.
     pub fn receipt_retention(&self) -> Duration {
         self.journals.retention()
     }

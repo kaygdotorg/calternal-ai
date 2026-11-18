@@ -171,59 +171,45 @@ fn idem(key: &str) -> Commit {
     }
 }
 
-const SHORT: Options = Options {
-    idempotency_retention: Duration::from_millis(150),
-    prune_every: Duration::from_millis(50),
-    highwater_quiet: Duration::from_secs(1),
-    highwater_max_staleness: Duration::from_secs(30),
-};
-
 #[tokio::test]
-async fn old_idempotency_records_are_swept_after_commits() {
+async fn only_the_explicit_prune_removes_expired_unpinned_receipts() {
     let dir = TempDir::new();
-    let s = SpaceStore::open_dir_with(dir.path(), SHORT).await.unwrap();
-    s.commit(idem("old")).await.unwrap();
+    let store = SpaceStore::open_dir(dir.path()).await.unwrap();
+    let key = "opaque:request";
+    store.commit(idem(key)).await.unwrap();
+    let other = AccountId::new();
+    let mut same_text = idem(key);
+    same_text.idempotency.as_mut().unwrap().account = other;
+    store.commit(same_text).await.unwrap();
+    drop(store);
+
+    let db = rusqlite::Connection::open(dir.path().join("index.db")).unwrap();
+    db.execute("UPDATE idempotency SET at_ms=0", []).unwrap();
+    drop(db);
+    let store = SpaceStore::open_dir(dir.path()).await.unwrap();
+    store.commit(idem("fresh")).await.unwrap();
+    assert!(store.idempotency(other, key).await.unwrap().is_some());
+
+    store
+        .prune_receipts(now_ms(), vec![(test_account(), key.into())])
+        .await
+        .unwrap();
     assert!(
-        s.idempotency(test_account(), "old")
+        store
+            .idempotency(test_account(), key)
             .await
             .unwrap()
             .is_some()
     );
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    // The next commit triggers the sweep (right after it replies); the
-    // fresh record stays.
-    s.commit(idem("fresh")).await.unwrap();
-    gone(&s, "old").await;
+    assert!(store.idempotency(other, key).await.unwrap().is_none());
     assert!(
-        s.idempotency(test_account(), "fresh")
+        store
+            .idempotency(test_account(), "fresh")
             .await
             .unwrap()
             .is_some()
     );
-    // The journal itself is never pruned.
-    assert_eq!(s.since(0, 100).await.unwrap().len(), 2);
-}
-
-#[tokio::test]
-async fn old_idempotency_records_are_swept_when_the_store_opens() {
-    let dir = TempDir::new();
-    let s = SpaceStore::open_dir_with(dir.path(), SHORT).await.unwrap();
-    s.commit(idem("old")).await.unwrap();
-    drop(s);
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let s = SpaceStore::open_dir_with(dir.path(), SHORT).await.unwrap();
-    gone(&s, "old").await;
-}
-
-/// Waits for the writer thread's sweep to remove a record.
-async fn gone(s: &SpaceStore, key: &str) {
-    for _ in 0..100 {
-        if s.idempotency(test_account(), key).await.unwrap().is_none() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    panic!("record {key} was not swept");
+    assert_eq!(store.since(0, 100).await.unwrap().len(), 3);
 }
 
 #[tokio::test]

@@ -93,8 +93,12 @@ synchronization. Recovery publishes its journal event and receipt, uses a FULL
 journal publication barrier, then durably retires the intent. Acknowledgement
 requires FULL content/history, journal/receipt and outbox-retirement commits on SSD.
 The retirement barrier prevents power loss from resurrecting an intent after its
-receipt has expired; removing it needs a shared transaction or expiry proof. The existing
-lifecycle worker wakes after commit, fsyncs the current file and directory, then
+receipt expires. Before startup replay or hourly maintenance, content reads the
+outbox under the space slot and asks the journal writer to prune only expired,
+unpinned receipts. If the outbox cannot be read, that prune is skipped.
+A surviving intent protects its receipt through durable retirement, even past
+the seven-day default eligibility age. The existing lifecycle worker wakes after
+commit, fsyncs the current file and directory, then
 marks placement with NORMAL bookkeeping. Lost bookkeeping is replayed from durable
 intents and file hashes. Pending heads pin their existing cache slots; no second
 cache, queue, per-write thread or unbounded task list is added. The worker pins the

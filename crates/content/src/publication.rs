@@ -103,6 +103,8 @@ impl Content {
                 &revision,
                 payload,
             )?;
+            #[cfg(debug_assertions)]
+            (self.fault)(crate::FaultPoint::AfterJournalCommit);
             space
                 .conn
                 .execute(

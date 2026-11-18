@@ -477,6 +477,7 @@ fn retries_are_idempotent() {
 fn crash_points_recover_without_duplicates() {
     for point in [
         "after_commit",
+        "after_journal_commit",
         "before_placement",
         "after_placement",
         "before_reply",
@@ -499,7 +500,10 @@ fn crash_points_recover_without_duplicates() {
         {
             let mut srv = start(&d.0, Some(point));
             let r = try_op(&srv, &srv.owner.clone(), "u", "notes.update", input.clone());
-            if matches!(point, "after_commit" | "before_reply") {
+            if matches!(
+                point,
+                "after_commit" | "after_journal_commit" | "before_reply"
+            ) {
                 assert!(r.is_none(), "{point}: expected crash before reply");
             } else if let Some(reply) = r {
                 assert_eq!(
@@ -510,6 +514,21 @@ fn crash_points_recover_without_duplicates() {
             let st = srv.child.wait().unwrap();
             assert!(!st.success(), "{point}: process should abort");
         }
+        let journal_path = d.0.join("appdata/spaces").join(&personal).join("index.db");
+        let original_reply = (point == "after_journal_commit").then(|| {
+            let index = rusqlite::Connection::open(&journal_path).unwrap();
+            let raw: String = index
+                .query_row(
+                    "SELECT result FROM idempotency WHERE key LIKE '%:u'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            index
+                .execute("UPDATE idempotency SET at_ms=0 WHERE key LIKE '%:u'", [])
+                .unwrap();
+            serde_json::from_str::<Value>(&raw).unwrap()["payload"].clone()
+        });
         let srv = start(&d.0, None);
         // Lazy first-use recovery places the committed revision before exposure.
         let recovered = op(
@@ -528,6 +547,18 @@ fn crash_points_recover_without_duplicates() {
         let r = op(&srv, &srv.owner, "u", "notes.update", input);
         assert_eq!(r.status, 200, "{point}: {}", r.body);
         assert_eq!(r.body["data"]["note"]["markdown"], "after\n");
+        if let Some(original_reply) = original_reply {
+            assert_eq!(r.body["data"], original_reply);
+            let index = rusqlite::Connection::open(&journal_path).unwrap();
+            let events: u32 = index
+                .query_row(
+                    "SELECT count(*) FROM journal WHERE kind='notes.update' AND request_id='u'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(events, 1, "recovery duplicated the durable journal event");
+        }
         let h = op(
             &srv,
             &srv.owner,
