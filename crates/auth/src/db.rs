@@ -19,8 +19,11 @@ const AUTH_CHANGES: &[(i64, &str)] = &[
     (12, include_str!("account_details.sql")),
     (13, include_str!("oidc.sql")),
     (14, include_str!("sharing.sql")),
-    (15, "INSERT INTO space_role_capabilities VALUES
-     ('manager','content.purge'),('owner','content.purge');"),
+    (
+        15,
+        "INSERT INTO space_role_capabilities VALUES
+     ('manager','content.purge'),('owner','content.purge');",
+    ),
 ];
 
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.

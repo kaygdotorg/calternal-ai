@@ -423,7 +423,10 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             &[
                 TITLES,
                 HARNESS,
-                (9, "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;"),
+                (
+                    9,
+                    "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+                ),
             ],
         );
         return FIXTURE;
