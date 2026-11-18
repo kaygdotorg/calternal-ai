@@ -5,7 +5,7 @@ use std::{
     time::Instant,
 };
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{TcpListener, UnixStream},
 };
 
@@ -20,6 +20,14 @@ fn inference_exposes_only_the_fixed_tool_and_rejects_other_calls() {
         serde_json::json!({"tools":[{"name":"mcp__workspace","tools":[{"name":"workspace_command","type":"function"}],"type":"namespace"}]})
     );
     assert!(isolate_request(br#"{"tools":"invalid"}"#, SharedToolsProvider::Claude).is_none());
+    assert_eq!(
+        isolate_request(
+            br#"{"mcp_servers":[{"name":"remote"}]}"#,
+            SharedToolsProvider::Claude
+        ),
+        Some(b"{}".to_vec())
+    );
+    assert!(check_event(b"data: [DONE]\r\n\r\n").is_ok());
     assert!(valid_reply(br#"{"item":{"type":"function_call","namespace":"mcp__workspace","name":"workspace_command"}}"#));
     assert!(!valid_reply(
         br#"{"item":{"type":"function_call","namespace":"mcp__other","name":"workspace_command"}}"#
@@ -47,13 +55,36 @@ async fn unix_request(broker: &Broker, path: &str, token: &str, payload: &str) -
     body
 }
 
-async fn mcp_tool(broker: &Broker, command: &str) -> serde_json::Value {
+fn bridge_fixture(broker: &Broker) -> PathBuf {
     let fixture = broker.directory.join("test-client.mjs");
     let source = include_str!("shared_broker_client.mjs").replace(
         "/run/calternal-broker/gateway.sock",
         broker.directory.join("gateway.sock").to_str().unwrap(),
     );
     std::fs::write(&fixture, source).unwrap();
+    fixture
+}
+
+async fn bridge_gateway(broker: &Broker, fixture: &Path) -> (tokio::process::Child, String) {
+    let mut gateway = Command::new("node")
+        .args(["--input-type=module", "-e",
+            "const bridge = await import(process.argv[1]); console.log((await bridge.startGateway()).baseUrl);"])
+        .arg(fixture)
+        .env("CALTERNAL_GATEWAY_TOKEN", &broker.access)
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let address = BufReader::new(gateway.stdout.take().unwrap())
+        .lines()
+        .next_line()
+        .await
+        .unwrap()
+        .unwrap();
+    (gateway, address)
+}
+
+async fn mcp_tool(broker: &Broker, fixture: &Path, command: &str) -> serde_json::Value {
     let mut child = Command::new("node")
         .arg(fixture)
         .arg("mcp")
@@ -219,7 +250,8 @@ JS
             login = login.to_string_lossy(),
             host_pid = std::process::id(),
         );
-        let tool = mcp_tool(&broker, &probe).await;
+        let fixture = bridge_fixture(&broker);
+        let tool = mcp_tool(&broker, &fixture, &probe).await;
         let reply = tool["result"]["content"][0]["text"].as_str().unwrap();
         assert_eq!(tool["result"]["isError"], false);
         assert!(
@@ -243,6 +275,8 @@ JS
         );
 
         let mock_url = format!("{base}{path}");
+        let (mut bridge, bridge_url) = bridge_gateway(&broker, &fixture).await;
+        let relayed_url = format!("{bridge_url}{path}");
         let mut overhead = Vec::new();
         for _ in 0..100 {
             let start = Instant::now();
@@ -256,7 +290,6 @@ JS
                         format!("Bearer {key}")
                     },
                 )
-                .header(header::CONNECTION, "close")
                 .body(payload)
                 .send()
                 .await
@@ -268,9 +301,17 @@ JS
             );
             let direct = start.elapsed();
             let start = Instant::now();
-            let relayed = unix_request(&broker, path, &broker.access, payload).await;
-            assert!(relayed.starts_with("HTTP/1.1 200") && relayed.contains("mock-provider-reply"));
-            assert!(!relayed.contains(&key));
+            let relayed = client
+                .post(&relayed_url)
+                .body(payload)
+                .send()
+                .await
+                .unwrap();
+            assert!(relayed.status().is_success());
+            assert_eq!(
+                relayed.text().await.unwrap(),
+                r#"{"text":"mock-provider-reply"}"#
+            );
             overhead.push(start.elapsed().as_micros() as i64 - direct.as_micros() as i64);
         }
         overhead.sort_unstable();
@@ -279,6 +320,7 @@ JS
             overhead[49], overhead[94]
         );
         assert_eq!(verified.load(Ordering::Relaxed), 200);
+        bridge.kill().await.unwrap();
         drop(login_handle);
         broker.close();
         upstream.abort();

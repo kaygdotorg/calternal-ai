@@ -325,6 +325,8 @@ const CODEX_METHOD: &str = "workspace_command";
 fn isolate_request(body: &[u8], provider: SharedToolsProvider) -> Option<Vec<u8>> {
     let mut body: serde_json::Value = serde_json::from_slice(body).ok()?;
     let contents = body.as_object_mut()?;
+    // Provider-hosted MCP servers bypass the machine's tool executor.
+    contents.remove("mcp_servers");
     if let Some(tools) = contents.get_mut("tools") {
         tools.as_array_mut()?.retain_mut(|tool| match provider {
             SharedToolsProvider::Claude => {
@@ -364,6 +366,7 @@ fn event_end(buffer: &[u8]) -> Option<usize> {
 fn check_event(frame: &[u8]) -> std::io::Result<()> {
     let mut data = Vec::new();
     for line in frame.split(|byte| *byte == b'\n') {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
         if let Some(value) = line.strip_prefix(b"data:") {
             if !data.is_empty() {
                 data.push(b'\n');
