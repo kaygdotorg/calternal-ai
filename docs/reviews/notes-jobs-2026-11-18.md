@@ -13,18 +13,17 @@ The Trash and rename decisions are recorded in
   with purge finalization. It releases the space writer between items.
   A restored or subsequently deleted revision stays outside that selection.
 - Editors can move notes to and from Trash. The Manager and Owner receive
-  `content.purge` for single permanent purges, Empty Trash and its preview.
+  `space.settings` for single permanent purges, Empty Trash and its preview.
 - Rename uses the inherited exclusive placement primitive before editing
   inbound links. A late competing destination cancels the unpublished plan
   so a fresh rename can replan. The durable job continues in turns of at most eight
   sources. Undo claims the original root path, then reapplies the recorded
   prior source revisions. Conflicting later revisions are preserved.
   Restore uses numbered filenames when its previous name is occupied.
-- Auth version 15 follows the production baseline and content versions
-  7–8 follow live rooms through the shared runner. Auth version 15 is incompatible
-  because the previous writer still allows Editors to purge. Each new
-  transition has an independent test. Conformance recovers an interrupted
-  Empty Trash admission with existing content.
+- Content versions 7–8 follow live rooms through the shared runner.
+  Auth stays at version 14. Each content transition has an independent
+  test. Conformance recovers an interrupted Empty Trash admission
+  with existing content.
 
 Purge unlinks owned Markdown files through the filesystem usage hook and
 removes stored content versions. Calternal-AI's owning-space quota

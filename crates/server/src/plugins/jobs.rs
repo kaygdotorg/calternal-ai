@@ -248,6 +248,7 @@ pub struct Jobs {
     pub(super) live: LiveMap,
     pub(super) subscribers: Arc<AtomicUsize>,
     permits: Arc<Semaphore>,
+    pub(crate) push: std::sync::OnceLock<crate::web_push::Service>,
     thread_events: Option<Arc<crate::threads::turn_events::Publisher>>,
 }
 
@@ -348,6 +349,7 @@ impl Jobs {
             subscribers: Arc::new(AtomicUsize::new(0)),
             permits: Arc::new(Semaphore::new(super::runner::MAX_RUNNING)),
             thread_events: None,
+            push: std::sync::OnceLock::new(),
         }
     }
 
@@ -581,6 +583,6 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
         "jobs.db",
         2,
         BATCHES.get_or_init(|| [SCHEMA, crate::threads::turn_events::schema()]),
-        &[waits::SCHEMA],
+        &[(3, waits::SCHEMA)],
     )
 }

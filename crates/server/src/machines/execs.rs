@@ -28,7 +28,7 @@ impl MachineService {
         env: Vec<(String, String)>,
         stdin: String,
     ) -> Result<Uuid, Error> {
-        self.queued_exec(account, lease, argv, env, stdin, false, false, false)
+        self.queued_exec(account, lease, argv, env, stdin, false, false, false, false)
     }
 
     /// Run the selected provider's title entry point without environment
@@ -49,6 +49,28 @@ impl MachineService {
             true,
             false,
             false,
+            false,
+        )
+    }
+
+    /// Start only the image-owned tool-free adapter on a shared turn lease.
+    /// The shared provider credentials are never provided as command data.
+    pub(crate) fn shared_turn_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        stdin: String,
+    ) -> Result<Uuid, Error> {
+        self.queued_exec(
+            account,
+            lease,
+            vec![crate::turns::space_execution::SHARED_ADAPTER.into()],
+            Vec::new(),
+            stdin,
+            false,
+            false,
+            false,
+            true,
         )
     }
 
@@ -63,7 +85,17 @@ impl MachineService {
         stdin: String,
         interactive: bool,
     ) -> Result<Uuid, Error> {
-        self.queued_exec(account, lease, argv, env, stdin, false, true, interactive)
+        self.queued_exec(
+            account,
+            lease,
+            argv,
+            env,
+            stdin,
+            false,
+            true,
+            interactive,
+            false,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -77,6 +109,7 @@ impl MachineService {
         background_title: bool,
         harness: bool,
         interactive: bool,
+        shared: bool,
     ) -> Result<Uuid, Error> {
         if stdin.len() > 128 * 1024 {
             return Err(Error::invalid_input("exec input exceeds 128 KiB"));
@@ -94,7 +127,8 @@ impl MachineService {
                     && (l.row.worker
                         || l.provider_login
                         || l.row.background_title != background_title
-                        || l.row.harness.is_some() != harness) =>
+                        || l.row.harness.is_some() != harness
+                        || l.row.shared_sponsor.is_some() != shared) =>
             {
                 return Err(Error::forbidden(
                     "internal machine execs are host-controlled",

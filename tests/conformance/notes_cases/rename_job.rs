@@ -4,6 +4,13 @@ use super::*;
 async fn linked_rename_batches_are_undoable_by_job_id() {
     let f = Fixture::new().await;
     let space = &f.spaces[3];
+    f.op(
+        1,
+        "plugins.enable",
+        json!({"space_id":space,"plugin_id":"calternal-notes"}),
+    )
+    .await
+    .ok();
     let create = async |title: &str, markdown: &str| {
         data(
             f.op(

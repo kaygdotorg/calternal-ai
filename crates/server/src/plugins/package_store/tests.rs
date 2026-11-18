@@ -37,7 +37,7 @@ fn installed_package_v2_opts_in_only_the_original_seed_and_preserves_rollback() 
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[bundled_notes::LIVE_EDITING],
+        &[(2, bundled_notes::LIVE_EDITING)],
     );
     let seeded = include_bytes!("notes_before_live_editing.calplugin").as_slice();
     let mut custom = decode(seeded.to_vec(), super::super::sha256_hex(seeded)).unwrap();
@@ -170,7 +170,7 @@ fn installed_package_v3_registers_the_provider_without_changing_its_archive() {
         "installed-plugins.sqlite3",
         1,
         &[PACKAGE_SCHEMA],
-        &[bundled_notes::LIVE_EDITING],
+        &[(2, bundled_notes::LIVE_EDITING)],
     );
     calternal_store::migrations::migrate(&db, baseline).unwrap();
     let package = Package {

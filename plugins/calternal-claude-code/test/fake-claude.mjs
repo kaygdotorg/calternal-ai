@@ -30,6 +30,15 @@ if(args.join(' ')==='auth status'){
 if(process.env.CALTERNAL_AGENT_TOKEN) execFileSync('calternal',['--help'],{stdio:'ignore'});
 let prompt='';for await(const data of process.stdin)prompt+=data;
 const emit=m=>process.stdout.write(JSON.stringify(m)+'\n');
+if (args.includes('--safe-mode') && prompt.startsWith('shared-fixture')) {
+  if (!['--disable-slash-commands', '--no-session-persistence', '--include-hook-events'].every(arg => args.includes(arg)) ||
+      args[args.indexOf('--tools') + 1] !== '' || args.includes('--resume') || args.includes('--allowedTools')) process.exit(96);
+  emit({type:'system', subtype:'init', tools:prompt.includes('unexpected-tool') ? ['Read'] : [],
+    skills:[], mcp_servers:[], slash_commands:[]});
+  emit({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:'Shared reply'}}});
+  emit({type:'result',subtype:'success',is_error:false});
+  process.exit(0);
+}
 if(args.includes('--safe-mode')){
   if(!['--disable-slash-commands','--no-session-persistence','--include-hook-events','--system-prompt'].every(arg=>args.includes(arg))||
      args[args.indexOf('--tools')+1]!==''||args[args.indexOf('--effort')+1]!=='low'||

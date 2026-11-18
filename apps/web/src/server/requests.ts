@@ -24,6 +24,8 @@ export interface WireRequest {
   space_id?: string | null;
   /** The thread that asked, when it came from a thread. */
   thread_id?: string | null;
+  /** The plugin job that is waiting on this prompt (a durable wait), when a plugin raised it. */
+  job_id?: string | null;
   /** What is asked: a question, an approval or a secret, with the data its form needs (read by `requestOf`). */
   detail:
     | { kind: "question"; label: string; form: { genui_version: number; source: string } }
@@ -43,6 +45,10 @@ export function lifetimesOf(d: Extract<WireRequest["detail"], { kind: "approval"
 
 /** A listed request as the Threads app's type. An unknown kind is dropped (the bar cannot draw it). */
 export function requestOf(w: WireRequest): Request | null {
+  const r = requestOfDetail(w);
+  return r && w.job_id ? { ...r, jobId: w.job_id } : r;
+}
+function requestOfDetail(w: WireRequest): Request | null {
   const threadId = w.thread_id ?? "";
   const d = w.detail;
   switch (d?.kind) {

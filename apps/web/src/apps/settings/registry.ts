@@ -269,6 +269,7 @@ function serverSections(): Section[] {
   const mayManage = spaces.current.role === "owner" || spaces.current.role === "manager";
   const admin: Page[] = [
     ...(caps.peopleManage ? [{ id: "people", name: "People", icon: "user" as IconName, blurb: "Everyone with an account on this server.", groups: [lazy("server.people", "People", () => import("./PeoplePanel.svelte"))] }] : []),
+    ...(caps.serverAdmin ? [{ id: "providers", name: "Sign-in providers", icon: "key" as IconName, blurb: "Outside accounts people can sign in with.", groups: [lazy("server.providers", "Sign-in providers", () => import("./ProvidersPanel.svelte"))] }] : []),
     ...(caps.groupsManage ? [{ id: "groups", name: "Groups", icon: "user" as IconName, blurb: "Groups give a role in a space to everyone in them.", groups: [lazy("server.groups", "Groups", () => import("./GroupsPanel.svelte"))] }] : []),
   ];
   return [

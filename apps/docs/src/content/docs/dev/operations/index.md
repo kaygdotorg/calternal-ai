@@ -118,6 +118,10 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [fonts.faces](./fonts-faces/): Generate same-origin face rules
 - [fonts.list](./fonts-list/): List shared and caller-owned fonts
 - [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [push.subscribe](./push-subscribe/): Register this browser for thread notifications
+- [push.unsubscribe](./push-unsubscribe/): Remove one of your push subscriptions
+- [push.devices](./push-devices/): List your registered push devices and the public VAPID key
+- [push.test](./push-test/): Queue a test push to this browser
 - [plugins.diagnostics](./plugins-diagnostics/): Inspect an installed plugin's readiness and recent worker failures
 - [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
 - [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
@@ -140,6 +144,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [requests.approve](./requests-approve/): Approve with a fresh verified passkey
 - [requests.deny](./requests-deny/): Decline a pending approval
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
+- [space.machine.get](./space-machine-get/): Read the execution setting for a space
+- [space.machine.set](./space-machine-set/): Set the shared execution machine for a space
 - [machines.install](./machines-install/): Create a single-use personal machine enrollment script
 - [machines.onboarding](./machines-onboarding/): Check whether the installation has an enrolled, available machine
 - [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in

@@ -112,6 +112,8 @@ fn schedule_checked<D: Directory>(
             && !verify
             && finished.is_ok()
             && claimed.job.input.get("thread_request").is_some()
+            && let Ok(job) = super::load(&st, &id).await
+            && job.checkpoint["shared_sponsor"].is_null()
         {
             crate::threads::title::schedule(st, svc, claimed.job);
         }
@@ -188,7 +190,32 @@ async fn execute<D: Directory>(
     };
     let saved_thread = job.input.get("thread_request").is_some();
     let mut phases = saved_thread.then(|| super::phases::Phases::queued(job, live));
-    let pin = {
+    let automation = job.input["thread_request"]["automation_run"].is_object();
+    let shared = if !check && !automation && !i.personal_machine {
+        let (s, m) = (state.clone(), machines.clone());
+        blocking(move || super::space_execution::resolve(&s, &m, space)).await?
+    } else {
+        None
+    };
+    let route_changed = job
+        .checkpoint
+        .get("shared_machine")
+        .is_some_and(|previous| {
+            *previous != json!(shared.map(|target| target.machine))
+                || job.checkpoint["shared_sponsor"] != json!(shared.map(|target| target.sponsor))
+        });
+    if route_changed || (shared.is_some() && provider_id != "calternal-claude-code") {
+        let message = if route_changed {
+            "The shared machine changed. Start a new turn to use the new setting."
+        } else {
+            "Choose Claude Code or use your personal machine."
+        };
+        live.publish(job.runs, &json!({"type":"notice","message":message}));
+        return Ok(RunEnd::Failed);
+    }
+    let pin = if shared.is_some() {
+        None
+    } else {
         let st = state.clone();
         let id = provider_id.to_owned();
         blocking(move || {
@@ -213,7 +240,7 @@ async fn execute<D: Directory>(
         (pin.image.clone(), sandbox)
     });
     let mut checkpoint =
-        super::lease::prepare(state, machines, job, live, space, thread, runtime).await?;
+        super::lease::prepare(state, machines, job, live, space, thread, shared, runtime).await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -252,7 +279,10 @@ async fn execute<D: Directory>(
         };
         phases.switch("starting_sandbox", job, live, &mut checkpoint);
     }
-    let mut local_session = if previous_machine == Some(machine_id) {
+    let mut local_session = if shared.is_none()
+        && job.checkpoint["shared_sponsor"].is_null()
+        && previous_machine == Some(machine_id)
+    {
         checkpoint
             .get("session_id")
             .and_then(Value::as_str)
@@ -260,7 +290,8 @@ async fn execute<D: Directory>(
     } else {
         None
     };
-    if job.runs == 1
+    if shared.is_none()
+        && job.runs == 1
         && let Some(session) = ProviderSession::owned(&job.input, account)
     {
         match session.resume(provider_id, thread, machine_id) {
@@ -276,7 +307,7 @@ async fn execute<D: Directory>(
         job,
         live,
         &mut checkpoint,
-        (saved_thread && personal_machine).then_some((thread, machine_id)),
+        (saved_thread && personal_machine && shared.is_none()).then_some((thread, machine_id)),
     )
     .await?;
     let mut context = i.context.clone();
@@ -335,7 +366,9 @@ async fn execute<D: Directory>(
     };
     let stdin = super::launch::encode(commands)?;
     let requested_mode = scope.as_ref().map(|scope| scope.mode);
-    let (mut env, mut redactor) = if let Some(scope) = scope {
+    let (mut env, mut redactor) = if shared.is_some() {
+        (Vec::new(), None)
+    } else if let Some(scope) = scope {
         let st = state.clone();
         let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
         crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationAfterToken);
@@ -366,6 +399,9 @@ async fn execute<D: Directory>(
     }
     crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationBeforeExec);
     let exec = blocking(move || {
+        if shared.is_some() {
+            return m.shared_turn_exec(account, lease_id, stdin);
+        }
         let argv = super::launch::argv(executable);
         if managed {
             m.harness_exec(account, lease_id, argv, env, stdin, interactive)
@@ -551,7 +587,9 @@ async fn execute<D: Directory>(
                                     let needs_sign_in = check && status.installed && !status.signed_in;
 
                                     let (m, provider, status) = (machines.clone(), provider_id.to_owned(), status.clone());
-                                    blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
+                                    if shared.is_none() {
+                                        blocking(move || m.record_check(account, lease_id, machine_id, provider, status)).await?;
+                                    }
                                     if needs_sign_in {
                                         let (s, svc, job, provider) = (state.clone(), machines.clone(), job.clone(), provider_id.to_owned());
                                         tokio::spawn(async move {

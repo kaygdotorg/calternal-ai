@@ -15,12 +15,10 @@ use std::time::Duration;
 
 mod role_batch;
 
-const AUTH_CHANGES: &[&str] = &[
-    include_str!("account_details.sql"),
-    include_str!("oidc.sql"),
-    include_str!("sharing.sql"),
-    "INSERT INTO space_role_capabilities VALUES
-     ('manager','content.purge'),('owner','content.purge');",
+const AUTH_CHANGES: &[(i64, &str)] = &[
+    (12, include_str!("account_details.sql")),
+    (13, include_str!("oidc.sql")),
+    (14, include_str!("sharing.sql")),
 ];
 
 /// Auth store descriptor shared with the locked deployment coordinator. No I/O.
@@ -331,38 +329,12 @@ mod port_tests {
     use std::task::{Context, Poll, Waker};
 
     #[test]
-    fn note_purge_migration_grants_only_manager_and_owner() {
-        use calternal_store::migrations::{Schema, inspect, migrate_release};
-
-        let conn = Connection::open_in_memory().unwrap();
-        let previous = Schema::new(
-            "auth.db",
-            11,
-            &[include_str!("schema.sql")],
-            &AUTH_CHANGES[..3],
-        );
-        migrate_release(&conn, previous, false).unwrap();
-        migrate_release(&conn, MIGRATIONS, false).unwrap();
-        assert_eq!(inspect(&conn, MIGRATIONS).unwrap(), 15);
-        assert!(inspect(&conn, previous).is_err());
-        let mut query = conn
-            .prepare("SELECT role FROM space_role_capabilities WHERE capability='content.purge' ORDER BY role")
-            .unwrap();
-        let roles = query
-            .query_map([], |row| row.get::<_, String>(0))
-            .unwrap()
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .unwrap();
-        assert_eq!(roles, ["manager", "owner"]);
-    }
-
-    #[test]
     fn a_database_at_another_version_is_refused() {
         let dir = TempDir::new();
         let path = dir.path().join("auth.db");
         Connection::open(&path)
             .unwrap()
-            .pragma_update(None, "user_version", 16)
+            .pragma_update(None, "user_version", 15)
             .unwrap();
         assert!(Db::open(&path).is_err());
         let fresh = dir.path().join("fresh.db");
