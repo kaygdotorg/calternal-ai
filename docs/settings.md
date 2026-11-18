@@ -80,7 +80,8 @@ to git; this list is the source.
 | Nataliya Melnychuk | `I_xBR4NmDhU` |
 
 Each is at `https://unsplash.com/photos/<Photo ID>`. The default is Geronimo Giqueaux's
-`EX_STserBZM`.
+`EX_STserBZM`. See [the server wallpaper contract](wallpapers.md) for the catalog,
+image routes and sign-in fallback.
 
 ## Being tried
 

@@ -45,6 +45,7 @@ mod plugins;
 mod request;
 mod request_action;
 mod spaces;
+pub mod wallpapers;
 mod web;
 pub use dispatch::dispatch;
 pub(crate) use dispatch::fingerprint;
@@ -114,6 +115,7 @@ pub fn router<D: Directory>(state: Shared<D>, web_dir: Option<PathBuf>) -> Route
             get(crate::plugins::job_api::events::<D>),
         )
         .merge(crate::machines::http::routes::<D>())
+        .route(wallpapers::ROUTE, get(wallpapers::image))
         .route("/api", any(api_not_found))
         .route("/api/", any(api_not_found))
         .route("/api/{*rest}", any(api_not_found))
