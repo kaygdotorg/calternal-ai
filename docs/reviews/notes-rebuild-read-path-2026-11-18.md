@@ -55,6 +55,38 @@ The perf directory is
 On the dev VM the cross build ran
 `cargo build --locked --offline --release --target x86_64-unknown-linux-musl --target-dir target-perf -j6 -p calternal-server`.
 
+## Message files
+
+One disk-cold build on perf-01 read 10,000 Markdown files containing
+10 million records and 5,031,910,000 source bytes. The fixture uses the
+production thread writer and parser with generated person and agent
+messages, 30 fixture terms per message, and chronological UUID ordering
+within one recorded second. A disposable probe loads the verified
+posting-block prototype and checks that an indexed locator reads the
+expected source byte range. This measures file I/O and framing against the
+readable format. Arbitrary text tokenization, late timestamps, updates,
+and server request latency remain outside the run.
+
+| Stage | Seconds |
+| --- | ---: |
+| File reads | 31.95 |
+| Thread envelope and record parsing | 11.86 |
+| Fixture terms and locator metadata | 12.39 |
+| SQLite writes and checkpoint | 1,227.50 |
+| Total | 1,285.31 |
+
+The checkpointed index is 2,522,783,744 bytes, or 252.28 MB per million
+messages. This corpus and its term distribution differ from the earlier
+pre-tokenised run. SQLite writes and checkpoint account for about 95.5%
+of total time. The optional second pass was stopped after the full cold
+result to free the shared perf lock. A warm build is still unqualified.
+
+The same locked directory contains `run-messages.sh`,
+`message-binary.sha256`, `messages-cold.progress`, and
+`messages-cold.json`. The probe used the cross-build command above with
+`--features rebuild-probe` and a disposable driver overlay. The timed
+command was `CALTERNAL_MEASURE_MESSAGE_FILES=1 bin/messages index message-source message-cold.db 10000`.
+
 ## Dev-02 backend gate
 
 The final gate ran with `nix develop -c`, `CARGO_TARGET_DIR=target`,
