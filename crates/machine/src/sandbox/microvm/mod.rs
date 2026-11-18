@@ -26,7 +26,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, OnceCell};
 use uuid::Uuid;
 
 use super::{Backend, BoxFuture, Sandbox, SandboxError, SandboxResult};
-use crate::protocol::SandboxSpec;
+use crate::protocol::{GuestSize, SandboxSpec};
 use vmm::Guest;
 use wire::Request;
 
@@ -63,7 +63,7 @@ pub struct Config {
     pub mkfs_ext4: PathBuf,
     /// Virtual CPUs per account, between 1 and 32.
     pub vcpus: u8,
-    /// Guest RAM in MiB, between 512 and 16384.
+    /// Guest RAM in MiB. Must be a supported account guest size.
     pub memory_mib: u32,
     /// Logical data disk ceiling per account in MiB, between 1024 and 65536.
     pub disk_mib: u32,
@@ -83,7 +83,7 @@ impl Config {
             || !config.image_directory.is_absolute()
             || !config.mkfs_ext4.is_absolute()
             || !(1..=32).contains(&config.vcpus)
-            || !(512..=16384).contains(&config.memory_mib)
+            || GuestSize::from_mib(config.memory_mib).is_none()
             || !(1024..=65536).contains(&config.disk_mib)
             || !(1..=64).contains(&config.max_guests)
             || config.warm_guests > 2
@@ -143,6 +143,10 @@ impl MicrovmBackend {
 impl Backend for MicrovmBackend {
     fn name(&self) -> &'static str {
         "microvm"
+    }
+
+    fn guest_memory_mib(&self) -> Option<u32> {
+        Some(self.0.config.memory_mib)
     }
 
     fn initialize(&self) -> BoxFuture<'_, SandboxResult<()>> {

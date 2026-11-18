@@ -1,6 +1,6 @@
 //! Admission and lease handling for pool machines running account microVMs.
 
-use calternal_machine::protocol::{Down, GUEST_LOST, Owner};
+use calternal_machine::protocol::{Down, GUEST_LOST, GuestSize, Owner};
 use calternal_types::Error;
 use uuid::Uuid;
 
@@ -18,6 +18,24 @@ pub(super) fn authorize(owner: Owner) -> Result<(), Error> {
             "microVM execution is available on pool machines",
         ))
     }
+}
+
+/// Resolve the account limit from the same size table the machine uses.
+pub(super) fn active_limit(backend: &str, memory_mib: Option<u32>) -> Result<Option<usize>, Error> {
+    if is_requested(backend) {
+        return memory_mib
+            .and_then(GuestSize::from_mib)
+            .map(|size| size.active_threads)
+            .ok_or_else(|| {
+                Error::invalid_input("microVM sessions require a supported guest size")
+            });
+    }
+    if memory_mib.is_some() {
+        return Err(Error::invalid_input(
+            "only microVM sessions report a guest size",
+        ));
+    }
+    Ok(None)
 }
 
 pub(super) fn lost(

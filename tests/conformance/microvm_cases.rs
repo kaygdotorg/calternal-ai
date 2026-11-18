@@ -186,3 +186,41 @@ async fn container_fallback_is_visible_only_to_entitled_accounts() {
     foreign.ok();
     assert_eq!(foreign.body["data"]["pool"], json!([]));
 }
+
+#[tokio::test]
+async fn small_pool_guests_queue_a_third_thread_across_spaces() {
+    let f = Fixture::new().await;
+    for who in [1, 2] {
+        machine_admin(&f, &["pool-grant", &f.ids[who]]);
+    }
+    let code = machine_admin(&f, &["code", "--pool"]);
+    let mut pool = requests_cases::Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
+    assert_eq!(pool.connect_sized(&f, "microvm", Some(512)).await, "microvm");
+    let (_, first) = tokio::join!(pool.sync_with_slots(&f, json!([]), 10), run(&f, 1, 0));
+    let (second, third) = tokio::join!(run(&f, 1, 3), run(&f, 1, 0));
+    let foreign = run(&f, 2, 3).await;
+    let mut waiting = None;
+    let mut assigned = Vec::new();
+    for lease in [first, second, third] {
+        let view = f.req("GET", &format!("/api/v1/machines/runs/{lease}"), Some(&f.cookies[1]), json!({}), Some(ORIGIN)).await;
+        view.ok();
+        if view.body["state"] == "waiting" {
+            assert_eq!(view.body["queue_position"], 1);
+            assert!(waiting.replace(lease).is_none());
+        } else {
+            assert_eq!(view.body["state"], "assigned");
+            assigned.push(lease);
+        }
+    }
+    assert_eq!(assigned.len(), 2);
+    let queued = waiting.expect("the third thread must be queued");
+    let unrelated = f.req("GET", &format!("/api/v1/machines/runs/{foreign}"), Some(&f.cookies[2]), json!({}), Some(ORIGIN)).await;
+    unrelated.ok();
+    assert_eq!(unrelated.body["state"], "assigned");
+    let stop = f.req("POST", &format!("/api/v1/machines/runs/{}/stop", assigned[0]), Some(&f.cookies[1]), json!({}), Some(ORIGIN)).await;
+    stop.ok();
+    let result = pool.sync_with_slots(&f, json!([]), 10).await;
+    let stop_index = result.iter().position(|r| r["type"]=="stop" && r["lease_id"]==assigned[0]).unwrap();
+    let assign_index = result.iter().position(|r| r["type"]=="assign" && r["lease_id"]==queued).unwrap();
+    assert!(stop_index < assign_index);
+}

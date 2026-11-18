@@ -117,7 +117,7 @@ of the machine role.
   "image_directory": "/absolute/path/to/guest-image",
   "image_digest": "sha256-of-the-image.sha256-manifest",
   "vcpus": 2,
-  "memory_mib": 1024,
+  "memory_mib": 512,
   "disk_mib": 4096,
   "max_guests": 4,
   "warm_guests": 1
@@ -128,6 +128,13 @@ of the machine role.
 calternal machine run --backend microvm --dir "$MACHINE_DIR" \
   --microvm-config "$MICROVM_CONFIG"
 ```
+
+The 512 MiB profile has two active thread slots across the person's pool
+work. A third turn shows **Waiting for capacity** with its queue position.
+The person can cancel while waiting. Placement retries when an active slot
+is released. The next RAM profile is 1,024 MiB. Its account thread limit
+requires further measurement. Both profiles stay within the machine-wide
+sandbox ceiling.
 
 The role verifies the kernel and system disk once at startup. It keeps up to
 two prebooted guests with blank account data, within the configured VMM cap.

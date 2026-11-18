@@ -74,6 +74,7 @@ fn connect(svc: &MachineService, id: Uuid, key: MachineKey, boot: Uuid) -> M {
             challenge,
             boot_id: boot,
             protocol: calternal_machine::protocol::PROTOCOL_VERSION,
+            guest_memory_mib: None,
             backend: "podman".into(),
         };
         let token = svc.session_finish(&finish).unwrap().token;
@@ -131,6 +132,7 @@ async fn sessions_need_the_machine_key() {
         challenge,
         boot_id: Uuid::new_v4(),
         protocol: calternal_machine::protocol::PROTOCOL_VERSION,
+        guest_memory_mib: None,
         backend: "podman".into(),
     };
     assert_eq!(
@@ -286,6 +288,7 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
             challenge,
             boot_id: Uuid::new_v4(),
             protocol: calternal_machine::protocol::PROTOCOL_VERSION,
+            guest_memory_mib: None,
             backend: backend.into(),
         })
     };
@@ -324,6 +327,7 @@ async fn automatic_backend_selection_follows_owner_consent_and_pool_cannot_be_di
             challenge,
             boot_id: Uuid::new_v4(),
             protocol: calternal_machine::protocol::PROTOCOL_VERSION,
+            guest_memory_mib: (backend == "microvm").then_some(512),
             backend: backend.into(),
         })
         .unwrap()

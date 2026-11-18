@@ -180,6 +180,7 @@ impl MachineService {
         } else if !matches!(f.backend.as_str(), "direct" | "podman" | "auto") {
             return Err(Error::invalid_input("unsupported machine backend"));
         }
+        let thread_limit = super::microvm::active_limit(&f.backend, f.guest_memory_mib)?;
         let backend = if kvm_fallback {
             "podman"
         } else if f.backend == "auto" {
@@ -206,6 +207,7 @@ impl MachineService {
             session: hash,
             direct: backend == "direct",
             kvm_fallback,
+            thread_limit,
             outbox: VecDeque::new(),
             next_seq: 1,
             polls: 0,

@@ -152,7 +152,7 @@ impl MachineService {
         let mut pool = Vec::new();
         for machine in st.eligible(account, pin) {
             let online = connected(machine, &self.settings);
-            let available = online && st.free(machine) != 0;
+            let available = online && st.free_for(machine, account) != 0;
             let checks = machine.checks.get(&account);
             let providers = providers
                 .iter()

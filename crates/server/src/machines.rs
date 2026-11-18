@@ -302,6 +302,7 @@ impl MachineService {
             worker_stops: HashMap::new(),
             recovery_stops: HashSet::new(),
             next_order: 0,
+            pool_load: HashMap::new(),
             db,
             authority,
         };
@@ -345,7 +346,7 @@ impl MachineService {
                 pool_diagnostic: false,
                 provider_login: false,
             };
-            st.take_slot(lease.assigned_machine());
+            st.take_slot(lease.assigned_machine(), lease.row.account);
             st.leases.insert(lease.row.id, lease);
         }
         Ok(Arc::new(Self {

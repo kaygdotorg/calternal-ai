@@ -65,6 +65,10 @@ impl Machine {
     }
 
     pub(super) async fn connect_as(&mut self, f: &Fixture, backend: &str) -> String {
+        self.connect_sized(f, backend, None).await
+    }
+
+    pub(super) async fn connect_sized(&mut self, f: &Fixture, backend: &str, memory_mib: Option<u32>) -> String {
         let challenge = f
             .machine(
                 "/api/v1/machine/session/start",
@@ -76,7 +80,7 @@ impl Machine {
         let ch = challenge.body["challenge"].as_str().unwrap();
         let r = f.machine("/api/v1/machine/session/finish",None,json!({
             "machine_id":self.id,"challenge":ch,"signature":self.key.sign_session(self.id,ch),
-            "boot_id":self.boot,"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":backend,
+            "boot_id":self.boot,"protocol":calternal_machine::protocol::PROTOCOL_VERSION,"backend":backend,"guest_memory_mib":memory_mib,
         })).await;
         r.ok();
         self.token = r.body["token"].as_str().unwrap().to_owned();
@@ -86,8 +90,12 @@ impl Machine {
     }
 
     pub(super) async fn sync(&mut self, f: &Fixture, discards: Value) -> Vec<Value> {
+        self.sync_with_slots(f, discards, 2).await
+    }
+
+    pub(super) async fn sync_with_slots(&mut self, f: &Fixture, discards: Value, slots: u32) -> Vec<Value> {
         let r = f.machine("/api/v1/machine/sync",Some(&self.token),json!({
-            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":2,"running_sandboxes":0},
+            "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":slots,"running_sandboxes":0},
             "draining":false,"leases":self.leases,"discards":discards,
         })).await;
         r.ok();

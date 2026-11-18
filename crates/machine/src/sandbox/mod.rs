@@ -123,6 +123,11 @@ pub trait Backend: Send + Sync + 'static {
     }
     /// Short name for logs and capacity reports.
     fn name(&self) -> &'static str;
+    /// Configured account VM memory for admission. Container and direct backends
+    /// have no account VM size.
+    fn guest_memory_mib(&self) -> Option<u32> {
+        None
+    }
     /// Backend request in the machine handshake. `auto` follows the owner's stored setting.
     fn preference(&self) -> &'static str {
         self.name()

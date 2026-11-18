@@ -84,7 +84,7 @@ async fn session_loop(
     let mut last_ok = Instant::now();
     let mut lease_ttl = Duration::from_secs(90);
     loop {
-        let granted = match open_session(creds, link, boot_id, runner.backend_name()).await {
+        let granted = match open_session(creds, link, boot_id, runner).await {
             Ok(g) => g,
             Err(Error::Revoked) => return Err(Error::Revoked),
             Err(e) if matches!(e.status(), Some(403 | 404)) => return Err(Error::Revoked),
@@ -180,7 +180,7 @@ async fn open_session(
     creds: &Credentials,
     link: &Link,
     boot_id: Uuid,
-    backend: &str,
+    runner: &Runner,
 ) -> Result<SessionGranted> {
     let t = Duration::from_secs(20);
     let SessionChallenge { challenge } = link
@@ -199,7 +199,8 @@ async fn open_session(
         challenge,
         boot_id,
         protocol: PROTOCOL_VERSION,
-        backend: backend.into(),
+        backend: runner.backend_name().into(),
+        guest_memory_mib: runner.guest_memory_mib(),
     };
     link.post("/api/v1/machine/session/finish", &finish, false, t)
         .await
