@@ -162,6 +162,7 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
             "plugins.network.content.preference.set",
             Capability::PluginsUse,
         ),
+        ("plugins.diagnostics", Capability::PluginsManage),
         ("plugins.personal_settings.get", Capability::SpaceRead),
         ("plugins.personal_settings.set", Capability::SpaceRead),
         ("plugins.settings.get", Capability::SpaceSettings),

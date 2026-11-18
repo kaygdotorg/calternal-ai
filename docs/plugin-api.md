@@ -216,6 +216,20 @@ Once the file is valid, recovery reapplies the pending key and keeps other
 edits. A competing edit to the same key becomes a conflict. Unrelated
 operations stay available during repair.
 
+## Installed plugin diagnostics
+
+A space Owner or Manager can call `plugins.diagnostics` with the space UUID
+and an installed package ID. The response reports the selected revision,
+its last observed readiness, recent reason codes, and up to 4 KiB of the
+last failed worker’s stderr from that space. Readiness is observed when the
+worker starts and stops. The endpoint does not start a worker.
+
+Diagnostics retain up to eight failures and one stderr tail per space and
+up to 64 spaces per package revision. Records expire after an hour and
+are cleared when the server restarts. The host never records operation
+inputs or outputs in the error history. Worker stderr is private to the
+space's managers. Authors should keep secrets and personal data out of it.
+
 ## Author diagnostics
 
 `calternal plugin new` creates a directory under the current directory and
@@ -363,7 +377,7 @@ Before any revision loads, the state is `failed`. The server keeps one failed
 candidate per package in the development space, for at most 16 packages, and
 clears it on the next successful publication. Nothing in diagnostics is
 written to disk, so it follows no database or file format and needs no
-migration. A restart drops it. A production server has no diagnostics view.
+migration. A restart drops it. Installed packages use the separate manager operation described above.
 
 ## Page a plugin's own kinds
 

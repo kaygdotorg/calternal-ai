@@ -20,6 +20,7 @@ pub(crate) use agent_settings::UPGRADE_SCHEMA as AGENT_SETTINGS_SCHEMA;
 pub mod broker;
 #[cfg(feature = "dev-plugin-drafts")]
 mod draft_diagnostics;
+pub(crate) mod installed_diagnostics;
 pub mod job_api;
 pub mod job_sql;
 mod job_streams;
@@ -106,6 +107,8 @@ pub struct Plugin {
     pub schemas: Arc<host::CompiledSchemas>,
     revision: u32,
     activation_approval: u32,
+    /// In-memory readiness and worker failures, scoped per space.
+    pub(crate) installed_diagnostics: installed_diagnostics::RuntimeDiagnostics,
     #[cfg(feature = "dev-plugin-drafts")]
     draft_space: Option<SpaceId>,
     #[cfg(feature = "dev-plugin-drafts")]
@@ -163,6 +166,7 @@ impl Plugin {
             unavailable: None,
             schemas,
             revision: 0,
+            installed_diagnostics: Default::default(),
             activation_approval: 0,
             #[cfg(feature = "dev-plugin-drafts")]
             draft_space: None,

@@ -221,6 +221,11 @@ async fn execute<D: Directory>(
             },
         )
         .await;
+    if let Outcome::InvalidInput(error) | Outcome::Failed(error) = &outcome {
+        plugin
+            .installed_diagnostics
+            .failure(space, &job.operation, error);
+    }
     Ok(match outcome {
         Outcome::Cancelled => None,
         Outcome::Complete(value) if value["status"] == "parked" => {

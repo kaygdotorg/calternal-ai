@@ -209,6 +209,15 @@ macro_rules! operation {
 /// Static policy rows, ordered by the public operation catalog.
 pub const REQUEST_OPERATIONS: &[RequestOperation] = &[
     operation!(
+        "plugins.diagnostics",
+        "Inspect an installed plugin's readiness and recent worker failures",
+        Space,
+        PluginsManage,
+        Read,
+        crate::PluginInput,
+        crate::PluginDiagnostics
+    ),
+    operation!(
         "plugins.network.content.get",
         "Get a prepared sealed content frame",
         Space,

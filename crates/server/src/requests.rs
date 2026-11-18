@@ -97,6 +97,13 @@ pub(crate) async fn dispatch<D: Directory>(
                     status: "pending".into()
                 })
             }
+            "plugins.diagnostics" => {
+                json!(crate::plugins::installed_diagnostics::read(
+                    &st,
+                    person.id,
+                    decode(input)?
+                )?)
+            }
             "plugins.network.content.get" => {
                 let i: calternal_core::ContentFrameAddress = decode(input)?;
                 let space = authorize(&st, person.id, &i.space_id, row.required)?;

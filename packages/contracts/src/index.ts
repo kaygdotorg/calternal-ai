@@ -733,6 +733,61 @@ value: unknown,
  */
 resolve?: Array<unknown>, };
 /**
+ * Last observed state of an installed package in one space.
+ */
+
+export type PluginReadiness = "disabled" | "unavailable" | "not_started" | "ready" | "failed";
+/**
+ * One caller-safe runtime failure from this space.
+ */
+
+export type PluginRuntimeFailure = {
+/**
+ * Operation attempted, when the failure belongs to an invocation.
+ */
+operation: string | null,
+/**
+ * Stable reason code without private input or output values.
+ */
+reason: string,
+/**
+ * When the host observed the failure, in Unix milliseconds.
+ */
+at_ms: number, };
+/**
+ * Installed-package diagnostics exposed to authorized space managers.
+ */
+
+export type PluginDiagnostics = {
+/**
+ * Explicit space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Revision inspected by this read.
+ */
+revision: number,
+/**
+ * Last observed readiness in this space.
+ */
+readiness: PluginReadiness,
+/**
+ * Caller-safe reason when the package is unavailable or failed.
+ */
+reason: string | null,
+/**
+ * Up to eight recent failures, newest first.
+ */
+recent_errors: Array<PluginRuntimeFailure>,
+/**
+ * Up to 4 KiB from the last failed worker's own stderr in this space.
+ */
+stderr_tail: string | null, };
+/**
  * Replace the caller's override if their observed value still matches.
  */
 

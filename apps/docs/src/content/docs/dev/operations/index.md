@@ -97,6 +97,7 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [fonts.faces](./fonts-faces/): Generate same-origin face rules
 - [fonts.list](./fonts-list/): List shared and caller-owned fonts
 - [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [plugins.diagnostics](./plugins-diagnostics/): Inspect an installed plugin's readiness and recent worker failures
 - [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
 - [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
 - [plugins.network.content.preference.set](./plugins-network-content-preference-set/): Set your remote content preference
