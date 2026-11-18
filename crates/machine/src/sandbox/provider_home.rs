@@ -28,8 +28,13 @@ pub(super) async fn prepare(
     };
     let shared = spec.shared_provider_sponsor;
     let login = if let Some(sponsor) = shared {
-        let root = account.parent().ok_or_else(|| SandboxError("missing account root".into()))?;
-        root.join(sponsor.to_string()).join("spaces").join(space.to_string()).join("provider-login")
+        let root = account
+            .parent()
+            .ok_or_else(|| SandboxError("missing account root".into()))?;
+        root.join(sponsor.to_string())
+            .join("spaces")
+            .join(space.to_string())
+            .join("provider-login")
     } else {
         account.join("provider-login")
     };

@@ -187,7 +187,8 @@ impl State {
                     Some(owners.step(row.space.as_uuid())?),
                     row.shared_sponsor
                         .filter(|sponsor| *sponsor != row.account)
-                        .map(|sponsor| owners.step(sponsor.as_uuid())).transpose()?,
+                        .map(|sponsor| owners.step(sponsor.as_uuid()))
+                        .transpose()?,
                 ])
             })
             .transpose()
@@ -226,7 +227,11 @@ impl State {
         };
         let Some(machine) = l.row.machine else { return };
         if l.row.shared_sponsor.is_some()
-            && !self.machines.get(&machine).and_then(|m| m.live.as_ref()).is_some_and(|live| live.shared_provider)
+            && !self
+                .machines
+                .get(&machine)
+                .and_then(|m| m.live.as_ref())
+                .is_some_and(|live| live.shared_provider)
         {
             return;
         }
@@ -445,8 +450,16 @@ impl State {
         for (background, _, lease) in waiting {
             let l = &self.leases[&lease];
             let sponsor = l.row.shared_sponsor.unwrap_or(l.row.account);
-            let shared = l.row.shared_sponsor.zip(l.row.pinned_machine)
-                .map(|(sponsor, machine)| super::space_execution::SpaceExecution { sponsor, machine });
+            let shared =
+                l.row
+                    .shared_sponsor
+                    .zip(l.row.pinned_machine)
+                    .map(
+                        |(sponsor, machine)| super::space_execution::SpaceExecution {
+                            sponsor,
+                            machine,
+                        },
+                    );
             if let Some(target) = shared
                 && self.require_execution(l.row.space, target).is_err()
             {
@@ -460,10 +473,14 @@ impl State {
                 .filter(|m| !l.row.worker || Self::worker_machine(m, settings))
                 .filter(|m| l.row.pinned_machine.is_none_or(|id| id == m.row.id))
                 .filter(|m| {
-                    self.may_use(m, sponsor)
-                        || (l.pool_diagnostic && m.row.owner == Owner::Pool)
+                    self.may_use(m, sponsor) || (l.pool_diagnostic && m.row.owner == Owner::Pool)
                 })
-                .map(|m| (m, self.free_for(m, l.row.shared_sponsor.unwrap_or(l.row.account))))
+                .map(|m| {
+                    (
+                        m,
+                        self.free_for(m, l.row.shared_sponsor.unwrap_or(l.row.account)),
+                    )
+                })
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
                     (

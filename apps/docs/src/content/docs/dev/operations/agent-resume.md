@@ -160,6 +160,10 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       "description": "Options declared by the selected provider, bounded by the command budget.",
       "type": "object"
     },
+    "personal_machine": {
+      "description": "Use the caller's machine and login for this turn in a configured shared space.",
+      "type": "boolean"
+    },
     "pool": {
       "default": false,
       "description": "Check an entitled pool machine without exposing its identity.",

@@ -117,7 +117,9 @@ impl Backend for DirectBackend {
                     account.join("threads").join(spec.thread_id.to_string())
                 };
                 if spec.shared_provider_sponsor.is_some() {
-                    return Err(SandboxError("a shared provider login requires sandbox isolation".into()));
+                    return Err(SandboxError(
+                        "a shared provider login requires sandbox isolation".into(),
+                    ));
                 }
                 let (home, login) = super::provider_home::prepare(account, &dir, spec).await?;
                 let work = dir.join("work");

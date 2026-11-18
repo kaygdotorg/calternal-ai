@@ -203,7 +203,9 @@ impl Backend for MicrovmBackend {
                 .space_id
                 .ok_or_else(|| SandboxError("missing sandbox space".into()))?;
             if spec.shared_provider_sponsor.is_some() {
-                return Err(SandboxError("shared provider login is unavailable on this backend".into()));
+                return Err(SandboxError(
+                    "shared provider login is unavailable on this backend".into(),
+                ));
             }
             let slot = self.0.account(spec.account_id);
             let mut account = slot.lock().await;

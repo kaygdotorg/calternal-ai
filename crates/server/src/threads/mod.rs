@@ -116,7 +116,10 @@ pub(crate) async fn dispatch<D: Directory>(
                 .cloned()
                 .map(|level| [("effort".into(), level)].into_iter().collect())
                 .unwrap_or_default(),
-            personal_machine: input.get("personal_machine").and_then(Value::as_bool).unwrap_or(false),
+            personal_machine: input
+                .get("personal_machine")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
             source_app: "threads".into(),
             ..Default::default()
         };

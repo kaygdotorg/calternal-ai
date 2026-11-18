@@ -319,7 +319,10 @@ fn lease_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<LeaseRow> {
         created_ms: r.get(10)?,
         pinned_machine: uuid(r.get(12)?),
         background_title,
-        shared_sponsor: r.get::<_, Option<String>>(14)?.map(|id| typed(14, id)).transpose()?,
+        shared_sponsor: r
+            .get::<_, Option<String>>(14)?
+            .map(|id| typed(14, id))
+            .transpose()?,
     })
 }
 
@@ -411,7 +414,12 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             ],
         );
     }
-    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[TITLE_LEASES, SPACE_EXECUTION])
+    calternal_store::migrations::Schema::new(
+        "machines.db",
+        6,
+        &[SCHEMA],
+        &[TITLE_LEASES, SPACE_EXECUTION],
+    )
 }
 
 #[cfg(test)]
@@ -432,9 +440,17 @@ mod tests {
             params![lease.to_string(), space.to_string(), actor.to_string(), Uuid::new_v4().to_string()],
         ).unwrap();
         migrate_release(&conn, upgrade_schema(), true).unwrap();
-        assert_eq!(calternal_store::migrations::inspect(&conn, previous).unwrap(), upgrade_schema().version());
-        assert_eq!(super::lease(&conn, lease).unwrap().unwrap().shared_sponsor, None);
-        let stored: i64 = conn.query_row("SELECT count(*) FROM space_execution", [], |row| row.get(0)).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, previous).unwrap(),
+            upgrade_schema().version()
+        );
+        assert_eq!(
+            super::lease(&conn, lease).unwrap().unwrap().shared_sponsor,
+            None
+        );
+        let stored: i64 = conn
+            .query_row("SELECT count(*) FROM space_execution", [], |row| row.get(0))
+            .unwrap();
         assert_eq!(stored, 0);
     }
 

@@ -185,10 +185,23 @@ async fn execute<D: Directory>(
     } else {
         None
     };
-    if shared.is_some() && provider_id != "calternal-claude-code" {
-        return Err(Error::invalid_input("choose Claude Code or use your personal machine"));
+    let previous_shared_machine = &job.checkpoint["shared_machine"];
+    let route_changed = !previous_shared_machine.is_null()
+        && !shared.is_some_and(|target| {
+            *previous_shared_machine == json!(target.machine)
+                && job.checkpoint["shared_sponsor"] == json!(target.sponsor)
+        });
+    if route_changed || (shared.is_some() && provider_id != "calternal-claude-code") {
+        let message = if route_changed {
+            "The shared machine changed. Start a new turn to use the new setting."
+        } else {
+            "Choose Claude Code or use your personal machine."
+        };
+        live.publish(job.runs, &json!({"type":"notice","message":message}));
+        return Ok(RunEnd::Failed);
     }
-    let mut checkpoint = super::lease::prepare(state, machines, job, live, space, thread, shared).await?;
+    let mut checkpoint =
+        super::lease::prepare(state, machines, job, live, space, thread, shared).await?;
     let lease_id = checkpoint["lease_id"]
         .as_str()
         .and_then(|id| Uuid::parse_str(id).ok())
@@ -234,7 +247,8 @@ async fn execute<D: Directory>(
     } else {
         None
     };
-    if shared.is_none() && job.runs == 1
+    if shared.is_none()
+        && job.runs == 1
         && let Some(session) = ProviderSession::owned(&job.input, account)
     {
         match session.resume(provider_id, thread, machine_id) {

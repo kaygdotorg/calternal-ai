@@ -232,7 +232,12 @@ impl MachineService {
             if st.leases[&lease].row.shared_sponsor.is_some()
                 && (f.protocol != PROTOCOL_VERSION || backend != "podman")
             {
-                st.end_with_files(lease, "shared provider login requires current Podman machine", &self.settings, true);
+                st.end_with_files(
+                    lease,
+                    "shared provider login requires current Podman machine",
+                    &self.settings,
+                    true,
+                );
                 continue;
             }
             if rebooted && (super::microvm::is_requested(&backend) || kvm_fallback) {

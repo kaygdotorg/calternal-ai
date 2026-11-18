@@ -50,13 +50,16 @@ pub(super) async fn run<D: Directory>(
     let svc = machines.clone();
     let shared = target.shared;
     let lease = match current(&state, &machines, account, &session, &target).await {
-        Ok(()) => blocking(move || {
-            if let Some(shared) = shared {
-                svc.request_shared(space, account, Uuid::new_v4(), shared, true)
-            } else {
-                svc.request_sign_in(space, account, machine)
-            }
-        }).await,
+        Ok(()) => {
+            blocking(move || {
+                if let Some(shared) = shared {
+                    svc.request_shared(space, account, Uuid::new_v4(), shared, true)
+                } else {
+                    svc.request_sign_in(space, account, machine)
+                }
+            })
+            .await
+        }
         Err(error) => Err(error),
     };
     let done = match lease {
@@ -242,7 +245,8 @@ async fn current<D: Directory>(
                 return Err(failed());
             }
             Ok(())
-        }).await?;
+        })
+        .await?;
     }
     Ok(())
 }

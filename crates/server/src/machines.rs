@@ -46,7 +46,6 @@
 
 pub mod admin;
 mod admission;
-pub(crate) mod space_execution;
 mod capacity;
 /// Local deployment enrollment and the first-owner onboarding operation.
 pub mod colocated;
@@ -62,6 +61,7 @@ mod owners;
 pub mod provider;
 pub(crate) mod readiness;
 mod sessions;
+pub(crate) mod space_execution;
 mod state;
 mod workers;
 

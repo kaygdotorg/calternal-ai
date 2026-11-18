@@ -119,8 +119,16 @@ impl MachineService {
         sign_in: bool,
     ) -> Result<RunView, Error> {
         self.request_work(
-            space, actor, thread, None, None, Some(target.machine),
-            false, sign_in, false, Some(target),
+            space,
+            actor,
+            thread,
+            None,
+            None,
+            Some(target.machine),
+            false,
+            sign_in,
+            false,
+            Some(target),
         )
     }
 
@@ -152,7 +160,11 @@ impl MachineService {
             .transpose()?;
         let _sponsor = shared
             .filter(|target| target.sponsor != account)
-            .and_then(|target| self.lifecycle.get().map(|l| l.step(target.sponsor.as_uuid())))
+            .and_then(|target| {
+                self.lifecycle
+                    .get()
+                    .map(|l| l.step(target.sponsor.as_uuid()))
+            })
             .transpose()?;
         let mut st = self.lock()?;
         let st = &mut *st;

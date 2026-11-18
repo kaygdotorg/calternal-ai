@@ -26,8 +26,10 @@ impl State {
             .map_err(sql)?;
         row.map(|(sponsor, machine)| {
             Ok(SpaceExecution {
-                sponsor: AccountId::parse(&sponsor).map_err(|_| Error::internal("invalid stored execution sponsor"))?,
-                machine: Uuid::parse_str(&machine).map_err(|_| Error::internal("invalid stored execution machine"))?,
+                sponsor: AccountId::parse(&sponsor)
+                    .map_err(|_| Error::internal("invalid stored execution sponsor"))?,
+                machine: Uuid::parse_str(&machine)
+                    .map_err(|_| Error::internal("invalid stored execution machine"))?,
             })
         })
         .transpose()
@@ -39,7 +41,10 @@ impl State {
             machine.row.owner == (Owner::Account { id: target.sponsor })
                 && !machine.row.revoked
                 && !machine.row.direct
-                && machine.live.as_ref().is_none_or(|session| session.shared_provider)
+                && machine
+                    .live
+                    .as_ref()
+                    .is_none_or(|session| session.shared_provider)
         })
     }
 
@@ -59,10 +64,7 @@ impl State {
 
 impl MachineService {
     /// Read one shared binding without exposing machine state for other accounts.
-    pub(crate) fn space_execution(
-        &self,
-        space: SpaceId,
-    ) -> Result<Option<SpaceExecution>, Error> {
+    pub(crate) fn space_execution(&self, space: SpaceId) -> Result<Option<SpaceExecution>, Error> {
         self.lock()?.space_execution(space)
     }
 
@@ -95,7 +97,10 @@ impl MachineService {
                 )
             }
         } else {
-            db.execute("DELETE FROM space_execution WHERE space=?1", [space.to_string()])
+            db.execute(
+                "DELETE FROM space_execution WHERE space=?1",
+                [space.to_string()],
+            )
         }
         .map_err(sql)?;
         Ok(())

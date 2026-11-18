@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 use uuid::Uuid;
 
+use crate::machines::space_execution::SpaceExecution;
 use crate::{
     api::Shared,
     auth::{Directory, Identity},
@@ -19,7 +20,6 @@ use crate::{
     plugins::{Session, jobs::Job},
 };
 use inbox::Target;
-use crate::machines::space_execution::SpaceExecution;
 
 fn decode<T: serde::de::DeserializeOwned>(input: JsonObject) -> Result<T, Error> {
     serde_json::from_value(json!(input)).map_err(|_| Error::invalid_input("invalid sign-in input"))
@@ -73,20 +73,30 @@ pub(crate) fn list<D: Directory>(
     let pending = state.inputs.sign_ins.access(account, |entries| {
         Ok(entries
             .iter()
-            .filter_map(|entry| Some((entry.target.space, entry.target.shared.is_some(), entry.request()?)))
+            .filter_map(|entry| {
+                Some((
+                    entry.target.space,
+                    entry.target.shared.is_some(),
+                    entry.request()?,
+                ))
+            })
             .collect::<Vec<_>>())
     })?;
     Ok(pending
         .into_iter()
         .filter(|(space, shared, _)| {
-            allowed(state, account, *space) && (!shared || can_manage_shared(state, account, *space))
+            allowed(state, account, *space)
+                && (!shared || can_manage_shared(state, account, *space))
         })
         .map(|(_, _, prompt)| prompt)
         .collect())
 }
 
 fn can_manage_shared<D: Directory>(state: &Shared<D>, account: AccountId, space: SpaceId) -> bool {
-    state.directory.capabilities(account, space).is_some_and(|grants| grants.contains(Capability::SpaceSettings))
+    state
+        .directory
+        .capabilities(account, space)
+        .is_some_and(|grants| grants.contains(Capability::SpaceSettings))
 }
 
 fn shared_target<D: Directory>(
@@ -121,7 +131,9 @@ pub(crate) async fn dispatch<D: Directory>(
     match operation {
         "provider.sign_in.start" => {
             let i: ProviderSignInStart = decode(input)?;
-            if (i.shared && (i.pool || i.machine_id.is_some())) || (i.pool && i.machine_id.is_some()) {
+            if (i.shared && (i.pool || i.machine_id.is_some()))
+                || (i.pool && i.machine_id.is_some())
+            {
                 return Err(Error::invalid_input(
                     "Select a personal machine or the pool.",
                 ));
@@ -144,7 +156,8 @@ pub(crate) async fn dispatch<D: Directory>(
                 } else {
                     Ok((m.sign_in_target(account, pin, pool)?, None))
                 }
-            }).await?;
+            })
+            .await?;
             start(
                 state,
                 machines,
@@ -203,7 +216,8 @@ pub(crate) async fn dispatch<D: Directory>(
                         return Err(missing());
                     }
                     Ok(())
-                }).await?;
+                })
+                .await?;
             }
             state.inputs.sign_ins.access(account, |entries| {
                 let entry = entries
@@ -250,7 +264,9 @@ async fn start<D: Directory>(
         .ok_or_else(missing)?;
     let executable = if shared.is_some() {
         if provider != "calternal-claude-code" {
-            return Err(Error::invalid_input("shared sign-in currently uses Claude Code"));
+            return Err(Error::invalid_input(
+                "shared sign-in currently uses Claude Code",
+            ));
         }
         crate::turns::space_execution::SHARED_ADAPTER.into()
     } else {
@@ -317,7 +333,11 @@ async fn typing<D: Directory>(
         ))
     })
     .await?;
-    if configured && !job.as_ref().is_some_and(|job| job.input["request"]["personal_machine"] == true) {
+    if configured
+        && !job
+            .as_ref()
+            .is_some_and(|job| job.input["request"]["personal_machine"] == true)
+    {
         return Ok(Value::Null);
     }
     if let Some(job) = &job

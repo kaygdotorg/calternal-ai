@@ -76,13 +76,24 @@ impl MachineService {
                     [id.to_string()],
                 )
                 .map_err(sql)?;
-                tx.execute("DELETE FROM space_execution WHERE sponsor=?1", [id.to_string()]).map_err(sql)?;
-                tx.execute("DELETE FROM leases WHERE account=?1 OR shared_sponsor=?1", [id.to_string()])
-                    .map_err(sql)?;
+                tx.execute(
+                    "DELETE FROM space_execution WHERE sponsor=?1",
+                    [id.to_string()],
+                )
+                .map_err(sql)?;
+                tx.execute(
+                    "DELETE FROM leases WHERE account=?1 OR shared_sponsor=?1",
+                    [id.to_string()],
+                )
+                .map_err(sql)?;
             }
             ErasedOwner::Space(id) => {
                 tx.execute("DELETE FROM workspace_discards WHERE lease IN (SELECT id FROM leases WHERE space=?1)", [id.to_string()]).map_err(sql)?;
-                tx.execute("DELETE FROM space_execution WHERE space=?1", [id.to_string()]).map_err(sql)?;
+                tx.execute(
+                    "DELETE FROM space_execution WHERE space=?1",
+                    [id.to_string()],
+                )
+                .map_err(sql)?;
                 tx.execute("DELETE FROM leases WHERE space=?1", [id.to_string()])
                     .map_err(sql)?;
             }

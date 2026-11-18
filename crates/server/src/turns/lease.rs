@@ -60,6 +60,7 @@ pub(super) async fn prepare<D: Directory>(
             lease = Some(admitted.lease_id);
             initial["lease_id"] = json!(admitted.lease_id);
             initial["shared_sponsor"] = json!(shared.map(|target| target.sponsor));
+            initial["shared_machine"] = json!(shared.map(|target| target.machine));
             Ok(initial)
         });
         if result.is_err() {

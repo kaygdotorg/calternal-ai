@@ -17,10 +17,18 @@ pub(super) async fn dispatch<D: Directory>(
     input: JsonObject,
 ) -> Result<Value, Error> {
     calternal_core::validate_operation_input(op, &input)?;
-    let space = SpaceId::parse(input.get("space_id").and_then(Value::as_str).unwrap_or_default())
-        .map_err(|_| Error::not_found("space not found"))?;
-    let machine = input.get("machine_id").and_then(Value::as_str)
-        .map(Uuid::parse_str).transpose()
+    let space = SpaceId::parse(
+        input
+            .get("space_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+    )
+    .map_err(|_| Error::not_found("space not found"))?;
+    let machine = input
+        .get("machine_id")
+        .and_then(Value::as_str)
+        .map(Uuid::parse_str)
+        .transpose()
         .map_err(|_| Error::not_found("sandbox machine not found"))?;
     let policy = crate::authz::policy(op)
         .ok_or_else(|| Error::internal("space execution policy missing"))?;
@@ -40,7 +48,9 @@ pub(super) async fn dispatch<D: Directory>(
         let show = grants.is_some_and(|caps| caps.contains(Capability::SpaceSettings));
         Ok(json!(SpaceMachineResult {
             configured: binding.is_some(),
-            machine_id: binding.filter(|_| show).map(|binding| binding.machine.to_string()),
+            machine_id: binding
+                .filter(|_| show)
+                .map(|binding| binding.machine.to_string()),
             notice: LICENSE_NOTICE.into(),
         }))
     })
@@ -48,7 +58,9 @@ pub(super) async fn dispatch<D: Directory>(
 }
 
 fn owner<D: Directory>(state: &Shared<D>, space: SpaceId) -> Result<Option<AccountId>, Error> {
-    state.directory.protected_spaces()
+    state
+        .directory
+        .protected_spaces()
         .ok_or_else(|| Error::unavailable("stored space directory unavailable"))?
         .shared_execution_owner(space)
         .map_err(crate::auth::auth_error)
@@ -61,9 +73,13 @@ pub(crate) fn resolve<D: Directory>(
     machines: &MachineService,
     space: SpaceId,
 ) -> Result<Option<SpaceExecution>, Error> {
-    let Some(binding) = machines.space_execution(space)? else { return Ok(None) };
+    let Some(binding) = machines.space_execution(space)? else {
+        return Ok(None);
+    };
     if owner(state, space)? != Some(binding.sponsor) {
-        return Err(Error::unavailable("the space Owner must configure a shared machine"));
+        return Err(Error::unavailable(
+            "the space Owner must configure a shared machine",
+        ));
     }
     Ok(Some(binding))
 }

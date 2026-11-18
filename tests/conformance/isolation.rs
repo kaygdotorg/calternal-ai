@@ -3205,30 +3205,83 @@ async fn shared_space_machine_routes_member_turns_without_granting_management() 
     let managed = &f.spaces[4]; // Account B is a Manager here.
     for (op, input) in [
         ("space.machine.get", json!({"space_id":shared})),
-        ("space.machine.set", json!({"space_id":shared,"machine_id":id})),
+        (
+            "space.machine.set",
+            json!({"space_id":shared,"machine_id":id}),
+        ),
     ] {
-        let reply = f.req("POST", "/api/v1/operations", None,
-            json!({"operation":op,"request_id":"space-machine-anonymous","input":input}), Some(ORIGIN)).await;
+        let reply = f
+            .req(
+                "POST",
+                "/api/v1/operations",
+                None,
+                json!({"operation":op,"request_id":"space-machine-anonymous","input":input}),
+                Some(ORIGIN),
+            )
+            .await;
         assert_eq!(reply.status, 401, "{op}: {}", reply.body);
     }
-    let denied = f.op(2, "space.machine.set", json!({"space_id":shared,"machine_id":id})).await;
+    let denied = f
+        .op(
+            2,
+            "space.machine.set",
+            json!({"space_id":shared,"machine_id":id}),
+        )
+        .await;
     assert_eq!(denied.status, 403, "{}", denied.body);
-    let spoof = f.op(1, "space.machine.set", json!({"space_id":shared,"machine_id":uuid::Uuid::nil()})).await;
+    let spoof = f
+        .op(
+            1,
+            "space.machine.set",
+            json!({"space_id":shared,"machine_id":uuid::Uuid::nil()}),
+        )
+        .await;
     assert_eq!(spoof.status, 404, "{}", spoof.body);
-    f.op(2, "space.machine.set", json!({"space_id":managed,"machine_id":id})).await.ok();
-    f.op(1, "space.machine.set", json!({"space_id":shared,"machine_id":id})).await.ok();
-    let read = f.op(2, "space.machine.get", json!({"space_id":shared})).await;
+    f.op(
+        2,
+        "space.machine.set",
+        json!({"space_id":managed,"machine_id":id}),
+    )
+    .await
+    .ok();
+    f.op(
+        1,
+        "space.machine.set",
+        json!({"space_id":shared,"machine_id":id}),
+    )
+    .await
+    .ok();
+    let read = f
+        .op(2, "space.machine.get", json!({"space_id":shared}))
+        .await;
     read.ok();
     assert_eq!(read.body["data"]["configured"], true);
     assert_eq!(read.body["data"]["machine_id"], Value::Null);
-    assert!(read.body["data"]["notice"].as_str().unwrap().contains("one person"));
-    let denied = f.op(2, "provider.sign_in.start", json!({
-        "space_id":shared,"provider_id":"calternal-claude-code","shared":true
-    })).await;
+    assert!(
+        read.body["data"]["notice"]
+            .as_str()
+            .unwrap()
+            .contains("one person")
+    );
+    let denied = f
+        .op(
+            2,
+            "provider.sign_in.start",
+            json!({
+                "space_id":shared,"provider_id":"calternal-claude-code","shared":true
+            }),
+        )
+        .await;
     assert_eq!(denied.status, 404, "{}", denied.body);
-    let run = f.op(2, "agent.run", json!({
-        "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"hello"
-    })).await;
+    let run = f
+        .op(
+            2,
+            "agent.run",
+            json!({
+                "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"hello"
+            }),
+        )
+        .await;
     run.ok();
     let mut machine = machine;
     let messages = tokio::time::timeout(std::time::Duration::from_secs(10), async {
@@ -3238,7 +3291,26 @@ async fn shared_space_machine_routes_member_turns_without_granting_management() 
                 break assign;
             }
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert_eq!(messages["account_id"], f.ids[2]);
     assert_eq!(messages["spec"]["shared_provider_sponsor"], f.ids[1]);
+
+    let code = f.req("POST", "/api/v1/machines/codes", Some(&f.cookies[2]), json!({}), Some(ORIGIN)).await;
+    code.ok();
+    let mut personal = requests_cases::Machine::enroll_with_code(&f, code.body["code"].as_str().unwrap()).await;
+    f.op(2, "agent.run", json!({
+        "space_id":shared, "thread_id":uuid::Uuid::now_v7(), "prompt":"private route", "personal_machine":true
+    })).await.ok();
+    let own_assignment = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let batch = personal.sync(&f, json!([])).await;
+            if let Some(assign) = batch.into_iter().find(|event| event["type"] == "assign") {
+                break assign;
+            }
+        }
+    }).await.unwrap();
+    assert_eq!(own_assignment["account_id"], f.ids[2]);
+    assert!(own_assignment["spec"]["shared_provider_sponsor"].is_null());
 }

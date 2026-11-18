@@ -97,6 +97,9 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [fonts.faces](./fonts-faces/): Generate same-origin face rules
 - [fonts.list](./fonts-list/): List shared and caller-owned fonts
 - [fonts.remove](./fonts-remove/): Remove a caller-owned family
+- [plugins.network.content.get](./plugins-network-content-get/): Get a prepared sealed content frame
+- [plugins.network.content.preference.get](./plugins-network-content-preference-get/): Read your remote content preference
+- [plugins.network.content.preference.set](./plugins-network-content-preference-set/): Set your remote content preference
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
@@ -109,6 +112,8 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [requests.approve](./requests-approve/): Approve with a fresh verified passkey
 - [requests.deny](./requests-deny/): Decline a pending approval
 - [space.instructions](./space-instructions/): Read or replace standing space instructions
+- [space.machine.get](./space-machine-get/): Read the execution setting for a space
+- [space.machine.set](./space-machine-set/): Set the shared execution machine for a space
 - [machines.install](./machines-install/): Create a single-use personal machine enrollment script
 - [machines.onboarding](./machines-onboarding/): Check whether the installation has an enrolled, available machine
 - [machines.verify](./machines-verify/): Verify a selected machine and provider sign-in

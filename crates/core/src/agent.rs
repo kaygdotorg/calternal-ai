@@ -106,8 +106,16 @@ pub struct SpaceMachineResult {
 
 /// Manual provider operations. This table feeds discovery, policy and instruction indexes.
 pub const AGENT_OPERATIONS: &[(&str, &str, bool)] = &[
-    (SPACE_MACHINE_GET, "Read the execution setting for a space", false),
-    (SPACE_MACHINE_SET, "Set the shared execution machine for a space", true),
+    (
+        SPACE_MACHINE_GET,
+        "Read the execution setting for a space",
+        false,
+    ),
+    (
+        SPACE_MACHINE_SET,
+        "Set the shared execution machine for a space",
+        true,
+    ),
     (
         crate::MACHINES_INSTALL,
         "Create a single-use personal machine enrollment script",

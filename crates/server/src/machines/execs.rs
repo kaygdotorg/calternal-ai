@@ -53,8 +53,21 @@ impl MachineService {
 
     /// Start only the image-owned tool-free adapter on a shared turn lease.
     /// The shared provider credentials are never provided as command data.
-    pub(crate) fn shared_turn_exec(&self, account: AccountId, lease: Uuid, stdin: String) -> Result<Uuid, Error> {
-        self.exec_scoped(account, lease, vec![crate::turns::space_execution::SHARED_ADAPTER.into()], Vec::new(), stdin, false, true)
+    pub(crate) fn shared_turn_exec(
+        &self,
+        account: AccountId,
+        lease: Uuid,
+        stdin: String,
+    ) -> Result<Uuid, Error> {
+        self.exec_scoped(
+            account,
+            lease,
+            vec![crate::turns::space_execution::SHARED_ADAPTER.into()],
+            Vec::new(),
+            stdin,
+            false,
+            true,
+        )
     }
 
     fn exec_scoped(
