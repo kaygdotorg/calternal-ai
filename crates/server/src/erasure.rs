@@ -67,6 +67,9 @@ pub(crate) fn finish(
         if let (Owner::Account(account), Some(jobs)) = (owner, jobs) {
             jobs.retire_account(*account)?;
         }
+        if let Owner::Account(account) = owner {
+            store.appearance.erase(*account)?;
+        }
         store.secrets().erase_owner(owner).map_err(|error| {
             tracing::warn!(%error, "owner key erasure failed");
             Error::unavailable("Owner key erasure is pending. Check storage before retrying.")

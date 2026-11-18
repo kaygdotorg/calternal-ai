@@ -31,6 +31,8 @@ pub struct Store {
     roots: calternal_roots::Roots,
     secrets: std::sync::Arc<calternal_secrets::LocalStore>,
     installation: Uuid,
+    /// Account appearance service and bounded installation font cache.
+    pub(crate) appearance: std::sync::Arc<crate::api::appearance::Appearance>,
     machines: std::sync::OnceLock<std::sync::Weak<crate::machines::MachineService>>,
     /// Process-lifetime key for authenticated, stateless list cursors.
     pub(crate) cursor_key: ring::hmac::Key,
@@ -217,8 +219,13 @@ impl Store {
         let cursor_key =
             ring::hmac::Key::generate(ring::hmac::HMAC_SHA256, &ring::rand::SystemRandom::new())
                 .map_err(|_| Error::unavailable("cursor entropy unavailable"))?;
+        let appearance = std::sync::Arc::new(crate::api::appearance::Appearance::open(
+            &root,
+            locks.clone(),
+        )?);
         Ok(Self {
             cursor_key,
+            appearance,
             content: std::sync::Arc::new(content),
             appdata: root.clone(),
             roots: roots.clone(),

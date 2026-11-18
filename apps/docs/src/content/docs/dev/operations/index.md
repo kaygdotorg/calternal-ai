@@ -89,6 +89,14 @@ Generated operation schemas. Capability and risk are shown only when the catalog
 - [pending.cancel](./pending-cancel/): pending cancel
 - [pending.confirm](./pending-confirm/): pending confirm
 - [pending.submit](./pending-submit/): pending submit
+- [appearance.get](./appearance-get/): Read this person's appearance preferences
+- [appearance.patch](./appearance-patch/): Patch this person's appearance preferences
+- [fonts.catalogue](./fonts-catalogue/): Search the bounded shared catalogue
+- [fonts.install](./fonts-install/): Install a catalogue family for this installation
+- [fonts.status](./fonts-status/): Check a family's local availability
+- [fonts.faces](./fonts-faces/): Generate same-origin face rules
+- [fonts.list](./fonts-list/): List shared and caller-owned fonts
+- [fonts.remove](./fonts-remove/): Remove a caller-owned family
 - [plugins.settings.get](./plugins-settings-get/): Read a declared space plugin setting
 - [plugins.settings.set](./plugins-settings-set/): Edit a declared space plugin setting
 - [provider.sign_in.start](./provider-sign-in-start/): Start a private provider sign-in
