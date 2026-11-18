@@ -28,6 +28,8 @@
   header { position: absolute; z-index: 2; top: var(--safe-top); left: 0; right: 0; height: var(--bar-h); display: flex; align-items: center; justify-content: flex-start; gap: var(--s-4); padding: 0 var(--s-4) 0 var(--s-4); }
   h2 { font-size: var(--text-heading); font-weight: var(--strong-weight); }
   .content { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-4)) var(--s-4) var(--foot-h); --fade-t: calc(var(--safe-top) + var(--bar-h)); --fade-b: var(--foot-h); }
+  /* With a phone keyboard up the panel's bottom is the keyboard's top: no room is kept for the tab bar (it is under the keyboard's edge anyway), so the field sits on the keyboard. */
+  :global(html[data-kb]) .rs { --foot-h: var(--s-4); }
   .tabs { position: absolute; z-index: 2; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; padding: 0 var(--s-4) var(--foot-inset); }
   .tabs :global(.selector) { width: 100%; }
   /* Four tabs, each with its icon and its label: a tab keeps the width of its content and the capsule shares what is left. */

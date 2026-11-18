@@ -7,8 +7,8 @@ S=apps/web/scripts/ios-sim.sh
 export CAL_LANE=ui-threads            # defaults to the repository folder's name; keeps one simulator per lane
 $S create                              # your own iPhone 18 Pro, iOS 27.0, booted (never another lane's)
 $S appearance dark                     # or light
-$S serve                               # vite preview of this lane's build on a dev VM, tunnelled to the Studio's 127.0.0.1:4180
-$S open http://127.0.0.1:4180/threads/t-idle     # or a deployed fixtures build: http://10.69.69.222:4310/threads/t-idle (VPN, plain http)
+$S serve                               # vite preview of this lane's build on a dev VM, tunnelled to the Studio's 127.0.0.1:$PORT (a port of its own per lane, 4200 to 4399, printed by `serve`; your checkout there is ~/Developer/lanes/<lane>, or set CAL_DEV_LANE; CAL_SIM_PORT overrides)
+$S open http://127.0.0.1:$PORT/threads/t-idle     # or a deployed fixtures build: http://10.69.69.222:4310/threads/t-idle (VPN, plain http)
 $S onboard                             # a fresh Safari shows the one-time "Choose a look" panel: keep the default
 $S tap 0.4 0.85 2                      # normalized (0..1 across the screen, y down), then wait 2 s
 $S type "hello"                        # types with the software keyboard into the focused field (tap the field first)
@@ -18,7 +18,7 @@ $S shot name                           # screenshot to ./sim-shots/name.png
 $S record start; $S tap 0.4 0.85 3; $S record stop focus 12   # a video, and with ffmpeg here its frames in ./sim-shots/focus-frames/
 $S setup                               # once per Studio (idempotent): adds the rotate test to the runner and rebuilds it (a few minutes)
 $S rotate landscapeLeft                # portrait | landscapeLeft | landscapeRight | upsideDown (the page lays out again; take a shot)
-$S home http://127.0.0.1:4180/threads/t-idle "Lane preview"   # Add to Home Screen from Safari's share sheet and open it from there (slow: the runner waits through Safari's animations; give the command 10 minutes)
+$S home http://127.0.0.1:$PORT/threads/t-idle "Lane preview"   # Add to Home Screen from Safari's share sheet and open it from there (slow: the runner waits through Safari's animations; give the command 10 minutes)
 $S unserve; $S delete                  # clean up: stop the tunnels and the preview, delete your simulator
 ```
 

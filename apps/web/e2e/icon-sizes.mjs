@@ -25,7 +25,7 @@ try {
     let s = await stray(p);
     ok(s.length === 0, `${device}: every icon in the canvas windows and the sidebar is a token size`, s.join("; "));
     // menus
-    await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click(); await p.waitForTimeout(900);
+    await p.locator("[data-win]").first().getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click(); await p.waitForTimeout(900);
     s = await stray(p); ok(s.length === 0, `${device}: and in the window menu`, s.join("; "));
     await p.keyboard.press("Escape");
     await p.locator("[data-win]").first().getByRole("button", { name: "Share" }).click(); await p.waitForTimeout(900);

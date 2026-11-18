@@ -49,7 +49,8 @@
   }
   function skip(s: StepId) { if (s === "passkey2" && !demo) void import("../../server/auth").then((a) => a.dismissPasskeyPrompt()).catch(() => {}); if (!skipped.includes(s)) skipped = [...skipped, s]; const n = after(coder, s); if (n) step = n; }
   function back() { const p = before(coder, step); if (p) step = p; }
-  function start() {
+  async function start() {
+    if (!demo) await import("../../server/client").then(({ server }) => server.operate("onboarding.finish", {})).catch(() => {}); // the server remembers it is finished, for every browser
     clear(store);
     location.replace(import.meta.env.BASE_URL + "threads");
   }

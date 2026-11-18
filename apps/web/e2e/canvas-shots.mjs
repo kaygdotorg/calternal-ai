@@ -10,7 +10,7 @@ for (const scheme of ["dark", "light"]) {
   const ctx = await ctxOf(scheme);
   const p = await goto(ctx);
   await p.screenshot({ path: `${dir}/${scheme}-1-three.png` });
-  await p.locator("[data-win]").first().getByRole("button", { name: "More" }).click(); await p.waitForTimeout(500);
+  await p.locator("[data-win]").first().getByRole("button", { name: /^(Thread actions|Note actions|More)$/ }).click(); await p.waitForTimeout(500);
   await p.screenshot({ path: `${dir}/${scheme}-2-menu.png` });
   await p.keyboard.press("Escape");
   await p.locator("[data-win]").first().getByRole("button", { name: "Full screen" }).hover(); await p.waitForTimeout(1100);

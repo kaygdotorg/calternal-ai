@@ -181,3 +181,13 @@ The two tabs are `Selector` from `packages/ui/src/components/selector/` (ported 
 - The window menu has no Width and no Look entries. Width is the drag handle; both are preferences: `canvasPrefs.look` (`"card" | "clear" | "solid"`, `LOOKS`) and `canvasPrefs.width` (`null` automatic, or 1/3, 1/2, 2/3, 1; `OPEN_WIDTHS`), with `setLook` and `setWidth`, in `apps/web/src/canvas/prefs.svelte.ts`, kept in this browser as `cal.canvas.prefs`. The Settings app (Appearance) binds those two.
 - Menus fit the viewport: `lib/place.ts` gives the surface the room it has (`--room`), the list inside scrolls, and `Menu` shows that more exists with a fade at that edge and the thin scrollbar (`e2e/menu-fit.mjs`: 600 px and 330 px high, and a phone).
 - Icons: only the two sizes, `--glyph` (controls) and `--glyph-inline` (beside text); the send control, the level mark, the model card's context ring and the window padlock were hand-set and now use the tokens; `e2e/icon-sizes.mjs` reads every svg on the Threads surfaces against the tokens.
+
+## A 16 MiB thread
+
+A thread file may be up to 16 MiB (owner decision, 2026-11-18). The fixture `t-long` is that size: 12,000 messages, about 1.4 KB each. What keeps the view fast, and what `e2e/thread-size.mjs` (in the gate, judged on the quiet list) checks:
+
+- **Windowing.** `VirtualList` renders only the rows near the viewport (a handful, not thousands); the rendered row count and the DOM size are asserted at the end, after a long scroll and at the start. Rows not yet measured take an estimated height, so the scroll bar is right without measuring everything.
+- **Paged reads.** The adapter asks for one page of the record at a time (`threads.get` with a range, or framed around one `message_id`); the file is never read whole by the view.
+- **Open at the end.** The list starts stuck to the end; nothing walks the earlier messages. Open to the last message shown and the composer usable is judged under 4 s (development host; typically under 1 s).
+- **Scroll.** 120 steps of 900 px and 40 jumps keep the 95th percentile of frame times under 40 ms and 60 ms.
+- **Search hits and the header.** A hit opens the thread framed around that message (a bounded open, then a scroll and a brief mark); the header title is a shell line, independent of how many messages exist.

@@ -1,20 +1,20 @@
 // The composer's four chips and their adaptive behaviour (docs/composer.md, decisions of 2026-11-18): attach, model (provider icon, name, reasoning level), permission, runs on (machine and a shield); as the composer's
 // own width shrinks they give up words in the order Runs on, Permission, Model; a chip holding a non-default choice keeps its words longest and Full access wears a warning tint. Usage: CAL_URL=... node e2e/chips.mjs
-import { launch, open, serve, expandComposer } from "./lib.mjs";
+import { launch, open, serve, expandComposer, win } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
 /** For each chip (attach, model, perm, where): whether it shows words. */
-const words = (p) => p.evaluate(() => [...document.querySelectorAll(".composer .chips .row > .chip")].map((c) => c.querySelector(".pill")?.classList.contains("wide") ?? false));
+const words = (p) => p.evaluate(() => [...(document.querySelector("[data-win][data-focused]") ?? document).querySelectorAll(".composer .chips .row > .chip")].map((c) => c.querySelector(".pill")?.classList.contains("wide") ?? false));
 try {
   const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads/t-idle");
   await expandComposer(p);
-  const names = await p.evaluate(() => [...document.querySelectorAll(".composer .chips .row > .chip .pill")].map((e) => e.getAttribute("aria-label") ?? e.textContent.trim()));
+  const names = await p.evaluate(() => [...(document.querySelector("[data-win][data-focused]") ?? document).querySelectorAll(".composer .chips .row > .chip .pill")].map((e) => e.getAttribute("aria-label") ?? e.textContent.trim()));
   console.log("   chips:", names.join(" | "));
   ok(names.length === 4, "four chips: attach, model, permission, runs on");
   ok(!names.some((n) => n.includes("·")), "no middle dot in any chip's name");
   ok((await words(p)).join() === "false,true,true,true", "wide: attach is icon only, the others show words");
-  const where = p.locator(".composer .chips .row > .chip").nth(3);
+  const where = win(p).locator(".composer .chips .row > .chip").nth(3);
   ok((await where.locator(".lbl").innerText()).length > 3 && (await where.locator("svg").count()) >= 2, "Runs on is the machine's name and a shield (no word)", (await where.innerText()).trim());
   // a fresh thread has only default choices: shrink the composer itself (its own width, not the window's) and watch the order words go
   await p.keyboard.press("Control+k"); await p.locator(".pal-input").fill("new thread"); await p.waitForTimeout(250);
@@ -36,7 +36,7 @@ try {
   // a non-default choice keeps its words; Full access is tinted
   await p.addStyleTag({ content: ".bottom .inner { max-width: 700px !important; }" }); await p.waitForTimeout(300);
   await expandComposer(p);
-  await p.locator(".composer .chips .row > .chip .pill").nth(2).click(); await p.getByRole("menuitemradio", { name: /Full access/ }).click(); await p.waitForTimeout(400);
+  await win(p).locator(".composer .chips .row > .chip .pill").nth(2).click(); await p.getByRole("menuitemradio", { name: /Full access/ }).click(); await p.waitForTimeout(400);
   await p.addStyleTag({ content: ".bottom .inner { max-width: 330px !important; }" }); await p.waitForTimeout(350); await expandComposer(p);
   const w2 = (await words(p)).slice(1);
   ok(w2[1] === true && w2[0] === false && w2[2] === false, "at the narrowest only the chip holding a non-default choice keeps its words", w2.join());

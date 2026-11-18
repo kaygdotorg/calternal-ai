@@ -21,13 +21,16 @@ function override(): boolean | null {
   if (seen !== undefined) return seen;
   try {
     const q = new URLSearchParams(location.search).get("canvas");
-    if (q === "1") sessionStorage.setItem(KEY + ".on", "1");
-    if (q === "0") sessionStorage.setItem(KEY + ".on", "0");
+    if (q === "1") { sessionStorage.setItem(KEY + ".on", "1"); sessionStorage.setItem(KEY + ".seed", "1"); }
+    if (q === "0") { sessionStorage.setItem(KEY + ".on", "0"); sessionStorage.removeItem(KEY + ".seed"); }
     const v = sessionStorage.getItem(KEY + ".on");
     seen = v === "1" ? true : v === "0" ? false : null;
   } catch { seen = null; }
   return seen;
 }
+
+/** Whether to fill a first visit with a second thread and a note to arrange: only for the explicit `?canvas=1` demonstration. A canvas that is simply on (a setting, a build default, a test) opens what the address names and nothing else. */
+export const canvasSeedWanted = (() => { override(); try { return sessionStorage.getItem(KEY + ".seed") === "1"; } catch { return false; } })();
 
 let n = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(n++).toString(36)}`;
