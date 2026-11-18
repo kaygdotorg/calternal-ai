@@ -33,7 +33,7 @@
   .ms { background: color-mix(in oklab, var(--paper) 55%, transparent); }
   .mc { background: var(--paper); box-shadow: 0 1px 4px rgb(0 0 0 / 0.18); padding: 12% 10%; display: grid; align-content: start; gap: 11%; }
   .mc .ctl { display: block; width: 62%; height: 7px; border-radius: 4px; background: var(--acc); }
-  .mc b { height: 3px; border-radius: 2px; background: var(--ink); }
+  .mc b { display: block; height: 3px; border-radius: 2px; background: var(--ink); }
   .mc b:last-child { width: 70%; opacity: 0.45; }
   .pn { font-size: var(--text-label); font-weight: var(--strong-weight); padding: 0 var(--s-1); }
 </style>
