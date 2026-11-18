@@ -78,3 +78,17 @@ the [deployment guide](../../docs/deploy.md#build-and-configure-a-disposable-gue
 Use a configuration with capacity for two guests and a machine user who can
 open `/dev/kvm` read-write. The case prints the skip reason if KVM access or
 the config is missing. Pass `--show-output` to see that detail in a serial run.
+
+## Release-to-release conformance
+
+Run `scripts/verify-additive-upgrade.sh PREVIOUS_IMAGE CANDIDATE_IMAGE PROOF_OUTPUT`
+inside the dev-01 Nix shell with both exact product images in local Podman. The
+gate extracts the shipped executables, writes a sample through release N's
+authenticated API and CLI, and starts N+1 on those roots. It restarts N on the
+migrated roots and checks that both releases can write and read each other's
+acknowledged writes. The resulting proof binds the two image IDs for deployment.
+
+The opt-in `release-upgrade` cases also exercise process loss at the intent,
+snapshot, version check, migration, verification, restore, and commit
+boundaries using debug binaries. The retained sample and generation commands
+are in [the fixture directory](fixtures/upgrades/README.md).

@@ -5,6 +5,7 @@
 //! written atomically with mode 0600 through `calternal-fsio`:
 //!
 //! ```text
+//! format: calternal-machine-credentials/v1
 //! server: https://cal.example.org
 //! machine_id: 0193…
 //! owner: account 0193…   (or: owner: pool)
@@ -24,6 +25,8 @@ use uuid::Uuid;
 
 use crate::protocol::{Owner, session_message};
 use crate::{Error, Result};
+
+const FORMAT: &str = "calternal-machine-credentials/v1";
 
 /// File name of the credentials inside the machine directory.
 pub const CREDENTIALS_FILE: &str = "credentials";
@@ -100,7 +103,7 @@ impl Credentials {
             Owner::Pool => "pool".to_owned(),
         };
         let text = format!(
-            "server: {}\nmachine_id: {}\nowner: {}\nprivate_key: {}\n",
+            "format: {FORMAT}\nserver: {}\nmachine_id: {}\nowner: {}\nprivate_key: {}\n",
             self.server,
             self.machine_id,
             owner,
@@ -126,6 +129,7 @@ impl Credentials {
                 .find_map(|l| l.strip_prefix(name)?.strip_prefix(':').map(str::trim))
                 .ok_or_else(|| Error::Protocol(format!("credentials file lacks `{name}`")))
         };
+        calternal_fsio::format::require(field("format")?, FORMAT)?;
         let bad = |what: &str| Error::Protocol(format!("credentials file has a bad `{what}`"));
         let owner = match field("owner")? {
             "pool" => Owner::Pool,

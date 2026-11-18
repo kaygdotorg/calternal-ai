@@ -102,7 +102,7 @@ fn missing_state_never_recreates_databases_even_with_create() {
     );
     put(
         &f.roots.appdata.join(MARKER),
-        format!("{}\nappdata\n", f.id).as_bytes(),
+        format!("format: calternal-install-root/v1\n{}\nappdata\n", f.id).as_bytes(),
     );
     assert!(!f.starts(false));
     assert!(!f.roots.appdata.join("system").exists());
@@ -436,7 +436,7 @@ fn roles_cannot_overlap_and_first_setup_never_creates_a_database() {
     {
         assert_eq!(
             std::fs::read_to_string(root.join(MARKER)).unwrap(),
-            format!("{}\n{role}\n", f.id)
+            format!("format: calternal-install-root/v1\n{}\n{role}\n", f.id)
         );
     }
 }
@@ -483,4 +483,24 @@ fn invalid_lock_entry_is_checked_on_every_role_before_any_lock_creation() {
         }
         assert!(lock.is_dir());
     }
+}
+
+#[test]
+fn newer_root_format_is_refused_before_locking_or_repairing() {
+    let f = Fixture::new();
+    f.setup();
+    f.clear_locks();
+    let path = f.roots.appdata.join(MARKER);
+    let marker = format!("format: calternal-install-root/v2\n{}\nappdata\n", f.id);
+    put(&path, marker.as_bytes());
+    assert_eq!(
+        prepare(&f.roots, f.id, false).err().unwrap().kind(),
+        io::ErrorKind::Unsupported
+    );
+    assert_eq!(
+        re_pair(&f.roots, f.id, true).err().unwrap().kind(),
+        io::ErrorKind::Unsupported
+    );
+    f.no_locks();
+    assert_eq!(std::fs::read_to_string(path).unwrap(), marker);
 }

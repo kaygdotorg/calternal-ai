@@ -48,18 +48,44 @@ pub(crate) fn space_path(appdata: &Path, id: SpaceId) -> PathBuf {
         .join("content.db")
 }
 
-pub(crate) fn database(path: &Path) -> Result<Connection> {
+const SPACE_BASE: &str = "
+            CREATE TABLE IF NOT EXISTS binding(id TEXT PRIMARY KEY CHECK(id='space'),value TEXT NOT NULL) STRICT;
+            CREATE TABLE IF NOT EXISTS kinds(kind TEXT PRIMARY KEY,definition TEXT NOT NULL) STRICT;
+            CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,kind TEXT NOT NULL,metadata TEXT NOT NULL,revision TEXT NOT NULL,seq INTEGER NOT NULL,updated_at TEXT NOT NULL,path TEXT NOT NULL,folded_path TEXT NOT NULL UNIQUE,old_path TEXT,mat_state TEXT NOT NULL,file_hash TEXT) STRICT;
+            CREATE INDEX IF NOT EXISTS item_pending ON items(mat_state,id);
+            CREATE TABLE IF NOT EXISTS versions(item TEXT NOT NULL REFERENCES items(id),seq INTEGER NOT NULL,revision TEXT NOT NULL UNIQUE,metadata TEXT NOT NULL,bytes BLOB NOT NULL,updated_at TEXT NOT NULL,author TEXT NOT NULL,PRIMARY KEY(item,seq)) STRICT;
+            CREATE TABLE IF NOT EXISTS outbox(account TEXT NOT NULL,request TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,item TEXT REFERENCES items(id),revision TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;
+            CREATE TABLE IF NOT EXISTS controls(key TEXT PRIMARY KEY,value TEXT NOT NULL) STRICT;
+            CREATE UNIQUE INDEX IF NOT EXISTS standard_collections ON items(json_extract(metadata,'$.item_kind'),json_extract(metadata,'$.standard_key')) WHERE kind='collections' AND json_extract(metadata,'$.standard_key') IS NOT NULL;
+";
+pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new(
+        "space content.db",
+        3,
+        &[
+            SPACE_BASE,
+            crate::linked_write::SCHEMA,
+            crate::trash::SCHEMA,
+        ],
+        &[],
+    );
+
+pub(crate) fn database(
+    path: &Path,
+    schema: calternal_store::migrations::Schema<'_>,
+) -> Result<Connection> {
     calternal_fsio::private::directory(path.parent().ok_or_else(|| internal("parent"))?)
         .map_err(internal)?;
     calternal_fsio::private::file(path).map_err(internal)?;
     let conn = Connection::open(path).map_err(internal)?;
-    conn.pragma_update(None, "journal_mode", "WAL")
-        .map_err(internal)?;
     conn.pragma_update(None, "synchronous", "FULL")
         .map_err(internal)?;
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(internal)?;
     conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(internal)?;
+    calternal_store::migrations::migrate(&conn, schema).map_err(internal)?;
+    conn.pragma_update(None, "journal_mode", "WAL")
         .map_err(internal)?;
     Ok(conn)
 }
@@ -70,32 +96,12 @@ impl Space {
         id: SpaceId,
         journal: calternal_store::SpaceStore,
     ) -> Result<Self> {
-        let conn = database(&space_path(appdata, id))?;
-        let version: i64 = conn
-            .pragma_query_value(None, "user_version", |r| r.get(0))
-            .map_err(internal)?;
-        if version != 0 && version != 3 {
-            return Err(internal("unsupported content schema"));
-        }
-        conn.execute_batch("BEGIN IMMEDIATE;
-            CREATE TABLE IF NOT EXISTS binding(id TEXT PRIMARY KEY CHECK(id='space'),value TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS kinds(kind TEXT PRIMARY KEY,definition TEXT NOT NULL) STRICT;
-            CREATE TABLE IF NOT EXISTS items(id TEXT PRIMARY KEY,kind TEXT NOT NULL,metadata TEXT NOT NULL,revision TEXT NOT NULL,seq INTEGER NOT NULL,updated_at TEXT NOT NULL,path TEXT NOT NULL,folded_path TEXT NOT NULL UNIQUE,old_path TEXT,mat_state TEXT NOT NULL,file_hash TEXT) STRICT;
-            CREATE INDEX IF NOT EXISTS item_list ON items(kind,updated_at DESC,id);
-            CREATE INDEX IF NOT EXISTS item_pending ON items(mat_state,id);
-            CREATE TABLE IF NOT EXISTS versions(item TEXT NOT NULL REFERENCES items(id),seq INTEGER NOT NULL,revision TEXT NOT NULL UNIQUE,metadata TEXT NOT NULL,bytes BLOB NOT NULL,updated_at TEXT NOT NULL,author TEXT NOT NULL,PRIMARY KEY(item,seq)) STRICT;
-            CREATE TABLE IF NOT EXISTS outbox(account TEXT NOT NULL,request TEXT NOT NULL,operation TEXT NOT NULL,fingerprint TEXT NOT NULL,item TEXT REFERENCES items(id),revision TEXT NOT NULL,result TEXT NOT NULL,PRIMARY KEY(account,request)) STRICT;
-            CREATE TABLE IF NOT EXISTS controls(key TEXT PRIMARY KEY,value TEXT NOT NULL) STRICT;
-            CREATE UNIQUE INDEX IF NOT EXISTS standard_collections ON items(json_extract(metadata,'$.item_kind'),json_extract(metadata,'$.standard_key')) WHERE kind='collections' AND json_extract(metadata,'$.standard_key') IS NOT NULL;
-            PRAGMA user_version=3; COMMIT;").map_err(internal)?;
+        let conn = database(&space_path(appdata, id), SPACE_SCHEMA)?;
         conn.execute(
             "INSERT OR IGNORE INTO binding VALUES('space',?1)",
             [id.to_string()],
         )
         .map_err(internal)?;
-        crate::discovery::install(&conn)?;
-        crate::linked_write::install(&conn)?;
-        crate::trash::install(&conn)?;
         let bound: String = conn
             .query_row("SELECT value FROM binding WHERE id='space'", [], |r| {
                 r.get(0)
@@ -104,6 +110,7 @@ impl Space {
         if bound != id.to_string() {
             return Err(internal("wrong space binding"));
         }
+        crate::discovery::install(&conn)?;
         Ok(Self {
             id,
             journal,

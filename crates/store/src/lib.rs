@@ -13,12 +13,17 @@
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 
 mod highwater;
+/// Shared SQLite schema migration for durable Calternal stores.
+pub mod migrations;
 mod projection;
 mod proof;
 pub use projection::{ProjectionChange, ProjectionJournal};
 mod read;
 mod restore;
 mod schema;
+
+/// Descriptor for the authoritative per-space journal and receipt database.
+pub const JOURNAL_SCHEMA: migrations::Schema<'_> = schema::MIGRATIONS;
 mod shared;
 #[cfg(any(
     feature = "perf-timings",

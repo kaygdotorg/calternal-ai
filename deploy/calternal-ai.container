@@ -31,6 +31,7 @@ HealthOnFailure=stop
 StopTimeout=90
 
 [Service]
+ExecStartPre=/usr/bin/bash @ROOT@/releases/current/recover-start.sh @ROOT@ @HDD_ROOT@
 UnsetEnvironment=CONTAINER_HOST CONTAINER_CONNECTION DOCKER_HOST
 Restart=always
 RestartSec=3s

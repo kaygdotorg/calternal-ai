@@ -26,6 +26,24 @@ pub enum FaultPoint {
     ErasureKeyRemoved,
     /// All owner paths were removed before the cleanup receipt.
     ErasureStorageRemoved,
+    /// The stopped installation is locked before examining its stores.
+    UpgradeLocked,
+    /// All selected store versions were checked.
+    UpgradeVersionsChecked,
+    /// One snapshot file was flushed before the intent was published.
+    UpgradeCopied,
+    /// The restore point and preparing intent are durable.
+    UpgradeIntent,
+    /// The candidate migration transactions finished.
+    UpgradeMigrated,
+    /// The schema and recovery witness checks passed.
+    UpgradeVerified,
+    /// The cutover decision is durable and permits only code rollback.
+    UpgradeCommitted,
+    /// One original file or absent sidecar was restored.
+    UpgradeRestoreFile,
+    /// The original data is durable before retiring the restore point.
+    UpgradeRestored,
 }
 
 impl FaultPoint {
@@ -43,6 +61,15 @@ impl FaultPoint {
             Self::ErasureAuthorityCommitted => "erasure_authority_committed",
             Self::ErasureKeyRemoved => "erasure_key_removed",
             Self::ErasureStorageRemoved => "erasure_storage_removed",
+            Self::UpgradeLocked => "upgrade_locked",
+            Self::UpgradeVersionsChecked => "upgrade_versions_checked",
+            Self::UpgradeCopied => "upgrade_copied",
+            Self::UpgradeIntent => "upgrade_intent",
+            Self::UpgradeMigrated => "upgrade_migrated",
+            Self::UpgradeVerified => "upgrade_verified",
+            Self::UpgradeCommitted => "upgrade_committed",
+            Self::UpgradeRestoreFile => "upgrade_restore_file",
+            Self::UpgradeRestored => "upgrade_restored",
         }
     }
 }

@@ -18,9 +18,6 @@ use calternal_types::{AccountId, SpaceId};
 use rusqlite::{Connection, OptionalExtension, params};
 use uuid::Uuid;
 
-/// Current schema version (`PRAGMA user_version`).
-pub const SCHEMA_VERSION: i64 = 6;
-
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS draining (
     machine TEXT PRIMARY KEY
@@ -75,8 +72,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS leases_active_thread ON leases(thread) WHERE s
 
 pub(crate) use calternal_types::now_ms;
 
-/// Open (creating 0600 if missing) the database at this build's schema; a file
-/// at another version is refused (development data is disposable).
+/// Open the private placement database and apply any supported migrations.
+/// One version read on a current database. Never accepts a newer schema.
 pub fn open(path: &Path) -> rusqlite::Result<Connection> {
     if let Some(dir) = path.parent() {
         calternal_fsio::private::directory(dir)
@@ -86,15 +83,10 @@ pub fn open(path: &Path) -> rusqlite::Result<Connection> {
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     let c = Connection::open(path)?;
     c.busy_timeout(std::time::Duration::from_secs(5))?;
-    c.pragma_update(None, "journal_mode", "WAL")?;
     c.pragma_update(None, "synchronous", "FULL")?;
     c.pragma_update(None, "foreign_keys", "ON")?;
-    let v: i64 = c.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if v != 0 && v != SCHEMA_VERSION {
-        return Err(rusqlite::Error::InvalidQuery);
-    }
-    c.execute_batch(SCHEMA)?;
-    c.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    calternal_store::migrations::migrate(&c, upgrade_schema())?;
+    c.pragma_update(None, "journal_mode", "WAL")?;
     Ok(c)
 }
 
@@ -369,4 +361,19 @@ pub(crate) fn last_thread_machine(
 ) -> rusqlite::Result<Option<Uuid>> {
     let id:Option<String>=c.query_row("SELECT last_machine FROM leases WHERE account=?1 AND thread=?2 AND last_machine IS NOT NULL ORDER BY created_ms DESC LIMIT 1",params![account.to_string(),thread.to_string()],|r|r.get(0)).optional()?;
     Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
+}
+
+/// Return the machine registry schema shared by normal startup and upgrade admission.
+/// Baseline 6 is the first production schema, including durable erased-worker stops.
+pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
+    #[cfg(feature = "test-plugins")]
+    if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
+        return calternal_store::migrations::Schema::new(
+            "machines.db",
+            6,
+            &[SCHEMA],
+            &["CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;"],
+        );
+    }
+    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], &[])
 }

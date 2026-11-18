@@ -86,10 +86,11 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         .map_err(err)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(err)?;
-    if names
-        .iter()
-        .any(|n| !n.starts_with("security_recovery_") && !SPECS.iter().any(|(s, _, _)| s == n))
-    {
+    if names.iter().any(|n| {
+        n != "_calternal_schema_compatibility"
+            && !n.starts_with("security_recovery_")
+            && !SPECS.iter().any(|(s, _, _)| s == n)
+    }) {
         return Err(err(
             "unclassified auth table; recovery owner mapping required",
         ));
@@ -128,16 +129,36 @@ pub(crate) fn initialize(c: &Connection) -> Result<()> {
         }
     }
     if !initialized {
-        tx.execute(
-            "INSERT OR IGNORE INTO security_recovery_dirty VALUES(?1)",
-            [GLOBAL],
-        )
+        mark_all(&tx)?;
+    }
+    tx.commit().map_err(err)
+}
+/// Remove capture triggers so a locked schema upgrade rebuilds their column checks.
+pub(crate) fn reset_capture_triggers(conn: &Connection) -> Result<()> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
         .map_err(err)?;
-        for &(kind, table) in OWNER_TABLES {
-            tx.execute(&format!("INSERT OR IGNORE INTO security_recovery_dirty SELECT '{kind}'||replace(lower(id),'-','') FROM {}",quote(table)),[]).map_err(err)?;
+    for (table, _, _) in SPECS {
+        for event in ["INSERT", "UPDATE", "DELETE"] {
+            tx.execute_batch(&format!(
+                "DROP TRIGGER IF EXISTS security_recovery_{table}_{event};"
+            ))
+            .map_err(err)?;
         }
     }
     tx.commit().map_err(err)
+}
+
+/// Queue the global schema and every current owner for an upgraded snapshot.
+pub(crate) fn mark_all(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO security_recovery_dirty VALUES(?1)",
+        [GLOBAL],
+    )
+    .map_err(err)?;
+    for &(kind, table) in OWNER_TABLES {
+        conn.execute(&format!("INSERT OR IGNORE INTO security_recovery_dirty SELECT '{kind}'||replace(lower(id),'-','') FROM {}",quote(table)),[]).map_err(err)?;
+    }
+    Ok(())
 }
 fn schema(c: &Connection, table: &str) -> Result<(String, Vec<String>)> {
     let schema = c
