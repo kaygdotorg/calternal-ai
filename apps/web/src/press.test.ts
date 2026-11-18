@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 vi.mock("svelte", async (orig) => ({ ...(await orig<typeof import("svelte")>()), mount: vi.fn() }));
 vi.mock("../../../packages/ui/src/components/PressSurface.svelte", () => ({ default: {} }));
-import { MENU_MS, pressRow, pressRows, STILL } from "../../../packages/ui/src/lib/press";
+import { LIFT_MS, MENU_MS, PRIME_MS, pressRow, pressRows, STILL } from "../../../packages/ui/src/lib/press";
 import { pressState } from "../../../packages/ui/src/lib/press-state.svelte";
 
 let list: HTMLElement, row: HTMLElement, stop: { destroy(): void };
@@ -61,6 +61,24 @@ test("a mouse right-click opens the menu alone, at once", async () => {
 test("the menu key on a focused row opens the menu alone", async () => {
   row.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true })); await settle();
   expect(pressState.cur?.preview).toBe(false);
+});
+
+test("the held row is staged a little into the hold, before the menu opens, and the lift stands over it", async () => {
+  row.dispatchEvent(ptr("pointerdown"));
+  await vi.advanceTimersByTimeAsync(PRIME_MS + 5); await settle();
+  expect(pressState.stage?.row).toBe(row);
+  expect(pressState.cur).toBeNull();
+  await vi.advanceTimersByTimeAsync(LIFT_MS - PRIME_MS + 5);
+  expect(row.style.visibility).toBe("hidden");
+  expect(document.body.lastElementChild).not.toBe(list);
+});
+
+test("a press that ends before the half second unstages the card and shows the row again", async () => {
+  row.dispatchEvent(ptr("pointerdown"));
+  await vi.advanceTimersByTimeAsync(LIFT_MS + 20); await settle();
+  row.dispatchEvent(ptr("pointerup")); await vi.advanceTimersByTimeAsync(400);
+  expect(pressState.stage).toBeNull();
+  expect(row.style.visibility).toBe("");
 });
 
 test("a row that is not registered is not pressable", async () => {

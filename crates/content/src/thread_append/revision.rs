@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use std::ops::Range;
 
 /// First writer version that can read a head stored as an append patch.
-pub(super) const PATCH_SCHEMA_VERSION: i64 = 6;
+pub(super) const PATCH_SCHEMA_VERSION: i64 = 7;
 
 /// Add immutable revision ranges to the existing content database.
 pub(crate) const SCHEMA: &str = "

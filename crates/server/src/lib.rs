@@ -21,13 +21,13 @@ pub mod plugins;
 #[cfg(feature = "rebuild-probe")]
 pub mod rebuild_probe;
 pub mod resolve;
-pub mod room_eviction;
 pub mod secrets;
 pub mod store;
 
 pub mod turns;
 
 pub mod live;
+mod live_rooms;
 
 pub mod account_input;
 mod netguard;

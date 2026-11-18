@@ -16,7 +16,7 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
 | Appdata `system/machines.db` | Authority | Machine placement, SQLite 6. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 6. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
+| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 7. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 4. Admission, retry and in-flight state, checkpoints, event outbox and retention. Version 3 adds plugin signal waits and decision receipts. Version 4 adds saved-thread admission receipts. |
@@ -38,6 +38,22 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 | Machine operator files for microVMs | Operator | The guest image is pinned by its manifest digest in the machine config. The machine config rejects unknown fields. The egress policy's `.installed` receipt is bound to the boot and fails closed, so it is reinstalled rather than migrated. |
 | Appdata `system/upgrade-intent.json` and role-local `.calternal-upgrade/` | Temporary authority | Deploy writes the private `calternal-upgrade-intent/v1` decision and one restore point. The manifest binds installation, both image digests and the raw file proofs. The gate supplies `calternal-upgrade-proof/v1` evidence for the two images. |
 | Appdata `startup.json`, `setup.token`, operator and release config | Mixed | Server startup publishes `calternal-startup/v1` and a replaceable setup code. Auth retains its hash and expiry. Operator owns the pinned installation ID and deployment secrets. Deploy owns image IDs, units and release pointers. |
+
+The live-editing migration adds `room_kinds` and `room_checkpoints` to
+space content SQLite as version 6, following Sharing’s version 5 collection
+membership projection. Checkpoints belong to an immutable revision and commit with its outbox
+intent. A checkpoint is limited to 8 MiB. Each item retains up to 64 recent
+checkpoints and 16 MiB total. Purge removes them with the referenced revisions.
+The preceding writer ignores these tables. A head written without a
+checkpoint is a new lineage on the next live access. Older live bases cannot
+be merged automatically across that boundary.
+
+The installed package catalog advances from SQLite version 1 to 2. The
+shared runner adds live editing to the original bundled Notes archive
+and updates its archive checksum. The migration matches the exact
+pre-live archive bytes and checksum and preserves its activation and
+revision. It leaves explicitly approved packages and retained versions
+as stored. Fresh installs receive the opt-in from the shipped manifest.
 
 ## Forward changes
 
@@ -116,7 +132,7 @@ independently derived keys.
 
 ### Thread appends
 
-The space content migration from SQLite 5 to 6 adds
+The space content migration from SQLite 6 to 7 adds
 `thread_revision_patches` to the existing descriptor. It leaves every old
 SQLite snapshot and v1 Markdown file unchanged. A new checkpoint records only its bytes and the offset and
 hashes needed to place or read it. The current reader composes patches over

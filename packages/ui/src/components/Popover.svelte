@@ -105,7 +105,12 @@
     addEventListener("pointerdown", away, true);
     addEventListener("keydown", esc, true);
     addEventListener("resize", go);
+    // The surface can grow after it was placed (its font arrives, a list adds rows): it is placed again when its width changes, so its far edge never ends past the window (a point anchor far to the right, a row's menu in a slid-open sidebar). Not while it morphs.
+    let lastW = box.offsetWidth;
+    const grown = new ResizeObserver(() => { const w = box?.offsetWidth ?? 0; if (Math.abs(w - lastW) > 0.5) { lastW = w; if (!morphed) go(); } });
+    grown.observe(box);
     return () => {
+      grown.disconnect();
       again = () => {};
       cancelAnimationFrame(f);
       removeEventListener("pointerdown", away, true);

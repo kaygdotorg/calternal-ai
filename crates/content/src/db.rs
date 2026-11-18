@@ -86,6 +86,7 @@ const COLLECTION_MEMBERS: &str = include_str!("collection_members.sql");
 const SPACE_CHANGES: &[&str] = &[
     THREAD_SNOOZE,
     COLLECTION_MEMBERS,
+    crate::rooms::SCHEMA,
     crate::thread_append::revision::SCHEMA,
 ];
 const CONTENT_BASELINE: i64 = 3;
@@ -380,6 +381,13 @@ mod tests {
         &[THREAD_SNOOZE, COLLECTION_MEMBERS],
     );
 
+    const ROOM_RELEASE: Schema<'_> = Schema::new(
+        CONTENT_SCHEMA_NAME,
+        CONTENT_BASELINE,
+        SPACE_INITIAL,
+        &[THREAD_SNOOZE, COLLECTION_MEMBERS, crate::rooms::SCHEMA],
+    );
+
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {
         let conn = Connection::open_in_memory().unwrap();
@@ -489,5 +497,52 @@ mod tests {
         conn.execute("UPDATE items SET path='.trash/collection.json'", [])
             .unwrap();
         assert!(member().is_none());
+    }
+
+    #[test]
+    fn room_migration_preserves_prior_writer_and_is_atomic() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, SHARING_RELEASE, false).unwrap();
+        conn.execute_batch(
+            "INSERT INTO kinds VALUES('documents','[]');
+             INSERT INTO items VALUES ('item','documents','{}','v1',1,'now','Doc.md','doc.md',NULL,'materialized',NULL);
+             INSERT INTO versions VALUES ('item',1,'v1','{}',X'41','now','owner');
+             CREATE TABLE room_checkpoints(conflicts_with_migration INT);",
+        ).unwrap();
+        assert!(migrate_release(&conn, ROOM_RELEASE, true).is_err());
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
+            5
+        );
+        let flag_table: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='room_kinds')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!flag_table);
+        conn.execute_batch("DROP TABLE room_checkpoints").unwrap();
+        migrate_release(&conn, ROOM_RELEASE, true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, ROOM_RELEASE).unwrap(),
+            6
+        );
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, SHARING_RELEASE).unwrap(),
+            6
+        );
+        conn.execute_batch(
+            "INSERT INTO room_kinds VALUES('documents');
+             INSERT INTO room_checkpoints VALUES('item',1,'lineage',X'0000');
+             INSERT INTO versions VALUES ('item',2,'v2','{}',X'42','now','owner');
+             UPDATE items SET revision='v2',seq=2 WHERE id='item';",
+        )
+        .unwrap();
+        let body: Vec<u8> = conn.query_row(
+            "SELECT bytes FROM versions JOIN items ON versions.item=items.id AND versions.seq=items.seq",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(body, b"B");
     }
 }

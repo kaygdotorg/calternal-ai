@@ -5,7 +5,7 @@ import { chromium } from "playwright";
 import { BASE, serve } from "./lib.mjs";
 const stop = await serve(); const b = await chromium.launch(); let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
-for (const [mode, q] of [["card", ""], ["canvas", "?canvas=1"]]) for (const [from, start] of [["a thread", "/threads/t-run"], ["a note", "/notes/n-1"]]) {
+for (const [mode, q] of [["card", "?canvas=0"], ["canvas", "?canvas=1"]]) for (const [from, start] of [["a thread", "/threads/t-run"], ["a note", "/notes/n-1"]]) {
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } }); await ctx.addInitScript(() => localStorage.setItem("cal.firstrun", "1"));
   const page = await ctx.newPage(); await page.goto(`${BASE}${start}${q}`); await page.waitForSelector("html[data-ready]"); await page.waitForTimeout(1200);
   const scope = mode === "canvas" ? "[data-win][data-kind=settings]" : "main.mid";

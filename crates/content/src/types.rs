@@ -102,6 +102,8 @@ pub struct Receipt {
 /// Durable boundaries exposed to trusted crash tests; no environment hooks in this crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FaultPoint {
+    /// Room preview was queued and its content transaction has not committed.
+    BeforeRoomCommit,
     /// Content and publication intent committed, before any file placement.
     AfterCommit,
     /// The journal receipt and event are durable, with the outbox row still present.

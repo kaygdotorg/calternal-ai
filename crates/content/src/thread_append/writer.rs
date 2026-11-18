@@ -123,7 +123,7 @@ impl Content {
             let staged = Staged {
                 item: Item { id,space,kind:head.kind,metadata,bytes:record.to_vec(),
                     revision:revision.clone(),updated_at:now_rfc3339() },
-                seq,path:head.path,expected:head.file_hash,
+                seq,path:head.path,expected:head.file_hash,room:None,
             };
             let tx = s.conn.transaction_with_behavior(TransactionBehavior::Immediate).map_err(internal)?;
             calternal_store::migrations::require_writer_version(

@@ -3,7 +3,10 @@ use crate::{Result, db::Space, journal::lock, types::internal};
 use calternal_types::SpaceId;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, OnceLock, TryLockError},
+    sync::{
+        Arc, Mutex, OnceLock, TryLockError,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 /// One cached space: opened on first use under its own lock, so a cold open in
@@ -80,6 +83,31 @@ pub(crate) fn place_pending(slot: &Slot, fault: fn(crate::FaultPoint)) -> bool {
     })
 }
 
+/// Stops and joins the placement worker before its owner releases the stores.
+pub(crate) struct Sweeper {
+    stop: Arc<AtomicBool>,
+    worker: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Sweeper {
+    /// Wake the placement worker after a commit. Cost: one thread notification.
+    pub(crate) fn unpark(&self) {
+        if let Some(worker) = &self.worker {
+            worker.thread().unpark();
+        }
+    }
+}
+
+impl Drop for Sweeper {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
+        if let Some(worker) = self.worker.take() {
+            worker.thread().unpark();
+            let _ = worker.join();
+        }
+    }
+}
+
 /// Materializes pending heads and retires idle spaces on the existing worker.
 /// Wakes after writes and retries failed or contended slots in 50 ms. Idle
 /// sweeping remains every 30 seconds. Visits at most 64 slots, with write
@@ -91,7 +119,9 @@ pub(crate) fn spawn_sweeper(
     lifecycle: calternal_types::OwnerLifecycle,
     idle: Duration,
     fault: fn(crate::FaultPoint),
-) -> Result<std::thread::Thread> {
+) -> Result<Sweeper> {
+    let stop = Arc::new(AtomicBool::new(false));
+    let shutdown = stop.clone();
     let weak = Arc::downgrade(spaces);
     let root_guard = Arc::downgrade(root_guard);
     let worker = std::thread::Builder::new()
@@ -100,6 +130,9 @@ pub(crate) fn spawn_sweeper(
             let mut wait = Duration::from_secs(30);
             loop {
                 std::thread::park_timeout(wait);
+                if shutdown.load(Ordering::Acquire) {
+                    return;
+                }
                 wait = Duration::from_secs(30);
                 let Some(guard) = root_guard.upgrade() else {
                     return;
@@ -123,7 +156,10 @@ pub(crate) fn spawn_sweeper(
             }
         })
         .map_err(internal)?;
-    Ok(worker.thread().clone())
+    Ok(Sweeper {
+        stop,
+        worker: Some(worker),
+    })
 }
 
 #[cfg(test)]

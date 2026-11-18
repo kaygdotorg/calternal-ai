@@ -279,7 +279,10 @@ pub fn validate_manifest_detailed(m: &ManifestV1) -> Result<(), String> {
     for (index, x) in m.kinds.iter().enumerate() {
         if x.id == "automations"
             || x.id.starts_with("skill-")
-            || x.searchable == Some(true) && !x.claimed_text
+            || (x.searchable == Some(true) || x.live_editing()) && !x.claimed_text
+            || x.schema
+                .get(calternal_core::ManifestKind::LIVE_EDITING)
+                .is_some_and(|value| !value.is_boolean())
             || !extension(x.claimed_text, x.extension.as_deref())
             || !schema(&x.schema)
             || !match &x.storage {

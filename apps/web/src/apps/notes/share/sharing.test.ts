@@ -81,3 +81,28 @@ describe("rescue", () => {
     expect(rescueLine("Plan", "Your edits to Plan")).toBe("You can no longer open “Plan”. Your edits were kept as “Your edits to Plan” in your personal space.");
   });
 });
+
+import { owedStore, rescueEdits, settleOwed, type Owed } from "./owed";
+describe("rescue owed", () => {
+  const memory = () => { const m = new Map<string, Owed>(); return { m, put: async (o: Owed) => void m.set(o.requestId, o), all: async () => [...m.values()], remove: async (id: string) => void m.delete(id) }; };
+  it("is kept when the server is away, tried again, and sent once", async () => {
+    const mem = memory(); owedStore(mem);
+    localStorage.setItem("cal.fixture.rescue-down", "1"); localStorage.removeItem("cal.fixture.rescued");
+    const line = await rescueEdits("n-1", "Plan", "# Plan\n\nOne.", "# Plan\n\nOne.\n\nMine.", "n-1:abc");
+    expect(line).toMatch(/kept on this device/);
+    expect(mem.m.size).toBe(1);
+    expect(await settleOwed()).toEqual([]); // still away
+    expect(mem.m.size).toBe(1);
+    localStorage.removeItem("cal.fixture.rescue-down");
+    const lines = await settleOwed();
+    expect(lines).toHaveLength(1); expect(lines[0]).toMatch(/Your edits to Plan/);
+    expect(mem.m.size).toBe(0);
+    expect(await settleOwed()).toEqual([]);
+    expect(JSON.parse(localStorage.getItem("cal.fixture.rescued")!)).toHaveLength(1);
+  });
+  it("owes nothing when nothing was changed", async () => {
+    const mem = memory(); owedStore(mem);
+    expect(await rescueEdits("n-1", "Plan", "# Plan", "# Plan", "n-1:x")).toMatch(/changed nothing/);
+    expect(mem.m.size).toBe(0);
+  });
+});
