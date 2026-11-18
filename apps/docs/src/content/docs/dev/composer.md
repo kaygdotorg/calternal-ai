@@ -70,3 +70,7 @@ server, so it is the person's or the space's choice.
 Every inline field is the Notes block editor, which is taken from the existing app:
 rewritten with reference to it and simplified wherever that helps speed, modularity and
 reuse. It gets its own performance budget before anything is built on it.
+
+## The keyboard on a phone in a Safari tab
+
+iOS Safari keeps the layout viewport at full height under the keyboard and pans the visual viewport instead, so a fixed box stays where it was while the page scrolls under it: the header ends up above the screen and text runs under the status bar with no fade. While a text field is focused under a keyboard, `shell/chrome.ts` writes the visual viewport's top and height to `--vvt` and `--vvh` and marks the root `data-kb`; the shell and its three panes then occupy exactly the visible area (header in view, composer on the keyboard, the side panel's field on the keyboard too). Verified on an iPhone 18 Pro Simulator (the screen's own state was logged on the device: `scrollY` 330, visual viewport offset 330, header at y = -326 before the change).
