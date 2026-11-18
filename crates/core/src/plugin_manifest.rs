@@ -302,10 +302,24 @@ pub struct ManifestAttention {
     /// Declared operation providing candidates.
     pub operation: String,
 }
-/// Typed space setting; secrets use separate handles.
+/// Owner of an override for a declared plugin setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestSettingScope {
+    /// Each person in the space can have their own value.
+    Personal,
+    /// Space managers can change the shared value.
+    Space,
+}
+
+/// Typed plugin setting; secrets use separate handles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestSetting {
+    /// Override owner. Omission selects the shared space setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub scope: Option<ManifestSettingScope>,
     /// Stable setting identifier.
     pub id: String,
     /// Primitive type of the default and stored values.

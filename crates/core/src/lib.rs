@@ -31,8 +31,10 @@ pub use calternal_types::ErrorCode;
 pub use models::*;
 pub use validation::*;
 
+mod plugin_diagnostics;
 mod plugin_manifest;
 mod plugin_settings;
+pub use plugin_diagnostics::*;
 pub use plugin_manifest::*;
 pub use plugin_settings::*;
 

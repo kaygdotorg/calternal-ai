@@ -190,3 +190,57 @@ authenticated same-origin connection. The SSE `chunk` event includes
 For disposable development bearer credentials, read the bearer from
 the supplied token file without echoing it and send the server's base
 URL as the `Origin` header. Keep both outside fixture logs.
+
+### Wait for a signal
+
+Return `parkJob` from a replayable job run. Declare `parked` in the run's
+output schema and allow an optional `signal` property in its input schema.
+For example, this run parks until the deadline and then returns its saved
+checkpoint.
+
+```ts
+import { parkJob, type JobSignal } from "@calternal/plugin-sdk";
+
+function run(input: {
+  checkpoint: { phase: string } | null;
+  signal?: JobSignal;
+}) {
+  if (input.signal) {
+    return { status: "done", result: input.checkpoint };
+  }
+  return parkJob({
+    checkpoint: { phase: "prepared" },
+    reason: "Waiting for the retry window",
+    deadline_ms: Date.now() + 30_000,
+    source: { kind: "deadline" },
+  });
+}
+```
+
+Use `{kind: "question", form, schema_operation}` to ask the job's starter
+a question in the existing Inbox. `form` is a GenUI view containing one
+Form with no actions. The host validates the answer against the input
+schema of `schema_operation` from this package and sends
+`{kind: "answer", value}` to the next run. An approval uses
+`{kind: "approval"}` and resumes with `{kind: "approval", approved}`.
+The decision is scoped to this wait. It confers no host permissions.
+
+`jobs.get` and the job stream show an active wait's reason and deadline.
+`jobs.cancel` cancels the wait. Keep private data out of the reason and
+shared result. The next run receives `{kind: "deadline"}` if no valid
+signal reaches the job first. A package can park eight waits per space,
+within a space-wide maximum of 32. Deadlines are future Unix milliseconds
+within seven days. A rejected park fails the job with `result.wait_error`.
+
+The host commits one winning signal and resumes from the saved checkpoint.
+A process crash can re-invoke a replayable handler with the same signal
+and checkpoint. Design that handler for replay and use the broker's
+receipt-backed calls for durable effects.
+
+To inspect a parked job or cancel it from the CLI, use the job ID from
+the start result. Inbox decisions use the request ID from
+`calternal invoke requests.list --json --input '{}'`. The listing
+identifies plugin prompts with `job_id`. Submit the answer with
+`requests.answer` and `{"id":"…","answer":{…}}`, or use
+`requests.deny` with `{"id":"…"}`. `requests.approve` takes
+`{"id":"…","lifetime":"once"}` and requires a fresh passkey session.

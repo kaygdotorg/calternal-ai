@@ -95,6 +95,11 @@ declared operation. Sealed renderer paths are metadata for the interface
 prototype. The host checks activation and caller authority before listing
 operation-backed contributions.
 
+A replayable job can return a typed park result. The server commits the
+checkpoint and signal wait and later supplies the first accepted signal
+in the resumed invocation. The worker transport uses the same invoke and
+complete frames. See [durable job waits](../../docs/plugin-api.md#durable-job-waits).
+
 A worker can declare `read_setting_v1` to read an effective setting from its
 own manifest in the invocation's space. The normal broker effect and delivery
 checks apply. The manager API handles overrides and offline conflicts.

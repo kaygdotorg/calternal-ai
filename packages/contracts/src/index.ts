@@ -374,6 +374,10 @@ space_id: string | null,
  */
 thread_id: string | null,
 /**
+ * Job UUID for a plugin wait addressed to this person.
+ */
+job_id?: string,
+/**
  * Question, approval or trusted secret prompt.
  */
 detail: RequestDetail, };
@@ -683,7 +687,7 @@ cursor?: string,
  */
 limit?: number, };
 /**
- * Read one manifest-declared setting as a Manager of the addressed space.
+ * Address one manifest-declared setting in an accessible space.
  */
 
 export type PluginSettingAddress = {
@@ -728,6 +732,86 @@ value: unknown,
  * Explicit conflict resolution echoes every alternative the caller saw.
  */
 resolve?: Array<unknown>, };
+/**
+ * Last observed state of an installed package in one space.
+ */
+
+export type PluginReadiness = "disabled" | "unavailable" | "not_started" | "ready" | "failed";
+/**
+ * One caller-safe runtime failure from this space.
+ */
+
+export type PluginRuntimeFailure = {
+/**
+ * Operation attempted, when the failure belongs to an invocation.
+ */
+operation: string | null,
+/**
+ * Stable reason code without private input or output values.
+ */
+reason: string,
+/**
+ * When the host observed the failure, in Unix milliseconds.
+ */
+at_ms: number, };
+/**
+ * Installed-package diagnostics exposed to authorized space managers.
+ */
+
+export type PluginDiagnostics = {
+/**
+ * Explicit space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Revision inspected by this read.
+ */
+revision: number,
+/**
+ * Last observed readiness in this space.
+ */
+readiness: PluginReadiness,
+/**
+ * Caller-safe reason when the package is unavailable or failed.
+ */
+reason: string | null,
+/**
+ * Up to eight recent failures, newest first.
+ */
+recent_errors: Array<PluginRuntimeFailure>,
+/**
+ * Up to 4 KiB from the last failed worker's own stderr in this space.
+ */
+stderr_tail: string | null, };
+/**
+ * Replace the caller's override if their observed value still matches.
+ */
+
+export type PluginPersonalSettingEdit = {
+/**
+ * Space UUID.
+ */
+space_id: string,
+/**
+ * Installed package ID.
+ */
+plugin_id: string,
+/**
+ * Personal setting key in that package's manifest.
+ */
+key: string,
+/**
+ * Last observed override. Null means no override.
+ */
+base: unknown,
+/**
+ * New override. Null restores the manifest default.
+ */
+value: unknown, };
 /**
  * Current values for a setting. The worker receives only its effective value.
  */
@@ -833,6 +917,11 @@ export type ManifestHookMode = "watch" | "block";
  */
 
 export type ManifestSettingType = "string" | "boolean" | "number";
+/**
+ * Owner of an override for a declared plugin setting.
+ */
+
+export type ManifestSettingScope = "personal" | "space";
 /**
  * Placement inside a space userdata tree; hidden files belong to the declaring plugin.
  */
@@ -1246,10 +1335,14 @@ id: string,
  */
 operation: string, };
 /**
- * Typed space setting; secrets use separate handles.
+ * Typed plugin setting; secrets use separate handles.
  */
 
 export type ManifestSetting = {
+/**
+ * Override owner. Omission selects the shared space setting.
+ */
+scope?: ManifestSettingScope,
 /**
  * Stable setting identifier.
  */
@@ -1494,6 +1587,27 @@ generation: number,
  * Validated declaration; it conveys no authority to dispatch or mount code.
  */
 contribution: PluginSlotContribution, };
+/**
+ * Latest authorized projection for one package-owned slot on its live stream.
+ */
+
+export type OwnedSlotUpdate = {
+/**
+ * Space UUID whose slot is being followed.
+ */
+space_id: string,
+/**
+ * Package-qualified slot requested when opening the stream.
+ */
+target: OwnedPluginSlotId,
+/**
+ * Whether the recipient can still use the declared slot.
+ */
+active: boolean,
+/**
+ * Current visible contributions in declaration priority order.
+ */
+contributions: Array<ResolvedPluginSlot>, };
 /**
  * Worker request to sanitize an exact stored content revision. Authority
  * comes from invocation admission and the plugin's content declaration.
@@ -2054,6 +2168,19 @@ export type JobInput = {
  */
 job_id: string, };
 /**
+ * Public summary of a parked plugin job with no signal payload or credentials.
+ */
+
+export type JobWait = {
+/**
+ * Why the job is waiting, supplied by the worker at the checkpoint.
+ */
+reason: string,
+/**
+ * Unix milliseconds when the wait ends if no signal arrives.
+ */
+deadline_ms: number, };
+/**
  * What a client may see of a job: its durable record, never its stream.
  */
 
@@ -2079,6 +2206,10 @@ state: JobState,
  */
 parent_id?: string,
 /**
+ * Public summary while a plugin job waits for a signal.
+ */
+wait?: JobWait,
+/**
  * Last durable checkpoint written by the plugin, or null.
  */
 checkpoint: unknown,
@@ -2087,7 +2218,7 @@ checkpoint: unknown,
  */
 checkpoint_seq: bigint,
 /**
- * Final result of a `done` job, or null.
+ * Final result, a caller-safe wait rejection, or null.
  */
 result: unknown, };
 /**
