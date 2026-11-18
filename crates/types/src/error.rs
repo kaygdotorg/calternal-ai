@@ -66,6 +66,20 @@ pub struct Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
+    /// Describe an invalid input field without including any submitted value.
+    /// Bounds and escapes the caller-visible JSON pointer. Cost is bounded by
+    /// the length of the returned diagnostic.
+    pub fn input_field(pointer: &str, expectation: &str) -> Self {
+        let path: String = pointer
+            .chars()
+            .take(160)
+            .flat_map(char::escape_debug)
+            .collect();
+        let label = if path.is_empty() { "/" } else { &path };
+        Self::invalid_input(format!("Input {label}: {expectation}.")).with_details(
+            serde_json::json!({"reason":"input_schema","path":label,"expected":expectation}),
+        )
+    }
     /// A classified error with a caller-safe message and no details.
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         Self {

@@ -7,6 +7,7 @@
 //! enforce CPU/memory/deadline limits and kill unresponsive cancelled workers.
 //! Host brokers must recheck current authority at every effect and delivery boundary.
 mod bounded;
+mod input_diagnostics;
 mod registry;
 mod runtime;
 mod slots;

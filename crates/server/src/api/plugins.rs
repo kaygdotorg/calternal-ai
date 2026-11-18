@@ -19,14 +19,21 @@ pub(super) fn plugin_state(
 /// string. Every other property is checked by the declared input schema before the
 /// worker sees it. Cost: O(1) map lookups.
 pub(super) fn validate_item_input(input: &JsonObject, field: &str) -> Result<(), Error> {
-    let shape = Error::invalid_input("input does not match operation schema");
     if !input
         .get(field)
         .and_then(Value::as_str)
         .is_some_and(|id| !id.is_empty() && id.len() <= 128)
-        || input.get("space_id").is_some_and(|v| !v.is_string())
     {
-        return Err(shape);
+        return Err(Error::input_field(
+            &format!("/{field}"),
+            "expected a nonempty item ID string of at most 128 bytes",
+        ));
+    }
+    if input.get("space_id").is_some_and(|v| !v.is_string()) {
+        return Err(Error::input_field(
+            "/space_id",
+            "expected a space UUID string",
+        ));
     }
     Ok(())
 }
@@ -35,9 +42,7 @@ pub(super) fn validate_item_input(input: &JsonObject, field: &str) -> Result<(),
 pub(super) fn outcome_value(outcome: Outcome) -> Result<Value, Error> {
     match outcome {
         Outcome::Complete(value) => Ok(value),
-        Outcome::InvalidInput => Err(Error::invalid_input(
-            "input does not match operation schema",
-        )),
+        Outcome::InvalidInput(error) => Err(error),
         Outcome::Refused => Err(Error::unavailable("extension request was refused")),
         Outcome::Failed(e) => Err(e),
         Outcome::Cancelled => Err(Error::unavailable("extension request was cancelled")),
@@ -98,8 +103,9 @@ pub(super) async fn invoke_plugin<D: Directory>(
     let space = match input.remove("space_id") {
         Some(Value::String(space)) => space_of(&space)?,
         _ => {
-            return Err(Error::invalid_input(
-                "input does not match operation schema",
+            return Err(Error::input_field(
+                "/space_id",
+                "expected a space UUID string",
             ));
         }
     };

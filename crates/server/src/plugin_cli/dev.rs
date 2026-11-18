@@ -4,6 +4,7 @@ use calternal_cli::output::Output;
 use calternal_types::{AccountId, SpaceId};
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     fs,
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime},
@@ -14,20 +15,68 @@ pub(crate) struct Args {
     /// Source directory created by calternal plugin new.
     dir: PathBuf,
     /// Protected appdata directory of the running development server.
-    #[arg(long)]
-    appdata: PathBuf,
+    #[arg(long, env = "APPDATA", num_args = 0..=1, default_missing_value = "")]
+    appdata: Option<OsString>,
     /// Development space UUID.
-    #[arg(long)]
-    space: SpaceId,
+    #[arg(long, env = "SPACE_ID", num_args = 0..=1, default_missing_value = "")]
+    space: Option<OsString>,
     /// Enrolled account with access to manage plugins in that space.
-    #[arg(long)]
-    account: AccountId,
+    #[arg(long, env = "ACCOUNT_ID", num_args = 0..=1, default_missing_value = "")]
+    account: Option<OsString>,
     /// Activate one build and exit.
     #[arg(long)]
     once: bool,
 }
 
-fn activate(args: &Args) -> Result<Reply, CliError> {
+struct Draft {
+    dir: PathBuf,
+    appdata: PathBuf,
+    space: SpaceId,
+    account: AccountId,
+    once: bool,
+}
+
+fn draft(args: Args) -> Result<Draft, CliError> {
+    let hint = "Source your development server's env file in this shell, or pass --appdata, --space and --account explicitly.";
+    let appdata = args
+        .appdata
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            CliError::usage(
+                "Pass --appdata PATH or set APPDATA to the development server's appdata directory.",
+            )
+            .hint(hint)
+        })?;
+    let space = args
+        .space
+        .as_deref()
+        .and_then(|value| value.to_str())
+        .and_then(|value| SpaceId::parse(value).ok())
+        .ok_or_else(|| {
+            CliError::usage("Pass --space UUID or set SPACE_ID to the development space UUID.")
+                .hint(hint)
+        })?;
+    let account = args
+        .account
+        .as_deref()
+        .and_then(|value| value.to_str())
+        .and_then(|value| AccountId::parse(value).ok())
+        .ok_or_else(|| {
+            CliError::usage(
+                "Pass --account UUID or set ACCOUNT_ID to the development account UUID.",
+            )
+            .hint(hint)
+        })?;
+    Ok(Draft {
+        dir: args.dir,
+        appdata: appdata.into(),
+        space,
+        account,
+        once: args.once,
+    })
+}
+
+fn activate(args: &Draft) -> Result<Reply, CliError> {
     let start = Instant::now();
     check(&args.dir)?;
     let script = fs::File::open(args.dir.join("package.json")).map_err(local)?;
@@ -72,6 +121,10 @@ fn activate(args: &Args) -> Result<Reply, CliError> {
 }
 
 pub(super) fn run(args: Args, out: &Output) -> i32 {
+    let args = match draft(args) {
+        Ok(args) => args,
+        Err(error) => return out.finish(Err(error)),
+    };
     if args.once {
         return out.finish(activate(&args));
     }

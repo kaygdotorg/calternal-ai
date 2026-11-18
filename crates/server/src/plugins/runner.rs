@@ -208,6 +208,10 @@ async fn execute<D: Directory>(
     Ok(match outcome {
         Outcome::Cancelled => None,
         Outcome::Complete(value) => Some(end_of(value)),
+        Outcome::InvalidInput(error) => {
+            tracing::warn!(plugin = %job.plugin, operation = %job.operation, reason = %error.message, "job run input rejected");
+            Some(RunEnd::Failed)
+        }
         _ => Some(RunEnd::Failed),
     })
 }

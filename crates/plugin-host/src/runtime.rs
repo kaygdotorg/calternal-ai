@@ -230,6 +230,17 @@ impl CompiledSchemas {
             .map(Self)
     }
 }
+/// Worker admission failure before any callback or worker effect.
+#[derive(Debug, PartialEq, thiserror::Error)]
+pub enum InvokeError {
+    /// The input violated the declared schema. The diagnostic omits submitted values.
+    #[error("{0}")]
+    Input(calternal_types::Error),
+    /// The invocation failed a protocol, queue or authority check.
+    #[error(transparent)]
+    Protocol(#[from] Error),
+}
+
 /// Long-lived worker session pinned to one manifest version and one space.
 /// A process adapter routes frames, drains both bounded queues and enforces deadlines.
 pub struct WorkerSession {
@@ -271,26 +282,34 @@ impl WorkerSession {
         input: Value,
         authority: Authority,
         broker: &mut impl HostBroker,
-    ) -> Result<(), Error> {
+    ) -> Result<(), InvokeError> {
         if self.outgoing.len() >= MAX_QUEUE
             || self.active.len() >= MAX_IN_FLIGHT
             || self.seen.len() >= 4096
         {
-            return Err(Error::BackPressure);
+            return Err(Error::BackPressure.into());
         }
         if self.seen.contains(&id)
             || authority.space_id != self.space
             || authority.account_id.as_uuid() == self.space.as_uuid()
             || authority.grant.is_empty()
             || authority.grant.len() > 256
-            || !self
-                .schemas
-                .0
-                .get(&operation)
-                .is_some_and(|(input_schema, _)| input_schema.is_valid(&input))
         {
-            return Err(Error::Invalid);
+            return Err(Error::Invalid.into());
         }
+        let declaration = self
+            .manifest
+            .operations
+            .iter()
+            .find(|op| op.id == operation)
+            .ok_or(Error::Invalid)?;
+        let (schema, _) = self.schemas.0.get(&operation).ok_or(Error::Invalid)?;
+        schema.validate(&input).map_err(|error| {
+            InvokeError::Input(crate::input_diagnostics::invalid_input(
+                &error,
+                &declaration.input_schema,
+            ))
+        })?;
         let frame = Frame {
             protocol_version: 2,
             invocation_id: id.clone(),
@@ -301,15 +320,9 @@ impl WorkerSession {
             },
         };
         check_frame(&frame)?;
-        let required = self
-            .manifest
-            .operations
-            .iter()
-            .find(|op| op.id == operation)
-            .ok_or(Error::Invalid)?
-            .required_capability;
+        let required = declaration.required_capability;
         if !broker.authorize_pinned(&authority, required) {
-            return Err(Error::Refused);
+            return Err(Error::Refused.into());
         }
         self.seen.insert(id.clone());
         self.active.insert(
