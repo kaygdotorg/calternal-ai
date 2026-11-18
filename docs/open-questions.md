@@ -2,19 +2,13 @@
 
 Decisions waiting on kayg, most blocking first. Answer here or in chat; answered items
 move to the decision record they belong to and leave this list. Terms: see
-[glossary](glossary.md). Updated 2026-11-19 15:40 IST.
+[glossary](glossary.md). Updated 2026-11-19 16:30 IST.
 
 ## Waiting now
 
 | # | Question | Recommendation | Area |
 | --- | --- | --- | --- |
-| 59 | Hosted accounts have passkeys and no email: how someone gets back in after losing every passkey | Recovery codes shown once at sign-up, plus a prompt to add a second passkey | Accounts |
-| 60 | How people join the hosted service: open sign-up with a plan, invitation only, or a waiting list | Invitation only until billing exists | Hosted |
-| 61 | What a push notification shows on a lock screen | Thread title and "needs you", never message text | Notifications |
-| 62 | Crash and usage reporting | Crash reports to our own server, opt-out; no usage analytics | Privacy |
-| 63 | Who reviews plugins before they appear in the gallery | Automated checks plus kayg's approval at first | Plugins |
-| 64 | Agent memory across threads | A memory plugin later, Honcho-compatible; nothing built in | Agents |
-| 31 | Thread rows on touch: what a long press does, now that rows are one line | The same menu as the three dots | Threads |
+| 63 | Where the plugin gallery lives: calternal.com/plugins or plugins.calternal.com | calternal.com/plugins | Plugins |
 | 10 | Native font: system or Google Sans Flex | Decide after seeing both on a Mac and an iPhone | Native apps |
 
 ## In progress, no decision needed
@@ -27,6 +21,7 @@ move to the decision record they belong to and leave this list. Terms: see
 
 ## Recently decided (2026-11-17), now in the decision records
 
+- Accounts and hosting (2026-11-19, reversing the earlier "no email"): an account has a username and an email address, both asked in onboarding; a second passkey is prompted; recovery codes are shown at sign-up; passkeys stay the only way to sign in. The hosted service is invitation only until billing exists. A push shows the thread's title and that it needs you or finished, never message text. Crash reports go to our own server with a switch, and there is no usage analytics. Plugins are submitted through a separate public repository with a process an agent can follow, itself explained by a plugin (calternal-plugin-submission-guide), with automated checks and kayg's approval at first. Agent memory is never part of the core: a Honcho plugin first, a popular wiki-style one may follow. A long press on a row shows a preview with the row's menu beneath it, as Apple Notes and the existing app do, as one shared component.
 - Shared spaces (2026-11-19): the Owner or a Manager sets up a shared space's machine and signs in once, and every member's turns there use it; any login the Owner chooses is allowed, with a plain notice that a personal subscription is licensed to one person; a turn uses the Owner's plan hours; a member may switch their own turns to their own machine and login. Personal spaces stay per person. Threads and subagents start freely while the sandbox has memory to spare and wait when it is short, with no fixed count. Live voice uses the ChatGPT subscription, not an API key.
 - 2026-11-19 afternoon: plans are $20 (2 GiB, 150 h), $50 (4 GiB, 400 h), $100 (4 GiB, 750 h) and $200 (8 GiB, 1,500 h); the canvas becomes the default, kept behind a clean boundary so it can become a shell plugin, with a switch back in Settings; no separate limit on subagents beyond a person's compute; native apps after the web app is solid, iPhone first; mail starts with reading; voice input (speech to text and live voice) comes first once the plugin API is stable; in shared spaces the machine and provider login are configured per space, not per person.
 - Automations (2026-11-19): a run uses the authority of the person who made the automation, on their machine or sandbox; a run missed because the machine was off happens once when it is back if it is still the same day, otherwise it is skipped and says so; its permission mode is what the person configured, Approve for me by default.
