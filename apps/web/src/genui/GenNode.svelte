@@ -67,7 +67,7 @@
   </label>
 {:else if type === "Choice"}
   <!-- The shared selection switcher (packages/ui Selector: a capsule that stretches to the new choice), so a plugin's Choice looks and moves like the app's own controls. -->
-  <Selector label={String(p.label ?? "")} fill={false} options={p.options.map((o) => { const x = opt(o); return { value: x.value, label: x.label }; })} value={bind?.value == null ? null : String(bind.value)} onchange={(v) => host.set(bind!.name, v)} />
+  <Selector label={String(p.label ?? "")} fill={false} options={p.options.map((o: unknown) => { const x = opt(o); return { value: x.value, label: x.label }; })} value={bind?.value == null ? null : String(bind.value)} onchange={(v) => host.set(bind!.name, v)} />
 {:else if type === "Radio"}
   <div class="field" role="radiogroup" aria-labelledby="{id}-r"><span id="{id}-r">{p.label}</span>
     <div class="radios">{#each p.options as o}{@const x = opt(o)}<button type="button" role="radio" aria-checked={String(bind?.value) === x.value} onclick={() => host.set(bind!.name, x.value)}><b>{x.label}</b>{#if x.detail}<small>{x.detail}</small>{/if}</button>{/each}</div>

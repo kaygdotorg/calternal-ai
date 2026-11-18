@@ -7,6 +7,7 @@
 import type { Snippet } from "svelte";
 import type { SpringConfig } from "../../lib/spring-engine";
 
+/** One choice of a Selector: its `value`, the `label` (always its accessible name), an optional icon, and whether it is disabled (with a `hint` saying why). */
 export type SelectorOption<T> = {
   value: T;
   label: string;
@@ -18,9 +19,12 @@ export type SelectorOption<T> = {
   hint?: string;
 };
 
+/** The capsule's two edges, in px from the track's left. */
 export type Edges = { left: number; right: number };
 
+/** The spring of the edge the capsule is moving toward: quick, so it leads. */
 export const LEAD: SpringConfig = { damping: 0.86, response: 0.26 };
+/** The spring of the edge that catches up: softer, so the capsule stretches and then gathers itself. */
 export const TRAIL: SpringConfig = { damping: 0.92, response: 0.42 };
 
 /** Which edge leads from the capsule's current place to the target, or null if it stays put. */

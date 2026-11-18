@@ -8,6 +8,7 @@
 
 import { adaptive, scheduleMaterial } from "./material";
 
+/** Which side of its trigger a tooltip prefers. */
 export type Side = "top" | "bottom" | "left" | "right";
 /** What a tooltip says: the label, an optional shortcut (written the Mac way), and the preferred side. */
 export type Tip = { label: string; kbd?: string; side?: Side };
