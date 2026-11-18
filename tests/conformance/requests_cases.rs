@@ -68,7 +68,12 @@ impl Machine {
         self.connect_sized(f, backend, None).await
     }
 
-    pub(super) async fn connect_sized(&mut self, f: &Fixture, backend: &str, memory_mib: Option<u32>) -> String {
+    pub(super) async fn connect_sized(
+        &mut self,
+        f: &Fixture,
+        backend: &str,
+        memory_mib: Option<u32>,
+    ) -> String {
         let challenge = f
             .machine(
                 "/api/v1/machine/session/start",
@@ -93,7 +98,12 @@ impl Machine {
         self.sync_with_slots(f, discards, 2).await
     }
 
-    pub(super) async fn sync_with_slots(&mut self, f: &Fixture, discards: Value, slots: u32) -> Vec<Value> {
+    pub(super) async fn sync_with_slots(
+        &mut self,
+        f: &Fixture,
+        discards: Value,
+        slots: u32,
+    ) -> Vec<Value> {
         let r = f.machine("/api/v1/machine/sync",Some(&self.token),json!({
             "ack":self.ack,"capacity":{"cpus":1,"memory_bytes":0,"max_sandboxes":slots,"running_sandboxes":0},
             "draining":false,"leases":self.leases,"discards":discards,
