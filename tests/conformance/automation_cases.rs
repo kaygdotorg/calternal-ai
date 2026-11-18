@@ -1,5 +1,6 @@
 //! Creator authority, readable automation schedules, and portable skill bundles.
 use super::*;
+mod crashes;
 
 pub(super) fn foreign_cases(foreign: &str, missing: &str) -> Vec<(&'static str, Value, Value)> {
     let skill = "---\nname: review\ndescription: Review a document.\n---\nReview it.";
@@ -226,6 +227,17 @@ async fn a_replayed_manual_run_has_one_thread_and_lost_access_stops_it() {
         )
         .await,
     );
+    let upcoming = data(
+        f.op(
+            1,
+            "automations.create",
+            json!({
+                "space_id":space,"name":"Next review","prompt":"Read the next status.",
+                "schedule_text":words,"schedule":p["schedule"],"timezone":p["timezone"],
+            }),
+        )
+        .await,
+    );
     let input = json!({"space_id":space,"id":a["id"]});
     let start = async {
         tokio::time::timeout(Duration::from_secs(4), async {
@@ -285,6 +297,22 @@ async fn a_replayed_manual_run_has_one_thread_and_lost_access_stops_it() {
             .unwrap()
             .contains("no longer")
     );
+    let list = data(f.op(1, "automations.list", json!({"space_id":space})).await);
+    let entries = list["automations"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    let paused = entries.iter().find(|item| item["id"] == a["id"]).unwrap();
+    let scheduled = entries
+        .iter()
+        .find(|item| item["id"] == upcoming["automation"]["id"])
+        .unwrap();
+    assert_eq!(paused["last"], stopped["last"]);
+    assert_eq!(paused["next_run_ms"], Value::Null);
+    assert_eq!(scheduled["last"], Value::Null);
+    assert_eq!(
+        scheduled["next_run_ms"],
+        upcoming["automation"]["next_run_ms"]
+    );
+    assert!(scheduled["next_run_ms"].is_i64());
     let (status, _) = agent(
         &f,
         &token,

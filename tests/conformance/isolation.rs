@@ -2780,6 +2780,15 @@ const MACHINE_ROUTES: &[(&str, &str)] = &[
 impl Fixture {
     /// Machine-protocol request with an optional machine bearer and no cookie.
     async fn machine(&self, path: &str, bearer: Option<&str>, body: Value) -> Answer {
+        self.try_machine(path, bearer, body).await.unwrap()
+    }
+
+    async fn try_machine(
+        &self,
+        path: &str,
+        bearer: Option<&str>,
+        body: Value,
+    ) -> Result<Answer, reqwest::Error> {
         let mut r = self
             .client
             .post(format!("{}{path}", self.base))
@@ -2788,15 +2797,15 @@ impl Fixture {
         if let Some(b) = bearer {
             r = r.bearer_auth(b);
         }
-        let r = r.send().await.unwrap();
+        let r = r.send().await?;
         let status = r.status().as_u16();
-        let text = r.text().await.unwrap();
-        Answer {
+        let text = r.text().await?;
+        Ok(Answer {
             status,
             body: serde_json::from_str(&text).unwrap_or(json!({"raw":text})),
             headers: BTreeMap::new(),
             micros: 0,
-        }
+        })
     }
 }
 

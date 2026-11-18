@@ -71,7 +71,7 @@ impl Definition {
 
     fn record(
         &self,
-        state: &crate::store::Store,
+        status: scheduling::Status,
         summary: &Summary,
         caller: AccountId,
         zone: &str,
@@ -79,7 +79,6 @@ impl Definition {
     ) -> Result<AutomationRecord, Error> {
         let schedule = Schedule::from_expression(&self.schedule)
             .ok_or_else(|| Error::unavailable("unsupported calendar expression"))?;
-        let status = scheduling::status(state, summary.space, summary.id)?;
         let is_creator = self.creator == caller;
         Ok(AutomationRecord {
             id: summary.id.to_string(),
@@ -184,9 +183,11 @@ pub(super) fn dispatch<D: Directory>(
     let content = state.store.content();
     if op == "automations.list" {
         let mut automations = Vec::new();
+        let mut statuses = scheduling::statuses(&state.store, space)?;
         for row in content.list(space, KIND, MAX_DEFINITIONS)? {
             let definition = Definition::read(row.metadata.clone())?;
-            automations.push(definition.record(&state.store, &row, who.id, &zone, None)?);
+            let status = statuses.remove(&row.id.to_string()).unwrap_or_default();
+            automations.push(definition.record(status, &row, who.id, &zone, None)?);
         }
         return Ok(json!(AutomationList { automations }));
     }
@@ -207,7 +208,7 @@ pub(super) fn dispatch<D: Directory>(
         )?;
         let (definition, prompt) = Definition::from_item(&item)?;
         let record = definition.record(
-            &state.store,
+            scheduling::status(&state.store, space, item.id)?,
             &summarize(&state.store, &item)?,
             who.id,
             &zone,
@@ -417,7 +418,7 @@ fn complete<D: Directory>(
     scheduling::register(&state.store, &item, &definition)?;
     Ok(json!(AutomationResult {
         automation: definition.record(
-            &state.store,
+            scheduling::status(&state.store, space, item.id)?,
             &summarize(&state.store, &item)?,
             account,
             zone,

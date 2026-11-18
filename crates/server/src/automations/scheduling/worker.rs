@@ -290,7 +290,13 @@ fn enqueue_due<D: Directory>(
             params![space_key, id, schedule.next(&d.timezone, latest), latest],
         )
         .map_err(db_error)?;
+        if today {
+            crate::fault::hit(crate::fault::FaultPoint::AutomationBeforeQueueCommit);
+        }
         tx.commit().map_err(db_error)?;
+        if today {
+            crate::fault::hit(crate::fault::FaultPoint::AutomationAfterQueueCommit);
+        }
     }
     Ok(())
 }

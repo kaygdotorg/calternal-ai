@@ -40,19 +40,22 @@ pub(crate) async fn admit<D: Directory>(
                 ));
             }
             Err(error) if error.code == calternal_types::ErrorCode::NotFound => {
-                operations::apply(
-                    &st,
-                    &who,
-                    space,
-                    "threads.create",
-                    &format!("{send}/create"),
-                    &create,
-                    None,
-                    &audit,
-                )?;
+                crate::fault::automation_content("thread", || {
+                    operations::apply(
+                        &st,
+                        &who,
+                        space,
+                        "threads.create",
+                        &format!("{send}/create"),
+                        &create,
+                        None,
+                        &audit,
+                    )
+                })?;
             }
             Err(error) => return Err(error),
         }
+        crate::fault::hit(crate::fault::FaultPoint::AutomationAfterThread);
         let input = JsonObject::from([
             ("message".into(), json!(prompt)),
             ("mode".into(), json!(mode)),
@@ -62,18 +65,21 @@ pub(crate) async fn admit<D: Directory>(
                 json!({"id":run,"automation":automation,"scheduled":scheduled,"timezone":zone}),
             ),
         ]);
-        operations::apply(
-            &st,
-            &who,
-            space,
-            "threads.send",
-            &send,
-            &input,
-            Some(run),
-            &audit,
-        )
+        crate::fault::automation_content("prompt", || {
+            operations::apply(
+                &st,
+                &who,
+                space,
+                "threads.send",
+                &send,
+                &input,
+                Some(run),
+                &audit,
+            )
+        })
     })
     .await?;
+    crate::fault::hit(crate::fault::FaultPoint::AutomationAfterPrompt);
     let thread = target["thread"]["id"]
         .as_str()
         .ok_or_else(|| Error::internal("missing saved thread"))?;
@@ -102,5 +108,6 @@ pub(crate) async fn admit<D: Directory>(
         target["intent"].clone(),
     )
     .await?;
+    crate::fault::hit(crate::fault::FaultPoint::AutomationAfterAdmission);
     Ok((thread.into(), job.id))
 }
