@@ -44,7 +44,7 @@
   const panelWidth = () => rightEl?.getBoundingClientRect().width ?? innerWidth * 0.9;
   const sideWidth = (side: Side) => (side === "left" ? sideEl : rightEl)?.firstElementChild?.getBoundingClientRect().width ?? 0;
   const settling = (el: Element | undefined) => !!el?.getAnimations().some((a) => (a as CSSTransition).transitionProperty === "transform" && a.playState === "running");
-  const state = () => ({ leftOpen: shell.sidebarOpen, rightOpen, hasRight });
+  const openness = () => ({ leftOpen: shell.sidebarOpen, rightOpen, hasRight });
   const moving = (el: Element | undefined) => !!el?.getAnimations().some((a) => a.playState === "running" && (a as Animation & { id: string }).id === "pull");
   /** The sheet motion tokens as an animation's timing. */
   const sheet = () => { const cs = getComputedStyle(document.documentElement); const ms = parseFloat(cs.getPropertyValue("--dur-sheet")); return { duration: Number.isFinite(ms) ? ms : 340, easing: cs.getPropertyValue("--ease-sheet").trim() || "ease-out", id: "pull" }; };
@@ -53,7 +53,7 @@
     if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return false; // not yet a horizontal gesture
     const dir = dx > 0 ? 1 : -1;
     if (leavesAlone(gtarget, dir, false)) { gskip = true; return false; }
-    const t = pickTarget(dir, state());
+    const t = pickTarget(dir, openness());
     if (!t) { gskip = true; return false; }
     tgt = t;
     if (shell.narrow) {
@@ -154,7 +154,7 @@
   function wheel(e: WheelEvent) {
     if (shell.narrow || e.ctrlKey) return;
     const r = ws.feed(e, (dir) => {
-      const t = pickTarget(dir, state());
+      const t = pickTarget(dir, openness());
       if (!t || leavesAlone(e.target as Element, dir, false)) return false;
       tgt = t;
       const w = sideWidth(t.side);
