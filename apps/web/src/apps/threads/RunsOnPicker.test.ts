@@ -10,7 +10,7 @@ describe("where-it-runs picker", () => {
   it("marks the current machine and mode, and says what the mode means", () => {
     render(RunsOnPicker, { machines, value: { machine: "dev-01", mode: "sandboxed" }, onchange() {} });
     expect(screen.getByRole("radio", { name: "dev-01" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Sandboxed" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Sandboxed" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText(/own sandbox/)).toBeTruthy();
   });
   it("changing the machine keeps the mode and changing the mode keeps the machine", async () => {
@@ -18,7 +18,7 @@ describe("where-it-runs picker", () => {
     render(RunsOnPicker, { machines, value: { machine: "dev-02", mode: "direct" }, onchange });
     await userEvent.click(screen.getByRole("radio", { name: "laptop" }));
     expect(onchange).toHaveBeenLastCalledWith({ machine: "laptop", mode: "direct" });
-    await userEvent.click(screen.getByRole("radio", { name: "Sandboxed" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Sandboxed" }));
     expect(onchange).toHaveBeenLastCalledWith({ machine: "dev-02", mode: "sandboxed" });
   });
   it("direct warns that there is no sandbox", () => {

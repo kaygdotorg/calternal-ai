@@ -55,7 +55,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     await userEvent.click(within(list).getByRole("radio", { name: /Inter/ }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/server downloads and stores it/);
     expect(appearance.prefs.fonts.chat.family).toBe("Google Sans Flex");
-    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+    await userEvent.click(screen.getByRole("tab", { name: "System" }));
     await userEvent.click(await within(screen.getByRole("radiogroup", { name: "Chat font" })).findByRole("radio", { name: /System/ }));
     expect(appearance.prefs.fonts.chat).toEqual({ family: "System", source: "system" });
   });
@@ -65,7 +65,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     await userEvent.click(screen.getByRole("button", { name: /Code/ }));
     const list = await screen.findByRole("radiogroup", { name: "Code font" });
     await within(list).findByRole("radio", { name: /Maple Mono/ });
-    await userEvent.click(screen.getByRole("radio", { name: "Google" }));
+    await userEvent.click(screen.getByRole("tab", { name: "Google" }));
     await within(await screen.findByRole("radiogroup", { name: "Code font" })).findByRole("radio", { name: /JetBrains Mono/ });
     expect(within(list).queryByRole("radio", { name: /Lora/ })).toBeNull();
   });
