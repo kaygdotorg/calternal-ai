@@ -349,7 +349,7 @@ impl MachineService {
             .is_some_and(|live| {
                 live.harness_protocol
                     && !live.direct
-                    && (live.thread_limit.is_some() && !live.kvm_fallback) == guest
+                    && (live.guest_memory_mib.is_some() && !live.kvm_fallback) == guest
             });
         if !matches {
             return Err(Error::unavailable(

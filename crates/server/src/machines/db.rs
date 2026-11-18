@@ -460,23 +460,19 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
     const CURRENT: Schema<'static> = Schema::new("machines.db", 6, &[SCHEMA], MACHINE_CHANGES);
     #[cfg(feature = "test-plugins")]
     if option_env!("CALTERNAL_RELEASE_TEST_MIGRATION") == Some("v7") {
-        const FIXTURE: Schema<'static> = Schema::new(
-            "machines.db",
-            6,
-            &[SCHEMA],
-            &[
-                MACHINE_CHANGES[0],
-                MACHINE_CHANGES[1],
-                MACHINE_CHANGES[2],
-                MACHINE_CHANGES[3],
-                MACHINE_CHANGES[4],
-                MACHINE_CHANGES[5],
-                (
-                    13,
-                    "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
-                ),
-            ],
-        );
+        const FIXTURE_CHANGES: &[(i64, &str)] = &[
+            MACHINE_CHANGES[0],
+            MACHINE_CHANGES[1],
+            MACHINE_CHANGES[2],
+            MACHINE_CHANGES[3],
+            MACHINE_CHANGES[4],
+            MACHINE_CHANGES[5],
+            (
+                13,
+                "CREATE TABLE upgrade_fixture (id INTEGER PRIMARY KEY) STRICT;",
+            ),
+        ];
+        const FIXTURE: Schema<'static> = Schema::new("machines.db", 6, &[SCHEMA], FIXTURE_CHANGES);
         return FIXTURE;
     }
     CURRENT
