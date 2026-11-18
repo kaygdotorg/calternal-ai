@@ -73,6 +73,7 @@ const MATRIX: &[(&str, Capability, [bool; 4])] = &[
     ),
 ];
 const TOKEN: &str = "matrix-token";
+const OTHER_TOKEN: &str = "matrix-other-token";
 
 /// Reader, Editor, Manager and Owner, as auth.db seeds them (schema.sql); written
 /// out here as independent expectations.
@@ -110,6 +111,7 @@ fn roles() -> [CapabilitySet; 4] {
 
 struct MutableDirectory {
     identity: Identity,
+    other_identity: Identity,
     space: SpaceId,
     grants: Mutex<Option<CapabilitySet>>,
     session_valid: AtomicBool,
@@ -119,6 +121,9 @@ impl MutableDirectory {
     fn new(role: u8) -> Self {
         Self {
             identity: Identity {
+                id: AccountId::new(),
+            },
+            other_identity: Identity {
                 id: AccountId::new(),
             },
             space: SpaceId::new(),
@@ -142,8 +147,13 @@ impl MutableDirectory {
 
 impl Directory for MutableDirectory {
     fn authenticate(&self, token: &[u8]) -> Option<Identity> {
-        (token == TOKEN.as_bytes() && self.session_valid.load(Ordering::SeqCst))
-            .then_some(self.identity)
+        if token == TOKEN.as_bytes() && self.session_valid.load(Ordering::SeqCst) {
+            Some(self.identity)
+        } else if token == OTHER_TOKEN.as_bytes() {
+            Some(self.other_identity)
+        } else {
+            None
+        }
     }
 
     fn capabilities(&self, account: AccountId, space: SpaceId) -> Option<CapabilitySet> {

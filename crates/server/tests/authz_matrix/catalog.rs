@@ -1,6 +1,53 @@
 //! Independent operation inventory and capability declarations, separate from role/race cases.
 use super::*;
 
+// Independent account expectations; both rows are exercised by the real router.
+const ONBOARDING_MATRIX: &[(&str, bool)] =
+    &[("onboarding.state", false), ("onboarding.finish", true)];
+
+#[tokio::test]
+async fn onboarding_requires_a_session_and_uses_its_own_account() {
+    let fixture = Fixture::new(0, false).await;
+    let owner = fixture.state.directory.identity.id.to_string();
+    let other = fixture.state.directory.other_identity.id.to_string();
+
+    for &(op, finished) in ONBOARDING_MATRIX {
+        let (status, body) = fixture.call(None, "signed-out", op, json!({})).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{op}: {body}");
+        let (status, body) = fixture
+            .call(
+                Some(OTHER_TOKEN),
+                "target-owner",
+                op,
+                json!({"account_id": owner}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{op}: {body}");
+        let (status, body) = fixture
+            .call(
+                Some(TOKEN),
+                "target-other",
+                op,
+                json!({"account_id": other}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{op}: {body}");
+        let (status, body) = fixture.call(Some(TOKEN), "own", op, json!({})).await;
+        assert_eq!(status, StatusCode::OK, "{op}: {body}");
+        assert_eq!(body["data"], json!({"finished":finished}), "{op}");
+        let (status, body) = fixture
+            .call(
+                Some(OTHER_TOKEN),
+                "other-own",
+                "onboarding.state",
+                json!({}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["data"], json!({"finished":false}), "{op}");
+    }
+}
+
 #[tokio::test]
 async fn every_registered_operation_has_an_independent_matrix_row() {
     let fixture = Fixture::new(3, false).await;
@@ -70,6 +117,37 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
     ]
     .into_iter()
     .collect();
+    for &(op, mutates) in ONBOARDING_MATRIX {
+        assert!(
+            stored_rows.insert(op),
+            "duplicate onboarding operation {op}"
+        );
+        assert_eq!(
+            calternal_core::cached_operation(op).unwrap().mutates,
+            mutates,
+            "{op}"
+        );
+    }
+    // Owner-only installation policy is exercised in conformance/harness_admin_cases.rs.
+    for op in [
+        "harnesses.list",
+        "harnesses.stage",
+        "harnesses.activate",
+        "harnesses.rollback",
+    ] {
+        assert!(stored_rows.insert(op), "duplicate harness operation {op}");
+        assert_eq!(
+            fixture
+                .state
+                .registry
+                .snapshot()
+                .policy(op)
+                .unwrap()
+                .required,
+            Capability::ServerSettings,
+            "{op}"
+        );
+    }
     // Manual-turn controls are covered by provider_turns.rs and agent_cases conformance.
     stored_rows.extend(
         calternal_core::AGENT_OPERATIONS
@@ -202,6 +280,9 @@ async fn every_registered_operation_has_an_independent_matrix_row() {
         MATRIX.len() + stored_rows.len(),
         "duplicate policy"
     );
+    for &(op, _) in ONBOARDING_MATRIX {
+        assert_eq!(catalog.policy(op).unwrap().scope, Scope::Account, "{op}");
+    }
     // Threads require real durable jobs and protected authority. Their independent
     // Reader/Editor/Manager/Owner HTTP matrix is in conformance/threads_cases.rs.
     let threads = [

@@ -16,7 +16,7 @@ fn fresh_catalog_uses_operator_distribution_entries() {
         include_bytes!("../../../../../plugins/calternal-notes/manifest.json"),
     )
     .unwrap();
-    let registry = load(appdata.path(), Some(root), None).unwrap();
+    let registry = load(appdata.path(), Some(root), None, false).unwrap();
     let catalog = registry.snapshot();
     assert_eq!(catalog.plugins().len(), 1);
     assert!(
@@ -56,7 +56,7 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
     )
     .unwrap();
     drop(db);
-    load(root, None, None).unwrap();
+    load(root, None, None, false).unwrap();
 
     let cache = root.join("installed-plugin-workers");
     let current = cache.join(format!("{id}.2.js"));
@@ -66,7 +66,7 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
     let active_file = fs::File::open(&current).unwrap();
     let retained_file = fs::File::open(&retained).unwrap();
     fs::write(&stale, b"stale").unwrap();
-    load(root, None, None).unwrap();
+    load(root, None, None, false).unwrap();
     assert_eq!(
         fs::metadata(&current).unwrap().ino(),
         active_file.metadata().unwrap().ino()
@@ -80,7 +80,7 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
     let expected = package.worker.unwrap();
     fs::set_permissions(&current, fs::Permissions::from_mode(0o644)).unwrap();
     fs::write(&retained, b"corrupt cached worker").unwrap();
-    load(root, None, None).unwrap();
+    load(root, None, None, false).unwrap();
     for path in [&current, &retained] {
         assert_eq!(fs::read_to_string(path).unwrap(), expected);
         assert_eq!(fs::metadata(path).unwrap().mode() & 0o7777, 0o600);
@@ -95,13 +95,13 @@ fn startup_reuses_verified_current_and_retained_workers_and_prunes_stale_files()
     fs::set_permissions(&outside, fs::Permissions::from_mode(0o600)).unwrap();
     fs::remove_file(&current).unwrap();
     symlink(&outside, &current).unwrap();
-    load(root, None, None).unwrap();
+    load(root, None, None, false).unwrap();
     assert!(fs::symlink_metadata(&current).unwrap().is_file());
     assert_eq!(fs::read_to_string(&outside).unwrap(), expected);
 
     fs::remove_file(&current).unwrap();
     fs::hard_link(&outside, &current).unwrap();
-    load(root, None, None).unwrap();
+    load(root, None, None, false).unwrap();
     assert_ne!(
         fs::metadata(&current).unwrap().ino(),
         fs::metadata(&outside).unwrap().ino()
@@ -141,7 +141,7 @@ fn provider_registration_migrates_without_changing_installed_package() {
     let distribution = tempfile::tempdir().unwrap();
     fs::write(distribution.path().join("trusted-plugins.json"), b"invalid").unwrap();
     assert!(
-        load(dir.path(), Some(distribution.path()), None)
+        load(dir.path(), Some(distribution.path()), None, false)
             .unwrap()
             .snapshot()
             .get(&package.manifest.id)

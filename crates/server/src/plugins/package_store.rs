@@ -4,7 +4,12 @@ use calternal_core::ManifestV1;
 use calternal_plugin_host::{self as host, MAX_MANIFEST_BYTES};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
-use std::{fs, io::Read, path::Path, time::Duration};
+use std::{
+    fs,
+    io::Read,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 pub(crate) mod provider_runtime;
 mod worker_cache;
@@ -430,13 +435,28 @@ pub(super) fn remove(appdata: &Path, id: &str) -> Result<(), String> {
     tx.commit().map_err(reason)
 }
 
-fn distribution_entries(root: &Path) -> Result<Vec<TrustedEntry>, String> {
-    let packaged = root.join("trusted-plugins.json");
-    let source = root.join("../crates/server/trusted-plugins.json");
-    let path = match packaged.try_exists().map_err(reason)? {
-        true => packaged,
-        false if source.try_exists().map_err(reason)? => source,
-        false => return Ok(Vec::new()),
+fn distribution_entries(root: &Path, development: bool) -> Result<Vec<TrustedEntry>, String> {
+    let mut candidates = vec![
+        root.join("trusted-plugins.json"),
+        root.join("../crates/server/trusted-plugins.json"),
+    ];
+    // Development may overlay packages from a temporary root while still using
+    // the catalog from the launcher's checkout.
+    if development && root.is_dir() {
+        candidates.extend([
+            PathBuf::from("crates/server/trusted-plugins.json"),
+            PathBuf::from("trusted-plugins.json"),
+        ]);
+    }
+    let mut path = None;
+    for candidate in candidates {
+        if candidate.try_exists().map_err(reason)? {
+            path = Some(candidate);
+            break;
+        }
+    }
+    let Some(path) = path else {
+        return Ok(Vec::new());
     };
     let bytes = read_regular(&path, MAX_MANIFEST_BYTES)?;
     let file: TrustedFile =
@@ -468,6 +488,7 @@ fn initialize_distribution(
     conn: &mut Connection,
     root: &Path,
     defaults: bool,
+    development: bool,
 ) -> Result<(), String> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -480,7 +501,7 @@ fn initialize_distribution(
     {
         return Ok(());
     }
-    let entries = distribution_entries(root)?;
+    let entries = distribution_entries(root, development)?;
     if defaults
         && !entries
             .iter()
@@ -534,17 +555,20 @@ fn initialize_distribution(
 /// reuse private current and retained workers matching the archive and discard
 /// stale cache files. Cost: one bounded read per worker and one cache scan.
 /// Missing or invalid workers are atomically written and synced. Worker launches
-/// verify the pinned hash again.
+/// verify the pinned hash again. Development may use the launcher's source catalog
+/// to validate packages in an alternate root.
 pub fn load(
     appdata: &Path,
     seed_root: Option<&Path>,
     test_root: Option<&Path>,
+    development: bool,
 ) -> Result<Registry, String> {
     let mut conn = open(appdata)?;
     initialize_distribution(
         &mut conn,
         seed_root.unwrap_or(Path::new("plugins")),
         seed_root.is_none(),
+        development,
     )?;
     let cache = appdata.join("installed-plugin-workers");
     calternal_fsio::private::directory(&cache).map_err(reason)?;
