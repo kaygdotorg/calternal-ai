@@ -33,6 +33,7 @@
 
 <nav class="switcher {placement}" aria-label="Apps">
   <Panel class="sw" radius="pill" dense>
+    <!-- svelte-ignore a11y_interactive_supports_focus (the tabs inside are the focusable parts, as in any tab list) -->
     <div class="track" role="tablist" aria-label="Apps" bind:this={track} onscroll={measure} onkeydown={key} data-more-left={more.left || undefined} data-more-right={more.right || undefined}>
       {#each apps as a (a.kind)}
         <button type="button" role="tab" class="app" aria-selected={a.kind === app.kind} tabindex={a.kind === app.kind ? 0 : -1} onclick={() => navigate(`/${a.kind}`)}>{a.name}</button>
