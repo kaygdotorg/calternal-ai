@@ -71,6 +71,9 @@ struct Args {
     /// Measure room keystrokes and durable receipts, and correlate subscribed SSE commits.
     #[arg(long)]
     rooms_only: bool,
+    /// Also measure peer refresh during unrelated item grant changes.
+    #[arg(long, requires = "rooms_only")]
+    room_access_storm: bool,
     /// Measure protected directory reads/writes with closed-loop client waves.
     #[arg(long)]
     concurrency_only: bool,
@@ -200,7 +203,7 @@ fn run(a: &Args) -> Result<i32> {
         serde_json::to_vec_pretty(&run_info)?,
     )?;
     let budgets: stats::Budgets = serde_json::from_slice(&std::fs::read(&a.budgets)?)?;
-    let placement_budget = if a.startup_only {
+    let placement_budget = if a.startup_only || a.rooms_only {
         Duration::ZERO
     } else {
         let ms = budgets
@@ -218,16 +221,23 @@ fn run(a: &Args) -> Result<i32> {
     if a.rooms_only && (a.samples == 0 || a.pairs + a.cold_pairs == 0) {
         return Err("room timing requires at least one keystroke per measured arm".into());
     }
-    let required = if a.rooms_only {
-        &[timings::COMMIT_TO_CLIENT, rooms::PEER, rooms::SAVE][..]
+    let mut required = if a.rooms_only {
+        vec![timings::COMMIT_TO_CLIENT, rooms::PEER, rooms::SAVE]
     } else if a.commit_timing_only {
-        &[timings::COMMIT_TO_CLIENT][..]
+        vec![timings::COMMIT_TO_CLIENT]
     } else {
-        &[]
+        Vec::new()
     };
-    for metric in required {
+    if a.room_access_storm {
+        required.push(rooms::ACCESS_STORM);
+    }
+    let required_samples = |metric: &str| match metric {
+        rooms::ACCESS_STORM => rooms::ACCESS_STORM_SAMPLES,
+        _ => a.samples,
+    };
+    for &metric in &required {
         if !budgets.entries.iter().any(|entry| {
-            entry.metric == *metric
+            entry.metric == metric
                 && matches!(entry.percentile, stats::Percentile::P95)
                 && entry.budget.is_some()
         }) {
@@ -377,10 +387,10 @@ fn run(a: &Args) -> Result<i32> {
                     })
                     .collect();
                 if arm == "head" {
-                    for metric in required {
+                    for &metric in &required {
                         commit_incomplete |= !summary
                             .iter()
-                            .any(|s| s.metric == *metric && s.samples == a.samples);
+                            .any(|s| s.metric == metric && s.samples == required_samples(metric));
                     }
                 }
                 for s in &summary {
@@ -401,7 +411,7 @@ fn run(a: &Args) -> Result<i32> {
                     if arm == "head" && s.breached {
                         commit_breach |= (s.metric == timings::COMMIT_TO_CLIENT
                             || required.contains(&s.metric.as_str()))
-                            && s.samples == a.samples;
+                            && s.samples == required_samples(&s.metric);
                         *breaches.entry(s.metric.clone()).or_default() += 1;
                     }
                 }
@@ -435,7 +445,11 @@ fn run(a: &Args) -> Result<i32> {
             (k, pct)
         })
         .collect();
-    let qualification = if a.commit_timing_only {
+    let qualification = if a.room_access_storm {
+        "room peer apply, durable save receipt, journal commit delivery and authority refresh"
+    } else if a.rooms_only {
+        "room peer apply, durable save receipt and journal commit delivery"
+    } else if a.commit_timing_only {
         "release durable commit to client receipt and separate file placement"
     } else {
         "incomplete: see separate release commit timing, job and idle suites"
@@ -449,7 +463,7 @@ fn run(a: &Args) -> Result<i32> {
     Ok(
         if commit_breach || placement_breach || (!a.commit_timing_only && reproduced) {
             1
-        } else if !a.commit_timing_only
+        } else if !(a.commit_timing_only || a.rooms_only)
             || !failures.is_empty()
             || stopped_for_placement
             || commit_incomplete

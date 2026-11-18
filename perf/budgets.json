@@ -114,6 +114,15 @@
       "p50_budget": null
     },
     {
+      "metric": "sync.round_trip.authority_storm",
+      "percentile": "p95",
+      "budget": 10,
+      "unit": "ms",
+      "fixture": "32 rooms with 32 memberships each and an unrelated grant mutation each second",
+      "measurement": "writer keystroke through application by every peer, including the full item View refresh",
+      "reference": "owner decision on live room authority invalidation"
+    },
+    {
       "metric": "sync.save_ack",
       "percentile": "p95",
       "budget": 40,

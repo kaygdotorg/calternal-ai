@@ -1,4 +1,6 @@
 //! Real WebSocket and Yjs clients on the perf VM's monotonic clock.
+mod access_storm;
+
 use std::{
     collections::BTreeMap,
     net::TcpStream,
@@ -25,6 +27,8 @@ use crate::{
 
 pub(super) const PEER: &str = "sync.round_trip";
 pub(super) const SAVE: &str = "sync.save_ack";
+pub(super) use access_storm::sample as sample_access_storm;
+pub(super) use access_storm::{METRIC as ACCESS_STORM, SAMPLES as ACCESS_STORM_SAMPLES};
 
 type Socket = WebSocket<MaybeTlsStream<TcpStream>>;
 
@@ -202,6 +206,12 @@ fn edit_send(
 }
 
 fn connect(http: &Http, room: &str) -> Result<Socket> {
+    let mut socket = open(http)?;
+    join_room(&mut socket, room, 1)?;
+    Ok(socket)
+}
+
+fn open(http: &Http) -> Result<Socket> {
     let base = http
         .base
         .strip_prefix("http://")
@@ -219,18 +229,32 @@ fn connect(http: &Http, room: &str) -> Result<Socket> {
     if let MaybeTlsStream::Plain(stream) = socket.get_mut() {
         stream.set_read_timeout(Some(Duration::from_secs(15)))?;
     }
+    Ok(socket)
+}
+
+fn join_room(socket: &mut Socket, room: &str, membership: usize) -> Result<()> {
     socket.send(Frame::text(
         json!({
-            "type":"join","room":room,"membership":1
+            "type":"join","room":room,"membership":membership
         })
         .to_string(),
     ))?;
-    let control = socket.read()?;
-    let value: Value = serde_json::from_str(control.to_text()?)?;
-    if value["type"] != "joined" {
-        return Err(format!("room join failed: {value}").into());
+    loop {
+        match socket.read()? {
+            Frame::Binary(_) => continue,
+            Frame::Text(control) => {
+                let value: Value = serde_json::from_str(&control)?;
+                if value["type"] == "joined"
+                    && value["room"] == room
+                    && value["membership"] == membership
+                {
+                    return Ok(());
+                }
+                return Err(format!("room join failed: {value}").into());
+            }
+            frame => return Err(format!("room join interrupted: {frame:?}").into()),
+        }
     }
-    Ok(socket)
 }
 
 fn initial(socket: &mut Socket, address: &str) -> Result<Doc> {
@@ -250,19 +274,25 @@ fn apply(doc: &Doc, bytes: &[u8]) -> Result<()> {
 }
 
 fn received(socket: &mut Socket, address: &str) -> Result<Message> {
+    let (received, message) = any_message(socket)?;
+    if received != address {
+        return Err("room returned a stale membership".into());
+    }
+    Ok(message)
+}
+
+fn any_message(socket: &mut Socket) -> Result<(String, Message)> {
     let frame = socket.read()?;
     let Frame::Binary(bytes) = frame else {
         return Err(format!("room unexpectedly closed: {frame:?}").into());
     };
     let mut cursor = Cursor::new(&bytes);
-    if cursor.read_string()? != address {
-        return Err("room returned a stale membership".into());
-    }
+    let address = cursor.read_string()?.to_owned();
     let message = Message::decode_v1(&bytes[cursor.next..])?;
     if matches!(message, Message::Custom(102 | 103, _)) {
         return Err(format!("room refused a benchmark edit: {message:?}").into());
     }
-    Ok(message)
+    Ok((address, message))
 }
 
 fn send(socket: &mut Socket, address: &str, message: Message) -> Result<()> {

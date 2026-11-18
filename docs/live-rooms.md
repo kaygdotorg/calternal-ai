@@ -25,6 +25,18 @@ a new lineage on demand. An explicit purge clears room checkpoints through
 the revision foreign key. See [Upgrades](upgrades.md) for the schema and
 the recovery contract.
 
+One server owns the installation's locked roots for its lifetime.
+A second server cannot open those roots concurrently. After a crash the
+next owner replays committed publication intents and loads the saved
+checkpoints. A peer can see a preview before commit, so the browser keeps
+its pending changes until it receives the matching durable check receipt.
+
+A client can reconnect after an hour with a full update from its persisted
+replica. It can integrate with the current room if the lineage and causal
+dependencies still match. Trash, a missing or replaced file, and a write
+from a previous release can prevent that merge. Keep the local edit
+available for recovery or manual copy in those cases.
+
 While a writer is connected, the host can check the underlying file
 at most once every five seconds. A write that races an outside change
 also runs the check before retrying. The host hashes the exact file,
@@ -102,10 +114,13 @@ The interim space-grant adapter provides no revision, so its stable path
 uses a current space capability statement in addition to the session
 statement. These are path counts, measured latency is still required.
 
-The additional sharing qualification uses 32 rooms with 32 participants
-each and one unrelated grant mutation per second. Start timing at each
-keystroke and stop after the peer applies it. The p95 ceiling remains 10 ms.
-The fixture must use the real matching sharing revision source.
+For the additional sharing qualification, pass
+`--rooms-only --room-access-storm`. The fixture opens 32 rooms with 32
+participants each and changes a grant in a separate space once per second.
+Each of the five changes is followed by one edit in each room, with each
+of the 31 observers timed through peer apply for 4,960 samples per arm.
+Participants reuse the authenticated fixture session. The p95 ceiling is
+10 ms. The candidate must use the real sharing revision source.
 
 ## Qualification
 

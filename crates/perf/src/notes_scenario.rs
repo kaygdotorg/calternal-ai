@@ -60,6 +60,13 @@ pub(super) fn run(
             require_commit_timings,
             &root.join("server.log"),
         )?);
+        if a.room_access_storm {
+            let space = space.as_str().ok_or("invalid fixture space")?;
+            samples.insert(
+                crate::rooms::ACCESS_STORM.into(),
+                crate::rooms::sample_access_storm(&mut h, space)?,
+            );
+        }
         return Ok(ScenarioObservations {
             samples,
             placement_breach: false,
