@@ -83,7 +83,8 @@ export class Adapter {
   private session?: string;
   private emitTail: Promise<void> = Promise.resolve();
   /** Select the installed official executable and an ordered, back-pressured event sink. */
-  constructor(private readonly binary: string, private readonly write: (line: string) => Promise<void>) {}
+  constructor(private readonly binary: string, private readonly write: (line: string) => Promise<void>,
+      private readonly shared = false) {}
 
   private emit(event: ProviderEventKind): Promise<void> {
     const next = async () => {
@@ -200,13 +201,17 @@ export class Adapter {
       const c = this.config!;
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
         '--model', c.model, '--append-system-prompt', c.instructions, '--system-prompt-snapshot', 'off',
-        '--disallowedTools', 'AskUserQuestion,Agent,Task',
-        '--allowedTools', 'Read,Edit,Write,Bash,Glob,Grep,WebFetch,WebSearch,NotebookEdit',
         '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}'];
+      if (this.shared) {
+        args.push('--safe-mode', '--disable-slash-commands', '--tools', '', '--no-session-persistence', '--include-hook-events');
+      } else {
+        args.push('--disallowedTools', 'AskUserQuestion,Agent,Task',
+          '--allowedTools', 'Read,Edit,Write,Bash,Glob,Grep,WebFetch,WebSearch,NotebookEdit');
+      }
       if (c.options.max_turns !== undefined) args.push('--max-turns', String(c.options.max_turns));
       if (c.options.effort !== undefined) args.push('--effort', String(c.options.effort));
-      if (this.session) args.push('--resume', this.session);
-      const child = spawn(this.binary, args, { cwd: c.cwd, env: this.environment(), stdio: ['pipe','pipe','ignore'] });
+      if (!this.shared && this.session) args.push('--resume', this.session);
+      const child = spawn(this.binary, args, { cwd: this.shared ? process.env.HOME : c.cwd, env: this.environment(), stdio: ['pipe','pipe','ignore'] });
       this.child = child;
       const closed = new Promise<number | null>(resolve => {
         child.once('error', () => resolve(null)); child.once('close', code => resolve(code));
@@ -214,10 +219,27 @@ export class Adapter {
       child.stdin.on('error', () => {});
       child.stdin.end(prompt);
       const steps = new Map<string, Tool>();
+      let initialized = !this.shared;
       for await (const line of lines(child.stdout, CLI_LINE_BYTES)) {
         const m = JSON.parse(line);
+        if (this.shared) {
+          if (m.type === 'system' && m.subtype === 'init') {
+            initialized = ['tools', 'skills', 'mcp_servers', 'slash_commands']
+              .every(key => Array.isArray(m[key]) && m[key].length === 0);
+            if (!initialized) throw new Error('shared adapter reported executable tools');
+          }
+          const block = m.event?.content_block;
+          if ((m.type === 'system' && m.subtype?.startsWith('hook_')) ||
+              block?.type === 'tool_use' || block?.type === 'tool_result' ||
+              m.message?.content?.some((content: { type: string }) =>
+                content.type === 'tool_use' || content.type === 'tool_result')) {
+            throw new Error('unexpected shared adapter tool event');
+          }
+          if (!initialized) continue;
+        }
         if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string') {
           if (!sessionId.test(m.session_id)) throw new Error('session id');
+          if (this.shared) continue;
           const id: string = m.session_id; this.session = id;
           await this.emit({ type: 'session', session_id: id });
         }
@@ -317,10 +339,10 @@ export class Adapter {
 }
 
 /** Run one adapter over stdio; stderr contains no provider output or input. */
-export async function main(): Promise<void> {
-  const adapter = new Adapter(process.env.CALTERNAL_CLAUDE_BINARY ?? 'claude', async line => {
+export async function main(binary = process.env.CALTERNAL_CLAUDE_BINARY ?? 'claude', shared = false): Promise<void> {
+  const adapter = new Adapter(binary, async line => {
     if (!process.stdout.write(line)) await once(process.stdout, 'drain');
-  });
+  }, shared);
   process.once('SIGTERM', () => { void adapter.stop(); });
   process.once('SIGINT', () => { void adapter.stop(); });
   try {

@@ -52,3 +52,22 @@ export function reasonLine(reasons: readonly string[]): string {
   const s = reasons.map((r) => r.toLowerCase()).join(" and ");
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** A prompt a plugin's durable job is waiting on, listed in the Inbox on its own (it belongs to no thread): a question or an approval, answered where it is. */
+export interface JobPrompt {
+  request: Request;
+  /** The line the row shows: the question's title, or the approval's action. */
+  title: string;
+  /** Why it is here, in the Inbox's words (`Question`, `Approval`). */
+  reason: string;
+}
+
+/** The job prompts among the open requests, in the order the server lists them. Cost: one pass. */
+export function jobPromptsOf(requests: readonly Request[]): JobPrompt[] {
+  return requests.flatMap((r): JobPrompt[] => {
+    if (!r.jobId || r.threadId) return [];
+    if (r.kind === "question") return [{ request: r, title: r.title, reason: "Question" }];
+    if (r.kind === "approval") return [{ request: r, title: r.action || r.title, reason: "Approval" }];
+    return [];
+  });
+}

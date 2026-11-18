@@ -106,3 +106,37 @@ describe("rescue owed", () => {
     expect(mem.m.size).toBe(0);
   });
 });
+
+import { createCollection, getCollection, setMembers } from "./collections";
+describe("collections (fixtures)", () => {
+  it("reads titles, edits the members against the revision, and refuses a stale one", async () => {
+    const made = await createCollection("s", "Two notes", ["n-3", "n-4"]);
+    expect(made.revision).toBe("1");
+    const c = await getCollection(made.id).catch((e) => e);
+    // The notes store is the real fixtures here; its titles are read lazily.
+    expect(c.members?.map((m: { id: string }) => m.id)).toEqual(["n-3", "n-4"]);
+    const next = await setMembers(made.id, c.revision, ["n-4"]);
+    expect(next.revision).toBe("2");
+    await expect(setMembers(made.id, c.revision, ["n-3"])).rejects.toMatchObject({ code: "conflict" });
+    expect((await getCollection(made.id)).members.map((m) => m.id)).toEqual(["n-4"]);
+    await expect(getCollection("c-nope")).rejects.toMatchObject({ code: "not_found" });
+  });
+  it("the shared-with-me fixture lists collections apart from notes", async () => {
+    const s = new FixtureSharing();
+    expect((await s.shared_with_me("collections")).items.map((i) => i.item.id)).toEqual(["c-demo"]);
+    expect((await s.shared_with_me("notes")).items.every((i) => i.item.kind === "notes")).toBe(true);
+  });
+});
+
+import { listCollections } from "./collections";
+describe("collections: can_edit and list", () => {
+  it("a read-only collection refuses a change and says can_edit false", async () => {
+    expect((await getCollection("c-ro")).can_edit).toBe(false);
+    await expect(setMembers("c-ro", "1", [])).rejects.toMatchObject({ code: "forbidden" });
+    expect((await getCollection("c-demo")).can_edit).toBe(true);
+  });
+  it("lists the space's collections", async () => {
+    const ids = (await listCollections("s")).items.map((c) => c.id);
+    expect(ids).toEqual(expect.arrayContaining(["c-demo", "c-ro"]));
+  });
+});

@@ -178,6 +178,8 @@ export interface QuestionRequest {
   kind: "question";
   /** The thread whose turn is parked on this request; empty when the server names none. */
   threadId: string;
+  /** The plugin job parked on this prompt, when a plugin\'s durable wait raised it instead of a thread (then `threadId` is empty): it is listed in the Inbox on its own, not under a thread. */
+  jobId?: string;
   /** The form's title, shown above its fields. */
   title: string;
   /** The generated-UI (GenUI v2) source of the form, rendered by the shell. */
@@ -192,6 +194,8 @@ export interface ApprovalRequest {
   kind: "approval";
   /** The thread whose turn is parked on this request; empty when the server names none. */
   threadId: string;
+  /** The plugin job parked on this prompt, when a plugin\'s durable wait raised it instead of a thread (then `threadId` is empty): it is listed in the Inbox on its own, not under a thread. */
+  jobId?: string;
   /** A fixed heading ("Approval needed"); the bar leads with `action`, not this. */
   title: string;
   /** What the agent wants to do, in a sentence. */
@@ -210,6 +214,8 @@ export interface SecretRequest {
   kind: "secret";
   /** The thread whose turn raised it; empty when the server names none. */
   threadId: string;
+  /** The plugin job parked on this prompt, when a plugin\'s durable wait raised it instead of a thread (then `threadId` is empty): it is listed in the Inbox on its own, not under a thread. */
+  jobId?: string;
   /** The manifest name, for example `GITHUB_TOKEN`. */
   name: string;
   /** The human label for the prompt, for example "Forgejo access token". */
@@ -237,6 +243,8 @@ export interface SignInRequest {
   kind: "signin";
   /** The thread that raised it; empty when the server names none (an explicit sign-in from onboarding). */
   threadId: string;
+  /** The plugin job parked on this prompt, when a plugin\'s durable wait raised it instead of a thread (then `threadId` is empty): it is listed in the Inbox on its own, not under a thread. */
+  jobId?: string;
   /** The provider's id (`claude`, `codex`). */
   providerId: string;
   /** The line the person reads, for example "Claude needs you to sign in again". */

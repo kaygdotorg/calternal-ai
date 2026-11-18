@@ -14,11 +14,11 @@ database until checkpointed. SQLite SHM, locks and sockets are runtime state.
 
 | Root and relative paths | Class | Writer and baseline marker |
 | --- | --- | --- |
-| Appdata `system/auth.db` | Authority | Auth, SQLite 14. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. Versions 12 and 13 add account recovery and provider sign-in. Version 14 adds dormant sharing grants. Version 15 adds the sharing purge capability grants. |
+| Appdata `system/auth.db` | Authority | Auth, SQLite 14. Accounts, passkeys, sessions, roles, memberships, invites, approvals, machine identity and grants, erasures, key fingerprints and protected receipts. Versions 12 and 13 add account recovery and provider sign-in. Version 14 adds dormant sharing grants. |
 | Appdata `system/appearance.db` | Mixed | Appearance, new SQLite 1 baseline through the shared runner. Account preferences and original private uploads are authoritative. Shared manifests and eviction pins coordinate with the cache. The production baseline has no appearance database. |
 | Appdata `fonts-cache-v1/` | Derived | Version 1 directories of immutable WOFF2 bytes by family and digest. Startup verifies the published manifest and retires incomplete or orphan fills. |
-| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
-| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, and version 8 adds rename jobs, and version 9 adds thread revision patches. Listing, labels and links are derived. |
+| Appdata `system/machines.db` | Authority | Machine placement, SQLite 6 initial schema, advanced to 7 on server startup by the automatic thread-title lease migration. Version 8 adds scoped harness leases. Version 9 adds shared-space execution bindings and the lease sponsor. Leases, fences, drain, work locations, discard and erase delivery, and the durable stop record that keeps an erased worker's machine slot reserved until its stop completes. |
+| Appdata `spaces/<id>/content.db` | Mixed | Content, SQLite 5. Item identity, revisions, pending placement, trash and tombstones, kinds, plugin controls, thread snooze state and sharing's collection membership. Version 6 adds live-room kinds and document checkpoints, version 7 adds Trash jobs, version 8 adds rename jobs, and version 9 adds thread revision patches. Listing, labels and links are derived. |
 | Appdata `spaces/<id>/index.db`, `secrets/spaces/<id>/head` | Authority | Space journal, SQLite 2 and binary CHW2. Journal, epoch, receipts and independent head witness. Receipts are pruned after the operator's retention (7 days by default) only on content's command, with every receipt of a surviving outbox intent pinned. The fence adds no stored state. |
 | Appdata `spaces/<id>/network.db` | Authority | Plugin network, SQLite 1, introduced after the production baseline. Per-person remote content preferences and bounded outbound audit metadata. Absent databases use the default and are initialized by the shared runner on the first saved preference. |
 | Appdata `spaces/<id>/jobs.db` | Authority | Jobs, SQLite 2. Admission, retry and in-flight state, checkpoints, event outbox and retention. Version 3 adds plugin signal waits and decision receipts. Version 4 adds saved-thread admission receipts. |
@@ -71,13 +71,13 @@ for an older release only under the explicit, tested compatibility policy.
 
 Production image `c98705d74bcf` has auth version 14, content version 5
 and machines version 6. After live rooms at content version 6, Empty Trash
-and rename queues follow at versions 7 and 8. Auth version 15 adds the
-Manager and Owner purge grant.
-The prior writer still allows Editors to purge. Treat this rollout as
-incompatible and use the owner-approved restore point for rollback.
+and rename queues follow at versions 7 and 8. Notes uses the existing
+`space.settings` capability for permanent Trash removal and keeps auth
+at version 14.
 
-Message search generation 2 drops the redundant thread-location index and
-rebuilds under the projection worker. Its SQLite schema version stays 1.
+Message search generation 2 drops the old thread-location index. Generation 3
+adds a thread-and-offset index for bounded tail reads. The projection worker
+rebuilds stale generations. Its SQLite schema version stays 1.
 
 Owned tags put the name before the version, as in `calternal-thread/v1`.
 Binary formats retain the version markers listed above.

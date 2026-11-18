@@ -130,7 +130,7 @@ export async function signIn(): Promise<void> {
 export async function signOut(): Promise<void> { clearCache(); await post("logout"); }
 
 /** Who is signed in: the account (`name`, `role`, `capabilities`) and this browser's installation id. */
-export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string; email?: string | null; email_status?: "missing" | "unverified" | "verified"; mail_available?: boolean; second_passkey_prompt?: boolean; recovery_codes_configured?: boolean; /** The server's policy requires a verified email and this account has none: ask for one after accepting the session. */ email_setup_required?: boolean }
+export interface Me { user: { id: string; name: string; username: string; role: string; capabilities: string[] }; installation: string; email?: string | null; email_status?: "missing" | "unverified" | "verified"; mail_available?: boolean; second_passkey_prompt?: boolean; recovery_codes_configured?: boolean; /** The server's policy requires a verified email and this account has none: ask for one after accepting the session. */ email_setup_required?: boolean; /** The provider this session signed in with, if any. */ sign_in_provider?: string | null; /** Providers linked to this account. */ provider_links?: { provider_id: string; label?: string }[] }
 /** A passkey as the server lists it. */
 export interface Passkey { id: string; name: string; created_at: number; last_used_at: number | null }
 /** A signed-in browser or app of this account. */
