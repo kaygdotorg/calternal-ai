@@ -5,7 +5,7 @@ use calternal_core::{AutomationOutcome, AutomationTarget, JobState};
 use calternal_store::migrations::{Schema, migrate};
 use calternal_types::Capability;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use std::{sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use uuid::Uuid;
 pub(crate) use worker::start;
 
@@ -76,9 +76,50 @@ pub(super) fn status(
         )
         .optional()
         .map_err(db_error)?;
-    let Some((next_run_ms, stop_reason, last)) = row else {
-        return Ok(Status::default());
-    };
+    row.map(|(next, stop, last)| decode_status(next, stop, last))
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
+/// Read next, last and stop reason for the definitions returned by one list.
+pub(super) fn statuses(
+    store: &crate::store::Store,
+    space: SpaceId,
+    ids: impl Iterator<Item = Uuid>,
+) -> Result<BTreeMap<String, Status>, Error> {
+    let ids: Vec<_> = ids.collect();
+    if ids.is_empty() || !store.appdata().join(PATH).exists() {
+        return Ok(BTreeMap::new());
+    }
+    let conn = database(store)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, next, stop, last FROM schedules
+             WHERE space=?1 AND id IN (SELECT value FROM json_each(?2))",
+        )
+        .map_err(db_error)?;
+    let mut rows = stmt
+        .query(params![space.to_string(), json!(ids).to_string()])
+        .map_err(db_error)?;
+    let mut statuses = BTreeMap::new();
+    while let Some(row) = rows.next().map_err(db_error)? {
+        statuses.insert(
+            row.get(0).map_err(db_error)?,
+            decode_status(
+                row.get(1).map_err(db_error)?,
+                row.get(2).map_err(db_error)?,
+                row.get(3).map_err(db_error)?,
+            )?,
+        );
+    }
+    Ok(statuses)
+}
+
+fn decode_status(
+    next_run_ms: Option<i64>,
+    stop_reason: Option<String>,
+    last: Option<String>,
+) -> Result<Status, Error> {
     let last = last
         .map(|value| serde_json::from_str(&value))
         .transpose()
@@ -481,7 +522,10 @@ async fn handoff<D: Directory>(state: &Shared<D>, run: &Run) -> Result<Option<St
                 ],
             )
             .map_err(db_error)?;
-        Ok((claimed != 0).then_some((d, body, candidate)))
+        Ok((claimed != 0).then(|| {
+            crate::fault::hit(crate::fault::FaultPoint::AutomationAfterClaim);
+            (d, body, candidate)
+        }))
     })
     .await?
     else {
@@ -534,6 +578,7 @@ async fn handoff<D: Directory>(state: &Shared<D>, run: &Run) -> Result<Option<St
         blocking(move || st.jobs.cancel(&space, &job).map(|_| ())).await?;
         return Ok(None);
     }
+    crate::fault::hit(crate::fault::FaultPoint::AutomationAfterRelease);
     if let Some(machines) = state.store.machines() {
         crate::turns::schedule_thread(state, &machines, space.to_string(), job, d.creator);
     }
@@ -624,3 +669,6 @@ fn complete(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod contention;

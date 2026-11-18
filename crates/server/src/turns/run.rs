@@ -66,6 +66,10 @@ fn schedule_checked<D: Directory>(
         else {
             return;
         };
+        crate::fault::automation_turn(
+            &claimed.job.input,
+            crate::fault::FaultPoint::AutomationAfterTurnClaim,
+        );
         claimed.live.retain_for_subscriber();
         let verify = claimed.job.input["verify"] == true;
         let end = execute(&st, &svc, &claimed.job, &claimed.live)
@@ -208,6 +212,10 @@ async fn execute<D: Directory>(
         super::progress::Placement::Ready(machine, personal, permit) => (machine, personal, permit),
         super::progress::Placement::Ended(end) => return Ok(end),
     };
+    crate::fault::automation_turn(
+        &job.input,
+        crate::fault::FaultPoint::AutomationAfterMachinePlacement,
+    );
     checkpoint["placement"] = Value::Null;
     checkpoint["machine_id"] = json!(machine_id);
     if let Some(phases) = &mut phases {
@@ -305,6 +313,7 @@ async fn execute<D: Directory>(
     let (env, mut redactor) = if let Some(scope) = scope {
         let st = state.clone();
         let token = blocking(move || st.jobs.agent_token(&scope, issuing_run)).await?;
+        crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationAfterToken);
         (
             vec![("CALTERNAL_AGENT_TOKEN".into(), token.clone())],
             Some(super::redact::Channels::new(token)),
@@ -317,6 +326,7 @@ async fn execute<D: Directory>(
     if !live.is_current(job.runs) || !super::session_live(state, job).await? {
         return Ok(RunEnd::Failed);
     }
+    crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationBeforeExec);
     let exec = blocking(move || {
         m.exec_input(
             account,
@@ -327,6 +337,7 @@ async fn execute<D: Directory>(
         )
     })
     .await?;
+    crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationAfterExec);
     let mut cursor = 0;
     let mut pending = Vec::new();
     let mut provider_seq = 0;
@@ -392,6 +403,7 @@ async fn execute<D: Directory>(
             .read_output(account, exec, cursor, Duration::from_secs(1))
             .await?;
         for chunk in output.chunks {
+            crate::fault::automation_turn(&job.input, crate::fault::FaultPoint::AutomationAfterMachineOutput);
             cursor = chunk.seq;
             match chunk.event {
                 ChunkEvent::Data {
