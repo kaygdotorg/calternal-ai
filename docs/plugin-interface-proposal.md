@@ -435,7 +435,7 @@ the existing Calternal engines before exposing a new primitive.
 
 | Missing public contract | Existing code to reuse | Estimated size |
 | --- | --- | --- |
-| Cursor-based kind listing, revision reads, lifecycle transitions and collection placement | Notes listing, history, Trash and file-store paths | 3–5 engineer-days including paging and isolation fixtures |
+| Revision reads, lifecycle transitions and collection placement | Own-kind indexed listing now uses `list_items_v1`. Notes history, Trash and placement still use host paths. | 3–5 engineer-days including isolation fixtures for the remaining calls |
 | Conditional patch and block-identity merge, revision conflicts and links/tags | Notes revision, merge and indexing paths | 4–7 days including recovery tests |
 | Invalidation and incremental indexing, including search-provider registration | Space journal and Notes index | 2–4 days |
 | Typed thread events, atomic append/checkpoint, paging and overflow attachments | Thread document, deltas, persistence and saved transcript | 4–7 days including crash/retry tests |
@@ -470,7 +470,7 @@ exceptions become API requirements.
 | --- | --- |
 | The server matches the orchestrator ID to native thread operations and native turn jobs | A public engine service selection contract with thread append/checkpoint and turn admission, lease, retry and request operations |
 | The seed sets some packages enabled by default | A deployment profile selects default packages and activation policy by the same manifest rules available to any installed package |
-| Notes calls its Rust store and lifecycle handlers directly | Public kind listing, lifecycle and data mutation contracts over the existing engine, with the same isolation and receipts |
+| Notes calls its Rust store and lifecycle handlers directly | Public own-kind listing is available. Notes still needs lifecycle and data mutation contracts over the existing engine, with the same isolation and receipts. |
 | The orchestrator's core skill is embedded by path and reused at startup as a named fallback | Declare packaged instruction and skill sources and distribute defaults through the package seed; keep host security instructions in the protected core |
 | Server, CLI and browser recognize a provider package ID when resolving defaults and thread files | Resolve an enabled provider by configuration or service selection and carry provider metadata through the thread protocol |
 | Browser defaults and palette entries name particular apps | Discover enabled apps and contributions from the manifest and active service slots |

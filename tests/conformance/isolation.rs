@@ -21,6 +21,7 @@ mod agent_cases;
 /// Plugin job cases: streams, restart, cancellation, sign-out and space isolation.
 #[path = "jobs_cases.rs"]
 mod jobs_cases;
+mod kind_page_cases;
 mod people_cases;
 
 mod provider_sign_in_cases;

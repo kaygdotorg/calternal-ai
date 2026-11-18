@@ -8,7 +8,7 @@
 //! and activation row, so sign-out, a revoked installation or membership, or a
 //! disabled/re-enabled plugin stops the invocation at its next boundary.
 //!
-//! Implemented host calls: `read_item` and `write_item`, both through
+//! Implemented host calls: `read_item`, `list_items_v1` and `write_item` through
 //! [`calternal_content`] via [`crate::store::Store`]; `start_job` and
 //! `checkpoint_job` through [`super::jobs::Jobs`]; `request_secret_handle` through
 //! [`crate::secrets::plugin_handle`]. Every other declared host call is
@@ -33,6 +33,8 @@ use crate::api::Shared;
 use crate::auth::{Directory, Identity};
 use crate::store::sha256_hex;
 use calternal_types::{Capability, SpaceId};
+
+mod item_pages;
 
 /// Fixed fixture text served to previews. Never user data.
 pub const PREVIEW_FIXTURE: &str = "# Preview fixture\n\nThis is fixed sample text used to preview a plugin.\nIt is not one of your notes.\n";
@@ -353,13 +355,15 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
     }
 
     /// Cost: `read_item` is one pooled catalog route read and one item read under
-    /// the space's lock; `write_item` adds a durable content write (journal, file and
+    /// the space's lock; `list_items_v1` is one indexed space query. `write_item`
+    /// adds a durable content write (journal, file and
     /// directory fsync); `start_job` and `checkpoint_job` are one FULL transaction on
     /// the space's job file; `request_secret_handle` one secret-database read (plus one
     /// fsync'd insert when it records a request). Other methods are refused.
     fn call(&self, method: HostCallKind, input: &Value) -> Result<Value, Error> {
         match method {
             HostCallKind::ReadItem => self.read_item(input),
+            HostCallKind::ListItemsV1 => self.list_items(input),
             HostCallKind::WriteItem => self.write_item(input),
             HostCallKind::StartJob => self.start_job(input),
             HostCallKind::CheckpointJob => self.checkpoint_job(input),
