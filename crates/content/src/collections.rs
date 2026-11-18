@@ -10,6 +10,21 @@ use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+const ACCOUNT_SCHEMA: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new(
+        "account content.db",
+        1,
+        &[
+            "CREATE TABLE IF NOT EXISTS binding(account TEXT PRIMARY KEY) STRICT;CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY,definition TEXT NOT NULL,revision TEXT NOT NULL,updated_at TEXT NOT NULL) STRICT;",
+        ],
+        &[],
+    );
+
+fn collection_file(mut fields: serde_json::Value) -> Result<Vec<u8>> {
+    fields["format"] = serde_json::json!("calternal-collection/v1");
+    serde_json::to_vec_pretty(&fields).map_err(internal)
+}
+
 /// A stored collection's stable identity and versioned membership definition.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredCollection {
@@ -59,7 +74,7 @@ impl Content {
             members: vec![],
         };
         let metadata = serde_json::to_value(&definition).map_err(internal)?;
-        let bytes = serde_json::to_vec_pretty(&definition).map_err(internal)?;
+        let bytes = collection_file(metadata.clone())?;
         let request = format!("standard/{space}/{kind}/{key}");
         let fingerprint = file_hash(&bytes);
         let write = self.write(
@@ -118,13 +133,14 @@ impl Content {
         }
         let mut collection = self.collection(space, id)?.collection;
         collection.members = members;
-        let bytes = serde_json::to_vec_pretty(&collection).map_err(internal)?;
+        let metadata = serde_json::to_value(&collection).map_err(internal)?;
+        let bytes = collection_file(metadata.clone())?;
         let item = self.write(
             space,
             Some(id),
             "collections",
             Some(base),
-            serde_json::to_value(&collection).map_err(internal)?,
+            metadata,
             &bytes,
             request,
             |i| serde_json::json!({"id":i.id,"revision":i.revision}),
@@ -246,8 +262,8 @@ impl Content {
                 .join("accounts")
                 .join(account.to_string())
                 .join("content.db"),
+            ACCOUNT_SCHEMA,
         )?;
-        conn.execute_batch("CREATE TABLE IF NOT EXISTS binding(account TEXT PRIMARY KEY) STRICT;CREATE TABLE IF NOT EXISTS collections(id TEXT PRIMARY KEY,definition TEXT NOT NULL,revision TEXT NOT NULL,updated_at TEXT NOT NULL) STRICT;").map_err(internal)?;
         conn.execute(
             "INSERT INTO binding SELECT ?1 WHERE NOT EXISTS(SELECT 1 FROM binding)",
             [account.to_string()],

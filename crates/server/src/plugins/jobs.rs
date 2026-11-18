@@ -369,24 +369,20 @@ impl Jobs {
         let path = dir.join("jobs.db");
         calternal_fsio::private::file(&path).map_err(|_| Error::internal("job storage file"))?;
         let c = Connection::open(path).map_err(db_err)?;
-        c.pragma_update(None, "journal_mode", "WAL")
-            .map_err(db_err)?;
         c.pragma_update(None, "synchronous", "FULL")
             .map_err(db_err)?;
         c.busy_timeout(Duration::from_secs(5)).map_err(db_err)?;
-        const SCHEMA_VERSION: i64 = 2;
-        let version = c
-            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
-            .map_err(db_err)?;
-        if version != 0 && version != SCHEMA_VERSION {
-            return Err(Error::unavailable(
-                "jobs database schema requires fresh preview data",
-            ));
-        }
-        c.execute_batch(SCHEMA).map_err(db_err)?;
-        c.execute_batch(crate::threads::turn_events::schema())
-            .map_err(db_err)?;
-        c.pragma_update(None, "user_version", SCHEMA_VERSION)
+        calternal_store::migrations::migrate(
+            &c,
+            calternal_store::migrations::Schema::new(
+                "jobs.db",
+                2,
+                &[SCHEMA, crate::threads::turn_events::schema()],
+                &[],
+            ),
+        )
+        .map_err(db_err)?;
+        c.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_err)?;
         retain(&c)?;
         let c = Arc::new(JobDatabase::new(c, self.lifecycle.clone(), space_id));

@@ -7,17 +7,34 @@ use uuid::Uuid;
 // A label is a name, not an item. The primary key groups it by kind and
 // counts each matching head once. Trailing label keys support item updates.
 pub(crate) fn install(conn: &Connection) -> Result<()> {
-    let needs_rebuild: bool = conn.query_row(
-        "SELECT NOT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='item_terms')",
-        [], |r| r.get(0),
-    ).map_err(internal)?;
+    // application_id is the generation of these replaceable indexes in
+    // content.db. The authoritative schema has its own user_version.
+    const GENERATION: i64 = 1;
+    let generation = conn
+        .pragma_query_value(None, "application_id", |r| r.get::<_, i64>(0))
+        .map_err(internal)?;
+    if generation == GENERATION {
+        return Ok(());
+    }
     let tx = conn.unchecked_transaction().map_err(internal)?;
+    tx.execute_batch(
+        "DROP TRIGGER IF EXISTS item_terms_insert;
+         DROP TRIGGER IF EXISTS item_terms_update;
+         DROP TABLE IF EXISTS item_terms;
+         DROP INDEX IF EXISTS item_list;
+         DROP INDEX IF EXISTS item_live_list;
+         DROP INDEX IF EXISTS item_trash;
+         DROP INDEX IF EXISTS item_trash_page;
+         DROP INDEX IF EXISTS item_title_key;",
+    )
+    .map_err(internal)?;
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS item_terms(
             kind TEXT NOT NULL, category TEXT NOT NULL, name TEXT NOT NULL, item TEXT NOT NULL REFERENCES items(id),
             PRIMARY KEY(kind,category,name,item)
         ) WITHOUT ROWID, STRICT;
         CREATE INDEX IF NOT EXISTS item_term_item ON item_terms(item);
+        CREATE INDEX IF NOT EXISTS item_list ON items(kind,updated_at DESC,id);
         CREATE INDEX IF NOT EXISTS item_live_list
             ON items(kind,updated_at DESC,id) WHERE substr(path,1,7) <> '.trash/';
         CREATE INDEX IF NOT EXISTS item_trash
@@ -48,17 +65,17 @@ pub(crate) fn install(conn: &Connection) -> Result<()> {
         END;",
     )
     .map_err(internal)?;
-    if needs_rebuild {
-        tx.execute_batch(
-            "INSERT INTO item_terms SELECT DISTINCT i.kind,'label',j.value,i.id
+    tx.execute_batch(
+        "INSERT INTO item_terms SELECT DISTINCT i.kind,'label',j.value,i.id
              FROM items i, json_each(i.metadata,'$.labels') j
              WHERE j.type='text' AND substr(i.path,1,7) <> '.trash/';
              INSERT INTO item_terms SELECT DISTINCT i.kind,'link',j.value,i.id
              FROM items i, json_each(i.metadata,'$.links') j
              WHERE j.type='text' AND substr(i.path,1,7) <> '.trash/';",
-        )
+    )
+    .map_err(internal)?;
+    tx.pragma_update(None, "application_id", GENERATION)
         .map_err(internal)?;
-    }
     tx.commit().map_err(internal)
 }
 
@@ -259,6 +276,28 @@ impl Content {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_projection_rebuilds_terms_from_retained_heads() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE items(id TEXT PRIMARY KEY,kind TEXT,metadata TEXT,revision TEXT,
+              updated_at TEXT,path TEXT,mat_state TEXT);
+             INSERT INTO items VALUES ('x','notes','{\"labels\":[\"kept\"]}','rev','date','Notes/X.md','materialized');",
+        ).unwrap();
+        install(&conn).unwrap();
+        conn.execute_batch("DELETE FROM item_terms; PRAGMA application_id=9;")
+            .unwrap();
+        install(&conn).unwrap();
+        let (label, rev): (String, String) = conn
+            .query_row(
+                "SELECT item_terms.name,items.revision FROM item_terms JOIN items ON id=item",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((label.as_str(), rev.as_str()), ("kept", "rev"));
+    }
 
     #[test]
     fn page_statements_seek_an_ordered_index_without_sorting() {

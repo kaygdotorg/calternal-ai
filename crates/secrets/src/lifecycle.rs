@@ -1,5 +1,5 @@
 //! Host recovery attachment and irreversible owner erasure.
-use crate::local::{SCHEMA, begin, crash_point, open_db};
+use crate::local::{begin, crash_point, open_db};
 use crate::{Error, LocalStore, Owner, Result};
 use rusqlite::OptionalExtension;
 impl LocalStore {
@@ -29,7 +29,7 @@ impl LocalStore {
             };
             return self.erase_key(owner, &fingerprint, dir);
         }
-        let mut c = open_db(&path, SCHEMA)?;
+        let mut c = open_db(&path)?;
         let tx = begin(&mut c)?;
         let fingerprint: Option<Vec<u8>> = tx
             .query_row(

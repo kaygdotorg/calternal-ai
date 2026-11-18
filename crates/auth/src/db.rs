@@ -16,7 +16,8 @@ use std::time::Duration;
 mod role_batch;
 
 /// The one schema version this build reads; [`migrate`] creates it on an empty file.
-const VERSION: i64 = 11;
+const MIGRATIONS: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("auth.db", 11, &[include_str!("schema.sql")], &[]);
 
 /// A handle to the dedicated auth.db worker. Its bounded mailbox serializes
 /// authority reads, authentication writes and recovery publication for this
@@ -286,42 +287,17 @@ pub fn open_conn(path: &Path) -> Result<Connection> {
     calternal_fsio::private::file(path).map_err(Error::internal)?;
     let conn = Connection::open(path).map_err(Error::internal)?;
     configure(&conn).map_err(Error::internal)?;
-    migrate(&conn).map_err(Error::internal)?;
+    calternal_store::migrations::migrate(&conn, MIGRATIONS).map_err(Error::internal)?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(Error::internal)?;
     Ok(conn)
 }
 
 fn configure(conn: &Connection) -> rusqlite::Result<()> {
     conn.busy_timeout(Duration::from_secs(5))?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "FULL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     Ok(())
-}
-
-/// Creates the current schema ([`include_str!`] of `schema.sql`) in an empty
-/// database; an existing database must already be at [`VERSION`]. There is no
-/// migration chain: preview data is disposable.
-fn migrate(conn: &Connection) -> rusqlite::Result<()> {
-    // Read the version after taking the write lock: a CLI command may open
-    // the same database while the server is starting.
-    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
-    let have: i64 = tx.pragma_query_value(None, "user_version", |r| r.get(0))?;
-    match have {
-        0 => {
-            tx.execute_batch(include_str!("schema.sql"))?;
-            tx.pragma_update(None, "user_version", VERSION)?;
-        }
-        VERSION => {}
-        _ => {
-            return Err(rusqlite::Error::SqliteFailure(
-                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_MISMATCH),
-                Some(format!(
-                    "auth.db schema version {have} is not {VERSION}; use fresh disposable data"
-                )),
-            ));
-        }
-    }
-    tx.commit()
 }
 
 // Owner-only creation and fsio directory durability; not a root guard.

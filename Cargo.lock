@@ -401,6 +401,7 @@ dependencies = [
  "blake3",
  "calternal-core",
  "calternal-fsio",
+ "calternal-store",
  "calternal-types",
  "getrandom 0.4.3",
  "openssl",
@@ -607,6 +608,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "calternal-fsio",
+ "calternal-store",
  "calternal-types",
  "getrandom 0.4.3",
  "openssl",

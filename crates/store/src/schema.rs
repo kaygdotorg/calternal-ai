@@ -1,13 +1,11 @@
-//! The `index.db` schema (one current definition) and its opening rules.
+//! The versioned `index.db` journal schema and its opening rules.
 
 use crate::token::entry_check;
 use crate::{Error, Result};
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::Path;
 
-/// The whole `index.db` schema at [`VERSION`]: the change journal and its
-/// expiring request receipts (nothing outlives a receipt). No migration chain:
-/// preview data is disposable, and a database at another version is refused.
+/// The baseline journal and its expiring request receipts.
 const SCHEMA: &str = "CREATE TABLE meta (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -31,8 +29,8 @@ const SCHEMA: &str = "CREATE TABLE meta (
         at_ms        INTEGER NOT NULL
     ) STRICT;
     CREATE INDEX idempotency_at ON idempotency (at_ms);";
-/// The schema version [`SCHEMA`] creates.
-const VERSION: i64 = 2;
+const MIGRATIONS: crate::migrations::Schema<'_> =
+    crate::migrations::Schema::new("index.db", 2, &[SCHEMA], &[]);
 
 /// Validates the explicit space binding before exposing an opened journal.
 pub(crate) fn open_bound_writer(
@@ -109,8 +107,7 @@ pub(crate) struct OpenState {
 /// commit switches to FULL for its one transaction.
 fn tune(conn: &Connection) -> Result<()> {
     conn.execute_batch(
-        "PRAGMA journal_mode = WAL;
-         PRAGMA synchronous = NORMAL;
+        "PRAGMA synchronous = NORMAL;
          PRAGMA foreign_keys = ON;
          PRAGMA busy_timeout = 5000;",
     )
@@ -119,9 +116,11 @@ fn tune(conn: &Connection) -> Result<()> {
 
 /// Opens the writer connection and reads its indexed head and restore metadata.
 pub(crate) fn open_writer(path: &Path, with_check: bool) -> Result<OpenState> {
-    let mut conn = Connection::open(path).map_err(Error::internal)?;
+    let conn = Connection::open(path).map_err(Error::internal)?;
     tune(&conn)?;
-    migrate(&mut conn)?;
+    crate::migrations::migrate(&conn, MIGRATIONS).map_err(Error::internal)?;
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .map_err(Error::internal)?;
     let (epoch, epoch_head, highwater_initialized) = ensure_epoch(&conn, with_check)?;
     let (head, head_check) = read_head(&conn, with_check)?;
     Ok(OpenState {
@@ -185,27 +184,6 @@ pub(crate) fn open_reader(path: &Path) -> Result<Connection> {
     conn.execute_batch("PRAGMA busy_timeout = 5000;")
         .map_err(Error::internal)?;
     Ok(conn)
-}
-
-/// Creates [`SCHEMA`] in an empty database; refuses any other version.
-fn migrate(conn: &mut Connection) -> Result<()> {
-    let version: i64 = conn
-        .query_row("PRAGMA user_version", [], |r| r.get(0))
-        .map_err(Error::internal)?;
-    match version {
-        0 => {
-            let tx = conn.transaction().map_err(Error::internal)?;
-            tx.execute_batch(SCHEMA).map_err(Error::internal)?;
-            tx.pragma_update(None, "user_version", VERSION)
-                .map_err(Error::internal)?;
-            tx.commit().map_err(Error::internal)
-        }
-        VERSION => Ok(()),
-        _ => Err(Error::new(
-            crate::ErrorCode::InvalidInput,
-            "index.db schema version is not this build's; use fresh disposable data",
-        )),
-    }
 }
 
 /// The journal's generation id and, for signed stores, its restore metadata.

@@ -18,7 +18,14 @@ use std::{
 const POLL: Duration = Duration::from_millis(50);
 const PAGE: usize = 128;
 const REQUESTS: usize = 128;
-const GENERATION: &str = concat!("2/", env!("CARGO_PKG_VERSION"));
+const VERSION: i64 = 2;
+const MIGRATIONS: calternal_store::migrations::Schema<'_> =
+    calternal_store::migrations::Schema::new("search projection", VERSION, &[SCHEMA], &[]);
+
+fn generation() -> &'static str {
+    static GENERATION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    GENERATION.get_or_init(|| VERSION.to_string())
+}
 
 pub(super) fn start(
     content: &Arc<Content>,
@@ -112,7 +119,7 @@ fn add(queue: &mut VecDeque<SpaceId>, marked: &mut HashSet<SpaceId>, space: Spac
 }
 
 pub(super) fn db_path(appdata: &std::path::Path, space: SpaceId) -> std::path::PathBuf {
-    crate::db::space_path(appdata, space).with_file_name("search-v2.db")
+    crate::db::space_path(appdata, space).with_file_name(format!("search-v{VERSION}.db"))
 }
 
 enum Progress {
@@ -197,7 +204,7 @@ fn open_writer(path: &std::path::Path) -> Result<Connection> {
         )
         .map_err(internal)?;
     register_functions(&index)?;
-    index.execute_batch(SCHEMA).map_err(internal)?;
+    calternal_store::migrations::migrate(&index, MIGRATIONS).map_err(internal)?;
     Ok(index)
 }
 
@@ -332,7 +339,7 @@ pub(super) struct State {
 }
 impl State {
     pub(super) fn matches(&self, config: &SearchConfig, space: SpaceId, head: &SyncToken) -> bool {
-        self.generation == GENERATION
+        self.generation == generation()
             && self.kinds == config.kinds
             && self.space == space.to_string()
             && self.epoch == head.epoch
@@ -372,7 +379,7 @@ fn reset(
             config.kinds,
             space.to_string(),
             head.epoch,
-            GENERATION,
+            generation(),
             head.seq
         ],
     )
@@ -382,7 +389,7 @@ fn reset(
         kinds: config.kinds.clone(),
         space: space.to_string(),
         epoch: head.epoch.clone(),
-        generation: GENERATION.to_owned(),
+        generation: generation().to_owned(),
         watermark: head.seq,
         scan_after: Some(0),
         ready: false,

@@ -13,6 +13,8 @@
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 
 mod highwater;
+/// Shared SQLite schema migration for durable Calternal stores.
+pub mod migrations;
 mod projection;
 mod proof;
 pub use projection::{ProjectionChange, ProjectionJournal};

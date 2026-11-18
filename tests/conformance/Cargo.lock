@@ -225,6 +225,7 @@ dependencies = [
  "blake3",
  "calternal-core",
  "calternal-fsio",
+ "calternal-store",
  "calternal-types",
  "getrandom 0.4.3",
  "openssl",
@@ -325,6 +326,22 @@ dependencies = [
  "reqwest",
  "ring",
  "rustix",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "calternal-store"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "calternal-fsio",
+ "calternal-types",
+ "rusqlite",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
