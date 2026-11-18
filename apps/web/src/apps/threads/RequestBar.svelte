@@ -107,8 +107,6 @@
 
 <style>
   :global(.bar) { color: var(--ink); max-height: min(26rem, 52dvh, 60cqh); overflow: auto; overscroll-behavior: contain; flex: 0 1 auto; }
-  /* A window only about 400 px high (a phone on its side) shares it with the header and the composer: the card takes what is left of it, never more. */
-  @media (max-height: 520px) { :global(.bar) { max-height: max(9rem, calc(100dvh - var(--bar-h) - 8.5rem)); } }
   :global(.bar[data-kind="approval"]), :global(.bar[data-kind="secret"]), :global(.bar[data-kind="signin"]) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-base) 38%, transparent); }
   .head { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-2) var(--s-2) 0 var(--s-6); }
   .kind { flex: 1; display: inline-flex; align-items: center; gap: var(--s-3); font-size: var(--text-label); font-weight: var(--strong-weight); color: var(--ink-2); }
@@ -133,4 +131,13 @@
   .once { font-size: var(--text-label); color: var(--ink-3); }
   .clock { font-size: var(--text-label); color: var(--ink-3); }
   .exp { color: var(--danger); }
+  /* A window only about 400 px high (a phone on its side) shares it with the header and the composer: the card takes what is left of it, never more. */
+  @media (max-height: 520px) {
+    :global(.bar) { max-height: max(9rem, calc(100dvh - var(--bar-h) - 8.5rem)); }
+    /* The card's lines are tightened and a secret's field and its quiet action share one row, so the pinned actions take one row and never sit on the question above them. */
+    .body { gap: var(--s-2); padding-bottom: var(--s-3); }
+    .act { display: flex; align-items: center; gap: var(--s-3); padding-block: var(--s-2) var(--s-3); }
+    .act form { flex: 1 1 auto; flex-wrap: nowrap; }
+    .act .foot { flex: none; }
+  }
 </style>
