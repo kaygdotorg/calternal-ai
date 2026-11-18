@@ -182,3 +182,12 @@ enrollment gate.
   DNS policy and a network isolation proof. A vsock egress broker keeps guest
   networking rootless and limits destinations in one place. It adds a proxy
   contract and requires compatibility checks for provider, CLI and package clients.
+
+## Plugin waits (issue #50)
+
+- **Standalone prompts.** Choose where the Inbox puts a plugin question or
+  approval that belongs to a job without a thread. The request carries its
+  job ID and uses the existing answer and approval operations.
+- **First release.** Decide whether to drain parked plugin jobs before a
+  downgrade or keep the new server while those jobs still need signals.
+  The jobs.db migration keeps the previous job writer shape.

@@ -57,6 +57,53 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
   "$schema": "http://json-schema.org/draft-07/schema#",
   "additionalProperties": false,
   "definitions": {
+    "ContentFetchField": {
+      "description": "Stored source fields supported by the content proxy.",
+      "oneOf": [
+        {
+          "description": "The item's UTF-8 text body.",
+          "enum": [
+            "text"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ContentFetchProfile": {
+      "description": "Host-owned remote media policy. Each additional profile requires review.",
+      "oneOf": [
+        {
+          "description": "Anonymous HTTPS GET for allowed image and font formats, excluding SVG.",
+          "enum": [
+            "images_fonts"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ContentFetchSource": {
+      "additionalProperties": false,
+      "description": "A stored field the broker may read to derive proxy references.",
+      "properties": {
+        "field": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchField"
+            }
+          ],
+          "description": "The source field interpreted as HTML."
+        },
+        "kind": {
+          "description": "The declaring package's own text kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "kind"
+      ],
+      "type": "object"
+    },
     "HostCallKind": {
       "description": "The only broker methods a worker may request.",
       "oneOf": [
@@ -78,6 +125,13 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           "description": "Read the effective value of a setting declared by the calling package.",
           "enum": [
             "read_setting_v1"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Prepare remote asset references from a declared, stored content revision.",
+          "enum": [
+            "content_prepare_v1"
           ],
           "type": "string"
         },
@@ -257,6 +311,34 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
       ],
       "type": "object"
     },
+    "ManifestContentFetch": {
+      "additionalProperties": false,
+      "description": "Anonymous content proxy scope shown during trusted installation review.",
+      "properties": {
+        "profile": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ContentFetchProfile"
+            }
+          ],
+          "description": "Host-enforced media and transport policy."
+        },
+        "sources": {
+          "description": "Up to 32 distinct text sources owned by the declaring package.",
+          "items": {
+            "$ref": "#/definitions/ContentFetchSource"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile",
+        "sources"
+      ],
+      "type": "object"
+    },
     "ManifestHook": {
       "additionalProperties": false,
       "description": "Space-scoped hook enabled by a Manager; never a global interceptor.",
@@ -382,6 +464,24 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "schema",
         "storage"
       ],
+      "type": "object"
+    },
+    "ManifestNetwork": {
+      "additionalProperties": false,
+      "description": "Network authority requested by a package. Each declaration has its own approval meaning and is subject to the live space activation.",
+      "properties": {
+        "content_fetch": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestContentFetch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Anonymous remote assets from stored content. Omit for no proxy access."
+        }
+      },
       "type": "object"
     },
     "ManifestOperation": {
@@ -598,7 +698,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "ManifestSetting": {
       "additionalProperties": false,
-      "description": "Typed space setting; secrets use separate handles.",
+      "description": "Typed plugin setting; secrets use separate handles.",
       "properties": {
         "default": {
           "description": "Default setting value."
@@ -606,6 +706,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "id": {
           "description": "Stable setting identifier.",
           "type": "string"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestSettingScope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Override owner. Omission selects the shared space setting."
         },
         "value_type": {
           "allOf": [
@@ -622,6 +733,25 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "value_type"
       ],
       "type": "object"
+    },
+    "ManifestSettingScope": {
+      "description": "Owner of an override for a declared plugin setting.",
+      "oneOf": [
+        {
+          "description": "Each person in the space can have their own value.",
+          "enum": [
+            "personal"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Space managers can change the shared value.",
+          "enum": [
+            "space"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "ManifestSettingType": {
       "description": "Primitive setting value type.",
@@ -689,7 +819,7 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
     },
     "ManifestV1": {
       "additionalProperties": false,
-      "description": "Plugin menu read without running plugin code. Every top-level field is required; only the documented optional fields inside declarations may be omitted.",
+      "description": "Plugin menu read without running plugin code. Only documented optional fields may be omitted.",
       "properties": {
         "api_version": {
           "description": "Manifest API version, currently 1.",
@@ -744,6 +874,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "name": {
           "description": "Human-readable plugin name.",
           "type": "string"
+        },
+        "network": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ManifestNetwork"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional outbound network declarations. Omit for no network access."
         },
         "operations": {
           "description": "Public operation schemas and policy.",

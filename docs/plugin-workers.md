@@ -11,7 +11,9 @@ backend and exec channel. Interactive exec input stays open; ordered, replay-
 protected `Input` envelopes carry subsequent frames. Fences apply in both directions.
 No paths or credentials accompany the source. Internal worker leases and raw
 exec streams are hidden from person-facing machine routes; only checked plugin
-results reach callers. Worker stderr is discarded at the machine boundary.
+results reach callers. The machine drains worker stderr into a 4 KiB tail.
+It forwards the tail before a failed worker's exit on the internal lease stream.
+Space Owners and Managers can inspect that tail through installed-package diagnostics.
 
 The worker profile has one read-only `/plugin` code mount, a read-only root,
 `--read-only-tmpfs=false`, an isolated network namespace, no capabilities, no privilege

@@ -56,6 +56,7 @@ pub(crate) async fn dispatch<D: Directory>(
     let rid = rid.to_owned();
     let scheduler = machines.clone();
     let st = state.clone();
+    let runtime = tokio::runtime::Handle::current();
     let (result, resume) = crate::blocking::spawn(move || {
         let mut resume = None;
         let result = match row.id {
@@ -96,6 +97,13 @@ pub(crate) async fn dispatch<D: Directory>(
                     status: "pending".into()
                 })
             }
+            "plugins.diagnostics" => {
+                json!(crate::plugins::installed_diagnostics::read(
+                    &st,
+                    person.id,
+                    decode(input)?
+                )?)
+            }
             "plugins.network.content.get" => {
                 let i: calternal_core::ContentFrameAddress = decode(input)?;
                 let space = authorize(&st, person.id, &i.space_id, row.required)?;
@@ -132,6 +140,9 @@ pub(crate) async fn dispatch<D: Directory>(
                 )?;
                 json!(i.preference)
             }
+            "plugins.personal_settings.get" | "plugins.personal_settings.set" => {
+                crate::plugins::settings::personal(&st, person.id, &rid, row, input)?
+            }
             "plugins.settings.get" | "plugins.settings.set" => {
                 crate::plugins::settings::dispatch(&st, person.id, &rid, row.id, input)?
             }
@@ -161,6 +172,7 @@ pub(crate) async fn dispatch<D: Directory>(
                 json!(SpaceInstructionsResult { markdown })
             }
             _ => {
+                let decision_fingerprint = fingerprint(row.id, &input);
                 let (id, status, value) = match row.id {
                     "requests.answer" => {
                         let i: RequestAnswerInput = decode(input)?;
@@ -180,6 +192,19 @@ pub(crate) async fn dispatch<D: Directory>(
                     }
                     _ => return Err(Error::not_found("operation not found")),
                 };
+                if let Some(result) = crate::plugins::signals::inbox(
+                    &st,
+                    &person,
+                    &id,
+                    row.required,
+                    &rid,
+                    &decision_fingerprint,
+                    status,
+                    value.as_ref(),
+                    &runtime,
+                )? {
+                    return Ok((json!(result), None));
+                }
                 let (space, job_id) =
                     st.jobs
                         .agent_decide(person.id, &id, &rid, status, value, |space| {
@@ -225,7 +250,8 @@ pub(crate) async fn dispatch<D: Directory>(
     Ok(result)
 }
 
-fn question_label(form: &calternal_core::GenUiView) -> Result<String, Error> {
+/// Validate the Inbox's action-free question form and return its display label.
+pub(crate) fn question_label(form: &calternal_core::GenUiView) -> Result<String, Error> {
     calternal_core::validate_genui(form)?;
     let limits = calternal_genui::Budgets::default();
     let program = calternal_genui::compile(&form.source, limits)
@@ -289,7 +315,10 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
             .is_some_and(|space| authorize(state, person.id, space, Capability::SpaceRead).is_ok())
     });
     let secrets = state.store.secrets();
-    let mut collect = |owner: Owner, space_id: Option<String>| -> Result<(), Error> {
+    let collect = |requests: &mut Vec<PersonRequest>,
+                   owner: Owner,
+                   space_id: Option<String>|
+     -> Result<(), Error> {
         for r in secrets
             .pending(&owner)
             .map_err(|_| Error::unavailable("secret requests unavailable"))?
@@ -304,6 +333,7 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
                 id: r.id.to_string(),
                 space_id: space_id.clone(),
                 thread_id: thread.map(|id| id.to_string()),
+                job_id: None,
                 detail: RequestDetail::Secret {
                     name: r.name,
                     label: r.label,
@@ -314,10 +344,13 @@ fn list<D: Directory>(state: &Shared<D>, person: &Identity) -> Result<RequestsLi
         }
         Ok(())
     };
-    collect(Owner::Account(person.id), None)?;
+    collect(&mut requests, Owner::Account(person.id), None)?;
     for space in state.directory.describe(person).spaces {
+        if authorize(state, person.id, &space.id, Capability::SpaceRead).is_ok() {
+            requests.extend(state.jobs.wait_requests(&space.id, person.id)?);
+        }
         if let Ok(id) = authorize(state, person.id, &space.id, Capability::SecretsManage) {
-            collect(Owner::Space(id), Some(space.id))?;
+            collect(&mut requests, Owner::Space(id), Some(space.id))?;
         }
     }
     requests.extend(crate::provider_sign_in::list(state, person.id)?);

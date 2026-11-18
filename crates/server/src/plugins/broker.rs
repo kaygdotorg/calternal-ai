@@ -445,12 +445,30 @@ impl<D: Directory> InvocationHost for SpaceHost<D> {
                     serde_json::from_value(input.clone()).map_err(|_| Error::Invalid)?;
                 let setting = super::settings::declaration(&self.plugin, &request.key)
                     .map_err(|_| Error::Refused)?;
-                let record = self
-                    .state
-                    .store
-                    .content()
-                    .plugin_setting(self.space, &self.plugin.manifest.id, &request.key)
-                    .map_err(|_| Error::Refused)?;
+                let record =
+                    if setting.scope == Some(calternal_core::ManifestSettingScope::Personal) {
+                        let value = self
+                            .state
+                            .inputs
+                            .plugin_value(
+                                self.identity.id,
+                                self.space,
+                                &self.plugin.manifest.id,
+                                &request.key,
+                            )
+                            .map_err(|_| Error::Refused)?;
+                        calternal_content::SettingRecord {
+                            value,
+                            alternatives: Vec::new(),
+                            repair: None,
+                        }
+                    } else {
+                        self.state
+                            .store
+                            .content()
+                            .plugin_setting(self.space, &self.plugin.manifest.id, &request.key)
+                            .map_err(|_| Error::Refused)?
+                    };
                 Ok(super::settings::effective(setting, record).effective)
             }
             HostCallKind::ContentPrepareV1 => self.prepare_content(input),
