@@ -418,6 +418,18 @@ async fn request_operations_keep_questions_approvals_and_secrets_account_private
     .await;
     assert_eq!(status, 200, "{app}");
     let app_approval = app["data"]["approval_id"].clone();
+    let inbox = f.op(1, "requests.list", json!({})).await;
+    inbox.ok();
+    let pending = inbox.body["data"]["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["id"] == app_approval)
+        .unwrap();
+    assert_eq!(
+        pending["detail"]["lifetimes"],
+        json!(["once", "this_thread"])
+    );
     f.op(
         1,
         "requests.approve",

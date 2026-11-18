@@ -317,6 +317,10 @@ app: string,
  */
 write: boolean,
 /**
+ * Choices enforced by the server for this action, in display order.
+ */
+lifetimes: Array<ApprovalLifetime>,
+/**
  * Exact operation details when raised by an automatic approval check.
  */
 action: JsonObject, } | { "kind": "secret",

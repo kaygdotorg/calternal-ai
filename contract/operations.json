@@ -7773,6 +7773,25 @@
         },
         "RequestDetail": {
           "description": "The information needed to render each pending request.",
+        "ApprovalLifetime": {
+          "description": "How long approved authority remains usable.",
+          "oneOf": [
+            {
+              "description": "The first matching action may use the grant.",
+              "enum": [
+                "once"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "The grant survives turns until the thread is archived or deleted.",
+              "enum": [
+                "this_thread"
+              ],
+              "type": "string"
+            }
+          ]
+        },
           "oneOf": [
             {
               "description": "One generated form, which may have multiple fields.",
@@ -7882,6 +7901,13 @@
           },
           "type": "array"
         }
+                "lifetimes": {
+                  "description": "Choices enforced by the server for this action, in display order.",
+                  "items": {
+                    "$ref": "#/definitions/ApprovalLifetime"
+                  },
+                  "type": "array"
+                },
       },
       "required": [
         "requests"
@@ -7891,6 +7917,7 @@
     }
   },
   {
+                "lifetimes",
     "risk": "reversible",
     "id": "requests.ask",
     "description": "Ask the person a question from the current turn",

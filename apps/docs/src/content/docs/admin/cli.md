@@ -123,7 +123,7 @@ checks and Trash retention.
 
 | Command | Purpose | Human output | `data` (JSON) |
 |---|---|---|---|
-| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space and detail. | `requests[]` |
+| `requests list` | List private questions, approvals and secret prompts. | Adaptive table with kind, request ID, space, detail and allowed approval lifetimes. | `requests[]` |
 | `requests answer ID --answer JSON` | Submit a question's form values. | Request ID and status. | `id`, `status` |
 | `requests approve ID --lifetime once\|this-thread` | Approve using a fresh passkey session. | Request ID and status. | `id`, `status` |
 | `requests deny ID` | Decline a pending approval. | Request ID and status. | `id`, `status` |
