@@ -159,9 +159,9 @@ export class FixtureClient implements ThreadsClient {
   }
 
   /** Fixture search: the first 400 messages of each thread of the space are scanned (generated on the fly, deterministic), newest first. Instant: nothing is awaited. */
-  async searchMessages(query: string, limit = 100): Promise<MessageHit[]> {
+  async searchMessages(query: string, limit = 100): Promise<{ hits: MessageHit[]; partial: boolean }> {
     const q = query.trim().toLowerCase();
-    if (!q) return [];
+    if (!q) return { hits: [], partial: false };
     const hits: MessageHit[] = [];
     for (const t of this.threadList) {
       const seed = [...t.id].reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -179,7 +179,7 @@ export class FixtureClient implements ThreadsClient {
         }
       }
     }
-    return hits.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, limit);
+    return { hits: hits.sort((a, b) => (b.at ?? 0) - (a.at ?? 0)).slice(0, limit), partial: false };
   }
   async messageIndex(threadId: string, messageId: string): Promise<number | undefined> {
     const f = this.forks.get(threadId);
