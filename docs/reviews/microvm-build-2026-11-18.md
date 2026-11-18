@@ -301,15 +301,6 @@ through a restart with the lease intact, rejects an insufficient ack
 and a report for another machine, and checks revocation after the
 lease has been removed from memory.
 
-Owner erasure followed by a server restart before teardown is an open
-case inherited from dev. Erasure deletes the lease row, leaving the
-stop record in memory until proof. A restart then has no row to
-restore. A minimal durable stop record could preserve the IDs needed
-for accounting while dropping the erased lease details. It would add
-a placement record retained until teardown or revocation. Retaining
-the existing stopping lease would avoid a separate record and would
-retain more owner data through that interval.
-
 On dev-01 the three targeted server worker tests passed. The machine
 library passed 21 tests with one ignored, and the workspace passed 611
 with two ignored. The focused Notes directory-mode regression passed.
@@ -332,6 +323,37 @@ nix develop -c env CALTERNAL_MICROVM_TEST_CONFIG="$PWD/../stage3-test.json" \
 
 The focused Notes run used the same absolute server and target paths
 with `filesystem_modes_and_complete_sql_inventory` as the test filter.
+
+### Machine-only reservations after erasure
+
+The owner chose a minimal durable record for the erasure and restart case.
+The existing erasure transaction inserts the machine UUID, lease UUID and
+one reserved slot, then deletes the stopping lease. Committing drops the
+account reservation in memory. Boot restores each machine slot and deletes
+records for durably revoked machines. Authentication and teardown reuse
+the existing worker stop flow. Pending entries are bounded by enrolled
+pool admission capacity, one row per occupied worker slot.
+
+The baseline regression found zero occupied slots after erasure and restart
+where one should remain. The new cases inspect the record's exact fields
+and identifier bytes, verify the machine stays full after reconnect, reject
+an unauthenticated report, and exercise proof, revocation and restart after
+revocation commits. Machine placement schema 6 follows the existing fresh
+development database rule.
+
+The dev-01 worker filter passed six tests. The workspace passed 614 tests
+with two ignored. Serial conformance with the absolute KVM config and server
+path passed all 127 cases in 184.43 seconds, including the four live microVM
+cases. Integration, plugin, GenUI, contract, docs, publication, formatting,
+and both leak checks passed.
+
+```sh
+nix develop -c ./scripts/check-podman-tests.sh cargo test --locked -j6 \
+  -p calternal-server --lib machines::workers -- --test-threads=1
+CALTERNAL_MICROVM_TEST_CONFIG="$PWD/../stage3-test.json" \
+  CALTERNAL_SERVER_BIN="$PWD/target/debug/calternal" CARGO_TARGET_DIR="$PWD/target" \
+  nix develop -c scripts/docs-site/gates.sh
+```
 
 ## Backend gate commands
 
@@ -373,10 +395,10 @@ nix develop -c ./scripts/check-podman-tests.sh cargo test --locked -j6 \
 | 2. Dependencies | Uses dependencies already available to the existing machine and server crates. New operator tooling uses Python's standard library and nftables. |
 | 3. Lock scope | The server uses the existing installation-wide machine registry. One account's guest lock spans disk binding and release to keep a single disk owner. TAP and account maps hold short in-memory locks. |
 | 4. Async I/O | Host file and process operations use Tokio. Policy verification, image hashing, directory sync and durable rename run on blocking tasks. |
-| 5. Reads and flushes | Warm exec uses one authenticated vsock channel with no explicit host filesystem reads or flushes. The capacity check adds in-memory lookups and no SQL. Disk binding flushes the new disk and affected directories. |
+| 5. Reads and flushes | Warm exec uses one authenticated vsock channel with no explicit host filesystem reads or flushes. Capacity checks add in-memory lookups. Erasure writes stop records in the existing fenced transaction. Boot scans them once and proof deletes each in one commit. Disk binding flushes the disk and affected directories. |
 | 6. Constant work | The role verifies and loads the immutable image and network policy at startup. Slots are in memory. The size table is constant. |
-| 7. Bounds | The writable disk is capped per account, the config bounds guest count and the warm pool has at most two entries. Image operations retain one active and one rollback root. Account erasure removes its durable disk. |
-| 8. Compatibility | The pool uses the current machine protocol. There are no database migrations or alternate image readers. |
+| 7. Bounds | The writable disk is capped per account, the config bounds guest count and the warm pool has at most two entries. Image operations retain one active and one rollback root. Account erasure removes its durable disk. Machine-only stop records are bounded by previously admitted worker slots. |
+| 8. Compatibility | The pool uses the current machine protocol. Placement schema 6 uses the fresh development database rule. There are no migrations or alternate image readers. |
 | 9. Space identity | Space homes, account disks and thread workspaces use the existing UUID identities. |
 | 10. Single declaration | Each size profile declares its active-thread limit. The machine and server both read it. One policy supplies DNS, allowed destinations and TAP slots. |
 | 11. Callers | Machine CLI selects the backend. The server uses its existing admission, readiness and erasure paths. |
@@ -393,3 +415,5 @@ sufficient for workspace recovery and admission. The firewall receipt lets
 the machine role open its assigned TAPs without running a firewall manager.
 Installing the provider adapter under the standard executable path could
 remove the extra PATH entry from both the OCI image and guest launcher.
+The two worker-stop recovery paths could share the check for durably revoked
+machines if lease recovery is consolidated later.

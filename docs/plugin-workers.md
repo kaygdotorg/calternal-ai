@@ -89,9 +89,20 @@ Options requiring an owner decision:
   container path is added.
 
 An unreachable enrolled machine retains its stopping reservations. A worker
-holds both machine and account capacity until authenticated teardown or
-durable machine revocation. The stop record retains the account so cleanup
-can release its reservation after an erasure removes the lease row.
+with a lease holds both machine and account capacity until authenticated
+teardown or durable machine revocation. Owner erasure replaces a stopping
+lease with a record containing only the machine UUID, lease UUID and its one
+reserved slot. Erasure releases the account slot immediately. The record
+keeps the machine slot occupied across server restarts. Teardown proof or
+durable revocation removes the record and frees that slot.
+
+There is at most one record per reserved worker slot. The bound is the sum
+of the enrolled pool machines' admission ceilings, using the highest
+advertised ceiling for a machine whose capacity has decreased since admission.
+Pending stops continue counting against a reduced ceiling as they drain.
+Records have no timed expiry. Boot reads them once. Erasure writes them in
+the same transaction that deletes the leases. Teardown removes each record
+with one commit. Polls without teardown proof add no database I/O.
 
 Manifest v1 has no destination declaration, manager approval record or `fetch`
 host call. All plugin network is therefore disabled. A future network-contract

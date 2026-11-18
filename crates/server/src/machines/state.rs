@@ -294,7 +294,7 @@ impl State {
         l.row.reason = Some(why.into());
         l.state = LeaseState::Interrupted;
         let account = l.row.account;
-        self.release_slot(assigned, account);
+        self.release_slot(assigned, Some(account));
         self.persist(lease);
     }
 
@@ -335,7 +335,7 @@ impl State {
         self.workers.remove(&lease);
         let account = l.row.account;
         if !stopping {
-            self.release_slot(assigned, account);
+            self.release_slot(assigned, Some(account));
         }
         self.persist(lease);
         for e in self.execs.values_mut() {
@@ -354,7 +354,7 @@ impl State {
                     lease,
                     WorkerStop {
                         machine: m,
-                        account,
+                        account: Some(account),
                         session,
                         seq,
                     },
@@ -486,7 +486,7 @@ impl State {
         l.row = row;
         l.state = LeaseState::Assigned;
         let account = l.row.account;
-        self.take_slot(Some(machine), account);
+        self.take_slot(Some(machine), Some(account));
         self.send_assign(lease, settings);
         self.send_execs(lease);
     }

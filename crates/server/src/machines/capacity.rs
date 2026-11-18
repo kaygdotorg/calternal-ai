@@ -12,32 +12,41 @@ impl State {
         self.machines.get(&machine).map_or(0, |m| m.assigned)
     }
 
-    /// Restore or reserve capacity for a live assigned/running lease.
-    pub(super) fn take_slot(&mut self, machine: Option<Uuid>, account: AccountId) {
+    /// Reserve one machine slot. Only leases with owners count toward a pool account.
+    pub(super) fn take_slot(&mut self, machine: Option<Uuid>, account: Option<AccountId>) {
         if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
             m.assigned += 1;
             let owner = m.row.owner;
-            if owner == Owner::Pool {
+            if owner == Owner::Pool
+                && let Some(account) = account
+            {
                 *self.pool_load.entry(account).or_default() += 1;
             }
             self.readiness_changed(owner);
         }
     }
 
-    /// Drop a placement reservation and its account count under the registry lock.
-    pub(super) fn release_slot(&mut self, machine: Option<Uuid>, account: AccountId) {
+    /// Release a machine slot and any associated pool account count. No I/O.
+    pub(super) fn release_slot(&mut self, machine: Option<Uuid>, account: Option<AccountId>) {
         if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
             m.assigned = m.assigned.saturating_sub(1);
             let owner = m.row.owner;
             if owner == Owner::Pool
-                && let Some(count) = self.pool_load.get_mut(&account)
+                && let Some(account) = account
             {
-                *count = count.saturating_sub(1);
-                if *count == 0 {
-                    self.pool_load.remove(&account);
-                }
+                self.release_pool_slot(account);
             }
             self.readiness_changed(owner);
+        }
+    }
+
+    /// Drop an account's pool count independently of the machine slot. No I/O.
+    pub(super) fn release_pool_slot(&mut self, account: AccountId) {
+        if let Some(count) = self.pool_load.get_mut(&account) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.pool_load.remove(&account);
+            }
         }
     }
 

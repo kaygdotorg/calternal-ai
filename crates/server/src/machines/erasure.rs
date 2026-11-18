@@ -24,11 +24,12 @@ pub(super) fn clear_orphan_drains(
 }
 
 impl MachineService {
-    /// Fence cached live machines and remove placements for a retired owner.
-    /// Uses the existing registry lock and one FULL cleanup transaction after
-    /// the lease-stop commits. No waits for remote acknowledgements.
+    /// Fence cached live machines and replace erased stopping leases with
+    /// machine-only reservations. Holds the registry lock across the cleanup
+    /// transaction so teardown cannot race lease deletion. No remote waits.
     pub(crate) fn retire_owner(&self, owner: ErasedOwner) -> Result<(), Error> {
         let mut st = self.lock()?;
+        let st = &mut *st;
         let matches = |row: &db::LeaseRow| match owner {
             ErasedOwner::Account(id) => row.account == id,
             ErasedOwner::Space(id) => row.space == id,
@@ -43,14 +44,13 @@ impl MachineService {
             let keep_files = !st.leases[lease].row.worker;
             st.end_with_files(*lease, "owner erased", &self.settings, keep_files);
         }
-        let pending;
+        let mut machines = Vec::new();
         if let ErasedOwner::Account(id) = owner {
-            let machines: Vec<_> = st
-                .machines
-                .values()
-                .filter(|m| m.row.owner == (Owner::Account { id }))
-                .map(|m| m.row.id)
-                .collect();
+            machines.extend(
+                st.machines
+                    .values()
+                    .filter_map(|m| (m.row.owner == (Owner::Account { id })).then_some(m.row.id)),
+            );
             for machine in &machines {
                 st.apply_revocation(*machine, &self.settings)?;
             }
@@ -58,38 +58,41 @@ impl MachineService {
             for m in st.machines.values_mut() {
                 m.checks.remove(&id);
             }
-            let tx = st.db.transaction().map_err(sql)?;
-            for machine in &machines {
+        }
+        let tx = st.db.transaction().map_err(sql)?;
+        for machine in &machines {
+            db::set_draining(&tx, *machine, false).map_err(sql)?;
+        }
+        let pending = super::erasure_queue::queue(&tx, owner, &machines)?;
+        for lease in &leases {
+            if let Some(stop) = st.worker_stops.get(lease) {
+                db::put_erased_worker_stop(&tx, *lease, stop.machine).map_err(sql)?;
+            }
+        }
+        match owner {
+            ErasedOwner::Account(id) => {
                 tx.execute(
-                    "DELETE FROM draining WHERE machine=?1",
-                    [machine.to_string()],
+                    "DELETE FROM workspace_discards WHERE account=?1",
+                    [id.to_string()],
                 )
                 .map_err(sql)?;
+                tx.execute("DELETE FROM leases WHERE account=?1", [id.to_string()])
+                    .map_err(sql)?;
             }
-            pending = super::erasure_queue::queue(&tx, owner, &machines)?;
-            tx.execute(
-                "DELETE FROM workspace_discards WHERE account=?1",
-                [id.to_string()],
-            )
-            .map_err(sql)?;
-            tx.execute("DELETE FROM leases WHERE account=?1", [id.to_string()])
-                .map_err(sql)?;
-            tx.commit().map_err(sql)?;
-            for machine in machines {
-                st.machines.remove(&machine);
+            ErasedOwner::Space(id) => {
+                tx.execute("DELETE FROM workspace_discards WHERE lease IN (SELECT id FROM leases WHERE space=?1)", [id.to_string()]).map_err(sql)?;
+                tx.execute("DELETE FROM leases WHERE space=?1", [id.to_string()])
+                    .map_err(sql)?;
             }
-            st.execs.retain(|_, exec| exec.account != id);
-        } else if let ErasedOwner::Space(id) = owner {
-            let tx = st.db.transaction().map_err(sql)?;
-            pending = super::erasure_queue::queue(&tx, owner, &[])?;
-            tx.execute("DELETE FROM workspace_discards WHERE lease IN (SELECT id FROM leases WHERE space=?1)", [id.to_string()]).map_err(sql)?;
-            tx.execute("DELETE FROM leases WHERE space=?1", [id.to_string()])
-                .map_err(sql)?;
-            tx.commit().map_err(sql)?;
-            st.execs.retain(|_, exec| !leases.contains(&exec.lease));
-        } else {
-            unreachable!("all storage owner types handled");
         }
+        tx.commit().map_err(sql)?;
+        for machine in machines {
+            st.machines.remove(&machine);
+        }
+        st.execs.retain(|_, exec| match owner {
+            ErasedOwner::Account(id) => exec.account != id,
+            ErasedOwner::Space(_) => !leases.contains(&exec.lease),
+        });
         st.pending_erasure_machines.extend(pending.iter().copied());
         for machine in pending {
             if let Some(live) = st.machines.get(&machine).and_then(|m| m.live.as_ref()) {
@@ -97,27 +100,22 @@ impl MachineService {
             }
         }
         for lease in leases {
+            // Remote plugin workers run on the operator pool. The machine
+            // reservation stays held, while the account loses its association.
+            if let Some(account) = st
+                .worker_stops
+                .get_mut(&lease)
+                .and_then(|stop| stop.account.take())
+            {
+                st.release_pool_slot(account);
+                st.readiness.change(account);
+            }
             if let Some(placement) = st.leases.remove(&lease) {
                 if st.threads.get(&placement.row.thread) == Some(&lease) {
                     st.threads.remove(&placement.row.thread);
                 }
                 st.workers.remove(&lease);
             }
-        }
-        // A revoked machine cannot send a teardown acknowledgement. Retain
-        // stops on every still-enrolled machine until it confirms teardown.
-        let orphaned: Vec<_> = st
-            .worker_stops
-            .iter()
-            .filter_map(|(lease, stop)| {
-                (!st.machines.contains_key(&stop.machine)).then_some(*lease)
-            })
-            .collect();
-        for lease in &orphaned {
-            st.worker_stops.remove(lease);
-        }
-        if !orphaned.is_empty() {
-            self.worker_changes.notify_waiters();
         }
         Ok(())
     }
