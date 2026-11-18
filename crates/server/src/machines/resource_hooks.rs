@@ -335,9 +335,8 @@ impl MachineService {
             return Err(Error::invalid_input("runtime window is outside retention"));
         }
         let authority = self.lock()?.authority.clone();
-        let owner = authority
-            .resource_owner(space)
-            .map_err(compute::authority_error)?
+        let owner = self
+            .resource_owner(space)?
             .ok_or_else(|| Error::not_found("resource scope is not assigned"))?;
         let groups = groups(&authority, Some(owner))?;
         let state = self.lock()?;
@@ -359,16 +358,11 @@ impl MachineService {
         binding: &ResourceHookBinding,
         after: i64,
     ) -> Result<Value, Error> {
-        let authority = {
-            let state = self.lock()?;
-            if state.resource_hooks.get(&space) != Some(binding) {
-                return Err(Error::forbidden("no resource observation grant"));
-            }
-            state.authority.clone()
-        };
-        let owner = authority
-            .resource_owner(space)
-            .map_err(compute::authority_error)?
+        if self.lock()?.resource_hooks.get(&space) != Some(binding) {
+            return Err(Error::forbidden("no resource observation grant"));
+        }
+        let owner = self
+            .resource_owner(space)?
             .ok_or_else(|| Error::not_found("resource scope is not assigned"))?;
         let state = self.lock()?;
         if state.resource_hooks.get(&space) != Some(binding) {

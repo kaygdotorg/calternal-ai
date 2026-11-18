@@ -247,15 +247,10 @@ pub fn execute(
             content.set_storage_limits(space, limits)?;
             Response::StorageLimits
         }
-        Request::StorageUsage { space } => {
-            let authority = svc.lock()?.authority.clone();
-            Response::StorageUsage {
-                owner: authority
-                    .resource_owner(space)
-                    .map_err(super::compute::authority_error)?,
-                usage: content.storage_usage(space)?,
-            }
-        }
+        Request::StorageUsage { space } => Response::StorageUsage {
+            owner: svc.resource_owner(space)?,
+            usage: content.storage_usage(space)?,
+        },
         Request::ResourceHook { space, binding } => {
             svc.set_resource_hook(space, binding)?;
             Response::ResourceHook
@@ -268,10 +263,7 @@ pub fn execute(
             Response::ComputeLimits
         }
         Request::ResourceGroup { space, group } => {
-            let authority = svc.lock()?.authority.clone();
-            authority
-                .set_resource_group(space, group)
-                .map_err(super::compute::authority_error)?;
+            svc.set_resource_group(space, group)?;
             Response::ResourceGroup
         }
         Request::Revoke { machine } => Response::Revoke {

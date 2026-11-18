@@ -130,10 +130,7 @@ impl MachineService {
             .transpose()?;
         let resource_owner =
             if worker.is_none() && !pool_diagnostic && !provider_login && !background_title {
-                let authority = self.lock()?.authority.clone();
-                authority
-                    .resource_owner(space)
-                    .map_err(super::compute::authority_error)?
+                self.resource_owner(space)?
             } else {
                 None
             };

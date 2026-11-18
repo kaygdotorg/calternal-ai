@@ -16,3 +16,7 @@ CREATE TABLE lease_resource_owners(
     scope_kind TEXT NOT NULL CHECK(scope_kind IN ('account','group')),
     scope_id TEXT NOT NULL
 ) STRICT, WITHOUT ROWID;
+CREATE TABLE space_resource_groups(
+    space TEXT PRIMARY KEY,
+    group_id TEXT NOT NULL
+) STRICT, WITHOUT ROWID;

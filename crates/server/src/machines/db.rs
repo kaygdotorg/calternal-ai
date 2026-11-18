@@ -419,6 +419,13 @@ pub(crate) fn last_thread_machine(
     Ok(id.and_then(|s| Uuid::parse_str(&s).ok()))
 }
 
+const MACHINE_CHANGES: &[&str] = &[
+    TITLE_LEASES,
+    super::compute::MIGRATION,
+    super::runtime::MIGRATION,
+    super::resource_hooks::MIGRATION,
+];
+
 /// Return the machine registry schema shared by normal startup and upgrade admission.
 /// Baseline 6 is the first production schema, including durable erased-worker stops.
 pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
@@ -437,23 +444,100 @@ pub(crate) fn upgrade_schema() -> calternal_store::migrations::Schema<'static> {
             ],
         );
     }
-    calternal_store::migrations::Schema::new(
-        "machines.db",
-        6,
-        &[SCHEMA],
-        &[
-            TITLE_LEASES,
-            super::compute::MIGRATION,
-            super::runtime::MIGRATION,
-            super::resource_hooks::MIGRATION,
-        ],
-    )
+    calternal_store::migrations::Schema::new("machines.db", 6, &[SCHEMA], MACHINE_CHANGES)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use calternal_store::migrations::{Schema, migrate_release};
+
+    fn through(version: usize) -> Schema<'static> {
+        Schema::new("machines.db", 6, &[SCHEMA], &MACHINE_CHANGES[..version - 6])
+    }
+
+    #[test]
+    fn compute_policy_migration_keeps_existing_leases_unassigned_to_resource_owners() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(7), false).unwrap();
+        let existing = LeaseRow {
+            id: Uuid::new_v4(),
+            space: SpaceId::new(),
+            account: AccountId::new(),
+            resource_owner: None,
+            thread: Uuid::new_v4(),
+            worker: false,
+            background_title: false,
+            image: None,
+            machine: None,
+            last_machine: None,
+            pinned_machine: None,
+            fence: 0,
+            state: "waiting".into(),
+            reason: None,
+            created_ms: 1,
+        };
+        put_lease(&conn, &existing).unwrap();
+        migrate_release(&conn, through(8), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(7)).unwrap(),
+            8
+        );
+        assert_eq!(
+            lease(&conn, existing.id).unwrap().unwrap().resource_owner,
+            None
+        );
+        conn.execute(
+            "INSERT INTO space_resource_groups VALUES(?1,?2)",
+            params![existing.space.to_string(), uuid::Uuid::now_v7().to_string()],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn runtime_migration_preserves_configured_scope_and_starts_with_no_charges() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(8), false).unwrap();
+        conn.execute(
+            "INSERT INTO space_resource_groups VALUES('space','group')",
+            [],
+        )
+        .unwrap();
+        migrate_release(&conn, through(9), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(8)).unwrap(),
+            9
+        );
+        let group: String = conn
+            .query_row("SELECT group_id FROM space_resource_groups", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let clocks: i64 = conn
+            .query_row("SELECT count(*) FROM guest_runtime", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(group, "group");
+        assert_eq!(clocks, 0);
+    }
+
+    #[test]
+    fn observation_migration_replays_the_latest_clock_and_assigns_later_cursors() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(9), false).unwrap();
+        conn.execute("INSERT INTO guest_runtime VALUES('machine','guest','account','group','owner','lease',1,1,500,0,1)", []).unwrap();
+        migrate_release(&conn, through(10), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(9)).unwrap(),
+            10
+        );
+        let read_cursor = || {
+            conn.query_row("SELECT cursor FROM resource_observations WHERE scope_id='owner' AND generation='guest'", [], |row| row.get::<_, i64>(0)).unwrap()
+        };
+        let before = read_cursor();
+        conn.execute("UPDATE guest_runtime SET running_ns=1500", [])
+            .unwrap();
+        assert!(before > 0 && read_cursor() > before);
+    }
 
     #[test]
     fn title_leases_migrate_with_durable_classification_for_both_writers() {

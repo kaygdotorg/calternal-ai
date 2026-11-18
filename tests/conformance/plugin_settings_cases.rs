@@ -233,16 +233,9 @@ async fn operator_binds_the_reviewed_fixture_to_hosted_admission() {
     let f = Fixture::new().await;
     let space = f.spaces[0].clone();
     let checksum = install(&f, &space).await;
-    operator_admin(
-        &f,
-        "resources",
-        &["set-hook", &space, PLUGIN, "--checksum", &checksum],
-    );
     machine_admin(&f, &["pool-grant", &f.ids[1]]);
     let code = machine_admin(&f, &["code", "--pool"]);
     let mut machine = Machine::enroll_with_code(&f, code["code"].as_str().unwrap()).await;
-    machine.connect(&f).await;
-    machine.sync_with_slots(&f, json!([]), 8).await;
     let run = || {
         f.req(
             "POST",
@@ -252,6 +245,16 @@ async fn operator_binds_the_reviewed_fixture_to_hosted_admission() {
             Some(ORIGIN),
         )
     };
+    // Capacity is published by a long poll. An unbound lease gives that poll
+    // a state transition to return, independent of request ordering.
+    let (messages, warm) = tokio::join!(machine.sync_with_slots(&f, json!([]), 8), run());
+    warm.ok();
+    assert!(messages.iter().any(|message| message["type"] == "assign"));
+    operator_admin(
+        &f,
+        "resources",
+        &["set-hook", &space, PLUGIN, "--checksum", &checksum],
+    );
     let allowed = run().await;
     allowed.ok();
     assert_eq!(allowed.body["state"], "assigned", "{}", allowed.body);

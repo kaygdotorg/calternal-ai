@@ -71,21 +71,18 @@ const THREAD_SNOOZE: &str = "
         BEGIN SELECT RAISE(ABORT, 'invalid thread snooze timestamp'); END;
 ";
 
+const SPACE_INITIAL: &[&str] = &[
+    SPACE_BASE,
+    crate::linked_write::SCHEMA,
+    crate::trash::SCHEMA,
+];
+const SPACE_CHANGES: &[&str] = &[
+    THREAD_SNOOZE,
+    crate::storage_usage::MIGRATION,
+    crate::plugin_state::MIGRATION,
+];
 pub(crate) const SPACE_SCHEMA: calternal_store::migrations::Schema<'_> =
-    calternal_store::migrations::Schema::new(
-        "space content.db",
-        3,
-        &[
-            SPACE_BASE,
-            crate::linked_write::SCHEMA,
-            crate::trash::SCHEMA,
-        ],
-        &[
-            THREAD_SNOOZE,
-            crate::storage_usage::MIGRATION,
-            crate::plugin_state::MIGRATION,
-        ],
-    );
+    calternal_store::migrations::Schema::new("space content.db", 3, SPACE_INITIAL, SPACE_CHANGES);
 
 pub(crate) fn database(
     path: &Path,
@@ -255,6 +252,70 @@ pub(crate) fn bookkeeping(conn: &Connection, run: impl FnOnce() -> Result<()>) -
 mod tests {
     use super::*;
     use calternal_store::migrations::{Schema, migrate_release};
+
+    fn through(version: usize) -> Schema<'static> {
+        Schema::new(
+            "space content.db",
+            3,
+            SPACE_INITIAL,
+            &SPACE_CHANGES[..version - 3],
+        )
+    }
+
+    #[test]
+    fn storage_migration_backfills_current_bodies_from_the_preceding_writer() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(4), false).unwrap();
+        conn.execute_batch(r#"
+            INSERT INTO kinds VALUES ('notes','[null,{"format":"markdown"}]');
+            INSERT INTO items VALUES ('a','notes','{}','v2',2,'now','a.md','a.md',NULL,'current',NULL);
+            INSERT INTO items VALUES ('b','files','{}','v3',1,'now','b.bin','b.bin',NULL,'current',NULL);
+            INSERT INTO versions VALUES ('a',1,'v1','{}',X'414141','now','owner');
+            INSERT INTO versions VALUES ('a',2,'v2','{}',X'41','now','owner');
+            INSERT INTO versions VALUES ('b',1,'v3','{}',X'4141','now','owner');
+        "#).unwrap();
+        migrate_release(&conn, through(5), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(4)).unwrap(),
+            5
+        );
+        let usage = crate::storage_usage::read(&conn).unwrap();
+        assert_eq!((usage.text_bytes, usage.binary_bytes), (1, 2));
+    }
+
+    #[test]
+    fn package_state_migration_preserves_existing_storage_policy() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate_release(&conn, through(5), false).unwrap();
+        conn.execute(
+            "UPDATE storage_usage SET total_limit=19 WHERE singleton=1",
+            [],
+        )
+        .unwrap();
+        migrate_release(&conn, through(6), true).unwrap();
+        assert_eq!(
+            calternal_store::migrations::inspect(&conn, through(5)).unwrap(),
+            6
+        );
+        let limit: i64 = conn
+            .query_row("SELECT total_limit FROM storage_usage", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(limit, 19);
+        conn.execute(
+            "INSERT INTO plugin_state VALUES('community','counter',1,1,'{}')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            conn.execute(
+                "INSERT INTO plugin_state VALUES('community','counter',1,1,'{}')",
+                []
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn baseline_threads_survive_the_snooze_migration_and_rollback_writer() {

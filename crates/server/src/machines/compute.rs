@@ -1,8 +1,8 @@
 //! Operator compute limits stored with placement authority.
 
 use calternal_auth::machines::ResourceOwner;
-use calternal_types::{AccountId, Error, GroupId};
-use rusqlite::{Connection, Row, params};
+use calternal_types::{AccountId, Error, GroupId, SpaceId};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -55,6 +55,78 @@ impl ComputeLimits {
 }
 
 impl MachineService {
+    /// Read the operator-selected accounting owner. Auth resolves personal
+    /// spaces and validates a configured group using stable UUIDs. Accounting
+    /// policy never confers space membership. Cost: one policy lookup and up to
+    /// two indexed auth reads. The caller must authorize use of the space.
+    pub(crate) fn resource_owner(&self, space: SpaceId) -> Result<Option<ResourceOwner>, Error> {
+        let (authority, group) = {
+            let state = self.lock()?;
+            let group: Option<String> = state
+                .db
+                .query_row(
+                    "SELECT group_id FROM space_resource_groups WHERE space=?1",
+                    [space.to_string()],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(sql)?;
+            (state.authority.clone(), group)
+        };
+        if let Some(account) = authority.resource_account(space).map_err(authority_error)? {
+            return Ok(Some(ResourceOwner::Account(account)));
+        }
+        let Some(group) = group else { return Ok(None) };
+        let owner = ResourceOwner::Group(GroupId::parse(&group)?);
+        match authority.require_resource_owner(owner) {
+            Ok(()) => Ok(Some(owner)),
+            Err(error) if error.code() == calternal_auth::ErrorCode::NotFound => Ok(None),
+            Err(error) => Err(authority_error(error)),
+        }
+    }
+
+    /// Bind one shared space to an existing accounting group. Costs at most
+    /// three indexed auth reads and one policy transaction. Holds the machine
+    /// registry lock only for writing its own state. Operator authority required.
+    pub(crate) fn set_resource_group(
+        &self,
+        space: SpaceId,
+        group: Option<GroupId>,
+    ) -> Result<(), Error> {
+        let authority = self.lock()?.authority.clone();
+        authority
+            .require_resource_space(space)
+            .map_err(authority_error)?;
+        if authority
+            .resource_account(space)
+            .map_err(authority_error)?
+            .is_some()
+        {
+            return Err(Error::invalid_input(
+                "personal space resources belong to the account",
+            ));
+        }
+        if let Some(group) = group {
+            authority
+                .require_resource_owner(ResourceOwner::Group(group))
+                .map_err(authority_error)?;
+            self.lock()?.db.execute(
+                "INSERT INTO space_resource_groups VALUES(?1,?2)
+                 ON CONFLICT(space) DO UPDATE SET group_id=excluded.group_id WHERE group_id<>excluded.group_id",
+                params![space.to_string(), group.to_string()],
+            ).map_err(sql)?;
+        } else {
+            self.lock()?
+                .db
+                .execute(
+                    "DELETE FROM space_resource_groups WHERE space=?1",
+                    [space.to_string()],
+                )
+                .map_err(sql)?;
+        }
+        Ok(())
+    }
+
     /// Replace or clear one scope's manually configured compute limits.
     /// The caller must have operator authority. One bounded config commit, then
     /// reconsider existing waits under the shared placement lock.
