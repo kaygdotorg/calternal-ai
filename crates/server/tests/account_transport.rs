@@ -253,7 +253,7 @@ async fn stale_account_proof_requires_reverification_before_adding_a_passkey() {
 
 #[tokio::test]
 async fn only_the_oidc_callback_accepts_cross_site_navigation() {
-    let app = app();
+    let app = app_with(|config| config.oidc_enabled = true);
     let callback = send(
         &app,
         "POST",
@@ -281,4 +281,13 @@ async fn only_the_oidc_callback_accepts_cross_site_navigation() {
     )
     .await;
     assert_eq!(ordinary.status, 403);
+}
+
+#[tokio::test]
+async fn the_baseline_has_no_oidc_transport() {
+    let app = app();
+    assert_eq!(
+        get(&app, "/api/v1/auth/oidc/providers", None).await.status,
+        404
+    );
 }

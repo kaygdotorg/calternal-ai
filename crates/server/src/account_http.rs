@@ -142,7 +142,13 @@ fn unauthorized() -> Response {
 
 /// Builds trusted account endpoints; merge before the API fallback.
 pub fn routes<S: Clone + Send + Sync + 'static>(service: HttpAuth) -> Router<S> {
-    oidc::routes(onboarding::routes(Router::new()))
+    let router = onboarding::routes(Router::new());
+    let router = if service.config.oidc_enabled {
+        oidc::routes(router)
+    } else {
+        router
+    };
+    router
         .route("/api/v1/auth/status", get(status))
         .route("/api/v1/auth/setup/start", post(setup_start))
         .route("/api/v1/auth/setup/finish", post(setup_finish))

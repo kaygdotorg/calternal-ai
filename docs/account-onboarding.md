@@ -76,6 +76,9 @@ enrollment. Give the grant to the verified owner over the trusted channel.
 
 ## Core OpenID Connect
 
+The fresh baseline includes the provider tables. Its server keeps the OIDC
+transport disabled. The following contract is for the provider rollout.
+
 These routes share the protected auth prefix and use the same private
 response and JSON mutation rules as passkey sign-in.
 

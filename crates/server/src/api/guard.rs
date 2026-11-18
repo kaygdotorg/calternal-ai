@@ -76,7 +76,12 @@ pub(super) async fn guard<D: Directory>(
             }
         }
         // The fixed provider callback has its own one-use state and browser binding.
-        let provider_callback = path == crate::account_http::OIDC_CALLBACK_PATH
+        let oidc_enabled = state
+            .directory
+            .http_auth()
+            .is_some_and(|auth| auth.config.oidc_enabled);
+        let provider_callback = oidc_enabled
+            && path == crate::account_http::OIDC_CALLBACK_PATH
             && matches!(
                 *req.method(),
                 axum::http::Method::GET | axum::http::Method::POST
