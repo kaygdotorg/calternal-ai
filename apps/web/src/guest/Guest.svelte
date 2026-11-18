@@ -45,7 +45,7 @@
   .by { margin: 0 0 var(--s-5); font-size: var(--text-label); color: var(--ink-3); }
   .by a { color: var(--ink-2); text-decoration: underline; }
   h1 { margin: 0 0 var(--s-4); font-size: var(--text-title); font-weight: var(--strong-weight); }
-  .members { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); }
+  .members { list-style: none; margin: 0 calc(var(--s-5) * -1); padding: 0; display: grid; gap: var(--s-1); }
   .members a { display: flex; align-items: center; min-height: var(--row-h); padding: 0 var(--s-5); border-radius: var(--r-select); font-size: var(--text-ui); color: var(--ink); }
   @media (hover: hover) and (pointer: fine) { .members a:hover { background: var(--hover); } }
   .lede { color: var(--ink-3); font-size: var(--text-ui); }
