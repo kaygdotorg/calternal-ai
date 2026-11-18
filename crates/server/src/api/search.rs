@@ -206,6 +206,8 @@ fn thread_titles(
                         space_id: row.space.to_string(),
                         title: title.to_owned(),
                         excerpt: Vec::new(),
+                        message_id: None,
+                        message_at: None,
                     },
                 ));
             }
@@ -242,6 +244,12 @@ fn collect(
         .collect::<Vec<_>>()
         .join(" ");
     let title = format!("title : ({query})");
+    let message_terms: Vec<_> = calternal_content::message_terms(&input.query)
+        .take(12)
+        .collect();
+    let raw = input.query.trim();
+    let phrase = raw.len() > 1 && raw.starts_with('"') && raw.ends_with('"');
+    let messages_only = !input.kinds.is_empty() && input.kinds.iter().all(|kind| kind == "threads");
     let after = SearchKey::parse(input.cursor.as_deref())?;
     let kinds = serde_json::to_string(&input.kinds).expect("kind array");
     let folded = calternal_content::fold_title(input.query.trim());
@@ -292,11 +300,15 @@ fn collect(
                 SearchMatch::Text {
                     all: &query,
                     title: &title,
+                    message_terms: &message_terms,
+                    phrase,
+                    messages_only,
                 },
                 &mut hits,
                 &mut partial,
             )?;
-            if after.is_none()
+            if !messages_only
+                && after.is_none()
                 && hits.is_empty()
                 && let Some(grams) = &typo_grams
             {
@@ -334,12 +346,17 @@ fn wire_hit(space: SpaceId, hit: IndexedHit) -> SearchHit {
         rest = &rest[at + 1..];
     }
     segment(&mut excerpt, rest, matched, &mut left);
+    let (message_id, message_at) = hit
+        .message
+        .map_or((None, None), |(id, at)| (Some(id.to_string()), Some(at)));
     SearchHit {
         address: format!("/{}/{}", hit.kind, hit.id),
         kind: hit.kind,
         space_id: space.to_string(),
         title: hit.title,
         excerpt,
+        message_id,
+        message_at,
     }
 }
 

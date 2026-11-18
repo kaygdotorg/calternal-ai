@@ -105,6 +105,14 @@ pub struct SearchHit {
     pub title: String,
     /// Short title or body excerpt with structured highlights.
     pub excerpt: Vec<SearchSegment>,
+    /// Stable record UUID on a message hit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub message_id: Option<String>,
+    /// Saved RFC 3339 message time, with its original offset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub message_at: Option<String>,
 }
 
 /// Visible results in deterministic order.

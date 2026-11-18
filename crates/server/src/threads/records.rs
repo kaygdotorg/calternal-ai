@@ -14,6 +14,8 @@ pub(super) struct Record<'a> {
     pub(super) role: &'a str,
     pub(super) heading: &'a str,
     pub(super) at: String,
+    #[serde(skip)]
+    pub(super) instant: time::OffsetDateTime,
     pub(super) turn: Option<Uuid>,
     pub(super) text: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -147,7 +149,7 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
         return Err(invalid());
     }
     let (text, rest) = text.split_at_checked(length).ok_or_else(invalid)?;
-    let at = line
+    let (at, instant) = line
         .split(" · ")
         .nth(if role == "agent" { 3 } else { 1 })
         .ok_or_else(invalid)
@@ -158,6 +160,7 @@ fn first(input: &str) -> Result<(Record<'_>, &str), Error> {
             role,
             heading: line,
             at,
+            instant,
             turn,
             text,
             provenance,

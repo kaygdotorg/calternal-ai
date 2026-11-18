@@ -17,8 +17,12 @@ pub(super) fn validate_metadata(metadata: &Value) -> Result<(), Error> {
 /// Locate framed records, ignoring the optional host session and the final
 /// framing newline. This never scans authored Markdown after the prefix.
 pub(super) fn body(item: &Item) -> Result<&str, Error> {
+    body_bytes(&item.bytes)
+}
+
+pub(super) fn body_bytes(bytes: &[u8]) -> Result<&str, Error> {
     let text =
-        std::str::from_utf8(&item.bytes).map_err(|_| Error::internal("invalid thread encoding"))?;
+        std::str::from_utf8(bytes).map_err(|_| Error::internal("invalid thread encoding"))?;
     let (front, body) = text
         .strip_prefix("---\n")
         .and_then(|s| s.split_once("\n---\n"))
