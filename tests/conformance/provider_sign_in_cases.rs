@@ -12,21 +12,39 @@ const FRAME: &str = "eyJ1cmwiOiAiaHR0cHM6Ly9jbGF1ZGUuYWkvb2F1dGgvYXV0aG9yaXplP3N
 const ANSWER: &str = "PRIVATE_TEST_BROWSER_ANSWER";
 
 fn assert_private_bytes_absent(path: &std::path::Path) {
-    for entry in std::fs::read_dir(path).unwrap() {
-        let entry = entry.unwrap();
-        if entry.file_type().unwrap().is_dir() {
-            assert_private_bytes_absent(&entry.path());
-        } else if entry.file_type().unwrap().is_file() {
-            let bytes = std::fs::read(entry.path()).unwrap();
+    let Some(entries) = still_exists(std::fs::read_dir(path)) else {
+        return;
+    };
+    for entry in entries.filter_map(still_exists) {
+        let path = entry.path();
+        let Some(kind) = still_exists(entry.file_type()) else {
+            continue;
+        };
+        if kind.is_dir() {
+            assert_private_bytes_absent(&path);
+        } else if kind.is_file()
+            && let Some(bytes) = still_exists(std::fs::read(&path))
+        {
             for sentinel in [ANSWER, "PRIVATE_TEST_LINK", FRAME] {
                 assert!(
                     !bytes
                         .windows(sentinel.len())
                         .any(|window| window == sentinel.as_bytes()),
-                    "a provider challenge or answer reached durable state"
+                    "a provider challenge or answer reached durable state in {}",
+                    path.display()
                 );
             }
         }
+    }
+}
+
+fn still_exists<T>(result: std::io::Result<T>) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        // The live server can retire a WAL, temporary file or directory
+        // between listing and opening it.
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => panic!("could not scan provider sign-in fixture: {err}"),
     }
 }
 

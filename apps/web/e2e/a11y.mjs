@@ -22,7 +22,7 @@ const screens = [
   ["settings groups", "/settings/plans"],
   ["settings pool", "/settings/pool"],
   ["settings storage", "/settings/storage"],
-  ["appearance sheet", "/settings/appearance?sheet=1"],
+  ["appearance sheet", "/settings/appearance/appearance.wallpaper"],
   ["notes empty", "/notes"],
   ["threads list", "/threads"],
   ["not found", "/nothing/here"],

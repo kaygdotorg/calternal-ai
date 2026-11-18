@@ -29,6 +29,8 @@ pub enum BackendKind {
     Auto,
     /// One rootless Podman container per thread.
     Podman,
+    /// One isolated Firecracker guest per account on a Linux pool machine.
+    Microvm,
     /// Direct processes as the machine user; owner consent required, no isolation.
     Direct,
 }
@@ -53,6 +55,9 @@ pub enum Command {
         /// Backend whose artifacts to remove; auto removes Podman artifacts when available.
         #[arg(long,value_enum,default_value_t=BackendKind::Auto)]
         backend: BackendKind,
+        /// Operator configuration file for the experimental microVM backend.
+        #[arg(long)]
+        microvm_config: Option<PathBuf>,
         /// Podman executable for container cleanup.
         #[arg(long, default_value = "podman")]
         podman: PathBuf,
@@ -141,6 +146,9 @@ pub enum Command {
         /// Podman executable.
         #[arg(long, default_value = "podman")]
         podman: PathBuf,
+        /// Operator configuration file for the experimental microVM backend.
+        #[arg(long)]
+        microvm_config: Option<PathBuf>,
         /// Most threads run at once.
         #[arg(long, default_value_t = 10)]
         max_sandboxes: u32,
@@ -342,6 +350,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             thread_id,
             dir,
             backend,
+            microvm_config,
             podman,
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
@@ -352,6 +361,14 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             let backend: Arc<dyn Backend> = match backend {
                 BackendKind::Direct => Arc::new(DirectBackend::new(root)),
                 BackendKind::Podman => Arc::new(PodmanBackend::new(podman, root, "unused")),
+                BackendKind::Microvm => {
+                    let backend = microvm(root, microvm_config).await?;
+                    backend
+                        .initialize()
+                        .await
+                        .map_err(|e| CliError::new("cleanup", e.to_string()))?;
+                    backend
+                }
                 BackendKind::Auto => {
                     let configured = crate::sandbox::configured::ConfiguredBackend::new(
                         root,
@@ -364,7 +381,9 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                     Arc::new(configured)
                 }
             };
-            backend.discard(account_id,thread_id).await.map_err(|_|CliError::new("cleanup","Workspace deletion failed.").hint("Stop active work and check the selected backend, directory and engine; then retry."))?;
+            let discarded = backend.discard(account_id, thread_id).await;
+            let stopped = backend.shutdown().await;
+            discarded.and(stopped).map_err(|_|CliError::new("cleanup","Workspace deletion failed.").hint("Stop active work and check the selected backend, directory and engine; then retry."))?;
             Ok(Reply::new(json!({"discarded":true,"account_id":account_id,"thread_id":thread_id,"account_home":"retained"})).fields([("workspace","discarded".to_owned()),("account home","retained".to_owned()),("account",account_id.to_string()),("thread",thread_id.to_string())]).hint("Run `calternal machine run` to accept new work."))
         }
         Command::Status { dir } => {
@@ -413,6 +432,7 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
             backend,
             image,
             podman,
+            microvm_config,
             max_sandboxes,
         } => {
             let dir = dir.unwrap_or_else(connection::default_dir);
@@ -422,6 +442,27 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                     root, podman, image,
                 )),
                 BackendKind::Direct => Arc::new(DirectBackend::new(root)),
+                BackendKind::Microvm => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        match crate::sandbox::microvm::probe_kvm().await {
+                            Ok(()) => microvm(root, microvm_config).await?,
+                            Err(error) => {
+                                tracing::warn!(%error, "using containers because KVM is unavailable");
+                                if !PodmanBackend::available(&podman).await {
+                                    return Err(CliError::new(
+                                        "unavailable",
+                                        "KVM and rootless Podman are unavailable.",
+                                    )
+                                    .hint("Enable nested KVM or install rootless Podman."));
+                                }
+                                Arc::new(PodmanBackend::new(podman, root, image).kvm_fallback())
+                            }
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    microvm(root, microvm_config).await?
+                }
                 BackendKind::Podman => {
                     if !PodmanBackend::available(&podman).await {
                         return Err(CliError::new(
@@ -453,6 +494,40 @@ async fn run(cmd: Command) -> Result<Reply, CliError> {
                 .map_err(|e| fail("machine run", e))?;
             Ok(Reply::new(json!({"stopped": true})).line("The machine stopped cleanly."))
         }
+    }
+}
+
+async fn microvm(root: PathBuf, config: Option<PathBuf>) -> Result<Arc<dyn Backend>, CliError> {
+    #[cfg(target_os = "linux")]
+    {
+        use crate::sandbox::microvm::{Config, MicrovmBackend};
+        let path = config.ok_or_else(|| {
+            CliError::new(
+                "usage",
+                "The microVM backend requires an operator configuration.",
+            )
+            .hint("Pass --microvm-config PATH.")
+        })?;
+        let config = Config::load(&path).await.map_err(|e| {
+            CliError::new(
+                "configuration",
+                format!("Cannot load microVM configuration: {e}"),
+            )
+            .hint("Check the configuration in the deployment guide.")
+        })?;
+        let root = tokio::fs::canonicalize(&root.parent().expect("sandbox root"))
+            .await
+            .map_err(|e| CliError::new("unavailable", e.to_string()))?
+            .join("sandboxes");
+        Ok(Arc::new(MicrovmBackend::new(root, config)))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (root, config);
+        Err(
+            CliError::new("unavailable", "The microVM backend requires Linux and KVM.")
+                .hint("Select a backend supported by this machine."),
+        )
     }
 }
 

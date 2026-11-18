@@ -10,7 +10,6 @@
   import { shell } from "./shell/shell.svelte";
   import { spaces } from "./shell/spaces.svelte";
   import Unknown from "./shell/Unknown.svelte";
-  import SettingsSheet from "./appearance/SettingsSheet.svelte";
   import { shortcuts } from "./lib/shortcuts.svelte";
   import ShortcutsSheet from "./shell/ShortcutsSheet.svelte";
   import { client, store } from "./apps/threads/store.svelte";
@@ -20,8 +19,6 @@
 
   const NONE: AppDef = { kind: "", name: "Calternal", icon: "apps", Sidebar: Unknown, Main: Unknown, panels: [{ id: "none", label: "Nothing", icon: "info", component: Unknown }] };
   const seg = $derived(segments());
-  // The appearance sheet (wallpaper, fonts) opens over the Settings app at /settings/appearance?sheet=1.
-  const settings = $derived(seg[0] === "settings" && seg[1] === "appearance" && route.query.get("sheet") === "1");
   const app = $derived(appFor(seg[0]) ?? NONE);
   // An app starts (loads its data and its code) the first time it is opened; Threads always.
   const started = new Set<string>();
@@ -73,5 +70,4 @@
 <ThreadSearch />
 <SnoozePicker />
 <Toasts bottom={shell.narrow ? "calc(var(--bar-h) + env(safe-area-inset-bottom) + 12px)" : 24} />
-<SettingsSheet open={settings && shell.narrow} onclose={() => navigate("/settings/appearance")} />
 <ShortcutsSheet open={shell.helpOpen} onclose={() => (shell.helpOpen = false)} />

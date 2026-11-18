@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMs, pickTarget, settleOpen, visible } from "./pull";
+import { pickTarget, settleOpen, visible } from "./pull";
 
 const none = { leftOpen: false, rightOpen: false, hasRight: true };
 describe("what a swipe does", () => {
@@ -30,15 +30,5 @@ describe("following the finger", () => {
     expect(settleOpen(200, 240, -0.6)).toBe(false);
     expect(settleOpen(130, 240, 0)).toBe(true);
     expect(settleOpen(110, 240, 0.1)).toBe(false);
-  });
-});
-
-describe("CSS times", () => {
-  it("reads milliseconds and seconds, and falls back on anything else", () => {
-    expect(parseMs("340ms", 1)).toBe(340);
-    expect(parseMs(" 0.19s ", 1)).toBeCloseTo(190);
-    expect(parseMs("200", 1)).toBe(200);
-    expect(parseMs("", 7)).toBe(7);
-    expect(parseMs("var(--x)", 7)).toBe(7);
   });
 });

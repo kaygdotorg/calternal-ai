@@ -194,7 +194,7 @@ fn reset(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn before_trial(cold: bool) -> Result<()> {
+pub(crate) fn before_trial(cold: bool) -> Result<()> {
     let ok = if cold {
         Command::new("sudo")
             .args(["-n", "/usr/local/sbin/perf-drop-caches"])

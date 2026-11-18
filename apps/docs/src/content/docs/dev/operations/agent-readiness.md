@@ -105,6 +105,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           },
           "description": "Installed provider plugins and their account-scoped check results.",
           "type": "object"
+        },
+        "sandbox_fallback": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SandboxFallback"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The cloud machine is using containers because KVM is unavailable."
         }
       },
       "required": [
@@ -161,6 +172,17 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
           },
           "description": "Installed provider plugins and their account-scoped check results.",
           "type": "object"
+        },
+        "sandbox_fallback": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SandboxFallback"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The cloud machine is using containers because KVM is unavailable."
         }
       },
       "required": [
@@ -227,6 +249,18 @@ Capability: not declared in this catalogue; the host policy remains authoritativ
         "ready"
       ],
       "type": "object"
+    },
+    "SandboxFallback": {
+      "description": "Why a machine is running a reduced sandbox configuration.",
+      "oneOf": [
+        {
+          "description": "The current machine user cannot create KVM guests, so the role uses Podman.",
+          "enum": [
+            "kvm_unavailable"
+          ],
+          "type": "string"
+        }
+      ]
     }
   },
   "description": "One cached readiness snapshot. Pool options carry no host identity.",

@@ -102,13 +102,9 @@ pub struct Commit {
 /// Knobs for one store. The defaults suit a real server; tests shrink them.
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
-    /// How long a finished action's idempotency record is kept. A retry
-    /// that arrives later runs the action again, so this is far longer
-    /// than any client keeps retrying.
+    /// Age at which a finished action's receipt becomes eligible for pruning.
+    /// The content owner may pin a receipt until its durable intent retires.
     pub idempotency_retention: Duration,
-    /// How often old records are swept. Also swept once when the store
-    /// opens.
-    pub prune_every: Duration,
     /// How long saves must be quiet before a dirty witness is written.
     pub highwater_quiet: Duration,
     /// Maximum age of the oldest journal update not yet in the witness,
@@ -122,7 +118,6 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             idempotency_retention: Duration::from_secs(7 * 24 * 3600),
-            prune_every: Duration::from_secs(3600),
             highwater_quiet: Duration::from_secs(1),
             highwater_max_staleness: Duration::from_secs(30),
         }
@@ -334,10 +329,8 @@ impl SpaceStore {
             restore::rotate(&mut conn, &shared, &epoch, known_head)?;
         }
         let (live, _) = broadcast::channel(LIVE_BUFFER);
-        let (tx, writer_thread, ready) =
+        let (tx, writer_thread) =
             writer::spawn(conn, shared.clone(), live.clone(), &path, options)?;
-        // Receipt reads must not race the writer's startup retention cleanup.
-        ready.await.map_err(Error::internal)?;
         let inner = Arc::new(Inner {
             space,
             strict,
@@ -652,6 +645,30 @@ impl SpaceStore {
             .map_err(|_| Error::internal("store writer stopped"))?;
         rx.await
             .map_err(|_| Error::internal("store writer dropped a commit"))?
+    }
+
+    /// Prunes expired receipts except for the supplied (acting account, request
+    /// ID) pairs. The content owner must hold the space slot from pin collection
+    /// until the writer replies. Cost: one encoded pin set, one writer command
+    /// and one indexed SQLite delete transaction.
+    /// Errors leave cleanup for a subsequent pass.
+    pub async fn prune_receipts(&self, now_ms: i64, pins: Vec<(AccountId, String)>) -> Result<()> {
+        let pinned = pins
+            .into_iter()
+            .map(|(account, request)| receipt_key(account, &request))
+            .collect();
+        let (reply, rx) = oneshot::channel();
+        self.inner
+            .sender()
+            .send(writer::Cmd::Prune {
+                now_ms,
+                pinned,
+                reply,
+            })
+            .await
+            .map_err(|_| Error::internal("store writer stopped"))?;
+        rx.await
+            .map_err(|_| Error::internal("store writer dropped a prune"))?
     }
 
     /// Finds an earlier result for an idempotency key.

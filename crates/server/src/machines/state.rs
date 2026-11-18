@@ -15,12 +15,14 @@ use calternal_types::{AccountId, Error};
 use tokio::sync::Notify;
 use uuid::Uuid;
 
-use super::{LeaseState, MachineView, RunView, Settings, db};
+use super::{LeaseState, MachineView, RunView, Settings, db, workers::WorkerStop};
 
 /// An open machine session: its outbox and last report.
 pub(super) struct Live {
     pub session: [u8; 32],
     pub direct: bool,
+    pub kvm_fallback: bool,
+    pub thread_limit: Option<usize>,
     pub outbox: VecDeque<Envelope>,
     pub next_seq: u64,
     pub polls: u32,
@@ -158,11 +160,13 @@ pub(super) struct State {
     pub sessions: HashMap<[u8; 32], Uuid>,
     pub challenges: HashMap<String, (Uuid, Instant)>,
     pub pool_grants: HashSet<AccountId>,
+    /// In-flight pool leases per account, including placement reservations.
+    pub pool_load: HashMap<AccountId, usize>,
     pub leases: HashMap<Uuid, Lease>,
     pub threads: HashMap<Uuid, Uuid>,
     pub execs: HashMap<Uuid, Exec>,
     pub workers: HashMap<Uuid, calternal_machine::protocol::PluginWorker>,
-    pub worker_stops: HashMap<Uuid, (Uuid, [u8; 32], u64)>,
+    pub worker_stops: HashMap<Uuid, WorkerStop>,
     pub next_order: u64,
 }
 
@@ -289,7 +293,8 @@ impl State {
         l.row.machine = None;
         l.row.reason = Some(why.into());
         l.state = LeaseState::Interrupted;
-        self.release_slot(assigned);
+        let account = l.row.account;
+        self.release_slot(assigned, Some(account));
         self.persist(lease);
     }
 
@@ -328,8 +333,9 @@ impl State {
         let thread = l.row.thread;
         self.threads.remove(&thread);
         self.workers.remove(&lease);
+        let account = l.row.account;
         if !stopping {
-            self.release_slot(assigned);
+            self.release_slot(assigned, Some(account));
         }
         self.persist(lease);
         for e in self.execs.values_mut() {
@@ -344,7 +350,15 @@ impl State {
                     .get(&m)
                     .and_then(|m| m.live.as_ref())
                     .map_or(([0; 32], u64::MAX), |live| (live.session, live.next_seq));
-                self.worker_stops.insert(lease, (m, session, seq));
+                self.worker_stops.insert(
+                    lease,
+                    WorkerStop {
+                        machine: m,
+                        account: Some(account),
+                        session,
+                        seq,
+                    },
+                );
             }
             self.push(
                 m,
@@ -375,7 +389,7 @@ impl State {
         let stopping: Vec<_> = self
             .worker_stops
             .iter()
-            .filter_map(|(lease, (assigned, _, _))| (*assigned == machine).then_some(*lease))
+            .filter_map(|(lease, stop)| (stop.machine == machine).then_some(*lease))
             .collect();
         for lease in stopping {
             self.finish_worker_stop(lease)?;
@@ -396,38 +410,6 @@ impl State {
         match m.row.owner {
             Owner::Account { id } => id == account,
             Owner::Pool => self.pool_grants.contains(&account),
-        }
-    }
-
-    pub fn load(&self, machine: Uuid) -> usize {
-        self.machines.get(&machine).map_or(0, |m| m.assigned)
-    }
-
-    /// Restore or reserve capacity for a live assigned/running lease.
-    pub(super) fn take_slot(&mut self, machine: Option<Uuid>) {
-        if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
-            m.assigned += 1;
-            let owner = m.row.owner;
-            self.readiness_changed(owner);
-        }
-    }
-
-    /// Release one accounted reservation and invalidate readiness in memory.
-    pub(super) fn release_slot(&mut self, machine: Option<Uuid>) {
-        if let Some(m) = machine.and_then(|id| self.machines.get_mut(&id)) {
-            m.assigned = m.assigned.saturating_sub(1);
-            let owner = m.row.owner;
-            self.readiness_changed(owner);
-        }
-    }
-
-    pub(super) fn free(&self, m: &Machine) -> usize {
-        match &m.live {
-            Some(live) if !live.draining && !m.row.draining && !m.row.revoked => {
-                (live.capacity.max_sandboxes as usize)
-                    .saturating_sub(m.assigned.max(live.capacity.running_sandboxes as usize))
-            }
-            _ => 0,
         }
     }
 
@@ -456,7 +438,7 @@ impl State {
                     self.may_use(m, l.row.account)
                         || (l.pool_diagnostic && m.row.owner == Owner::Pool)
                 })
-                .map(|m| (m, self.free(m)))
+                .map(|m| (m, self.free_for(m, l.row.account)))
                 .filter(|(_, free)| *free > 0)
                 .max_by_key(|(m, free)| {
                     (
@@ -477,6 +459,13 @@ impl State {
         let Some(l) = self.leases.get(&lease) else {
             return;
         };
+        if self
+            .machines
+            .get(&machine)
+            .is_none_or(|m| self.free_for(m, l.row.account) == 0)
+        {
+            return;
+        }
         let Ok(_steps) = self.lease_steps(&l.row) else {
             return;
         };
@@ -496,7 +485,8 @@ impl State {
             .expect("existing lease under registry lock");
         l.row = row;
         l.state = LeaseState::Assigned;
-        self.take_slot(Some(machine));
+        let account = l.row.account;
+        self.take_slot(Some(machine), Some(account));
         self.send_assign(lease, settings);
         self.send_execs(lease);
     }
@@ -533,6 +523,7 @@ impl State {
                 .get_mut(&r.lease_id)
                 .expect("existing lease under registry lock");
             let keep_files = !l.row.worker;
+            let account = l.row.account;
             let current = l.row.machine == Some(machine)
                 && l.row.fence == r.fence
                 && !matches!(l.state, LeaseState::Ended | LeaseState::Stopping);
@@ -543,6 +534,9 @@ impl State {
                     {
                         l.state = LeaseState::Running;
                         self.persist(r.lease_id);
+                    }
+                    SandboxState::Lost => {
+                        super::microvm::lost(self, machine, r.lease_id, settings, keep_files)
                     }
                     SandboxState::Failed { reason } => {
                         let why = format!("sandbox failed: {reason}");
@@ -555,7 +549,7 @@ impl State {
                 && self
                     .machines
                     .get(&machine)
-                    .is_some_and(|m| self.free(m) > 0)
+                    .is_some_and(|m| self.free_for(m, account) > 0)
             {
                 self.assign(r.lease_id, machine, settings);
             } else {

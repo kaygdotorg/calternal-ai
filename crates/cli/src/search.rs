@@ -145,9 +145,14 @@ pub fn reply(op: SearchOperation, data: Value) -> Reply {
     match op {
         SearchOperation::Query | SearchOperation::Threads | SearchOperation::Items => {
             let with_excerpt = op == SearchOperation::Query;
+            let with_message =
+                with_excerpt && rows(&data, "hits").any(|hit| hit["message_id"].is_string());
             let mut headers = vec!["TITLE", "KIND", "ADDRESS", "SPACE"];
             if with_excerpt {
                 headers.push("EXCERPT");
+            }
+            if with_message {
+                headers.extend(["MESSAGE ID", "SENT"]);
             }
             let hits = rows(&data, "hits")
                 .map(|hit| {
@@ -161,6 +166,9 @@ pub fn reply(op: SearchOperation, data: Value) -> Reply {
                         let excerpt: String =
                             rows(hit, "excerpt").map(|chunk| s(chunk, "text")).collect();
                         row.push(excerpt.split_whitespace().collect::<Vec<_>>().join(" "));
+                    }
+                    if with_message {
+                        row.extend([s(hit, "message_id").into(), s(hit, "message_at").into()]);
                     }
                     row
                 })

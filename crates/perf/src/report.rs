@@ -42,6 +42,7 @@ fn human_reply(report: &Value, path: &Path) -> Reply {
                 ("arm", "arm"),
                 ("pair", "pair"),
                 ("cache", "cache"),
+                ("file_placement", "file placement"),
             ]
             .into_iter()
             .filter_map(|(key, label)| {

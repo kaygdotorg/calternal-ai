@@ -13,7 +13,8 @@
     "check": "npm run prepare:assets && svelte-check --tsconfig ./tsconfig.json",
     "test": "npm run prepare:assets && vitest run",
     "e2e:gate": "node e2e/gate.mjs",
-    "e2e:server": "node e2e/gate-server.mjs"
+    "e2e:server": "node e2e/gate-server.mjs",
+    "e2e:quiet": "node e2e/quiet.mjs"
   },
   "dependencies": {
     "@calternal/genui": "*",

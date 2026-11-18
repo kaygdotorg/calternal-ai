@@ -260,6 +260,10 @@ available: boolean,
  */
 execution: MachineExecution,
 /**
+ * The cloud machine is using containers because KVM is unavailable.
+ */
+sandbox_fallback: SandboxFallback | null,
+/**
  * Installed provider plugins and their account-scoped check results.
  */
 providers: { [key in string]?: ProviderReadiness }, };
@@ -297,6 +301,10 @@ available: boolean,
  */
 execution: MachineExecution,
 /**
+ * The cloud machine is using containers because KVM is unavailable.
+ */
+sandbox_fallback: SandboxFallback | null,
+/**
  * Installed provider plugins and their account-scoped check results.
  */
 providers: { [key in string]?: ProviderReadiness }, };
@@ -305,6 +313,11 @@ providers: { [key in string]?: ProviderReadiness }, };
  */
 
 export type MachineExecution = "sandboxed" | "direct";
+/**
+ * Why a machine is running a reduced sandbox configuration.
+ */
+
+export type SandboxFallback = "kvm_unavailable";
 /**
  * A bounded observation of the official provider program's own check.
  */
@@ -836,7 +849,15 @@ title: string,
 /**
  * Short title or body excerpt with structured highlights.
  */
-excerpt: Array<SearchSegment>, };
+excerpt: Array<SearchSegment>,
+/**
+ * Stable record UUID on a message hit.
+ */
+message_id?: string,
+/**
+ * Saved RFC 3339 message time, with its original offset.
+ */
+message_at?: string, };
 /**
  * Visible results in deterministic order.
  */

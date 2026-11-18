@@ -4,7 +4,7 @@
   // them: the sidebar is underneath and the middle card slides aside to reveal it (and visibly floats above it); the right card slides
   // over the middle card from the right; the app and its panels are the bottom bar.
   import { untrack } from "svelte";
-  import { Card, Pill } from "@calternal/ui";
+  import { Card, Pill, tokenEase, tokenMs } from "@calternal/ui";
   import { ariaKeys, shortcuts } from "../lib/shortcuts.svelte";
   import type { AppDef } from "../apps/registry";
   import { appearance } from "../appearance/prefs.svelte";
@@ -18,7 +18,7 @@
   import ResizeHandle from "./ResizeHandle.svelte";
   import Sidebar from "./Sidebar.svelte";
   import { shell } from "./shell.svelte";
-  import { leavesAlone, parseMs, pickTarget, settleOpen, visible, type Side, type Target } from "./pull";
+  import { leavesAlone, pickTarget, settleOpen, visible, type Side, type Target } from "./pull";
   let { app, id }: { app: AppDef; id?: string } = $props();
   // The sidebar pull (docs/ui-shell.md "Sidebar pull"; the rules are in ./pull.ts): a horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to
   // one, and the opposite swipe closes it. One recogniser for every width. On a phone the card slides aside and the sidebar is underneath, on either side: left for the list, right for the side panel (the mirror, owner decision 2026-11-18); on a wide screen the sidebar
@@ -45,7 +45,7 @@
   const openness = () => ({ leftOpen: shell.sidebarOpen, rightOpen, hasRight });
   const moving = (el: Element | undefined) => !!el?.getAnimations().some((a) => a.playState === "running" && (a as Animation & { id: string }).id === "pull");
   /** The sheet motion tokens as an animation's timing. */
-  const sheet = () => { const cs = getComputedStyle(document.documentElement); return { duration: parseMs(cs.getPropertyValue("--dur-sheet"), 340), easing: cs.getPropertyValue("--ease-sheet").trim() || "ease-out", id: "pull" }; };
+  const sheet = () => ({ duration: tokenMs("--dur-sheet", 340), easing: tokenEase("--ease-sheet", "ease-out"), id: "pull" });
   /** Where a swipe's first move decides what it is: the target by direction, then the geometry that goes with it. False when the swipe is not a pull. */
   function begin(dx: number, dy: number): boolean {
     if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.5) return false; // not yet a horizontal gesture

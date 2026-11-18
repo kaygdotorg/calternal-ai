@@ -569,3 +569,54 @@ fn acknowledged_content_materializes_without_another_request() {
     wait_for_placement(dir.path(), space, item.id);
     assert!(std::fs::read_to_string(path).unwrap().ends_with("durable"));
 }
+
+#[test]
+fn dormant_outbox_recovery_preserves_the_original_checkpoint_event() {
+    let root = tempfile::tempdir().unwrap();
+    let (space, actor) = (SpaceId::new(), AccountId::new());
+    let request = Request {
+        account: actor,
+        via: None,
+        id: "checkpoint:1",
+        operation: "threads.checkpoint",
+        fingerprint: "original",
+    };
+    let reply = json!({"append": [{"text": "exactly once"}]});
+    let content = open(root.path(), |_| {});
+    let journal = content.live_journal(space).unwrap();
+    let space_root = root.path().join(format!("appdata/spaces/{space}"));
+    let db = rusqlite::Connection::open(space_root.join("content.db")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER stop_retirement BEFORE DELETE ON outbox
+         BEGIN SELECT RAISE(FAIL, 'interrupted after publication'); END;",
+    )
+    .unwrap();
+    content
+        .set_control(space, request, "checkpoint", |_| {
+            Ok((json!(true), reply.clone()))
+        })
+        .expect_err("journal commit must precede the interrupted retirement");
+    assert_eq!(content.journal(space).unwrap().len(), 1);
+    db.execute_batch("DROP TRIGGER stop_retirement").unwrap();
+    assert_eq!(
+        db.query_row("SELECT count(*) FROM outbox", [], |row| row
+            .get::<_, u32>(0))
+            .unwrap(),
+        1
+    );
+    drop(db);
+    drop(journal);
+    drop(content);
+    let db = rusqlite::Connection::open(space_root.join("index.db")).unwrap();
+    db.execute("UPDATE idempotency SET at_ms=0", []).unwrap();
+    drop(db);
+    let recovered = open(root.path(), |_| {});
+    let stored = recovered
+        .receipt(space, actor, "checkpoint:1")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.result, reply);
+    let events = recovered.journal(space).unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].data["append"], reply["append"]);
+}

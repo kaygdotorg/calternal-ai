@@ -93,13 +93,17 @@ synchronization. Recovery publishes its journal event and receipt, uses a FULL
 journal publication barrier, then durably retires the intent. Acknowledgement
 requires FULL content/history, journal/receipt and outbox-retirement commits on SSD.
 The retirement barrier prevents power loss from resurrecting an intent after its
-receipt has expired; removing it needs a shared transaction or expiry proof. The existing
-lifecycle worker wakes after commit, fsyncs the current file and directory, then
+receipt expires. Before startup replay or hourly maintenance, content reads the
+outbox under the space slot and asks the journal writer to prune only expired,
+unpinned receipts. If the outbox cannot be read, that prune is skipped.
+A surviving intent protects its receipt through durable retirement, even past
+the seven-day default eligibility age. The existing lifecycle worker wakes after
+commit, fsyncs the current file and directory, then
 marks placement with NORMAL bookkeeping. Lost bookkeeping is replayed from durable
 intents and file hashes. Pending heads pin their existing cache slots; no second
 cache, queue, per-write thread or unbounded task list is added. The worker pins the
-host's root locks while doing I/O. It does not poll while idle: the inherited
-30-second retirement deadline remains; failed placement retries after 50 ms.
+host's root locks while doing I/O. The inherited 30-second idle sweep remains.
+A failed placement or a busy slot schedules another pass after 50 ms.
 ADR 0062's materialization maximum is one second after acknowledgement. The oldest
 pending age never extends when newer edits arrive. A missed deadline refuses new
 writes in that space until placement succeeds; failed/outside-changed files remain
@@ -171,6 +175,8 @@ reads were removed. Linked path edits and Trash/restore finish placement before
 returning, and purge finishes removal before publishing its receipt.
 
 An opted-in Markdown kind is searchable through a separate per-space database.
+Threads have a chronological message index that follows the same journal and
+locates one byte-counted message in the exact committed revision.
 A bounded worker advances its projection and journal watermark outside the
 acknowledgment path. A new generation becomes visible when it has scanned
 the retained heads and caught up. List and ID reads use the retained metadata.

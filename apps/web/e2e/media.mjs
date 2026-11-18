@@ -16,7 +16,7 @@ const ok = (n, p, note = "") => { console.log(`${p ? "PASS" : "FAIL"}  ${n}${not
   await ctx.close();
 }
 { // paste a link, storage list
-  const { page, ctx } = await open(b, "desktop", "light", "/settings/appearance?sheet=1");
+  const { page, ctx } = await open(b, "desktop", "light", "/settings/appearance/appearance.wallpaper");
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
   await page.route("https://pics.test/**", (r) => r.fulfill({ status: 200, contentType: "image/png", body: png, headers: { "access-control-allow-origin": "*" } }));
   await page.waitForSelector("#u-link");

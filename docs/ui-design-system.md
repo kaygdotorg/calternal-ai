@@ -137,7 +137,6 @@ a large live blur is avoided.)
 | `IconButton` | Round button with one icon | `label` required (name and tooltip) |
 | `Button` | Text pill: primary, secondary, quiet, destructive | `text` required |
 | `Toolbar` | A pill holding buttons, arrow-key roving focus | `label` required |
-| `Capsule` | Segmented control; `kind="tabs"` or `"radio"`; `morph` is the phone's bottom bar | `label` required; each item has a `label` even when only its icon shows |
 | `Card` | Landmark region: `glass` (blurs and dims the background), `solid`, `attention` | `label` required |
 | `Sheet` | Modal dialog (bottom or side), focus trap, Escape, focus return | `label` required |
 | `Menu` | Popover list with radio items and arrows | `label` required |
@@ -179,7 +178,7 @@ keyboard rule. Ported to `lib/tooltip.ts` (`use:tip={{ label, kbd }}`); the labe
 
 ## Pill press
 
-The existing app's press, as plain CSS on each control (`Pill`, `IconButton`, `Button`, `Row`, `Capsule`): `scale` goes to `--press-scale` while pressed and returns over
+The existing app's press, as plain CSS on each control (`Pill`, `IconButton`, `Button`, `Row`, `Selector`): `scale` goes to `--press-scale` while pressed and returns over
 `--dur-fast` on `--ease-out`, transform only. There is no rebound past 1 (owner, 2026-11-18: the overshoot was too much; the existing app has none). A keyboard activation never
 moves it (key modality makes every transition 0 s) and reduced motion keeps only the scale.
 
@@ -299,7 +298,7 @@ On the default wallpaper every surface above reports `--mat-a` 0.04 in both sche
 
 ## Selection switching and toasts, ported from the existing app (2026-11-18)
 
-**Selector** (`packages/ui` `Selector`, from the existing app's `primitives/selector`): one component for every single choice. A capsule sits behind plain options; when the choice changes its leading edge stretches toward the new option on a quick spring and the trailing edge catches up on a softer one, so it stretches and then gathers itself; labels never move; click again mid-flight and it turns from where it is. It is a tab list (arrow keys, Home and End move and choose, only the chosen option is in the Tab order, disabled ones are skipped) and a keyboard move goes straight there (keyboard actions never animate). Used for every segmented choice in Settings (the colour scheme, chat layout, the readability floor, and the others) and for a plugin's `Choice` (GenUI), so a plugin's choice looks and moves like the app's own. `edges.ts` holds the edge rules as plain numbers and is tested without a browser (`test/selector-*.test.ts`).
+**Selector** (`packages/ui` `Selector`, from the existing app's `primitives/selector`): one component for every single choice. A capsule sits behind plain options; when the choice changes its leading edge stretches toward the new option on a quick spring and the trailing edge catches up on a softer one, so it stretches and then gathers itself; labels never move; click again mid-flight and it turns from where it is. It is a tab list (arrow keys, Home and End move and choose, only the chosen option is in the Tab order, disabled ones are skipped) and a keyboard move goes straight there (keyboard actions never animate). Used for every segmented choice (the app capsule in the sidebar footer, the right sidebar tabs, the machine pickers, the colour scheme, chat layout, the readability floor, and the others) and for a plugin's `Choice` (GenUI), so a plugin's choice looks and moves like the app's own. `edges.ts` holds the edge rules as plain numbers and is tested without a browser (`test/selector-*.test.ts`).
 
 **Toasts** (`packages/ui` `toast/`): already the existing app's Sonner-style implementation (`notify`, `stack`, `bursts`, the capsule that opens from a dot and keeps being the same toast as its words change, `Roll` for counts, undoable and failed variants); only its in-the-bar variant (`inbar`) is not ported, because this shell has no bar for it.
 
