@@ -32,9 +32,6 @@ function override(): boolean | null {
 /** Whether to fill a first visit with a second thread and a note to arrange: only for the explicit `?canvas=1` demonstration. A canvas that is simply on (a setting, a build default, a test) opens what the address names and nothing else. */
 export const canvasSeedWanted = (() => { override(); try { return sessionStorage.getItem(KEY + ".seed") === "1"; } catch { return false; } })();
 
-/** Whether to fill a first visit with a second thread and a note to arrange: only for the explicit `?canvas=1` demonstration. A canvas that is simply on (a setting, a build default, a test) opens what the person opened and nothing else: two or three windows nobody asked for are a defect in daily use. */
-export const canvasSeedWanted = (() => { try { return sessionStorage.getItem(KEY + ".seed") === "1"; } catch { return false; } })();
-
 
 let n = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(n++).toString(36)}`;
