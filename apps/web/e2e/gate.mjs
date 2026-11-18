@@ -6,12 +6,12 @@ import { createServer } from "node:net";
 import { cpus } from "node:os";
 import { existsSync, readFileSync } from "node:fs";
 
-/** The suites: file, extra arguments, a timeout in seconds (default 150) and the name shown. The accessibility walk is four suites (device and scheme) so that no one suite runs long. */
+/** The suites: file, extra arguments, a timeout in seconds (default 240: it only bounds a hang, and dev VMs are shared) and the name shown. The accessibility walk is four suites (device and scheme) so that no one suite runs long. */
 const SUITES = [
-  ["a11y", ["desktop", "light"], 150, "a11y desktop light"], ["a11y", ["desktop", "dark"], 150, "a11y desktop dark"], ["a11y", ["phone", "light"], 150, "a11y phone light"], ["a11y", ["phone", "dark"], 150, "a11y phone dark"],
+  ["a11y", ["desktop", "light"], 300, "a11y desktop light"], ["a11y", ["desktop", "dark"], 300, "a11y desktop dark"], ["a11y", ["phone", "light"], 300, "a11y phone light"], ["a11y", ["phone", "dark"], 300, "a11y phone dark"],
   ["first-visit"], ["shell-audit"], ["flat-sidebars"], ["resize"], ["sidebar-scroll"], ["text-parity"], ["palette"],
   ["palette-focus", ["12"]], ["interact"], ["phone-nav"], ["settings-pages"], ["focus-ring"], ["swipe-rows"], ["morph"], ["states"], ["new-thread"], ["keyboard-threads"], ["swipe"], ["composer"],
-].map(([name, args = [], timeout = 150, label = name]) => ({ name, args, timeout, label }));
+].map(([name, args = [], timeout = 240, label = name]) => ({ name, args, timeout, label }));
 
 const free = () => new Promise((res, rej) => { const s = createServer(); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => res(port)); }); s.on("error", rej); });
 
