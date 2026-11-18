@@ -1,8 +1,7 @@
 // The canvas (docs/ui-shell-status.md, "The rules"), behind ?canvas=1 in the fixtures build. Usage: CAL_URL=... node e2e/canvas.mjs
 // niri's structure (a single window fills and is centred, two share, a new one opens beside the focused column, presets, resize between neighbours), the chrome (nothing but the capsule and the sidebar pills; one title pill and one pill of three buttons per window,
 // every control with its tooltip), the wallpaper sharp and the wallpaper-derived colour, the old Calternal's frost, input (wheel rule, lock, trackpad never opens a sidebar, two fingers on a phone), motion (pointer animates, keyboard is instant) and frame times.
-import { cpus, loadavg } from "node:os";
-import { launch, open, serve } from "./lib.mjs";
+import { busyNow, judgeTimings, launch, open, serve } from "./lib.mjs";
 const stop = await serve(); const browser = await launch();
 let bad = 0;
 const ok = (c, m, note = "") => { console.log(`${c ? "PASS" : "FAIL"}  ${m}${note ? "  " + note : ""}`); if (!c) bad++; };
@@ -67,15 +66,15 @@ try {
     // ---- the wallpaper and the colour ----
     ok(!(await p.evaluate(() => !!document.querySelector("[data-canvas]").closest(".mid-card"))) && await p.evaluate(() => { const c = getComputedStyle(document.querySelector("[data-canvas]")); const b = getComputedStyle(document.querySelector("[data-canvas]"), "::before"); return c.backgroundImage === "none" && c.backgroundColor === "rgba(0, 0, 0, 0)" && (b.content === "none" || b.content === "normal"); }), "there is no card round the canvas and the area paints nothing itself (the sidebars' background shows through)");
     ok(await p.evaluate(() => [...document.querySelectorAll("[data-win]")].every((w) => w.dataset.look === "card" && !!w.querySelector(":scope > .pic"))), "every window is the shared middle card (class mid-card) by default: the wallpaper's card copy under the card veil");
-    // the looks (all neutral, nothing tinted with the wallpaper): Solid is the page paper; Transparent is the paper at a density with no blurred copy and no backdrop filter
-    await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Solid/).click(); await p.waitForTimeout(300);
+    // the looks (all neutral, nothing tinted with the wallpaper) are one preference for every window (canvas/prefs.svelte.ts): Solid is the page paper; Transparent is the paper at a density with no blurred copy and no backdrop filter
+    const setLook = async (look) => { await p.evaluate((l) => localStorage.setItem("cal.canvas.prefs", JSON.stringify({ look: l, width: null })), look); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2200); };
+    await setLook("solid");
     const c = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; const probe = document.createElement("i"); probe.style.cssText = "position:absolute;background:var(--paper)"; document.body.append(probe); const paper = getComputedStyle(probe).backgroundColor; probe.remove(); return { bg: getComputedStyle(w).backgroundColor, paper, look: w.dataset.look }; });
     ok(c.look === "solid" && c.bg === c.paper, "Solid is the page paper, a neutral surface (never tinted with the wallpaper)", `${c.bg} / ${c.paper}`);
-
-    await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Transparent/).click(); await p.waitForTimeout(300);
+    await setLook("clear");
     const cl = await p.evaluate(() => { const w = document.querySelectorAll("[data-win]")[0]; return { look: w.dataset.look, pic: !!w.querySelector(":scope > .pic"), f: getComputedStyle(w).backdropFilter, bg: getComputedStyle(w).backgroundColor, d: getComputedStyle(w).getPropertyValue("--fd") }; });
     ok(cl.look === "clear" && !cl.pic && (cl.f === "none" || cl.f === "") && /oklab|color\(|rgba?\(/.test(cl.bg) && +cl.d > 0 && +cl.d <= 1, "Transparent: only a tint over the background (no blurred copy, no backdrop filter), at the least density that reads", JSON.stringify(cl));
-    await wins(p).nth(0).getByRole("button", { name: "More" }).click(); await item(p, /Look: Card/).click(); await p.waitForTimeout(300);
+    await setLook("card");
     // ---- niri's structure ----
     let r = await rects(p); const cb = await canvasBox(p);
     ok(r.length === 3 && Math.abs(r[1].x - r[0].x - r[0].w - 8) < 1.5 && Math.abs(r[0].w - (cb.width - 24) / 2) < 2, "two columns share the canvas, half each, with an 8 px gap all round and between", `${r[0].w.toFixed(0)} / ${r[1].w.toFixed(0)} of ${cb.width}`);
@@ -106,12 +105,11 @@ try {
     ok(!(await animating(p, 150)), "a keyboard width preset is instant");
     const fw = await p.locator("[data-win][data-focused]").evaluate((e) => e.getBoundingClientRect().width);
     ok(Math.abs(fw - ((cb.width - 8) * 2 / 3 - 8)) < 2 || Math.abs(fw - ((cb.width - 8) / 3 - 8)) < 2 || Math.abs(fw - (cb.width - 16)) < 2, "the preset is one of 1/3, 2/3 or full (from half)", fw.toFixed(0));
-    // pointer width preset from the menu animates and lands on 1/3
+    // the window menu has no Width and no Look entries (width is the handle, the look a preference)
     await p.locator("[data-win][data-focused]").getByRole("button", { name: "More" }).click();
-    await item(p, /Width 1\/3/).click();
-    ok(await animating(p), "a pointer width preset animates");
-    await p.waitForTimeout(700);
-    ok(Math.abs((await p.locator("[data-win][data-focused]").evaluate((e) => e.getBoundingClientRect().width)) - ((cb.width - 8) / 3 - 8)) < 2, "the width is exactly 1/3 of the canvas, gaps counted");
+    const menuNames = (await p.locator("[role^=menuitem]").allInnerTexts()).map((x) => x.trim());
+    ok(!menuNames.some((x) => /^Width |^Look:/.test(x)) && menuNames.some((x) => /Open a thread beside/.test(x)), "the window menu has no Width and no Look entries", menuNames.join(" | ").slice(0, 160));
+    await p.keyboard.press("Escape");
     // close back to two windows, then one window fills the canvas and is centred
     while ((await wins(p).count()) > 1) { await key(p, "Alt+Shift+KeyW"); await p.waitForTimeout(100); }
     await p.waitForTimeout(300);
@@ -119,6 +117,7 @@ try {
     ok(r.length === 1 && Math.abs(r[0].w - (cb.width - 16)) < 2 && Math.abs((r[0].x - cb.x) - (cb.x + cb.width - r[0].x - r[0].w)) < 2, "a single window is the card: the area less the card's inset on each side, centred", `${r[0].w.toFixed(0)} of ${cb.width}`);
     const plain = await (async () => { const { page: q, ctx: c2 } = await open(browser, "desktop", scheme, "/threads/t-idle"); await q.waitForTimeout(700); const b = await q.locator(".mid-card").boundingBox(); await c2.close(); return b; })();
     ok(Math.abs(r[0].x - plain.x) < 1 && Math.abs(r[0].y - plain.y) < 1 && Math.abs(r[0].w - plain.width) < 1 && Math.abs(r[0].h - plain.height) < 1, "a single window is identical to the app's own middle card (same box)", `${[r[0].x, r[0].y, r[0].w, r[0].h].map(Math.round)} / ${[plain.x, plain.y, plain.width, plain.height].map(Math.round)}`);
+    ok((await wins(p).first().getByRole("button", { name: /Full screen|Restore/ }).count()) === 0 && (await wins(p).first().locator(".tr button").count()) === 2, "a lone window is full already: no full screen control, only Share and More");
     await key(p, "Alt+Shift+KeyN"); await key(p, "Alt+Shift+KeyN");
     r = await rects(p);
     ok(r.length === 3 && Math.abs(r[0].w - r[1].w) < 2 && Math.abs(r[0].w - (cb.width - 24) / 2) < 2, "two windows share it, half each; the third keeps half and the strip scrolls", r.map((x) => x.w.toFixed(0)).join("/"));
@@ -229,7 +228,7 @@ try {
     const { page: p, ctx } = await open(browser, "desktop", "dark", "/threads?canvas=1");
     await p.waitForTimeout(2200);
     for (let i = 0; i < 3; i++) await key(p, "Alt+Shift+KeyN");
-    if (clear) { await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("cal.canvas")); for (const c of s.cols) for (const w of c.wins) w.look = "clear"; localStorage.setItem("cal.canvas", JSON.stringify(s)); }); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2500); }
+    if (clear) { await p.evaluate(() => localStorage.setItem("cal.canvas.prefs", JSON.stringify({ look: "clear", width: null }))); await p.reload(); await p.waitForSelector("html[data-ready]"); await p.waitForTimeout(2500); }
     const total = await p.evaluate(() => JSON.parse(localStorage.getItem("cal.canvas")).cols.reduce((n, c) => n + c.wins.length, 0));
     await p.mouse.wheel(0, -9999); await p.waitForTimeout(500);
     // Warm: every column is mounted once before the measurement (mounting a thread view is the one cost of a pan, and it is the same for every look).
@@ -246,7 +245,7 @@ try {
     const dt = await p.evaluate(() => { cancelAnimationFrame(window.__r); return window.__f.slice(5); });
     const s = [...dt].sort((a, b) => a - b); const p95 = s[Math.floor(s.length * 0.95)], max = s.at(-1), late = dt.filter((v) => v > 24).length;
     console.log(`INFO  frame times while panning, 4x CPU, ${total} windows, ${clear ? "all transparent" : "cards"}: n=${dt.length} p50=${s[s.length >> 1].toFixed(1)}ms p95=${p95.toFixed(1)}ms max=${max.toFixed(1)}ms late(>24ms)=${late}`);
-    if (loadavg()[0] > cpus().length) console.log(`SKIP  p95 judgement: the VM is busy (load ${loadavg()[0].toFixed(0)} on ${cpus().length} cores)`);
+    if (!judgeTimings()) console.log(`SKIP  p95 judgement (recorded above, not judged): the machine is busy (${busyNow().why}); the quiet list judges it: npm run e2e:quiet`);
     else ok(p95 < 24, `panning six ${clear ? "transparent " : ""}windows at 4x CPU keeps the p95 frame under 24 ms`, `p95=${p95.toFixed(1)}`);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
     if (!clear) {

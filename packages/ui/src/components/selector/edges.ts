@@ -13,6 +13,8 @@ export type SelectorOption<T> = {
   label: string;
   /** An icon before the label, or instead of it with `iconOnly` (the label stays the name). */
   icon?: Snippet;
+  /** An icon from the host's icon set, by name (the simple case: no snippet to write). Drawn like `icon`. */
+  iconName?: import("../../icons").IconName;
   iconOnly?: boolean;
   disabled?: boolean;
   /** Why it's disabled, or extra words for the tooltip. */

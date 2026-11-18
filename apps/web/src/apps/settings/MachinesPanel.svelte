@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Machines page: the machines a person's threads can run on, each with where its threads run (sandboxed or direct), and the guided way to add one (by SSH; the server never keeps the key).
   // Fixture machines and values; the real list is the server's (`machines.list`).
-  import { Button, Capsule, Sheet } from "@calternal/ui";
+  import { Button, Selector, Sheet } from "@calternal/ui";
   import { values } from "./store.svelte";
   const MACHINES: { id: string; name: string; state: string }[] = [
     { id: "calternal-dev-02-std", name: "calternal-dev-02-std", state: "Online" },
@@ -20,7 +20,7 @@
   {#each all as m (m.id)}
     <li data-setting="machines.{m.id}">
       <span class="n"><span class="t">{m.name}</span><span class="h">{m.state}</span></span>
-      <Capsule label="Where threads run on {m.name}" kind="radio" glass={false} items={[{ id: "sandboxed", label: "Sandboxed" }, { id: "direct", label: "Direct" }]} value={mode(m.id)} onchange={(v) => values.set(`machines.${m.id}.mode`, v)} />
+      <Selector label="Where threads run on {m.name}" fill={false} options={[{ value: "sandboxed", label: "Sandboxed" }, { value: "direct", label: "Direct" }]} value={mode(m.id)} onchange={(v) => values.set(`machines.${m.id}.mode`, v)} />
     </li>
   {/each}
 </ul>
@@ -31,7 +31,7 @@
     <h1>Add a machine</h1>
     {#if step === 0}
       <p class="h">Step 1 of 3. How will it connect?</p>
-      <Capsule label="Connection" kind="radio" glass={false} items={[{ id: "ssh", label: "SSH" }]} value="ssh" onchange={() => {}} />
+      <Selector label="Connection" fill={false} options={[{ value: "ssh", label: "SSH" }]} value="ssh" onchange={() => {}} />
       <div class="f"><Button text="Continue" variant="primary" onclick={() => (step = 1)} /></div>
     {:else if step === 1}
       <p class="h">Step 2 of 3. Where is it?</p>

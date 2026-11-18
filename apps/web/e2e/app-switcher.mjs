@@ -13,12 +13,12 @@ const open = async (phone, path, order) => {
   return { ctx, page };
 };
 const geom = (page) => page.evaluate(() => {
-  const nav = document.querySelector('aside.side footer nav[aria-label="Apps"]'), track = nav.querySelector(".track"), tr = track.getBoundingClientRect();
-  const icons = [...nav.querySelectorAll("a")], r = (e) => e.getBoundingClientRect();
+  const nav = document.querySelector('aside.side footer nav[aria-label="Apps"]'), track = nav.querySelector(".selector"), tr = track.getBoundingClientRect();
+  const icons = [...nav.querySelectorAll(".opt")], r = (e) => e.getBoundingClientRect();
   const whole = icons.filter((a) => r(a).left >= tr.left - 1 && r(a).right <= tr.right + 1 && r(a).width > 0);
-  const cur = icons.find((a) => a.getAttribute("aria-current") === "page");
+  const cur = icons.find((a) => a.getAttribute("aria-selected") === "true");
   const c = cur ? r(cur) : null;
-  return { total: icons.length, whole: whole.length, outer: icons.filter((a) => a.classList.contains("outer")).length, scrolls: track.scrollWidth > track.clientWidth + 1, centred: c ? Math.abs(c.left + c.width / 2 - (tr.left + tr.width / 2)) : 999, labels: icons.map((a) => a.getAttribute("aria-label")), current: icons.filter((a) => a.hasAttribute("aria-current")).length, text: nav.innerText.trim(), tabbable: icons.filter((a) => a.tabIndex === 0).length };
+  return { total: icons.length, whole: whole.length, outer: nav.querySelectorAll(".ic.outer").length, scrolls: track.scrollWidth > track.clientWidth + 1, centred: c ? Math.abs(c.left + c.width / 2 - (tr.left + tr.width / 2)) : 999, labels: icons.map((a) => a.getAttribute("aria-label")), current: icons.filter((a) => a.getAttribute("aria-selected") === "true").length, text: nav.innerText.trim(), tabbable: icons.filter((a) => a.tabIndex === 0).length };
 });
 for (const phone of [false, true]) {
   const where = phone ? "phone" : "wide screen";
@@ -26,21 +26,21 @@ for (const phone of [false, true]) {
   for (const [n, route, outerWant] of [[1, "/threads", 0], [3, "/threads", 0], [4, "/threads", 1], [4, "/notes", 1], [20, "/settings/appearance", 2], [20, "/threads", 1]]) {
     const { ctx, page } = await open(phone, `${route}?apps=${n}&firstrun=0`);
     const g = await geom(page);
-    if (n === 3) { const looks = await page.evaluate(() => [...document.querySelectorAll('aside.side footer nav[aria-label="Apps"] a')].map((a) => { const c = getComputedStyle(a); return `${c.opacity}/${c.scale}`; })); ok(looks.every((l) => l === "1/none"), `${where}, exactly 3 apps: no icon is faded or shrunk (nothing is hidden on either side)`, looks.join(" ")); }
+    if (n === 3) { const looks = await page.evaluate(() => [...document.querySelectorAll('aside.side footer nav[aria-label="Apps"] .ic')].map((a) => { const c = getComputedStyle(a); return `${c.opacity}/${c.scale}`; })); ok(looks.every((l) => l === "1/none"), `${where}, exactly 3 apps: no icon is faded or shrunk (nothing is hidden on either side)`, looks.join(" ")); }
     const wholeWant = Math.min(3, n);
     ok(g.total === n && g.whole === wholeWant, `${where}, ${n} apps (on ${route}): ${wholeWant} whole icon${wholeWant > 1 ? "s" : ""} in view, none clipped`, `${g.whole} of ${g.total}`);
     ok(g.outer === outerWant, `${where}, ${n} apps on ${route}: ${outerWant ? "the outer icon on the side with more is smaller and fainter" : "all icons full size"}`, `${g.outer} outer`);
     ok(n <= 3 ? !g.scrolls : g.scrolls, `${where}, ${n} apps: ${n <= 3 ? "nothing scrolls" : "the rest scroll sideways"}`);
     const interior = n > 3 && !(route === "/threads") && !(route === "/settings/appearance" && n === 4);
     ok(!interior || g.centred < 3, `${where}, ${n} apps on ${route}: ${interior ? "the current app is centred in the capsule" : "the current app is in view (at an end the strip rests flush)"}`, `${g.centred.toFixed(1)} px off`);
-    ok(g.current === 1 && g.tabbable === 1 && g.labels.every((l) => !!l) && g.text === "", `${where}, ${n} apps: every icon is a named link, one current page, one tab stop, no words`);
+    ok(g.current === 1 && g.tabbable === 1 && g.labels.every((l) => !!l) && g.text === "", `${where}, ${n} apps: every icon is a named tab, one chosen, one tab stop, no words`);
     await ctx.close();
   }
   // ---- keys, links, current app after navigation
   {
     const { ctx, page } = await open(phone, "/threads?apps=20&firstrun=0");
     const nav = page.locator('aside.side footer nav[aria-label="Apps"]');
-    await nav.getByRole("link", { name: "Threads" }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(500);
+    await nav.getByRole("tab", { name: "Threads" }).focus(); await page.keyboard.press("ArrowRight"); await page.waitForTimeout(500);
     ok((await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) === "Notes", `${where}: the right arrow moves focus to the next app`);
     await page.keyboard.press("End"); await page.waitForTimeout(500);
     const e = await geom(page);
@@ -88,7 +88,7 @@ for (const phone of [false, true]) {
 }
 // ---- Settings: Move Notes up changes the capsule
 {
-  const { ctx, page } = await open(false, "/settings/appearance?firstrun=0");
+  const { ctx, page } = await open(false, "/settings/appearance/appearance.app-order?firstrun=0");
   await page.getByRole("button", { name: "Move Notes up" }).click(); await page.waitForTimeout(300);
   const g = await geom(page);
   ok(g.labels.join(",") === "Notes,Threads,Settings", "Settings, Appearance, Apps: Move Notes up changes the capsule", g.labels.join(","));

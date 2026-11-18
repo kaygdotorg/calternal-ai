@@ -285,3 +285,19 @@ Owner decisions: Google Sans Flex is the default for interface and chat; Cascadi
 - `fonts.list` -> installed and uploaded families with source, bytes and "used by"; `fonts.remove {family}`: a family in use falls back to the role's default.
 - Prefs: the four roles (and brand) in the person's appearance prefs, wherever the server keeps them (today the web keeps them in the browser).
 - **Question:** instance-wide installs (proposed: one copy serves everyone, the person who first picks it triggers the download) or per person?
+
+## Settings in an in-card split, and the Appearance audit (2026-11-18)
+
+**The primitive.** `SplitView` (packages/ui) arranges a list beside the selected thing's detail inside one card: side by side where the card itself is wide enough (a container query on the component, 40 rem by default, so it follows the card, not the window), and one pane at a time with a Back button where it is narrow (drill-in). It only arranges and collapses; the list and the detail are the caller's snippets and `selected` / `onback` the caller's state, so Settings uses it for sections beside a section and a mail plugin can use it for its message list beside the message (a virtual list in the `list` snippet). Settings pages opt in with `split: true` and titled groups; **Appearance** is the first (`apps/settings/Main.svelte`), and Fonts nests a second one (roles on the left, the chosen role's picker on the right: no nested page when there is width).
+
+**Appearance sections:** Look (colour scheme, preset), Wallpaper, Fonts, Materials (Blur, Dim, Tint, Clear to tinted), Size and colour (UI size, accent, wordmark text), Chat (layout), Motion, Apps (the capsule's order), Reset. The default window width and the window look (Card, Transparent, Solid) join as a Windows section when the Threads lane names the two preferences (they leave the window's three-dot menu).
+
+**What the audit found, and what was done.** Appearance existed twice: as a page of rows and as a second, nested page (the "appearance sheet", reached by "Wallpaper and fonts"). The same controls were on both:
+1. Materials (Blur, Dim, Tint): on the page and in the sheet. One now (Materials).
+2. UI size: both. One now.
+3. Colour scheme: the page row and a "Colour" capsule in the sheet, which is what the owner saw inside Fonts. One now (Look).
+4. Accent: page and sheet. One now.
+5. Wordmark name and its font: page and sheet. The name is in Size and colour, its font is the Wordmark role in Fonts.
+6. Presets: the "Preset" row and a "Themes" section in the sheet (the same gallery). One now (Look).
+7. "Stream messages as they are written": in the sheet's Behaviour and on the Agents page. It is an agent behaviour, not a look: it lives only on Agents.
+Wrong or stale: the Apps row's help text still described a switcher under the card and a phone bottom bar (now the capsule at the bottom of the sidebar). "Restore defaults" was at the foot of the sheet; it is a Reset section. `SettingsSheet.svelte`, its tests, `?sheet=1`, and the phone's bottom-sheet mount are deleted (a phone gets the same page: the sections list, then a section with Back); `WallpaperPanel` and `FontsPanel` are the two pieces that remain of it.

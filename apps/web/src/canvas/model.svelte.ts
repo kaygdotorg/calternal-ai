@@ -6,7 +6,8 @@
  * the focused window (Canvas.svelte navigates on focus), so the sidebars, which are chosen by the address's kind, follow the focused window's app with no code of their own.
  */
 import { serverMode } from "../server/client";
-import { dragBoundary, nextPreset, type Col, type Look, type Win } from "./layout";
+import { dragBoundary, nextPreset, type Col, type Win } from "./layout";
+import { canvasPrefs } from "./prefs.svelte";
 
 const KEY = "cal.canvas";
 /** Whether the experiment is on: `?canvas=1` once (remembered for the visit), `?canvas=0` to leave. Fixtures build only. */
@@ -38,7 +39,7 @@ class CanvasModel {
   constructor() {
     try {
       const s = JSON.parse(localStorage.getItem(KEY) ?? "null") as { cols: Col[]; focus: string | null; x?: number } | null;
-      if (s?.cols?.length && s.cols.every((c) => c && "p" in c && Array.isArray(c.wins) && c.wins.every((w) => w.look))) { this.cols = s.cols; this.focus = s.focus; this.x = s.x ?? 0; }
+      if (s?.cols?.length && s.cols.every((c) => c && "p" in c && Array.isArray(c.wins) && c.wins.every((w) => w.id))) { this.cols = s.cols; this.focus = s.focus; this.x = s.x ?? 0; }
     } catch { /* nothing kept */ }
   }
   save(): void { try { localStorage.setItem(KEY, JSON.stringify({ cols: this.cols, focus: this.focus, x: this.x })); } catch { /* storage is off */ } }
@@ -55,7 +56,7 @@ class CanvasModel {
   find(kind: string, item: string): Win | undefined { return this.all().find((w) => w.kind === kind && w.item === item); }
   address(w: Win): string { return w.item ? `/${w.kind}/${w.item}` : `/${w.kind}`; }
 
-  private make(kind: string, item: string): Win { return { id: uid("w"), kind, item, weight: 1, look: "card", locked: false }; }
+  private make(kind: string, item: string): Win { return { id: uid("w"), kind, item, weight: 1, locked: false }; }
 
   /** Opens an address: its window gets focus, or a new column opens right of the focused one. Returns the window. One window per address. */
   show(kind: string, item: string): Win {
@@ -69,7 +70,7 @@ class CanvasModel {
     const w = this.make(kind, item);
     const at = this.colIndexOf(this.focus) + 1 || this.cols.length;
     const next = [...this.cols];
-    next.splice(at, 0, { id: uid("c"), p: null, wins: [w] });
+    next.splice(at, 0, { id: uid("c"), p: canvasPrefs.width, wins: [w] });
     this.cols = next; this.focus = w.id; this.max = null; this.save();
     return w;
   }
@@ -126,8 +127,6 @@ class CanvasModel {
   }
   toggleMax(id: string): void { this.max = this.max === id ? null : id; this.focus = id; this.save(); }
   toggleLock(id: string): void { this.patch(id, (w) => ({ ...w, locked: !w.locked })); }
-  /** Sets how a window looks (card, transparent, solid). */
-  setLook(id: string, look: Look): void { this.patch(id, (w) => ({ ...w, look })); }
   private patch(id: string, f: (w: Win) => Win): void { this.cols = this.cols.map((c) => ({ ...c, wins: c.wins.map((w) => (w.id === id ? f(w) : w)) })); this.save(); }
   /** Sets a column's width as a proportion of the canvas. */
   setProportion(colId: string, p: number | null): void { this.cols = this.cols.map((c) => (c.id === colId ? { ...c, p } : c)); this.save(); }

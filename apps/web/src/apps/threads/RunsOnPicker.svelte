@@ -1,7 +1,7 @@
 <script lang="ts">
   // Where a thread runs, in two choices: a machine, then Sandboxed or Direct. A bottom sheet on a phone, a popover on a desktop (the composer
   // decides); this is the content of both. A choice applies at once, to the next message; it never moves work that is already running.
-  import { Capsule, Icon } from "@calternal/ui";
+  import { Icon, Selector } from "@calternal/ui";
   import type { RunsOn } from "./model";
   let { machines, value, onchange }: { machines: string[]; value: RunsOn; onchange: (r: RunsOn) => void } = $props();
   let q = $state("");
@@ -19,7 +19,7 @@
     {:else}<p class="note">No machine matches.</p>{/each}
   </div>
   <h2 id="ro-w">How</h2>
-  <Capsule label="Sandboxed or direct" kind="radio" glass={false} items={[{ id: "sandboxed", label: "Sandboxed", icon: "shield" }, { id: "direct", label: "Direct", icon: "folder" }]} value={value.mode} onchange={(v) => onchange({ ...value, mode: v as RunsOn["mode"] })} />
+  <Selector label="Sandboxed or direct" options={[{ value: "sandboxed", label: "Sandboxed", iconName: "shield" }, { value: "direct", label: "Direct", iconName: "folder" }]} value={value.mode} onchange={(v) => onchange({ ...value, mode: v as RunsOn["mode"] })} />
   <p class="note">{value.mode === "sandboxed" ? "The thread gets its own sandbox on this machine." : "The agent works straight on a folder of this machine, with no sandbox."}</p>
 </div>
 
