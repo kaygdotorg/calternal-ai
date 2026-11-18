@@ -182,9 +182,11 @@ pub(super) fn dispatch<D: Directory>(
     let zone = account_zone(state, who.id)?;
     let content = state.store.content();
     if op == "automations.list" {
-        let mut automations = Vec::new();
-        let mut statuses = scheduling::statuses(&state.store, space)?;
-        for row in content.list(space, KIND, MAX_DEFINITIONS)? {
+        let rows = content.list(space, KIND, MAX_DEFINITIONS)?;
+        let mut automations = Vec::with_capacity(rows.len());
+        let mut statuses =
+            scheduling::statuses(&state.store, space, rows.iter().map(|row| row.id))?;
+        for row in rows {
             let definition = Definition::read(row.metadata.clone())?;
             let status = statuses.remove(&row.id.to_string()).unwrap_or_default();
             automations.push(definition.record(status, &row, who.id, &zone, None)?);

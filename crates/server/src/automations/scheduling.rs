@@ -81,18 +81,26 @@ pub(super) fn status(
         .map(Option::unwrap_or_default)
 }
 
+/// Read next, last and stop reason for the definitions returned by one list.
 pub(super) fn statuses(
     store: &crate::store::Store,
     space: SpaceId,
+    ids: impl Iterator<Item = Uuid>,
 ) -> Result<BTreeMap<String, Status>, Error> {
-    if !store.appdata().join(PATH).exists() {
+    let ids: Vec<_> = ids.collect();
+    if ids.is_empty() || !store.appdata().join(PATH).exists() {
         return Ok(BTreeMap::new());
     }
     let conn = database(store)?;
     let mut stmt = conn
-        .prepare("SELECT id, next, stop, last FROM schedules WHERE space=?1")
+        .prepare(
+            "SELECT id, next, stop, last FROM schedules
+             WHERE space=?1 AND id IN (SELECT value FROM json_each(?2))",
+        )
         .map_err(db_error)?;
-    let mut rows = stmt.query([space.to_string()]).map_err(db_error)?;
+    let mut rows = stmt
+        .query(params![space.to_string(), json!(ids).to_string()])
+        .map_err(db_error)?;
     let mut statuses = BTreeMap::new();
     while let Some(row) = rows.next().map_err(db_error)? {
         statuses.insert(
