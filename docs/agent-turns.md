@@ -284,3 +284,28 @@ space-local SQL statement for activations and any pin, and one owner-indexed
 in-memory registry snapshot. No body reads, flushes or machine traffic. A cold
 space opens its existing indexes. A check uses the ordinary fenced lease and
 job receipt. Cache publication and invalidation add no durable writes.
+
+## Shared-space execution design
+
+A space's Owner or Manager configures its execution machine using the existing
+`space.settings` capability (ADR 0058). `space.read` permits reading the setting.
+Turn admission still requires the caller's existing capabilities and retains the
+caller's identity for the turn, content permissions, and agent token. The space
+Owner is the execution sponsor. The open server can apply its operator-set limits
+to that sponsor. The private plans service owns the plan-hours meter.
+
+Reuse the machine registry's `machines.db`, fenced leases, enrollment and
+revocation checks, and provider sign-in scratch flow. Store one binding per space
+UUID through the shared migration runner. Bind it to the current space Owner and
+their enrolled sandbox machine. Resolve and recheck that binding before starting
+work. If a configured target stops being eligible, refuse the shared route. An
+explicit personal choice uses the caller's machine and login for that turn.
+Personal and unconfigured spaces keep their existing per-account execution.
+
+A shared sign-in uses a machine-local credential directory scoped to the space.
+Only a current `space.settings` holder can write there through the existing
+sign-in flow. The server holds no provider credentials. Shared execution must
+keep the credential directory outside tool reach. The initial shared adapter
+uses the existing tool-free Claude CLI mode, on a sandboxed machine. Personal
+execution keeps its normal tools. The settings response carries the notice
+“Personal subscriptions are licensed for use by one person.”
