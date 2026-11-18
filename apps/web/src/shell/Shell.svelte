@@ -244,6 +244,8 @@
   .edge.l { left: calc(var(--inset) + var(--s-4)); }
   .edge.r { right: calc(var(--inset) + var(--s-4)); }
   .mid :global(.mid-card) { height: 100%; overflow: clip; }
+  /* The card is the only thing on the background, and it casts nothing onto it: a shadow would be a second layer in the gap beside the card (the owner's seam). It is told apart by its own surface (docs/ui-design-system.md). On a phone it slides over the list, where it does cast one. */
+  .shell:not(.narrow) .mid :global(.mid-card) { box-shadow: none; }
   .col { position: relative; height: 100%; display: flex; flex-direction: column; }
   .app { flex: 1; min-height: 0; position: relative; }
   .appbar { flex: none; padding: var(--s-3) var(--s-6) var(--s-4); }
