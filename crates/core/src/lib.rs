@@ -14,6 +14,8 @@ pub use note_operations::*;
 pub use notes::*;
 mod plugin_wire;
 pub use plugin_wire::*;
+mod sharing;
+pub use sharing::*;
 mod spaces;
 pub use spaces::*;
 mod onboarding;

@@ -129,6 +129,7 @@ pub fn is_known_operation(operation: &str) -> bool {
         || crate::PeopleOperation::from_id(operation).is_some()
         || is_account_input_operation(operation)
         || crate::note_operation(operation).is_some()
+        || crate::sharing_operation(operation).is_some()
         || crate::SearchOperation::from_id(operation).is_some()
         || request_operation(operation).is_some()
         || matches!(
@@ -223,6 +224,9 @@ pub fn validate_operation_input(operation: &str, input: &JsonObject) -> Result<(
         return op.validate(input);
     }
     if let Some(op) = crate::note_operation(operation) {
+        return op.validate(input);
+    }
+    if let Some(op) = crate::sharing_operation(operation) {
         return op.validate(input);
     }
     if let Some(row) = request_operation(operation) {
@@ -554,6 +558,7 @@ pub fn operation_catalog() -> Vec<OperationDescription> {
             .map(crate::NoteOperation::describe),
     );
     catalog.extend(crate::SearchOperation::ALL.iter().map(|op| op.describe()));
+    catalog.extend(SHARING_OPERATIONS.iter().map(SharingOperation::describe));
     catalog.extend(account_input_catalog());
     catalog.extend(REQUEST_OPERATIONS.iter().map(RequestOperation::description));
     catalog.extend(crate::AGENT_OPERATIONS.iter().map(|(id, text, mutates)| {

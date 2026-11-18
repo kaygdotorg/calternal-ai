@@ -97,6 +97,14 @@ unsent edits can be lost during a system crash or power loss.
    The test-only `upgrade_schema()` step in `machines/db.rs` shows the shape of
    a real step and how the fixture tests drive it.
 
+### Item sharing
+
+The fresh production baseline at `c98705d7` includes dormant sharing authority
+(`auth.db` 14) and the derived collection membership index (space
+`content.db` 5). The sharing feature uses these shipped schemas. The existing
+`system/invite.key` backup also protects public link credentials through
+independently derived keys.
+
 ## Release handoff
 
 Unattended updates allow additive changes with proof that release N can run

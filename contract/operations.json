@@ -8699,6 +8699,793 @@
     }
   },
   {
+    "risk": "read",
+    "id": "collections.get",
+    "description": "Open a saved notes collection",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Read one saved Notes collection.",
+      "properties": {
+        "id": {
+          "description": "The saved collection UUID.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "CollectionGetInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "collections.create",
+    "description": "Save an explicit set of notes in one space",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Create a saved set of notes in one space.",
+      "properties": {
+        "members": {
+          "description": "Explicit same-space note UUIDs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "space_id": {
+          "description": "Owning space UUID.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Display title.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "members",
+        "space_id",
+        "title"
+      ],
+      "title": "CollectionCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "collections.set_members",
+    "description": "Replace a saved collection's explicit notes",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Replace a saved collection's explicit note list.",
+      "properties": {
+        "base_revision": {
+          "description": "Expected current collection revision.",
+          "type": "string"
+        },
+        "id": {
+          "description": "Target collection UUID.",
+          "type": "string"
+        },
+        "members": {
+          "description": "Explicit same-space note UUIDs.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "base_revision",
+        "id",
+        "members"
+      ],
+      "title": "CollectionMembersInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "sharing.mark_seen",
+    "description": "Mark a received item share as seen",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "An explicit acknowledgement that the recipient has seen a share.",
+      "properties": {
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The received item reference."
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "title": "ShareSeenInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "sharing.rescue",
+    "description": "Save the caller's blocked offline edits as a private note",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Locally authored edits the server could no longer save to a shared note.",
+      "properties": {
+        "changed_blocks": {
+          "description": "Only the caller's locally changed Markdown blocks, in document order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "title": {
+          "description": "The former note title, from the caller's local copy.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "changed_blocks",
+        "title"
+      ],
+      "title": "ShareRescueInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.list",
+    "description": "List sharing controls and grants for an item",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Read one page of sharing metadata.",
+      "properties": {
+        "cursor": {
+          "description": "An optional continuation issued for this operation and scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        }
+      },
+      "required": [
+        "item"
+      ],
+      "title": "ShareListInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.audiences",
+    "description": "Find visible people or groups to share an item with",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Search the currently visible directory for audience choices.",
+      "properties": {
+        "cursor": {
+          "description": "An optional continuation issued for this operation and scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "query": {
+          "description": "A display-name search prefix or substring, or empty.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "query"
+      ],
+      "title": "ShareAudiencesInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.shared_with_me",
+    "description": "List items shared with the signed-in account",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "List current received shares for an app or collection kind.",
+      "properties": {
+        "cursor": {
+          "description": "An optional continuation issued for this operation and scope.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The item kind, either notes or collections in this slice.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "SharesReceivedInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.grant",
+    "description": "Set view or edit access for one named audience",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "ShareAccountAudience": {
+          "additionalProperties": false,
+          "description": "A named account audience.",
+          "properties": {
+            "account_id": {
+              "description": "The active recipient account UUID.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "account_id"
+          ],
+          "type": "object"
+        },
+        "ShareAudience": {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ShareAccountAudience"
+                }
+              ],
+              "description": "A named account."
+            },
+            {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/ShareGroupAudience"
+                }
+              ],
+              "description": "A group with current membership."
+            }
+          ],
+          "description": "Exactly one identified account or server group."
+        },
+        "ShareGroupAudience": {
+          "additionalProperties": false,
+          "description": "A live group audience.",
+          "properties": {
+            "group_id": {
+              "description": "The recipient group UUID.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "group_id"
+          ],
+          "type": "object"
+        },
+        "SharePermission": {
+          "description": "Current operations allowed on the shared item.",
+          "oneOf": [
+            {
+              "description": "Read the live item.",
+              "enum": [
+                "view"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Read and edit the live item.",
+              "enum": [
+                "edit"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Create or replace a named grant.",
+      "properties": {
+        "audience": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ShareAudience"
+            }
+          ],
+          "description": "The named person or group receiving access."
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "permission": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharePermission"
+            }
+          ],
+          "description": "The permission to grant."
+        }
+      },
+      "required": [
+        "audience",
+        "item",
+        "permission"
+      ],
+      "title": "ShareGrantInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "reversible",
+    "id": "sharing.revoke",
+    "description": "Remove one item grant",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bind a grant UUID to its item.",
+      "properties": {
+        "grant_id": {
+          "description": "The independently manageable grant UUID.",
+          "type": "string"
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        }
+      },
+      "required": [
+        "grant_id",
+        "item"
+      ],
+      "title": "ShareGrantTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.link_create",
+    "description": "Issue a read-only public link",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Create a labeled public view link.",
+      "properties": {
+        "expires_at": {
+          "description": "Unix milliseconds. A null value means Never.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "label": {
+          "description": "The display name in the Share sheet.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item",
+        "label"
+      ],
+      "title": "ShareLinkCreateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.link_update",
+    "description": "Change a public link's label or expiry",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Update metadata on an existing public link.",
+      "properties": {
+        "expires_at": {
+          "default": null,
+          "description": "Unix milliseconds. A null value means Never.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "grant_id": {
+          "description": "The independently manageable grant UUID.",
+          "type": "string"
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        },
+        "label": {
+          "description": "The display name in the Share sheet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "grant_id",
+        "item"
+      ],
+      "title": "ShareLinkUpdateInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "read",
+    "id": "sharing.link_copy",
+    "description": "Retrieve an authorized public link URL",
+    "mutates": false,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "definitions": {
+        "SharedItemRef": {
+          "additionalProperties": false,
+          "description": "A recognized kind and stable item UUID.",
+          "properties": {
+            "id": {
+              "description": "The stable UUID of the item.",
+              "type": "string"
+            },
+            "kind": {
+              "description": "The item kind, either notes or collections in this slice.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Bind a grant UUID to its item.",
+      "properties": {
+        "grant_id": {
+          "description": "The independently manageable grant UUID.",
+          "type": "string"
+        },
+        "item": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SharedItemRef"
+            }
+          ],
+          "description": "The target item reference."
+        }
+      },
+      "required": [
+        "grant_id",
+        "item"
+      ],
+      "title": "ShareGrantTarget",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
+    "risk": "widens_access",
+    "id": "sharing.set_link_policy",
+    "description": "Set the authority needed to manage public links",
+    "mutates": true,
+    "input_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "description": "Set who can manage item links in a space.",
+      "properties": {
+        "editors_can_manage_links": {
+          "description": "Whether the space Editor capability can manage links.",
+          "type": "boolean"
+        },
+        "space_id": {
+          "description": "The space whose link policy changes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "editors_can_manage_links",
+        "space_id"
+      ],
+      "title": "ShareLinkPolicyInput",
+      "type": "object"
+    },
+    "output_schema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": true,
+      "title": "Map_of_AnyValue",
+      "type": "object"
+    }
+  },
+  {
     "risk": "reversible",
     "id": "drafts.save",
     "description": "drafts save",
