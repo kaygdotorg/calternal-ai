@@ -32,7 +32,7 @@ describe("appearance: wallpaper and fonts sections", () => {
     expect(within(group).getByRole("radio", { name: /Automatic/ }).getAttribute("aria-checked")).toBe("true");
     await userEvent.click(within(group).getByRole("radio", { name: "Storm" }));
     expect(appearance.prefs.wallpaperId).toBe("storm-sea");
-    await userEvent.click(within(group).getByRole("radio", { name: "No wallpaper" }));
+    await userEvent.click(within(group).getByRole("radio", { name: /^None/ }));
     expect(appearance.prefs.wallpaperId).toBeNull();
   });
 

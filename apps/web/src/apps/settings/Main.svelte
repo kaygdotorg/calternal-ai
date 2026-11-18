@@ -84,7 +84,7 @@
 
 <style>
   /* A settings page taller than the window scrolls inside the card; the shell never grows (its sidebars and their footer stay in view). */
-  .scroller { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .scroller { container: settings-page / inline-size; position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
   .page { box-sizing: border-box; min-width: 0; overflow-x: clip; width: 100%; max-width: 35rem; margin: 0 auto; padding: calc(var(--safe-top) + var(--bar-h) + var(--s-6)) var(--s-6) var(--s-10); }
   h1 { font-size: var(--text-title); font-weight: var(--strong-weight); }
   .page.split { max-width: 60rem; }

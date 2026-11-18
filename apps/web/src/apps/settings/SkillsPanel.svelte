@@ -68,10 +68,10 @@
     {#each list as s (s.name)}
       <div class="r">
         <span class="n"><span class="t">{s.name}</span><span class="h">{s.description}</span><span class="h">Used by {s.agents.length ? s.agents.join(", ") : "every agent in this space"} · <code>{s.path}</code></span></span>
-        <span class="a"><Button variant="quiet" text="Open file" onclick={() => navigate("/notes")} /></span>
+        <span class="a"><Button variant="secondary" text="Open file" onclick={() => navigate("/notes")} /></span>
       </div>
     {/each}
     {#if !list.length}<div class="r"><span class="n"><span class="t">No skills yet</span><span class="h">A skill teaches agents a procedure they can follow when it fits.</span></span></div>{/if}
-    <div class="r"><span class="n"><span class="h">Skills follow the open <a href="https://agentskills.io/specification" target="_blank" rel="noreferrer">Agent Skills</a> format.</span></span><span class="a"><Button variant="primary" text="New skill" onclick={begin} /></span></div>
+    <div class="r"><span class="n"><span class="h">Skills follow the open <a href="https://agentskills.io/specification" target="_blank" rel="noreferrer">Agent Skills</a> format.</span></span><span class="a"><Button class="settings-action" variant="primary" text="New skill" onclick={begin} /></span></div>
   {/if}
 </div>

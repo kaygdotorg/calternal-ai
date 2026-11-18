@@ -65,7 +65,7 @@
   {#if loaded && g.members.length === 1 && !error}<p class="e" style="color: var(--ink-3)">Only you are in this space. Add a person who has an account here, a group, or send an invitation from the Invites page.</p>{/if}
   {#if canManage}
     <div class="r"><span class="n"><span class="t">Add to this space</span><span class="h">A person or a group already on this server, with a role.</span></span>
-      <span class="a"><Button text="Add a person…" disabled={busy} onclick={() => open("person")} /><Button text="Add a group…" variant="secondary" disabled={busy} onclick={() => open("group")} /></span></div>
+      <span class="a"><Button class="settings-action" text="Add a person…" disabled={busy} onclick={() => open("person")} /><Button class="settings-action" text="Add a group…" variant="secondary" disabled={busy} onclick={() => open("group")} /></span></div>
   {/if}
   {#if adding}
     <div class="r"><span class="n">
