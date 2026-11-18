@@ -122,3 +122,5 @@ setup, lifecycle bounds and unresolved placement/network contracts.
 
 Notes supports title and tag pickers, relative-link rename, and 30-day space
 Trash. See the [Notes operations reference](docs/notes-operations.md).
+
+The [deployment runbook](docs/deploy.md) covers the rootless Podman image, machine service and calternal.cloud cutover.
