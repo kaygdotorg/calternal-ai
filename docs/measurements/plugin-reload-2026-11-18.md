@@ -128,3 +128,22 @@ using existing x86_64-musl static archives. Rust compilation and linking
 ran on dev-02.
 
 [Raw full-loop samples](plugin-reload-author-loop-2026-11-18.json)
+
+## Standby option
+
+The first full-loop run spent 176.2 ms p95 in the build and 489.9 ms in
+package activation. The passing run's median was 861.0 ms, with 190.5 ms
+build and 642.0 ms activation p95. These are separate phase percentiles.
+Activation includes the package read, isolated container and worker startup,
+the readiness round trip and publication. Cleanup from the prior edit can
+also delay placement in the passing run.
+
+An empty standby can overlap some container provisioning with validation if
+the host can reserve a separate sandbox early. It would still need verified
+bytes, a fresh worker process, the data-free handshake and a catalog commit.
+The topology test measured 464.5 ms p95 from validation through the first
+result with a standby and 463.3 ms with a fresh container. The standby saves
+time only to the extent provisioning can overlap work that is already on the
+critical path. It consumes a sandbox permit while it waits and cannot remove
+the previous revision's teardown queueing by itself. The current plan keeps
+fresh containers on demand.
