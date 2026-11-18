@@ -172,7 +172,7 @@ Implementation and status: `docs/ui-shell-status.md`.
 
 ## Sidebar pull (2026-11-18)
 
-A horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to one: the sidebar's visible width is the distance the finger has travelled, clamped to the sidebar's width. The opposite swipe closes it. One recogniser (`apps/web/src/shell/Shell.svelte`, rules and helpers in `shell/pull.ts`, tested in `pull.test.ts` and `e2e/sidebar-pull.mjs`) serves the phone, a touch screen of any width and a trackpad; the phone's edge swipe is the same gesture started at the edge.
+A horizontal swipe anywhere over the middle card brings a closed sidebar into view, following the finger one to one: the sidebar's visible width is the distance the finger has travelled, clamped to the sidebar's width. The opposite swipe closes it. One recogniser (`apps/web/src/shell/Shell.svelte`, rules and helpers in `shell/pull.ts`, tested in `pull.test.ts` and `e2e/sidebar-pull.mjs`) serves the phone, a touch screen of any width (not a trackpad); the phone's edge swipe is the same gesture started at the edge.
 
 **What a swipe does.** Finger right: closes the right sidebar if it is open, else opens the left one. Finger left: closes the left sidebar if it is open, else opens the right one (when the app has one). Otherwise nothing (swiping toward a sidebar that is already open does nothing).
 
